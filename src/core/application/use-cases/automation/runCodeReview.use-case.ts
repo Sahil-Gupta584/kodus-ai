@@ -13,10 +13,6 @@ import {
     IExecuteAutomationService,
 } from '@/shared/domain/contracts/execute.automation.service.contracts';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import {
-    AUTH_INTEGRATION_SERVICE_TOKEN,
-    IAuthIntegrationService,
-} from '@/core/domain/authIntegrations/contracts/auth-integration.service.contracts';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import {
     IIntegrationConfigService,
@@ -31,9 +27,6 @@ import { stripCurlyBracesFromUUIDs } from '@/core/domain/platformIntegrations/ty
 @Injectable()
 export class RunCodeReviewAutomationUseCase {
     constructor(
-        @Inject(AUTH_INTEGRATION_SERVICE_TOKEN)
-        private readonly authIntegrationService: IAuthIntegrationService,
-
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
 
@@ -80,6 +73,7 @@ export class RunCodeReviewAutomationUseCase {
                 payload: sanitizedPayload,
                 event: event,
             });
+
             if (!action) {
                 return;
             }
@@ -87,6 +81,7 @@ export class RunCodeReviewAutomationUseCase {
             const repository = mappedPlatform.mapRepository({
                 payload: sanitizedPayload,
             });
+
             if (!repository) {
                 return;
             }
@@ -107,6 +102,7 @@ export class RunCodeReviewAutomationUseCase {
             const pullRequest = mappedPlatform.mapPullRequest({
                 payload: sanitizedPayload,
             });
+
             if (!pullRequest) {
                 // try to get the PR details from the code management when it's a github issue
                 if (platformType === PlatformType.GITHUB) {
@@ -285,7 +281,15 @@ export class RunCodeReviewAutomationUseCase {
                     config.team.uuid,
                 );
 
-                if (automations?.length) {
+                if (!automations?.length) {
+                    this.logger.warn({
+                        message: 'No automations configuration found',
+                        context: RunCodeReviewAutomationUseCase.name,
+                        metadata: {
+                            repositoryName: params.repository?.name,
+                        },
+                    });
+                } else {
                     return {
                         organizationAndTeamData: {
                             organizationId: config.team.organization.uuid,
@@ -298,6 +302,14 @@ export class RunCodeReviewAutomationUseCase {
 
             return null;
         } catch (error) {
+            this.logger.error({
+                message: 'Automation, Repository OR License not Active',
+                context: RunCodeReviewAutomationUseCase.name,
+                error: error,
+                metadata: {
+                    ...params,
+                },
+            });
             throw new BadRequestException(error);
         }
     }
