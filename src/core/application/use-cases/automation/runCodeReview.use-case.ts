@@ -23,6 +23,10 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { stripCurlyBracesFromUUIDs } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-bitbucket.type';
+import {
+    ILicenseService,
+    LICENSE_SERVICE_TOKEN,
+} from '@/ee/license/interfaces/license.interface';
 
 @Injectable()
 export class RunCodeReviewAutomationUseCase {
@@ -38,6 +42,9 @@ export class RunCodeReviewAutomationUseCase {
 
         @Inject(EXECUTE_AUTOMATION_SERVICE_TOKEN)
         private readonly executeAutomation: IExecuteAutomationService,
+
+        @Inject(LICENSE_SERVICE_TOKEN)
+        private readonly licenseService: ILicenseService,
 
         private readonly codeManagement: CodeManagementService,
 
@@ -88,6 +95,7 @@ export class RunCodeReviewAutomationUseCase {
 
             const teamWithAutomation = await this.findTeamWithActiveCodeReview({
                 repository,
+                platformType,
             });
 
             if (!teamWithAutomation) {
@@ -246,6 +254,7 @@ export class RunCodeReviewAutomationUseCase {
 
     async findTeamWithActiveCodeReview(params: {
         repository: { id: string; name: string };
+        platformType: PlatformType;
     }): Promise<{
         organizationAndTeamData: OrganizationAndTeamData;
         automationId: string;
@@ -259,6 +268,7 @@ export class RunCodeReviewAutomationUseCase {
                 await this.integrationConfigService.findIntegrationConfigWithTeams(
                     IntegrationConfigKey.REPOSITORIES,
                     params.repository.id,
+                    params.platformType,
                 );
 
             if (!configs?.length) {
@@ -290,13 +300,41 @@ export class RunCodeReviewAutomationUseCase {
                         },
                     });
                 } else {
-                    return {
+                    const { organizationAndTeamData, automationId } = {
                         organizationAndTeamData: {
                             organizationId: config.team.organization.uuid,
                             teamId: config.team.uuid,
                         },
                         automationId: automations[0].uuid,
                     };
+
+                    const validation =
+                        await this.licenseService.validateOrganizationLicense(
+                            organizationAndTeamData,
+                        );
+
+                    if (!validation?.valid) {
+                        this.logger.warn({
+                            message: 'License not active',
+                            context: RunCodeReviewAutomationUseCase.name,
+                            metadata: {
+                                organizationId: config.team.organization.uuid,
+                                teamId: config.team.uuid,
+                            },
+                        });
+                        return null;
+                    }
+
+                    if (validation?.valid) {
+                        const users =
+                            await this.licenseService.getAllUsersWithLicense(
+                                organizationAndTeamData,
+                            );
+
+                        console.log('users', users);
+                    }
+
+                    return { organizationAndTeamData, automationId };
                 }
             }
 

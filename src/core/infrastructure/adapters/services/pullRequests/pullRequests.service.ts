@@ -62,10 +62,12 @@ export class PullRequestsService implements IPullRequestsService {
     findByNumberAndRepository(
         prNumber: number,
         repositoryName: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null> {
         return this.pullRequestsRepository.findByNumberAndRepository(
             prNumber,
             repositoryName,
+            organizationAndTeamData,
         );
     }
 
@@ -73,11 +75,13 @@ export class PullRequestsService implements IPullRequestsService {
         prNumber: number,
         repoFullName: string,
         filename: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ) {
         return this.pullRequestsRepository.findSuggestionsByPRAndFilename(
             prNumber,
             repoFullName,
             filename,
+            organizationAndTeamData,
         );
     }
 
@@ -240,6 +244,7 @@ export class PullRequestsService implements IPullRequestsService {
                 await this.pullRequestsRepository.findByNumberAndRepository(
                     pullRequest?.number,
                     repository.name,
+                    organizationAndTeamData,
                 );
 
             if (!existingPR) {
@@ -289,6 +294,7 @@ export class PullRequestsService implements IPullRequestsService {
                 changedFiles,
                 prioritizedSuggestions,
                 unusedSuggestions,
+                organizationAndTeamData,
             );
         } catch (error) {
             this.logger.log({
@@ -547,6 +553,7 @@ export class PullRequestsService implements IPullRequestsService {
         changedFiles: Array<any>,
         prioritizedSuggestions: Array<ISuggestion>,
         unusedSuggestions: Array<ISuggestion>,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<IPullRequests> {
         try {
             for (const file of changedFiles) {
@@ -631,6 +638,7 @@ export class PullRequestsService implements IPullRequestsService {
             const newPrEntity = await this.findByNumberAndRepository(
                 pullRequest?.number,
                 repository?.name,
+                organizationAndTeamData,
             );
 
             const { totalAdded, totalDeleted, totalChanges } =

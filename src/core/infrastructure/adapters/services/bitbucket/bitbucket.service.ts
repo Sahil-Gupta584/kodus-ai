@@ -940,6 +940,7 @@ export class BitbucketService
         });
         throw new Error('Method not implemented.');
     }
+
     getCommitsByReleaseMode(params: any): Promise<CommitLeadTimeForChange[]> {
         this.logger.error({
             message: 'Method not implemented.',

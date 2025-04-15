@@ -23,6 +23,7 @@ import { AgentModule } from './agent.module';
 import { RunCodeReviewAutomationUseCase } from '@/core/application/use-cases/automation/runCodeReview.use-case';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { CodebaseModule } from './codeBase.module';
+import { LicenseModule } from '@/ee/license/license.module';
 
 @Module({
     imports: [
@@ -43,6 +44,7 @@ import { CodebaseModule } from './codeBase.module';
         forwardRef(() => AgentModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
+        LicenseModule
     ],
     providers: [
         ...UseCases,

@@ -47,6 +47,7 @@ import { UseCases as SaveCodeReviewFeedbackUseCase } from '@/core/application/us
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { PullRequestsModule } from './pullRequests.module';
 import { TeamArtifactsModule } from './teamArtifacts.module';
+import { LicenseModule } from '@/ee/license/license.module';
 
 @Module({
     imports: [
@@ -77,6 +78,7 @@ import { TeamArtifactsModule } from './teamArtifacts.module';
         AuthIntegrationModule,
         CheckinModule,
         TeamArtifactsModule,
+        LicenseModule
     ],
     providers: [
         ...UseCases,
@@ -130,4 +132,4 @@ import { TeamArtifactsModule } from './teamArtifacts.module';
         RunCodeReviewAutomationUseCase,
     ],
 })
-export class AutomationModule {}
+export class AutomationModule { }

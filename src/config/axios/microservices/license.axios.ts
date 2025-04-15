@@ -5,7 +5,7 @@ export class AxiosLicenseService {
 
     constructor() {
         this.axiosInstance = axios.create({
-            baseURL: process.env.KODUS_SERVICE_AZURE_REPOS,
+            baseURL: `${process.env.GLOBAL_KODUS_SERVICE_BILLING}/api/billing/`,
             headers: {
                 'Content-Type': 'application/json',
             },
