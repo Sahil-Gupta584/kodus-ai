@@ -36,7 +36,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
         private readonly integrationConfigService: IIntegrationConfigService,
 
         private readonly bitbuckerService: BitbucketService,
-    ) {}
+    ) { }
 
     public async execute(params: {
         payload: any;
@@ -90,7 +90,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                 case 'Note Hook':
                     if (
                         params.payload?.object_attributes?.action ===
-                            'create' &&
+                        'create' &&
                         !params.payload?.object_attributes?.change_position &&
                         !params.payload?.object_attributes?.type
                     ) {
@@ -117,26 +117,6 @@ export class ReceiveWebhookUseCase implements IUseCase {
                         this.isStartCommand(params);
                     }
 
-                    // if (comment && this.isAzureDevOpsStartCommand(comment)) {
-                    //     const updatedParams = {
-                    //         ...params,
-                    //         payload: {
-                    //             ...params.payload,
-                    //             action: 'synchronize',
-                    //             origin: 'command',
-                    //         },
-                    //     };
-
-                    //     await this.savePullRequestUseCase.execute(
-                    //         updatedParams,
-                    //     );
-                    //     await this.runCodeReviewAutomationUseCase.execute(
-                    //         updatedParams,
-                    //     );
-                    // } else {
-                    //     // Processar comentário normal
-                    //     this.chatWithKodyFromGitUseCase.execute(params);
-                    // }
                     break;
 
                 default:

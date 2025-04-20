@@ -93,7 +93,32 @@ interface FileDiff {
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
-    implements Omit<ICodeManagementService, 'getOrganizations'> {
+    implements Omit<ICodeManagementService,
+        'getOrganizations' |
+        'getPullRequestDetails' |
+        'getWorkflows' |
+        'getListMembers' |
+        'getCommitsByReleaseMode' |
+        'getPullRequestsForRTTM' |
+        'createCommentInPullRequest' |
+        'getPullRequestReviewThreads' |
+        'getListOfValidReviews' |
+        'getPullRequestsWithChangesRequested' |
+        'createSingleIssueComment' |
+        'findTeamAndOrganizationIdByConfigKey' |
+        'getPullRequestReviewComment' |
+        'createResponseToComment' |
+        'getAuthenticationOAuthToken' |
+        'countReactions' |
+        'getRepositoryAllFiles' |
+        'mergePullRequest' |
+        'approvePullRequest' |
+        'requestChangesPullRequest' |
+        'getAllCommentsInPullRequest' |
+        'getUserByUsername' |
+        'getUserByEmailOrName' |
+        'getUserById' |
+        'markReviewCommentAsResolved'> {
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
         private readonly integrationService: IIntegrationService,
@@ -111,107 +136,50 @@ export class AzureReposService
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
     ) { }
 
-    getPullRequestDetails(params: any): Promise<PullRequestDetails | null> {
-        throw new Error('Method not implemented.');
+    async getLanguageRepository(params: any): Promise<any | null> {
+        try {
+            const { organizationAndTeamData, repository } = params;
+
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            const data =
+                await this.azureReposRequestHelper.getLanguageRepository({
+                    orgName,
+                    token,
+                    projectId,
+                });
+
+            const languages = data?.languageBreakdown ?? [];
+
+            if (!languages?.length) {
+                return '';
+            }
+
+            const main = languages.reduce((a, b) =>
+                (b.languagePercentage ?? 0) > (a.languagePercentage ?? 0)
+                    ? b
+                    : a,
+            );
+
+            return main?.name ?? '';
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to get language repository',
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService',
+                error,
+                metadata: { params },
+            });
+            return null;
+        }
     }
-    getWorkflows(params: any): Promise<Workflow[]> {
-        throw new Error('Method not implemented.');
-    }
-    getListMembers(
-        params: any,
-    ): Promise<{ name: string; id: string | number }[]> {
-        throw new Error('Method not implemented.');
-    }
-    getCommitsByReleaseMode(params: any): Promise<CommitLeadTimeForChange[]> {
-        throw new Error('Method not implemented.');
-    }
-    getPullRequestsForRTTM(
-        params: any,
-    ): Promise<PullRequestCodeReviewTime[] | null> {
-        throw new Error('Method not implemented.');
-    }
-
-    // async getChangedFilesSinceLastCommit(params: {
-    //     organizationAndTeamData: OrganizationAndTeamData;
-    //     repository: { id: string; name: string; project: { id: string } };
-    //     prNumber: number;
-    //     lastCommit: { created_at: string };
-    // }): Promise<FileChange[] | null> {
-    //     try {
-    //         const {
-    //             organizationAndTeamData,
-    //             repository,
-    //             prNumber,
-    //             lastCommit,
-    //         } = params;
-    //         const { orgName, token } = await this.getAuthDetails(
-    //             organizationAndTeamData,
-    //         );
-
-    //         const commits =
-    //             await this.azureReposRequestHelper.getCommitsForPullRequest({
-    //                 orgName,
-    //                 token,
-    //                 projectId: repository.project.id,
-    //                 repositoryId: repository.id,
-    //                 prId: prNumber,
-    //             });
-
-    //         const newCommits = commits.filter(
-    //             (commit) =>
-    //                 new Date(commit.author?.date).getTime() >
-    //                 new Date(lastCommit.created_at).getTime(),
-    //         );
-
-    //         const changedFiles: FileChange[] = [];
-
-    //         for (const commit of newCommits) {
-    //             const changes =
-    //                 await this.azureReposRequestHelper.getChangesForCommit({
-    //                     orgName,
-    //                     token,
-    //                     projectId: repository.project.id,
-    //                     repositoryId: repository.id,
-    //                     commitId: commit.commitId,
-    //                 });
-
-    //             for (const change of changes) {
-    //                 changedFiles.push({
-    //                     filename: change.item.path,
-    //                     sha: commit.commitId,
-    //                     status: this.azureReposRequestHelper.mapAzureStatusToFileChangeStatus(
-    //                         change.changeType,
-    //                     ),
-    //                     additions: 0,
-    //                     deletions: 0,
-    //                     changes: 0,
-    //                     patch: null,
-    //                     blob_url: null,
-    //                     raw_url: null,
-    //                     contents_url: null,
-    //                     content: null,
-    //                     previous_filename: null,
-    //                     fileContent: null,
-    //                     reviewMode: null,
-    //                     codeReviewModelUsed: {
-    //                         generateSuggestions: null,
-    //                         safeguard: null,
-    //                     },
-    //                 });
-    //             }
-    //         }
-
-    //         return changedFiles;
-    //     } catch (error) {
-    //         this.logger.error({
-    //             message: `Error to get changed files since last commit for PR#${params.prNumber}`,
-    //             context: this.getChangedFilesSinceLastCommit.name,
-    //             error,
-    //             metadata: { params },
-    //         });
-    //         return null;
-    //     }
-    // }
 
     async getChangedFilesSinceLastCommit(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -297,8 +265,9 @@ export class AzureReposService
             return changedFiles;
         } catch (error) {
             this.logger.error({
-                message: `Erro ao obter arquivos alterados desde o último commit para o PR #${params.prNumber}`,
-                context: this.getChangedFilesSinceLastCommit.name,
+                message: `Failed to get changed files since last commit for PR #${params.prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService',
                 error,
                 metadata: { params },
             });
@@ -359,9 +328,6 @@ export class AzureReposService
         }
     }
 
-    createCommentInPullRequest(params: any): Promise<any[] | null> {
-        throw new Error('Method not implemented.');
-    }
     async getRepositoryContentFile(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string; project: { id: string } };
@@ -564,9 +530,6 @@ export class AzureReposService
             return null;
         }
     }
-    createSingleIssueComment(params: any): Promise<any | null> {
-        throw new Error('Method not implemented.');
-    }
     async updateIssueComment(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string; project: { id: string } };
@@ -615,39 +578,7 @@ export class AzureReposService
             return null;
         }
     }
-    findTeamAndOrganizationIdByConfigKey(
-        params: any,
-    ): Promise<IntegrationConfigEntity | null> {
-        throw new Error('Method not implemented.');
-    }
-    async getDefaultBranch(params: any): Promise<string> {
-        const { organizationAndTeamData, repository } = params;
 
-        const { orgName, token } = await this.getAuthDetails(
-            organizationAndTeamData,
-        );
-
-        const projectId = await this.getProjectIdFromRepository(
-            organizationAndTeamData,
-            repository.id,
-        );
-
-        const defaultBranch =
-            await this.azureReposRequestHelper.getDefaultBranch({
-                orgName,
-                token,
-                projectId,
-                repositoryId: repository.id,
-            });
-
-        return defaultBranch;
-    }
-    getPullRequestReviewComment(params: any): Promise<any | null> {
-        throw new Error('Method not implemented.');
-    }
-    createResponseToComment(params: any): Promise<any | null> {
-        throw new Error('Method not implemented.');
-    }
     async updateDescriptionInPullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { id: string; project: { id: string } };
@@ -681,57 +612,9 @@ export class AzureReposService
             return updatedPR;
         } catch (error) {
             this.logger.error({
-                message: `Error to update description in pull request #${params.prNumber}`,
-                context: this.updateDescriptionInPullRequest.name,
-                error,
-                metadata: { params },
-            });
-            return null;
-        }
-    }
-    getAuthenticationOAuthToken(params: any): Promise<string> {
-        throw new Error('Method not implemented.');
-    }
-    countReactions(params: any): Promise<any[]> {
-        throw new Error('Method not implemented.');
-    }
-    async getLanguageRepository(params: any): Promise<any | null> {
-        try {
-            const { organizationAndTeamData, repository } = params;
-
-            const { orgName, token } = await this.getAuthDetails(
-                organizationAndTeamData,
-            );
-
-            const projectId = await this.getProjectIdFromRepository(
-                organizationAndTeamData,
-                repository.id,
-            );
-
-            const data =
-                await this.azureReposRequestHelper.getLanguageRepository({
-                    orgName,
-                    token,
-                    projectId,
-                });
-
-            const languages = data?.languageBreakdown ?? [];
-
-            if (!languages?.length) {
-                return '';
-            }
-
-            const main = languages.reduce((a, b) =>
-                (b.languagePercentage ?? 0) > (a.languagePercentage ?? 0)
-                    ? b
-                    : a,
-            );
-
-            return main?.name ?? '';
-        } catch (error) {
-            this.logger.error({
-                message: 'Error to get language repository',
-                context: this.getLanguageRepository.name,
+                message: `Failed to update description in pull request #${params.prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService',
                 error,
                 metadata: { params },
             });
@@ -739,42 +622,27 @@ export class AzureReposService
         }
     }
 
-    getRepositoryAllFiles(params: any): Promise<any> {
-        throw new Error('Method not implemented.');
-    }
-    mergePullRequest(params: any): Promise<any> {
-        throw new Error('Method not implemented.');
-    }
-    approvePullRequest(params: any): Promise<any> {
-        throw new Error('Method not implemented.');
-    }
-    requestChangesPullRequest(params: any): Promise<any> {
-        throw new Error('Method not implemented.');
-    }
-    getAllCommentsInPullRequest(params: any): Promise<any[]> {
-        throw new Error('Method not implemented.');
-    }
-    getUserByUsername(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        username: string;
-    }): Promise<any> {
-        throw new Error('Method not implemented.');
-    }
-    getUserByEmailOrName(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        email?: string;
-        userName: string;
-    }): Promise<any> {
-        throw new Error('Method not implemented.');
-    }
-    getUserById(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        userId: string;
-    }): Promise<any | null> {
-        throw new Error('Method not implemented.');
-    }
-    markReviewCommentAsResolved(params: any): Promise<any | null> {
-        throw new Error('Method not implemented.');
+    async getDefaultBranch(params: any): Promise<string> {
+        const { organizationAndTeamData, repository } = params;
+
+        const { orgName, token } = await this.getAuthDetails(
+            organizationAndTeamData,
+        );
+
+        const projectId = await this.getProjectIdFromRepository(
+            organizationAndTeamData,
+            repository.id,
+        );
+
+        const defaultBranch =
+            await this.azureReposRequestHelper.getDefaultBranch({
+                orgName,
+                token,
+                projectId,
+                repositoryId: repository.id,
+            });
+
+        return defaultBranch;
     }
     async getPullRequestReviewComments(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -820,7 +688,7 @@ export class AzureReposService
                 .filter(
                     (comment) =>
                         !comment.body.includes(
-                            '## Code Review Completed! 🔥',
+                            '## Code Review Completed! ud83dudd25',
                         ) &&
                         !comment.body.includes(
                             '# Found critical issues please',
@@ -840,26 +708,6 @@ export class AzureReposService
             });
             return null;
         }
-    }
-    getPullRequestReviewThreads(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        repository: Partial<Repository>;
-        prNumber: number;
-    }): Promise<PullRequestReviewComment[] | null> {
-        throw new Error('Method not implemented.');
-    }
-    getListOfValidReviews(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        repository: Partial<Repository>;
-        prNumber: number;
-    }): Promise<any[] | null> {
-        throw new Error('Method not implemented.');
-    }
-    getPullRequestsWithChangesRequested(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        repository: Partial<Repository>;
-    }): Promise<PullRequestsWithChangesRequested[] | null> {
-        throw new Error('Method not implemented.');
     }
 
     async cloneRepository(params: {
