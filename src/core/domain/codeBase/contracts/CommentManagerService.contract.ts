@@ -20,7 +20,7 @@ export interface ICommentManagerService {
         changedFiles: FileChange[],
         language: string,
         platformType: string,
-    ): Promise<{ commentId: number; noteId: number }>;
+    ): Promise<{ commentId: number; noteId: number; threadId?: number }>;
 
     generateSummaryPR(
         pullRequest: any,
@@ -40,6 +40,7 @@ export interface ICommentManagerService {
         platformType: string,
         codeSuggestions?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
+        threadId?: number,
     ): Promise<void>;
 
     updateSummarizationInPR(
@@ -60,13 +61,6 @@ export interface ICommentManagerService {
         commits: any[];
         commentResults: Array<CommentResult>;
     }>;
-
-    createNewComment(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        repository: { name: string; id: string },
-        comment: string,
-    ): Promise<string>;
 
     generateSummaryMarkdown(
         changedFiles: FileChange[],

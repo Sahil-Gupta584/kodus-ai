@@ -119,8 +119,6 @@ export class CodeReviewHandlerService {
         @Inject(FILE_REVIEW_CONTEXT_PREPARATION_TOKEN)
         private readonly fileReviewContextPreparation: IFileReviewContextPreparation,
 
-        private readonly kodyFineTuningService: KodyFineTuningService,
-
         private readonly codeAnalysisOrchestrator: CodeAnalysisOrchestrator,
 
         private readonly logger: PinoLoggerService,
@@ -752,6 +750,7 @@ export class CodeReviewHandlerService {
                 ? {
                     commentId: lastExecution?.dataExecution?.commentId,
                     noteId: lastExecution?.dataExecution?.noteId,
+                    threadId: lastExecution?.dataExecution?.threadId,
                     lastAnalyzedCommit:
                         lastExecution?.dataExecution?.lastAnalyzedCommit,
                 }
@@ -776,6 +775,7 @@ export class CodeReviewHandlerService {
                 data: {
                     commentId: filesResult.lastExecution.commentId,
                     noteId: filesResult.lastExecution.noteId,
+                    threadId: filesResult.lastExecution.threadId,
                 },
                 loginfo: {
                     message: `Using existing comment for PR#${pullRequest.number}`,
@@ -785,6 +785,7 @@ export class CodeReviewHandlerService {
                         prNumber: pullRequest.number,
                         commentId: filesResult.lastExecution.commentId,
                         noteId: filesResult.lastExecution.noteId,
+                        threadId: filesResult.lastExecution.threadId,
                     },
                 },
             };
@@ -800,74 +801,6 @@ export class CodeReviewHandlerService {
         );
 
         return { status: 'CONTINUE', data: result };
-    }
-
-    private async requestChangesIfCritical(
-        isRequestChanges: boolean,
-        prNumber: number,
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: { id: string; name: string },
-        lineComments: CommentResult[],
-    ) {
-        try {
-            if (!isRequestChanges) return;
-
-            const criticalComments = lineComments.filter(
-                (comment) =>
-                    comment.comment.suggestion.severity ===
-                    SeverityLevel.CRITICAL,
-            );
-
-            if (criticalComments.length <= 0) return;
-
-            await this.codeManagementService.requestChangesPullRequest({
-                organizationAndTeamData,
-                prNumber,
-                repository,
-                criticalComments,
-            });
-        } catch (error) {
-            this.logger.error({
-                message: `Error when trying to change status to request changes for PR#${prNumber}`,
-                error,
-                context: CodeReviewHandlerService.name,
-                metadata: {
-                    isRequestChanges,
-                    prNumber,
-                    organizationAndTeamData,
-                    repository,
-                    lineComments,
-                },
-            });
-        }
-    }
-
-    private async approvePullRequest(
-        pullRequestApprovalActive: boolean,
-        lineCommentsLength: number,
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        repository: { id: string; name: string },
-    ) {
-        try {
-            if (!pullRequestApprovalActive || lineCommentsLength > 0) return;
-
-            const approved =
-                await this.codeManagementService.approvePullRequest({
-                    organizationAndTeamData,
-                    prNumber,
-                    repository,
-                });
-
-            return approved;
-        } catch (error) {
-            this.logger.error({
-                message: `Error when trying to merge PR#${prNumber}`,
-                error,
-                context: CodeReviewHandlerService.name,
-                metadata: { organizationAndTeamData, prNumber, repository },
-            });
-        }
     }
 
     async handlePullRequest(
@@ -932,6 +865,7 @@ export class CodeReviewHandlerService {
                 lastAnalyzedCommit: result?.lastAnalyzedCommit,
                 commentId: result?.initialCommentData?.commentId,
                 noteId: result?.initialCommentData?.noteId,
+                threadId: result?.initialCommentData?.threadId,
             };
         } catch (error) {
             this.logger.error({
@@ -983,6 +917,7 @@ export class CodeReviewHandlerService {
         commentId: number,
         noteId: number,
         platformType: string,
+        threadId?: number,
     ) {
         await this.commentManagerService.updateOverallComment(
             organizationAndTeamData,
@@ -991,6 +926,9 @@ export class CodeReviewHandlerService {
             commentId,
             noteId,
             platformType,
+            undefined,
+            undefined,
+            threadId,
         );
     }
 

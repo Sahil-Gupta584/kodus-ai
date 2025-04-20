@@ -36,7 +36,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
         private readonly integrationConfigService: IIntegrationConfigService,
 
         private readonly bitbuckerService: BitbucketService,
-    ) {}
+    ) { }
 
     public async execute(params: {
         payload: any;
@@ -90,7 +90,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                 case 'Note Hook':
                     if (
                         params.payload?.object_attributes?.action ===
-                            'create' &&
+                        'create' &&
                         !params.payload?.object_attributes?.change_position &&
                         !params.payload?.object_attributes?.type
                     ) {
@@ -99,6 +99,26 @@ export class ReceiveWebhookUseCase implements IUseCase {
                         this.chatWithKodyFromGitUseCase.execute(params);
                     }
                     break;
+
+                // Azure DevOps events
+                case 'git.pullrequest.created':
+                case 'git.pullrequest.updated':
+                    await this.savePullRequestUseCase.execute(params);
+                    this.runCodeReviewAutomationUseCase.execute(params);
+                    break;
+                case 'git.pullrequest.merge.attempted':
+                    await this.savePullRequestUseCase.execute(params);
+                    break;
+                case 'ms.vss-code.git-pullrequest-comment-event':
+                    const comment = params.payload?.resource.comment.content;
+                    const pullRequestId = params.payload?.resource.pullRequest.status === 'active';
+
+                    if (comment && pullRequestId) {
+                        this.isStartCommand(params);
+                    }
+
+                    break;
+
                 default:
                     this.logger.warn({
                         message: `Evento não tratado: ${params?.event}`,
@@ -110,11 +130,12 @@ export class ReceiveWebhookUseCase implements IUseCase {
             }
         } catch (error) {
             this.logger.error({
-                message: 'Error processing webhook from Github',
+                message: 'Error processing webhook',
                 context: ReceiveWebhookUseCase.name,
                 error: error,
                 metadata: {
                     eventName: params.event,
+                    platformType: params.platformType,
                 },
             });
         }
@@ -315,5 +336,13 @@ export class ReceiveWebhookUseCase implements IUseCase {
             default:
                 return false;
         }
+    }
+
+    /**
+     * Verifica se um comentário do Azure DevOps contém o comando para iniciar review
+     */
+    private isAzureDevOpsStartCommand(comment: string): boolean {
+        const commandPattern = /@kody\s+start-review/i;
+        return commandPattern.test(comment);
     }
 }
