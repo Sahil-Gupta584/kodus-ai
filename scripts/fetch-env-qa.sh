@@ -128,6 +128,8 @@ KEYS=(
 
     "/qa/kodus-orchestrator/CODE_MANAGEMENT_SECRET"
     "/qa/kodus-orchestrator/CODE_MANAGEMENT_WEBHOOK_TOKEN"
+
+    "/qa/kodus-orchestrator/GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK"
 )
 
 # Lista de todas as chaves que você precisa

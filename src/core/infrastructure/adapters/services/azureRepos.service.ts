@@ -12,11 +12,7 @@ import {
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { IntegrationServiceDecorator } from '@/shared/utils/decorators/integration-service.decorator';
-import {
-    BadRequestException,
-    Inject,
-    NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, NotFoundException } from '@nestjs/common';
 import { PinoLoggerService } from './logger/pino.service';
 import {
     PullRequests,
@@ -45,9 +41,7 @@ import { AzureReposRequestHelper } from './azureRepos/azure-repos-request-helper
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 import { AzureGitPullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 import { Comment, FileChange } from '@/config/types/general/codeReview.type';
-import {
-    Repository,
-} from '@/config/types/general/codeReview.type';
+import { Repository } from '@/config/types/general/codeReview.type';
 import { IRepositoryManager } from '@/core/domain/repository/contracts/repository-manager.contract';
 import { REPOSITORY_MANAGER_TOKEN } from '@/core/domain/repository/contracts/repository-manager.contract';
 import { decrypt, encrypt } from '@/shared/utils/crypto';
@@ -57,35 +51,41 @@ import { AzureRepoPRThread } from '@/core/domain/azureRepos/entities/azureRepoEx
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { getLabelShield } from '@/shared/utils/codeManagement/labels';
-import { getTranslationsForLanguageByCategory, TranslationsCategory } from '@/shared/utils/translations/translations';
+import {
+    getTranslationsForLanguageByCategory,
+    TranslationsCategory,
+} from '@/shared/utils/translations/translations';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
-    implements Omit<ICodeManagementService,
-        'getOrganizations' |
-        'getPullRequestDetails' |
-        'getWorkflows' |
-        'getListMembers' |
-        'getCommitsByReleaseMode' |
-        'getPullRequestsForRTTM' |
-        'createCommentInPullRequest' |
-        'getPullRequestReviewThreads' |
-        'getListOfValidReviews' |
-        'getPullRequestsWithChangesRequested' |
-        'createSingleIssueComment' |
-        'findTeamAndOrganizationIdByConfigKey' |
-        'getPullRequestReviewComment' |
-        'createResponseToComment' |
-        'getAuthenticationOAuthToken' |
-        'countReactions' |
-        'getRepositoryAllFiles' |
-        'mergePullRequest' |
-        'approvePullRequest' |
-        'requestChangesPullRequest' |
-        'getAllCommentsInPullRequest' |
-        'getUserById' |
-        'markReviewCommentAsResolved'> {
+    implements
+        Omit<
+            ICodeManagementService,
+            | 'getOrganizations'
+            | 'getPullRequestDetails'
+            | 'getWorkflows'
+            | 'getListMembers'
+            | 'getCommitsByReleaseMode'
+            | 'getPullRequestsForRTTM'
+            | 'createCommentInPullRequest'
+            | 'getPullRequestReviewThreads'
+            | 'getListOfValidReviews'
+            | 'getPullRequestsWithChangesRequested'
+            | 'createSingleIssueComment'
+            | 'findTeamAndOrganizationIdByConfigKey'
+            | 'getPullRequestReviewComment'
+            | 'createResponseToComment'
+            | 'getAuthenticationOAuthToken'
+            | 'countReactions'
+            | 'getRepositoryAllFiles'
+            | 'mergePullRequest'
+            | 'approvePullRequest'
+            | 'requestChangesPullRequest'
+            | 'getUserById'
+            | 'markReviewCommentAsResolved'
+        >
+{
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
         private readonly integrationService: IIntegrationService,
@@ -101,7 +101,11 @@ export class AzureReposService
 
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
-    ) { }
+    ) {}
+
+    getAllCommentsInPullRequest(params: any): Promise<any[]> {
+        throw new Error('Method not implemented.');
+    }
 
     async getLanguageRepository(params: any): Promise<any | null> {
         try {
@@ -155,18 +159,27 @@ export class AzureReposService
         lastCommit: any;
     }): Promise<FileChange[] | null> {
         try {
-            const { organizationAndTeamData, repository, prNumber, lastCommit } = params;
-            const { orgName, token } = await this.getAuthDetails(organizationAndTeamData);
+            const {
+                organizationAndTeamData,
+                repository,
+                prNumber,
+                lastCommit,
+            } = params;
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
             const projectId = repository.project.id;
 
             // Obter detalhes do PR
-            const pr = await this.azureReposRequestHelper.getPullRequestDetails({
-                orgName,
-                token,
-                projectId,
-                repositoryId: repository.id,
-                prId: prNumber,
-            });
+            const pr = await this.azureReposRequestHelper.getPullRequestDetails(
+                {
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                },
+            );
 
             const targetCommitId = pr.lastMergeSourceCommit?.commitId;
 
@@ -189,7 +202,9 @@ export class AzureReposService
                 targetCommitId,
             });
 
-            const fileChanges = diffResponse?.filter(change => change?.item?.gitObjectType === 'blob');
+            const fileChanges = diffResponse?.filter(
+                (change) => change?.item?.gitObjectType === 'blob',
+            );
 
             if (!fileChanges?.length) {
                 return null;
@@ -250,9 +265,16 @@ export class AzureReposService
         language: LanguageValue;
     }): Promise<AzureRepoPRThread | null> {
         try {
-            const { organizationAndTeamData, repository, prNumber, lineComment, language,
+            const {
+                organizationAndTeamData,
+                repository,
+                prNumber,
+                lineComment,
+                language,
             } = params;
-            const { orgName, token } = await this.getAuthDetails(organizationAndTeamData);
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
 
             const projectId = await this.getProjectIdFromRepository(
                 organizationAndTeamData,
@@ -270,17 +292,18 @@ export class AzureReposService
                 translations,
             );
 
-            const thread = await this.azureReposRequestHelper.createReviewComment({
-                orgName,
-                token,
-                projectId,
-                repositoryId: repository.id,
-                prId: prNumber,
-                filePath: lineComment.path,
-                start_line: lineComment.start_line,
-                line: lineComment.line,
-                commentContent: bodyFormatted,
-            });
+            const thread =
+                await this.azureReposRequestHelper.createReviewComment({
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                    filePath: lineComment.path,
+                    start_line: lineComment.start_line,
+                    line: lineComment.line,
+                    commentContent: bodyFormatted,
+                });
 
             return thread;
         } catch (error) {
@@ -419,7 +442,8 @@ export class AzureReposService
 
             const enriched = await Promise.all(
                 commits.map(async (commit) => {
-                    const authorName = commit.author?.email || commit.author?.username || null;
+                    const authorName =
+                        commit.author?.email || commit.author?.username || null;
 
                     let userId: string | null = null;
 
@@ -447,16 +471,18 @@ export class AzureReposService
                             id: userId,
                         },
                     };
-                })
+                }),
             );
 
             return enriched.sort(
                 (a, b) =>
-                    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                    new Date(a.created_at).getTime() -
+                    new Date(b.created_at).getTime(),
             );
         } catch (error) {
             this.logger.error({
-                message: 'Error to get commits for pull request for code review',
+                message:
+                    'Error to get commits for pull request for code review',
                 context: this.getCommitsForPullRequestForCodeReview.name,
                 error,
                 metadata: { params },
@@ -472,7 +498,8 @@ export class AzureReposService
         body: string;
     }): Promise<any | null> {
         try {
-            const { organizationAndTeamData, repository, prNumber, body } = params;
+            const { organizationAndTeamData, repository, prNumber, body } =
+                params;
 
             const { orgName, token } = await this.getAuthDetails(
                 organizationAndTeamData,
@@ -494,7 +521,9 @@ export class AzureReposService
                 });
 
             if (!comment?.comments?.[0]?.id) {
-                throw new Error(`Failed to create issue comment PR#${prNumber}`);
+                throw new Error(
+                    `Failed to create issue comment PR#${prNumber}`,
+                );
             }
 
             this.logger.log({
@@ -508,7 +537,7 @@ export class AzureReposService
                 ...comment,
                 id: comment?.comments?.[0]?.id,
                 threadId: comment.id,
-            }
+            };
         } catch (error) {
             this.logger.error({
                 message: 'Error to create issue comment',
@@ -786,17 +815,22 @@ export class AzureReposService
                 organizationAndTeamData,
             );
 
-            const projects = await this.azureReposRequestHelper.getProjects({
-                orgName: azureAuthDetail.orgName,
-                token: azureAuthDetail.token,
-            });
+            const repositories: Repositories[] =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
 
-            for (const project of projects) {
+            if (!repositories || repositories.length === 0) {
+                return null;
+            }
+
+            for (const repo of repositories) {
                 await this.createNotificationChannel(
-                    project.id,
+                    repo?.project?.id,
                     azureAuthDetail.token,
                     azureAuthDetail.orgName,
-                    project.id,
+                    repo.id,
                 );
             }
         } catch (error) {
@@ -874,7 +908,9 @@ export class AzureReposService
                 orgName: authDetails.orgName,
             });
 
-            if (!checkRepos.success) { return checkRepos; }
+            if (!checkRepos.success) {
+                return checkRepos;
+            }
 
             const integration = await this.integrationService.findOne({
                 organization: {
@@ -909,8 +945,13 @@ export class AzureReposService
         }
     }
 
-    async getUserByUsername(params: { organizationAndTeamData: OrganizationAndTeamData; username: string; }): Promise<any> {
-        const { orgName, token } = await this.getAuthDetails(params.organizationAndTeamData);
+    async getUserByUsername(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        username: string;
+    }): Promise<any> {
+        const { orgName, token } = await this.getAuthDetails(
+            params.organizationAndTeamData,
+        );
 
         const user = await this.azureReposRequestHelper.getUser({
             orgName,
@@ -926,7 +967,9 @@ export class AzureReposService
         email?: string;
         userName: string;
     }): Promise<any> {
-        const { orgName, token } = await this.getAuthDetails(params.organizationAndTeamData);
+        const { orgName, token } = await this.getAuthDetails(
+            params.organizationAndTeamData,
+        );
 
         const user = await this.azureReposRequestHelper.getUser({
             orgName,
@@ -1159,8 +1202,9 @@ export class AzureReposService
                 queryString += `created_on >= "${filters.startDate}"`;
             }
             if (filters?.endDate) {
-                queryString += `${queryString ? ' AND ' : ''
-                    }created_on <= "${filters.endDate}"`;
+                queryString += `${
+                    queryString ? ' AND ' : ''
+                }created_on <= "${filters.endDate}"`;
             }
 
             const projectId = await this.getProjectIdFromRepository(
@@ -1275,8 +1319,7 @@ export class AzureReposService
                     : pr.repositoryId,
                 message: pr.description,
                 state:
-                    stateMap[pr.status?.toLowerCase()] ||
-                    PullRequestState.ALL,
+                    stateMap[pr.status?.toLowerCase()] || PullRequestState.ALL,
                 prURL: pr._links?.web?.href,
                 organizationId: organizationAndTeamData.organizationId,
                 pull_number: pr.pullRequestId,
@@ -1655,13 +1698,15 @@ export class AzureReposService
             }
 
             // 1. Get PR details to find base and target commit refs
-            const pr = await this.azureReposRequestHelper.getPullRequestDetails({
-                orgName,
-                token,
-                projectId,
-                repositoryId: repository.id,
-                prId: prNumber,
-            });
+            const pr = await this.azureReposRequestHelper.getPullRequestDetails(
+                {
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                },
+            );
 
             // Use target branch commit as the base for comparison
             const baseCommitId = pr.lastMergeTargetCommit?.commitId;
@@ -1682,13 +1727,15 @@ export class AzureReposService
             });
 
             // 2. Get Iterations to find the commit ID of the latest source changes
-            const iterations = await this.azureReposRequestHelper.getIterations({
-                orgName,
-                token,
-                projectId,
-                repositoryId: repository.id,
-                prId: prNumber,
-            });
+            const iterations = await this.azureReposRequestHelper.getIterations(
+                {
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                },
+            );
 
             if (!iterations || iterations.length === 0) {
                 this.logger.warn({
@@ -1723,22 +1770,27 @@ export class AzureReposService
             // Note: The getChanges API might compare iteration N to iteration N-1 or to the common base.
             // We primarily use its output for the *list* of files changed in the *latest* iteration.
             // The diff generation below explicitly uses the determined baseCommitId and targetCommitId.
-            const changesResponse = await this.azureReposRequestHelper.getChanges({
-                orgName,
-                token,
-                projectId,
-                repositoryId: repository.id,
-                pullRequestId: prNumber,
-                iterationId, // Get changes for the last iteration
-                // compareIteration: Optional - consider if comparing explicitly to base (0) is needed here
-            });
+            const changesResponse =
+                await this.azureReposRequestHelper.getChanges({
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: repository.id,
+                    pullRequestId: prNumber,
+                    iterationId, // Get changes for the last iteration
+                    // compareIteration: Optional - consider if comparing explicitly to base (0) is needed here
+                });
 
             // Ensure we have changeEntries which should be an array from the response
             const changeEntries = changesResponse || []; // Adjust based on actual response structure if 'changes' is nested
             this.logger.log({
                 message: `Found ${changeEntries.length} change entries in iteration ${iterationId} for PR #${prNumber}`,
                 context: this.getFilesByPullRequestId.name,
-                metadata: { prNumber, iterationId, changeEntriesLength: changeEntries.length },
+                metadata: {
+                    prNumber,
+                    iterationId,
+                    changeEntriesLength: changeEntries.length,
+                },
             });
 
             // 4. Process each change entry to generate the diff using our specific base and target commits
@@ -1769,7 +1821,10 @@ export class AzureReposService
             this.logger.log({
                 message: `Successfully generated diffs for ${successfulFiles.length} files for PR #${prNumber}`,
                 context: this.getFilesByPullRequestId.name,
-                metadata: { prNumber, successfulFilesLength: successfulFiles.length },
+                metadata: {
+                    prNumber,
+                    successfulFilesLength: successfulFiles.length,
+                },
             });
 
             // Map to the expected FileChange format (ensure this matches your domain type)
@@ -1878,7 +1933,8 @@ export class AzureReposService
             }
 
             // Get modified content (only if not a deleted file)
-            if (status !== 'removed') { // Compare with 'removed'
+            if (status !== 'removed') {
+                // Compare with 'removed'
                 try {
                     const modifiedFile =
                         await this.azureReposRequestHelper.getFileContent({
@@ -1933,11 +1989,13 @@ export class AzureReposService
                 deletions = diffLines.filter(
                     (line) => line.startsWith('-') && !line.startsWith('---'),
                 ).length;
-            } else if (status === 'removed') { // Compare with 'removed'
+            } else if (status === 'removed') {
+                // Compare with 'removed'
                 // Handle deleted files explicitly if needed (e.g., create a dummy patch or specific log)
                 patch = `--- a/${filePath}\n+++ /dev/null\n File deleted`; // Example dummy patch
                 deletions = 0; // Or calculate based on original file lines if fetched
-            } else if (status === 'added') { // Compare with string literal
+            } else if (status === 'added') {
+                // Compare with string literal
                 // Handle added files explicitly if needed
                 patch = `--- /dev/null\n+++ b/${filePath}\n File added`; // Example dummy patch
                 additions = 0; // Or calculate based on modified file lines if fetched
@@ -2016,9 +2074,7 @@ export class AzureReposService
             },
             user: {
                 login:
-                    pr.createdBy?.uniqueName ||
-                    pr.createdBy?.displayName ||
-                    '',
+                    pr.createdBy?.uniqueName || pr.createdBy?.displayName || '',
                 name: pr.createdBy?.displayName,
                 id: pr.createdBy?.id,
             },
@@ -2318,7 +2374,11 @@ export class AzureReposService
         return `<sub>${text}</sub>\n\n`;
     }
 
-    private formatBodyForGitHub(lineComment: any, repository: any, translations: any) {
+    private formatBodyForGitHub(
+        lineComment: any,
+        repository: any,
+        translations: any,
+    ) {
         const severityShield = lineComment?.suggestion
             ? getSeverityLevelShield(lineComment.suggestion.severity)
             : '';
@@ -2346,7 +2406,7 @@ export class AzureReposService
             actionStatement,
             this.formatSub(translations.talkToKody),
             this.formatSub(translations.feedback) +
-            '<!-- kody-codereview -->&#8203;\n&#8203;',
+                '<!-- kody-codereview -->&#8203;\n&#8203;',
         ]
             .join('\n')
             .trim();
@@ -2364,14 +2424,18 @@ export class AzureReposService
         );
 
         if (reviewedIndex === -1) {
-            throw new Error(`Commit ${lastReviewedCommitId} not found in PR commit history`);
+            throw new Error(
+                `Commit ${lastReviewedCommitId} not found in PR commit history`,
+            );
         }
 
         return iterations.filter((iteration) => {
             const commitId = iteration.sourceRefCommit?.commitId;
             if (!commitId) return false;
 
-            const iterationIndex = commits.findIndex((commit) => commit.commitId === commitId);
+            const iterationIndex = commits.findIndex(
+                (commit) => commit.commitId === commitId,
+            );
             return iterationIndex > reviewedIndex;
         });
     }
