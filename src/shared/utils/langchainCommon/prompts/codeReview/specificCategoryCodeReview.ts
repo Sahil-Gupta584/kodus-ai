@@ -49,7 +49,6 @@ ${payload?.categorySpecificInstructions || ''}
 The output ALWAYS must be ONLY the JSON object - no explanations, comments, or any other text before or after the JSON.
 \`\`\`json
 {
-    "overallSummary": "PR changes summary",
     "codeSuggestions": [
         {
             "relevantFile": "path/to/file",

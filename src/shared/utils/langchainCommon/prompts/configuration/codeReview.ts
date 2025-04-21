@@ -25,8 +25,6 @@ Only propose suggestions that strictly fall under one of the following categorie
 
 - 'maintainability': Suggestions that make the code easier to maintain and extend in the future.
 
-- 'potential_issues': Suggestions that address possible bugs or logical errors in the code.
-
 - 'code_style': Suggestions to improve the consistency and adherence to coding standards.
 
 - 'documentation_and_comments': Suggestions related to improving code documentation.
@@ -152,7 +150,6 @@ Provide detailed, constructive code feedback that strictly falls under these cat
 - 'refactoring': Code restructuring for better readability/maintenance
 - 'performance_and_optimization': Speed/efficiency improvements
 - 'maintainability': Future maintenance improvements
-- 'potential_issues': Potential bugs/logical errors
 - 'code_style': Coding standards adherence
 - 'documentation_and_comments': Documentation improvements
 Each suggestion MUST use one of the above categories as its label - no other labels are allowed.

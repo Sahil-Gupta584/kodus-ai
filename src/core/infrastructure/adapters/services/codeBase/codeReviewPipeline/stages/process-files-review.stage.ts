@@ -748,7 +748,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 fileChangeContext: { file, patchWithLinesStr },
             };
 
-            const standardAnalysisResult =
+            const analysisResultBasedOnCategory =
                 await this.codeAnalysisOrchestrator.executeMultipleCategoriesAnalysis(
                     context.organizationAndTeamData,
                     context.pullRequest.number,
@@ -756,6 +756,19 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     reviewModeResponse,
                     context,
                 );
+
+            const standardAnalysisResult =
+                await this.codeAnalysisOrchestrator.executeStandardAnalysis(
+                    context.organizationAndTeamData,
+                    context.pullRequest.number,
+                    { file, patchWithLinesStr },
+                    reviewModeResponse,
+                    context,
+                );
+
+            standardAnalysisResult?.codeSuggestions?.push(
+                ...analysisResultBasedOnCategory.codeSuggestions,
+            );
 
             const kodyRulesSuggestions =
                 await this.codeAnalysisOrchestrator.executeKodyRulesAnalysis(
@@ -881,7 +894,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     file,
                     patchWithLinesStr,
                     getDataPipelineKodyFineTunning?.keepedSuggestions ??
-                    suggestionsWithId,
+                        suggestionsWithId,
                     context?.codeReviewConfig?.languageResultPrompt,
                     reviewModeResponse,
                 );
@@ -892,7 +905,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             discardedSuggestionsBySafeGuard.push(
                 ...this.suggestionService.getDiscardedSuggestions(
                     getDataPipelineKodyFineTunning?.keepedSuggestions ??
-                    suggestionsWithId,
+                        suggestionsWithId,
                     safeGuardResponse?.suggestions || [],
                     PriorityStatus.DISCARDED_BY_SAFEGUARD,
                 ),
@@ -950,7 +963,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                         (suggestion) =>
                             suggestion.deliveryStatus === DeliveryStatus.SENT &&
                             suggestion.implementationStatus ===
-                            ImplementationStatus.NOT_IMPLEMENTED,
+                                ImplementationStatus.NOT_IMPLEMENTED,
                     );
 
                     if (mergedSuggestions?.length > 0) {
@@ -1077,13 +1090,13 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
         const foundComments = isPlatformTypeGithub
             ? reviewComments.filter((comment) =>
-                implementedSuggestionsCommentIds.includes(
-                    Number(comment.fullDatabaseId),
-                ),
-            )
+                  implementedSuggestionsCommentIds.includes(
+                      Number(comment.fullDatabaseId),
+                  ),
+              )
             : reviewComments.filter((comment) =>
-                implementedSuggestionsCommentIds.includes(comment.id),
-            );
+                  implementedSuggestionsCommentIds.includes(comment.id),
+              );
 
         if (foundComments.length > 0) {
             const promises = foundComments.map(
@@ -1107,7 +1120,12 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             // timeout mechanism for the Promise.allSettled operation to prevent potential hanging.
             await Promise.race([
                 Promise.allSettled(promises),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Operation timed out')), 30000))
+                new Promise((_, reject) =>
+                    setTimeout(
+                        () => reject(new Error('Operation timed out')),
+                        30000,
+                    ),
+                ),
             ]);
         }
     }
@@ -1124,7 +1142,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                         (suggestion) =>
                             suggestion.comment &&
                             suggestion.implementationStatus !==
-                            ImplementationStatus.NOT_IMPLEMENTED &&
+                                ImplementationStatus.NOT_IMPLEMENTED &&
                             suggestion.deliveryStatus === DeliveryStatus.SENT,
                     )
                     .forEach((filteredSuggestion) => {
