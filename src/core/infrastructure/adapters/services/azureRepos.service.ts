@@ -47,7 +47,10 @@ import { REPOSITORY_MANAGER_TOKEN } from '@/core/domain/repository/contracts/rep
 import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { generateWebhookToken } from '@/shared/utils/webhooks/webhookTokenCrypto';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
-import { AzureRepoPRThread } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
+import {
+    AzureRepoPRThread,
+    EventConfig,
+} from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { getLabelShield } from '@/shared/utils/codeManagement/labels';
@@ -74,7 +77,6 @@ export class AzureReposService
             | 'getPullRequestsWithChangesRequested'
             | 'createSingleIssueComment'
             | 'findTeamAndOrganizationIdByConfigKey'
-            | 'getPullRequestReviewComment'
             | 'createResponseToComment'
             | 'getAuthenticationOAuthToken'
             | 'countReactions'
@@ -103,8 +105,123 @@ export class AzureReposService
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
     ) {}
 
-    getAllCommentsInPullRequest(params: any): Promise<any[]> {
-        throw new Error('Method not implemented.');
+    async getPullRequestReviewComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        filters: {
+            repository: { id: string };
+            pullRequestNumber: number;
+            discussionId?: number;
+        };
+    }): Promise<any[] | null> {
+        const { organizationAndTeamData, filters } = params;
+
+        try {
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                filters.repository.id,
+            );
+
+            const threads =
+                await this.azureReposRequestHelper.getPullRequestComments({
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: filters.repository.id,
+                    prId: filters.pullRequestNumber,
+                });
+
+            if (!filters.discussionId) {
+                return threads;
+            }
+
+            const thread = threads.find((t) => t.id === filters.discussionId);
+            if (!thread) return [];
+
+            const originalCommentBody = thread?.comments?.[0]?.content ?? null;
+
+            const mappedComments = (thread.comments ?? []).map((note) => ({
+                id: note.id,
+                body: note.content,
+                createdAt: note.publishedDate,
+                originalCommit: { body: originalCommentBody },
+                author: {
+                    id: note.author?.id,
+                    username: note.author?.displayName,
+                    name: note.author?.displayName,
+                },
+            }));
+
+            return mappedComments.sort(
+                (a, b) =>
+                    new Date(b.createdAt).getTime() -
+                    new Date(a.createdAt).getTime(),
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to get pull request review comments',
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService getPullRequestReviewComment',
+                error,
+                metadata: { params },
+            });
+            return null;
+        }
+    }
+
+    async getAllCommentsInPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { name: string; id: string };
+        prNumber: number;
+    }): Promise<any[] | null> {
+        try {
+            const { organizationAndTeamData, repository, prNumber } = params;
+
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            const threads =
+                await this.azureReposRequestHelper.getPullRequestComments({
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                });
+
+            const comments = threads.flatMap((thread) =>
+                (thread.comments ?? []).map((comment) => ({
+                    id: comment.id,
+                    body: comment.content,
+                    createdAt: comment.publishedDate,
+                    originalCommit:
+                        thread.pullRequestThreadContext?.commitId ?? null,
+                    author: {
+                        id: comment.author?.id,
+                        username: comment.author?.displayName,
+                        name: comment.author?.displayName,
+                    },
+                })),
+            );
+
+            return comments;
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to get all comments in pull request',
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService',
+                error,
+                metadata: { params },
+            });
+            return null;
+        }
     }
 
     async getLanguageRepository(params: any): Promise<any | null> {
@@ -1309,53 +1426,9 @@ export class AzureReposService
             };
 
             const transformed = allPRs.map((pr) => ({
-                id: pr.pullRequestId?.toString(),
-                author_id: pr.createdBy?.id,
-                author_name: pr.createdBy?.displayName,
-                author_created_at: pr.creationDate,
-                repository: pr.repository,
-                repositoryId: pr.repository
-                    ? pr.repository.id
-                    : pr.repositoryId,
-                message: pr.description,
+                ...pr,
                 state:
                     stateMap[pr.status?.toLowerCase()] || PullRequestState.ALL,
-                prURL: pr._links?.web?.href,
-                organizationId: organizationAndTeamData.organizationId,
-                pull_number: pr.pullRequestId,
-                number: pr.pullRequestId,
-                body: pr.description,
-                title: pr.title,
-                created_at: pr.creationDate,
-                updated_at:
-                    pr.status === 'completed' || pr.status === 'abandoned'
-                        ? pr.closedDate
-                        : pr.creationDate,
-                merged_at: pr.status === 'completed' ? pr.closedDate : null,
-                participants: [],
-                reviewers:
-                    pr.reviewers?.map((reviewer) => ({
-                        ...reviewer,
-                        uuid: reviewer.id,
-                    })) || [],
-                head: {
-                    ref: pr.sourceRefName?.replace('refs/heads/', ''),
-                    repo: {
-                        id: pr.repository?.id,
-                        name: pr.repository?.name,
-                    },
-                },
-                base: {
-                    ref: pr.targetRefName?.replace('refs/heads/', ''),
-                },
-                user: {
-                    login:
-                        pr.createdBy?.uniqueName ||
-                        pr.createdBy?.displayName ||
-                        '',
-                    name: pr.createdBy?.displayName,
-                    id: pr.createdBy?.id,
-                },
             }));
 
             let finalPRs = transformed;
@@ -2044,7 +2117,7 @@ export class AzureReposService
             state:
                 stateMap[pr.status as AzureGitPullRequestState] ||
                 PullRequestState.ALL,
-            prURL: pr._links?.web?.href,
+            prURL: pr?.url,
             organizationId,
             pull_number: pr.pullRequestId,
             number: pr.pullRequestId,
@@ -2157,7 +2230,7 @@ export class AzureReposService
             }
 
             const [azureReposRepositories, azureReposOrg] = await Promise.all([
-                this.findOneByOrganizationIdAndConfigKey(
+                this.findOneByOrganizationAndTeamDataAndConfigKey(
                     params.organizationAndTeamData,
                     IntegrationConfigKey.REPOSITORIES,
                 ),
@@ -2169,6 +2242,7 @@ export class AzureReposService
                         uuid: params.organizationAndTeamData.teamId,
                     },
                     platform: PlatformType.AZURE_REPOS,
+                    status: true,
                 }),
             ]);
 
@@ -2244,7 +2318,9 @@ export class AzureReposService
                 platform: PlatformType.AZURE_REPOS,
             });
 
-            if (!integration) return;
+            if (!integration) {
+                return;
+            }
 
             const integrationConfig =
                 await this.integrationConfigService.findOne({
@@ -2270,100 +2346,136 @@ export class AzureReposService
         organizationName: string,
         repoId: string,
     ): Promise<void> {
-        const eventTypes = [
-            'git.pullrequest.created',
-            'git.pullrequest.updated',
-            'ms.vss-code.git-pullrequest-comment-event',
+        const EVENT_CONFIGS: EventConfig[] = [
+            { type: 'git.pullrequest.created', resourceVersion: '1.0' },
+            { type: 'git.pullrequest.updated', resourceVersion: '1.0' },
+            {
+                type: 'ms.vss-code.git-pullrequest-comment-event',
+                resourceVersion: '2.0',
+            },
         ];
+
         const webhookUrl =
-            process.env.GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK;
+            process.env.GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK!;
         const encryptedToken = generateWebhookToken();
 
-        const tasks = eventTypes.map(async (eventType) => {
+        const tasks = EVENT_CONFIGS.map(({ type, resourceVersion }) =>
+            this.createOrReplaceHook({
+                orgName: organizationName,
+                token: userToken,
+                projectId,
+                repoId,
+                eventType: type,
+                resourceVersion,
+                webhookUrl,
+                encryptedToken,
+            }).catch((error) => {
+                this.logger.error({
+                    message: `Erro no hook ${type}: ${error.message ?? error}`,
+                    context: this.createNotificationChannel.name,
+                    error,
+                    metadata: {
+                        eventType: type,
+                        organizationName,
+                        projectId,
+                        repoId,
+                    },
+                });
+            }),
+        );
+
+        // Aguardar todas, mas já lidamos com erros acima
+        await Promise.all(tasks);
+    }
+
+    private async createOrReplaceHook(opts: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repoId: string;
+        eventType: string;
+        resourceVersion: string;
+        webhookUrl: string;
+        encryptedToken: string;
+    }): Promise<void> {
+        const {
+            orgName,
+            token,
+            projectId,
+            repoId,
+            eventType,
+            resourceVersion,
+            webhookUrl,
+            encryptedToken,
+        } = opts;
+
+        try {
             const payload = {
                 publisherId: 'tfs',
                 eventType,
-                resourceVersion: '2.0',
+                resourceVersion,
                 consumerId: 'webHooks',
                 consumerActionId: 'httpRequest',
-                publisherInputs: {
-                    projectId,
-                    repository: repoId, // Ensure this is correct for Azure DevOps API
-                },
+                publisherInputs: { projectId, repository: repoId },
                 consumerInputs: {
                     url: `${webhookUrl}?token=${encodeURIComponent(encryptedToken)}`,
+                    resourceDetailsToSend: 'all',
+                    messagesToSend: 'all',
+                    detailedMessagesToSend: 'all',
                 },
             };
 
-            try {
-                const existingHooks =
-                    await this.azureReposRequestHelper.listSubscriptionsByProject(
-                        {
-                            orgName: organizationName,
-                            token: userToken,
-                            projectId,
-                        },
-                    );
+            // Lista assinaturas existentes
+            const subs =
+                await this.azureReposRequestHelper.listSubscriptionsByProject({
+                    orgName,
+                    token,
+                    projectId,
+                });
 
-                const alreadyExists = existingHooks.find(
-                    (sub) =>
-                        sub.eventType === eventType &&
-                        sub.publisherInputs?.repository === repoId && // Check repoId here
-                        sub.consumerInputs?.url?.includes(webhookUrl),
-                );
+            const existing = subs.find(
+                (s) =>
+                    s.eventType === eventType &&
+                    s.publisherInputs?.repository === repoId &&
+                    s.consumerInputs?.url?.includes(webhookUrl),
+            );
 
-                if (alreadyExists) {
-                    this.logger.log({
-                        message: `Webhook already exists for ${eventType}, id: ${alreadyExists.id}, will be removed`,
-                        context: this.createNotificationChannel.name,
-                        metadata: { eventType, webhookId: alreadyExists.id },
-                    });
-
-                    await this.azureReposRequestHelper.deleteWebhookById({
-                        orgName: organizationName,
-                        token: userToken,
-                        subscriptionId: alreadyExists.id,
-                    });
-                }
-
-                const created =
-                    await this.azureReposRequestHelper.createSubscriptionForProject(
-                        {
-                            orgName: organizationName,
-                            token: userToken,
-                            projectId,
-                            subscriptionPayload: payload,
-                        },
-                    );
-
+            if (existing) {
+                await this.azureReposRequestHelper.deleteWebhookById({
+                    orgName,
+                    token,
+                    subscriptionId: existing.id,
+                });
                 this.logger.log({
-                    message: `Webhook created for ${eventType}, subscriptionId: ${created?.id}`,
-                    context: this.createNotificationChannel.name,
-                    metadata: { eventType, subscriptionId: created?.id },
-                });
-            } catch (error) {
-                this.logger.error({
-                    message: `Error creating webhook for event ${eventType}`,
-                    context: this.createNotificationChannel.name,
-                    error: error,
-                    metadata: { eventType },
+                    message: `Webhook removed for ${eventType} (id=${existing.id})`,
+                    context: this.createOrReplaceHook.name,
+                    metadata: { eventType, subscriptionId: existing.id },
                 });
             }
-        });
 
-        const results = await Promise.allSettled(tasks);
-
-        results.forEach((res, idx) => {
-            const evt = eventTypes[idx];
-            if (res.status === 'rejected') {
-                this.logger.error({
-                    message: `Error final in processing ${evt}`,
-                    context: this.createNotificationChannel.name,
-                    error: res.reason,
-                    metadata: { eventType: evt },
-                });
-            }
-        });
+            // Cria nova assinatura
+            const created =
+                await this.azureReposRequestHelper.createSubscriptionForProject(
+                    {
+                        orgName,
+                        token,
+                        projectId,
+                        subscriptionPayload: payload,
+                    },
+                );
+            this.logger.log({
+                message: `Webhook create for ${eventType} (id=${created.id})`,
+                context: this.createOrReplaceHook.name,
+                metadata: { eventType, subscriptionId: created.id },
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error creating/replacing hook for ${eventType}: ${error.message ?? error}`,
+                context: this.createOrReplaceHook.name,
+                error,
+                metadata: { eventType, orgName, projectId, repoId },
+            });
+        }
     }
 
     private formatCodeBlock(language: string, code: string) {
