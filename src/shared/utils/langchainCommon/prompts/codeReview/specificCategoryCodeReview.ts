@@ -26,9 +26,6 @@ ${payload?.fileContent}
 # Code Changes
 ${payload?.codeDiff}
 
-# Language and Frameworks Context
-${payload?.isLanguageContextEnabled ? payload?.languageContext || '' : ''}
-
 # Review Focus
 This code review should focus EXCLUSIVELY on identifying issues related to the following category:
 ${payload?.categoryName}
