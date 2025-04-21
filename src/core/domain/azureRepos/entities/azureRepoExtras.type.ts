@@ -4,6 +4,11 @@ export interface AzureRepoLink {
     href: string;
 }
 
+export type EventConfig = {
+    type: string;
+    resourceVersion: '1.0' | '2.0';
+  };
+
 export enum AzureRepoCommentType {
     /**
      * General comment not attached to specific lines of code.
