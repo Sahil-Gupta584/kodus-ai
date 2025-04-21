@@ -80,6 +80,7 @@ export class RunCodeReviewAutomationUseCase {
                 payload: sanitizedPayload,
                 event: event,
             });
+
             if (!action) {
                 return;
             }
@@ -107,6 +108,7 @@ export class RunCodeReviewAutomationUseCase {
             const pullRequest = mappedPlatform.mapPullRequest({
                 payload: sanitizedPayload,
             });
+
             if (!pullRequest) {
                 // try to get the PR details from the code management when it's a github issue
                 if (platformType === PlatformType.GITHUB) {

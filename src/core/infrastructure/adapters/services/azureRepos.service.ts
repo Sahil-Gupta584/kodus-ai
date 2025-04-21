@@ -15,81 +15,50 @@ import { IntegrationServiceDecorator } from '@/shared/utils/decorators/integrati
 import {
     BadRequestException,
     Inject,
-    Injectable,
     NotFoundException,
 } from '@nestjs/common';
 import { PinoLoggerService } from './logger/pino.service';
-import { CommitLeadTimeForChange } from '@/core/domain/platformIntegrations/types/codeManagement/commitLeadTimeForChange.type';
-import { DeployFrequency } from '@/core/domain/platformIntegrations/types/codeManagement/deployFrequency.type';
 import {
     PullRequests,
     PullRequestWithFiles,
-    PullRequestCodeReviewTime,
-    PullRequestFile,
-    PullRequestDetails,
     PullRequestReviewComment,
-    PullRequestsWithChangesRequested,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { v4 as uuidv4, v4 } from 'uuid';
 import { createTwoFilesPatch } from 'diff';
 
-import * as moment from 'moment-timezone';
 import {
     IIntegrationService,
     INTEGRATION_SERVICE_TOKEN,
 } from '@/core/domain/integrations/contracts/integration.service.contracts';
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
-import { PromptService } from './prompt.service';
-import { Organization } from '@/core/domain/platformIntegrations/types/codeManagement/organization.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
-import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
-import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
-import { User } from '@/core/domain/platformIntegrations/types/projectManagement/user.type';
 import { Commit } from '@/config/types/general/commit.type';
-import { AxiosAzureReposService } from '@/config/axios/microservices/azureRepos.axios';
 import { IntegrationConfigEntity } from '@/core/domain/integrationConfigs/entities/integration-config.entity';
 import { CodeManagementConnectionStatus } from '@/shared/utils/decorators/validate-code-management-integration.decorator';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
 import { CreateAuthIntegrationStatus } from '@/shared/domain/enums/create-auth-integration-status.enum';
 import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { AzureReposAuthDetail } from '@/core/domain/authIntegrations/types/azure-repos-auth-detail';
 import { IntegrationEntity } from '@/core/domain/integrations/entities/integration.entity';
-import axios from 'axios';
 import { AzureReposRequestHelper } from './azureRepos/azure-repos-request-helper';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 import { AzureGitPullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 import { Comment, FileChange } from '@/config/types/general/codeReview.type';
 import {
-    CommentResult,
     Repository,
-    ReviewComment,
 } from '@/config/types/general/codeReview.type';
 import { IRepositoryManager } from '@/core/domain/repository/contracts/repository-manager.contract';
 import { REPOSITORY_MANAGER_TOKEN } from '@/core/domain/repository/contracts/repository-manager.contract';
 import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { generateWebhookToken } from '@/shared/utils/webhooks/webhookTokenCrypto';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
-import { Workflow } from '@/core/domain/platformIntegrations/types/codeManagement/workflow.type';
-import { AzureRepoDiffChange, AzureRepoPRThread } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
+import { AzureRepoPRThread } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { getLabelShield } from '@/shared/utils/codeManagement/labels';
 import { getTranslationsForLanguageByCategory, TranslationsCategory } from '@/shared/utils/translations/translations';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
-
-interface FileDiff {
-    filename: string;
-    status: 'added' | 'modified' | 'deleted' | 'renamed';
-    patch: string;
-    additions: number;
-    deletions: number;
-    oldContent: string;
-    newContent: string;
-}
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
@@ -115,8 +84,6 @@ export class AzureReposService
         'approvePullRequest' |
         'requestChangesPullRequest' |
         'getAllCommentsInPullRequest' |
-        'getUserByUsername' |
-        'getUserByEmailOrName' |
         'getUserById' |
         'markReviewCommentAsResolved'> {
     constructor(
@@ -424,6 +391,7 @@ export class AzureReposService
             return null;
         }
     }
+
     async getCommitsForPullRequestForCodeReview(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string; project: { id: string } };
@@ -449,23 +417,43 @@ export class AzureReposService
                     prId: prNumber,
                 });
 
-            return commits
-                .map((commit) => ({
-                    sha: commit.commitId,
-                    message: commit.comment,
-                    created_at: commit.author?.date,
-                    author: {
-                        name: commit.author?.name,
-                        email: commit.author?.email,
-                        date: commit.author?.date,
-                        username: commit.author?.name, // Azure doesn't separate "username" in its own field
-                    },
-                }))
-                .sort(
-                    (a, b) =>
-                        new Date(a.created_at).getTime() -
-                        new Date(b.created_at).getTime()
-                );
+            const enriched = await Promise.all(
+                commits.map(async (commit) => {
+                    const authorName = commit.author?.email || commit.author?.username || null;
+
+                    let userId: string | null = null;
+
+                    if (authorName) {
+                        try {
+                            const user = await this.getUserByUsername({
+                                organizationAndTeamData,
+                                username: authorName,
+                            });
+                            userId = user?.originId ?? null;
+                        } catch {
+                            userId = null;
+                        }
+                    }
+
+                    return {
+                        sha: commit.commitId,
+                        message: commit.comment,
+                        created_at: commit.author?.date,
+                        author: {
+                            name: commit.author?.name,
+                            email: commit.author?.email,
+                            date: commit.author?.date,
+                            username: authorName,
+                            id: userId,
+                        },
+                    };
+                })
+            );
+
+            return enriched.sort(
+                (a, b) =>
+                    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
         } catch (error) {
             this.logger.error({
                 message: 'Error to get commits for pull request for code review',
@@ -476,6 +464,7 @@ export class AzureReposService
             return null;
         }
     }
+
     async createIssueComment(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string };
@@ -872,13 +861,20 @@ export class AzureReposService
         try {
             const { organizationAndTeamData, token, orgUrl, orgName } = params;
 
-            const checkRepos = await this.checkRepositoryPermissions({
-                token: token,
+            const authDetails: AzureReposAuthDetail = {
                 orgUrl: orgUrl,
+                token: encrypt(token),
+                authMode: AuthMode.TOKEN,
                 orgName: orgName,
+            };
+
+            const checkRepos = await this.checkRepositoryPermissions({
+                token: authDetails.token,
+                orgUrl: authDetails.orgUrl,
+                orgName: authDetails.orgName,
             });
 
-            if (!checkRepos.success) return checkRepos;
+            if (!checkRepos.success) { return checkRepos; }
 
             const integration = await this.integrationService.findOne({
                 organization: {
@@ -887,13 +883,6 @@ export class AzureReposService
                 team: { uuid: organizationAndTeamData.teamId },
                 platform: PlatformType.AZURE_REPOS,
             });
-
-            const authDetails: AzureReposAuthDetail = {
-                orgUrl: orgUrl,
-                token: encrypt(token),
-                authMode: AuthMode.TOKEN,
-                orgName: orgName,
-            };
 
             await this.handleIntegration(
                 integration,
@@ -918,6 +907,34 @@ export class AzureReposService
                 'Error authenticating with Azure Devops PAT.',
             );
         }
+    }
+
+    async getUserByUsername(params: { organizationAndTeamData: OrganizationAndTeamData; username: string; }): Promise<any> {
+        const { orgName, token } = await this.getAuthDetails(params.organizationAndTeamData);
+
+        const user = await this.azureReposRequestHelper.getUser({
+            orgName,
+            token,
+            identifier: params.username,
+        });
+
+        return user ?? null;
+    }
+
+    async getUserByEmailOrName(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        email?: string;
+        userName: string;
+    }): Promise<any> {
+        const { orgName, token } = await this.getAuthDetails(params.organizationAndTeamData);
+
+        const user = await this.azureReposRequestHelper.getUser({
+            orgName,
+            token,
+            identifier: params.userName,
+        });
+
+        return user ?? null;
     }
 
     private async checkRepositoryPermissions(params: {

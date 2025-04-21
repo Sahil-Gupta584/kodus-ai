@@ -70,12 +70,11 @@ import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
 export class BitbucketService
     implements
-        IBitbucketService,
-        Omit<
-            ICodeManagementService,
-            'getOrganizations' | 'getListOfValidReviews'
-        >
-{
+    IBitbucketService,
+    Omit<
+        ICodeManagementService,
+        'getOrganizations' | 'getListOfValidReviews' | 'getUserByEmailOrName'
+    > {
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
         private readonly integrationService: IIntegrationService,
@@ -95,7 +94,7 @@ export class BitbucketService
         private readonly promptService: PromptService,
 
         private readonly logger: PinoLoggerService,
-    ) {}
+    ) { }
 
     async getPullRequestsWithChangesRequested(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -1496,7 +1495,7 @@ export class BitbucketService
                             path: lineComment?.path,
                             to: this.sanitizeLine(
                                 params.lineComment.start_line ??
-                                    params.lineComment.line,
+                                params.lineComment.line,
                             ),
                         },
                     },
@@ -3071,9 +3070,8 @@ export class BitbucketService
                 queryString += `created_on >= "${filters.startDate}"`;
             }
             if (filters?.endDate) {
-                queryString += `${
-                    queryString ? ' AND ' : ''
-                }created_on <= "${filters.endDate}"`;
+                queryString += `${queryString ? ' AND ' : ''
+                    }created_on <= "${filters.endDate}"`;
             }
 
             const pullRequests = await bitbucketAPI.pullrequests
@@ -3104,14 +3102,6 @@ export class BitbucketService
             });
             return null;
         }
-    }
-
-    getUserByEmailOrName(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        email: string;
-        userName: string;
-    }): Promise<any> {
-        throw new Error('Method not implemented.');
     }
 
     async getUserByUsername(params: {
