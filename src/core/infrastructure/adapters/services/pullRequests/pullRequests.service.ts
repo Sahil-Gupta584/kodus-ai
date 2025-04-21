@@ -717,14 +717,7 @@ export class PullRequestsService implements IPullRequestsService {
                     id: data?.id || data?.uuid || '',
                     username:
                         data?.login || data?.username || data?.nickname || completeUser?.principalName || '',
-                    name:
-                        data?.name ||
-                        data?.display_name ||
-                        data?.displayName ||
-                        completeUser?.name ||
-                        completeUser?.display_name ||
-                        completeUser?.displayName ||
-                        '',
+                    name: this.extractUserName(data, completeUser),
                     email: completeUser?.email || completeUser?.mailAddress || null,
                 };
             }
@@ -935,6 +928,16 @@ export class PullRequestsService implements IPullRequestsService {
         );
 
         return foundUsers.filter((user) => user !== null);
+    }
+
+    private extractUserName(data: any | null | undefined, completeUser: any): string {
+        return data?.name ||
+            data?.display_name ||
+            data?.displayName ||
+            completeUser?.name ||
+            completeUser?.display_name ||
+            completeUser?.displayName ||
+            '';
     }
     //#endregion
 }
