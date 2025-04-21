@@ -934,7 +934,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 ...(kodyASTSuggestions?.codeSuggestions || []),
             ];
 
-            const VALID_ACTIONS = ['synchronize', 'update', 'updated'];
+            const VALID_ACTIONS = ['synchronize', 'update', 'updated', 'git.pullrequest.updated'];
 
             // If it's a commit, validate repeated suggestions
             if (context?.action && VALID_ACTIONS.includes(context.action)) {

@@ -19,7 +19,12 @@ export class AzureReposMappedPlatform implements IMappedPlatform {
         if (!pullRequest || !pullRequest.createdBy) { return null };
 
         return {
-            user: pullRequest.createdBy,
+            user: {
+                ...pullRequest.createdBy,
+                id: pullRequest.createdBy.id,
+                username: pullRequest.createdBy.uniqueName,
+                name: pullRequest.createdBy.displayName,
+            },
             assignees: [],
             reviewers: pullRequest.reviewers ?? [],
         };
@@ -32,6 +37,7 @@ export class AzureReposMappedPlatform implements IMappedPlatform {
         if (!pullRequest || !pullRequest.pullRequestId) { return null };
 
         return {
+            ...pullRequest,
             repository: pullRequest.repository,
             title: pullRequest.title ?? '',
             body: pullRequest.description ?? '',

@@ -305,11 +305,15 @@ export class AzureReposRequestHelper {
     private async azureRequest({
         orgName,
         token,
+        useGraphApi = false,
     }: {
         orgName: string;
         token: string;
+        useGraphApi?: boolean;
     }): Promise<any> {
-        const baseURL = `https://dev.azure.com/${orgName}`;
+        const baseURL = useGraphApi
+            ? `https://vssps.dev.azure.com/${orgName}`
+            : `https://dev.azure.com/${orgName}`;
 
         const instance = axios.create({
             baseURL,
@@ -647,6 +651,41 @@ export class AzureReposRequestHelper {
         );
 
         return data;
+    }
+
+    async getUser(params: {
+        orgName: string;
+        token: string;
+        identifier: string;
+    }): Promise<any> {
+        const instance = await this.azureRequest({
+            ...params,
+            useGraphApi: true,
+        });
+
+        const isDescriptor = /^(aad|msa|vss|svc)\./.test(params.identifier);
+
+        let url = '';
+        if (isDescriptor) {
+            url = `https://vssps.dev.azure.com/${params.orgName}/_apis/graph/users/${params.identifier}?api-version=7.1-preview.1`;
+        } else {
+            url = `https://vssps.dev.azure.com/${params.orgName}/_apis/graph/users?filterValue=${encodeURIComponent(params.identifier)}&api-version=7.1-preview.1`;
+        }
+
+        const { data } = await instance.get(url);
+
+        if (isDescriptor) {
+            return data ?? null;
+        }
+
+        const users = data?.value ?? [];
+
+        // Priorize users from Azure AD or MSA
+        const preferredUser = users.find(
+            (u: any) => u.origin === 'aad' || u.origin === 'msa',
+        );
+
+        return preferredUser ?? users[0] ?? null;
     }
 
     mapAzureStatusToFileChangeStatus(status: string): FileChange['status'] {

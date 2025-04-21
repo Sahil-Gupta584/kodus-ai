@@ -30,7 +30,7 @@ export class PullRequestsService implements IPullRequestsService {
         private readonly codeManagement: CodeManagementService,
 
         private readonly logger: PinoLoggerService,
-    ) {}
+    ) { }
 
     getNativeCollection() {
         throw new Error('Method not implemented.');
@@ -268,14 +268,14 @@ export class PullRequestsService implements IPullRequestsService {
                 reviewers: await this.extractUsers(
                     (pullRequest.reviewers ||
                         pullRequest?.requested_reviewers) ??
-                        enrichedPullRequest.reviewers,
+                    enrichedPullRequest.reviewers,
                     organizationId,
                     platformType,
                     pullRequest?.number,
                 ),
                 assignees: await this.extractUsers(
                     (pullRequest.assignees || pullRequest?.participants) ??
-                        enrichedPullRequest.assignees,
+                    enrichedPullRequest.assignees,
                     organizationId,
                     platformType,
                     pullRequest?.number,
@@ -380,7 +380,8 @@ export class PullRequestsService implements IPullRequestsService {
         if (
             pullRequest.state === 'open' ||
             pullRequest.state === 'opened' ||
-            pullRequest.state === 'OPEN'
+            pullRequest.state === 'OPEN' ||
+            pullRequest.status === 'active'
         ) {
             return PullRequestState.OPENED;
         } else if (
@@ -669,6 +670,7 @@ export class PullRequestsService implements IPullRequestsService {
                 teamId: undefined,
                 organizationId: organizationId,
             };
+            const rawEmail = data?.email ?? data?.uniqueName;
 
             /**
              *  used to extract data from bitbucket participants,
@@ -696,7 +698,7 @@ export class PullRequestsService implements IPullRequestsService {
                 };
             }
 
-            if (!data.email) {
+            if (!data?.email && !data?.uniqueName) {
                 const completeUser =
                     await this.codeManagement.getUserByUsername(
                         {
@@ -705,6 +707,7 @@ export class PullRequestsService implements IPullRequestsService {
                                 data?.login ||
                                 data?.username ||
                                 data?.nickname ||
+                                data?.descriptor ||
                                 '',
                         },
                         platformType,
@@ -713,19 +716,14 @@ export class PullRequestsService implements IPullRequestsService {
                 return {
                     id: data?.id || data?.uuid || '',
                     username:
-                        data?.login || data?.username || data?.nickname || '',
-                    name:
-                        data?.name ||
-                        data?.display_name ||
-                        completeUser?.name ||
-                        completeUser?.display_name ||
-                        '',
-                    email: completeUser?.email || null,
+                        data?.login || data?.username || data?.nickname || completeUser?.principalName || '',
+                    name: this.extractUserName(data, completeUser),
+                    email: completeUser?.email || completeUser?.mailAddress || null,
                 };
             }
 
             // Gitlab returns [REDACTED] instead of a valid email, so we can search for it by name.
-            if (!this.isValidEmail(data?.email)) {
+            if (!this.isValidEmail(rawEmail)) {
                 const completeUser =
                     await this.codeManagement.getUserByEmailOrName(
                         {
@@ -752,9 +750,9 @@ export class PullRequestsService implements IPullRequestsService {
 
             return {
                 id: data?.id || data?.uuid || '',
-                username: data?.login || data?.username || data?.nickname || '',
-                name: data?.actor.display_name,
-                email: this.isValidEmail(data?.email) ? data.email : null,
+                username: data?.login || data?.username || data?.nickname || data?.uniqueName || '',
+                name: data?.actor?.display_name || data?.displayName || '',
+                email: this.isValidEmail(rawEmail) ? rawEmail : null,
             };
         } catch (error) {
             this.logger.log({
@@ -852,7 +850,7 @@ export class PullRequestsService implements IPullRequestsService {
     }
 
     private extractOpenedAt(pullRequest: any): string {
-        return pullRequest?.created_at || pullRequest?.created_on || '';
+        return pullRequest?.created_at || pullRequest?.created_on || pullRequest?.creationDate || '';
     }
 
     private extractClosedAt(pullRequest: any): string {
@@ -921,15 +919,25 @@ export class PullRequestsService implements IPullRequestsService {
                 });
                 return foundUser
                     ? {
-                          id: foundUser.id,
-                          username: foundUser.username,
-                          name: foundUser.name,
-                      }
+                        id: foundUser.id,
+                        username: foundUser.username,
+                        name: foundUser.name,
+                    }
                     : null;
             }),
         );
 
         return foundUsers.filter((user) => user !== null);
+    }
+
+    private extractUserName(data: any | null | undefined, completeUser: any): string {
+        return data?.name ||
+            data?.display_name ||
+            data?.displayName ||
+            completeUser?.name ||
+            completeUser?.display_name ||
+            completeUser?.displayName ||
+            '';
     }
     //#endregion
 }

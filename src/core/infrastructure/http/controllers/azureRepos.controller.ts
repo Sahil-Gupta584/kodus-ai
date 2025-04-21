@@ -10,11 +10,12 @@ export class AzureReposController {
     constructor(
         private readonly receiveWebhookUseCase: ReceiveWebhookUseCase,
         private logger: PinoLoggerService,
-    ) {}
+    ) { }
 
     @Post('/webhook')
     handleWebhook(@Req() req: Request, @Res() res: Response) {
-        const encrypted = req.query.token as string;
+        const encrypted = req.
+            query.token as string;
 
         if (!validateWebhookToken(encrypted)) {
             this.logger.error({
