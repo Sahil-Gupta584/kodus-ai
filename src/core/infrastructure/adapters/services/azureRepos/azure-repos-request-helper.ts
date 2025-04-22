@@ -8,7 +8,6 @@ import {
     AzureRepoChange,
     AzureRepoCommit,
     AzureRepoFileContent,
-    AzureRepoDiffChange,
     AzureRepoPRThread,
     AzureRepoSubscription,
     AzureRepoCommentType,
@@ -18,7 +17,7 @@ import { FileChange } from '@/config/types/general/codeReview.type';
 
 @Injectable()
 export class AzureReposRequestHelper {
-    constructor() { }
+    constructor() {}
 
     async getProjects(params: {
         orgName: string;
@@ -130,7 +129,8 @@ export class AzureReposRequestHelper {
     }): Promise<AzureRepoPRThread> {
         const instance = await this.azureRequest(params);
 
-        const isMultiLine = params.start_line !== undefined && params.start_line !== null;
+        const isMultiLine =
+            params.start_line !== undefined && params.start_line !== null;
 
         const payload = {
             comments: [
@@ -143,7 +143,10 @@ export class AzureReposRequestHelper {
             threadContext: {
                 filePath: params.filePath,
                 rightFileStart: {
-                    line: Math.max(isMultiLine ? params.start_line! : params.line, 1),
+                    line: Math.max(
+                        isMultiLine ? params.start_line! : params.line,
+                        1,
+                    ),
                     offset: 1,
                 },
                 rightFileEnd: {
@@ -302,6 +305,25 @@ export class AzureReposRequestHelper {
         return data;
     }
 
+    async getAuthenticatedUserId(params: {
+        orgName: string;
+        token: string;
+    }): Promise<string | null> {
+        const { orgName, token } = params;
+
+        const instance = await this.azureRequest({
+            orgName,
+            token,
+            useGraphApi: true,
+        });
+
+        const { data } = await instance.get(
+            '/_apis/connectionData?connectOptions=IncludeServices&api-version=7.1-preview',
+        );
+
+        return data?.authenticatedUser?.id;
+    }
+
     private async azureRequest({
         orgName,
         token,
@@ -324,6 +346,25 @@ export class AzureReposRequestHelper {
         });
 
         return instance;
+    }
+
+    async resolvePullRequestThread(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        prId: number;
+        threadId: number;
+    }): Promise<any> {
+        const instance = await this.azureRequest(params);
+
+        const url = `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullRequests/${params.prId}/threads/${params.threadId}?api-version=7.1`;
+
+        const payload = { status: 'closed' };
+
+        const { data } = await instance.patch(url, payload);
+
+        return data;
     }
 
     async getIterations(params: {
@@ -570,6 +611,25 @@ export class AzureReposRequestHelper {
             payload,
         );
 
+        return data;
+    }
+
+    async votePullRequest(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        prId: number;
+        reviewerId: string;
+        vote: number; // 10 = approve, -10 = reject/request changes
+    }): Promise<any> {
+        const instance = await this.azureRequest(params);
+
+        const url = `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullRequests/${params.prId}/reviewers/${params.reviewerId}?api-version=7.1`;
+
+        const payload = { vote: params.vote };
+
+        const { data } = await instance.put(url, payload);
         return data;
     }
 

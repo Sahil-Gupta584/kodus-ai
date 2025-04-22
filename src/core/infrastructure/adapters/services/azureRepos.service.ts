@@ -18,6 +18,7 @@ import {
     PullRequests,
     PullRequestWithFiles,
     PullRequestReviewComment,
+    OneSentenceSummaryItem,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { v4 as uuidv4, v4 } from 'uuid';
@@ -40,7 +41,11 @@ import { IntegrationEntity } from '@/core/domain/integrations/entities/integrati
 import { AzureReposRequestHelper } from './azureRepos/azure-repos-request-helper';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 import { AzureGitPullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
-import { Comment, FileChange } from '@/config/types/general/codeReview.type';
+import {
+    Comment,
+    CommentResult,
+    FileChange,
+} from '@/config/types/general/codeReview.type';
 import { Repository } from '@/config/types/general/codeReview.type';
 import { IRepositoryManager } from '@/core/domain/repository/contracts/repository-manager.contract';
 import { REPOSITORY_MANAGER_TOKEN } from '@/core/domain/repository/contracts/repository-manager.contract';
@@ -48,6 +53,7 @@ import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { generateWebhookToken } from '@/shared/utils/webhooks/webhookTokenCrypto';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
 import {
+    AzurePullRequestVote,
     AzureRepoPRThread,
     EventConfig,
 } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
@@ -75,17 +81,13 @@ export class AzureReposService
             | 'getPullRequestReviewThreads'
             | 'getListOfValidReviews'
             | 'getPullRequestsWithChangesRequested'
-            | 'createSingleIssueComment'
             | 'findTeamAndOrganizationIdByConfigKey'
             | 'createResponseToComment'
             | 'getAuthenticationOAuthToken'
             | 'countReactions'
             | 'getRepositoryAllFiles'
             | 'mergePullRequest'
-            | 'approvePullRequest'
-            | 'requestChangesPullRequest'
             | 'getUserById'
-            | 'markReviewCommentAsResolved'
         >
 {
     constructor(
@@ -104,6 +106,228 @@ export class AzureReposService
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
     ) {}
+
+    async markReviewCommentAsResolved(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        prNumber: number;
+        commentId: number;
+    }): Promise<any | null> {
+        try {
+            const { organizationAndTeamData, repository, prNumber, commentId } =
+                params;
+
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            const response =
+                await this.azureReposRequestHelper.resolvePullRequestThread({
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                    threadId: commentId,
+                });
+
+            this.logger.log({
+                message: `Marked thread ${commentId} as resolved in PR #${prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService markReviewCommentAsResolved',
+                metadata: { params },
+            });
+
+            return response;
+        } catch (error) {
+            this.logger.error({
+                message: `Failed to resolve review thread in PR #${params.prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService markReviewCommentAsResolved',
+                error,
+                metadata: { params },
+            });
+            return null;
+        }
+    }
+
+    async approvePullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string };
+    }): Promise<any> {
+        try {
+            const { organizationAndTeamData, prNumber, repository } = params;
+
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            const reviewerId =
+                await this.azureReposRequestHelper.getAuthenticatedUserId({
+                    orgName,
+                    token,
+                });
+
+            if (!reviewerId) {
+                throw new Error('Unable to identify reviewer from PAT.');
+            }
+
+            const result = await this.azureReposRequestHelper.votePullRequest({
+                orgName,
+                token,
+                projectId,
+                repositoryId: repository.id,
+                prId: prNumber,
+                reviewerId,
+                vote: AzurePullRequestVote.Approved, // approve
+            });
+
+            this.logger.log({
+                message: `Approved pull request #${prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService approvePullRequest',
+                metadata: { params },
+            });
+
+            return result;
+        } catch (error) {
+            this.logger.error({
+                message: `Error approving pull request #${params.prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService approvePullRequest',
+                error,
+                metadata: { params },
+            });
+            return null;
+        }
+    }
+
+    async requestChangesPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string };
+        criticalComments: CommentResult[];
+    }): Promise<any> {
+        try {
+            const {
+                organizationAndTeamData,
+                prNumber,
+                repository,
+                criticalComments,
+            } = params;
+
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            const reviewerId =
+                await this.azureReposRequestHelper.getAuthenticatedUserId({
+                    orgName,
+                    token,
+                });
+
+            if (!reviewerId) {
+                throw new Error('Unable to identify reviewer from PAT.');
+            }
+
+            await this.azureReposRequestHelper.votePullRequest({
+                orgName,
+                token,
+                projectId,
+                repositoryId: repository.id,
+                prId: prNumber,
+                reviewerId,
+                vote: AzurePullRequestVote.Rejected, // request changes
+            });
+
+            const title =
+                '# Found critical issues, please review the requested changes';
+            const listOfCriticalIssues =
+                this.getListOfCriticalIssues(criticalComments);
+            const bodyFormatted = `${title}\n\n${listOfCriticalIssues}`;
+
+            await this.createSingleIssueComment({
+                body: bodyFormatted,
+                organizationAndTeamData,
+                prNumber,
+                repository,
+            });
+
+            this.logger.log({
+                message: `Requested changes on pull request #${prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService requestChangesPullRequest',
+                metadata: { params },
+            });
+
+            return true;
+        } catch (error) {
+            this.logger.error({
+                message: `Error requesting changes on pull request #${params.prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService requestChangesPullRequest',
+                error,
+                metadata: { params },
+            });
+            return null;
+        }
+    }
+
+    async createSingleIssueComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string };
+        prNumber: number;
+        body: string;
+    }): Promise<any | null> {
+        try {
+            const { organizationAndTeamData, repository, prNumber, body } =
+                params;
+
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            const response =
+                await this.azureReposRequestHelper.createIssueComment({
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                    comment: body,
+                });
+
+            return response;
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to create single issue comment',
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService createSingleIssueComment',
+                error,
+                metadata: { params },
+            });
+            return null;
+        }
+    }
 
     async getPullRequestReviewComment(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -145,9 +369,13 @@ export class AzureReposService
                     ?.map((note) => ({
                         id: note.id,
                         threadId: thread.id,
+                        commentType: note?.commentType,
                         body: note.content,
                         createdAt: note.publishedDate,
                         originalCommit: commitId,
+                        isResolved:
+                            thread?.status === 'closed' ||
+                            thread?.status === 'fixed',
                         author: {
                             id: note.author?.id,
                             username: note.author?.uniqueName,
@@ -211,8 +439,12 @@ export class AzureReposService
                     ?.map((note) => ({
                         id: note.id,
                         threadId: thread.id,
+                        commentType: note?.commentType,
                         body: note.content,
                         createdAt: note.publishedDate,
+                        isResolved:
+                            thread?.status === 'closed' ||
+                            thread?.status === 'fixed',
                         originalCommit: commitId,
                         author: {
                             id: note.author?.id,
@@ -676,6 +908,7 @@ export class AzureReposService
             return null;
         }
     }
+
     async updateIssueComment(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string; project: { id: string } };
@@ -790,6 +1023,7 @@ export class AzureReposService
 
         return defaultBranch;
     }
+
     async getPullRequestReviewComments(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: Partial<Repository>;
@@ -820,10 +1054,13 @@ export class AzureReposService
                     (thread.comments || []).map((comment) => ({
                         id: comment.id,
                         threadId: String(thread.id),
+                        commentType: comment?.commentType,
                         body: comment.content ?? '',
                         createdAt: comment.publishedDate,
                         updatedAt: comment.lastUpdatedDate,
-                        isResolved: thread.status === 'closed',
+                        isResolved:
+                            thread?.status === 'closed' ||
+                            thread?.status === 'fixed',
                         author: {
                             id: comment.author?.id,
                             username: comment.author?.displayName,
@@ -2561,5 +2798,36 @@ export class AzureReposService
             );
             return iterationIndex > reviewedIndex;
         });
+    }
+
+    private getListOfCriticalIssues(criticalComments: CommentResult[]): string {
+        const criticalIssuesSummaryArray =
+            this.getCriticalIssuesSummaryArray(criticalComments);
+
+        const listOfCriticalIssues = criticalIssuesSummaryArray
+            .map((criticalIssue) => {
+                const summary = criticalIssue.oneSentenceSummary;
+                const formattedItem = `- ${summary}`;
+
+                return formattedItem.trim();
+            })
+            .join('\n');
+
+        return listOfCriticalIssues;
+    }
+
+    private getCriticalIssuesSummaryArray(
+        criticalComments: CommentResult[],
+    ): OneSentenceSummaryItem[] {
+        const criticalIssuesSummaryArray: OneSentenceSummaryItem[] =
+            criticalComments.map((comment) => {
+                return {
+                    id: comment.codeReviewFeedbackData.commentId,
+                    oneSentenceSummary:
+                        comment.comment.suggestion.oneSentenceSummary ?? '',
+                };
+            });
+
+        return criticalIssuesSummaryArray;
     }
 }

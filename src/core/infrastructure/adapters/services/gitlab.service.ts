@@ -83,6 +83,9 @@ export class GitlabService
             | 'getRepositoryAllFiles'
             | 'getAuthenticationOAuthToken'
             | 'getPullRequestDetails'
+            | 'getCommitsByReleaseMode'
+            | 'getDataForCalculateDeployFrequency'
+            | 'requestChangesPullRequest'
         >
 {
     constructor(
@@ -1255,16 +1258,6 @@ export class GitlabService
         }
     }
 
-    getCommitsByReleaseMode(params: any): Promise<CommitLeadTimeForChange[]> {
-        throw new Error('Method not implemented.');
-    }
-
-    getDataForCalculateDeployFrequency(
-        params: any,
-    ): Promise<DeployFrequency[]> {
-        throw new Error('Method not implemented.');
-    }
-
     private async getPullRequestFiles(
         gitlab: InstanceType<typeof Gitlab>,
         projectId: string,
@@ -2266,16 +2259,6 @@ export class GitlabService
             });
             return null;
         }
-    }
-
-    async requestChangesPullRequest(params: any) {
-        this.logger.error({
-            message: `Request changes pull request not implemented`,
-            context: GitlabService.name,
-            serviceName: 'GitlabService requestChangesPullRequest',
-            metadata: params,
-        });
-        throw new Error('Method not implemented.');
     }
 
     async getAllCommentsInPullRequest(params: {
