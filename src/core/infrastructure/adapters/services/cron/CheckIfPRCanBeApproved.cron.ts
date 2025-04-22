@@ -30,10 +30,7 @@ import {
     IIntegrationService,
     INTEGRATION_SERVICE_TOKEN,
 } from '@/core/domain/integrations/contracts/integration.service.contracts';
-import {
-    AzureRepoCommentType,
-    AzureRepoCommentTypeString,
-} from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
+import { AzureRepoCommentTypeString } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
 
 const API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED =
     process.env.API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED;
@@ -105,7 +102,20 @@ export class CheckIfPRCanBeApprovedCronProvider {
                         organizationAndTeamData,
                     );
 
-                const codeReviewConfig = codeReviewParameter.configValue as {
+                if (!codeReviewParameter || !codeReviewParameter?.configValue) {
+                    this.logger.error({
+                        message: 'Code review parameter configs not found',
+                        context: CheckIfPRCanBeApprovedCronProvider.name,
+                        metadata: {
+                            timestamp: new Date().toISOString(),
+                            organizationAndTeamData,
+                        },
+                    });
+
+                    continue;
+                }
+
+                const codeReviewConfig = codeReviewParameter?.configValue as {
                     global: CodeReviewConfig;
                     repositories: CodeReviewConfigWithRepositoryInfo[];
                 };
@@ -117,10 +127,11 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     codeReviewConfig.repositories.length < 1
                 ) {
                     this.logger.error({
-                        message: 'Code review parameter configs not found',
+                        message:
+                            'No repositories were found on the code review parameter config value',
                         context: CheckIfPRCanBeApprovedCronProvider.name,
                         metadata: {
-                            teamId,
+                            organizationAndTeamData,
                             timestamp: new Date().toISOString(),
                         },
                     });
@@ -133,7 +144,7 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     organizationId: organizationId,
                 });
 
-                if (!openPullRequests || openPullRequests.length === 0) {
+                if (!openPullRequests || openPullRequests?.length === 0) {
                     continue;
                 }
 
@@ -141,13 +152,13 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     const repository = pr.repository;
 
                     const codeReviewConfigFromRepo =
-                        codeReviewConfig.repositories.find(
+                        codeReviewConfig?.repositories?.find(
                             (codeReviewConfigRepo) =>
                                 codeReviewConfigRepo.id === repository.id,
                         );
 
                     if (
-                        !codeReviewConfig.global.pullRequestApprovalActive &&
+                        !codeReviewConfig?.global?.pullRequestApprovalActive &&
                         !codeReviewConfigFromRepo?.pullRequestApprovalActive
                     ) {
                         return;
@@ -254,6 +265,15 @@ export class CheckIfPRCanBeApprovedCronProvider {
             this.logger.error({
                 message: 'Error in shouldApprovePR',
                 context: CheckIfPRCanBeApprovedCronProvider.name,
+                metadata: {
+                    organizationAndTeamData,
+                    platformType,
+                    prNumber: pr.number,
+                    repository: {
+                        name: repository.name,
+                        id: repository.id,
+                    },
+                },
                 error,
             });
 
