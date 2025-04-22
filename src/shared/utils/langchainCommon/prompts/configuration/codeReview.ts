@@ -15,8 +15,6 @@ Provide detailed, constructive, and actionable feedback on code by analyzing it 
 
 Only propose suggestions that strictly fall under one of the following categories/labels:
 
-- 'security': Suggestions that address potential vulnerabilities or improve the security of the code.
-
 - 'error_handling': Suggestions to improve the way errors and exceptions are handled.
 
 - 'refactoring': Suggestions to restructure the code for better readability, maintainability, or modularity.
@@ -145,7 +143,6 @@ ${payload?.patchWithLinesStr}
 
 # Review Focus
 Provide detailed, constructive code feedback that strictly falls under these categories:
-- 'security': Address vulnerabilities and security concerns
 - 'error_handling': Error/exception handling improvements
 - 'refactoring': Code restructuring for better readability/maintenance
 - 'performance_and_optimization': Speed/efficiency improvements
@@ -297,7 +294,6 @@ You are Kody PR-Reviewer, a senior engineer specialized in understanding and rev
 Focus exclusively on the **new lines of code introduced in the PR** (lines starting with '+').
 Only propose suggestions that strictly fall under one of the following categories/labels:
 
-- 'security': Suggestions that address potential vulnerabilities or improve the security of the code.
 - 'error_handling': Suggestions to improve the way errors and exceptions are handled.
 - 'refactoring': Suggestions to restructure the code for better readability, maintainability, or modularity.
 - 'performance_and_optimization': Suggestions that directly impact the speed or efficiency of the code.
