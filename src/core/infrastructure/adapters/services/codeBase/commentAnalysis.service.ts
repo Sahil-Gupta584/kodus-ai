@@ -544,6 +544,14 @@ export class CommentAnalysisService {
                             body: note.body,
                         }));
                     }
+
+                    if (comment?.threadId) {
+                        // Azure DevOps: ensure unique ID
+                        return {
+                            ...comment,
+                            id: `${comment.threadId}-${comment.id}`, // composite ID
+                        };
+                    }
                     return comment;
                 });
 
@@ -558,19 +566,19 @@ export class CommentAnalysisService {
                 }
 
                 const filteredComments = uniqueComments
-                    .filter(
+                    ?.filter(
                         (comment) =>
-                            !comment.user ||
-                            !comment.user.type ||
-                            comment.user.type.toLowerCase() !== 'bot',
+                            !comment?.user ||
+                            !comment?.user?.type ||
+                            comment?.user?.type?.toLowerCase() !== 'bot',
                     )
-                    .filter(
+                    ?.filter(
                         (comment) =>
-                            !comment.body
-                                .toLowerCase()
-                                .includes('kody-codereview'),
+                            !comment?.body
+                                ?.toLowerCase()
+                                ?.includes('kody-codereview'),
                     )
-                    .filter((comment) => comment.body.length > 100);
+                    ?.filter((comment) => comment?.body?.length > 100);
 
                 let finalComments = filteredComments;
                 if (pr.files && pr.files.length > 0) {

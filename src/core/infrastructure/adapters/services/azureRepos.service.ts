@@ -110,15 +110,14 @@ export class AzureReposService
         filters: {
             repository: { id: string };
             pullRequestNumber: number;
-            discussionId?: number;
         };
     }): Promise<any[] | null> {
-        const { organizationAndTeamData, filters } = params;
-
         try {
+            const { organizationAndTeamData, filters } = params;
             const { orgName, token } = await this.getAuthDetails(
                 organizationAndTeamData,
             );
+
             const projectId = await this.getProjectIdFromRepository(
                 organizationAndTeamData,
                 filters.repository.id,
@@ -133,35 +132,38 @@ export class AzureReposService
                     prId: filters.pullRequestNumber,
                 });
 
-            if (!filters.discussionId) {
-                return threads;
+            if (!threads?.length) {
+                return [];
             }
 
-            const thread = threads.find((t) => t.id === filters.discussionId);
-            if (!thread) return [];
+            const comments = threads?.flatMap((thread) => {
+                const commitId =
+                    thread.pullRequestThreadContext?.commitId ?? null;
 
-            const originalCommentBody = thread?.comments?.[0]?.content ?? null;
+                return (thread.comments ?? [])
+                    ?.filter((note) => !!note.content?.trim())
+                    ?.map((note) => ({
+                        id: note.id,
+                        threadId: thread.id,
+                        body: note.content,
+                        createdAt: note.publishedDate,
+                        originalCommit: commitId,
+                        author: {
+                            id: note.author?.id,
+                            username: note.author?.uniqueName,
+                            name: note.author?.displayName,
+                        },
+                    }));
+            });
 
-            const mappedComments = (thread.comments ?? []).map((note) => ({
-                id: note.id,
-                body: note.content,
-                createdAt: note.publishedDate,
-                originalCommit: { body: originalCommentBody },
-                author: {
-                    id: note.author?.id,
-                    username: note.author?.displayName,
-                    name: note.author?.displayName,
-                },
-            }));
-
-            return mappedComments.sort(
+            return comments.sort(
                 (a, b) =>
                     new Date(b.createdAt).getTime() -
                     new Date(a.createdAt).getTime(),
             );
         } catch (error) {
             this.logger.error({
-                message: 'Failed to get pull request review comments',
+                message: 'Failed to get pull request review comment',
                 context: AzureReposService.name,
                 serviceName: 'AzureReposService getPullRequestReviewComment',
                 error,
@@ -196,20 +198,29 @@ export class AzureReposService
                     prId: prNumber,
                 });
 
-            const comments = threads.flatMap((thread) =>
-                (thread.comments ?? []).map((comment) => ({
-                    id: comment.id,
-                    body: comment.content,
-                    createdAt: comment.publishedDate,
-                    originalCommit:
-                        thread.pullRequestThreadContext?.commitId ?? null,
-                    author: {
-                        id: comment.author?.id,
-                        username: comment.author?.displayName,
-                        name: comment.author?.displayName,
-                    },
-                })),
-            );
+            if (!threads?.length) {
+                return [];
+            }
+
+            const comments = threads?.flatMap((thread) => {
+                const commitId =
+                    thread.pullRequestThreadContext?.commitId ?? null;
+
+                return (thread.comments ?? [])
+                    ?.filter((note) => !!note.content?.trim())
+                    ?.map((note) => ({
+                        id: note.id,
+                        threadId: thread.id,
+                        body: note.content,
+                        createdAt: note.publishedDate,
+                        originalCommit: commitId,
+                        author: {
+                            id: note.author?.id,
+                            username: note.author?.uniqueName,
+                            name: note.author?.displayName,
+                        },
+                    }));
+            });
 
             return comments;
         } catch (error) {
