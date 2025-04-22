@@ -4,8 +4,12 @@ export interface NewCodeReviewPayload {
     codeDiff?: string;
     categoryName?: string;
     categorySpecificInstructions?: string;
-    isLanguageContextEnabled?: boolean;
-    languageContext?: string;
+    categoryExamples?: CategoryExamples[];
+}
+
+export type CategoryExamples = {
+    description: string;
+    examples: string[];
 }
 
 export const prompt_specificCategoryCodeReview = (payload: NewCodeReviewPayload) => {
@@ -34,6 +38,12 @@ All suggestions must be labeled with this category only. Do not generate suggest
 
 # Category-Specific Instructions
 ${payload?.categorySpecificInstructions || ''}
+
+${payload?.categoryExamples?.length > 0 ? `# Category Examples
+${payload?.categoryExamples.map((example) => `## ${example.description}
+${example.examples.map((example) => `- ${example}`).join('\n')}
+`).join('\n')}
+` : ''}
 
 # General Guidelines
 - Understand the PR purpose
