@@ -1337,95 +1337,75 @@ export class BitbucketService
         prNumber: number;
         lastCommit: any;
     }): Promise<FileChange[] | null> {
+        const { organizationAndTeamData, repository, prNumber, lastCommit } = params;
+
         try {
-            const {
-                organizationAndTeamData,
-                repository,
-                prNumber,
-                lastCommit,
-            } = params;
+            const bitbucketAuthDetails = await this.getAuthDetails(organizationAndTeamData);
+            if (!bitbucketAuthDetails) return null;
 
-            const bitbucketAuthDetails = await this.getAuthDetails(
-                organizationAndTeamData,
-            );
+            const repo = await this.getRepoById(organizationAndTeamData, repository.id);
+            const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetails);
 
-            if (!bitbucketAuthDetails) {
-                return null;
-            }
+            // 🔍 Pega o estado atual do PR
+            const pr = await bitbucketAPI.pullrequests.get({
+                pull_request_id: prNumber,
+                repo_slug: `{${repo.id}}`,
+                workspace: `{${repo.workspaceId}}`,
+            }).then(res => res.data);
 
-            const repo = await this.getRepoById(
-                organizationAndTeamData,
-                repository.id,
-            );
+            // 📄 Lista todos os arquivos tocados no PR até agora
+            const allFilesInPR = await bitbucketAPI.pullrequests.getDiffStat({
+                pull_request_id: prNumber,
+                repo_slug: `{${repo.id}}`,
+                workspace: `{${repo.workspaceId}}`,
+            }).then(res => this.getPaginatedResults<Schema.Diffstat>(bitbucketAPI, res));
 
-            const bitbucketAPI =
-                this.instanceBitbucketApi(bitbucketAuthDetails);
+            // ⚙️ Processa apenas arquivos que realmente mudaram desde o último commit
+            const changedFiles = await Promise.all(
+                allFilesInPR.map(async (file) => {
+                    const path = file.new?.path;
+                    if (!path) return null;
 
-            const pr = await bitbucketAPI.pullrequests
-                .get({
-                    pull_request_id: prNumber,
-                    repo_slug: `{${repo.id}}`,
-                    workspace: `{${repo.workspaceId}}`,
+                    const diff = await bitbucketAPI.commits.getDiff({
+                        repo_slug: `{${repo.id}}`,
+                        workspace: `{${repo.workspaceId}}`,
+                        spec: `${pr.source?.commit?.hash}..${lastCommit.sha}`,
+                        path,
+                    }).then(res => res.data as string);
+
+                    if (!diff?.trim()) return null;
+
+                    const content = await bitbucketAPI.source.read({
+                        repo_slug: `{${repo.id}}`,
+                        workspace: `{${repo.workspaceId}}`,
+                        commit: pr.source?.commit?.hash,
+                        path,
+                    }).then(res => res.data as string);
+
+                    return {
+                        filename: path,
+                        sha: pr.source?.commit?.hash,
+                        status: file.status,
+                        additions: file.lines_added,
+                        deletions: file.lines_removed,
+                        changes: file.lines_added + file.lines_removed,
+                        patch: diff,
+                        content,
+                        blob_url: null,
+                        contents_url: null,
+                        raw_url: null,
+                    };
                 })
-                .then((res) => res.data);
-
-            const prFiles = await bitbucketAPI.pullrequests
-                .getDiffStat({
-                    pull_request_id: prNumber,
-                    repo_slug: `{${repo.id}}`,
-                    workspace: `{${repo.workspaceId}}`,
-                })
-                .then((res) =>
-                    this.getPaginatedResults<Schema.Diffstat>(
-                        bitbucketAPI,
-                        res,
-                    ),
-                );
-
-            const prFilesWithDiffAndContents = await Promise.all(
-                prFiles.map(async (file) => ({
-                    ...file,
-                    contents: await bitbucketAPI.source
-                        .read({
-                            repo_slug: `{${repo.id}}`,
-                            workspace: `{${repo.workspaceId}}`,
-                            commit: pr.source?.commit?.hash,
-                            path: file.new?.path,
-                        })
-                        .then((res) => res.data as string),
-                    diff: await bitbucketAPI.commits
-                        .getDiff({
-                            repo_slug: `{${repo.id}}`,
-                            workspace: `{${repo.workspaceId}}`,
-                            spec: `${pr.source?.commit?.hash}..${lastCommit.sha}`,
-                            path: file.new?.path,
-                        })
-                        .then((res) => res.data as string),
-                })),
             );
 
-            return prFilesWithDiffAndContents.map((file) => ({
-                filename: file.new?.path,
-                sha: pr.source?.commit?.hash,
-                status: file.status,
-                additions: file.lines_added,
-                deletions: file.lines_removed,
-                changes: file.lines_added + file.lines_removed,
-                patch: file.diff,
-                blob_url: null,
-                content: file.contents,
-                contents_url: null,
-                raw_url: null,
-            }));
+            return changedFiles.filter(Boolean);
         } catch (error) {
             this.logger.error({
-                message: 'Error to get changed files since last commit',
+                message: 'Error to get incremental changed files since last commit',
                 context: BitbucketService.name,
-                serviceName: 'BitbucketService getChangedFilesSinceLastCommit',
-                error: error,
-                metadata: {
-                    params,
-                },
+                serviceName: 'getIncrementalChangedFilesSinceLastCommit',
+                error,
+                metadata: { params },
             });
             return null;
         }
@@ -1755,8 +1735,8 @@ export class BitbucketService
                 })
                 .sort(
                     (a, b) =>
-                        new Date(b?.created_at).getTime() -
-                        new Date(a?.created_at).getTime(),
+                        new Date(a?.created_at).getTime() -
+                        new Date(b?.created_at).getTime(),
                 );
         } catch (error) {
             this.logger.error({
@@ -3180,6 +3160,12 @@ export class BitbucketService
             }
 
             const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
+
+            // const activities = await bitbucketAPI.pullrequests.listActivities({
+            //     repo_slug: `{${repository.id}}`,
+            //     workspace: `{${workspace}}`,
+            //     pull_request_id: prNumber,
+            // });
 
             const comments = await bitbucketAPI.pullrequests
                 .listComments({

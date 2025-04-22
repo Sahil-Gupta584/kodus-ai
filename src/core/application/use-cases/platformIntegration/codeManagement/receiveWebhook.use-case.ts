@@ -317,7 +317,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
             );
 
         if (storedPR) {
-            const prCommit = pullRequestCommits[0];
+            const prCommit = pullRequestCommits[pullRequestCommits.length - 1];
             const storedPRCommitHashes = storedPR.commits?.map(
                 (commit) => commit.sha,
             );
