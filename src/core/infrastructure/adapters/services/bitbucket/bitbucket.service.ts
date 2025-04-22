@@ -1755,8 +1755,8 @@ export class BitbucketService
                 })
                 .sort(
                     (a, b) =>
-                        new Date(b?.created_at).getTime() -
-                        new Date(a?.created_at).getTime(),
+                        new Date(a?.created_at).getTime() -
+                        new Date(b?.created_at).getTime(),
                 );
         } catch (error) {
             this.logger.error({
@@ -3180,6 +3180,12 @@ export class BitbucketService
             }
 
             const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
+
+            // const activities = await bitbucketAPI.pullrequests.listActivities({
+            //     repo_slug: `{${repository.id}}`,
+            //     workspace: `{${workspace}}`,
+            //     pull_request_id: prNumber,
+            // });
 
             const comments = await bitbucketAPI.pullrequests
                 .listComments({
