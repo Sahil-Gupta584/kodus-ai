@@ -23,6 +23,7 @@ import { AzureReposService } from '@/core/infrastructure/adapters/services/azure
 import { AZURE_REPOS_SERVICE_TOKEN } from '@/core/domain/azureRepos/contracts/azure-repos.service.contract';
 import { AzureReposRequestHelper } from '@/core/infrastructure/adapters/services/azureRepos/azure-repos-request-helper';
 import { AzureReposController } from '@/core/infrastructure/http/controllers/azureRepos.controller';
+import { LicenseModule } from '@/ee/license/license.module';
 
 @Module({
     imports: [
@@ -43,6 +44,7 @@ import { AzureReposController } from '@/core/infrastructure/http/controllers/azu
         forwardRef(() => AgentModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
+        forwardRef(() => LicenseModule),
     ],
     providers: [
         ...SaveOrganizationMetricsToDbUseCase,
