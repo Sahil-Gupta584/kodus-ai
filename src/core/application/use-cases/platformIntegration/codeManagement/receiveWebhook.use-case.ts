@@ -295,7 +295,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                 repoId,
             );
 
-        if (!configs || !configs.length) {
+        if (!configs || !configs?.length) {
             return false;
         }
 
@@ -324,10 +324,10 @@ export class ReceiveWebhookUseCase implements IUseCase {
 
         if (storedPR) {
             const prCommit = pullRequestCommits[pullRequestCommits.length - 1];
-            const storedPRCommitHashes = storedPR.commits?.map(
+            const storedPRCommitHashes = storedPR?.commits?.map(
                 (commit) => commit.sha,
             );
-            if (storedPRCommitHashes.includes(prCommit.sha)) {
+            if (storedPRCommitHashes?.includes(prCommit?.sha)) {
                 return false;
             }
         }
@@ -342,13 +342,5 @@ export class ReceiveWebhookUseCase implements IUseCase {
             default:
                 return false;
         }
-    }
-
-    /**
-     * Verifica se um comentário do Azure DevOps contém o comando para iniciar review
-     */
-    private isAzureDevOpsStartCommand(comment: string): boolean {
-        const commandPattern = /@kody\s+start-review/i;
-        return commandPattern.test(comment);
     }
 }

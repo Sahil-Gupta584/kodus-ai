@@ -38,7 +38,7 @@ export class FinishOnboardingUseCase {
         let platformConfig;
 
         try {
-            if (!this.request.user.organization.uuid) {
+            if (!this.request?.user?.organization?.uuid) {
                 throw new Error('Organization ID not found');
             }
 

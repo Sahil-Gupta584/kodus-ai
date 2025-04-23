@@ -216,6 +216,11 @@ export class RunCodeReviewAutomationUseCase {
             platformType !== PlatformType.BITBUCKET &&
             (!allowedActions.includes(currentAction) || isMerged)
         ) {
+            this.logger.log({
+                message: 'Automation skipped',
+                context: RunCodeReviewAutomationUseCase.name,
+                metadata: { currentAction, isMerged, platformType },
+            });
             return false;
         }
 
