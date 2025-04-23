@@ -84,7 +84,10 @@ import {
     IRepositoryManager,
     REPOSITORY_MANAGER_TOKEN,
 } from '@/core/domain/repository/contracts/repository-manager.contract';
-import { CommentResult, Repository } from '@/config/types/general/codeReview.type';
+import {
+    CommentResult,
+    Repository,
+} from '@/config/types/general/codeReview.type';
 import { CreateAuthIntegrationStatus } from '@/shared/domain/enums/create-auth-integration-status.enum';
 import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
@@ -101,7 +104,16 @@ interface GitHubAuthResponse {
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITHUB, 'codeManagement')
 export class GithubService
-    implements IGithubService, Omit<ICodeManagementService, 'getOrganizations'> {
+    implements
+        IGithubService,
+        Omit<
+            ICodeManagementService,
+            | 'getOrganizations'
+            | 'getUserById'
+            | 'getLanguageRepository'
+            | 'createSingleIssueComment'
+        >
+{
     private readonly MAX_RETRY_ATTEMPTS = 2;
     private readonly TTL = 50 * 60 * 1000; // 50 minutes
 
@@ -134,21 +146,7 @@ export class GithubService
 
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
-    ) { }
-
-
-    getUserById(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        userId: string;
-    }): Promise<any | null> {
-        throw new Error('Method not implemented.');
-    }
-    getLanguageRepository(params: any): Promise<any | null> {
-        throw new Error('Method not implemented.');
-    }
-    createSingleIssueComment(params: any): Promise<any | null> {
-        throw new Error('Method not implemented.');
-    }
+    ) {}
 
     private async handleIntegration(
         integration: any,
@@ -1276,7 +1274,7 @@ export class GithubService
 
     private async instanceGraphQL(
         organizationAndTeamData: OrganizationAndTeamData,
-        authDetails?: GithubAuthDetail
+        authDetails?: GithubAuthDetail,
     ): Promise<typeof graphql> {
         try {
             let githubAuthDetail: GithubAuthDetail = authDetails;
@@ -1904,7 +1902,7 @@ export class GithubService
                         if (
                             secondToLastDeploy &&
                             lastDeploy.teamConfig?.configValue?.type ===
-                            'deployment'
+                                'deployment'
                         ) {
                             commits = await this.getCommitsForTagName(
                                 octokit,
@@ -1915,7 +1913,7 @@ export class GithubService
                         } else if (
                             secondToLastDeploy &&
                             lastDeploy.teamConfig?.configValue?.type ===
-                            'releases'
+                                'releases'
                         ) {
                             commits = await this.getCommitsForTagName(
                                 octokit,
@@ -2422,7 +2420,7 @@ export class GithubService
             actionStatement,
             this.formatSub(translations.talkToKody),
             this.formatSub(translations.feedback) +
-            '<!-- kody-codereview -->&#8203;\n&#8203;',
+                '<!-- kody-codereview -->&#8203;\n&#8203;',
         ]
             .join('\n')
             .trim();
@@ -2522,15 +2520,11 @@ export class GithubService
     }
 
     async getPullRequestReviewComments(params: {
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: Partial<Repository>,
-        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
     }): Promise<PullRequestReviewComment[] | null> {
-        const {
-            organizationAndTeamData,
-            repository,
-            prNumber,
-        } = params;
+        const { organizationAndTeamData, repository, prNumber } = params;
 
         const githubAuthDetail = await this.getGithubAuthDetails(
             organizationAndTeamData,
@@ -2544,7 +2538,7 @@ export class GithubService
                 repo: repository.name,
                 pull_number: prNumber,
                 per_page: 100,
-                page: 1
+                page: 1,
             });
 
             return reviewComments.data.map((comment) => ({
@@ -2556,7 +2550,7 @@ export class GithubService
                     id: comment.user.id,
                     name: comment.user?.name,
                     username: comment.user?.login,
-                }
+                },
             }));
         } catch (error) {
             this.logger.error({
@@ -2570,19 +2564,14 @@ export class GithubService
 
             return null;
         }
-
     }
 
     async getPullRequestReviewThreads(params: {
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: Partial<Repository>,
-        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
     }): Promise<PullRequestReviewComment[] | null> {
-        const {
-            organizationAndTeamData,
-            repository,
-            prNumber,
-        } = params;
+        const { organizationAndTeamData, repository, prNumber } = params;
 
         const githubAuthDetail = await this.getGithubAuthDetails(
             organizationAndTeamData,
@@ -2631,28 +2620,36 @@ export class GithubService
 
             while (hasNextPage) {
                 const response: any = await graphql(query, variables);
-                const reviewThreads = response.repository.pullRequest.reviewThreads.nodes;
+                const reviewThreads =
+                    response.repository.pullRequest.reviewThreads.nodes;
 
-                const reviewComments: PullRequestReviewComment[] = reviewThreads.map((reviewThread) => {
-                    const firstComment = reviewThread.comments.nodes[0];
+                const reviewComments: PullRequestReviewComment[] = reviewThreads
+                    .map((reviewThread) => {
+                        const firstComment = reviewThread.comments.nodes[0];
 
-                    // The same resource in graphQL API and REST API have different ids.
-                    // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
-                    return firstComment ? {
-                        id: firstComment.id, // Used to actually resolve the thread
-                        threadId: reviewThread.id,
-                        isResolved: reviewThread.isResolved,
-                        isOutdated: reviewThread.isOutdated,
-                        fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
-                        body: firstComment.body,
-                    } : null;
-                }).filter(comment => comment !== null);
+                        // The same resource in graphQL API and REST API have different ids.
+                        // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
+                        return firstComment
+                            ? {
+                                  id: firstComment.id, // Used to actually resolve the thread
+                                  threadId: reviewThread.id,
+                                  isResolved: reviewThread.isResolved,
+                                  isOutdated: reviewThread.isOutdated,
+                                  fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
+                                  body: firstComment.body,
+                              }
+                            : null;
+                    })
+                    .filter((comment) => comment !== null);
 
                 allReviewComments.push(...reviewComments);
 
                 // Check if there are more pages
-                hasNextPage = response.repository.pullRequest.reviewThreads.pageInfo.hasNextPage;
-                variables.cursor = response.repository.pullRequest.reviewThreads.pageInfo.endCursor; // Update cursor for next request
+                hasNextPage =
+                    response.repository.pullRequest.reviewThreads.pageInfo
+                        .hasNextPage;
+                variables.cursor =
+                    response.repository.pullRequest.reviewThreads.pageInfo.endCursor; // Update cursor for next request
             }
 
             return allReviewComments;
@@ -2670,15 +2667,11 @@ export class GithubService
         }
     }
 
-
     async getPullRequestsWithChangesRequested(params: {
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: Partial<Repository>,
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
     }): Promise<PullRequestsWithChangesRequested[] | null> {
-        const {
-            organizationAndTeamData,
-            repository,
-        } = params;
+        const { organizationAndTeamData, repository } = params;
 
         const githubAuthDetail = await this.getGithubAuthDetails(
             organizationAndTeamData,
@@ -2708,9 +2701,14 @@ export class GithubService
         try {
             const response: any = await graphql(query, variables);
 
-            const prs: PullRequestsWithChangesRequested[] = response.repository.pullRequests.nodes;
+            const prs: PullRequestsWithChangesRequested[] =
+                response.repository.pullRequests.nodes;
 
-            const prsWithRequestedChanges = prs.filter((pr) => pr.reviewDecision === PullRequestReviewState.CHANGES_REQUESTED);
+            const prsWithRequestedChanges = prs.filter(
+                (pr) =>
+                    pr.reviewDecision ===
+                    PullRequestReviewState.CHANGES_REQUESTED,
+            );
 
             return prsWithRequestedChanges;
         } catch (error) {
@@ -2726,7 +2724,6 @@ export class GithubService
             return null;
         }
     }
-
 
     private sanitizeLine(line: string | number): number {
         return typeof line === 'string' ? parseInt(line, 10) : line;
@@ -3006,11 +3003,7 @@ export class GithubService
             });
             throw new BadRequestException('Failed to resolve review thread.');
         }
-
     }
-
-
-
 
     async findTeamAndOrganizationIdByConfigKey(
         params: any,
@@ -3220,15 +3213,15 @@ export class GithubService
                 reactions: {
                     thumbsUp: isOAuth
                         ? Math.max(
-                            0,
-                            comment.reactions[GitHubReaction.THUMBS_UP] - 1,
-                        )
+                              0,
+                              comment.reactions[GitHubReaction.THUMBS_UP] - 1,
+                          )
                         : comment.reactions[GitHubReaction.THUMBS_UP],
                     thumbsDown: isOAuth
                         ? Math.max(
-                            0,
-                            comment.reactions[GitHubReaction.THUMBS_DOWN] - 1,
-                        )
+                              0,
+                              comment.reactions[GitHubReaction.THUMBS_DOWN] - 1,
+                          )
                         : comment.reactions[GitHubReaction.THUMBS_DOWN],
                 },
                 comment: {
@@ -3545,11 +3538,16 @@ export class GithubService
     async requestChangesPullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         prNumber: number;
-        repository: { id: string; name: string },
-        criticalComments: CommentResult[]
+        repository: { id: string; name: string };
+        criticalComments: CommentResult[];
     }) {
         try {
-            const { organizationAndTeamData, prNumber, repository, criticalComments } = params;
+            const {
+                organizationAndTeamData,
+                prNumber,
+                repository,
+                criticalComments,
+            } = params;
 
             const githubAuthDetail = await this.getGithubAuthDetails(
                 organizationAndTeamData,
@@ -3561,12 +3559,14 @@ export class GithubService
                 criticalComments,
                 orgName: githubAuthDetail.org,
                 repository,
-                prNumber
+                prNumber,
             });
 
-            const requestChangeBodyTitle = '# Found critical issues please review the requested changes';
+            const requestChangeBodyTitle =
+                '# Found critical issues please review the requested changes';
 
-            const formattedBody = `${requestChangeBodyTitle}\n\n${listOfCriticalIssues}`.trim();
+            const formattedBody =
+                `${requestChangeBodyTitle}\n\n${listOfCriticalIssues}`.trim();
 
             await octokit.rest.pulls.createReview({
                 owner: githubAuthDetail.org,
@@ -3595,40 +3595,47 @@ export class GithubService
     }
 
     getListOfCriticalIssues(params: {
-        criticalComments: CommentResult[],
-        orgName: string,
-        repository: Partial<IRepository>,
+        criticalComments: CommentResult[];
+        orgName: string;
+        repository: Partial<IRepository>;
         prNumber: number;
     }): string {
         const { criticalComments, orgName, prNumber, repository } = params;
 
-        const criticalIssuesSummaryArray = this.getCriticalIssuesSummaryArray(criticalComments);
+        const criticalIssuesSummaryArray =
+            this.getCriticalIssuesSummaryArray(criticalComments);
 
-        const listOfCriticalIssues = criticalIssuesSummaryArray.map((criticalIssue) => {
-            const commentId = criticalIssue.id;
-            const summary = criticalIssue.oneSentenceSummary;
+        const listOfCriticalIssues = criticalIssuesSummaryArray
+            .map((criticalIssue) => {
+                const commentId = criticalIssue.id;
+                const summary = criticalIssue.oneSentenceSummary;
 
-            const link = !orgName || !repository?.name || !prNumber || !commentId
-                ? ''
-                : `https://github.com/${orgName}/${repository.name}/pull/${prNumber}#discussion_r${commentId}`;
+                const link =
+                    !orgName || !repository?.name || !prNumber || !commentId
+                        ? ''
+                        : `https://github.com/${orgName}/${repository.name}/pull/${prNumber}#discussion_r${commentId}`;
 
-            const formattedItem = commentId
-                ? (`- [${summary}](${link})`)
-                : (`- ${summary}`)
+                const formattedItem = commentId
+                    ? `- [${summary}](${link})`
+                    : `- ${summary}`;
 
-            return formattedItem.trim();
-        }).join("\n")
+                return formattedItem.trim();
+            })
+            .join('\n');
 
         return listOfCriticalIssues;
     }
 
-    getCriticalIssuesSummaryArray(criticalComments: CommentResult[]): OneSentenceSummaryItem[] {
+    getCriticalIssuesSummaryArray(
+        criticalComments: CommentResult[],
+    ): OneSentenceSummaryItem[] {
         const criticalIssuesSummaryArray: OneSentenceSummaryItem[] =
             criticalComments.map((comment) => {
                 return {
                     id: comment.codeReviewFeedbackData.commentId,
-                    oneSentenceSummary: comment.comment.suggestion.oneSentenceSummary ?? "",
-                }
+                    oneSentenceSummary:
+                        comment.comment.suggestion.oneSentenceSummary ?? '',
+                };
             });
 
         return criticalIssuesSummaryArray;
@@ -3787,11 +3794,7 @@ export class GithubService
         repository: Partial<Repository>;
         prNumber: number;
     }): Promise<any[] | null> {
-        const {
-            organizationAndTeamData,
-            repository,
-            prNumber,
-        } = params;
+        const { organizationAndTeamData, repository, prNumber } = params;
 
         const githubAuthDetail = await this.getGithubAuthDetails(
             organizationAndTeamData,
@@ -3847,72 +3850,86 @@ export class GithubService
             const response: any = await graphql(query, variables);
 
             const reviews = response.repository.pullRequest.reviews.nodes;
-            const reviewThreads = response.repository.pullRequest.reviewThreads.nodes;
+            const reviewThreads =
+                response.repository.pullRequest.reviewThreads.nodes;
 
-            const reviewThreadComments: PullRequestReviewComment[] = reviewThreads.map((reviewThread) => {
-                const firstComment = reviewThread.comments.nodes[0];
+            const reviewThreadComments: PullRequestReviewComment[] =
+                reviewThreads
+                    .map((reviewThread) => {
+                        const firstComment = reviewThread.comments.nodes[0];
 
-                // The same resource in graphQL API and REST API have different ids.
-                // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
-                return firstComment ? {
-                    id: firstComment.id, // Used to actually resolve the thread
-                    threadId: reviewThread.id,
-                    isResolved: reviewThread.isResolved,
-                    isOutdated: reviewThread.isOutdated,
-                    fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
-                    body: firstComment.body,
-                } : null;
-            }).filter(comment => comment !== null);
+                        // The same resource in graphQL API and REST API have different ids.
+                        // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
+                        return firstComment
+                            ? {
+                                  id: firstComment.id, // Used to actually resolve the thread
+                                  threadId: reviewThread.id,
+                                  isResolved: reviewThread.isResolved,
+                                  isOutdated: reviewThread.isOutdated,
+                                  fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
+                                  body: firstComment.body,
+                              }
+                            : null;
+                    })
+                    .filter((comment) => comment !== null);
 
-            const reviewsThatRequestedChanges = reviews
-                .filter((review) => review.state === PullRequestReviewState.CHANGES_REQUESTED)
+            const reviewsThatRequestedChanges = reviews.filter(
+                (review) =>
+                    review.state === PullRequestReviewState.CHANGES_REQUESTED,
+            );
 
             if (reviewsThatRequestedChanges.length < 1) {
                 return [];
             }
 
-            const reviewsComments: any[] = reviewsThatRequestedChanges.map((review) => {
-                const firstComment = review?.comments?.nodes[0];
+            const reviewsComments: any[] = reviewsThatRequestedChanges
+                .map((review) => {
+                    const firstComment = review?.comments?.nodes[0];
 
-                if (!firstComment) {
-                    return {
-                        reviewId: review.id,
+                    if (!firstComment) {
+                        return {
+                            reviewId: review.id,
+                        };
                     }
-                }
-                // The same resource in graphQL API and REST API have different ids.
-                // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
-                return firstComment ? {
-                    id: firstComment.id, // Used to actually resolve the thread
-                    reviewId: review.id,
-                    fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
-                    body: firstComment.body,
-                } : null;
-            }).filter(comment => comment !== null);
+                    // The same resource in graphQL API and REST API have different ids.
+                    // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
+                    return firstComment
+                        ? {
+                              id: firstComment.id, // Used to actually resolve the thread
+                              reviewId: review.id,
+                              fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
+                              body: firstComment.body,
+                          }
+                        : null;
+                })
+                .filter((comment) => comment !== null);
 
             const validReviews = reviewsComments
-                .map(reviewComment => {
-                    const matchingThreadComment = reviewThreadComments.find(threadComment => threadComment.id === reviewComment.id);
+                .map((reviewComment) => {
+                    const matchingThreadComment = reviewThreadComments.find(
+                        (threadComment) =>
+                            threadComment.id === reviewComment.id,
+                    );
 
                     if (matchingThreadComment) {
                         return {
                             ...reviewComment,
                             isResolved: matchingThreadComment?.isResolved,
-                            isOutdated: matchingThreadComment?.isOutdated
+                            isOutdated: matchingThreadComment?.isOutdated,
                         };
                     }
 
                     return null;
                 })
-                .filter(comment => comment !== null);
+                .filter((comment) => comment !== null);
             return validReviews;
-
         } catch (error) {
             this.logger.error({
                 message: `Error retrieving list of valid reviews for PR#${prNumber}`,
                 context: GithubService.name,
                 error: error,
                 metadata: {
-                    ...params
+                    ...params,
                 },
             });
 

@@ -2,8 +2,6 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { IBitbucketService } from '@/core/domain/bitbucket/contracts/bitbucket.service.contract';
 import { IntegrationConfigEntity } from '@/core/domain/integrationConfigs/entities/integration-config.entity';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
-import { CommitLeadTimeForChange } from '@/core/domain/platformIntegrations/types/codeManagement/commitLeadTimeForChange.type';
-import { DeployFrequency } from '@/core/domain/platformIntegrations/types/codeManagement/deployFrequency.type';
 import {
     PullRequests,
     PullRequestWithFiles,
@@ -70,8 +68,21 @@ import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
 export class BitbucketService
     implements
-    IBitbucketService,
-    Omit<ICodeManagementService, 'getOrganizations'> {
+        IBitbucketService,
+        Omit<
+            ICodeManagementService,
+            | 'getOrganizations'
+            | 'getListOfValidReviews'
+            | 'getUserByEmailOrName'
+            | 'getPullRequestReviewThreads'
+            | 'getUserById'
+            | 'getDataForCalculateDeployFrequency'
+            | 'getCommitsByReleaseMode'
+            | 'getAuthenticationOAuthToken'
+            | 'countReactions'
+            | 'getRepositoryAllFiles'
+        >
+{
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
         private readonly integrationService: IIntegrationService,
@@ -91,10 +102,7 @@ export class BitbucketService
         private readonly promptService: PromptService,
 
         private readonly logger: PinoLoggerService,
-    ) { }
-    getListOfValidReviews(params: { organizationAndTeamData: OrganizationAndTeamData; repository: Partial<Repository>; prNumber: number; }): Promise<any[] | null> {
-        throw new Error('Method not implemented.');
-    }
+    ) {}
 
     async getPullRequestsWithChangesRequested(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -123,28 +131,29 @@ export class BitbucketService
             const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
 
             // takes a while
-            const activities: any[] = await bitbucketAPI.pullrequests.listActivitiesForRepo({
-                repo_slug: `{${repository.id}}`,
-                workspace: `{${workspace}}`,
-            }).then((res) => this.getPaginatedResults(bitbucketAPI, res));
+            const activities: any[] = await bitbucketAPI.pullrequests
+                .listActivitiesForRepo({
+                    repo_slug: `{${repository.id}}`,
+                    workspace: `{${workspace}}`,
+                })
+                .then((res) => this.getPaginatedResults(bitbucketAPI, res));
 
             return activities
-                .filter((activity) =>
-                    (activity.changes_requested))
+                .filter((activity) => activity.changes_requested)
                 .map((filteredActivity) => ({
-                    title: filteredActivity.pull_request.title ?? "",
+                    title: filteredActivity.pull_request.title ?? '',
                     number: filteredActivity.pull_request.id,
                     reviewDecision: PullRequestReviewState.CHANGES_REQUESTED,
-                    date: new Date(filteredActivity.changes_requested.date)
+                    date: new Date(filteredActivity.changes_requested.date),
                 }))
                 .sort((a, b) => a.date.getTime() - b.date.getTime())
                 .map(({ date, ...rest }) => rest);
-
         } catch (error) {
             this.logger.error({
                 message: 'Error to get pull requests with changes requested',
                 context: BitbucketService.name,
-                serviceName: 'BitbucketService getPullRequestsWithChangesRequested',
+                serviceName:
+                    'BitbucketService getPullRequestsWithChangesRequested',
                 error: error,
                 metadata: {
                     params,
@@ -152,19 +161,6 @@ export class BitbucketService
             });
             return null;
         }
-    }
-
-
-    // Only relevant for github
-    getPullRequestReviewThreads(params: { organizationAndTeamData: OrganizationAndTeamData; repository: Partial<Repository>; prNumber: number; }): Promise<any | null> {
-        throw new Error('Method not implemented.');
-    }
-
-    getUserById(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        userId: string;
-    }): Promise<any | null> {
-        throw new Error('Method not implemented.');
     }
 
     async cloneRepository(params: {
@@ -352,13 +348,17 @@ export class BitbucketService
 
     async getPullRequestDetails(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        repository: { id: string, name: string };
+        repository: { id: string; name: string };
         prNumber: number;
     }): Promise<any | null> {
         try {
             const { organizationAndTeamData, repository, prNumber } = params;
 
-            if (!organizationAndTeamData.organizationId || !repository.id || !prNumber) {
+            if (
+                !organizationAndTeamData.organizationId ||
+                !repository.id ||
+                !prNumber
+            ) {
                 return null;
             }
 
@@ -381,20 +381,25 @@ export class BitbucketService
                 return null;
             }
 
-
-            const prDetails = (await bitbucketAPI.pullrequests.get({
-                repo_slug: `{${repository.id}}`,
-                workspace: `{${workspace}}`,
-                pull_request_id: prNumber,
-                fields: '+values.participants,+values.reviewers',
-            })).data;
+            const prDetails = (
+                await bitbucketAPI.pullrequests.get({
+                    repo_slug: `{${repository.id}}`,
+                    workspace: `{${workspace}}`,
+                    pull_request_id: prNumber,
+                    fields: '+values.participants,+values.reviewers',
+                })
+            ).data;
 
             const prData = {
                 id: prDetails.id.toString(),
-                author_id: this.sanitizeUUId(prDetails.author?.uuid?.toString()),
+                author_id: this.sanitizeUUId(
+                    prDetails.author?.uuid?.toString(),
+                ),
                 author_name: prDetails.author?.display_name,
                 repository: repository.name,
-                repositoryId: this.sanitizeUUId(prDetails.source?.repository?.uuid),
+                repositoryId: this.sanitizeUUId(
+                    prDetails.source?.repository?.uuid,
+                ),
                 message: prDetails.summary?.raw,
                 state: prDetails.state,
                 prURL: prDetails.links?.html?.href,
@@ -410,7 +415,7 @@ export class BitbucketService
                     id: this.sanitizeUUId(participant.user.uuid),
                     approved: participant.approved,
                     state: participant.state,
-                    type: participant.type
+                    type: participant.type,
                 })),
                 reviewers: prDetails.reviewers.map((reviewer) => ({
                     id: this.sanitizeUUId(reviewer.uuid),
@@ -418,7 +423,9 @@ export class BitbucketService
                 head: {
                     ref: prDetails.source?.branch?.name,
                     repo: {
-                        id: this.sanitizeUUId(prDetails.source?.repository?.uuid),
+                        id: this.sanitizeUUId(
+                            prDetails.source?.repository?.uuid,
+                        ),
                         name: prDetails.source?.repository?.name,
                     },
                 },
@@ -930,26 +937,6 @@ export class BitbucketService
         }
     }
 
-    getDataForCalculateDeployFrequency(
-        params: any,
-    ): Promise<DeployFrequency[]> {
-        this.logger.error({
-            message: 'Method not implemented.',
-            context: BitbucketService.name,
-            serviceName: 'BitbucketService getDataForCalculateDeployFrequency',
-        });
-        throw new Error('Method not implemented.');
-    }
-
-    getCommitsByReleaseMode(params: any): Promise<CommitLeadTimeForChange[]> {
-        this.logger.error({
-            message: 'Method not implemented.',
-            context: BitbucketService.name,
-            serviceName: 'BitbucketService getCommitsByReleaseMode',
-        });
-        throw new Error('Method not implemented.');
-    }
-
     async getPullRequestsWithFiles(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         filters?: any;
@@ -1323,30 +1310,23 @@ export class BitbucketService
         prNumber: number;
         lastCommit: any;
     }): Promise<FileChange[] | null> {
-        try {
-            const {
-                organizationAndTeamData,
-                repository,
-                prNumber,
-                lastCommit,
-            } = params;
+        const { organizationAndTeamData, repository, prNumber, lastCommit } =
+            params;
 
+        try {
             const bitbucketAuthDetails = await this.getAuthDetails(
                 organizationAndTeamData,
             );
-
-            if (!bitbucketAuthDetails) {
-                return null;
-            }
+            if (!bitbucketAuthDetails) return null;
 
             const repo = await this.getRepoById(
                 organizationAndTeamData,
                 repository.id,
             );
-
             const bitbucketAPI =
                 this.instanceBitbucketApi(bitbucketAuthDetails);
 
+            // 🔍 Pega o estado atual do PR
             const pr = await bitbucketAPI.pullrequests
                 .get({
                     pull_request_id: prNumber,
@@ -1355,7 +1335,8 @@ export class BitbucketService
                 })
                 .then((res) => res.data);
 
-            const prFiles = await bitbucketAPI.pullrequests
+            // 📄 Lista todos os arquivos tocados no PR até agora
+            const allFilesInPR = await bitbucketAPI.pullrequests
                 .getDiffStat({
                     pull_request_id: prNumber,
                     repo_slug: `{${repo.id}}`,
@@ -1368,50 +1349,61 @@ export class BitbucketService
                     ),
                 );
 
-            const prFilesWithDiffAndContents = await Promise.all(
-                prFiles.map(async (file) => ({
-                    ...file,
-                    contents: await bitbucketAPI.source
-                        .read({
-                            repo_slug: `{${repo.id}}`,
-                            workspace: `{${repo.workspaceId}}`,
-                            commit: pr.source?.commit?.hash,
-                            path: file.new?.path,
-                        })
-                        .then((res) => res.data as string),
-                    diff: await bitbucketAPI.commits
+            // ⚙️ Processa apenas arquivos que realmente mudaram desde o último commit
+            const changedFiles = await Promise.all(
+                allFilesInPR.map(async (file) => {
+                    const path = file.new?.path;
+                    if (!path) {
+                        return null;
+                    }
+
+                    const diff = await bitbucketAPI.commits
                         .getDiff({
                             repo_slug: `{${repo.id}}`,
                             workspace: `{${repo.workspaceId}}`,
                             spec: `${pr.source?.commit?.hash}..${lastCommit.sha}`,
-                            path: file.new?.path,
+                            path,
                         })
-                        .then((res) => res.data as string),
-                })),
+                        .then((res) => res.data as string);
+
+                    if (!diff?.trim()) {
+                        return null;
+                    }
+
+                    const content = await bitbucketAPI.source
+                        .read({
+                            repo_slug: `{${repo.id}}`,
+                            workspace: `{${repo.workspaceId}}`,
+                            commit: pr.source?.commit?.hash,
+                            path,
+                        })
+                        .then((res) => res.data as string);
+
+                    return {
+                        filename: path,
+                        sha: pr.source?.commit?.hash,
+                        status: file.status,
+                        additions: file.lines_added,
+                        deletions: file.lines_removed,
+                        changes: file.lines_added + file.lines_removed,
+                        patch: diff,
+                        content,
+                        blob_url: null,
+                        contents_url: null,
+                        raw_url: null,
+                    };
+                }),
             );
 
-            return prFilesWithDiffAndContents.map((file) => ({
-                filename: file.new?.path,
-                sha: pr.source?.commit?.hash,
-                status: file.status,
-                additions: file.lines_added,
-                deletions: file.lines_removed,
-                changes: file.lines_added + file.lines_removed,
-                patch: file.diff,
-                blob_url: null,
-                content: file.contents,
-                contents_url: null,
-                raw_url: null,
-            }));
+            return changedFiles.filter(Boolean);
         } catch (error) {
             this.logger.error({
-                message: 'Error to get changed files since last commit',
+                message:
+                    'Error to get incremental changed files since last commit',
                 context: BitbucketService.name,
-                serviceName: 'BitbucketService getChangedFilesSinceLastCommit',
-                error: error,
-                metadata: {
-                    params,
-                },
+                serviceName: 'getIncrementalChangedFilesSinceLastCommit',
+                error,
+                metadata: { params },
             });
             return null;
         }
@@ -1481,7 +1473,7 @@ export class BitbucketService
                             path: lineComment?.path,
                             to: this.sanitizeLine(
                                 params.lineComment.start_line ??
-                                params.lineComment.line,
+                                    params.lineComment.line,
                             ),
                         },
                     },
@@ -1673,19 +1665,6 @@ export class BitbucketService
         }
     }
 
-    async indexRepositoriesForCodeReview(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        configValue: any;
-        integrationId: string;
-    }): Promise<void> {
-        this.logger.error({
-            message: 'Method not implemented.',
-            context: BitbucketService.name,
-            serviceName: 'BitbucketService indexRepositoriesForCodeReview',
-        });
-        throw new Error('Method not implemented.');
-    }
-
     async getCommitsForPullRequestForCodeReview(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string };
@@ -1741,8 +1720,8 @@ export class BitbucketService
                 })
                 .sort(
                     (a, b) =>
-                        new Date(b?.created_at).getTime() -
-                        new Date(a?.created_at).getTime(),
+                        new Date(a?.created_at).getTime() -
+                        new Date(b?.created_at).getTime(),
                 );
         } catch (error) {
             this.logger.error({
@@ -1821,13 +1800,72 @@ export class BitbucketService
         }
     }
 
-    createSingleIssueComment(params: any): Promise<any | null> {
-        this.logger.error({
-            message: 'Method not implemented.',
-            context: BitbucketService.name,
-            serviceName: 'BitbucketService createSingleIssueComment',
-        });
-        throw new Error('Method not implemented.');
+    async createSingleIssueComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { name: string; id: string };
+        prNumber: number;
+        body: string;
+    }): Promise<any | null> {
+        const { organizationAndTeamData, repository, prNumber, body } = params;
+
+        try {
+            const bitbucketAuthDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            if (!bitbucketAuthDetails) return null;
+
+            const repo = await this.getRepoById(
+                organizationAndTeamData,
+                repository.id,
+            );
+            const bitbucketAPI =
+                this.instanceBitbucketApi(bitbucketAuthDetails);
+
+            const response = await bitbucketAPI.pullrequests.createComment({
+                pull_request_id: prNumber,
+                repo_slug: `{${repo.id}}`,
+                workspace: `{${repo.workspaceId}}`,
+                // @ts-ignore
+                _body: {
+                    content: {
+                        raw: body,
+                    },
+                },
+            });
+
+            const commentData = response?.data;
+
+            if (!commentData?.id) {
+                throw new Error(`Failed to create comment in PR#${prNumber}`);
+            }
+
+            this.logger.log({
+                message: `Created issue comment for PR#${prNumber}`,
+                context: this.createSingleIssueComment.name,
+                metadata: { params },
+            });
+
+            return {
+                id: commentData.id,
+                threadId: commentData.id,
+                content: commentData.content?.raw,
+                createdAt: commentData.created_on,
+                author: {
+                    id: commentData.user?.uuid,
+                    username: commentData.user?.nickname,
+                    name: commentData.user?.display_name,
+                },
+            };
+        } catch (error) {
+            this.logger.error({
+                message: 'Error creating single issue comment on Bitbucket',
+                context: this.createSingleIssueComment.name,
+                error,
+                metadata: { params },
+            });
+
+            return null;
+        }
     }
 
     async updateIssueComment(params: {
@@ -2177,23 +2215,6 @@ export class BitbucketService
         }
     }
 
-    getAuthenticationOAuthToken(params: any): Promise<string> {
-        this.logger.error({
-            message: 'Method not implemented.',
-            context: BitbucketService.name,
-            serviceName: 'BitbucketService getAuthenticationOAuthToken',
-        });
-        throw new Error('Method not implemented.');
-    }
-    countReactions(params: any): Promise<any[]> {
-        this.logger.error({
-            message: 'Method not implemented.',
-            context: BitbucketService.name,
-            serviceName: 'BitbucketService countReactions',
-        });
-        throw new Error('Method not implemented.');
-    }
-
     async getLanguageRepository(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string };
@@ -2233,15 +2254,6 @@ export class BitbucketService
             });
             return null;
         }
-    }
-
-    getRepositoryAllFiles(params: any): Promise<any> {
-        this.logger.error({
-            message: 'Method not implemented.',
-            context: BitbucketService.name,
-            serviceName: 'BitbucketService getRepositoryAllFiles',
-        });
-        throw new Error('Method not implemented.');
     }
 
     async createAuthIntegration(params: {
@@ -2545,19 +2557,6 @@ export class BitbucketService
             });
             throw new BadRequestException(err);
         }
-    }
-
-    async authenticateWithCodeOauth(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        authMode: AuthMode;
-        code: string;
-    }): Promise<{ success: boolean }> {
-        this.logger.error({
-            message: 'Method not implemented.',
-            context: BitbucketService.name,
-            serviceName: 'BitbucketService authenticateWithCodeOauth',
-        });
-        throw new Error('Method not implemented.');
     }
 
     async authenticateWithToken(params: {
@@ -3056,8 +3055,9 @@ export class BitbucketService
                 queryString += `created_on >= "${filters.startDate}"`;
             }
             if (filters?.endDate) {
-                queryString += `${queryString ? ' AND ' : ''
-                    }created_on <= "${filters.endDate}"`;
+                queryString += `${
+                    queryString ? ' AND ' : ''
+                }created_on <= "${filters.endDate}"`;
             }
 
             const pullRequests = await bitbucketAPI.pullrequests
@@ -3088,14 +3088,6 @@ export class BitbucketService
             });
             return null;
         }
-    }
-
-    getUserByEmailOrName(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        email: string;
-        userName: string;
-    }): Promise<any> {
-        throw new Error('Method not implemented.');
     }
 
     async getUserByUsername(params: {
@@ -3175,33 +3167,47 @@ export class BitbucketService
 
             const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
 
-            const comments = await bitbucketAPI.pullrequests.listComments({
-                repo_slug: `{${repository.id}}`,
-                workspace: `{${workspace}}`,
-                pull_request_id: prNumber,
-                fields: '+values.resolution.type,+values.resolution.+values.id,+values.pullrequest',
-            }).then((res) => this.getPaginatedResults(bitbucketAPI, res));
+            // const activities = await bitbucketAPI.pullrequests.listActivities({
+            //     repo_slug: `{${repository.id}}`,
+            //     workspace: `{${workspace}}`,
+            //     pull_request_id: prNumber,
+            // });
+
+            const comments = await bitbucketAPI.pullrequests
+                .listComments({
+                    repo_slug: `{${repository.id}}`,
+                    workspace: `{${workspace}}`,
+                    pull_request_id: prNumber,
+                    fields: '+values.resolution.type,+values.resolution.+values.id,+values.pullrequest',
+                })
+                .then((res) => this.getPaginatedResults(bitbucketAPI, res));
 
             return comments
                 .filter((comment) => {
-                    return !comment?.content?.raw.includes("## Code Review Completed! 🔥") &&
-                        !comment?.content?.raw.includes("# Found critical issues please"); // Exclude comments with the specific strings
+                    return (
+                        !comment?.content?.raw.includes(
+                            '## Code Review Completed! 🔥',
+                        ) &&
+                        !comment?.content?.raw.includes(
+                            '# Found critical issues please',
+                        )
+                    ); // Exclude comments with the specific strings
                 })
                 .map((comment) => {
                     const mappedComment: PullRequestReviewComment = {
                         id: comment?.id,
                         threadId: null, // Bitbucket comments are resolved by id,so no threadId necessary
-                        body: comment?.content?.raw ?? "",
+                        body: comment?.content?.raw ?? '',
                         createdAt: comment?.created_on,
                         updatedAt: comment?.updated_on,
-                        isResolved: comment.resolution ? (true) : (false),
+                        isResolved: comment.resolution ? true : false,
                         author: {
-                            id: this.sanitizeUUId(comment?.user?.uuid) ?? "",
-                            username: comment?.user?.display_name ?? "",
-                            name: comment?.user?.display_name ?? "",
+                            id: this.sanitizeUUId(comment?.user?.uuid) ?? '',
+                            username: comment?.user?.display_name ?? '',
+                            name: comment?.user?.display_name ?? '',
                         },
-                    }
-                    return mappedComment
+                    };
+                    return mappedComment;
                 })
                 .sort(
                     (a, b) =>

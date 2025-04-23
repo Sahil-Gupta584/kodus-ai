@@ -101,6 +101,28 @@ export class ReceiveWebhookUseCase implements IUseCase {
                         this.chatWithKodyFromGitUseCase.execute(params);
                     }
                     break;
+
+                // Azure DevOps events
+                case 'git.pullrequest.created':
+                case 'git.pullrequest.updated':
+                    await this.savePullRequestUseCase.execute(params);
+                    this.runCodeReviewAutomationUseCase.execute(params);
+                    break;
+                case 'git.pullrequest.merge.attempted':
+                    await this.savePullRequestUseCase.execute(params);
+                    break;
+                case 'ms.vss-code.git-pullrequest-comment-event':
+                    const comment = params.payload?.resource.comment.content;
+                    const pullRequestId =
+                        params.payload?.resource?.pullRequest?.status ===
+                        'active';
+
+                    if (comment && pullRequestId) {
+                        this.isStartCommand(params);
+                    }
+
+                    break;
+
                 default:
                     this.logger.warn({
                         message: `Evento não tratado: ${params?.event}`,
@@ -112,11 +134,12 @@ export class ReceiveWebhookUseCase implements IUseCase {
             }
         } catch (error) {
             this.logger.error({
-                message: 'Error processing webhook from Github',
+                message: 'Error processing webhook',
                 context: ReceiveWebhookUseCase.name,
                 error: error,
                 metadata: {
                     eventName: params.event,
+                    platformType: params.platformType,
                 },
             });
         }
@@ -139,12 +162,16 @@ export class ReceiveWebhookUseCase implements IUseCase {
             return;
         }
 
-        const commandPattern = /@kody\s+start-review/i;
+        const commandPattern = /^\s*@kody\s+start-review/i;
         const isStartCommand = commandPattern.test(comment.body);
+
+        // procura exatamente: <!-- kody-codereview -->
+        const reviewMarkerPattern = /<!--\s*kody-codereview\s*-->/i;
+        const hasReviewMarker = reviewMarkerPattern.test(comment.body);
 
         const pullRequest = mappedPlatform.mapPullRequest({ payload });
 
-        if (isStartCommand) {
+        if (isStartCommand && !hasReviewMarker) {
             this.logger.log({
                 message: `@kody start command detected in PR#${pullRequest?.number}`,
                 context: ReceiveWebhookUseCase.name,
@@ -273,7 +300,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                 platformType,
             );
 
-        if (!configs || !configs.length) {
+        if (!configs || !configs?.length) {
             return false;
         }
 
@@ -302,11 +329,11 @@ export class ReceiveWebhookUseCase implements IUseCase {
             );
 
         if (storedPR) {
-            const prCommit = pullRequestCommits[0];
-            const storedPRCommitHashes = storedPR.commits?.map(
+            const prCommit = pullRequestCommits[pullRequestCommits.length - 1];
+            const storedPRCommitHashes = storedPR?.commits?.map(
                 (commit) => commit.sha,
             );
-            if (storedPRCommitHashes.includes(prCommit.sha)) {
+            if (storedPRCommitHashes?.includes(prCommit?.sha)) {
                 return false;
             }
         }

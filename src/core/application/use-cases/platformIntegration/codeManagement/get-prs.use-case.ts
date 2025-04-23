@@ -43,6 +43,10 @@ export class GetPRsUseCase implements IUseCase {
                     filters: defaultFilter,
                 });
 
+            if (!pullRequests?.length) {
+                return [];
+            }
+
             const limitedPRs = this.getLimitedPrsByRepo(pullRequests);
 
             const filteredPRs = this.getFilteredPRs(limitedPRs);
@@ -67,7 +71,7 @@ export class GetPRsUseCase implements IUseCase {
     private getLimitedPrsByRepo(pullRequests: any[]) {
         const numberOfPRsPerRepo = 5;
 
-        const groupedPRsByRepo = pullRequests.reduce((acc, pr) => {
+        const groupedPRsByRepo = pullRequests?.reduce((acc, pr) => {
             if (!acc[pr.repository]) {
                 acc[pr.repository] = [];
             }
@@ -92,7 +96,7 @@ export class GetPRsUseCase implements IUseCase {
                 id,
                 repository: pr.repository,
                 pull_number: pr.pull_number,
-                title: pr.message,
+                title: pr?.message || pr?.title,
                 url: pr.prURL,
             };
         });

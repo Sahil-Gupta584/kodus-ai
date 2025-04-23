@@ -125,6 +125,11 @@ KEYS=(
     "/prod/kodus-orchestrator/GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK"
 
     "/prod/kodus-orchestrator/API_ENABLE_CODE_REVIEW_AST"
+
+    "/prod/kodus-orchestrator/CODE_MANAGEMENT_SECRET"
+    "/prod/kodus-orchestrator/CODE_MANAGEMENT_WEBHOOK_TOKEN"
+
+    "/prod/kodus-orchestrator/GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK"
 )
 
 # Lista de todas as chaves que você precisa
