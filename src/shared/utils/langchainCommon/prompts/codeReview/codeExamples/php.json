@@ -1,0 +1,167 @@
+[
+    {
+      "description": "SQL Injection vulnerability in query construction",
+      "language": "php",
+      "codeExamples": [
+        "$query = \"SELECT * FROM users WHERE username = '$username'\";",
+        "$userId = $_GET['id'];\n$result = mysqli_query($conn, \"DELETE FROM users WHERE id = $userId\");"
+      ],
+      "severity": "critical",
+      "explanation": "Inserting user input directly into SQL queries allows attackers to manipulate the query structure. Use prepared statements with mysqli or PDO to properly separate data from SQL commands.",
+      "category": "security"
+    },
+    {
+      "description": "Cross-Site Scripting (XSS) vulnerability",
+      "language": "php",
+      "codeExamples": [
+        "echo \"<div>Welcome, {$_GET['name']}!</div>\";",
+        "<?php echo $_POST['comment']; ?>"
+      ],
+      "severity": "high",
+      "explanation": "Outputting unfiltered user input to HTML allows attackers to inject malicious JavaScript. Always use htmlspecialchars() or similar functions when displaying user input.",
+      "category": "security"
+    },
+    {
+      "description": "Command Injection vulnerability",
+      "language": "php",
+      "codeExamples": [
+        "system('ping ' . $_POST['host']);",
+        "exec(\"git clone \" . $repository);"
+      ],
+      "severity": "critical",
+      "explanation": "Passing user input to shell commands allows attackers to execute arbitrary commands. Avoid shell commands entirely or use escapeshellarg() and escapeshellcmd() functions.",
+      "category": "security"
+    },
+    {
+      "description": "Insecure File Upload handling",
+      "language": "php",
+      "codeExamples": [
+        "move_uploaded_file($_FILES['file']['tmp_name'], \"uploads/\" . $_FILES['file']['name']);",
+        "$destination = \"./images/\" . basename($_FILES['image']['name']);\nmove_uploaded_file($_FILES['image']['tmp_name'], $destination);"
+      ],
+      "severity": "high",
+      "explanation": "Saving files with user-controlled filenames allows attackers to upload and execute malicious PHP files. Validate file types, use random names, check MIME types, and store uploads outside the web root.",
+      "category": "security"
+    },
+    {
+      "description": "Local/Remote File Inclusion vulnerability",
+      "language": "php",
+      "codeExamples": [
+        "include($_GET['page'] . '.php');",
+        "require($user_theme . '/header.php');"
+      ],
+      "severity": "critical",
+      "explanation": "Dynamic file inclusion using user input can allow attackers to include malicious files. Validate against a whitelist of allowed files and disable allow_url_include in php.ini.",
+      "category": "security"
+    },
+    {
+      "description": "Insecure deserialization",
+      "language": "php",
+      "codeExamples": [
+        "unserialize($_COOKIE['user_data']);",
+        "$object = unserialize($input);"
+      ],
+      "severity": "critical",
+      "explanation": "PHP's unserialize() with untrusted data can lead to object injection attacks and remote code execution. Use JSON or other safe formats for user-controlled serialized data.",
+      "category": "security"
+    },
+    {
+      "description": "Hardcoded credentials in source code",
+      "language": "php",
+      "codeExamples": [
+        "$conn = new mysqli('localhost', 'root', 'password123', 'database');",
+        "define('API_KEY', 'sk_live_abcdef123456789');"
+      ],
+      "severity": "critical",
+      "explanation": "Embedding credentials in code exposes them to anyone with access to the codebase. Store credentials in environment variables or separate configuration files outside the document root.",
+      "category": "security"
+    },
+    {
+      "description": "Sensitive information disclosure in error messages",
+      "language": "php",
+      "codeExamples": [
+        "ini_set('display_errors', 1);\nerror_reporting(E_ALL);",
+        "catch (Exception $e) {\n  echo '<pre>' . $e->getTraceAsString() . '</pre>';\n}"
+      ],
+      "severity": "medium",
+      "explanation": "Displaying detailed error information to users reveals implementation details and stack traces. Disable display_errors in production and log errors securely instead.",
+      "category": "security"
+    },
+    {
+      "description": "Cross-Site Request Forgery (CSRF)",
+      "language": "php",
+      "codeExamples": [
+        "if ($_POST['action'] === 'delete') {\n  deleteUser($_POST['id']);\n}",
+        "function updatePassword($userId, $newPassword) {\n  // Update without token validation\n}"
+      ],
+      "severity": "high",
+      "explanation": "Actions that change state without verifying the request came from your site are vulnerable to CSRF. Implement anti-CSRF tokens that must be included with every state-changing request.",
+      "category": "security"
+    },
+    {
+      "description": "Insecure session management",
+      "language": "php",
+      "codeExamples": [
+        "session_start();\n$_SESSION['is_admin'] = true;",
+        "setcookie('auth', $userData, time()+3600);"
+      ],
+      "severity": "high",
+      "explanation": "Default PHP session settings and improperly secured cookies can lead to session hijacking. Set session.cookie_secure, session.cookie_httponly, and appropriate expiration times.",
+      "category": "security"
+    },
+    {
+      "description": "Path traversal vulnerability",
+      "language": "php",
+      "codeExamples": [
+        "readfile('documents/' . $_GET['filename']);",
+        "include('templates/' . $_GET['template']);"
+      ],
+      "severity": "high",
+      "explanation": "User input in file paths can allow accessing files outside intended directories using '../' sequences. Use basename() function and validate against a whitelist of allowed files.",
+      "category": "security"
+    },
+    {
+      "description": "Insecure cryptographic practices",
+      "language": "php",
+      "codeExamples": [
+        "md5($password)",
+        "password_hash($password, PASSWORD_DEFAULT, ['cost' => 4]);"
+      ],
+      "severity": "high",
+      "explanation": "Using weak hashing algorithms or insufficient work factors makes passwords vulnerable to cracking. Use password_hash() with appropriate cost and avoid older functions like md5() or sha1().",
+      "category": "security"
+    },
+    {
+      "description": "Dangerous use of eval()",
+      "language": "php",
+      "codeExamples": [
+        "eval('$result = ' . $_POST['formula'] . ';');",
+        "$code = $_GET['plugin'];\neval($code);"
+      ],
+      "severity": "critical",
+      "explanation": "The eval() function executes arbitrary PHP code, allowing attackers to run any code if they can control the input. Avoid eval() entirely; use safer alternatives like mathematical parsing libraries.",
+      "category": "security"
+    },
+    {
+      "description": "Insecure Direct Object References (IDOR)",
+      "language": "php",
+      "codeExamples": [
+        "$userId = $_GET['id'];\n$userData = fetchUserData($userId);",
+        "$file = 'user_files/' . $_GET['file'];\nreadfile($file);"
+      ],
+      "severity": "high",
+      "explanation": "Accessing objects directly by ID without authorization checks allows attackers to access unauthorized resources. Implement access control checks to verify the current user has permission to access the requested resource.",
+      "category": "security"
+    },
+    {
+      "description": "Insecure randomness for sensitive operations",
+      "language": "php",
+      "codeExamples": [
+        "$token = rand(100000, 999999);",
+        "$password = substr(str_shuffle('abcdefghijklmnopqrstuvwxyz'), 0, 10);"
+      ],
+      "severity": "medium",
+      "explanation": "PHP's rand(), mt_rand(), and array shuffling functions aren't cryptographically secure. Use random_bytes() or random_int() for security-critical random values.",
+      "category": "security"
+    }
+  ]

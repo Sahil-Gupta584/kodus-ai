@@ -1,0 +1,167 @@
+[
+    {
+        "description": "SQL Injection vulnerability in query construction",
+        "language": "typescript",
+        "codeExamples": [
+            "const query = `SELECT * FROM users WHERE id = ${userId}`;",
+            "db.query('UPDATE users SET role = \"' + userRole + '\" WHERE id = ' + userId)"
+        ],
+        "severity": "critical",
+        "explanation": "Combining user input directly into SQL queries allows attackers to inject malicious SQL commands. Always use parameterized queries with prepared statements.",
+        "category": "security"
+    },
+    {
+        "description": "NoSQL Injection in MongoDB queries",
+        "language": "typescript",
+        "codeExamples": [
+            "const query = { username: req.body.username };",
+            "await collection.findOne({ $where: `this.username === '${username}'` })"
+        ],
+        "severity": "high",
+        "explanation": "NoSQL databases are also vulnerable to injection attacks when user input is directly included in query objects. Use MongoDB's query operators and validated input.",
+        "category": "security"
+    },
+    {
+        "description": "Command Injection vulnerability",
+        "language": "typescript",
+        "codeExamples": [
+            "const { exec } = require('child_process');\nexec('git clone ' + userInput);",
+            "import { execSync } from 'child_process';\nconst output = execSync(`ping ${hostName}`);"
+        ],
+        "severity": "critical",
+        "explanation": "Passing unvalidated user input to system commands allows attackers to execute arbitrary commands. Avoid shell commands when possible or use allowlists and command sanitization.",
+        "category": "security"
+    },
+    {
+        "description": "Cross-Site Scripting (XSS) vulnerability",
+        "language": "typescript",
+        "codeExamples": [
+            "res.send(`<div>${userInput}</div>`);",
+            "element.innerHTML = data.message;"
+        ],
+        "severity": "high",
+        "explanation": "Rendering unsanitized user input as HTML enables attackers to inject malicious scripts. Always sanitize user input before rendering it in HTML contexts.",
+        "category": "security"
+    },
+    {
+        "description": "Insecure JWT implementation",
+        "language": "typescript",
+        "codeExamples": [
+            "jwt.sign(payload, 'simple-secret-key', { expiresIn: '1y' });",
+            "const verified = jwt.verify(token, secretKey, { algorithms: ['none', 'HS256'] });"
+        ],
+        "severity": "high",
+        "explanation": "Using weak secrets, long expiration times, or unsafe algorithms in JWT implementation creates authentication vulnerabilities. Use strong secrets, appropriate expiration times, and secure algorithms.",
+        "category": "security"
+    },
+    {
+        "description": "Hardcoded credentials in source code",
+        "language": "typescript",
+        "codeExamples": [
+            "const dbConnection = mysql.createConnection({\n  host: 'localhost',\n  user: 'admin',\n  password: 'p@ssw0rd123!'\n});",
+            "const API_KEY = 'sk_live_abcdef123456789';"
+        ],
+        "severity": "critical",
+        "explanation": "Storing credentials directly in source code leads to credential exposure in version control systems. Use environment variables or secure credential management systems.",
+        "category": "security"
+    },
+    {
+        "description": "Insecure randomness for sensitive operations",
+        "language": "typescript",
+        "codeExamples": [
+            "const token = Math.random().toString(36).substring(2);",
+            "const resetCode = Math.floor(Math.random() * 10000);"
+        ],
+        "severity": "medium",
+        "explanation": "Using predictable random number generators for security-critical functions enables attackers to predict values. Use cryptographically secure random functions like crypto.randomBytes().",
+        "category": "security"
+    },
+    {
+        "description": "Insecure file upload handling",
+        "language": "typescript",
+        "codeExamples": [
+            "const filename = req.file.originalname;\nfs.writeFileSync(`./uploads/${filename}`, data);",
+            "app.post('/upload', (req, res) => {\n  const file = req.files.file;\n  file.mv(`./public/${file.name}`);\n});"
+        ],
+        "severity": "high",
+        "explanation": "Saving files with user-controlled filenames without validation enables path traversal and content-type attacks. Validate file extensions, sanitize filenames, and store files outside the webroot.",
+        "category": "security"
+    },
+    {
+        "description": "Path traversal vulnerability",
+        "language": "typescript",
+        "codeExamples": [
+            "const filePath = path.join(baseDir, req.params.filename);\nres.sendFile(filePath);",
+            "fs.readFileSync(directory + '/' + fileName);"
+        ],
+        "severity": "high",
+        "explanation": "Without proper validation, attackers can use '../' sequences to access files outside intended directories. Normalize paths and validate against a whitelist of allowed paths.",
+        "category": "security"
+    },
+    {
+        "description": "Insecure deserialization of user data",
+        "language": "typescript",
+        "codeExamples": [
+            "const userData = JSON.parse(req.body.data);\nObject.assign(user, userData);",
+            "const obj = eval('(' + jsonString + ')');"
+        ],
+        "severity": "high",
+        "explanation": "Deserializing untrusted data without validation can lead to remote code execution. Always validate deserialized data and avoid unsafe deserialization methods like eval().",
+        "category": "security"
+    },
+    {
+        "description": "Missing rate limiting on authentication endpoints",
+        "language": "typescript",
+        "codeExamples": [
+            "app.post('/login', async (req, res) => {\n  const { username, password } = req.body;\n  const user = await db.findUser(username);\n  if (!user || !comparePassword(password, user.password)) {\n    return res.status(401).send('Invalid credentials');\n  }\n  // Login logic\n});",
+            "router.post('/reset-password', async (req, res) => {\n  const email = req.body.email;\n  await sendPasswordResetEmail(email);\n  res.send('Password reset email sent');\n});"
+        ],
+        "severity": "medium",
+        "explanation": "Authentication endpoints without rate limiting are vulnerable to brute force attacks. Implement rate limiting to prevent excessive login attempts from the same source.",
+        "category": "security"
+    },
+    {
+        "description": "Insecure CORS configuration",
+        "language": "typescript",
+        "codeExamples": [
+            "app.use(cors({\n  origin: '*',\n  credentials: true\n}));",
+            "res.header('Access-Control-Allow-Origin', req.headers.origin);\nres.header('Access-Control-Allow-Credentials', 'true');"
+        ],
+        "severity": "high",
+        "explanation": "Overly permissive CORS settings allow malicious websites to make authenticated requests to your API. Restrict origins to trusted domains, especially when allowing credentials.",
+        "category": "security"
+    },
+    {
+        "description": "Insecure cookie configuration",
+        "language": "typescript",
+        "codeExamples": [
+            "res.cookie('authToken', token);",
+            "res.cookie('sessionId', sessionId, { httpOnly: false });"
+        ],
+        "severity": "medium",
+        "explanation": "Cookies without secure attributes are vulnerable to theft and manipulation. Set httpOnly, secure, and sameSite attributes on sensitive cookies.",
+        "category": "security"
+    },
+    {
+        "description": "Information exposure in error responses",
+        "language": "typescript",
+        "codeExamples": [
+            "app.use((err, req, res, next) => {\n  console.error(err.stack);\n  res.status(500).send(err.stack);\n});",
+            "catch (error) {\n  res.status(500).json({ error: error.toString() });\n}"
+        ],
+        "severity": "medium",
+        "explanation": "Returning detailed error information to clients exposes implementation details that can aid attackers. Use generic error messages in production and log details server-side.",
+        "category": "security"
+    },
+    {
+        "description": "Insecure Direct Object References (IDOR)",
+        "language": "typescript",
+        "codeExamples": [
+            "app.get('/api/users/:id/profile', async (req, res) => {\n  const user = await db.getUser(req.params.id);\n  res.json(user);\n});",
+            "router.put('/documents/:docId', async (req, res) => {\n  await db.updateDocument(req.params.docId, req.body);\n  res.sendStatus(200);\n});"
+        ],
+        "severity": "high",
+        "explanation": "Endpoints that reference objects directly by ID without access control checks allow attackers to access unauthorized resources. Always verify the authenticated user has permission to access the requested resource.",
+        "category": "security"
+    }
+]

@@ -1,0 +1,167 @@
+[
+    {
+        "description": "SQL Injection vulnerability in query construction",
+        "language": "ruby",
+        "codeExamples": [
+            "User.where(\"username = '#{params[:username]}'\")",
+            "ActiveRecord::Base.connection.execute(\"SELECT * FROM users WHERE email = '#{user_input}'\")"
+        ],
+        "severity": "critical",
+        "explanation": "Interpolating user input directly into SQL statements allows attackers to inject malicious SQL commands. Use parameterized queries with prepared statements or ActiveRecord methods that handle escaping.",
+        "category": "security"
+    },
+    {
+        "description": "Command Injection vulnerability",
+        "language": "ruby",
+        "codeExamples": [
+            "system(\"git clone #{repository_url}\")",
+            "`echo #{user_input}`"
+        ],
+        "severity": "critical",
+        "explanation": "Executing shell commands with unvalidated user input allows attackers to run arbitrary commands on the server. Use allowlists or dedicated libraries instead of shell commands when possible.",
+        "category": "security"
+    },
+    {
+        "description": "Cross-Site Scripting (XSS) vulnerability in Rails views",
+        "language": "ruby",
+        "codeExamples": [
+            "<%= params[:message] %>",
+            "page.html(\"<div>#{user_content}</div>\")"
+        ],
+        "severity": "high",
+        "explanation": "Rendering unescaped user input in views allows attackers to inject malicious JavaScript. Use Rails' html_safe method cautiously and prefer html_escape or the <%=h %> helper.",
+        "category": "security"
+    },
+    {
+        "description": "Unsafe deserialization of user input",
+        "language": "ruby",
+        "codeExamples": [
+            "YAML.load(params[:data])",
+            "Marshal.load(Base64.decode64(cookie_value))"
+        ],
+        "severity": "critical",
+        "explanation": "Ruby's YAML.load and Marshal.load can execute arbitrary code during deserialization. Use YAML.safe_load with allowed classes or JSON for user-controlled data.",
+        "category": "security"
+    },
+    {
+        "description": "Mass Assignment vulnerability",
+        "language": "ruby",
+        "codeExamples": [
+            "User.create(params[:user])",
+            "user.update_attributes(params[:user])"
+        ],
+        "severity": "high",
+        "explanation": "Passing params directly to create/update methods allows attackers to set any attribute, including protected ones like admin or role. Use Strong Parameters or attr_accessible/attr_protected.",
+        "category": "security"
+    },
+    {
+        "description": "Hardcoded credentials in source code",
+        "language": "ruby",
+        "codeExamples": [
+            "AWS_KEY = 'AKIA1234567890ABCDEF'\nAWS_SECRET = 'abcdefghijklmnopqrstuvwxyz1234567890/+=='",
+            "config.action_mailer.smtp_settings = {\n  user_name: 'admin',\n  password: 'super_secret_123'\n}"
+        ],
+        "severity": "critical",
+        "explanation": "Embedding credentials directly in code exposes them in version control systems. Use environment variables or Rails' credentials/secrets management.",
+        "category": "security"
+    },
+    {
+        "description": "Insecure file upload handling",
+        "language": "ruby",
+        "codeExamples": [
+            "File.open(Rails.root.join('public', 'uploads', params[:file].original_filename), 'wb') do |file|\n  file.write(params[:file].read)\nend",
+            "destination = \"#{Rails.public_path}/#{params[:filename]}\"\nFile.write(destination, file_data)"
+        ],
+        "severity": "high",
+        "explanation": "Saving files with user-controlled filenames enables path traversal attacks and serving malicious content. Sanitize filenames, validate content types, and store uploads outside the webroot.",
+        "category": "security"
+    },
+    {
+        "description": "Path traversal vulnerability",
+        "language": "ruby",
+        "codeExamples": [
+            "send_file(\"#{Rails.root}/files/#{params[:filename]}\")",
+            "File.read(File.join(base_directory, user_input))"
+        ],
+        "severity": "high",
+        "explanation": "User input in file paths can allow accessing files outside intended directories using '../' sequences. Validate against whitelisted paths and use File.basename to strip directory components.",
+        "category": "security"
+    },
+    {
+        "description": "Missing CSRF protection",
+        "language": "ruby",
+        "codeExamples": [
+            "skip_before_action :verify_authenticity_token",
+            "protect_from_forgery except: [:create, :update]"
+        ],
+        "severity": "high",
+        "explanation": "Disabling Rails' CSRF protection allows attackers to perform actions on behalf of authenticated users. Keep protect_from_forgery enabled for all state-changing actions.",
+        "category": "security"
+    },
+    {
+        "description": "Broken authentication",
+        "language": "ruby",
+        "codeExamples": [
+            "def create\n  user = User.find_by(email: params[:email])\n  if user && user.password == params[:password]\n    session[:user_id] = user.id\n  end\nend",
+            "User.find_by_sql(\"SELECT * FROM users WHERE email='#{params[:email]}' AND password='#{params[:password]}'\")"
+        ],
+        "severity": "critical",
+        "explanation": "Storing or comparing passwords in plaintext and using insecure authentication methods enables credential theft. Use has_secure_password or Devise and never store plaintext passwords.",
+        "category": "security"
+    },
+    {
+        "description": "Insecure cookie configuration",
+        "language": "ruby",
+        "codeExamples": [
+            "cookies[:auth_token] = token",
+            "cookies.signed[:user_id] = user.id"
+        ],
+        "severity": "medium",
+        "explanation": "Cookies without secure attributes can be stolen or tampered with. Set secure: true, httponly: true, and same_site: :strict on sensitive cookies, especially in Rails.",
+        "category": "security"
+    },
+    {
+        "description": "Information exposure in error responses",
+        "language": "ruby",
+        "codeExamples": [
+            "rescue Exception => e\n  render json: { error: e.message, backtrace: e.backtrace }",
+            "config.consider_all_requests_local = true # In production"
+        ],
+        "severity": "medium",
+        "explanation": "Exposing detailed error information to users reveals implementation details that help attackers. Set consider_all_requests_local to false in production and use custom error pages.",
+        "category": "security"
+    },
+    {
+        "description": "Insecure Direct Object References (IDOR)",
+        "language": "ruby",
+        "codeExamples": [
+            "def show\n  @document = Document.find(params[:id])\nend",
+            "account = Account.find_by(id: params[:account_id])"
+        ],
+        "severity": "high",
+        "explanation": "Accessing objects by ID without authorization checks allows attackers to access other users' data. Add authorization checks like current_user.documents.find or use authorization gems like Pundit.",
+        "category": "security"
+    },
+    {
+        "description": "Insecure randomness for sensitive operations",
+        "language": "ruby",
+        "codeExamples": [
+            "token = (0...50).map { ('a'..'z').to_a[rand(26)] }.join",
+            "reset_code = rand(100000..999999)"
+        ],
+        "severity": "medium",
+        "explanation": "Ruby's rand is not cryptographically secure for sensitive tokens or keys. Use SecureRandom methods like SecureRandom.hex, SecureRandom.uuid, or SecureRandom.base64.",
+        "category": "security"
+    },
+    {
+        "description": "Dangerous HTTP redirect",
+        "language": "ruby",
+        "codeExamples": [
+            "redirect_to params[:return_to]",
+            "redirect_to \"#{request.protocol}#{params[:subdomain]}.example.com\""
+        ],
+        "severity": "high",
+        "explanation": "Redirecting to user-controlled URLs enables phishing attacks. Validate redirect destinations against a whitelist or ensure they're relative paths.",
+        "category": "security"
+    }
+]

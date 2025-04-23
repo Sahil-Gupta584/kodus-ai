@@ -1,0 +1,167 @@
+[
+    {
+      "description": "SQL Injection vulnerability in query construction",
+      "language": "c#",
+      "codeExamples": [
+        "string query = \"SELECT * FROM Users WHERE Username = '\" + username + \"'\";",
+        "using (SqlCommand cmd = new SqlCommand($\"DELETE FROM Orders WHERE OrderId = {orderId}\", connection))"
+      ],
+      "severity": "critical",
+      "explanation": "Concatenating user input directly into SQL queries allows attackers to manipulate query structure. Use parameterized queries with SqlParameter objects to properly separate data from SQL commands.",
+      "category": "security"
+    },
+    {
+      "description": "Cross-Site Scripting (XSS) vulnerability in ASP.NET",
+      "language": "c#",
+      "codeExamples": [
+        "@Html.Raw(Model.UserComment)",
+        "divElement.InnerHtml = userInput;"
+      ],
+      "severity": "high",
+      "explanation": "Rendering unencoded user input as HTML enables script injection attacks. Use @Html.Encode() or HttpUtility.HtmlEncode() for dynamic content in views.",
+      "category": "security"
+    },
+    {
+      "description": "Insecure deserialization",
+      "language": "c#",
+      "codeExamples": [
+        "BinaryFormatter formatter = new BinaryFormatter();\nObject obj = formatter.Deserialize(requestStream);",
+        "JavaScriptSerializer serializer = new JavaScriptSerializer();\nUserData data = serializer.Deserialize<UserData>(untrustedInput);"
+      ],
+      "severity": "critical",
+      "explanation": "Deserializing untrusted data with BinaryFormatter or other unsafe deserializers can lead to remote code execution. Use safer alternatives like System.Text.Json with proper type constraints.",
+      "category": "security"
+    },
+    {
+      "description": "Hardcoded credentials",
+      "language": "c#",
+      "codeExamples": [
+        "private const string ConnectionString = \"Server=myserver;Database=mydb;User Id=admin;Password=password123!\";",
+        "private static readonly string ApiKey = \"sk_live_51AbCdEfGhIjKlMnOpQrStUvWxYz\";"
+      ],
+      "severity": "critical",
+      "explanation": "Embedding credentials in source code makes them visible in repositories and compiled assemblies. Store secrets in Azure Key Vault, user secrets, or environment variables.",
+      "category": "security"
+    },
+    {
+      "description": "Weak cryptographic practices",
+      "language": "c#",
+      "codeExamples": [
+        "using (MD5 md5Hash = MD5.Create())\n{\n    byte[] data = md5Hash.ComputeHash(Encoding.UTF8.GetBytes(password));\n}",
+        "var encryptedBytes = TripleDES.Create().CreateEncryptor().TransformFinalBlock(dataBytes, 0, dataBytes.Length);"
+      ],
+      "severity": "high",
+      "explanation": "Using obsolete or weak cryptographic algorithms like MD5 or 3DES compromises data security. Use modern algorithms like SHA-256 or AES, and follow best practices from System.Security.Cryptography.",
+      "category": "security"
+    },
+    {
+      "description": "Insecure Direct Object References (IDOR)",
+      "language": "c#",
+      "codeExamples": [
+        "public IActionResult GetDocument(int documentId)\n{\n    var document = _context.Documents.Find(documentId);\n    return File(document.Content, document.ContentType);\n}",
+        "public async Task<IActionResult> GetUserProfile(int userId)\n{\n    var profile = await _userService.GetProfileById(userId);\n    return View(profile);\n}"
+      ],
+      "severity": "high",
+      "explanation": "Accessing resources directly by ID without authorization verification allows attackers to access other users' data. Check if the current user has permission to access the requested resource.",
+      "category": "security"
+    },
+    {
+      "description": "Path traversal vulnerability",
+      "language": "c#",
+      "codeExamples": [
+        "var filePath = Path.Combine(basePath, fileName);\nreturn File.ReadAllText(filePath);",
+        "string path = Server.MapPath(\"~/uploads/\" + request.Filename);\nFile.WriteAllBytes(path, fileContents);"
+      ],
+      "severity": "high",
+      "explanation": "User-controlled file paths can allow accessing files outside intended directories. Validate paths against a whitelist or use Path.GetFileName() to strip directory components.",
+      "category": "security"
+    },
+    {
+      "description": "Cross-Site Request Forgery (CSRF) vulnerability",
+      "language": "c#",
+      "codeExamples": [
+        "[HttpPost]\npublic IActionResult Transfer(int toAccount, decimal amount)\n{\n    // Missing [ValidateAntiForgeryToken]\n    _bankService.TransferMoney(User.Identity.Name, toAccount, amount);\n    return RedirectToAction(\"Index\");\n}",
+        "services.AddMvc(options => {\n    // CSRF protection disabled\n    options.Filters.Add(new IgnoreAntiforgeryTokenAttribute());\n});"
+      ],
+      "severity": "high",
+      "explanation": "Without anti-forgery token validation, attackers can trick users into submitting state-changing requests. Apply [ValidateAntiForgeryToken] attribute to all state-changing actions and include @Html.AntiForgeryToken() in forms.",
+      "category": "security"
+    },
+    {
+      "description": "Insecure randomness for sensitive operations",
+      "language": "c#",
+      "codeExamples": [
+        "var token = new Random().Next(100000, 999999).ToString();",
+        "string password = new string(Enumerable.Repeat(chars, 8).Select(s => s[random.Next(s.Length)]).ToArray());"
+      ],
+      "severity": "medium",
+      "explanation": "System.Random is not cryptographically secure and produces predictable sequences for sensitive values. Use RandomNumberGenerator.GetBytes() or RandomNumberGenerator.GetInt32() for security-critical random values.",
+      "category": "security"
+    },
+    {
+      "description": "Improper error handling exposing sensitive information",
+      "language": "c#",
+      "codeExamples": [
+        "catch (Exception ex)\n{\n    return BadRequest($\"An error occurred: {ex.Message}\\nStack Trace: {ex.StackTrace}\");\n}",
+        "app.UseDeveloperExceptionPage();"
+      ],
+      "severity": "medium",
+      "explanation": "Exposing detailed error information to clients reveals implementation details. Use try/catch blocks with appropriate logging, and return generic error messages to end users.",
+      "category": "security"
+    },
+    {
+      "description": "Insecure cookie configuration",
+      "language": "c#",
+      "codeExamples": [
+        "Response.Cookies.Append(\"token\", authToken);",
+        "services.ConfigureApplicationCookie(options => {\n    options.Cookie.HttpOnly = false;\n    options.Cookie.SecurePolicy = CookieSecurePolicy.None;\n});"
+      ],
+      "severity": "medium",
+      "explanation": "Cookies without proper security attributes can be stolen or tampered with. Set HttpOnly, Secure, and SameSite attributes appropriately, especially for authentication cookies.",
+      "category": "security"
+    },
+    {
+      "description": "Open redirect vulnerability",
+      "language": "c#",
+      "codeExamples": [
+        "public IActionResult Redirect(string returnUrl)\n{\n    return Redirect(returnUrl);\n}",
+        "return Redirect(Request.QueryString[\"url\"]);"
+      ],
+      "severity": "medium",
+      "explanation": "Redirecting to user-controlled URLs enables phishing attacks. Validate redirect URLs against a whitelist or ensure they are local to your application.",
+      "category": "security"
+    },
+    {
+      "description": "XML External Entity (XXE) vulnerability",
+      "language": "c#",
+      "codeExamples": [
+        "XmlDocument doc = new XmlDocument();\ndoc.XmlResolver = new XmlUrlResolver();\ndoc.LoadXml(xml);",
+        "XmlReader reader = XmlReader.Create(stream);\nvar result = XDocument.Load(reader);"
+      ],
+      "severity": "high",
+      "explanation": "Default XML parsers may process external entities, leading to file disclosure or SSRF. Set XmlDocument.XmlResolver to null or use XmlReaderSettings with ProhibitDtd=true.",
+      "category": "security"
+    },
+    {
+      "description": "Improper certificate validation",
+      "language": "c#",
+      "codeExamples": [
+        "ServicePointManager.ServerCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true;",
+        "var handler = new HttpClientHandler\n{\n    ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true\n};"
+      ],
+      "severity": "critical",
+      "explanation": "Bypassing SSL/TLS certificate validation leaves connections vulnerable to man-in-the-middle attacks. Never bypass certificate validation in production code.",
+      "category": "security"
+    },
+    {
+      "description": "Entity Framework mass assignment vulnerability",
+      "language": "c#",
+      "codeExamples": [
+        "public IActionResult Update([FromBody] User user)\n{\n    _context.Users.Update(user);\n    _context.SaveChanges();\n    return Ok();\n}",
+        "_context.Entry(dbModel).CurrentValues.SetValues(viewModel);"
+      ],
+      "severity": "high",
+      "explanation": "Binding directly to entity models allows attackers to modify fields they shouldn't have access to. Use view models and map only allowed properties to your entities.",
+      "category": "security"
+    }
+  ]
