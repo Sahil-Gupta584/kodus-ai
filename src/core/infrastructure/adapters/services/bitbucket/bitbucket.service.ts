@@ -68,21 +68,20 @@ import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
 export class BitbucketService
     implements
-        IBitbucketService,
-        Omit<
-            ICodeManagementService,
-            | 'getOrganizations'
-            | 'getListOfValidReviews'
-            | 'getUserByEmailOrName'
-            | 'getPullRequestReviewThreads'
-            | 'getUserById'
-            | 'getDataForCalculateDeployFrequency'
-            | 'getCommitsByReleaseMode'
-            | 'getAuthenticationOAuthToken'
-            | 'countReactions'
-            | 'getRepositoryAllFiles'
-        >
-{
+    IBitbucketService,
+    Omit<
+        ICodeManagementService,
+        | 'getOrganizations'
+        | 'getListOfValidReviews'
+        | 'getUserByEmailOrName'
+        | 'getPullRequestReviewThreads'
+        | 'getUserById'
+        | 'getDataForCalculateDeployFrequency'
+        | 'getCommitsByReleaseMode'
+        | 'getAuthenticationOAuthToken'
+        | 'countReactions'
+        | 'getRepositoryAllFiles'
+    > {
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
         private readonly integrationService: IIntegrationService,
@@ -102,7 +101,7 @@ export class BitbucketService
         private readonly promptService: PromptService,
 
         private readonly logger: PinoLoggerService,
-    ) {}
+    ) { }
 
     async getPullRequestsWithChangesRequested(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -1456,7 +1455,13 @@ export class BitbucketService
                 `${lineComment?.body?.improvedCode}\n` +
                 `\`\`\`\n` +
                 `${lineComment?.body?.suggestionContent}\n\n\n\n` +
-                `${lineComment?.body?.actionStatement ? `${lineComment?.body?.actionStatement}\n\n\n\n` : ''}`;
+                `${lineComment?.body?.actionStatement ? `${lineComment?.body?.actionStatement}\n\n\n\n` : ''}` +
+                `Was this suggestion helpful? Reply with 👍 or 👎 to help Kody learn from this interaction.\n`;
+
+            const thumbsUpBlock = `\`\`\`\n👍\n\`\`\`\n`;
+            const thumbsDownBlock = `\`\`\`\n👎\n\`\`\`\n`;
+
+            const updatedBodyFormatted = bodyFormatted + thumbsUpBlock + thumbsDownBlock;
 
             // added ts-ignore because _body expects a type property but Bitbucket rejects it
             const comment = await bitbucketAPI.pullrequests
@@ -1467,13 +1472,13 @@ export class BitbucketService
                     // @ts-ignore
                     _body: {
                         content: {
-                            raw: bodyFormatted,
+                            raw: updatedBodyFormatted,
                         },
                         inline: {
                             path: lineComment?.path,
                             to: this.sanitizeLine(
                                 params.lineComment.start_line ??
-                                    params.lineComment.line,
+                                params.lineComment.line,
                             ),
                         },
                     },
@@ -3055,9 +3060,8 @@ export class BitbucketService
                 queryString += `created_on >= "${filters.startDate}"`;
             }
             if (filters?.endDate) {
-                queryString += `${
-                    queryString ? ' AND ' : ''
-                }created_on <= "${filters.endDate}"`;
+                queryString += `${queryString ? ' AND ' : ''
+                    }created_on <= "${filters.endDate}"`;
             }
 
             const pullRequests = await bitbucketAPI.pullrequests
