@@ -11,6 +11,7 @@ import {
     OneSentenceSummaryItem,
     PullRequestsWithChangesRequested,
     PullRequestReviewState,
+    ReactionsInComments,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
@@ -79,7 +80,6 @@ export class BitbucketService
         | 'getDataForCalculateDeployFrequency'
         | 'getCommitsByReleaseMode'
         | 'getAuthenticationOAuthToken'
-        | 'countReactions'
         | 'getRepositoryAllFiles'
     > {
     constructor(
@@ -102,6 +102,7 @@ export class BitbucketService
 
         private readonly logger: PinoLoggerService,
     ) { }
+
 
     async getPullRequestsWithChangesRequested(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -2090,6 +2091,7 @@ export class BitbucketService
                     body: comment?.content?.raw,
                     createdAt: comment?.created_on,
                     originalCommit: comment?.pullrequest?.source?.commit?.hash,
+                    parent: comment?.parent,
                     author: {
                         id: this.sanitizeUUId(comment?.user?.uuid),
                         username: comment?.user?.display_name,
@@ -3230,6 +3232,86 @@ export class BitbucketService
             });
             return null;
         }
+    }
+
+    async countReactions(params: {
+        comments: any[],
+        pr: any
+    }): Promise<any[]> {
+        const { comments, pr } = params;
+
+        /**
+         * bitbucket sends a list of all comments, regardless of if they're a reply to another comment
+         * This reduce() fixes it so each comment has a reply array.
+         */
+        const commentMap = comments.reduce((acc, comment) => {
+            // Initialize the reply field and map the comment by ID
+            comment.reply = [];
+            acc[comment.id] = comment;
+
+            // If the comment has a parent, add it to the parent's reply array
+            if (comment.parent) {
+                const parentId = comment.parent.id;
+                if (acc[parentId]) {
+                    acc[parentId].reply.push(comment);
+                }
+            }
+
+            return acc;
+        }, {});
+
+        const organizedComments = Object.values(commentMap);
+
+
+        const thumbsUpText = ':thumbsUp:';
+        const thumbsDownText = ':thumbsDown:';
+
+        const commentsWithNumberOfReactions = organizedComments
+            .filter((comment: any) => (comment.reply && comment.reply.length > 0))
+            .map((comment: any) => {
+                comment.totalReactions = 0;
+                comment.thumbsUp = 0;
+                comment.thumbsDown = 0;
+
+                comment.reply.forEach(reply => {
+                    if (reply.text.includes(thumbsUpText)) {
+                        comment.thumbsUp++;
+                    }
+                    if (reply.text.includes(thumbsDownText)) {
+                        comment.thumbsDown++;
+                    }
+                });
+
+                comment.totalReactions = comment.thumbsUp + comment.thumbsDown;
+
+                return comment;
+            });
+
+
+        const reactionsInComments: ReactionsInComments[] =
+            commentsWithNumberOfReactions
+                .filter((comment) => comment.totalReactions > 0)
+                .map((comment: any) => ({
+                    reactions: {
+                        thumbsUp: comment.thumbsUp,
+                        thumbsDown: comment.thumbsDown,
+                    },
+                    comment: {
+                        id: comment.id,
+                        body: comment.body,
+                        pull_request_review_id: pr.pull_number,
+                    },
+                    pullRequest: {
+                        id: pr.id,
+                        number: pr.pull_number,
+                        repository: {
+                            id: pr.repository_id,
+                            fullName: pr.repository,
+                        },
+                    },
+                }))
+
+        return reactionsInComments;
     }
 
     /**
