@@ -7,7 +7,21 @@ export interface AzureRepoLink {
 export type EventConfig = {
     type: string;
     resourceVersion: '1.0' | '2.0';
-  };
+};
+
+export enum AzurePullRequestVote {
+    Approved = 10,
+    ApprovedWithSuggestions = 5,
+    NoVote = 0,
+    WaitingForAuthor = -5,
+    Rejected = -10,
+}
+
+export enum AzureRepoCommentTypeString {
+    TEXT = 'text',
+    CODE = 'codeChange',
+    SYSTEM = 'system',
+}
 
 export enum AzureRepoCommentType {
     /**

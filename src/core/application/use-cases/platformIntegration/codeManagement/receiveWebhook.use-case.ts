@@ -36,7 +36,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
         private readonly integrationConfigService: IIntegrationConfigService,
 
         private readonly bitbuckerService: BitbucketService,
-    ) { }
+    ) {}
 
     public async execute(params: {
         payload: any;
@@ -90,7 +90,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                 case 'Note Hook':
                     if (
                         params.payload?.object_attributes?.action ===
-                        'create' &&
+                            'create' &&
                         !params.payload?.object_attributes?.change_position &&
                         !params.payload?.object_attributes?.type
                     ) {
@@ -111,7 +111,9 @@ export class ReceiveWebhookUseCase implements IUseCase {
                     break;
                 case 'ms.vss-code.git-pullrequest-comment-event':
                     const comment = params.payload?.resource.comment.content;
-                    const pullRequestId = params.payload?.resource.pullRequest.status === 'active';
+                    const pullRequestId =
+                        params.payload?.resource?.pullRequest?.status ===
+                        'active';
 
                     if (comment && pullRequestId) {
                         this.isStartCommand(params);
@@ -158,12 +160,16 @@ export class ReceiveWebhookUseCase implements IUseCase {
             return;
         }
 
-        const commandPattern = /@kody\s+start-review/i;
+        const commandPattern = /^\s*@kody\s+start-review/i;
         const isStartCommand = commandPattern.test(comment.body);
+
+        // procura exatamente: <!-- kody-codereview -->
+        const reviewMarkerPattern = /<!--\s*kody-codereview\s*-->/i;
+        const hasReviewMarker = reviewMarkerPattern.test(comment.body);
 
         const pullRequest = mappedPlatform.mapPullRequest({ payload });
 
-        if (isStartCommand) {
+        if (isStartCommand && !hasReviewMarker) {
             this.logger.log({
                 message: `@kody start command detected in PR#${pullRequest?.number}`,
                 context: ReceiveWebhookUseCase.name,
@@ -289,7 +295,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                 repoId,
             );
 
-        if (!configs || !configs.length) {
+        if (!configs || !configs?.length) {
             return false;
         }
 
@@ -318,10 +324,10 @@ export class ReceiveWebhookUseCase implements IUseCase {
 
         if (storedPR) {
             const prCommit = pullRequestCommits[pullRequestCommits.length - 1];
-            const storedPRCommitHashes = storedPR.commits?.map(
+            const storedPRCommitHashes = storedPR?.commits?.map(
                 (commit) => commit.sha,
             );
-            if (storedPRCommitHashes.includes(prCommit.sha)) {
+            if (storedPRCommitHashes?.includes(prCommit?.sha)) {
                 return false;
             }
         }
@@ -336,13 +342,5 @@ export class ReceiveWebhookUseCase implements IUseCase {
             default:
                 return false;
         }
-    }
-
-    /**
-     * Verifica se um comentário do Azure DevOps contém o comando para iniciar review
-     */
-    private isAzureDevOpsStartCommand(comment: string): boolean {
-        const commandPattern = /@kody\s+start-review/i;
-        return commandPattern.test(comment);
     }
 }

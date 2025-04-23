@@ -6,17 +6,13 @@ import { GenerateCodeReviewParameterUseCase } from '../../parameters/generate-co
 import { GenerateKodyRulesUseCase } from '../../kodyRules/generate-kody-rules.use-case';
 import { REQUEST } from '@nestjs/core';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from '../../kodyRules/find-rules-in-organization-by-filter.use-case';
-import {
-    IKodyRule,
-    KodyRulesStatus,
-} from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
+import { KodyRulesStatus } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { ChangeStatusKodyRulesUseCase } from '../../kodyRules/change-status-kody-rules.use-case';
 import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
-import { KodyLearningStatus } from '@/core/domain/parameters/types/configValue.type';
 
 @Injectable()
 export class FinishOnboardingUseCase {
@@ -42,7 +38,7 @@ export class FinishOnboardingUseCase {
         let platformConfig;
 
         try {
-            if (!this.request.user.organization.uuid) {
+            if (!this.request?.user?.organization?.uuid) {
                 throw new Error('Organization ID not found');
             }
 

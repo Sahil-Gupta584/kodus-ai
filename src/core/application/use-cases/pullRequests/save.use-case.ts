@@ -27,7 +27,7 @@ export class SavePullRequestUseCase {
         private readonly codeManagement: CodeManagementService,
 
         private readonly logger: PinoLoggerService,
-    ) { }
+    ) {}
 
     public async execute(params: {
         payload: any;
@@ -179,6 +179,8 @@ export class SavePullRequestUseCase {
             'review_request_removed',
             'assigned',
             'unassigned',
+            'active',
+            'completed',
         ] as const;
         const validObjectActions = [
             'open',
@@ -191,9 +193,9 @@ export class SavePullRequestUseCase {
         return (
             validActions.includes(payload?.action) ||
             validObjectActions.includes(payload?.object_attributes?.action) ||
+            validActions.includes(payload?.resource?.status) ||
+            validActions.includes(payload?.resource?.pullRequest?.status) ||
             platformType === PlatformType.BITBUCKET
         );
     }
-
-
 }

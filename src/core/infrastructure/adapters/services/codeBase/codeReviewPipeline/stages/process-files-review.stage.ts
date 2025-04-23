@@ -1085,7 +1085,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 implementedSuggestionsCommentIds.includes(comment.id),
             );
 
-        if (foundComments.length > 0) {
+        if (foundComments?.length > 0) {
             const promises = foundComments.map(
                 async (foundComment: PullRequestReviewComment) => {
                     let commentId =

@@ -390,7 +390,8 @@ export class PullRequestsService implements IPullRequestsService {
             pullRequest.state === 'DECLINED' ||
             pullRequest.state === 'merge' ||
             pullRequest.state === 'merged' ||
-            pullRequest.state === 'MERGED'
+            pullRequest.state === 'MERGED' ||
+            pullRequest.status === 'completed'
         ) {
             return PullRequestState.CLOSED;
         } else {
@@ -864,7 +865,7 @@ export class PullRequestsService implements IPullRequestsService {
             return pullRequest?.updated_at || pullRequest?.updated_on || '';
         }
 
-        return pullRequest.closed_at || '';
+        return pullRequest.closed_at || pullRequest.closedDate || '';
     }
 
     private extractRepoFullName(pullRequest: any): string {
