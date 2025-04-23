@@ -341,16 +341,16 @@ export class LLMAnalysisService implements IAIAnalysisService {
             let llm =
                 provider === LLMModelProvider.DEEPSEEK_V3
                     ? getDeepseekByNovitaAI({
-                          temperature: 0,
-                          callbacks: [this.tokenTracker],
-                      })
+                        temperature: 0,
+                        callbacks: [this.tokenTracker],
+                    })
                     : provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW
-                      ? getChatGemini({
+                        ? getChatGemini({
                             model: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW,
                             temperature: 0,
                             callbacks: [this.tokenTracker],
                         })
-                      : getChatGPT({
+                        : getChatGPT({
                             model: getLLMModelProviderWithFallback(
                                 LLMModelProvider.CHATGPT_4_ALL,
                             ),
@@ -430,7 +430,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
         if (
             reviewModeResponse === ReviewModeResponse.LIGHT_MODE &&
             context?.codeReviewConfig?.reviewModeConfig ===
-                ReviewModeConfig.LIGHT_MODE_FULL
+            ReviewModeConfig.LIGHT_MODE_FULL
         ) {
             return newDeepseekVersion
                 ? LLMModelProvider.DEEPSEEK_V3_0324
@@ -547,16 +547,16 @@ export class LLMAnalysisService implements IAIAnalysisService {
             const model =
                 provider === LLMModelProvider.CHATGPT_4_ALL
                     ? getChatGPT({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
-                          temperature: 0,
-                          callbacks: [this.tokenTracker],
-                      })
+                        model: getLLMModelProviderWithFallback(
+                            LLMModelProvider.CHATGPT_4_ALL,
+                        ),
+                        temperature: 0,
+                        callbacks: [this.tokenTracker],
+                    })
                     : getChatVertexAI({
-                          temperature: 0,
-                          callbacks: [this.tokenTracker],
-                      });
+                        temperature: 0,
+                        callbacks: [this.tokenTracker],
+                    });
 
             const chain = RunnableSequence.from([
                 async () => {
@@ -796,15 +796,15 @@ export class LLMAnalysisService implements IAIAnalysisService {
             let llm =
                 provider === LLMModelProvider.DEEPSEEK_V3_0324
                     ? getDeepseekByNovitaAI({
-                          model: LLMModelProvider.DEEPSEEK_V3_0324,
-                          temperature: 0,
-                          callbacks: [this.tokenTracker],
-                      })
+                        model: LLMModelProvider.DEEPSEEK_V3_0324,
+                        temperature: 0,
+                        callbacks: [this.tokenTracker],
+                    })
                     : getChatGemini({
-                          model: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW,
-                          temperature: 0,
-                          callbacks: [this.tokenTracker],
-                      });
+                        model: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW,
+                        temperature: 0,
+                        callbacks: [this.tokenTracker],
+                    });
 
             const categoryPrompt = this.getCategoryPrompt(category);
 
@@ -1047,16 +1047,16 @@ export class LLMAnalysisService implements IAIAnalysisService {
             let llm =
                 provider === LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET
                     ? getChatVertexAI({
-                          temperature: 0,
-                          callbacks: [this.tokenTracker],
-                      })
+                        temperature: 0,
+                        callbacks: [this.tokenTracker],
+                    })
                     : getChatGPT({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
-                          temperature: 0,
-                          callbacks: [this.tokenTracker],
-                      });
+                        model: getLLMModelProviderWithFallback(
+                            LLMModelProvider.CHATGPT_4_ALL,
+                        ),
+                        temperature: 0,
+                        callbacks: [this.tokenTracker],
+                    });
 
             const chain = RunnableSequence.from([
                 async (input: any) => {
@@ -1244,11 +1244,11 @@ export class LLMAnalysisService implements IAIAnalysisService {
                 model:
                     provider === LLMModelProvider.CHATGPT_4_ALL_MINI
                         ? getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL_MINI,
-                          )
+                            LLMModelProvider.CHATGPT_4_ALL_MINI,
+                        )
                         : getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
+                            LLMModelProvider.CHATGPT_4_ALL,
+                        ),
                 temperature: 0,
                 callbacks: [this.tokenTracker],
             }).bind({
@@ -1442,15 +1442,15 @@ export class LLMAnalysisService implements IAIAnalysisService {
             let llm =
                 provider === LLMModelProvider.DEEPSEEK_V3
                     ? getDeepseekByNovitaAI({
-                          temperature: 0,
-                          maxTokens: 8000,
-                      })
+                        temperature: 0,
+                        maxTokens: 8000,
+                    })
                     : getChatGPT({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
-                          temperature: 0,
-                      });
+                        model: getLLMModelProviderWithFallback(
+                            LLMModelProvider.CHATGPT_4_ALL,
+                        ),
+                        temperature: 0,
+                    });
 
             if (provider === LLMModelProvider.CHATGPT_4_ALL) {
                 llm = llm.bind({
@@ -1616,15 +1616,15 @@ export class LLMAnalysisService implements IAIAnalysisService {
             let llm =
                 provider === LLMModelProvider.DEEPSEEK_V3
                     ? getDeepseekByNovitaAI({
-                          temperature: 0,
-                          maxTokens: 8000,
-                      })
+                        temperature: 0,
+                        maxTokens: 8000,
+                    })
                     : getChatGPT({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
-                          temperature: 0,
-                      });
+                        model: getLLMModelProviderWithFallback(
+                            LLMModelProvider.CHATGPT_4_ALL,
+                        ),
+                        temperature: 0,
+                    });
 
             if (provider === LLMModelProvider.CHATGPT_4_ALL) {
                 llm = llm.bind({

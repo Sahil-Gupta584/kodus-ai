@@ -69,14 +69,9 @@ async function bootstrap() {
     app.useStaticAssets('static');
     useContainer(app.select(AppModule), { fallbackOnErrors: true });
 
-    console.log(
-        `[BOOT] - Running in ${environment.API_CLOUD_MODE ? 'CLOUD' : 'SELF-HOSTED'} mode`,
-    );
+    console.log(`[BOOT] - Running in ${environment.API_CLOUD_MODE ? 'CLOUD' : 'SELF-HOSTED'} mode`);
     await app.listen(port, host, () => {
-        console.log(
-            `[Server] - Ready on http://${host}:${port}`,
-            'Application',
-        );
+        console.log(`[Server] - Ready on http://${host}:${port}`, 'Application');
     });
 }
 
