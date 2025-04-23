@@ -80,6 +80,7 @@ export class RunCodeReviewAutomationUseCase {
                 payload: sanitizedPayload,
                 event: event,
             });
+
             if (!action) {
                 return;
             }
@@ -107,6 +108,7 @@ export class RunCodeReviewAutomationUseCase {
             const pullRequest = mappedPlatform.mapPullRequest({
                 payload: sanitizedPayload,
             });
+
             if (!pullRequest) {
                 // try to get the PR details from the code management when it's a github issue
                 if (platformType === PlatformType.GITHUB) {
@@ -187,10 +189,25 @@ export class RunCodeReviewAutomationUseCase {
     }
 
     private shouldRunAutomation(payload: any, platformType: PlatformType) {
-        const allowedActions = ['opened', 'synchronize', 'open', 'update'];
+        const allowedActions = [
+            'opened',
+            'synchronize',
+            'open',
+            'update',
+            'git.pullrequest.updated',
+            'git.pullrequest.created',
+        ];
         const currentAction =
-            payload?.action || payload?.object_attributes?.action;
-        const isMerged = payload?.object_attributes?.state === 'merged';
+            payload?.action ||
+            payload?.object_attributes?.action ||
+            payload?.eventType;
+
+        const isMerged =
+            payload?.object_attributes?.state === 'merged' ||
+            payload?.resource?.pullRequest?.status === 'completed' ||
+            payload?.resource?.status === 'completed' ||
+            false;
+
         const isCommand = payload?.origin === 'command';
 
         // bitbucket has already been handled in the webhook validation
@@ -199,6 +216,11 @@ export class RunCodeReviewAutomationUseCase {
             platformType !== PlatformType.BITBUCKET &&
             (!allowedActions.includes(currentAction) || isMerged)
         ) {
+            this.logger.log({
+                message: 'Automation skipped',
+                context: RunCodeReviewAutomationUseCase.name,
+                metadata: { currentAction, isMerged, platformType },
+            });
             return false;
         }
 
