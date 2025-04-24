@@ -10,6 +10,7 @@ import {
     Res,
     Inject,
 } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
 import { Response } from 'express';
 import { writeFileSync, createReadStream, unlink } from 'fs';
 import { join } from 'path';
@@ -26,32 +27,49 @@ export class CodeBaseController {
     constructor(
         @Inject(AST_ANALYSIS_SERVICE_TOKEN)
         private readonly codeASTAnalysisService: IASTAnalysisService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: { organization: { uuid: string } };
+        },
     ) {}
 
     @Post('analyze-dependencies')
     async analyzeDependencies(
-        @Body() body: { headDir: string; baseDir: string },
+        @Body()
+        body: {
+            id: string;
+            name: string;
+            full_name: string;
+            number: string;
+            head: {
+                ref: string;
+            };
+            base: {
+                ref: string;
+            };
+            platform: string;
+            teamId: string;
+        },
         @Res({ passthrough: true }) res: Response,
     ): Promise<StreamableFile> {
+        const { id, name, full_name, number, head, base, platform, teamId } =
+            body;
         const result = await this.codeASTAnalysisService.cloneAndGenerate(
             {
-                id: '929108425',
-                name: 'testing-repo',
-                full_name: 'kodustech/testing-repo',
+                id,
+                name,
+                full_name,
             },
             {
-                number: '15',
-                head: {
-                    ref: 'manim',
-                },
-                base: {
-                    ref: 'manim',
-                },
+                number,
+                head,
+                base,
             },
-            'github',
+            platform,
             {
-                organizationId: '27aa99ae-d31e-4584-887e-1dc271274064',
-                teamId: 'b951e67e-ba20-4d0e-9d04-26d7c17a3237',
+                organizationId: this.request.user?.organization.uuid,
+                teamId,
             },
         );
         // Converte o resultado para JSON
