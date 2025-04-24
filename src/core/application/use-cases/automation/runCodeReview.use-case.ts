@@ -345,6 +345,10 @@ export class RunCodeReviewAutomationUseCase {
                         return null;
                     }
 
+                    if (validation?.valid && validation?.subscriptionStatus === 'trial') {
+                        return { organizationAndTeamData, automationId };
+                    }
+
                     if (validation?.valid) {
                         const users =
                             await this.licenseService.getAllUsersWithLicense(
