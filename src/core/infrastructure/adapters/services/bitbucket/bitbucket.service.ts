@@ -68,21 +68,20 @@ import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
 export class BitbucketService
     implements
-        IBitbucketService,
-        Omit<
-            ICodeManagementService,
-            | 'getOrganizations'
-            | 'getListOfValidReviews'
-            | 'getUserByEmailOrName'
-            | 'getPullRequestReviewThreads'
-            | 'getUserById'
-            | 'getDataForCalculateDeployFrequency'
-            | 'getCommitsByReleaseMode'
-            | 'getAuthenticationOAuthToken'
-            | 'countReactions'
-            | 'getRepositoryAllFiles'
-        >
-{
+    IBitbucketService,
+    Omit<
+        ICodeManagementService,
+        | 'getOrganizations'
+        | 'getListOfValidReviews'
+        | 'getUserByEmailOrName'
+        | 'getPullRequestReviewThreads'
+        | 'getUserById'
+        | 'getDataForCalculateDeployFrequency'
+        | 'getCommitsByReleaseMode'
+        | 'getAuthenticationOAuthToken'
+        | 'countReactions'
+        | 'getRepositoryAllFiles'
+    > {
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
         private readonly integrationService: IIntegrationService,
@@ -102,7 +101,7 @@ export class BitbucketService
         private readonly promptService: PromptService,
 
         private readonly logger: PinoLoggerService,
-    ) {}
+    ) { }
 
     async getPullRequestsWithChangesRequested(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -1473,7 +1472,7 @@ export class BitbucketService
                             path: lineComment?.path,
                             to: this.sanitizeLine(
                                 params.lineComment.start_line ??
-                                    params.lineComment.line,
+                                params.lineComment.line,
                             ),
                         },
                     },
@@ -2862,7 +2861,7 @@ export class BitbucketService
             this.logger.error({
                 message: `Error to approve pull request #${params.prNumber}`,
                 context: BitbucketService.name,
-                serviceName: 'BitbucketService approvePullRequest',
+                serviceName: 'BitbucketService checkIfPullRequestShouldBeApproved',
                 error: error,
                 metadata: {
                     params,
@@ -3110,9 +3109,8 @@ export class BitbucketService
                 queryString += `created_on >= "${filters.startDate}"`;
             }
             if (filters?.endDate) {
-                queryString += `${
-                    queryString ? ' AND ' : ''
-                }created_on <= "${filters.endDate}"`;
+                queryString += `${queryString ? ' AND ' : ''
+                    }created_on <= "${filters.endDate}"`;
             }
 
             const pullRequests = await bitbucketAPI.pullrequests
@@ -3239,6 +3237,9 @@ export class BitbucketService
                         ) &&
                         !comment?.content?.raw.includes(
                             '# Found critical issues please',
+                        ) &&
+                        !comment?.content?.raw.includes(
+                            '@kody start',
                         )
                     ); // Exclude comments with the specific strings
                 })
