@@ -74,20 +74,19 @@ import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadg
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
 export class GitlabService
     implements
-        Omit<
-            ICodeManagementService,
-            | 'getOrganizations'
-            | 'getPullRequestsWithChangesRequested'
-            | 'getListOfValidReviews'
-            | 'getPullRequestReviewThreads'
-            | 'getRepositoryAllFiles'
-            | 'getAuthenticationOAuthToken'
-            | 'getPullRequestDetails'
-            | 'getCommitsByReleaseMode'
-            | 'getDataForCalculateDeployFrequency'
-            | 'requestChangesPullRequest'
-        >
-{
+    Omit<
+        ICodeManagementService,
+        | 'getOrganizations'
+        | 'getPullRequestsWithChangesRequested'
+        | 'getListOfValidReviews'
+        | 'getPullRequestReviewThreads'
+        | 'getRepositoryAllFiles'
+        | 'getAuthenticationOAuthToken'
+        | 'getPullRequestDetails'
+        | 'getCommitsByReleaseMode'
+        | 'getDataForCalculateDeployFrequency'
+        | 'requestChangesPullRequest'
+    > {
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
         private readonly integrationService: IIntegrationService,
@@ -106,7 +105,10 @@ export class GitlabService
 
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
-    ) {}
+    ) { }
+    checkIfPullRequestShouldBeApproved(params: { organizationAndTeamData: OrganizationAndTeamData; prNumber: number; repository: { id: string; name: string; }; }): Promise<any | null> {
+        throw new Error('Method not implemented.');
+    }
 
     async getPullRequestByNumber(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -576,7 +578,7 @@ export class GitlabService
                                     avatar_url: project.namespace?.avatar_url,
                                     organizationName: project.namespace?.name,
                                     visibility: (project?.visibility ===
-                                    'public'
+                                        'public'
                                         ? 'public'
                                         : 'private') as 'public' | 'private',
                                     selected:
@@ -627,7 +629,7 @@ export class GitlabService
                                     avatar_url: project.namespace?.avatar_url,
                                     organizationName: project.namespace?.name,
                                     visibility: (project?.visibility ===
-                                    'public'
+                                        'public'
                                         ? 'public'
                                         : 'private') as 'public' | 'private',
                                     selected:
@@ -746,8 +748,8 @@ export class GitlabService
                         pr.state === GitlabPullRequestState.OPENED
                             ? PullRequestState.OPENED
                             : pr.state === GitlabPullRequestState.CLOSED
-                              ? PullRequestState.CLOSED
-                              : PullRequestState.ALL,
+                                ? PullRequestState.CLOSED
+                                : PullRequestState.ALL,
                     pull_number: pr.iid,
                     project_id: pr.project_id,
                     prURL: pr.web_url,
@@ -1495,7 +1497,7 @@ export class GitlabService
             actionStatement,
             this.formatSub(translations.talkToKody),
             this.formatSub(translations.feedback) +
-                '<!-- kody-codereview -->&#8203;\n&#8203;',
+            '<!-- kody-codereview -->&#8203;\n&#8203;',
         ]
             .join('\n')
             .trim();
@@ -2475,8 +2477,8 @@ export class GitlabService
                         pr.state === GitlabPullRequestState.OPENED
                             ? PullRequestState.OPENED
                             : pr.state === GitlabPullRequestState.CLOSED
-                              ? PullRequestState.CLOSED
-                              : PullRequestState.ALL,
+                                ? PullRequestState.CLOSED
+                                : PullRequestState.ALL,
                     pull_number: pr.iid,
                     project_id: pr.project_id,
                     prURL: pr.web_url,
@@ -2541,7 +2543,7 @@ export class GitlabService
                     const firstDiscussionComment = discussion.notes[0];
                     const isDiscussionResolved: boolean =
                         firstDiscussionComment.resolved &&
-                        firstDiscussionComment.resolved === true
+                            firstDiscussionComment.resolved === true
                             ? true
                             : false;
 

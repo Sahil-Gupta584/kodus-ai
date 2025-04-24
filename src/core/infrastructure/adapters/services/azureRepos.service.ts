@@ -69,27 +69,26 @@ import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
     implements
-        Omit<
-            ICodeManagementService,
-            | 'getOrganizations'
-            | 'getPullRequestDetails'
-            | 'getWorkflows'
-            | 'getListMembers'
-            | 'getCommitsByReleaseMode'
-            | 'getPullRequestsForRTTM'
-            | 'createCommentInPullRequest'
-            | 'getPullRequestReviewThreads'
-            | 'getListOfValidReviews'
-            | 'getPullRequestsWithChangesRequested'
-            | 'findTeamAndOrganizationIdByConfigKey'
-            | 'createResponseToComment'
-            | 'getAuthenticationOAuthToken'
-            | 'countReactions'
-            | 'getRepositoryAllFiles'
-            | 'mergePullRequest'
-            | 'getUserById'
-        >
-{
+    Omit<
+        ICodeManagementService,
+        | 'getOrganizations'
+        | 'getPullRequestDetails'
+        | 'getWorkflows'
+        | 'getListMembers'
+        | 'getCommitsByReleaseMode'
+        | 'getPullRequestsForRTTM'
+        | 'createCommentInPullRequest'
+        | 'getPullRequestReviewThreads'
+        | 'getListOfValidReviews'
+        | 'getPullRequestsWithChangesRequested'
+        | 'findTeamAndOrganizationIdByConfigKey'
+        | 'createResponseToComment'
+        | 'getAuthenticationOAuthToken'
+        | 'countReactions'
+        | 'getRepositoryAllFiles'
+        | 'mergePullRequest'
+        | 'getUserById'
+    > {
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
         private readonly integrationService: IIntegrationService,
@@ -105,7 +104,10 @@ export class AzureReposService
 
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
-    ) {}
+    ) { }
+    checkIfPullRequestShouldBeApproved(params: { organizationAndTeamData: OrganizationAndTeamData; prNumber: number; repository: { id: string; name: string; }; }): Promise<any | null> {
+        throw new Error('Method not implemented.');
+    }
 
     async markReviewCommentAsResolved(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -1567,9 +1569,8 @@ export class AzureReposService
                 queryString += `created_on >= "${filters.startDate}"`;
             }
             if (filters?.endDate) {
-                queryString += `${
-                    queryString ? ' AND ' : ''
-                }created_on <= "${filters.endDate}"`;
+                queryString += `${queryString ? ' AND ' : ''
+                    }created_on <= "${filters.endDate}"`;
             }
 
             const projectId = await this.getProjectIdFromRepository(
@@ -2766,7 +2767,7 @@ export class AzureReposService
             actionStatement,
             this.formatSub(translations.talkToKody),
             this.formatSub(translations.feedback) +
-                '<!-- kody-codereview -->&#8203;\n&#8203;',
+            '<!-- kody-codereview -->&#8203;\n&#8203;',
         ]
             .join('\n')
             .trim();
