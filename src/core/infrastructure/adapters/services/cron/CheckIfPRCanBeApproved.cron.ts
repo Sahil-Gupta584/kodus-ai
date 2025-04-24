@@ -53,7 +53,7 @@ export class CheckIfPRCanBeApprovedCronProvider {
         private readonly integrationService: IIntegrationService,
 
         private readonly codeManagementService: CodeManagementService,
-    ) {}
+    ) { }
 
     @Cron(API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED, {
         name: 'CHECK IF PR SHOULD BE APPROVED',
@@ -248,7 +248,7 @@ export class CheckIfPRCanBeApprovedCronProvider {
             }
 
             if (isEveryReviewCommentResolved) {
-                await this.codeManagementService.approvePullRequest(
+                await this.codeManagementService.checkIfPullRequestShouldBeApproved(
                     {
                         organizationAndTeamData,
                         prNumber,

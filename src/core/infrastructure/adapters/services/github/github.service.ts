@@ -105,15 +105,14 @@ interface GitHubAuthResponse {
 @IntegrationServiceDecorator(PlatformType.GITHUB, 'codeManagement')
 export class GithubService
     implements
-        IGithubService,
-        Omit<
-            ICodeManagementService,
-            | 'getOrganizations'
-            | 'getUserById'
-            | 'getLanguageRepository'
-            | 'createSingleIssueComment'
-        >
-{
+    IGithubService,
+    Omit<
+        ICodeManagementService,
+        | 'getOrganizations'
+        | 'getUserById'
+        | 'getLanguageRepository'
+        | 'createSingleIssueComment'
+    > {
     private readonly MAX_RETRY_ATTEMPTS = 2;
     private readonly TTL = 50 * 60 * 1000; // 50 minutes
 
@@ -146,7 +145,8 @@ export class GithubService
 
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
-    ) {}
+    ) { }
+
 
     private async handleIntegration(
         integration: any,
@@ -1902,7 +1902,7 @@ export class GithubService
                         if (
                             secondToLastDeploy &&
                             lastDeploy.teamConfig?.configValue?.type ===
-                                'deployment'
+                            'deployment'
                         ) {
                             commits = await this.getCommitsForTagName(
                                 octokit,
@@ -1913,7 +1913,7 @@ export class GithubService
                         } else if (
                             secondToLastDeploy &&
                             lastDeploy.teamConfig?.configValue?.type ===
-                                'releases'
+                            'releases'
                         ) {
                             commits = await this.getCommitsForTagName(
                                 octokit,
@@ -2420,7 +2420,7 @@ export class GithubService
             actionStatement,
             this.formatSub(translations.talkToKody),
             this.formatSub(translations.feedback) +
-                '<!-- kody-codereview -->&#8203;\n&#8203;',
+            '<!-- kody-codereview -->&#8203;\n&#8203;',
         ]
             .join('\n')
             .trim();
@@ -2631,13 +2631,13 @@ export class GithubService
                         // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
                         return firstComment
                             ? {
-                                  id: firstComment.id, // Used to actually resolve the thread
-                                  threadId: reviewThread.id,
-                                  isResolved: reviewThread.isResolved,
-                                  isOutdated: reviewThread.isOutdated,
-                                  fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
-                                  body: firstComment.body,
-                              }
+                                id: firstComment.id, // Used to actually resolve the thread
+                                threadId: reviewThread.id,
+                                isResolved: reviewThread.isResolved,
+                                isOutdated: reviewThread.isOutdated,
+                                fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
+                                body: firstComment.body,
+                            }
                             : null;
                     })
                     .filter((comment) => comment !== null);
@@ -3213,15 +3213,15 @@ export class GithubService
                 reactions: {
                     thumbsUp: isOAuth
                         ? Math.max(
-                              0,
-                              comment.reactions[GitHubReaction.THUMBS_UP] - 1,
-                          )
+                            0,
+                            comment.reactions[GitHubReaction.THUMBS_UP] - 1,
+                        )
                         : comment.reactions[GitHubReaction.THUMBS_UP],
                     thumbsDown: isOAuth
                         ? Math.max(
-                              0,
-                              comment.reactions[GitHubReaction.THUMBS_DOWN] - 1,
-                          )
+                            0,
+                            comment.reactions[GitHubReaction.THUMBS_DOWN] - 1,
+                        )
                         : comment.reactions[GitHubReaction.THUMBS_DOWN],
                 },
                 comment: {
@@ -3418,6 +3418,83 @@ export class GithubService
         }
     }
 
+    async checkIfPullRequestShouldBeApproved(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string; };
+    }): Promise<any | null> {
+        const { organizationAndTeamData, prNumber, repository } = params;
+
+        const githubAuth = await this.getGithubAuthDetails(
+            organizationAndTeamData,
+        );
+
+        const octokit = await this.instanceOctokit(
+            organizationAndTeamData,
+            githubAuth,
+        );
+
+        const graphQLWithAuth = await this.instanceGraphQL(
+            organizationAndTeamData,
+        );
+
+        const query = `
+        query {
+          viewer {
+            login
+            id
+            __typename
+          }
+        }
+      `;
+
+        const variables = {};
+        const userAuth: {
+            viewer: { login: string; id: string; __typename: string };
+        } = await graphQLWithAuth(query, variables);
+
+        const { data: allReviews } = await octokit.rest.pulls.listReviews({
+            owner: githubAuth.org,
+            repo: repository.name,
+            pull_number: prNumber,
+            per_page: 100,
+        });
+
+        if (!allReviews?.length && allReviews) {
+            return;
+        }
+
+        const myReviews = allReviews
+            ?.filter(
+                (reviewer) =>
+                    reviewer?.user?.login === userAuth?.viewer?.login &&
+                    reviewer?.user?.node_id === userAuth?.viewer?.id,
+            )
+            ?.sort(
+                (a, b) =>
+                    new Date(a.submitted_at!).getTime() -
+                    new Date(b.submitted_at!).getTime(),
+            );
+
+        if (!myReviews?.length) {
+            return;
+        }
+
+        const lastMy = myReviews.pop();
+
+        if (lastMy?.state === 'APPROVED') {
+            return;
+        } else {
+            await this.approvePullRequest({ organizationAndTeamData, prNumber, repository });
+            this.logger.log({
+                message: `Pull request #${prNumber} aprovado pelo bot.`,
+                context: GithubService.name,
+                serviceName: 'GithubService.approvePullRequest',
+                metadata: params,
+            });
+        }
+    }
+
     async approvePullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         prNumber: number;
@@ -3431,26 +3508,6 @@ export class GithubService
             );
 
             const octokit = await this.instanceOctokit(organizationAndTeamData);
-
-            const { data: reviews } = await octokit.rest.pulls.listReviews({
-                owner: githubAuthDetail.org,
-                repo: repository.name,
-                pull_number: prNumber,
-            });
-
-            if (reviews.length > 0) {
-                const lastReview = reviews[reviews.length - 1];
-
-                if (lastReview.state === PullRequestReviewState.APPROVED) {
-                    this.logger.log({
-                        message: `Pull request #${prNumber} has already been approved.`,
-                        context: GithubService.name,
-                        serviceName: 'GithubService approvePullRequest',
-                        metadata: params,
-                    });
-                    return;
-                }
-            }
 
             await octokit.rest.pulls.createReview({
                 owner: githubAuthDetail.org,
@@ -3862,13 +3919,13 @@ export class GithubService
                         // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
                         return firstComment
                             ? {
-                                  id: firstComment.id, // Used to actually resolve the thread
-                                  threadId: reviewThread.id,
-                                  isResolved: reviewThread.isResolved,
-                                  isOutdated: reviewThread.isOutdated,
-                                  fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
-                                  body: firstComment.body,
-                              }
+                                id: firstComment.id, // Used to actually resolve the thread
+                                threadId: reviewThread.id,
+                                isResolved: reviewThread.isResolved,
+                                isOutdated: reviewThread.isOutdated,
+                                fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
+                                body: firstComment.body,
+                            }
                             : null;
                     })
                     .filter((comment) => comment !== null);
@@ -3895,11 +3952,11 @@ export class GithubService
                     // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
                     return firstComment
                         ? {
-                              id: firstComment.id, // Used to actually resolve the thread
-                              reviewId: review.id,
-                              fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
-                              body: firstComment.body,
-                          }
+                            id: firstComment.id, // Used to actually resolve the thread
+                            reviewId: review.id,
+                            fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
+                            body: firstComment.body,
+                        }
                         : null;
                 })
                 .filter((comment) => comment !== null);
