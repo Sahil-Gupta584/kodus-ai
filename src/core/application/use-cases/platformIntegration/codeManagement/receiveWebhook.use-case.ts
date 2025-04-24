@@ -36,7 +36,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
         private readonly integrationConfigService: IIntegrationConfigService,
 
         private readonly bitbuckerService: BitbucketService,
-    ) {}
+    ) { }
 
     public async execute(params: {
         payload: any;
@@ -90,7 +90,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                 case 'Note Hook':
                     if (
                         params.payload?.object_attributes?.action ===
-                            'create' &&
+                        'create' &&
                         !params.payload?.object_attributes?.change_position &&
                         !params.payload?.object_attributes?.type
                     ) {
@@ -322,7 +322,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                 repository.name,
             );
 
-        if (storedPR) {
+        if (storedPR && pullrequest.state === 'OPEN') {
             const prCommit = pullRequestCommits[pullRequestCommits.length - 1];
             const storedPRCommitHashes = storedPR?.commits?.map(
                 (commit) => commit.sha,
