@@ -2817,6 +2817,61 @@ export class BitbucketService
         }
     }
 
+    async checkIfPullRequestShouldBeApproved(params: {
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { id: string; name: string };
+    }) {
+        try {
+            const { organizationAndTeamData, prNumber, repository } = params;
+
+            const bitbucketAuthDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const workspace = await this.getWorkspaceFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            if (!workspace) {
+                return null;
+            }
+
+            const bitbucketAPI =
+                this.instanceBitbucketApi(bitbucketAuthDetails);
+
+            const currentUser = (await bitbucketAPI.users.getAuthedUser({})).data;
+
+            const activities = await bitbucketAPI.pullrequests.listActivities({
+                repo_slug: `{${repository.id}}`,
+                workspace: `{${workspace}}`,
+                pull_request_id: prNumber,
+            }).then((res) => this.getPaginatedResults(bitbucketAPI, res));
+
+            const isApprovedByCurrentUser = activities
+                .find((activity: any) => (activity.approval && (activity.approval?.user?.uuid === currentUser?.uuid)));
+
+            if (isApprovedByCurrentUser) {
+                return null;
+            }
+
+            await this.approvePullRequest({ organizationAndTeamData, prNumber, repository });
+
+        } catch (error) {
+            this.logger.error({
+                message: `Error to approve pull request #${params.prNumber}`,
+                context: BitbucketService.name,
+                serviceName: 'BitbucketService approvePullRequest',
+                error: error,
+                metadata: {
+                    params,
+                },
+            });
+            return null;
+        }
+    }
+
     async approvePullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         prNumber: number;
@@ -3166,12 +3221,6 @@ export class BitbucketService
             }
 
             const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
-
-            // const activities = await bitbucketAPI.pullrequests.listActivities({
-            //     repo_slug: `{${repository.id}}`,
-            //     workspace: `{${workspace}}`,
-            //     pull_request_id: prNumber,
-            // });
 
             const comments = await bitbucketAPI.pullrequests
                 .listComments({
