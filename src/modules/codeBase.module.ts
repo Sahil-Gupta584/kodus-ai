@@ -26,13 +26,9 @@ import { PromptRunnerService } from '@/core/infrastructure/adapters/services/cod
 import { CommentAnalysisService } from '@/core/infrastructure/adapters/services/codeBase/commentAnalysis.service';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 
-import { UseCases } from '@/core/application/use-cases/codeBase';
-import { REPOSITORY_MANAGER_TOKEN } from '@/core/domain/repository/contracts/repository-manager.contract';
-import { RepositoryManagerService } from '@/core/infrastructure/adapters/services/codeBase/repository/repository-manager.service';
 import { AST_ANALYSIS_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
 import { SuggestionService } from '@/core/infrastructure/adapters/services/codeBase/suggestion.service';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
-import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeBase.controller';
 import { KodyFineTuningService } from '@/ee/kodyFineTuning/kodyFineTuning.service';
 import { CodeReviewPipelineModule } from './codeReviewPipeline.module';
 import { FileReviewModule } from '@/ee/codeReview/fileReviewContextPreparation/fileReview.module';
@@ -49,6 +45,9 @@ import {
 } from '@/ee/codeBase/kodyRulesAnalysis.service';
 import { GlobalParametersModule } from './global-parameters.module';
 import { LogModule } from './log.module';
+import { ClientsModule } from '@nestjs/microservices';
+import { AST_MICROSERVICE_OPTIONS } from '@/config/microservices/ast-options';
+import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeBase.controller';
 
 @Module({
     imports: [
@@ -72,9 +71,10 @@ import { LogModule } from './log.module';
         forwardRef(() => KodyASTAnalyzeContextModule),
         forwardRef(() => GlobalParametersModule),
         LogModule,
+
+        ClientsModule.register([AST_MICROSERVICE_OPTIONS]),
     ],
     providers: [
-        ...UseCases,
         {
             provide: LLM_ANALYSIS_SERVICE_TOKEN,
             useClass: LLMAnalysisService,
@@ -94,10 +94,6 @@ import { LogModule } from './log.module';
         {
             provide: KODY_RULES_ANALYSIS_SERVICE_TOKEN,
             useClass: KodyRulesAnalysisService,
-        },
-        {
-            provide: REPOSITORY_MANAGER_TOKEN,
-            useClass: RepositoryManagerService,
         },
         {
             provide: AST_ANALYSIS_SERVICE_TOKEN,
@@ -122,7 +118,6 @@ import { LogModule } from './log.module';
         COMMENT_MANAGER_SERVICE_TOKEN,
         CODE_BASE_CONFIG_SERVICE_TOKEN,
         KODY_RULES_ANALYSIS_SERVICE_TOKEN,
-        REPOSITORY_MANAGER_TOKEN,
         SUGGESTION_SERVICE_TOKEN,
         PromptService,
         CodeAnalysisOrchestrator,

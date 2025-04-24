@@ -7,12 +7,12 @@ import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum'
 import { ImplementationStatus } from '@/core/domain/pullRequests/enums/implementationStatus.enum';
 
 import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
-import { FunctionAnalysis } from '@/ee/codeBase/ast/contracts/CodeGraph';
 import {
     EnrichGraph,
     FunctionsAffectResult,
     FunctionSimilarity,
 } from '@/ee/codeBase/ast/services/code-analyzer.service';
+import { FunctionAnalysis } from '@/ee/codeBase/ast/types/types';
 
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
@@ -296,7 +296,7 @@ export type CodeReviewConfigWithRepositoryInfo = Omit<
     id: string;
     name: string;
     isSelected?: boolean;
-}
+};
 
 // Omit every configuration that isn't present on the kodus configuration file.
 export type KodusConfigFile = Omit<

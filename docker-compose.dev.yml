@@ -16,6 +16,7 @@ services:
         volumes:
             - .:/usr/src/app:delegated
             - /usr/src/app/node_modules
+            - ../certs/:/usr/src/app/certs:delegated
         networks:
             - kodus-backend-services
             - shared-network

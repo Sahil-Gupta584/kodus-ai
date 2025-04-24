@@ -1,3 +1,20 @@
+import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
+import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
+
+export type GitCloneParams = {
+    url: string;
+    provider: PlatformType;
+    branch?: string;
+    auth?: {
+        type?: AuthMode;
+        token?: string;
+        org?: string;
+    };
+    organizationId: string;
+    repositoryId: string;
+    repositoryName: string;
+};
+
 /**
  * Possible types of relationships between code elements
  */

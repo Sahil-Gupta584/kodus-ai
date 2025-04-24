@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { CodeGraph, FunctionAnalysis } from '../contracts/CodeGraph';
 import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
 import { JsonOutputParser } from '@langchain/core/output_parsers';
 import {
@@ -13,6 +12,7 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { SyntaxNode } from 'tree-sitter';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { ChangeResult, FunctionResult } from '../../diffAnalyzer.service';
+import { CodeGraph, FunctionAnalysis } from '../types/types';
 
 export enum NodeType {
     CLASS = 'CLASS',

@@ -1,0 +1,26 @@
+import { ClientProviderOptions, Transport } from '@nestjs/microservices';
+import { resolve } from 'path';
+import { cwd } from 'process';
+import { credentials } from '@grpc/grpc-js';
+import * as fs from 'fs';
+
+export const AST_MICROSERVICE_OPTIONS = {
+    name: 'AST_MICROSERVICE',
+    transport: Transport.GRPC,
+    options: {
+        package: 'kodus.ast.v1',
+        protoPath: resolve(
+            cwd(),
+            'node_modules/@kodus/kodus-proto/kodus/ast/v1/analyzer.proto',
+        ),
+        url: process.env.SERVICE_AST_URL,
+        loader: {
+            includeDirs: [resolve(cwd(), 'node_modules/@kodus/kodus-proto')],
+        },
+        credentials: credentials.createSsl(
+            fs.readFileSync(resolve(cwd(), 'certs/ca.crt')),
+            fs.readFileSync(resolve(cwd(), 'certs/client.key')),
+            fs.readFileSync(resolve(cwd(), 'certs/client.crt')),
+        ),
+    },
+} as ClientProviderOptions;

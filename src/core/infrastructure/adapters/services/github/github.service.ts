@@ -81,10 +81,6 @@ import {
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 import { getLabelShield } from '@/shared/utils/codeManagement/labels';
 import {
-    IRepositoryManager,
-    REPOSITORY_MANAGER_TOKEN,
-} from '@/core/domain/repository/contracts/repository-manager.contract';
-import {
     CommentResult,
     Repository,
 } from '@/config/types/general/codeReview.type';
@@ -93,6 +89,7 @@ import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 
 interface GitHubAuthResponse {
     token: string;
@@ -138,9 +135,6 @@ export class GithubService
 
         @Inject(DORA_METRICS_FACTORY_TOKEN)
         private readonly doraMetricsFactory: IDoraMetricsFactory,
-
-        @Inject(REPOSITORY_MANAGER_TOKEN)
-        private readonly repositoryManager: IRepositoryManager,
 
         private readonly cacheService: CacheService,
 
@@ -3477,13 +3471,13 @@ export class GithubService
         }
     }
 
-    async cloneRepository(params: {
+    async getCloneParams(params: {
         repository: Pick<
             Repository,
             'id' | 'defaultBranch' | 'fullName' | 'name'
         >;
         organizationAndTeamData: OrganizationAndTeamData;
-    }): Promise<string> {
+    }): Promise<GitCloneParams> {
         try {
             const githubAuthDetail: any = await this.getGithubAuthDetails(
                 params.organizationAndTeamData,
@@ -3507,7 +3501,7 @@ export class GithubService
 
             const fullGithubUrl = `https://github.com/${params?.repository?.fullName}`;
 
-            const repoPath = await this.repositoryManager.gitCloneWithAuth({
+            return {
                 organizationId: params?.organizationAndTeamData?.organizationId,
                 repositoryId: params?.repository?.id,
                 repositoryName: params?.repository?.name,
@@ -3521,9 +3515,7 @@ export class GithubService
                         ? installationAuthentication.token
                         : decrypt(githubAuthDetail.authToken),
                 },
-            });
-
-            return repoPath;
+            };
         } catch (error) {
             this.logger.error({
                 message: `Failed to clone repository ${params?.repository?.fullName} from Github`,
@@ -3531,7 +3523,7 @@ export class GithubService
                 error: error.message,
                 metadata: params,
             });
-            return '';
+            return null;
         }
     }
 
