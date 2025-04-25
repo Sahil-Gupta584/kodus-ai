@@ -63,6 +63,7 @@ import {
     REPOSITORY_MANAGER_TOKEN,
 } from '@/core/domain/repository/contracts/repository-manager.contract';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { KODY_CODE_REVIEW_COMPLETED_MARKER, KODY_CRITICAL_ISSUE_COMMENT_MARKER, KODY_START_COMMAND_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -2840,6 +2841,15 @@ export class BitbucketService
             const bitbucketAPI =
                 this.instanceBitbucketApi(bitbucketAuthDetails);
 
+            if (!bitbucketAuthDetails) {
+                this.logger.warn({
+                    message: 'Bitbucket auth details not found',
+                    context: this.checkIfPullRequestShouldBeApproved.name,
+                    metadata: { organizationAndTeamData }
+                });
+                return null;
+            }
+
             const currentUser = (await bitbucketAPI.users.getAuthedUser({})).data;
 
             const activities = await bitbucketAPI.pullrequests.listActivities({
@@ -3233,13 +3243,13 @@ export class BitbucketService
                 .filter((comment) => {
                     return (
                         !comment?.content?.raw.includes(
-                            '## Code Review Completed! 🔥',
+                            KODY_CODE_REVIEW_COMPLETED_MARKER,
                         ) &&
                         !comment?.content?.raw.includes(
-                            '# Found critical issues please',
+                            KODY_CRITICAL_ISSUE_COMMENT_MARKER,
                         ) &&
                         !comment?.content?.raw.includes(
-                            '@kody start',
+                            KODY_START_COMMAND_MARKER,
                         )
                     ); // Exclude comments with the specific strings
                 })

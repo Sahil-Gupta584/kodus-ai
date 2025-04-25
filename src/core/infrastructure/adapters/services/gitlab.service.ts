@@ -1,5 +1,4 @@
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
-import { DeployFrequency } from '@/core/domain/platformIntegrations/types/codeManagement/deployFrequency.type';
 import {
     PullRequestCodeReviewTime,
     PullRequestReviewComment,
@@ -41,7 +40,6 @@ import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { PinoLoggerService } from './logger/pino.service';
 import { PromptService } from './prompt.service';
-import { CommitLeadTimeForChange } from '@/core/domain/platformIntegrations/types/codeManagement/commitLeadTimeForChange.type';
 import * as moment from 'moment-timezone';
 import { Commit } from '@/config/types/general/commit.type';
 import { IntegrationConfigEntity } from '@/core/domain/integrationConfigs/entities/integration-config.entity';
@@ -69,6 +67,7 @@ import { CreateAuthIntegrationStatus } from '@/shared/domain/enums/create-auth-i
 import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
+import { KODY_CODE_REVIEW_COMPLETED_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
@@ -2579,7 +2578,7 @@ export class GitlabService
                     return (
                         firstDiscussionComment.resolvable &&
                         !firstDiscussionComment.body.includes(
-                            '## Code Review Completed! 🔥',
+                            KODY_CODE_REVIEW_COMPLETED_MARKER,
                         )
                     ); // Exclude comments with the specific string
                 })

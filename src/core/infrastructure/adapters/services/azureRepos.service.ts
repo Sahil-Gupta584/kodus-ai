@@ -65,6 +65,7 @@ import {
     TranslationsCategory,
 } from '@/shared/utils/translations/translations';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
+import { KODY_CRITICAL_ISSUE_COMMENT_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
@@ -1132,7 +1133,7 @@ export class AzureReposService
                             '## Code Review Completed! ud83dudd25',
                         ) &&
                         !comment.body.includes(
-                            '# Found critical issues please',
+                            KODY_CRITICAL_ISSUE_COMMENT_MARKER,
                         ),
                 )
                 .sort(
