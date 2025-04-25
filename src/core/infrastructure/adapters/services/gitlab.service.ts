@@ -2243,7 +2243,8 @@ export class GitlabService
             const approvedBy = approvalSettings?.approved_by;
 
             const isApprovedByCurrentUser = approvedBy
-                .find((approval) => (approval?.user?.id === currentUser.id));
+                ? approvedBy.some((approval) => (approval?.user?.id === currentUser.id))
+                : false;
 
             if (isApprovedByCurrentUser) {
                 return null;
