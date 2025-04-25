@@ -3486,12 +3486,6 @@ export class GithubService
             return;
         } else {
             await this.approvePullRequest({ organizationAndTeamData, prNumber, repository });
-            this.logger.log({
-                message: `Pull request #${prNumber} aprovado pelo bot.`,
-                context: GithubService.name,
-                serviceName: 'GithubService.approvePullRequest',
-                metadata: params,
-            });
         }
     }
 
