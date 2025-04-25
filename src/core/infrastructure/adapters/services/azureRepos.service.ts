@@ -105,9 +105,7 @@ export class AzureReposService
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
     ) { }
-    checkIfPullRequestShouldBeApproved(params: { organizationAndTeamData: OrganizationAndTeamData; prNumber: number; repository: { id: string; name: string; }; }): Promise<any | null> {
-        throw new Error('Method not implemented.');
-    }
+
 
     async markReviewCommentAsResolved(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -151,6 +149,64 @@ export class AzureReposService
                 message: `Failed to resolve review thread in PR #${params.prNumber}`,
                 context: AzureReposService.name,
                 serviceName: 'AzureReposService markReviewCommentAsResolved',
+                error,
+                metadata: { params },
+            });
+            return null;
+        }
+    }
+
+    async checkIfPullRequestShouldBeApproved(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string; };
+    }): Promise<any | null> {
+        try {
+            const { organizationAndTeamData, prNumber, repository } = params;
+
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            const currentUserId =
+                await this.azureReposRequestHelper.getAuthenticatedUserId({
+                    orgName,
+                    token,
+                });
+
+            if (!currentUserId) {
+                throw new Error('Unable to identify reviewer from PAT.');
+            }
+
+            const reviewers = await this.azureReposRequestHelper.getListOfPullRequestReviewers({
+                orgName,
+                projectId,
+                repositoryId: repository.id,
+                prId: prNumber,
+                token
+            });
+
+            const isApprovedByCurrentUser = reviewers
+                ? reviewers?.some((reviewer) => (reviewer.id === currentUserId))
+                : false;
+
+            if (isApprovedByCurrentUser) {
+                return null;
+            }
+
+            const result = await this.approvePullRequest({ organizationAndTeamData, prNumber, repository });
+
+            return result;
+        } catch (error) {
+            this.logger.error({
+                message: `Error approving pull request #${params.prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService approvePullRequest',
                 error,
                 metadata: { params },
             });

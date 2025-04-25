@@ -17,7 +17,7 @@ import { FileChange } from '@/config/types/general/codeReview.type';
 
 @Injectable()
 export class AzureReposRequestHelper {
-    constructor() {}
+    constructor() { }
 
     async getProjects(params: {
         orgName: string;
@@ -631,6 +631,22 @@ export class AzureReposRequestHelper {
 
         const { data } = await instance.put(url, payload);
         return data;
+    }
+
+    async getListOfPullRequestReviewers(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        prId: number;
+    }): Promise<any> {
+        const instance = await this.azureRequest(params);
+
+        const url = `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullRequests/${params.prId}/reviewers/?api-version=7.1`;
+
+        const { data } = await instance.get(url);
+
+        return data?.value ?? [];
     }
 
     async getRepositoryContentFile(params: {
