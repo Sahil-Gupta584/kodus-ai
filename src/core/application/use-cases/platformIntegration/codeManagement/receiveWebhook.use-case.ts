@@ -192,11 +192,14 @@ export class ReceiveWebhookUseCase implements IUseCase {
                     name: payload.repository.name,
                 };
 
+                const userGitId = await this.getUserGitId(payload, platformType);
+
                 const teamData =
                     await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview(
                         {
                             repository,
                             platformType,
+                            userGitId,
                         },
                     );
 
@@ -348,5 +351,13 @@ export class ReceiveWebhookUseCase implements IUseCase {
             default:
                 return false;
         }
+    }
+
+    private async getUserGitId(payload: any, platformType: PlatformType) {
+        if (platformType === PlatformType.GITHUB) {
+            return payload?.sender?.id.toString();
+        }
+
+        return null;
     }
 }

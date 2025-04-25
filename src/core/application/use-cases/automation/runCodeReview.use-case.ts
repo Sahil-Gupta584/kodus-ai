@@ -275,6 +275,7 @@ export class RunCodeReviewAutomationUseCase {
     async findTeamWithActiveCodeReview(params: {
         repository: { id: string; name: string };
         platformType: PlatformType;
+        userGitId?: string;
     }): Promise<{
         organizationAndTeamData: OrganizationAndTeamData;
         automationId: string;
@@ -345,7 +346,10 @@ export class RunCodeReviewAutomationUseCase {
                         return null;
                     }
 
-                    if (validation?.valid && validation?.subscriptionStatus === 'trial') {
+                    if (
+                        validation?.valid &&
+                        validation?.subscriptionStatus === 'trial'
+                    ) {
                         return { organizationAndTeamData, automationId };
                     }
 
@@ -355,10 +359,21 @@ export class RunCodeReviewAutomationUseCase {
                                 organizationAndTeamData,
                             );
 
-                        console.log('users', users);
+                        if (params?.userGitId) {
+                            const user = users?.find(
+                                (user) => user?.git_id === params?.userGitId,
+                            );
+
+                            if (user) {
+                                return {
+                                    organizationAndTeamData,
+                                    automationId,
+                                };
+                            }
+                        }
                     }
 
-                    return { organizationAndTeamData, automationId };
+                    return null;
                 }
             }
 
