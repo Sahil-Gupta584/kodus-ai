@@ -11,6 +11,7 @@ import {
     AzureRepoPRThread,
     AzureRepoSubscription,
     AzureRepoCommentType,
+    AzureRepoReviewerWithVote,
 } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
 import { decrypt } from '@/shared/utils/crypto';
 import { FileChange } from '@/config/types/general/codeReview.type';
@@ -639,7 +640,7 @@ export class AzureReposRequestHelper {
         projectId: string;
         repositoryId: string;
         prId: number;
-    }): Promise<any> {
+    }): Promise<AzureRepoReviewerWithVote[]> {
         const instance = await this.azureRequest(params);
 
         const url = `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullRequests/${params.prId}/reviewers/?api-version=7.1`;
