@@ -1,0 +1,568 @@
+{
+  "timestamp": "2025-04-25T15:15:58.733Z",
+  "config": {
+    "app": {
+      "baseUrl": "http://localhost:3001",
+      "timeout": 180000
+    },
+    "test": {
+      "simulationCount": 3,
+      "interval": 10000,
+      "timeout": 600000,
+      "verifyMongoDB": true,
+      "simulateLLM": true,
+      "simulateLogs": true
+    },
+    "mongodb": {
+      "host": "localhost",
+      "port": "27017",
+      "username": "kodusdev",
+      "password": "123456",
+      "database": "kodus_db",
+      "uri": "mongodb://kodusdev:123456@localhost:27017/kodus_db",
+      "collections": {
+        "pullRequests": "pullrequests",
+        "automationExecutions": "automationexecutions",
+        "logs": "logs"
+      }
+    },
+    "llmMock": {
+      "endpoint": "http://localhost:8080/mock-llm",
+      "avgResponseTime": 30000,
+      "responseTimeVariation": 15000
+    },
+    "pipeline": {
+      "stages": [
+        "ValidateConfig",
+        "FetchChangedFiles",
+        "InitialComment",
+        "ProcessFilesReview",
+        "AggregateResults",
+        "UpdateCommentsAndGenerateSummary",
+        "RequestChangesOrApprove"
+      ],
+      "stageTimings": {
+        "ValidateConfig": 500,
+        "FetchChangedFiles": 2000,
+        "InitialComment": 1000,
+        "ProcessFilesReview": 5000,
+        "AggregateResults": 1000,
+        "UpdateCommentsAndGenerateSummary": 2000,
+        "RequestChangesOrApprove": 1000
+      }
+    }
+  },
+  "summary": {
+    "totalDuration": 58663,
+    "webhookSuccessCount": 3,
+    "pipelineSuccessCount": 3,
+    "webhookSuccessRate": 100,
+    "pipelineSuccessRate": 100,
+    "llmCalls": 23,
+    "llmSuccessRate": 0,
+    "avgLLMTime": 0,
+    "stageStats": {
+      "ValidateConfig": {
+        "count": 3,
+        "successCount": 3,
+        "totalDuration": 1105,
+        "avgDuration": 368.3333333333333,
+        "successRate": 100
+      },
+      "FetchChangedFiles": {
+        "count": 3,
+        "successCount": 3,
+        "totalDuration": 7146,
+        "avgDuration": 2382,
+        "successRate": 100
+      },
+      "InitialComment": {
+        "count": 3,
+        "successCount": 3,
+        "totalDuration": 2333,
+        "avgDuration": 777.6666666666666,
+        "successRate": 100
+      },
+      "ProcessFilesReview": {
+        "count": 3,
+        "successCount": 3,
+        "totalDuration": 16754,
+        "avgDuration": 5584.666666666667,
+        "successRate": 100
+      },
+      "AggregateResults": {
+        "count": 3,
+        "successCount": 3,
+        "totalDuration": 3738,
+        "avgDuration": 1246,
+        "successRate": 100
+      },
+      "UpdateCommentsAndGenerateSummary": {
+        "count": 3,
+        "successCount": 3,
+        "totalDuration": 4693,
+        "avgDuration": 1564.3333333333333,
+        "successRate": 100
+      },
+      "RequestChangesOrApprove": {
+        "count": 3,
+        "successCount": 3,
+        "totalDuration": 2523,
+        "avgDuration": 841,
+        "successRate": 100
+      }
+    }
+  },
+  "results": [
+    {
+      "webhook": {
+        "success": true,
+        "duration": 196,
+        "status": 200,
+        "webhookId": "webhook-1745594100067-0",
+        "prNumber": 100,
+        "repoName": "test-repo",
+        "timestamp": "2025-04-25T15:15:00.263Z"
+      },
+      "pipeline": {
+        "webhookId": "webhook-1745594100067-0",
+        "prNumber": 100,
+        "repoName": "test-repo",
+        "stages": [
+          {
+            "name": "ValidateConfig",
+            "duration": 387,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:00.654Z"
+          },
+          {
+            "name": "FetchChangedFiles",
+            "duration": 2790,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:03.445Z"
+          },
+          {
+            "name": "InitialComment",
+            "duration": 528,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:03.975Z"
+          },
+          {
+            "name": "ProcessFilesReview",
+            "duration": 6944,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:10.919Z"
+          },
+          {
+            "name": "AggregateResults",
+            "duration": 1367,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:12.286Z"
+          },
+          {
+            "name": "UpdateCommentsAndGenerateSummary",
+            "duration": 1616,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:13.902Z"
+          },
+          {
+            "name": "RequestChangesOrApprove",
+            "duration": 509,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:14.412Z"
+          }
+        ],
+        "startTime": "2025-04-25T15:15:00.267Z",
+        "endTime": "2025-04-25T15:15:14.413Z",
+        "totalDuration": 14146,
+        "success": true,
+        "logs": [
+          {
+            "stage": "ValidateConfig",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:00.654Z"
+          },
+          {
+            "stage": "FetchChangedFiles",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:03.447Z"
+          },
+          {
+            "stage": "InitialComment",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:03.975Z"
+          },
+          {
+            "stage": "ProcessFilesReview",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:10.919Z"
+          },
+          {
+            "stage": "AggregateResults",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:12.286Z"
+          },
+          {
+            "stage": "UpdateCommentsAndGenerateSummary",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:13.903Z"
+          },
+          {
+            "stage": "RequestChangesOrApprove",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:14.413Z"
+          }
+        ],
+        "llmCalls": [
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:10.901Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:10.904Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:10.905Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:10.912Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:10.915Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:10.919Z",
+            "success": false
+          },
+          {
+            "type": "review-mode",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:12.286Z",
+            "success": false
+          },
+          {
+            "type": "safeguard",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:13.902Z",
+            "success": false
+          }
+        ]
+      },
+      "processing": false
+    },
+    {
+      "webhook": {
+        "success": true,
+        "duration": 71,
+        "status": 200,
+        "webhookId": "webhook-1745594124415-1",
+        "prNumber": 101,
+        "repoName": "test-repo",
+        "timestamp": "2025-04-25T15:15:24.486Z"
+      },
+      "pipeline": {
+        "webhookId": "webhook-1745594124415-1",
+        "prNumber": 101,
+        "repoName": "test-repo",
+        "stages": [
+          {
+            "name": "ValidateConfig",
+            "duration": 398,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:24.884Z"
+          },
+          {
+            "name": "FetchChangedFiles",
+            "duration": 2337,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:27.221Z"
+          },
+          {
+            "name": "InitialComment",
+            "duration": 980,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:28.202Z"
+          },
+          {
+            "name": "ProcessFilesReview",
+            "duration": 2695,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:30.897Z"
+          },
+          {
+            "name": "AggregateResults",
+            "duration": 1394,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:32.291Z"
+          },
+          {
+            "name": "UpdateCommentsAndGenerateSummary",
+            "duration": 1514,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:33.805Z"
+          },
+          {
+            "name": "RequestChangesOrApprove",
+            "duration": 733,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:34.538Z"
+          }
+        ],
+        "startTime": "2025-04-25T15:15:24.486Z",
+        "endTime": "2025-04-25T15:15:34.539Z",
+        "totalDuration": 10053,
+        "success": true,
+        "logs": [
+          {
+            "stage": "ValidateConfig",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:24.884Z"
+          },
+          {
+            "stage": "FetchChangedFiles",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:27.222Z"
+          },
+          {
+            "stage": "InitialComment",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:28.202Z"
+          },
+          {
+            "stage": "ProcessFilesReview",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:30.897Z"
+          },
+          {
+            "stage": "AggregateResults",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:32.291Z"
+          },
+          {
+            "stage": "UpdateCommentsAndGenerateSummary",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:33.805Z"
+          },
+          {
+            "stage": "RequestChangesOrApprove",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:34.538Z"
+          }
+        ],
+        "llmCalls": [
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:30.886Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:30.889Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:30.891Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:30.894Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:30.895Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:30.897Z",
+            "success": false
+          },
+          {
+            "type": "review-mode",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:32.291Z",
+            "success": false
+          },
+          {
+            "type": "safeguard",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:33.805Z",
+            "success": false
+          }
+        ]
+      },
+      "processing": false
+    },
+    {
+      "webhook": {
+        "success": true,
+        "duration": 82,
+        "status": 200,
+        "webhookId": "webhook-1745594144541-2",
+        "prNumber": 102,
+        "repoName": "test-repo",
+        "timestamp": "2025-04-25T15:15:44.623Z"
+      },
+      "pipeline": {
+        "webhookId": "webhook-1745594144541-2",
+        "prNumber": 102,
+        "repoName": "test-repo",
+        "stages": [
+          {
+            "name": "ValidateConfig",
+            "duration": 320,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:44.943Z"
+          },
+          {
+            "name": "FetchChangedFiles",
+            "duration": 2019,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:46.962Z"
+          },
+          {
+            "name": "InitialComment",
+            "duration": 825,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:47.787Z"
+          },
+          {
+            "name": "ProcessFilesReview",
+            "duration": 7115,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:54.902Z"
+          },
+          {
+            "name": "AggregateResults",
+            "duration": 977,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:55.879Z"
+          },
+          {
+            "name": "UpdateCommentsAndGenerateSummary",
+            "duration": 1563,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:57.442Z"
+          },
+          {
+            "name": "RequestChangesOrApprove",
+            "duration": 1281,
+            "success": true,
+            "timestamp": "2025-04-25T15:15:58.724Z"
+          }
+        ],
+        "startTime": "2025-04-25T15:15:44.623Z",
+        "endTime": "2025-04-25T15:15:58.725Z",
+        "totalDuration": 14102,
+        "success": true,
+        "logs": [
+          {
+            "stage": "ValidateConfig",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:44.943Z"
+          },
+          {
+            "stage": "FetchChangedFiles",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:46.962Z"
+          },
+          {
+            "stage": "InitialComment",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:47.787Z"
+          },
+          {
+            "stage": "ProcessFilesReview",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:54.902Z"
+          },
+          {
+            "stage": "AggregateResults",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:55.879Z"
+          },
+          {
+            "stage": "UpdateCommentsAndGenerateSummary",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:57.443Z"
+          },
+          {
+            "stage": "RequestChangesOrApprove",
+            "level": "info",
+            "timestamp": "2025-04-25T15:15:58.725Z"
+          }
+        ],
+        "llmCalls": [
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:54.890Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:54.892Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:54.894Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:54.895Z",
+            "success": false
+          },
+          {
+            "type": "code-review",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:54.902Z",
+            "success": false
+          },
+          {
+            "type": "review-mode",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:55.879Z",
+            "success": false
+          },
+          {
+            "type": "safeguard",
+            "error": "connect ECONNREFUSED ::1:8080",
+            "timestamp": "2025-04-25T15:15:57.442Z",
+            "success": false
+          }
+        ]
+      },
+      "processing": false
+    }
+  ]
+}

@@ -109,7 +109,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                 case 'git.pullrequest.merge.attempted':
                     await this.savePullRequestUseCase.execute(params);
                     break;
-                case 'ms.vss-code.git-pullrequest-comment-event':
+                case 'ms.vss-code.git-pullrequest-comment-event': {
                     const comment = params.payload?.resource.comment.content;
                     const pullRequestId =
                         params.payload?.resource?.pullRequest?.status ===
@@ -120,6 +120,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                     }
 
                     break;
+                }
 
                 default:
                     this.logger.warn({
@@ -148,7 +149,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
         event: string;
         platformType: PlatformType;
     }) {
-        const { payload, event, platformType } = params;
+        const { payload, platformType } = params;
 
         const mappedPlatform = getMappedPlatform(platformType);
         if (!mappedPlatform) {

@@ -138,16 +138,20 @@ export class BitbucketService
                 })
                 .then((res) => this.getPaginatedResults(bitbucketAPI, res));
 
-            return activities
-                .filter((activity) => activity.changes_requested)
-                .map((filteredActivity) => ({
-                    title: filteredActivity.pull_request.title ?? '',
-                    number: filteredActivity.pull_request.id,
-                    reviewDecision: PullRequestReviewState.CHANGES_REQUESTED,
-                    date: new Date(filteredActivity.changes_requested.date),
-                }))
-                .sort((a, b) => a.date.getTime() - b.date.getTime())
-                .map(({ date, ...rest }) => rest);
+            return (
+                activities
+                    .filter((activity) => activity.changes_requested)
+                    .map((filteredActivity) => ({
+                        title: filteredActivity.pull_request.title ?? '',
+                        number: filteredActivity.pull_request.id,
+                        reviewDecision:
+                            PullRequestReviewState.CHANGES_REQUESTED,
+                        date: new Date(filteredActivity.changes_requested.date),
+                    }))
+                    .sort((a, b) => a.date.getTime() - b.date.getTime())
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                    .map(({ date, ...rest }) => rest)
+            );
         } catch (error) {
             this.logger.error({
                 message: 'Error to get pull requests with changes requested',
@@ -604,7 +608,7 @@ export class BitbucketService
                 return [];
             }
 
-            let llm = getChatGPT({
+            const llm = getChatGPT({
                 model: getLLMModelProviderWithFallback(
                     LLMModelProvider.CHATGPT_4_TURBO,
                 ),
@@ -1423,8 +1427,6 @@ export class BitbucketService
                 repository,
                 prNumber,
                 lineComment,
-                commit,
-                language,
             } = params;
 
             const bitbucketAuthDetails = await this.getAuthDetails(
@@ -1464,7 +1466,7 @@ export class BitbucketService
                     pull_request_id: prNumber,
                     repo_slug: `{${repository.id}}`,
                     workspace: `{${workspace}}`,
-                    // @ts-ignore
+                    // @ts-expect-error - you need to pass with _ to the endpoint in question
                     _body: {
                         content: {
                             raw: bodyFormatted,
@@ -1540,7 +1542,7 @@ export class BitbucketService
                     pull_request_id: prNumber,
                     repo_slug: `{${repository.id}}`,
                     workspace: `{${workspace}}`,
-                    // @ts-ignore
+                    // @ts-expect-error - you need to pass with _ to the endpoint in question
                     _body: {
                         content: {
                             raw: body,
@@ -1644,7 +1646,7 @@ export class BitbucketService
         prNumber: number;
     }): Promise<PullRequests | null> {
         try {
-            const { organizationAndTeamData, repository, prNumber } = params;
+            const { organizationAndTeamData, prNumber } = params;
 
             const pullRequests = await this.getPullRequests({
                 organizationAndTeamData,
@@ -1767,7 +1769,7 @@ export class BitbucketService
                     pull_request_id: prNumber,
                     repo_slug: `{${repository.id}}`,
                     workspace: `{${workspace}}`,
-                    // @ts-ignore
+                    // @ts-expect-error - you need to pass with _ to the endpoint in question
                     _body: {
                         content: {
                             raw: body,
@@ -1825,7 +1827,7 @@ export class BitbucketService
                 pull_request_id: prNumber,
                 repo_slug: `{${repo.id}}`,
                 workspace: `{${repo.workspaceId}}`,
-                // @ts-ignore
+                // @ts-expect-error - you need to pass with _ to the endpoint in question
                 _body: {
                     content: {
                         raw: body,
@@ -1903,7 +1905,7 @@ export class BitbucketService
                     pull_request_id: prNumber,
                     repo_slug: `{${repository.id}}`,
                     workspace: `{${workspace}}`,
-                    // @ts-ignore
+                    // @ts-expect-error - you need to pass with _ to the endpoint in question
                     _body: {
                         content: {
                             raw: body,
@@ -2147,7 +2149,7 @@ export class BitbucketService
                     content: {
                         raw: body,
                     },
-                    // @ts-ignore
+                    // @ts-expect-error - you need to pass with _ to the endpoint in question
                     parent: {
                         id: inReplyToId,
                     },
@@ -2194,7 +2196,7 @@ export class BitbucketService
                 pull_request_id: prNumber,
                 repo_slug: `{${repository.id}}`,
                 workspace: `{${workspace}}`,
-                // @ts-ignore
+                // @ts-expect-error - you need to pass with _ to the endpoint in question
                 _body: {
                     summary: {
                         raw: summary,

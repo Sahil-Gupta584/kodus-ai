@@ -19,7 +19,6 @@ import {
 } from '@/shared/utils/helpers';
 import { WorkItemSkippingWIPColumnsArtifact } from './artifacts/workItemSkippingWIPColumns.artifact';
 import { artifacts } from './artifactsStructure.json';
-import { WipLimitArtifact } from './artifacts/wipLimit.artifact';
 import { BugRatioArtifact } from './artifacts/bugRatio.artifact';
 import { PinoLoggerService } from '../logger/pino.service';
 import { WorkItemWithAssignedOwnerArtifact } from './artifacts/workItemWithAssignedOwner.artifact';

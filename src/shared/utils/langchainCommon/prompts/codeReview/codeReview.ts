@@ -129,9 +129,7 @@ Your final output should be **only** a JSON object with the following structure:
 </finalSteps>`;
 };
 
-export const prompt_codereview_user_deepseek= (
-    payload: CodeReviewPayload,
-) => {
+export const prompt_codereview_user_deepseek = (payload: CodeReviewPayload) => {
     return `# Code Analysis Mission
 You are Kody PR-Reviewer, a senior engineer specialized in code review and LLM understanding.
 

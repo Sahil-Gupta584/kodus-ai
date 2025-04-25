@@ -112,6 +112,7 @@ export class GithubService
             | 'getUserById'
             | 'getLanguageRepository'
             | 'createSingleIssueComment'
+            | 'getUserByEmailOrName'
         >
 {
     private readonly MAX_RETRY_ATTEMPTS = 2;
@@ -195,10 +196,6 @@ export class GithubService
                 return;
             }
 
-            const team = await this.teamService.findOne({
-                uuid: params.organizationAndTeamData.teamId,
-            });
-
             await this.integrationConfigService.createOrUpdateConfig(
                 params.configKey,
                 params.configValue,
@@ -267,19 +264,19 @@ export class GithubService
                 };
 
             const authDetails = {
-                // @ts-ignore
+                // @ts-expect-error add to pass github validation
                 authToken: installationAuthentication?.token,
                 installationId:
-                    // @ts-ignore
+                    // @ts-expect-error add to pass github validation
                     installationAuthentication?.installationId || null,
-                // @ts-ignore
+                // @ts-expect-error add to pass github validation
                 org: installLogin?.data.account?.login || null,
                 authMode: params.authMode || AuthMode.OAUTH,
             };
 
             const repoPermissions = await this.checkRepositoryPermissions({
                 organizationAndTeamData: params.organizationAndTeamData,
-                // @ts-ignore
+                // @ts-expect-error add to pass github validation
                 org: installLogin?.data.account?.login,
                 authDetails,
             });
@@ -376,7 +373,12 @@ export class GithubService
                 success: true,
                 status: CreateAuthIntegrationStatus.SUCCESS,
             };
-        } catch (err) {
+        } catch (error) {
+            this.logger.error({
+                message: 'AuthenticateWithToken',
+                context: GithubService.name,
+                error,
+            });
             throw new BadRequestException(
                 'Error authenticating with GITHUB PAT.',
             );
@@ -512,7 +514,13 @@ export class GithubService
                 })) || null;
 
             return commits;
-        } catch (err) {
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to getCommits',
+                context: GithubService.name,
+                error: error,
+                metadata: params,
+            });
             return [];
         }
     }
@@ -1153,6 +1161,12 @@ export class GithubService
             await octokit.rest.rateLimit.get();
             return true;
         } catch (error) {
+            this.logger.error({
+                message: 'Error validateCachedToken',
+                context: GithubService.name,
+                serviceName: 'GithubService',
+                error: error,
+            });
             return false;
         }
     }
@@ -1186,7 +1200,6 @@ export class GithubService
                 const MyOctokit = Octokit.plugin(retry, throttling);
 
                 const octokit = new MyOctokit({
-                    // @ts-ignore
                     auth: installationAuthentication.token,
                     throttle: {
                         onRateLimit: (
@@ -1359,7 +1372,6 @@ export class GithubService
                 installationId: code,
             });
 
-            // @ts-ignore
             const installLogin = await appOctokit.rest.apps.getInstallation({
                 installation_id: parseInt(code),
             });
@@ -1377,12 +1389,12 @@ export class GithubService
             });
 
             const authDetails = {
-                // @ts-ignore
+                // @ts-expect-error add to pass github validation
                 authToken: installationAuthentication?.token,
                 installationId:
-                    // @ts-ignore
+                    // @ts-expect-error add to pass github validation
                     installationAuthentication?.installationId || null,
-                // @ts-ignore
+                // @ts-expect-error add to pass github validation
                 org: installLogin?.data.account?.login || null,
             };
 
@@ -1391,14 +1403,14 @@ export class GithubService
             } else {
                 await this.updateAuthIntegration({
                     organizationAndTeamData,
-                    // @ts-ignore
+                    // @ts-expect-error add to pass github validation
                     accessToken: installationAuthentication?.token,
                     authIntegrationId: integration?.authIntegration?.uuid,
                     integrationId: integration?.uuid,
                     installationId:
-                        // @ts-ignore
+                        // @ts-expect-error add to pass github validation
                         installationAuthentication?.installationId,
-                    // @ts-ignore
+                    // @ts-expect-error add to pass github validation
                     org: installLogin?.data.account?.login,
                 });
             }
@@ -1415,7 +1427,7 @@ export class GithubService
                 );
             }
 
-            // @ts-ignore
+            // @ts-expect-error add to pass github validation
             return `${installationAuthentication.tokenType} - ${installationAuthentication?.token}`;
         } catch (err) {
             throw new BadRequestException(err);
@@ -1659,7 +1671,7 @@ export class GithubService
             return [];
         }
 
-        let llm = getChatGPT({
+        const llm = getChatGPT({
             model: getLLMModelProviderWithFallback(
                 LLMModelProvider.CHATGPT_4_TURBO,
             ),
@@ -1730,7 +1742,7 @@ export class GithubService
             return [];
         }
 
-        let llm = getChatGPT({
+        const llm = getChatGPT({
             model: getLLMModelProviderWithFallback(
                 LLMModelProvider.CHATGPT_4_TURBO,
             ),
@@ -1875,7 +1887,7 @@ export class GithubService
             }
 
             const formatRepo = extractRepoNames(repositories);
-            let commitsLeadTimeForChange: CommitLeadTimeForChange[] = [];
+            const commitsLeadTimeForChange: CommitLeadTimeForChange[] = [];
 
             for (let index = 0; index < formatRepo.length; index++) {
                 const repo = formatRepo[index];
@@ -2142,8 +2154,6 @@ export class GithubService
     async getPullRequestsWithFiles(
         params,
     ): Promise<PullRequestWithFiles[] | null> {
-        let repositories;
-
         if (!params?.organizationAndTeamData.organizationId) {
             return null;
         }
@@ -2156,10 +2166,11 @@ export class GithubService
             params.organizationAndTeamData,
         );
 
-        repositories = await this.findOneByOrganizationAndTeamDataAndConfigKey(
-            params?.organizationAndTeamData,
-            IntegrationConfigKey.REPOSITORIES,
-        );
+        const repositories =
+            await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                params?.organizationAndTeamData,
+                IntegrationConfigKey.REPOSITORIES,
+            );
 
         if (!githubAuthDetail || !repositories) {
             return null;
@@ -3711,14 +3722,6 @@ export class GithubService
             });
             throw error;
         }
-    }
-
-    getUserByEmailOrName(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        email: string;
-        userName: string;
-    }): Promise<any> {
-        throw new Error('Method not implemented.');
     }
 
     async getPullRequestsByRepository(params: {

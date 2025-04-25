@@ -1,0 +1,280 @@
+[
+    {
+        "event": "pull_request",
+        "platform": "github",
+        "clientId": "client1",
+        "payload": {
+            "action": "opened",
+            "pull_request": {
+                "id": 12345,
+                "number": 1,
+                "title": "Implementação de otimização de performance no processamento de webhooks",
+                "body": "Este PR implementa melhorias de performance no processamento de webhooks para evitar bloqueio do event loop.",
+                "user": {
+                    "login": "dev-teste",
+                    "id": 123456
+                },
+                "head": {
+                    "ref": "feature/performance-optimization",
+                    "sha": "abc123def456",
+                    "repo": {
+                        "id": 54321,
+                        "name": "kodus-ai",
+                        "full_name": "kodustech/kodus-ai",
+                        "language": "TypeScript"
+                    }
+                },
+                "base": {
+                    "ref": "main",
+                    "sha": "789ghi012jkl",
+                    "repo": {
+                        "id": 54321,
+                        "name": "kodus-ai",
+                        "full_name": "kodustech/kodus-ai",
+                        "language": "TypeScript",
+                        "default_branch": "main"
+                    }
+                },
+                "created_at": "2025-04-25T08:00:00Z",
+                "updated_at": "2025-04-25T08:00:00Z"
+            },
+            "repository": {
+                "id": 54321,
+                "name": "kodus-ai",
+                "full_name": "kodustech/kodus-ai",
+                "language": "TypeScript",
+                "owner": {
+                    "login": "kodustech",
+                    "id": 98765
+                }
+            },
+            "sender": {
+                "login": "dev-teste",
+                "id": 123456
+            },
+            "installation": {
+                "id": 111222
+            }
+        }
+    },
+    {
+        "event": "pull_request",
+        "platform": "gitlab",
+        "clientId": "client2",
+        "payload": {
+            "object_kind": "merge_request",
+            "event_type": "merge_request",
+            "object_attributes": {
+                "id": 23456,
+                "iid": 2,
+                "title": "Refatoração do sistema de cache",
+                "description": "Implementa um sistema de cache mais eficiente para reduzir chamadas ao banco de dados",
+                "state": "opened",
+                "action": "open",
+                "source_branch": "feature/cache-system",
+                "target_branch": "main",
+                "source": {
+                    "id": 65432,
+                    "name": "projeto-backend",
+                    "path_with_namespace": "empresa2/projeto-backend",
+                    "default_branch": "main"
+                },
+                "target": {
+                    "id": 65432,
+                    "name": "projeto-backend",
+                    "path_with_namespace": "empresa2/projeto-backend",
+                    "default_branch": "main"
+                }
+            },
+            "repository": {
+                "name": "projeto-backend",
+                "url": "git@gitlab.com:empresa2/projeto-backend.git",
+                "description": "Backend API",
+                "homepage": "https://gitlab.com/empresa2/projeto-backend"
+            },
+            "project": {
+                "id": 65432,
+                "name": "projeto-backend",
+                "path_with_namespace": "empresa2/projeto-backend"
+            },
+            "user": {
+                "name": "Desenvolvedor 2",
+                "username": "dev2",
+                "id": 234567
+            }
+        }
+    },
+    {
+        "event": "pullrequest:created",
+        "platform": "bitbucket",
+        "clientId": "client3",
+        "payload": {
+            "pullrequest": {
+                "id": 34567,
+                "title": "Implementação de nova feature de autenticação",
+                "description": "Adiciona suporte a OAuth 2.0 e autenticação multifator",
+                "state": "OPEN",
+                "author": {
+                    "display_name": "Desenvolvedor 3",
+                    "uuid": "{345678}",
+                    "account_id": "345678"
+                },
+                "source": {
+                    "branch": {
+                        "name": "feature/auth-system"
+                    },
+                    "repository": {
+                        "full_name": "empresa3/auth-service",
+                        "uuid": "{76543}",
+                        "name": "auth-service"
+                    }
+                },
+                "destination": {
+                    "branch": {
+                        "name": "main"
+                    },
+                    "repository": {
+                        "full_name": "empresa3/auth-service",
+                        "uuid": "{76543}",
+                        "name": "auth-service"
+                    }
+                },
+                "participants": [
+                    {
+                        "display_name": "Revisor 1",
+                        "uuid": "{456789}",
+                        "account_id": "456789"
+                    }
+                ],
+                "reviewers": [
+                    {
+                        "display_name": "Revisor 1",
+                        "uuid": "{456789}",
+                        "account_id": "456789"
+                    }
+                ]
+            },
+            "repository": {
+                "full_name": "empresa3/auth-service",
+                "uuid": "{76543}",
+                "name": "auth-service"
+            },
+            "actor": {
+                "display_name": "Desenvolvedor 3",
+                "uuid": "{345678}",
+                "account_id": "345678"
+            }
+        }
+    },
+    {
+        "event": "issue_comment",
+        "platform": "github",
+        "clientId": "client4",
+        "payload": {
+            "action": "created",
+            "issue": {
+                "number": 4,
+                "title": "Problema de performance com processamento de imagens",
+                "body": "O processamento de imagens está muito lento em produção",
+                "user": {
+                    "login": "dev-cliente4",
+                    "id": 567890
+                }
+            },
+            "comment": {
+                "id": 876543,
+                "body": "@kody start-review",
+                "user": {
+                    "login": "dev-cliente4",
+                    "id": 567890
+                },
+                "created_at": "2025-04-25T09:15:00Z"
+            },
+            "repository": {
+                "id": 87654,
+                "name": "image-processor",
+                "full_name": "empresa4/image-processor",
+                "language": "JavaScript",
+                "owner": {
+                    "login": "empresa4",
+                    "id": 876543
+                }
+            },
+            "sender": {
+                "login": "dev-cliente4",
+                "id": 567890
+            },
+            "installation": {
+                "id": 333444
+            }
+        }
+    },
+    {
+        "event": "pull_request_review_comment",
+        "platform": "github",
+        "clientId": "client5",
+        "payload": {
+            "action": "created",
+            "pull_request": {
+                "id": 45678,
+                "number": 5,
+                "title": "Refatoração da API de pagamentos",
+                "body": "Melhora a estrutura da API de pagamentos e adiciona novos endpoints",
+                "user": {
+                    "login": "dev-cliente5",
+                    "id": 678901
+                },
+                "head": {
+                    "ref": "feature/payment-api-refactor",
+                    "sha": "def456ghi789",
+                    "repo": {
+                        "id": 98765,
+                        "name": "payment-service",
+                        "full_name": "empresa5/payment-service",
+                        "language": "TypeScript"
+                    }
+                },
+                "base": {
+                    "ref": "main",
+                    "sha": "123abc456def",
+                    "repo": {
+                        "id": 98765,
+                        "name": "payment-service",
+                        "full_name": "empresa5/payment-service",
+                        "language": "TypeScript",
+                        "default_branch": "main"
+                    }
+                }
+            },
+            "comment": {
+                "id": 765432,
+                "body": "Podemos melhorar a validação neste endpoint",
+                "path": "src/controllers/payment.controller.ts",
+                "position": 15,
+                "commit_id": "def456ghi789",
+                "user": {
+                    "login": "reviewer-cliente5",
+                    "id": 789012
+                },
+                "created_at": "2025-04-25T09:30:00Z"
+            },
+            "repository": {
+                "id": 98765,
+                "name": "payment-service",
+                "full_name": "empresa5/payment-service",
+                "language": "TypeScript",
+                "owner": {
+                    "login": "empresa5",
+                    "id": 987654
+                }
+            },
+            "sender": {
+                "login": "reviewer-cliente5",
+                "id": 789012
+            },
+            "installation": {
+                "id": 555666
+            }
+        }
+    }
+]

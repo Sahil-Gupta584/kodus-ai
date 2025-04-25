@@ -124,7 +124,9 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
         repository: { id: string; name: string },
     ): Promise<void> {
         try {
-            if (!pullRequestApprovalActive || lineCommentsLength > 0) return;
+            if (!pullRequestApprovalActive || lineCommentsLength > 0) {
+                return;
+            }
 
             this.logger.log({
                 message: `Approving PR#${prNumber} as no issues were found`,

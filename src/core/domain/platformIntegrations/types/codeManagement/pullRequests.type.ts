@@ -55,27 +55,27 @@ export type PullRequestReviewComment = {
         id?: string | number;
         name?: string;
         username?: string;
-    }
+    };
     createdAt?: string;
     updatedAt?: string;
-}
+};
 
 export type PullRequestsWithChangesRequested = {
     title: string;
     number: number;
     reviewDecision: PullRequestReviewState;
-}
+};
 
 // For now it's only relevant for github
 export enum PullRequestReviewState {
-    COMMENTED = "COMMENTED",
-    PENDING = "PENDING",
-    APPROVED = "APPROVED",
-    CHANGES_REQUESTED = "CHANGES_REQUESTED",
-    DISMISSED = "DISMISSED"
+    COMMENTED = 'COMMENTED',
+    PENDING = 'PENDING',
+    APPROVED = 'APPROVED',
+    CHANGES_REQUESTED = 'CHANGES_REQUESTED',
+    DISMISSED = 'DISMISSED',
 }
 
 export type OneSentenceSummaryItem = {
     id?: number;
     oneSentenceSummary: string;
-}
+};

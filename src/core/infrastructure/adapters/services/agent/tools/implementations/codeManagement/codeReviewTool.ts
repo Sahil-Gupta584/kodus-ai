@@ -4,11 +4,6 @@ import { IToolResult } from '@/core/domain/agents/interfaces/toolResult.interfac
 import { CodeManagementService } from '../../../../platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '../../../../logger/pino.service';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-
-import {
-    prompt_codereview_system_main,
-    prompt_codereview_user_tool,
-} from '@/shared/utils/langchainCommon/prompts/configuration/codeReview';
 import {
     CODE_BASE_CONFIG_SERVICE_TOKEN,
     ICodeBaseConfigService,
@@ -17,17 +12,6 @@ import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
-import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
-
-interface Parameters {
-    parameter_instructions?: string | null;
-    [key: string]: any;
-}
-
-interface ParsedParameters {
-    parameter_instructions?: any; // O objeto após parse
-    [key: string]: any;
-}
 
 const codeReviewToolDefinition = {
     tool_name: 'CodeReviewTool',
@@ -84,7 +68,7 @@ export class CodeReviewTool implements ITool<any, IToolResult> {
         context: ToolExecutionContext,
     ): Promise<IToolResult> {
         try {
-            const { organizationAndTeamData, message, sessionId } = context;
+            const { organizationAndTeamData, sessionId } = context;
 
             const code = input?.parameters?.parameter_code;
             let prNumber: string | undefined =
@@ -148,7 +132,6 @@ export class CodeReviewTool implements ITool<any, IToolResult> {
             const response = await this.generateCodeSuggestions(
                 organizationAndTeamData,
                 sessionId,
-                data,
             );
 
             return {
@@ -181,13 +164,12 @@ export class CodeReviewTool implements ITool<any, IToolResult> {
     private async generateCodeSuggestions(
         organizationAndTeamData: OrganizationAndTeamData,
         sessionId: string,
-        codeToReview: any,
     ) {
         try {
             const maxRetries = 2;
             let retryCount = 0;
 
-            let codeManagementConfig =
+            const codeManagementConfig =
                 await this.codeBaseConfigService.getCodeManagementPatConfigAndRepositories(
                     organizationAndTeamData,
                 );
@@ -206,50 +188,11 @@ export class CodeReviewTool implements ITool<any, IToolResult> {
                 };
             }
 
-            const languageResultPrompt = (
-                await this.parametersService.findByKey(
-                    ParametersKey.LANGUAGE_CONFIG,
-                    organizationAndTeamData,
-                )
-            )?.configValue;
-
             while (retryCount < maxRetries) {
-                let responseError = '';
+                const responseError = '';
 
                 try {
-                    const body = JSON.stringify({
-                        messages: [
-                            {
-                                role: 'system',
-                                content: prompt_codereview_system_main(),
-                            },
-                            {
-                                role: 'user',
-                                content: prompt_codereview_user_tool({
-                                    codeToReview,
-                                    languageResultPrompt,
-                                }),
-                            },
-                        ],
-                        repositories: codeManagementConfig?.repositories?.map(
-                            (repository) => ({
-                                remote: codeManagementConfig?.platform,
-                                repository: repository.repositoryPath,
-                                branch: repository.default_branch,
-                            }),
-                        ),
-                        genius: false,
-                        sessionId,
-                    });
-
-                    const response = null;
-
-                    if (!response) {
-                        throw new Error('Failed to search suggestion code');
-                    }
-
-                    responseError = response.data;
-                    return response?.data;
+                    return [];
                 } catch (error) {
                     this.logger.error({
                         message: `Error search suggestion code retry ${retryCount}:, ${error}`,
@@ -278,27 +221,5 @@ export class CodeReviewTool implements ITool<any, IToolResult> {
             });
             throw new Error('Error search suggestion code');
         }
-    }
-
-    private parseAndValidateParameters(
-        parameters: Parameters | undefined | null,
-    ): ParsedParameters | null {
-        if (!parameters) {
-            return null;
-        }
-
-        let parsedParameters: ParsedParameters = {};
-
-        if (parameters?.parameter_instructions) {
-            try {
-                parsedParameters.parameter_instructions = JSON.parse(
-                    parameters.parameter_instructions,
-                );
-            } catch (e) {
-                parsedParameters.parameter_instructions = null;
-            }
-        }
-
-        return parsedParameters;
     }
 }

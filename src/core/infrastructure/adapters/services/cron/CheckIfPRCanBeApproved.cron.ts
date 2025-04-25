@@ -209,7 +209,7 @@ export class CheckIfPRCanBeApprovedCronProvider {
             prNumber: prNumber,
         };
         try {
-            let isPlatformTypeGithub: boolean =
+            const isPlatformTypeGithub: boolean =
                 platformType === PlatformType.GITHUB;
 
             let reviewComments: any[];

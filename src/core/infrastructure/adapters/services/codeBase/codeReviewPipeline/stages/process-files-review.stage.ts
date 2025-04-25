@@ -422,8 +422,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[],
         overallComments: { filepath: string; summary: string }[],
     ): void {
-        const file = fileProcessingResult.file;
-
         if (fileProcessingResult?.validSuggestionsToAnalyze?.length > 0) {
             validSuggestionsToAnalyze.push(
                 ...fileProcessingResult.validSuggestionsToAnalyze,
@@ -840,7 +838,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             result.codeSuggestions.length > 0
         ) {
             // Filter code suggestions by review options
-            let filteredSuggestionsByOptions =
+            const filteredSuggestionsByOptions =
                 this.suggestionService.filterCodeSuggestionsByReviewOptions(
                     context?.codeReviewConfig?.reviewOptions,
                     result,
@@ -947,7 +945,12 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 ...(kodyASTSuggestions?.codeSuggestions || []),
             ];
 
-            const VALID_ACTIONS = ['synchronize', 'update', 'updated', 'git.pullrequest.updated'];
+            const VALID_ACTIONS = [
+                'synchronize',
+                'update',
+                'updated',
+                'git.pullrequest.updated',
+            ];
 
             // If it's a commit, validate repeated suggestions
             if (context?.action && VALID_ACTIONS.includes(context.action)) {
@@ -1058,7 +1061,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             prNumber: prNumber,
         };
 
-        let isPlatformTypeGithub: boolean =
+        const isPlatformTypeGithub: boolean =
             platformType === PlatformType.GITHUB;
 
         const pr = await this.pullRequestService.findByNumberAndRepository(
@@ -1066,7 +1069,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             repository.name,
         );
 
-        let implementedSuggestionsCommentIds =
+        const implementedSuggestionsCommentIds =
             this.getImplementedSuggestionsCommentIds(pr);
 
         let reviewComments = [];
@@ -1101,7 +1104,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         if (foundComments?.length > 0) {
             const promises = foundComments.map(
                 async (foundComment: PullRequestReviewComment) => {
-                    let commentId =
+                    const commentId =
                         platformType === PlatformType.BITBUCKET
                             ? foundComment.id
                             : foundComment.threadId;

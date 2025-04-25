@@ -10,9 +10,11 @@ export interface NewCodeReviewPayload {
 export type CategoryExamples = {
     description: string;
     examples: string[];
-}
+};
 
-export const prompt_specificCategoryCodeReview = (payload: NewCodeReviewPayload) => {
+export const prompt_specificCategoryCodeReview = (
+    payload: NewCodeReviewPayload,
+) => {
     return `
 # Code Review Expert
 
@@ -39,11 +41,19 @@ All suggestions must be labeled with this category only. Do not generate suggest
 # Category-Specific Instructions
 ${payload?.categorySpecificInstructions || ''}
 
-${payload?.categoryExamples?.length > 0 ? `# Category Examples
-${payload?.categoryExamples.map((example) => `## ${example.description}
+${
+    payload?.categoryExamples?.length > 0
+        ? `# Category Examples
+${payload?.categoryExamples
+    .map(
+        (example) => `## ${example.description}
 ${example.examples.map((example) => `- ${example}`).join('\n')}
-`).join('\n')}
-` : ''}
+`,
+    )
+    .join('\n')}
+`
+        : ''
+}
 
 # General Guidelines
 - Understand the PR purpose

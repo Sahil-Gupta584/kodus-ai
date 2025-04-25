@@ -21,7 +21,7 @@ import {
     OneSentenceSummaryItem,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
-import { v4 as uuidv4, v4 } from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 import { createTwoFilesPatch } from 'diff';
 
 import {
@@ -1212,10 +1212,11 @@ export class AzureReposService
 
     async createAuthIntegration(params: any): Promise<any> {
         try {
-            let res: {
+            const res: {
                 success: boolean;
                 status?: CreateAuthIntegrationStatus;
             } = { success: true, status: CreateAuthIntegrationStatus.SUCCESS };
+
             if (params && params?.authMode === AuthMode.OAUTH) {
                 throw new Error(
                     'Authenticating on Azure Devops Repos via OAuth not implemented',
@@ -1416,7 +1417,7 @@ export class AzureReposService
         organizationAndTeamData: OrganizationAndTeamData,
         authDetails: AzureReposAuthDetail,
     ): Promise<IntegrationEntity> {
-        const authUuid = v4();
+        const authUuid = uuidv4();
 
         const authIntegration = await this.authIntegrationService.create({
             uuid: authUuid,
@@ -1436,7 +1437,7 @@ export class AzureReposService
         organizationAndTeamData: OrganizationAndTeamData,
         authIntegrationId: string,
     ): Promise<IntegrationEntity> {
-        const integrationUuid = v4();
+        const integrationUuid = uuidv4();
 
         return await this.integrationService.create({
             uuid: integrationUuid,
@@ -1562,16 +1563,6 @@ export class AzureReposService
                 organizationAndTeamData,
             );
 
-            let queryString = '';
-            if (filters?.startDate) {
-                queryString += `created_on >= "${filters.startDate}"`;
-            }
-            if (filters?.endDate) {
-                queryString += `${
-                    queryString ? ' AND ' : ''
-                }created_on <= "${filters.endDate}"`;
-            }
-
             const projectId = await this.getProjectIdFromRepository(
                 organizationAndTeamData,
                 repository.id,
@@ -1626,12 +1617,6 @@ export class AzureReposService
             if (!organizationAndTeamData.organizationId) {
                 return null;
             }
-
-            const azureAuthDetail = await this.getAuthDetails(
-                organizationAndTeamData,
-            );
-
-            const { orgName, token } = azureAuthDetail;
 
             const repositories: Repositories[] =
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(
@@ -1752,7 +1737,7 @@ export class AzureReposService
 
             await Promise.all(
                 reposWithPRs.map(async ({ repo, prs }) => {
-                    const prsWithDiffs = await Promise.all(
+                    await Promise.all(
                         prs.map(async (pr) => {
                             const iterations =
                                 await this.azureReposRequestHelper.getIterations(

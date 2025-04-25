@@ -74,7 +74,7 @@ export class CommentManagerService implements ICommentManagerService {
                         prNumber: pullRequest?.number,
                     });
 
-                let llm = getChatGPT({
+                const llm = getChatGPT({
                     model: getLLMModelProviderWithFallback(
                         LLMModelProvider.CHATGPT_4_ALL,
                     ),
@@ -89,7 +89,7 @@ Avoid making assumptions or including inferred details not present in the provid
                 if (
                     updatedPR?.body &&
                     summaryConfig?.behaviourForExistingDescription ===
-                    BehaviourForExistingDescription.COMPLEMENT
+                        BehaviourForExistingDescription.COMPLEMENT
                 ) {
                     promptBase += `\n\n**Additional Instructions**:
                     - Focus on generating new insights and relevant information
@@ -137,7 +137,7 @@ Avoid making assumptions or including inferred details not present in the provid
                 if (
                     updatedPR?.body &&
                     summaryConfig?.behaviourForExistingDescription ===
-                    BehaviourForExistingDescription.CONCATENATE
+                        BehaviourForExistingDescription.CONCATENATE
                 ) {
                     finalDescription = `${updatedPR.body}\n\n---\n\n${finalDescription}`;
                 }
@@ -201,13 +201,6 @@ Avoid making assumptions or including inferred details not present in the provid
         }
     }
 
-    generateSummaryMarkdown(
-        changedFiles: FileChange[],
-        description: string,
-    ): string {
-        throw new Error('Method not implemented.');
-    }
-
     async createInitialComment(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
@@ -220,7 +213,6 @@ Avoid making assumptions or including inferred details not present in the provid
             let commentBody = await this.generatePullRequestSummaryMarkdown(
                 changedFiles,
                 language,
-                platformType,
             );
 
             commentBody = this.sanitizeBitbucketMarkdown(
@@ -249,11 +241,15 @@ Avoid making assumptions or including inferred details not present in the provid
             switch (platformType) {
                 case PlatformType.GITLAB:
                     // GitLab uses noteId
-                    noteId = comment?.notes?.[0]?.id ? Number(comment.notes[0].id) : null;
+                    noteId = comment?.notes?.[0]?.id
+                        ? Number(comment.notes[0].id)
+                        : null;
                     break;
                 case PlatformType.AZURE_REPOS:
                     // Azure Repos uses threadId
-                    threadId = comment?.threadId ? Number(comment.threadId) : null;
+                    threadId = comment?.threadId
+                        ? Number(comment.threadId)
+                        : null;
                     break;
                 default:
                     break;
@@ -506,7 +502,6 @@ Avoid making assumptions or including inferred details not present in the provid
     private generatePullRequestSummaryMarkdown(
         changedFiles: FileChange[],
         language: string,
-        platformType: PlatformType,
     ): string {
         try {
             const translation = getTranslationsForLanguageByCategory(
@@ -604,7 +599,8 @@ ${filesTable}
             )
                 .map(
                     ([key, value]) =>
-                        `| **${key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())}** | ${value ? translation.enabled : translation.disabled
+                        `| **${key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())}** | ${
+                            value ? translation.enabled : translation.disabled
                         } |`,
                 )
                 .join('\n');
@@ -673,7 +669,6 @@ ${reviewOptionsMarkdown}
                 organizationAndTeamData,
                 prNumber,
                 provider,
-                baseContext,
             );
 
         let repeteadSuggetionsClustered;
@@ -717,7 +712,6 @@ ${reviewOptionsMarkdown}
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         provider: LLMModelProvider,
-        context: any,
     ) {
         const fallbackProvider =
             provider === LLMModelProvider.CHATGPT_4_ALL
@@ -731,7 +725,6 @@ ${reviewOptionsMarkdown}
                     organizationAndTeamData,
                     prNumber,
                     provider,
-                    context,
                 );
 
             // Fallback chain
@@ -740,7 +733,6 @@ ${reviewOptionsMarkdown}
                     organizationAndTeamData,
                     prNumber,
                     fallbackProvider,
-                    context,
                 );
 
             // Configure chain with fallback
@@ -778,21 +770,20 @@ ${reviewOptionsMarkdown}
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         provider: LLMModelProvider,
-        context: any,
     ) {
         try {
             let llm =
                 provider === LLMModelProvider.DEEPSEEK_V3
                     ? getDeepseekByNovitaAI({
-                        temperature: 0,
-                        maxTokens: 8000,
-                    })
+                          temperature: 0,
+                          maxTokens: 8000,
+                      })
                     : getChatGPT({
-                        model: getLLMModelProviderWithFallback(
-                            LLMModelProvider.CHATGPT_4_ALL_MINI,
-                        ),
-                        temperature: 0,
-                    });
+                          model: getLLMModelProviderWithFallback(
+                              LLMModelProvider.CHATGPT_4_ALL_MINI,
+                          ),
+                          temperature: 0,
+                      });
 
             if (provider === LLMModelProvider.CHATGPT_4_ALL_MINI) {
                 llm = llm.bind({
@@ -994,7 +985,7 @@ ${reviewOptionsMarkdown}
                 (s) =>
                     s.clusteringInformation?.type === ClusteringType.RELATED &&
                     s.clusteringInformation?.parentSuggestionId ===
-                    suggestion.id,
+                        suggestion.id,
             );
 
             const occurrences = [
@@ -1025,11 +1016,11 @@ ${reviewOptionsMarkdown}
     ): string {
         return platformType === PlatformType.BITBUCKET
             ? markdown
-                .replace(
-                    /(<\/?details>)|(<\/?summary>)|(<!-- kody-codereview -->(\n|\\n)?&#8203;)/g,
-                    '',
-                )
-                .trim()
+                  .replace(
+                      /(<\/?details>)|(<\/?summary>)|(<!-- kody-codereview -->(\n|\\n)?&#8203;)/g,
+                      '',
+                  )
+                  .trim()
             : markdown;
     }
 }

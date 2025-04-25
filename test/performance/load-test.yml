@@ -1,0 +1,39 @@
+config:
+  target: "http://localhost:3000"
+  phases:
+    - duration: 30
+      arrivalRate: 1
+      name: "Aquecimento"
+    - duration: 60
+      arrivalRate: 2
+      rampTo: 10
+      name: "Aumento gradual de carga"
+    - duration: 30
+      arrivalRate: 10
+      name: "Carga constante"
+  payload:
+    path: "./data/webhooks.json"
+    fields:
+      - "event"
+      - "payload"
+  plugins:
+    metrics-by-endpoint: {}
+    expect: {}
+  ensure:
+    maxErrorRate: 5
+    max: 95
+    statusCode: 200
+
+scenarios:
+  - name: "Simulação de webhooks do GitHub"
+    flow:
+      - post:
+          url: "/github/webhook"
+          headers:
+            Content-Type: "application/json"
+            x-github-event: "{{ event }}"
+            x-github-delivery: "webhook-{{ $timestamp }}"
+          json: "{{ payload }}"
+          expect:
+            - statusCode: 200
+            - contentType: "text/plain"

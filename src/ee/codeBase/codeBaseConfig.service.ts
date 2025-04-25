@@ -785,6 +785,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             });
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { version, ...kodusConfigYMLFileWithoutVersion } =
             kodusConfigYMLfile;
 

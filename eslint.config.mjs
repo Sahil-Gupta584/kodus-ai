@@ -32,6 +32,9 @@ export default [
 
             // Arquivos de configuração
             '.eslintrc.js',
+
+            // Pasta de testes de performance
+            'test/performance/**',
         ],
     },
 
@@ -69,6 +72,18 @@ export default [
             '@typescript-eslint/explicit-function-return-type': 'off',
             '@typescript-eslint/explicit-module-boundary-types': 'off',
             '@typescript-eslint/no-explicit-any': 'off',
+            '@typescript-eslint/no-require-imports': 'off',
+            'prettier/prettier': [
+                'error',
+                {
+                    singleQuote: true,
+                    trailingComma: 'all',
+                    tabWidth: 4,
+                    semi: true,
+                    bracketSpacing: true,
+                    quoteProps: 'consistent',
+                },
+            ],
         },
     },
 ];

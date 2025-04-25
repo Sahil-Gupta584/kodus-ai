@@ -33,6 +33,7 @@ export const prompt_severity_analysis_user = (
         return `<context>
  <categories>${
      Object.entries(validatedCategories)
+         // eslint-disable-next-line @typescript-eslint/no-unused-vars
          .filter(([_, value]) => value === true)
          .map(([category]) => category)
          .join(', ') || 'none'
