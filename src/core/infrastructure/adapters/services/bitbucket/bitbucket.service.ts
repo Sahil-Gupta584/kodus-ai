@@ -2849,7 +2849,7 @@ export class BitbucketService
             }).then((res) => this.getPaginatedResults(bitbucketAPI, res));
 
             const isApprovedByCurrentUser = activities
-                .find((activity: any) => (activity.approval && (activity.approval?.user?.uuid === currentUser?.uuid)));
+                .find((activity: any) => activity.approval?.user?.uuid === currentUser?.uuid);
 
             if (isApprovedByCurrentUser) {
                 return null;
