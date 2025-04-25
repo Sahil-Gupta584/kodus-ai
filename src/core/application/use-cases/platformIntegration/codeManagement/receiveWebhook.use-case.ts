@@ -251,6 +251,14 @@ export class ReceiveWebhookUseCase implements IUseCase {
             return true;
         }
 
+        // Verify if the PR is closed.
+        if (
+            objectAttributes.state === 'closed' ||
+            objectAttributes.action === 'close'
+        ) {
+            return true;
+        }
+
         // Ignore if it's an update to the description
         if (objectAttributes.action === 'update' && changes.description) {
             return false;
