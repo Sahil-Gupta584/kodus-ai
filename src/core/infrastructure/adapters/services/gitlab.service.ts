@@ -106,9 +106,6 @@ export class GitlabService
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
     ) { }
-    checkIfPullRequestShouldBeApproved(params: { organizationAndTeamData: OrganizationAndTeamData; prNumber: number; repository: { id: string; name: string; }; }): Promise<any | null> {
-        throw new Error('Method not implemented.');
-    }
 
     async getPullRequestByNumber(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -2222,6 +2219,53 @@ export class GitlabService
                 },
             });
             throw error;
+        }
+    }
+
+    async checkIfPullRequestShouldBeApproved(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string; };
+    }): Promise<any | null> {
+        try {
+            const { organizationAndTeamData, repository, prNumber } = params;
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const approvalSettings = await gitlabAPI.MergeRequestApprovals.showConfiguration(repository.id, { mergerequestIId: prNumber });
+
+            const currentUser = await gitlabAPI.Users.showCurrentUser();
+
+            const approvedBy = approvalSettings?.approved_by;
+
+            const isApprovedByCurrentUser = approvedBy
+                .find((approval) => (approval?.user?.id === currentUser.id));
+
+            if (isApprovedByCurrentUser) {
+                return null;
+            }
+
+            await this.approvePullRequest({ organizationAndTeamData, prNumber, repository });
+
+            this.logger.log({
+                message: `Approved pull request #${prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService approvePullRequest',
+                metadata: params,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error to approve pull request #${params.prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService checkIfPullRequestShouldBeApproved',
+                error: error,
+                metadata: params,
+            });
+            return null;
         }
     }
 
