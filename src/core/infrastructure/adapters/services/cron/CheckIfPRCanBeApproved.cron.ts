@@ -233,9 +233,7 @@ export class CheckIfPRCanBeApprovedCronProvider {
                 return false;
             }
 
-            let isEveryReviewCommentResolved = null;
-
-            isEveryReviewCommentResolved = reviewComments?.every(
+            const isEveryReviewCommentResolved = reviewComments?.every(
                 (reviewComment) => reviewComment.isResolved,
             );
 
