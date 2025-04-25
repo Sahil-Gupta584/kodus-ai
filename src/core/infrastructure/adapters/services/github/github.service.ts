@@ -3460,7 +3460,7 @@ export class GithubService
             per_page: 100,
         });
 
-        if (!allReviews?.length && allReviews) {
+        if (!allReviews?.length) {
             return;
         }
 
