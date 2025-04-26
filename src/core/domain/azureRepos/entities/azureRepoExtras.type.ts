@@ -211,3 +211,31 @@ export interface AzureRepoDiffChange {
     additions?: number;
     deletions?: number;
 }
+
+/**
+ * Representa um reviewer retornado pela API
+ * IdentityRefWithVote (nome do tipo retornado)
+ */
+export interface AzureRepoReviewerWithVote {
+    _links: any;
+    descriptor: string;
+    directoryAlias?: string; // deprecated
+    displayName: string;
+    hasDeclined: boolean;
+    id: string;
+    imageUrl?: string; // deprecated
+    inactive?: boolean; // deprecated
+    isAadIdentity?: boolean; // deprecated
+    isContainer?: boolean; // deprecated
+    isDeletedInOrigin: boolean;
+    isFlagged: boolean;
+    isReapprove: boolean;
+    isRequired: boolean;
+    profileUrl?: string; // deprecated
+    reviewerUrl: string;
+    uniqueName?: string; // deprecated
+    url: string;
+    vote: number; // int16
+    votedFor: any;
+}
+
