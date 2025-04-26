@@ -93,9 +93,18 @@ export class RunCodeReviewAutomationUseCase {
                 return;
             }
 
+            const mappedUsers = mappedPlatform.mapUsers({
+                payload: sanitizedPayload,
+            });
+
+            if (!mappedUsers) {
+                return;
+            }
+
             const teamWithAutomation = await this.findTeamWithActiveCodeReview({
                 repository,
                 platformType,
+                userGitId: mappedUsers?.user?.id?.toString(),
             });
 
             if (!teamWithAutomation) {
