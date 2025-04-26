@@ -200,7 +200,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                             repository,
                             platformType,
                             userGitId,
-                            prNumber: pullRequest?.number,
+                            prNumber: payload.issue.number,
                         },
                     );
 
