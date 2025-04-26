@@ -97,10 +97,6 @@ export class RunCodeReviewAutomationUseCase {
                 payload: sanitizedPayload,
             });
 
-            if (!mappedUsers) {
-                return;
-            }
-
             const teamWithAutomation = await this.findTeamWithActiveCodeReview({
                 repository,
                 platformType,
@@ -389,10 +385,14 @@ export class RunCodeReviewAutomationUseCase {
                                     prNumber: params?.prNumber,
                                 },
                             });
-
-                            return null;
                         }
                     }
+
+                    await this.createNoActiveSubscriptionComment({
+                        organizationAndTeamData,
+                        repository: params.repository,
+                        prNumber: params?.prNumber,
+                    });
 
                     return null;
                 }
@@ -410,5 +410,41 @@ export class RunCodeReviewAutomationUseCase {
             });
             throw new BadRequestException(error);
         }
+    }
+
+    private async createNoActiveSubscriptionComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        prNumber: number;
+    }) {
+        const repositoryPayload = {
+            id: params.repository.id,
+            name: params.repository.name,
+        };
+
+        const noActiveSubscriptionMessage =
+            '## Your trial has ended! 😢\n\n' +
+            "To keep getting reviews, activate your plan [here](https://app.kodus.io/settings/subscription).\n\n" +
+            'Got questions about plans or want to see if we can extend your trial? Talk to our founders [here](https://cal.com/gabrielmalinosqui/30min).😎\n\n' +
+            '<!-- kody-codereview -->';
+
+        await this.codeManagement.createIssueComment({
+            organizationAndTeamData: params.organizationAndTeamData,
+            repository: repositoryPayload,
+            prNumber: params?.prNumber,
+            body: noActiveSubscriptionMessage,
+        });
+
+        this.logger.log({
+            message: `No active subscription found for PR#${params?.prNumber}`,
+            context: RunCodeReviewAutomationUseCase.name,
+            metadata: {
+                organizationAndTeamData: params.organizationAndTeamData,
+                repository: repositoryPayload,
+                prNumber: params?.prNumber,
+            },
+        });
+
+        return;
     }
 }
