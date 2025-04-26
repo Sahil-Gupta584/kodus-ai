@@ -285,6 +285,7 @@ export class RunCodeReviewAutomationUseCase {
         repository: { id: string; name: string };
         platformType: PlatformType;
         userGitId?: string;
+        prNumber?: number;
     }): Promise<{
         organizationAndTeamData: OrganizationAndTeamData;
         automationId: string;
@@ -345,11 +346,11 @@ export class RunCodeReviewAutomationUseCase {
 
                     if (!validation?.valid) {
                         this.logger.warn({
-                            message: 'License not active',
+                            message: `License not active - PR#${params?.prNumber}`,
                             context: RunCodeReviewAutomationUseCase.name,
                             metadata: {
-                                organizationId: config.team.organization.uuid,
-                                teamId: config.team.uuid,
+                                organizationAndTeamData,
+                                prNumber: params?.prNumber,
                             },
                         });
                         return null;
@@ -379,6 +380,17 @@ export class RunCodeReviewAutomationUseCase {
                                     automationId,
                                 };
                             }
+
+                            this.logger.warn({
+                                message: `User License not found - PR#${params?.prNumber}`,
+                                context: RunCodeReviewAutomationUseCase.name,
+                                metadata: {
+                                    organizationAndTeamData,
+                                    prNumber: params?.prNumber,
+                                },
+                            });
+
+                            return null;
                         }
                     }
 
