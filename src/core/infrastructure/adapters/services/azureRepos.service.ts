@@ -65,6 +65,7 @@ import {
     TranslationsCategory,
 } from '@/shared/utils/translations/translations';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
+import { KODY_CRITICAL_ISSUE_COMMENT_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
@@ -149,6 +150,71 @@ export class AzureReposService
                 message: `Failed to resolve review thread in PR #${params.prNumber}`,
                 context: AzureReposService.name,
                 serviceName: 'AzureReposService markReviewCommentAsResolved',
+                error,
+                metadata: { params },
+            });
+            return null;
+        }
+    }
+
+    async checkIfPullRequestShouldBeApproved(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string };
+    }): Promise<any | null> {
+        try {
+            const { organizationAndTeamData, prNumber, repository } = params;
+
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            const currentUserId =
+                await this.azureReposRequestHelper.getAuthenticatedUserId({
+                    orgName,
+                    token,
+                });
+
+            if (!currentUserId) {
+                throw new Error('Unable to identify reviewer from PAT.');
+            }
+
+            const reviewers =
+                await this.azureReposRequestHelper.getListOfPullRequestReviewers(
+                    {
+                        orgName,
+                        projectId,
+                        repositoryId: repository.id,
+                        prId: prNumber,
+                        token,
+                    },
+                );
+
+            const isApprovedByCurrentUser = reviewers
+                ? reviewers?.some((reviewer) => reviewer.id === currentUserId)
+                : false;
+
+            if (isApprovedByCurrentUser) {
+                return null;
+            }
+
+            const result = await this.approvePullRequest({
+                organizationAndTeamData,
+                prNumber,
+                repository,
+            });
+
+            return result;
+        } catch (error) {
+            this.logger.error({
+                message: `Error approving pull request #${params.prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService approvePullRequest',
                 error,
                 metadata: { params },
             });
@@ -1074,7 +1140,7 @@ export class AzureReposService
                             '## Code Review Completed! ud83dudd25',
                         ) &&
                         !comment.body.includes(
-                            '# Found critical issues please',
+                            KODY_CRITICAL_ISSUE_COMMENT_MARKER,
                         ),
                 )
                 .sort(

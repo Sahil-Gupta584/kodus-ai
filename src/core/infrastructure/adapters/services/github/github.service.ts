@@ -3429,6 +3429,81 @@ export class GithubService
         }
     }
 
+    async checkIfPullRequestShouldBeApproved(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string };
+    }): Promise<any | null> {
+        const { organizationAndTeamData, prNumber, repository } = params;
+
+        const githubAuth = await this.getGithubAuthDetails(
+            organizationAndTeamData,
+        );
+
+        const octokit = await this.instanceOctokit(
+            organizationAndTeamData,
+            githubAuth,
+        );
+
+        const graphQLWithAuth = await this.instanceGraphQL(
+            organizationAndTeamData,
+        );
+
+        const query = `
+        query {
+          viewer {
+            login
+            id
+            __typename
+          }
+        }
+      `;
+
+        const variables = {};
+        const userAuth: {
+            viewer: { login: string; id: string; __typename: string };
+        } = await graphQLWithAuth(query, variables);
+
+        const { data: allReviews } = await octokit.rest.pulls.listReviews({
+            owner: githubAuth.org,
+            repo: repository.name,
+            pull_number: prNumber,
+            per_page: 100,
+        });
+
+        if (!allReviews?.length) {
+            return;
+        }
+
+        const myReviews = allReviews
+            ?.filter(
+                (reviewer) =>
+                    reviewer?.user?.login === userAuth?.viewer?.login &&
+                    reviewer?.user?.node_id === userAuth?.viewer?.id,
+            )
+            ?.sort(
+                (a, b) =>
+                    new Date(a.submitted_at!).getTime() -
+                    new Date(b.submitted_at!).getTime(),
+            );
+
+        if (!myReviews?.length) {
+            return;
+        }
+
+        const lastMy = myReviews.pop();
+
+        if (lastMy?.state === 'APPROVED') {
+            return;
+        } else {
+            await this.approvePullRequest({
+                organizationAndTeamData,
+                prNumber,
+                repository,
+            });
+        }
+    }
+
     async approvePullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         prNumber: number;
@@ -3442,26 +3517,6 @@ export class GithubService
             );
 
             const octokit = await this.instanceOctokit(organizationAndTeamData);
-
-            const { data: reviews } = await octokit.rest.pulls.listReviews({
-                owner: githubAuthDetail.org,
-                repo: repository.name,
-                pull_number: prNumber,
-            });
-
-            if (reviews.length > 0) {
-                const lastReview = reviews[reviews.length - 1];
-
-                if (lastReview.state === PullRequestReviewState.APPROVED) {
-                    this.logger.log({
-                        message: `Pull request #${prNumber} has already been approved.`,
-                        context: GithubService.name,
-                        serviceName: 'GithubService approvePullRequest',
-                        metadata: params,
-                    });
-                    return;
-                }
-            }
 
             await octokit.rest.pulls.createReview({
                 owner: githubAuthDetail.org,

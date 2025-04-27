@@ -26,10 +26,6 @@ import {
     CodeReviewConfigWithRepositoryInfo,
 } from '@/config/types/general/codeReview.type';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
-import {
-    IIntegrationService,
-    INTEGRATION_SERVICE_TOKEN,
-} from '@/core/domain/integrations/contracts/integration.service.contracts';
 import { AzureRepoCommentTypeString } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
 
 const API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED =
@@ -49,11 +45,8 @@ export class CheckIfPRCanBeApprovedCronProvider {
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
         private readonly pullRequestService: IPullRequestsService,
 
-        @Inject(INTEGRATION_SERVICE_TOKEN)
-        private readonly integrationService: IIntegrationService,
-
         private readonly codeManagementService: CodeManagementService,
-    ) {}
+    ) { }
 
     @Cron(API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED, {
         name: 'CHECK IF PR SHOULD BE APPROVED',
@@ -227,28 +220,25 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     );
             }
 
-            if (!reviewComments || reviewComments.length < 1) {
-                return false;
-            }
-
-            let isEveryReviewCommentResolved = null;
-
             if (platformType === PlatformType.AZURE_REPOS) {
-                isEveryReviewCommentResolved = reviewComments
+                reviewComments = reviewComments
                     .filter(
                         (comment) =>
                             comment?.commentType ===
                             AzureRepoCommentTypeString.CODE,
                     )
-                    ?.every((reviewComment) => reviewComment.isResolved);
-            } else {
-                isEveryReviewCommentResolved = reviewComments?.every(
-                    (reviewComment) => reviewComment.isResolved,
-                );
             }
 
+            if (!reviewComments || reviewComments.length < 1) {
+                return false;
+            }
+
+            const isEveryReviewCommentResolved = reviewComments?.every(
+                (reviewComment) => reviewComment.isResolved,
+            );
+
             if (isEveryReviewCommentResolved) {
-                await this.codeManagementService.approvePullRequest(
+                await this.codeManagementService.checkIfPullRequestShouldBeApproved(
                     {
                         organizationAndTeamData,
                         prNumber,
