@@ -117,7 +117,6 @@ export class RunCodeReviewAutomationUseCase {
                 teamWithAutomation;
             organizationAndTeamData = teamData;
 
-
             if (!pullRequest) {
                 // try to get the PR details from the code management when it's a github issue
                 if (platformType === PlatformType.GITHUB) {
@@ -387,6 +386,15 @@ export class RunCodeReviewAutomationUseCase {
                                     prNumber: params?.prNumber,
                                 },
                             });
+
+                            await this.createNoActiveSubscriptionComment({
+                                organizationAndTeamData,
+                                repository: params.repository,
+                                prNumber: params?.prNumber,
+                                noActiveSubscriptionType: 'user',
+                            });
+
+                            return null;
                         }
                     }
 
@@ -394,6 +402,7 @@ export class RunCodeReviewAutomationUseCase {
                         organizationAndTeamData,
                         repository: params.repository,
                         prNumber: params?.prNumber,
+                        noActiveSubscriptionType: 'general',
                     });
 
                     return null;
@@ -418,23 +427,24 @@ export class RunCodeReviewAutomationUseCase {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { id: string; name: string };
         prNumber: number;
+        noActiveSubscriptionType: 'user' | 'general';
     }) {
         const repositoryPayload = {
             id: params.repository.id,
             name: params.repository.name,
         };
 
-        const noActiveSubscriptionMessage =
-            '## Your trial has ended! 😢\n\n' +
-            "To keep getting reviews, activate your plan [here](https://app.kodus.io/settings/subscription).\n\n" +
-            'Got questions about plans or want to see if we can extend your trial? Talk to our founders [here](https://cal.com/gabrielmalinosqui/30min).😎\n\n' +
-            '<!-- kody-codereview -->';
+        let message = await this.noActiveSubscriptionGeneralMessage();
+
+        if (params.noActiveSubscriptionType === 'user') {
+            message = await this.noActiveSubscriptionForUser();
+        }
 
         await this.codeManagement.createIssueComment({
             organizationAndTeamData: params.organizationAndTeamData,
             repository: repositoryPayload,
             prNumber: params?.prNumber,
-            body: noActiveSubscriptionMessage,
+            body: message,
         });
 
         this.logger.log({
@@ -448,5 +458,22 @@ export class RunCodeReviewAutomationUseCase {
         });
 
         return;
+    }
+
+    private async noActiveSubscriptionGeneralMessage(): Promise<string> {
+        return (
+            '## Your trial has ended! 😢\n\n' +
+            'To keep getting reviews, activate your plan [here](https://app.kodus.io/settings/subscription).\n\n' +
+            'Got questions about plans or want to see if we can extend your trial? Talk to our founders [here](https://cal.com/gabrielmalinosqui/30min).😎\n\n' +
+            '<!-- kody-codereview -->'
+        );
+    }
+
+    private async noActiveSubscriptionForUser(): Promise<string> {
+        return (
+            '## User License not found! 😢\n\n' +
+            'To perform the review, ask the admin to add a subscription for your user in [subscription management](https://app.kodus.io/settings/subscription).\n\n' +
+            '<!-- kody-codereview -->'
+        );
     }
 }
