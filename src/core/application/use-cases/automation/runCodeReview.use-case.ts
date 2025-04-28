@@ -350,6 +350,14 @@ export class RunCodeReviewAutomationUseCase {
                                 prNumber: params?.prNumber,
                             },
                         });
+
+                        await this.createNoActiveSubscriptionComment({
+                            organizationAndTeamData,
+                            repository: params.repository,
+                            prNumber: params?.prNumber,
+                            noActiveSubscriptionType: 'general',
+                        });
+
                         return null;
                     }
 
@@ -397,15 +405,6 @@ export class RunCodeReviewAutomationUseCase {
                             return null;
                         }
                     }
-
-                    await this.createNoActiveSubscriptionComment({
-                        organizationAndTeamData,
-                        repository: params.repository,
-                        prNumber: params?.prNumber,
-                        noActiveSubscriptionType: 'general',
-                    });
-
-                    return null;
                 }
             }
 
