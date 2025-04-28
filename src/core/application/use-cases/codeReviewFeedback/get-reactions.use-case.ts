@@ -18,7 +18,7 @@ export class GetReactionsUseCase implements IUseCase {
 
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
         private readonly pullRequestService: IPullRequestsService,
-    ) {}
+    ) { }
 
     async execute(organizationAndTeamData: OrganizationAndTeamData) {
         const period = this.calculatePeriod();

@@ -39,7 +39,7 @@ export type PullRequestWithFiles = {
     pull_number: number;
     state: string;
     title: string;
-    repository: string;
+    repository: string | { id: string, name: string };
     repositoryData?: Repository;
     pullRequestFiles: PullRequestFile[] | null;
 };
