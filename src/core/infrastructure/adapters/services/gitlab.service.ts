@@ -1,5 +1,4 @@
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
-import { DeployFrequency } from '@/core/domain/platformIntegrations/types/codeManagement/deployFrequency.type';
 import {
     PullRequestCodeReviewTime,
     PullRequestReviewComment,
@@ -41,7 +40,6 @@ import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { PinoLoggerService } from './logger/pino.service';
 import { PromptService } from './prompt.service';
-import { CommitLeadTimeForChange } from '@/core/domain/platformIntegrations/types/codeManagement/commitLeadTimeForChange.type';
 import * as moment from 'moment-timezone';
 import { Commit } from '@/config/types/general/commit.type';
 import { IntegrationConfigEntity } from '@/core/domain/integrationConfigs/entities/integration-config.entity';
@@ -69,25 +67,25 @@ import { CreateAuthIntegrationStatus } from '@/shared/domain/enums/create-auth-i
 import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
+import { KODY_CODE_REVIEW_COMPLETED_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
 export class GitlabService
     implements
-        Omit<
-            ICodeManagementService,
-            | 'getOrganizations'
-            | 'getPullRequestsWithChangesRequested'
-            | 'getListOfValidReviews'
-            | 'getPullRequestReviewThreads'
-            | 'getRepositoryAllFiles'
-            | 'getAuthenticationOAuthToken'
-            | 'getPullRequestDetails'
-            | 'getCommitsByReleaseMode'
-            | 'getDataForCalculateDeployFrequency'
-            | 'requestChangesPullRequest'
-        >
-{
+    Omit<
+        ICodeManagementService,
+        | 'getOrganizations'
+        | 'getPullRequestsWithChangesRequested'
+        | 'getListOfValidReviews'
+        | 'getPullRequestReviewThreads'
+        | 'getRepositoryAllFiles'
+        | 'getAuthenticationOAuthToken'
+        | 'getPullRequestDetails'
+        | 'getCommitsByReleaseMode'
+        | 'getDataForCalculateDeployFrequency'
+        | 'requestChangesPullRequest'
+    > {
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
         private readonly integrationService: IIntegrationService,
@@ -106,7 +104,7 @@ export class GitlabService
 
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
-    ) {}
+    ) { }
 
     async getPullRequestByNumber(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -576,7 +574,7 @@ export class GitlabService
                                     avatar_url: project.namespace?.avatar_url,
                                     organizationName: project.namespace?.name,
                                     visibility: (project?.visibility ===
-                                    'public'
+                                        'public'
                                         ? 'public'
                                         : 'private') as 'public' | 'private',
                                     selected:
@@ -627,7 +625,7 @@ export class GitlabService
                                     avatar_url: project.namespace?.avatar_url,
                                     organizationName: project.namespace?.name,
                                     visibility: (project?.visibility ===
-                                    'public'
+                                        'public'
                                         ? 'public'
                                         : 'private') as 'public' | 'private',
                                     selected:
@@ -746,8 +744,8 @@ export class GitlabService
                         pr.state === GitlabPullRequestState.OPENED
                             ? PullRequestState.OPENED
                             : pr.state === GitlabPullRequestState.CLOSED
-                              ? PullRequestState.CLOSED
-                              : PullRequestState.ALL,
+                                ? PullRequestState.CLOSED
+                                : PullRequestState.ALL,
                     pull_number: pr.iid,
                     project_id: pr.project_id,
                     prURL: pr.web_url,
@@ -1495,7 +1493,7 @@ export class GitlabService
             actionStatement,
             this.formatSub(translations.talkToKody),
             this.formatSub(translations.feedback) +
-                '<!-- kody-codereview -->&#8203;\n&#8203;',
+            '<!-- kody-codereview -->&#8203;\n&#8203;',
         ]
             .join('\n')
             .trim();
@@ -2223,6 +2221,54 @@ export class GitlabService
         }
     }
 
+    async checkIfPullRequestShouldBeApproved(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string; };
+    }): Promise<any | null> {
+        try {
+            const { organizationAndTeamData, repository, prNumber } = params;
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const approvalSettings = await gitlabAPI.MergeRequestApprovals.showConfiguration(repository.id, { mergerequestIId: prNumber });
+
+            const currentUser = await gitlabAPI.Users.showCurrentUser();
+
+            const approvedBy = approvalSettings?.approved_by;
+
+            const isApprovedByCurrentUser = approvedBy
+                ? approvedBy.some((approval) => (approval?.user?.id === currentUser.id))
+                : false;
+
+            if (isApprovedByCurrentUser) {
+                return null;
+            }
+
+            await this.approvePullRequest({ organizationAndTeamData, prNumber, repository });
+
+            this.logger.log({
+                message: `Approved pull request #${prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService approvePullRequest',
+                metadata: params,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error to approve pull request #${params.prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService checkIfPullRequestShouldBeApproved',
+                error: error,
+                metadata: params,
+            });
+            return null;
+        }
+    }
+
     async approvePullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string };
@@ -2475,8 +2521,8 @@ export class GitlabService
                         pr.state === GitlabPullRequestState.OPENED
                             ? PullRequestState.OPENED
                             : pr.state === GitlabPullRequestState.CLOSED
-                              ? PullRequestState.CLOSED
-                              : PullRequestState.ALL,
+                                ? PullRequestState.CLOSED
+                                : PullRequestState.ALL,
                     pull_number: pr.iid,
                     project_id: pr.project_id,
                     prURL: pr.web_url,
@@ -2532,7 +2578,7 @@ export class GitlabService
                     return (
                         firstDiscussionComment.resolvable &&
                         !firstDiscussionComment.body.includes(
-                            '## Code Review Completed! 🔥',
+                            KODY_CODE_REVIEW_COMPLETED_MARKER,
                         )
                     ); // Exclude comments with the specific string
                 })
@@ -2541,7 +2587,7 @@ export class GitlabService
                     const firstDiscussionComment = discussion.notes[0];
                     const isDiscussionResolved: boolean =
                         firstDiscussionComment.resolved &&
-                        firstDiscussionComment.resolved === true
+                            firstDiscussionComment.resolved === true
                             ? true
                             : false;
 

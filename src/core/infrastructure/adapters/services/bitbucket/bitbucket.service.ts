@@ -64,6 +64,7 @@ import {
     REPOSITORY_MANAGER_TOKEN,
 } from '@/core/domain/repository/contracts/repository-manager.contract';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { KODY_CODE_REVIEW_COMPLETED_MARKER, KODY_CRITICAL_ISSUE_COMMENT_MARKER, KODY_START_COMMAND_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -102,7 +103,6 @@ export class BitbucketService
 
         private readonly logger: PinoLoggerService,
     ) { }
-
 
     async getPullRequestsWithChangesRequested(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -2824,6 +2824,70 @@ export class BitbucketService
         }
     }
 
+    async checkIfPullRequestShouldBeApproved(params: {
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { id: string; name: string };
+    }) {
+        try {
+            const { organizationAndTeamData, prNumber, repository } = params;
+
+            const bitbucketAuthDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const workspace = await this.getWorkspaceFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            if (!workspace) {
+                return null;
+            }
+
+            const bitbucketAPI =
+                this.instanceBitbucketApi(bitbucketAuthDetails);
+
+            if (!bitbucketAuthDetails) {
+                this.logger.warn({
+                    message: 'Bitbucket auth details not found',
+                    context: this.checkIfPullRequestShouldBeApproved.name,
+                    metadata: { organizationAndTeamData }
+                });
+                return null;
+            }
+
+            const currentUser = (await bitbucketAPI.users.getAuthedUser({})).data;
+
+            const activities = await bitbucketAPI.pullrequests.listActivities({
+                repo_slug: `{${repository.id}}`,
+                workspace: `{${workspace}}`,
+                pull_request_id: prNumber,
+            }).then((res) => this.getPaginatedResults(bitbucketAPI, res));
+
+            const isApprovedByCurrentUser = activities
+                .find((activity: any) => activity.approval?.user?.uuid === currentUser?.uuid);
+
+            if (isApprovedByCurrentUser) {
+                return null;
+            }
+
+            await this.approvePullRequest({ organizationAndTeamData, prNumber, repository });
+
+        } catch (error) {
+            this.logger.error({
+                message: `Error to approve pull request #${params.prNumber}`,
+                context: BitbucketService.name,
+                serviceName: 'BitbucketService checkIfPullRequestShouldBeApproved',
+                error: error,
+                metadata: {
+                    params,
+                },
+            });
+            return null;
+        }
+    }
+
     async approvePullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         prNumber: number;
@@ -3173,12 +3237,6 @@ export class BitbucketService
 
             const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
 
-            // const activities = await bitbucketAPI.pullrequests.listActivities({
-            //     repo_slug: `{${repository.id}}`,
-            //     workspace: `{${workspace}}`,
-            //     pull_request_id: prNumber,
-            // });
-
             const comments = await bitbucketAPI.pullrequests
                 .listComments({
                     repo_slug: `{${repository.id}}`,
@@ -3192,10 +3250,13 @@ export class BitbucketService
                 .filter((comment) => {
                     return (
                         !comment?.content?.raw.includes(
-                            '## Code Review Completed! 🔥',
+                            KODY_CODE_REVIEW_COMPLETED_MARKER,
                         ) &&
                         !comment?.content?.raw.includes(
-                            '# Found critical issues please',
+                            KODY_CRITICAL_ISSUE_COMMENT_MARKER,
+                        ) &&
+                        !comment?.content?.raw.includes(
+                            KODY_START_COMMAND_MARKER,
                         )
                     ); // Exclude comments with the specific strings
                 })
