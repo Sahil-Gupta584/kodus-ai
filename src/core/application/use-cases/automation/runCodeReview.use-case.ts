@@ -97,10 +97,16 @@ export class RunCodeReviewAutomationUseCase {
                 payload: sanitizedPayload,
             });
 
+            let pullRequestData = null;
+            const pullRequest = mappedPlatform.mapPullRequest({
+                payload: sanitizedPayload,
+            });
+
             const teamWithAutomation = await this.findTeamWithActiveCodeReview({
                 repository,
                 platformType,
                 userGitId: mappedUsers?.user?.id?.toString(),
+                prNumber: pullRequest?.number,
             });
 
             if (!teamWithAutomation) {
@@ -111,10 +117,6 @@ export class RunCodeReviewAutomationUseCase {
                 teamWithAutomation;
             organizationAndTeamData = teamData;
 
-            let pullRequestData = null;
-            const pullRequest = mappedPlatform.mapPullRequest({
-                payload: sanitizedPayload,
-            });
 
             if (!pullRequest) {
                 // try to get the PR details from the code management when it's a github issue
