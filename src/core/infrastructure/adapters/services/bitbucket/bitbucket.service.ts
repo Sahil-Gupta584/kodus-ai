@@ -945,6 +945,17 @@ export class BitbucketService
             const { organizationAndTeamData } = params;
 
             const filters = params?.filters ?? {};
+            const { prStatus } = filters ?? "OPEN";
+
+            const stateMap = {
+                open: PullRequestState.OPENED.toUpperCase(),
+                closed: "DECLINED",
+                merged: PullRequestState.MERGED.toUpperCase(),
+            };
+
+            // Normalize the input to lowercase and look it up in the stateMap
+            const normalizedStatus = stateMap[prStatus.toLowerCase()] || PullRequestState.OPENED; // Default to OPENED if not found
+
             const { startDate, endDate } = filters?.period || {};
 
             const bitbucketAuthDetail = await this.getAuthDetails(
@@ -970,17 +981,20 @@ export class BitbucketService
                         .list({
                             repo_slug: `{${repo.id}}`,
                             workspace: `{${repo.workspaceId}}`,
+                            state: normalizedStatus
                         })
                         .then((res) =>
                             this.getPaginatedResults(bitbucketAPI, res),
                         );
 
                     if (startDate && endDate) {
-                        prs = prs.filter(
-                            (pr) =>
-                                new Date(pr.created_on) >= startDate &&
-                                new Date(pr.created_on) <= endDate,
-                        );
+                        const start = new Date(startDate);
+                        const end = new Date(endDate);
+
+                        prs = prs.filter((pr) => {
+                            const createdOn = new Date(pr.created_on);
+                            return createdOn >= start && createdOn <= end;
+                        });
                     }
 
                     return { repo, prs };
@@ -1025,7 +1039,10 @@ export class BitbucketService
                                 pull_number: pr.id,
                                 state: pr.state,
                                 title: pr.title,
-                                repository: repo.name,
+                                repository: {
+                                    id: repo.id,
+                                    name: repo.name,
+                                },
                                 pullRequestFiles,
                             };
                         });
@@ -2074,24 +2091,52 @@ export class BitbucketService
                 filters.repository.id,
             );
 
+            if (!workspace) {
+                return null;
+            }
+
             const bitbucketAPI =
                 this.instanceBitbucketApi(bitbucketAuthDetails);
 
-            const comments = await bitbucketAPI.pullrequests
-                .listComments({
-                    pull_request_id: filters.pullRequestNumber,
-                    repo_slug: `{${filters.repository.id}}`,
-                    workspace: `{${workspace}}`,
-                })
-                .then((res) => this.getPaginatedResults(bitbucketAPI, res));
+            if (!bitbucketAPI) {
+                return null;
+            }
+            const comments
+                = await bitbucketAPI.pullrequests
+                    .listComments({
+                        pull_request_id: filters.pullRequestNumber,
+                        repo_slug: `{${filters.repository.id}}`,
+                        workspace: `{${workspace}}`,
+                    })
+                    .then((res) => this.getPaginatedResults(bitbucketAPI, res));
 
-            return comments
+            // Adds a reply field to each comment.
+            const commentMap = comments.reduce((acc, comment) => {
+                // Initialize the reply field and map the comment by ID
+                comment.reply = [];
+                acc[comment.id] = comment;
+
+                // If the comment has a parent, add it to the parent's reply array
+                if (comment.parent) {
+                    const parentId = comment.parent.id;
+                    if (acc[parentId]) {
+                        acc[parentId].reply.push(comment);
+                    }
+                }
+
+                return acc;
+            }, {});
+
+            const organizedComments: any = Object.values(commentMap);
+
+            return organizedComments
                 .map((comment) => ({
                     id: comment?.id,
                     body: comment?.content?.raw,
                     createdAt: comment?.created_on,
                     originalCommit: comment?.pullrequest?.source?.commit?.hash,
-                    parent: comment?.parent,
+                    parent: comment?.parent, // present if the comment is a reply to another comment.
+                    reply: comment?.reply,
                     author: {
                         id: this.sanitizeUUId(comment?.user?.uuid),
                         username: comment?.user?.display_name,
@@ -3299,80 +3344,82 @@ export class BitbucketService
         comments: any[],
         pr: any
     }): Promise<any[]> {
-        const { comments, pr } = params;
+        try {
+            const { comments, pr } = params;
 
-        /**
-         * bitbucket sends a list of all comments, regardless of if they're a reply to another comment
-         * This reduce() fixes it so each comment has a reply array.
-         */
-        const commentMap = comments.reduce((acc, comment) => {
-            // Initialize the reply field and map the comment by ID
-            comment.reply = [];
-            acc[comment.id] = comment;
+            const thumbsUpText = '👍';
+            const thumbsDownText = '👎';
 
-            // If the comment has a parent, add it to the parent's reply array
-            if (comment.parent) {
-                const parentId = comment.parent.id;
-                if (acc[parentId]) {
-                    acc[parentId].reply.push(comment);
-                }
-            }
+            const commentsWithNumberOfReactions = comments
+                .filter((comment: any) => (comment.reply && comment.reply.length > 0))
+                .map((comment: any) => {
+                    comment.totalReactions = 0;
+                    comment.thumbsUp = 0;
+                    comment.thumbsDown = 0;
 
-            return acc;
-        }, {});
+                    // Use a Set to track users who have reacted (ensures that we are not counting duplicate votes)
+                    const reactedUsers = new Set();
 
-        const organizedComments = Object.values(commentMap);
+                    comment.reply.forEach(reply => {
+                        const userId = reply.user.uuid; // retrieves userId
 
+                        // Only count the reaction if the user hasn't reacted yet
+                        if (!reactedUsers.has(userId)) {
+                            if (reply.content.raw.includes(thumbsUpText)) {
+                                comment.thumbsUp++;
+                            }
+                            if (reply.content.raw.includes(thumbsDownText)) {
+                                comment.thumbsDown++;
+                            }
 
-        const thumbsUpText = ':thumbsUp:';
-        const thumbsDownText = ':thumbsDown:';
+                            // Mark this user as having reacted
+                            reactedUsers.add(userId);
+                        }
+                    });
 
-        const commentsWithNumberOfReactions = organizedComments
-            .filter((comment: any) => (comment.reply && comment.reply.length > 0))
-            .map((comment: any) => {
-                comment.totalReactions = 0;
-                comment.thumbsUp = 0;
-                comment.thumbsDown = 0;
+                    comment.totalReactions = comment.thumbsUp + comment.thumbsDown;
 
-                comment.reply.forEach(reply => {
-                    if (reply.text.includes(thumbsUpText)) {
-                        comment.thumbsUp++;
-                    }
-                    if (reply.text.includes(thumbsDownText)) {
-                        comment.thumbsDown++;
-                    }
+                    return comment;
                 });
 
-                comment.totalReactions = comment.thumbsUp + comment.thumbsDown;
 
-                return comment;
-            });
-
-
-        const reactionsInComments: ReactionsInComments[] =
-            commentsWithNumberOfReactions
-                .filter((comment) => comment.totalReactions > 0)
-                .map((comment: any) => ({
-                    reactions: {
-                        thumbsUp: comment.thumbsUp,
-                        thumbsDown: comment.thumbsDown,
-                    },
-                    comment: {
-                        id: comment.id,
-                        body: comment.body,
-                        pull_request_review_id: pr.pull_number,
-                    },
-                    pullRequest: {
-                        id: pr.id,
-                        number: pr.pull_number,
-                        repository: {
-                            id: pr.repository_id,
-                            fullName: pr.repository,
+            const reactionsInComments: ReactionsInComments[] =
+                commentsWithNumberOfReactions
+                    .filter((comment) => comment.totalReactions > 0)
+                    .map((comment: any) => ({
+                        reactions: {
+                            thumbsUp: comment.thumbsUp,
+                            thumbsDown: comment.thumbsDown,
                         },
-                    },
-                }))
+                        comment: {
+                            id: comment.id,
+                            body: comment.body,
+                            pull_request_review_id: pr.pull_number,
+                        },
+                        pullRequest: {
+                            id: pr.id,
+                            number: pr.pull_number,
+                            repository: {
+                                id: pr.repository_id,
+                                fullName: pr.repository,
+                            },
+                        },
+                    }))
 
-        return reactionsInComments;
+            return reactionsInComments;
+        }
+        catch (error) {
+            this.logger.error({
+                message: `Error when trying to count reactions in PR${params.pr.pull_number}`,
+                context: BitbucketService.name,
+                serviceName: 'BitbucketService countReactions',
+                error: error,
+                metadata: {
+                    params,
+                },
+            });
+            return null;
+        }
     }
 
     /**
