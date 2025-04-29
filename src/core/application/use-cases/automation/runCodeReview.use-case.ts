@@ -27,9 +27,12 @@ import {
     ILicenseService,
     LICENSE_SERVICE_TOKEN,
 } from '@/ee/license/interfaces/license.interface';
+import { environment } from '@/ee/configs/environment';
 
 @Injectable()
 export class RunCodeReviewAutomationUseCase {
+    public readonly isCloud: boolean;
+
     constructor(
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
@@ -49,7 +52,9 @@ export class RunCodeReviewAutomationUseCase {
         private readonly codeManagement: CodeManagementService,
 
         private logger: PinoLoggerService,
-    ) {}
+    ) {
+        this.isCloud = environment.API_CLOUD_MODE;
+    }
 
     async execute(params: {
         payload: any;
@@ -338,58 +343,15 @@ export class RunCodeReviewAutomationUseCase {
                         automationId: automations[0].uuid,
                     };
 
-                    const validation =
-                        await this.licenseService.validateOrganizationLicense(
-                            organizationAndTeamData,
-                        );
-
-                    if (!validation?.valid) {
-                        this.logger.warn({
-                            message: `License not active - PR#${params?.prNumber}`,
-                            context: RunCodeReviewAutomationUseCase.name,
-                            metadata: {
-                                organizationAndTeamData,
-                                prNumber: params?.prNumber,
-                            },
-                        });
-
-                        await this.createNoActiveSubscriptionComment({
-                            organizationAndTeamData,
-                            repository: params.repository,
-                            prNumber: params?.prNumber,
-                            noActiveSubscriptionType: 'general',
-                        });
-
-                        return null;
-                    }
-
-                    if (
-                        validation?.valid &&
-                        validation?.subscriptionStatus === 'trial'
-                    ) {
-                        return { organizationAndTeamData, automationId };
-                    }
-
-                    if (validation?.valid) {
-                        const users =
-                            await this.licenseService.getAllUsersWithLicense(
+                    if (this.isCloud) {
+                        const validation =
+                            await this.licenseService.validateOrganizationLicense(
                                 organizationAndTeamData,
                             );
 
-                        if (params?.userGitId) {
-                            const user = users?.find(
-                                (user) => user?.git_id === params?.userGitId,
-                            );
-
-                            if (user) {
-                                return {
-                                    organizationAndTeamData,
-                                    automationId,
-                                };
-                            }
-
+                        if (!validation?.valid) {
                             this.logger.warn({
-                                message: `User License not found - PR#${params?.prNumber}`,
+                                message: `License not active - PR#${params?.prNumber}`,
                                 context: RunCodeReviewAutomationUseCase.name,
                                 metadata: {
                                     organizationAndTeamData,
@@ -401,11 +363,63 @@ export class RunCodeReviewAutomationUseCase {
                                 organizationAndTeamData,
                                 repository: params.repository,
                                 prNumber: params?.prNumber,
-                                noActiveSubscriptionType: 'user',
+                                noActiveSubscriptionType: 'general',
                             });
 
                             return null;
                         }
+
+                        if (
+                            validation?.valid &&
+                            validation?.subscriptionStatus === 'trial'
+                        ) {
+                            return { organizationAndTeamData, automationId };
+                        }
+
+                        if (validation?.valid) {
+                            const users =
+                                await this.licenseService.getAllUsersWithLicense(
+                                    organizationAndTeamData,
+                                );
+
+                            if (params?.userGitId) {
+                                const user = users?.find(
+                                    (user) =>
+                                        user?.git_id === params?.userGitId,
+                                );
+
+                                if (user) {
+                                    return {
+                                        organizationAndTeamData,
+                                        automationId,
+                                    };
+                                }
+
+                                this.logger.warn({
+                                    message: `User License not found - PR#${params?.prNumber}`,
+                                    context:
+                                        RunCodeReviewAutomationUseCase.name,
+                                    metadata: {
+                                        organizationAndTeamData,
+                                        prNumber: params?.prNumber,
+                                    },
+                                });
+
+                                await this.createNoActiveSubscriptionComment({
+                                    organizationAndTeamData,
+                                    repository: params.repository,
+                                    prNumber: params?.prNumber,
+                                    noActiveSubscriptionType: 'user',
+                                });
+
+                                return null;
+                            }
+                        }
+                    } else {
+                        return {
+                            organizationAndTeamData,
+                            automationId,
+                        };
                     }
                 }
             }
