@@ -93,7 +93,7 @@ export class AzureReposRequestHelper {
 
         const pullRequests = data?.value ?? [];
 
-        if (!params.startDate && !params.endDate) {
+        if (pullRequests.length < 1 || (!params.startDate && !params.endDate)) {
             return pullRequests;
         }
 
