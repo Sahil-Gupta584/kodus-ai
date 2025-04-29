@@ -66,6 +66,7 @@ import {
 } from '@/shared/utils/translations/translations';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 import { KODY_CRITICAL_ISSUE_COMMENT_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
+import { AzurePRStatus } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
@@ -85,7 +86,6 @@ export class AzureReposService
         | 'findTeamAndOrganizationIdByConfigKey'
         | 'createResponseToComment'
         | 'getAuthenticationOAuthToken'
-        | 'countReactions'
         | 'getRepositoryAllFiles'
         | 'mergePullRequest'
         | 'getUserById'
@@ -106,6 +106,7 @@ export class AzureReposService
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
     ) { }
+
 
 
     async markReviewCommentAsResolved(params: {
@@ -317,7 +318,14 @@ export class AzureReposService
                 '# Found critical issues, please review the requested changes';
             const listOfCriticalIssues =
                 this.getListOfCriticalIssues(criticalComments);
-            const bodyFormatted = `${title}\n\n${listOfCriticalIssues}`;
+
+            const thumbsUpBlock = `\`\`\`\n👍\n\`\`\`\n`;
+            const thumbsDownBlock = `\`\`\`\n👎\n\`\`\`\n`;
+
+            const bodyFormatted = `${title}\n\n${listOfCriticalIssues}\n\n\n` +
+                `Was this suggestion helpful? Reply with 👍 or 👎 to help Kody learn from this interaction.\n` +
+                thumbsUpBlock +
+                thumbsDownBlock;
 
             await this.createSingleIssueComment({
                 body: bodyFormatted,
@@ -1768,11 +1776,23 @@ export class AzureReposService
 
     async getPullRequestsWithFiles(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        filters?: { period?: { startDate?: string; endDate?: string } };
+        filters?: { period?: { startDate?: string; endDate?: string }, prStatus?: string };
     }): Promise<PullRequestWithFiles[] | null> {
         try {
             const { organizationAndTeamData } = params;
             const filters = params.filters ?? {};
+
+            const { prStatus } = filters;
+
+            const stateMap = {
+                open: AzurePRStatus.ACTIVE,
+                closed: AzurePRStatus.ABANDONED,
+                merged: AzurePRStatus.COMPLETED,
+            };
+
+            // Normalize the input to lowercase and look it up in the stateMap
+            const normalizedStatus = prStatus ? stateMap[prStatus.toLowerCase()] || AzurePRStatus.ACTIVE : AzurePRStatus.ACTIVE;
+
             const { startDate, endDate } = filters.period || {};
 
             const repositories: Repositories[] =
@@ -1800,6 +1820,7 @@ export class AzureReposService
                                 repositoryId: repo.id,
                                 startDate,
                                 endDate,
+                                status: normalizedStatus,
                             },
                         );
                     return { repo, prs };
@@ -1857,6 +1878,31 @@ export class AzureReposService
             return null;
         }
     }
+
+    async countReactions(params: {
+        comments: any[],
+        pr: any,
+    }): Promise<any[] | null> {
+        try {
+            const { comments, pr } = params;
+
+            // Todo
+
+        }
+        catch (error) {
+            this.logger.error({
+                message: `Error when trying to count reactions in PR${params.pr.pull_number}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService countReactions',
+                error: error,
+                metadata: {
+                    params,
+                },
+            });
+            return null;
+        }
+    }
+
 
     async getRepositories(params: any): Promise<Repositories[]> {
         try {
