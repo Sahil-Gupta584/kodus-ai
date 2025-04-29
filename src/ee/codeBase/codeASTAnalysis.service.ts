@@ -186,7 +186,7 @@ export class CodeAstAnalysisService
                     );
                 },
                 {
-                    timeout: 300000, // 5 minutes
+                    timeout: 480000, // 8 minutes
                     errorThresholdPercentage: 50, // 50% of failures
                     resetTimeout: 30000, // 30 seconds
                 },
