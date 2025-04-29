@@ -451,7 +451,34 @@ export class AzureReposService
                     }));
             });
 
-            return comments.sort(
+            // Group comments by threadId
+            const groupedComments = comments.reduce((acc, comment) => {
+                if (!acc[comment.threadId]) {
+                    acc[comment.threadId] = [];
+                }
+                acc[comment.threadId].push(comment);
+
+                return acc;
+            }, {});
+
+            // Creates final comment array with replies
+            const commentsWithReplyArray = Object.values(groupedComments).flatMap((group: any) => {
+                // Sort Comments by created_at
+                group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+                // The first comment of the sorted group will be the parent
+                const parentComment = {
+                    ...group[0],
+                    replies: [],
+                }
+
+                // The rest are replies
+                parentComment.replies = group.slice(1);
+
+                return parentComment;
+            })
+
+            return commentsWithReplyArray.sort(
                 (a, b) =>
                     new Date(b.createdAt).getTime() -
                     new Date(a.createdAt).getTime(),
@@ -1827,7 +1854,7 @@ export class AzureReposService
                 }),
             );
 
-            const pullRequestsWithFiles: PullRequestWithFiles[] = [];
+            let pullRequestsWithFiles: PullRequestWithFiles[] = [];
 
             await Promise.all(
                 reposWithPRs.map(async ({ repo, prs }) => {
@@ -1861,9 +1888,22 @@ export class AzureReposService
 
                             const diffs =
                                 changes.map((change) => change.item) || [];
-                            return { pr, diffs };
+
+                            const prWithFileChanges: PullRequestWithFiles = {
+                                id: pr.pullRequestId,
+                                pull_number: pr.pullRequestId,
+                                state: pr.status,
+                                title: pr.title,
+                                repository: { id: repo.id, name: repo.name },
+                                repositoryData: repo as any,
+                                pullRequestFiles: diffs as any,
+                            }
+
+                            return prWithFileChanges
                         }),
                     );
+
+                    pullRequestsWithFiles.push(...prsWithDiffs);
                 }),
             );
 
