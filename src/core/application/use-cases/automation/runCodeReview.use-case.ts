@@ -105,7 +105,9 @@ export class RunCodeReviewAutomationUseCase {
             const teamWithAutomation = await this.findTeamWithActiveCodeReview({
                 repository,
                 platformType,
-                userGitId: mappedUsers?.user?.id?.toString(),
+                userGitId:
+                    mappedUsers?.user?.id?.toString() ||
+                    mappedUsers?.user?.uuid?.toString(),
                 prNumber: pullRequest?.number,
             });
 
