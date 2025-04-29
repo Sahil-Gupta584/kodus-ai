@@ -80,11 +80,18 @@ export class GetReactionsUseCase implements IUseCase {
                 continue;
             }
 
+
             const commentsLinkedToSuggestions = comments.filter((comment) =>
                 suggestions?.some(
-                    (suggestion) =>
-                        suggestion?.comment?.id ===
-                        (comment?.notes?.[0]?.id || comment?.id),
+                    (suggestion) => {
+                        // We dont save the commentId for azure, but the threadId.
+                        if (comment.threadId) {
+                            return suggestion?.comment?.id === comment?.threadId;
+                        }
+                        else {
+                            return (comment?.notes?.[0]?.id || comment?.id);
+                        }
+                    }
                 ),
             );
 
