@@ -65,31 +65,31 @@ import {
     TranslationsCategory,
 } from '@/shared/utils/translations/translations';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
+import { KODY_CRITICAL_ISSUE_COMMENT_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
     implements
-        Omit<
-            ICodeManagementService,
-            | 'getOrganizations'
-            | 'getPullRequestDetails'
-            | 'getWorkflows'
-            | 'getListMembers'
-            | 'getCommitsByReleaseMode'
-            | 'getPullRequestsForRTTM'
-            | 'createCommentInPullRequest'
-            | 'getPullRequestReviewThreads'
-            | 'getListOfValidReviews'
-            | 'getPullRequestsWithChangesRequested'
-            | 'findTeamAndOrganizationIdByConfigKey'
-            | 'createResponseToComment'
-            | 'getAuthenticationOAuthToken'
-            | 'countReactions'
-            | 'getRepositoryAllFiles'
-            | 'mergePullRequest'
-            | 'getUserById'
-        >
-{
+    Omit<
+        ICodeManagementService,
+        | 'getOrganizations'
+        | 'getPullRequestDetails'
+        | 'getWorkflows'
+        | 'getListMembers'
+        | 'getCommitsByReleaseMode'
+        | 'getPullRequestsForRTTM'
+        | 'createCommentInPullRequest'
+        | 'getPullRequestReviewThreads'
+        | 'getListOfValidReviews'
+        | 'getPullRequestsWithChangesRequested'
+        | 'findTeamAndOrganizationIdByConfigKey'
+        | 'createResponseToComment'
+        | 'getAuthenticationOAuthToken'
+        | 'countReactions'
+        | 'getRepositoryAllFiles'
+        | 'mergePullRequest'
+        | 'getUserById'
+    > {
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
         private readonly integrationService: IIntegrationService,
@@ -105,7 +105,8 @@ export class AzureReposService
 
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
-    ) {}
+    ) { }
+
 
     async markReviewCommentAsResolved(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -149,6 +150,64 @@ export class AzureReposService
                 message: `Failed to resolve review thread in PR #${params.prNumber}`,
                 context: AzureReposService.name,
                 serviceName: 'AzureReposService markReviewCommentAsResolved',
+                error,
+                metadata: { params },
+            });
+            return null;
+        }
+    }
+
+    async checkIfPullRequestShouldBeApproved(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string; };
+    }): Promise<any | null> {
+        try {
+            const { organizationAndTeamData, prNumber, repository } = params;
+
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            const currentUserId =
+                await this.azureReposRequestHelper.getAuthenticatedUserId({
+                    orgName,
+                    token,
+                });
+
+            if (!currentUserId) {
+                throw new Error('Unable to identify reviewer from PAT.');
+            }
+
+            const reviewers = await this.azureReposRequestHelper.getListOfPullRequestReviewers({
+                orgName,
+                projectId,
+                repositoryId: repository.id,
+                prId: prNumber,
+                token
+            });
+
+            const isApprovedByCurrentUser = reviewers
+                ? reviewers?.some((reviewer) => (reviewer.id === currentUserId))
+                : false;
+
+            if (isApprovedByCurrentUser) {
+                return null;
+            }
+
+            const result = await this.approvePullRequest({ organizationAndTeamData, prNumber, repository });
+
+            return result;
+        } catch (error) {
+            this.logger.error({
+                message: `Error approving pull request #${params.prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService approvePullRequest',
                 error,
                 metadata: { params },
             });
@@ -1074,7 +1133,7 @@ export class AzureReposService
                             '## Code Review Completed! ud83dudd25',
                         ) &&
                         !comment.body.includes(
-                            '# Found critical issues please',
+                            KODY_CRITICAL_ISSUE_COMMENT_MARKER,
                         ),
                 )
                 .sort(
@@ -1567,9 +1626,8 @@ export class AzureReposService
                 queryString += `created_on >= "${filters.startDate}"`;
             }
             if (filters?.endDate) {
-                queryString += `${
-                    queryString ? ' AND ' : ''
-                }created_on <= "${filters.endDate}"`;
+                queryString += `${queryString ? ' AND ' : ''
+                    }created_on <= "${filters.endDate}"`;
             }
 
             const projectId = await this.getProjectIdFromRepository(
@@ -2766,7 +2824,7 @@ export class AzureReposService
             actionStatement,
             this.formatSub(translations.talkToKody),
             this.formatSub(translations.feedback) +
-                '<!-- kody-codereview -->&#8203;\n&#8203;',
+            '<!-- kody-codereview -->&#8203;\n&#8203;',
         ]
             .join('\n')
             .trim();
