@@ -3330,7 +3330,7 @@ export class BitbucketService
             this.logger.error({
                 message: 'Error to get pull requests with files',
                 context: BitbucketService.name,
-                serviceName: 'BitbucketService getPullRequestsWithFiles',
+                serviceName: 'BitbucketService getPullRequestReviewComments',
                 error: error,
                 metadata: {
                     params,
