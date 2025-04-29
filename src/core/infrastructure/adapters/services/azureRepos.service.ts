@@ -1,3 +1,4 @@
+
 import {
     AUTH_INTEGRATION_SERVICE_TOKEN,
     IAuthIntegrationService,
@@ -19,6 +20,7 @@ import {
     PullRequestWithFiles,
     PullRequestReviewComment,
     OneSentenceSummaryItem,
+    ReactionsInComments,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { v4 as uuidv4, v4 } from 'uuid';
@@ -1926,7 +1928,66 @@ export class AzureReposService
         try {
             const { comments, pr } = params;
 
-            // Todo
+            const thumbsUpText = '👍';
+            const thumbsDownText = '👎';
+
+            const commentsWithNumberOfReactions = comments
+                .filter((comment: any) => (comment.replies && comment.replies.length > 0))
+                .map((comment: any) => {
+                    comment.totalReactions = 0;
+                    comment.thumbsUp = 0;
+                    comment.thumbsDown = 0;
+
+                    // Use a Set to track users who have reacted (ensures that we are not counting duplicate votes)
+                    const reactedUsers = new Set();
+
+                    comment.replies.forEach(reply => {
+                        const userId = reply.author.id; // retrieves userId
+
+                        // Only count the reaction if the user hasn't reacted yet
+                        if (!reactedUsers.has(userId)) {
+                            if (reply.body.includes(thumbsUpText)) {
+                                comment.thumbsUp++;
+                            }
+                            if (reply.body.includes(thumbsDownText)) {
+                                comment.thumbsDown++;
+                            }
+
+                            // Mark this user as having reacted
+                            reactedUsers.add(userId);
+                        }
+                    });
+
+                    comment.totalReactions = comment.thumbsUp + comment.thumbsDown;
+
+                    return comment;
+                });
+
+
+            const reactionsInComments: ReactionsInComments[] =
+                commentsWithNumberOfReactions
+                    .filter((comment) => comment.totalReactions > 0)
+                    .map((comment: any) => ({
+                        reactions: {
+                            thumbsUp: comment.thumbsUp,
+                            thumbsDown: comment.thumbsDown,
+                        },
+                        comment: {
+                            id: comment.threadId,
+                            body: comment.body,
+                            pull_request_review_id: pr.pull_number,
+                        },
+                        pullRequest: {
+                            id: pr.id,
+                            number: pr.pull_number,
+                            repository: {
+                                id: pr.repository_id,
+                                fullName: pr.repository,
+                            },
+                        },
+                    }))
+
+            return reactionsInComments;
 
         }
         catch (error) {
