@@ -1474,7 +1474,7 @@ export class BitbucketService
                 `\`\`\`\n` +
                 `${lineComment?.body?.suggestionContent}\n\n\n\n` +
                 `${lineComment?.body?.actionStatement ? `${lineComment?.body?.actionStatement}\n\n\n\n` : ''}` +
-                `Was this suggestion helpful? Reply with 👍 or 👎 to help Kody learn from this interaction.\n`;
+                `Was this suggestion helpful? reply with 👍 or 👎 to help Kody learn from this interaction.\n`;
 
             const thumbsUpBlock = `\`\`\`\n👍\n\`\`\`\n`;
             const thumbsDownBlock = `\`\`\`\n👎\n\`\`\`\n`;
@@ -2110,17 +2110,17 @@ export class BitbucketService
                     })
                     .then((res) => this.getPaginatedResults(bitbucketAPI, res));
 
-            // Adds a reply field to each comment.
+            // Adds a replies field to each comment.
             const commentMap = comments.reduce((acc, comment) => {
-                // Initialize the reply field and map the comment by ID
-                comment.reply = [];
+                // Initialize the replies field and map the comment by ID
+                comment.replies = [];
                 acc[comment.id] = comment;
 
-                // If the comment has a parent, add it to the parent's reply array
+                // If the comment has a parent, add it to the parent's replies array
                 if (comment.parent) {
                     const parentId = comment.parent.id;
                     if (acc[parentId]) {
-                        acc[parentId].reply.push(comment);
+                        acc[parentId].replies.push(comment);
                     }
                 }
 
@@ -2135,8 +2135,8 @@ export class BitbucketService
                     body: comment?.content?.raw,
                     createdAt: comment?.created_on,
                     originalCommit: comment?.pullrequest?.source?.commit?.hash,
-                    parent: comment?.parent, // present if the comment is a reply to another comment.
-                    reply: comment?.reply,
+                    parent: comment?.parent, // present if the comment is a replies to another comment.
+                    replies: comment?.replies,
                     author: {
                         id: this.sanitizeUUId(comment?.user?.uuid),
                         username: comment?.user?.display_name,
@@ -3351,7 +3351,7 @@ export class BitbucketService
             const thumbsDownText = '👎';
 
             const commentsWithNumberOfReactions = comments
-                .filter((comment: any) => (comment.reply && comment.reply.length > 0))
+                .filter((comment: any) => (comment.replies && comment.replies.length > 0))
                 .map((comment: any) => {
                     comment.totalReactions = 0;
                     comment.thumbsUp = 0;
@@ -3360,7 +3360,7 @@ export class BitbucketService
                     // Use a Set to track users who have reacted (ensures that we are not counting duplicate votes)
                     const reactedUsers = new Set();
 
-                    comment.reply.forEach(reply => {
+                    comment.replies.forEach(reply => {
                         const userId = reply.user.uuid; // retrieves userId
 
                         // Only count the reaction if the user hasn't reacted yet
