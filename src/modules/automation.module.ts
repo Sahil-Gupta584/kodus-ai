@@ -41,7 +41,7 @@ import { UseCases as OrganizationAutomationUseCases } from '@/core/application/u
 import { OrganizationModule } from './organization.module';
 import { CheckinModule } from './checkin.module';
 import { ParametersModule } from './parameters.module';
-import { RunCodeReviewAutomationUseCase } from '@/core/application/use-cases/automation/runCodeReview.use-case';
+import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.use-case';
 import { CodebaseModule } from './codeBase.module';
 import { UseCases as SaveCodeReviewFeedbackUseCase } from '@/core/application/use-cases/codeReviewFeedback';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';

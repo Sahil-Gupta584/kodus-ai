@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { RunCodeReviewAutomationUseCase } from '../../automation/runCodeReview.use-case';
+import { RunCodeReviewAutomationUseCase } from '../../../../../ee/automation/runCodeReview.use-case';
 import { ChatWithKodyFromGitUseCase } from './chatWithKodyFromGit.use-case';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { SavePullRequestUseCase } from '../../pullRequests/save.use-case';

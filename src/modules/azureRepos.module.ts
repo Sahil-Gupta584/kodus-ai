@@ -16,7 +16,7 @@ import { AutomationModule } from './automation.module';
 import { TeamAutomationModule } from './teamAutomation.module';
 import { AutomationStrategyModule } from './automationStrategy.module';
 import { AgentModule } from './agent.module';
-import { RunCodeReviewAutomationUseCase } from '@/core/application/use-cases/automation/runCodeReview.use-case';
+import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.use-case';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { CodebaseModule } from './codeBase.module';
 import { AzureReposService } from '@/core/infrastructure/adapters/services/azureRepos.service';
