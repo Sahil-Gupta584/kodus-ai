@@ -130,7 +130,7 @@ export class CodeReviewHandlerService {
 
         @Inject(GLOBAL_PARAMETERS_SERVICE_TOKEN)
         private readonly globalParametersService: GlobalParametersService,
-    ) { }
+    ) {}
 
     private async findLastTeamAutomationCodeReviewExecution(
         teamAutomationId: string,
@@ -262,8 +262,8 @@ export class CodeReviewHandlerService {
                 ...(kodyRulesSuggestions
                     ? kodyRulesSuggestions?.codeSuggestions
                     : suggestionsWithSeverity?.length > 0
-                        ? suggestionsWithSeverity
-                        : []),
+                      ? suggestionsWithSeverity
+                      : []),
             ];
 
             // TODO
@@ -289,6 +289,7 @@ export class CodeReviewHandlerService {
                         context?.pullRequest?.number,
                         context?.pullRequest?.base?.repo?.fullName,
                         file.filename,
+                        context.organizationAndTeamData,
                     );
 
                 if (savedSuggestions?.length > 0) {
@@ -296,7 +297,7 @@ export class CodeReviewHandlerService {
                         (suggestion) =>
                             suggestion.deliveryStatus === DeliveryStatus.SENT &&
                             suggestion.implementationStatus ===
-                            ImplementationStatus.NOT_IMPLEMENTED,
+                                ImplementationStatus.NOT_IMPLEMENTED,
                     );
 
                     if (mergedSuggestions?.length > 0) {
@@ -526,6 +527,7 @@ export class CodeReviewHandlerService {
         const pr = await this.pullRequestService.findByNumberAndRepository(
             prNumber,
             repository.name,
+            organizationAndTeamData,
         );
 
         let implementedSuggestionsCommentIds =
@@ -552,13 +554,13 @@ export class CodeReviewHandlerService {
 
         const foundComments = isPlatformTypeGithub
             ? reviewComments.filter((comment) =>
-                implementedSuggestionsCommentIds.includes(
-                    Number(comment.fullDatabaseId),
-                ),
-            )
+                  implementedSuggestionsCommentIds.includes(
+                      Number(comment.fullDatabaseId),
+                  ),
+              )
             : reviewComments.filter((comment) =>
-                implementedSuggestionsCommentIds.includes(comment.id),
-            );
+                  implementedSuggestionsCommentIds.includes(comment.id),
+              );
 
         if (foundComments.length > 0) {
             const promises = foundComments.map(
@@ -595,7 +597,7 @@ export class CodeReviewHandlerService {
                         (suggestion) =>
                             suggestion.comment &&
                             suggestion.implementationStatus !==
-                            ImplementationStatus.NOT_IMPLEMENTED &&
+                                ImplementationStatus.NOT_IMPLEMENTED &&
                             suggestion.deliveryStatus === DeliveryStatus.SENT,
                     )
                     .forEach((filteredSuggestion) => {

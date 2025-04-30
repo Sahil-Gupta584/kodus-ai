@@ -16,13 +16,14 @@ import { AutomationModule } from './automation.module';
 import { TeamAutomationModule } from './teamAutomation.module';
 import { AutomationStrategyModule } from './automationStrategy.module';
 import { AgentModule } from './agent.module';
-import { RunCodeReviewAutomationUseCase } from '@/core/application/use-cases/automation/runCodeReview.use-case';
+import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.use-case';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { CodebaseModule } from './codeBase.module';
 import { AzureReposService } from '@/core/infrastructure/adapters/services/azureRepos.service';
 import { AZURE_REPOS_SERVICE_TOKEN } from '@/core/domain/azureRepos/contracts/azure-repos.service.contract';
 import { AzureReposRequestHelper } from '@/core/infrastructure/adapters/services/azureRepos/azure-repos-request-helper';
 import { AzureReposController } from '@/core/infrastructure/http/controllers/azureRepos.controller';
+import { LicenseModule } from '@/ee/license/license.module';
 
 @Module({
     imports: [
@@ -43,6 +44,7 @@ import { AzureReposController } from '@/core/infrastructure/http/controllers/azu
         forwardRef(() => AgentModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
+        forwardRef(() => LicenseModule),
     ],
     providers: [
         ...SaveOrganizationMetricsToDbUseCase,

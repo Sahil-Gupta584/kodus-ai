@@ -39,6 +39,7 @@ import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { OrganizationModule } from './organization.module';
 import { PullRequestsModule } from './pullRequests.module';
 import { TeamArtifactsModule } from './teamArtifacts.module';
+import { LicenseModule } from '@/ee/license/license.module';
 
 @Module({
     imports: [
@@ -69,6 +70,7 @@ import { TeamArtifactsModule } from './teamArtifacts.module';
         CheckinHistoryOrganizationModule,
         AuthIntegrationModule,
         CheckinHistoryModule,
+        LicenseModule
     ],
     providers: [
         ...UseCases,

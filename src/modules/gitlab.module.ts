@@ -15,9 +15,10 @@ import { MetricsModule } from './metrics.module';
 import { OrganizationMetricsModule } from './organizationMetrics.module';
 import { ParametersModule } from './parameters.module';
 import { GlobalCacheModule } from './cache.module';
-import { RunCodeReviewAutomationUseCase } from '@/core/application/use-cases/automation/runCodeReview.use-case';
+import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.use-case';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { CodebaseModule } from './codeBase.module';
+import { LicenseModule } from '@/ee/license/license.module';
 
 @Module({
     imports: [
@@ -37,6 +38,7 @@ import { CodebaseModule } from './codeBase.module';
         forwardRef(() => AutomationStrategyModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
+        LicenseModule
     ],
     providers: [RunCodeReviewAutomationUseCase, PromptService],
     controllers: [GitlabController],
