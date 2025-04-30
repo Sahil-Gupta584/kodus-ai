@@ -1,7 +1,7 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 
 export class AxiosLicenseService {
-    private axiosInstance: AxiosInstance;
+    private readonly axiosInstance: AxiosInstance;
 
     constructor() {
         this.axiosInstance = axios.create({
@@ -22,7 +22,11 @@ export class AxiosLicenseService {
         }
     }
 
-    public async post(url: string, body = {}, config = {}) {
+    public async post(
+        url: string,
+        body: Record<string, unknown> = {},
+        config: AxiosRequestConfig = {}
+    ): Promise<any> {
         const { data } = await this.axiosInstance.post(url, body, config);
         return data;
     }
