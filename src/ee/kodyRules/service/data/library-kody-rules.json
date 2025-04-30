@@ -1,6 +1,720 @@
 {
     "JSTS": [
         {
+            "uuid": "7c3bc63a-249c-4bdb-bc27-9e3fd9d2832e",
+            "title": "Use detailed prop definitions",
+            "rule": "In committed code, prop definitions should always be as detailed as possible, specifying at least type(s).",
+            "why_is_this_important": "Detailed prop definitions document the component's API, making it easy to understand how to use the component. In development, Vue will warn if incorrectly formatted props are provided, helping to catch potential errors.",
+            "severity": "High",
+            "bad_example": "// This is only OK when prototyping\nprops: ['status']",
+            "good_example": "props: {\n  status: String\n}\n\n// Even better!\nprops: {\n  status: {\n    type: String,\n    required: true,\n    validator: value => {\n      return [\n        'syncing',\n        'synced',\n        'version-conflict',\n        'error'\n      ].includes(value)\n    }\n  }\n}",
+            "tags": "vue, style-guide, essential, props, definition, validation",
+            "examples": [
+                {
+                    "snippet": "props: ['status']",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "props: {\n  status: String\n}",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "props: {\n  status: {\n    type: String,\n    required: true,\n    validator: value => {\n      return [\n        'syncing',\n        'synced',\n        'version-conflict',\n        'error'\n      ].includes(value)\n    }\n  }\n}",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "b00e5eb9-1467-47bc-8d22-e021e684c3f7",
+            "title": "Use keyed `v-for`",
+            "rule": "`key` with `v-for` is *always* required on components to maintain internal component state down the subtree. Even for elements, it's good practice for predictable behavior like object constancy in animations.",
+            "why_is_this_important": "Using unique keys helps Vue optimize DOM rendering by tracking node identities, especially when the order of items in a list changes. This is important for components to preserve their state and for elements to ensure predictable behavior in scenarios like animations.",
+            "severity": "High",
+            "bad_example": "<ul>\n  <li v-for=\"todo in todos\">\n    {{ todo.text }}\n  </li>\n</ul>",
+            "good_example": "<ul>\n  <li\n    v-for=\"todo in todos\"\n    :key=\"todo.id\"\n  >\n    {{ todo.text }}\n  </li>\n</ul>",
+            "tags": "vue, style-guide, essential, v-for, key, performance, state",
+            "examples": [
+                {
+                    "snippet": "<ul>\n  <li v-for=\"todo in todos\">\n    {{ todo.text }}\n  </li>\n</ul>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<ul>\n  <li\n    v-for=\"todo in todos\"\n    :key=\"todo.id\"\n  >\n    {{ todo.text }}\n  </li>\n</ul>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "0680f783-a106-4a8d-873f-dc5f2d6c3445",
+            "title": "Avoid `v-if` with `v-for`",
+            "rule": "Never use `v-if` on the same element as `v-for`.",
+            "why_is_this_important": "When Vue processes directives, `v-if` has a higher priority than `v-for`. This can lead to errors because the `v-if` directive might be evaluated before the `v-for` has access to the iteration variables.",
+            "severity": "High",
+            "bad_example": "<ul>\n  <li\n    v-for=\"user in users\"\n    v-if=\"user.isActive\"\n    :key=\"user.id\"\n  >\n    {{ user.name }}\n  </li>\n</ul>",
+            "good_example": "<ul>\n  <li\n    v-for=\"user in activeUsers\"\n    :key=\"user.id\"\n  >\n    {{ user.name }}\n  </li>\n</ul>\n\n<ul>\n  <template v-for=\"user in users\" :key=\"user.id\">\n    <li v-if=\"user.isActive\">\n      {{ user.name }}\n    </li>\n  </template>\n</ul>",
+            "tags": "vue, style-guide, essential, v-if, v-for, performance, error-prevention",
+            "examples": [
+                {
+                    "snippet": "<ul>\n  <li\n    v-for=\"user in users\"\n    v-if=\"user.isActive\"\n    :key=\"user.id\"\n  >\n    {{ user.name }}\n  </li>\n</ul>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<ul>\n  <li\n    v-for=\"user in activeUsers\"\n    :key=\"user.id\"\n  >\n    {{ user.name }}\n  </li>\n</ul>",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "<ul>\n  <template v-for=\"user in users\" :key=\"user.id\">\n    <li v-if=\"user.isActive\">\n      {{ user.name }}\n    </li>\n  </template>\n</ul>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "73e2a1c3-c7cf-4373-8479-3f2f5b9987a1",
+            "title": "Use component-scoped styling",
+            "rule": "For applications, styles in a top-level `App` component and in layout components may be global, but all other components should always be scoped. This can be achieved through CSS modules, class-based strategies like BEM, or the `scoped` attribute in Single-File Components.",
+            "why_is_this_important": "Consistent scoping ensures that styles only apply to the intended components, preventing unintended side effects and making styles easier to manage, especially in large projects or when using third-party components.",
+            "severity": "High",
+            "bad_example": "<template>\n  <button class=\"btn btn-close\">×</button>\n</template>\n<style>\n.btn-close {\n  background-color: red;\n}\n</style>",
+            "good_example": "<template>\n  <button class=\"button button-close\">×</button>\n</template>\n\n<style scoped>\n.button {\n  border: none;\n  border-radius: 2px;\n}\n.button-close {\n  background-color: red;\n}\n</style>\n\n<template>\n  <button :class=\"[$style.button, $style.buttonClose]\">×</button>\n</template>\n\n<style module>\n.button {\n  border: none;\n  border-radius: 2px;\n}\n.buttonClose {\n  background-color: red;\n}\n</style>\n\n<template>\n  <button class=\"c-Button c-Button--close\">×</button>\n</template>\n\n<style>\n.c-Button {\n  border: none;\n  border-radius: 2px;\n}\n.c-Button--close {\n  background-color: red;\n}\n</style>",
+            "tags": "vue, style-guide, essential, css, style, scoping, sfc",
+            "examples": []
+        },
+        {
+            "uuid": "6475ecf8-6206-441a-ab88-e4d4c0b71c57",
+            "title": "Component files",
+            "rule": "Whenever a build system is available to concatenate files, each component should be in its own file.",
+            "why_is_this_important": "This helps you to more quickly find a component when you need to edit it or review how to use it.",
+            "severity": "Medium",
+            "bad_example": "app.component('TodoList', {\n //...\n})\napp.component('TodoItem', {\n //...\n})",
+            "good_example": "components/\n|- TodoList.js\n|- TodoItem.js\n\ncomponents/\n|- TodoList.vue\n|- TodoItem.vue",
+            "tags": "vue, style-guide, strongly-recommended, structure, organization, sfc",
+            "examples": []
+        },
+        {
+            "uuid": "b83cd985-12e9-4cae-9e63-a74eeaf3f895",
+            "title": "Single-file component filename casing",
+            "rule": "Filenames of Single-File Components should either be always PascalCase or always kebab-case.",
+            "why_is_this_important": "PascalCase works best with autocompletion in code editors, as it's consistent with how we reference components in JS(X) and templates. However, mixed case filenames can sometimes create issues on case-insensitive file systems, which is why kebab-case is also perfectly acceptable.",
+            "severity": "Medium",
+            "bad_example": "components/\n|- mycomponent.vue\n\ncomponents/\n|- myComponent.vue",
+            "good_example": "components/\n|- MyComponent.vue\n\ncomponents/\n|- my-component.vue",
+            "tags": "vue, style-guide, strongly-recommended, naming, sfc, casing, consistency",
+            "examples": [
+                {
+                    "snippet": "mycomponent.vue",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "myComponent.vue",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "MyComponent.vue",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "my-component.vue",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "1f195751-37d3-46e5-a86e-f0debae66301",
+            "title": "Base component names",
+            "rule": "Base components (a.k.a. presentational, dumb, or pure components) that apply app-specific styling and conventions should all begin with a specific prefix, such as `Base`, `App`, or `V`.",
+            "why_is_this_important": "These components lay the foundation for consistent styling and behavior. Organizing them with a prefix makes them easy to identify and list together alphabetically. It also avoids arbitrary prefixes for simple wrappers and allows for easier global registration.",
+            "severity": "Medium",
+            "bad_example": "components/\n|- MyButton.vue\n|- VueTable.vue\n|- Icon.vue",
+            "good_example": "components/\n|- BaseButton.vue\n|- BaseTable.vue\n|- BaseIcon.vue\n\ncomponents/\n|- AppButton.vue\n|- AppTable.vue\n|- AppIcon.vue\n\ncomponents/\n|- VButton.vue\n|- VTable.vue\n|- VIcon.vue",
+            "tags": "vue, style-guide, strongly-recommended, naming, component, base-component, prefix, consistency",
+            "examples": []
+        },
+        {
+            "uuid": "7728a16a-909a-4112-ae96-c877dbc60510",
+            "title": "Tightly coupled component names",
+            "rule": "Child components that are tightly coupled with their parent should include the parent component name as a prefix.",
+            "why_is_this_important": "If a component only makes sense in the context of a single parent component, that relationship should be evident in its name. This also keeps related files next to each other in editors.",
+            "severity": "Medium",
+            "bad_example": "components/\n|- TodoList.vue\n|- TodoItem.vue\n|- TodoButton.vue\n\ncomponents/\n|- SearchSidebar.vue\n|- NavigationForSearchSidebar.vue",
+            "good_example": "components/\n|- TodoList.vue\n|- TodoListItem.vue\n|- TodoListItemButton.vue\n\ncomponents/\n|- SearchSidebar.vue\n|- SearchSidebarNavigation.vue",
+            "tags": "vue, style-guide, strongly-recommended, naming, component, relationship, coupling, organization",
+            "examples": []
+        },
+        {
+            "uuid": "2eed163a-e80c-430d-b35b-5b8eac0cb3c8",
+            "title": "Order of words in component names",
+            "rule": "Component names should start with the highest-level (often most general) words and end with descriptive modifying words.",
+            "why_is_this_important": "This makes it easier to see the relationships between components at a glance, especially when editors organize files alphabetically.",
+            "severity": "Medium",
+            "bad_example": "components/\n|- ClearSearchButton.vue\n|- ExcludeFromSearchInput.vue\n|- LaunchOnStartupCheckbox.vue\n|- RunSearchButton.vue\n|- SearchInput.vue\n|- TermsCheckbox.vue",
+            "good_example": "components/\n|- SearchButtonClear.vue\n|- SearchButtonRun.vue\n|- SearchInputQuery.vue\n|- SearchInputExcludeGlob.vue\n|- SettingsCheckboxTerms.vue\n|- SettingsCheckboxLaunchOnStartup.vue",
+            "tags": "vue, style-guide, strongly-recommended, naming, component, organization, readability",
+            "examples": []
+        },
+        {
+            "uuid": "23923c1f-6762-48e3-82a2-b747179d55a3",
+            "title": "Self-closing components",
+            "rule": "Components with no content should be self-closing in Single-File Components, string templates, and JSX - but never in in-DOM templates.",
+            "why_is_this_important": "Self-closing components communicate that they not only have no content, but are *meant* to have no content. It also makes your code cleaner.",
+            "severity": "Medium",
+            "bad_example": "\n<MyComponent></MyComponent>\n\n\n<my-component/>",
+            "good_example": "\n<MyComponent/>\n\n\n<my-component></my-component>",
+            "tags": "vue, style-guide, strongly-recommended, template, syntax, self-closing, readability",
+            "examples": [
+                {
+                    "snippet": "<MyComponent></MyComponent> ",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<my-component/> ",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<MyComponent/> ",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "<my-component></my-component> ",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "ac84b896-f0ee-4a57-bd65-d34dc92018ae",
+            "title": "Component name casing in templates",
+            "rule": "In most projects, component names should always be PascalCase in Single-File Components and string templates - but kebab-case in in-DOM templates.",
+            "why_is_this_important": "PascalCase allows editors to autocomplete component names and is more visually distinct from single-word HTML elements. However, if you've already invested heavily in kebab-case, using it everywhere is also acceptable for consistency.",
+            "severity": "Medium",
+            "bad_example": "\n<mycomponent/>\n\n\n<myComponent/>\n\n\n<MyComponent></MyComponent>",
+            "good_example": "\n<MyComponent/>\n\n\n<my-component></my-component>\n\nOR\n\n\n<my-component></my-component>",
+            "tags": "vue, style-guide, strongly-recommended, naming, component, template, casing, consistency",
+            "examples": [
+                {
+                    "snippet": "<mycomponent/> ",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<MyComponent></MyComponent> ",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<MyComponent/> ",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "<my-component></my-component> ",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "<my-component></my-component> ",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "a8ff5907-7002-42a0-b800-0af437478372",
+            "title": "Component name casing in JS/JSX",
+            "rule": "Component names in JS/JSX should always be PascalCase, though they may be kebab-case inside strings for simpler applications that only use global component registration through `app.component`.",
+            "why_is_this_important": "PascalCase is the convention for classes and constructors in JavaScript. Vue components have instances, so PascalCase makes sense. It also helps distinguish components from HTML elements in JSX and templates. Kebab-case is acceptable in strings for global registration.",
+            "severity": "Medium",
+            "bad_example": "app.component('myComponent', { /*... */ })\n\nimport myComponent from './MyComponent.vue'\n\nexport default {\n name: 'myComponent'\n //...\n}\n\nexport default {\n name: 'my-component'\n //...\n}",
+            "good_example": "app.component('MyComponent', { /*... */ })\n\napp.component('my-component', { /*... */ })\n\nimport MyComponent from './MyComponent.vue'\n\nexport default {\n name: 'MyComponent'\n //...\n}",
+            "tags": "vue, style-guide, strongly-recommended, naming, component, javascript, jsx, casing, consistency",
+            "examples": [
+                {
+                    "snippet": "app.component('myComponent', { /*...*/ })",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "import myComponent from './MyComponent.vue'",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "export default { name: 'my-component' }",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "app.component('MyComponent', { /*...*/ })",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "app.component('my-component', { /*...*/ })",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "import MyComponent from './MyComponent.vue'",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "export default { name: 'MyComponent' }",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "ae7eb030-2272-47a6-b410-db211f15ec30",
+            "title": "Full-word component names",
+            "rule": "Component names should prefer full words over abbreviations.",
+            "why_is_this_important": "Autocompletion in editors makes writing longer names easy, and the clarity they provide is invaluable. Uncommon abbreviations should always be avoided.",
+            "severity": "Medium",
+            "bad_example": "components/\n|- SdSettings.vue\n|- UProfOpts.vue",
+            "good_example": "components/\n|- StudentDashboardSettings.vue\n|- UserProfileOptions.vue",
+            "tags": "vue, style-guide, strongly-recommended, naming, component, readability, clarity",
+            "examples": []
+        },
+        {
+            "uuid": "5838484a-0947-4f9f-af62-215f79eb941a",
+            "title": "Prop name casing",
+            "rule": "Prop names should always use camelCase during declaration. When used inside in-DOM templates, props should be kebab-cased. Single-File Components templates and JSX can use either kebab-case or camelCase props. Casing should be consistent.",
+            "why_is_this_important": "Consistency in prop casing improves code readability and maintainability.",
+            "severity": "Medium",
+            "bad_example": "props: {\n 'greeting-text': String\n}\n\n// for in-DOM templates\n<welcome-message greetingText=\"hi\"></welcome-message>",
+            "good_example": "props: {\n greetingText: String\n}\n\n// for SFC - please make sure your casing is consistent throughout the project\n// you can use either convention but we don't recommend mixing two different casing styles\n<WelcomeMessage greeting-text=\"hi\"/>\n// or\n<WelcomeMessage greetingText=\"hi\"/>\n\n// for in-DOM templates\n<welcome-message greeting-text=\"hi\"></welcome-message>",
+            "tags": "vue, style-guide, strongly-recommended, props, naming, casing, consistency, template, javascript, jsx",
+            "examples": []
+        },
+        {
+            "uuid": "839d423e-7a59-4afd-86f1-bc7efbd9bbc3",
+            "title": "Multi-attribute elements",
+            "rule": "Elements with multiple attributes should span multiple lines, with one attribute per line.",
+            "why_is_this_important": "This improves readability, similar to splitting objects with multiple properties over multiple lines in JavaScript.",
+            "severity": "Medium",
+            "bad_example": "<img src=\"https://vuejs.org/images/logo.png\" alt=\"Vue Logo\">\n\n<MyComponent foo=\"a\" bar=\"b\" baz=\"c\"/>",
+            "good_example": "<img\n src=\"https://vuejs.org/images/logo.png\"\n alt=\"Vue Logo\"\n>\n\n<MyComponent\n foo=\"a\"\n bar=\"b\"\n baz=\"c\"\n/>",
+            "tags": "vue, style-guide, strongly-recommended, template, formatting, readability, attributes",
+            "examples": [
+                {
+                    "snippet": "<img src=\"...\" alt=\"...\">",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<MyComponent foo=\"a\" bar=\"b\" baz=\"c\"/>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<img\n src=\"...\"\n alt=\"...\"\n>",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "<MyComponent\n foo=\"a\"\n bar=\"b\"\n baz=\"c\"\n/>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "ffaa73bb-30f3-4d4e-a02f-73759f27d835",
+            "title": "Simple expressions in templates",
+            "rule": "Component templates should only include simple expressions, with more complex expressions refactored into computed properties or methods.",
+            "why_is_this_important": "Complex expressions in templates make them less declarative and harder to maintain. Moving logic into computed properties or methods allows for reuse and easier testing.",
+            "severity": "Medium",
+            "bad_example": "{{\n fullName.split(' ').map((word) => {\n   return word.toUpperCase() + word.slice(1)\n }).join(' ')\n}}",
+            "good_example": "\n{{ normalizedFullName }}\n\n// The complex expression has been moved to a computed property\ncomputed: {\n normalizedFullName() {\n   return this.fullName.split(' ')\n    .map(word => word.toUpperCase() + word.slice(1))\n    .join(' ')\n }\n}",
+            "tags": "vue, style-guide, strongly-recommended, template, expressions, computed-properties, methods, readability, maintainability",
+            "examples": [
+                {
+                    "snippet": "{{ firstName.trim().toUpperCase() }}",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "{{ formattedName }}",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "a3f0b68f-5902-4491-bf68-f3306346b24e",
+            "title": "Simple computed properties",
+            "rule": "Complex computed properties should be split into as many simpler properties as possible.",
+            "why_is_this_important": "Simpler, well-named computed properties are easier to test, read, and adapt to changing requirements.",
+            "severity": "Medium",
+            "bad_example": "computed: {\n price() {\n   const basePrice = this.manufactureCost / (1 - this.profitMargin)\n   return (\n     basePrice -\n     basePrice * (this.discountPercent || 0)\n   )\n }\n}",
+            "good_example": "computed: {\n basePrice() {\n   return this.manufactureCost / (1 - this.profitMargin)\n },\n discount() {\n   return this.basePrice * (this.discountPercent || 0)\n },\n finalPrice() {\n   return this.basePrice - this.discount\n }\n}",
+            "tags": "vue, style-guide, strongly-recommended, computed-properties, complexity, readability, maintainability, testing",
+            "examples": [
+                {
+                    "snippet": "computed: {\n  complexValue() { /* multiple operations */ }\n}",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "computed: {\n  valuePart1() { /* operation 1 */ },\n  valuePart2() { /* operation 2 */ },\n  finalValue() { return this.valuePart1 + this.valuePart2; }\n}",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "2dfd3728-00f2-4ce3-8c86-3a81731de4a3",
+            "title": "Quoted attribute values",
+            "rule": "Non-empty HTML attribute values should always be inside quotes (single or double, whichever is not used in JS).",
+            "why_is_this_important": "This practice avoids issues with spaces in attribute values and makes them more readable.",
+            "severity": "Medium",
+            "bad_example": "<input type=text>\n\n<AppSidebar :style={width:sidebarWidth+'px'}>",
+            "good_example": "<input type=\"text\">\n\n<AppSidebar :style=\"{ width: sidebarWidth + 'px' }\">",
+            "tags": "vue, style-guide, strongly-recommended, template, attributes, quotes, readability",
+            "examples": [
+                {
+                    "snippet": "<input type=text>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<input type=\"text\">",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "<input type='text'>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "e7dbcd9b-e2e3-4701-9744-3f826be26841",
+            "title": "Directive shorthands",
+            "rule": "Directive shorthands (`:` for `v-bind:`, `@` for `v-on:` and `#` for `v-slot`) should be used always or never.",
+            "why_is_this_important": "Using directive shorthands consistently improves code conciseness and readability.",
+            "severity": "Medium",
+            "bad_example": "<input\n v-bind:value=\"newTodoText\"\n :placeholder=\"newTodoInstructions\"\n>\n\n<input\n v-on:input=\"onInput\"\n @focus=\"onFocus\"\n>\n\n<template v-slot:header>\n  <h1>Here might be a page title</h1>\n</template>\n<template #footer>\n  <p>Here's some contact info</p>\n</template>",
+            "good_example": "// Always use shorthands:\n<input\n :value=\"newTodoText\"\n :placeholder=\"newTodoInstructions\"\n>\n<input\n @input=\"onInput\"\n @focus=\"onFocus\"\n>\n<template #header>\n  <h1>Here might be a page title</h1>\n</template>\n<template #footer>\n  <p>Here's some contact info</p>\n</template>\n\n// Never use shorthands:\n<input\n v-bind:value=\"newTodoText\"\n v-bind:placeholder=\"newTodoInstructions\"\n>\n<input\n v-on:input=\"onInput\"\n v-on:focus=\"onFocus\"\n>\n<template v-slot:header>\n  <h1>Here might be a page title</h1>\n</template>\n<template v-slot:footer>\n  <p>Here's some contact info</p>\n</template>",
+            "tags": "vue, style-guide, strongly-recommended, template, directives, v-bind, v-on, v-slot, syntax, consistency, readability",
+            "examples": [
+                {
+                    "snippet": "<input v-bind:value=\"text\" :placeholder=\"ph\">",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<input :value=\"text\" :placeholder=\"ph\">",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "<input v-bind:value=\"text\" v-bind:placeholder=\"ph\">",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "9159d31f-8a2c-4922-8540-7fc41e5ed4a0",
+            "title": "vue/attribute-hyphenation",
+            "rule": "Enforces consistent usage of hyphenated (kebab-case) or non-hyphenated (camelCase) attribute names on custom components in templates.",
+            "why_is_this_important": "HTML attributes are traditionally hyphenated and case-insensitive. While Vue allows camelCase props to be bound using kebab-case in templates, consistency in the template itself (always using kebab-case or always using camelCase where possible) improves readability and aligns with chosen project conventions.",
+            "severity": "Medium",
+            "bad_example": "// Config: 'always' (hyphenated)\n<MyComponent myProp=\"value\"></MyComponent>\n\n// Config: 'never' (camelCase)\n<MyComponent my-prop=\"value\"></MyComponent>",
+            "good_example": "// Config: 'always' (hyphenated)\n<MyComponent my-prop=\"value\"></MyComponent>\n\n// Config: 'never' (camelCase)\n<MyComponent myProp=\"value\"></MyComponent>",
+            "tags": "vue, eslint, style-guide, strongly-recommended, attributes, props, naming, template, consistency",
+            "examples": [
+                {
+                    "snippet": "// Config: 'always'\n<MyComponent myProp=\"value\"></MyComponent>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "// Config: 'never'\n<MyComponent my-prop=\"value\"></MyComponent>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "// Config: 'always'\n<MyComponent my-prop=\"value\"></MyComponent>",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "// Config: 'never'\n<MyComponent myProp=\"value\"></MyComponent>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "7141404f-636d-4ea6-a028-482fadafd675",
+            "title": "Component/instance options order",
+            "rule": "Component options (like `name`, `props`, `data`, `computed`, `methods`, lifecycle hooks, etc.) should be ordered consistently according to a predefined sequence.",
+            "why_is_this_important": "A consistent order for component options makes components easier to read, navigate, and maintain. Developers know where to find specific options (e.g., `methods` are always after lifecycle hooks), reducing cognitive load and improving predictability.",
+            "severity": "Low",
+            "bad_example": "// BAD: Inconsistent order\nexport default {\n  methods: {... },\n  data() {... },\n  props: {... },\n  name: 'MyComponent'\n}",
+            "good_example": "// GOOD: Consistent order (Example based on Vue Style Guide recommendation)\nexport default {\n  name: 'MyComponent',\n  props: {... },\n  emits: [... ],\n  data() {... },\n  computed: {... },\n  watch: {... },\n  // Lifecycle Hooks (e.g., created, mounted)\n  created() {... },\n  mounted() {... },\n  methods: {... }\n}",
+            "tags": "vue, style-guide, recommended, structure, organization, readability, consistency, component-options",
+            "examples": [
+                {
+                    "snippet": "export default {\n  methods: { fn1(){/*...*/} },\n  data() { return { count: 0 }; },\n  props: ['id'],\n  name: 'InconsistentOrder'\n}",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "export default {\n  name: 'ConsistentOrder',\n  props: ['id'],\n  data() { return { count: 0 }; },\n  //... other options in order...\n  methods: { fn1(){/*...*/} }\n}",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "a04963c1-3df0-426a-96db-a7d602aa5157",
+            "title": "Element attribute order",
+            "rule": "Attributes within an element tag (including components) should be ordered consistently according to a predefined sequence (e.g., definitions, list rendering, conditionals, unique attributes, binding, events, content).",
+            "why_is_this_important": "Consistent attribute ordering improves the readability of templates, especially for elements with many attributes or directives. It makes it easier to quickly scan and understand the element's behavior and properties.",
+            "severity": "Low",
+            "bad_example": "<MyComponent\n  @click=\"handleClick\"\n  v-if=\"isVisible\"\n  :prop-a=\"valueA\"\n  id=\"my-comp\"\n  v-for=\"item in items\"\n  :key=\"item.id\"\n/>",
+            "good_example": "// GOOD: Consistent order (Example based on Vue Style Guide recommendation)\n<MyComponent\n  v-for=\"item in items\" // List Rendering\n  :key=\"item.id\"\n  v-if=\"isVisible\"      // Conditionals\n  id=\"my-comp\"          // Global Awareness\n  :prop-a=\"valueA\"      // Other Attributes\n  @click=\"handleClick\"   // Events\n/>",
+            "tags": "vue, style-guide, recommended, template, attributes, directives, formatting, readability, consistency",
+            "examples": [
+                {
+                    "snippet": "<MyComponent @click=\"fn\" v-if=\"ok\" :prop=\"val\" id=\"c1\"/>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<MyComponent id=\"c1\" v-if=\"ok\" :prop=\"val\" @click=\"fn\"/>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "2b7c79b1-4697-4f98-9b2e-8f7e349d0296",
+            "title": "Empty lines in component/instance options",
+            "rule": "Consider adding one empty line between multi-line properties (like complex `props`, `computed`, `methods`, `watch` objects) within the component options, especially in large components.",
+            "why_is_this_important": "Adding vertical whitespace can improve readability and scannability in components with many options or complex, multi-line definitions. It visually separates distinct blocks of options.",
+            "severity": "Low",
+            "bad_example": "// BAD (Potentially hard to read in large components)\nexport default {\n  props: {\n    propA: { /* multi-line */ },\n    propB: String\n  },\n  computed: {\n    compA() { /* multi-line */ },\n    compB() { /* multi-line */ }\n  },\n  methods: {\n    methodA() { /* multi-line */ }\n  }\n}",
+            "good_example": "// GOOD (Improved readability with spacing)\nexport default {\n  props: {\n    propA: { /* multi-line */ },\n\n    propB: String\n  },\n\n  computed: {\n    compA() { /* multi-line */ },\n\n    compB() { /* multi-line */ }\n  },\n\n  methods: {\n    methodA() { /* multi-line */ }\n  }\n}",
+            "tags": "vue, style-guide, recommended, formatting, readability, whitespace, component-options",
+            "examples": [
+                {
+                    "snippet": "props: {\n  value: { /*...*/ },\n  focused: { /*...*/ }\n},\ncomputed: {\n  formattedValue() { /*...*/ },\n  inputClasses() { /*...*/ }\n}",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "props: {\n  value: { /*...*/ },\n\n  focused: { /*...*/ }\n},\n\ncomputed: {\n  formattedValue() { /*...*/ },\n\n  inputClasses() { /*...*/ }\n}",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "e6329ab7-6364-4664-89ec-cb651eb6276b",
+            "title": "Single-file component top-level element order",
+            "rule": "The top-level tags (`<script>`, `<template>`, `<style>`) in Single-File Components (.vue files) should be ordered consistently across the project. A common convention is `<script>`, then `<template>`, then `<style>`.",
+            "why_is_this_important": "Consistency in the order of top-level tags makes SFCs easier to navigate and read. Developers know where to look for the script logic, template structure, and styles within any component file.",
+            "severity": "Low",
+            "bad_example": "\n<style>/*... */</style>\n<script>/*... */</script>\n<template>...</template>\n\n\n<script>/*... */</script>\n<template>...</template>\n<style>/*... */</style>\n\n<template>...</template>\n<script>/*... */</script>\n<style>/*... */</style>",
+            "good_example": "\n\n<script>/*... */</script>\n<template>...</template>\n<style>/*... */</style>\n\n<script>/*... */</script>\n<template>...</template>\n<style>/*... */</style>\n\n\n\n<template>...</template>\n<script>/*... */</script>\n<style>/*... */</style>\n\n<template>...</template>\n<script>/*... */</script>\n<style>/*... */</style>",
+            "tags": "vue, style-guide, recommended, sfc, structure, organization, readability, consistency",
+            "examples": [
+                {
+                    "snippet": "<style>...</style>\n<script>...</script>\n<template>...</template>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<script>...</script>\n<template>...</template>\n<style>...</style>",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "<template>...</template>\n<script>...</script>\n<style>...</style>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "30ab36a3-1a5f-45e8-b6fd-05a3f93570de",
+            "title": "Element selectors with `scoped`",
+            "rule": "Avoid using element selectors (e.g., `button {... }`) directly within `<style scoped>`. Prefer class selectors.",
+            "why_is_this_important": "When using `scoped`, Vue adds a unique data attribute selector (e.g., `[data-v-xxxxxxx]`) to each rule. Element selectors combined with attribute selectors (e.g., `button[data-v-xxxxxxx]`) can be significantly less performant in browsers compared to class selectors combined with attribute selectors (e.g., `.my-button[data-v-xxxxxxx]`). Using classes improves CSS performance.",
+            "severity": "Low",
+            "bad_example": "<template>\n  <button>×</button>\n</template>\n<style scoped>\n/* BAD: Element selector in scoped style */\nbutton {\n  background-color: red;\n}\n</style>",
+            "good_example": "<template>\n  <button class=\"btn-close\">×</button>\n</template>\n<style scoped>\n/* GOOD: Class selector in scoped style */\n.btn-close {\n  background-color: red;\n}\n</style>",
+            "tags": "vue, style-guide, caution, css, style, scoping, performance, selectors",
+            "examples": [
+                {
+                    "snippet": "<style scoped>\nbutton { /* Noncompliant: Element selector */\n  background-color: red;\n}\n</style>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<style scoped>\n.btn-close { /* Compliant: Class selector */\n  background-color: red;\n}\n</style>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "c3353429-6aa2-4a72-8f35-145067b9adc8",
+            "title": "Implicit parent-child communication",
+            "rule": "Avoid implicit communication between parent and child components, such as using `this.$parent`, `this.$root`, or directly mutating props received from the parent. Prefer explicit communication via props down and events up.",
+            "why_is_this_important": "Implicit communication makes component relationships and data flow hard to understand and debug. It tightly couples components, making them brittle and difficult to refactor or reuse. The 'props down, events up' pattern creates a clear, predictable data flow that is easier to maintain.",
+            "severity": "Medium",
+            "bad_example": "// BAD: Child accessing parent directly\nthis.$parent.doSomething();\n\n// BAD: Child mutating prop (See vue/no-mutating-props rule)\nexport default {\n  props: ['todo'],\n  template: '<input v-model=\"todo.text\">' // Mutates todo.text\n}",
+            "good_example": "// GOOD: Child emits event, parent listens\n// Child component:\nthis.$emit('delete-item', this.itemId);\n\n// Parent template:\n<child-component @delete-item=\"handleDelete\"></child-component>\n\n// GOOD: Using v-model for two-way binding (syntactic sugar for prop + event)\n// Child component:\nexport default {\n  props: ['modelValue'],\n  emits: ['update:modelValue'],\n  template: '<input :value=\"modelValue\" @input=\"$emit(\\'update:modelValue\\', $event.target.value)\">'\n}",
+            "tags": "vue, style-guide, caution, component-communication, props, events, state-management, data-flow, coupling",
+            "examples": []
+        },
+        {
+            "uuid": "4cba19e7-b8cc-4033-8f61-3a504de9f4fb",
+            "title": "Avoid using the comma operator",
+            "rule": "Detect occurrences of the comma operator in expressions. The comma operator can make code harder to read and debug, as it executes multiple expressions but only returns the value of the last one.",
+            "why_is_this_important": "The comma operator evaluates each of its operands (from left to right) and returns the value of the last operand. This behavior is often confusing and rarely intended, reducing code readability and increasing the potential for bugs. Clearer alternatives using separate statements are preferred.",
+            "severity": "Low",
+            "bad_example": "let x = 0;\nconst y = (x++, x + 1); // Bad: y becomes 2, x becomes 1. Confusing.",
+            "good_example": "let x = 0;\nx++;\nconst y = x + 1; // Good: Clear separation of steps.",
+            "tags": "javascript, sonarsource, maintainability, readability, potential-bug",
+            "examples": [
+                {
+                    "snippet": "i = a += 2, a + b;",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "a += 2;\ni = a + b;",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "62dde711-38c2-4c3f-90f2-5f79d5e92e55",
+            "title": "Prefer `const` over `let`/`var` in Vue components",
+            "rule": "Use `const` for all references by default within Vue components (e.g., imports, non-reassigned variables, refs obtained via `ref()`). Use `let` only when reassignment of the variable itself is necessary (rare for state). Avoid `var` entirely.",
+            "why_is_this_important": "Promotes immutability and predictability, reducing unexpected state changes in components. `const` signals that the variable binding won't be reassigned (though the value it holds, like an object or ref's `.value`, might still be mutable). `let` clearly indicates intentional reassignment. Avoids `var`'s confusing function scoping and hoisting issues.",
+            "severity": "Low",
+            "bad_example": "export default {\n  data() {\n    var message = 'Hello'; // Bad: using var\n    return { message };\n  },\n  methods: {\n    update() {\n      var counter = 0; // Bad: using var\n      counter++;\n    }\n  }\n}",
+            "good_example": "import { ref, computed } from 'vue';\n\nconst componentName = 'MyComponent'; // Good: const for constant\n\nexport default {\n  name: componentName,\n  props: {\n    initialCount: { type: Number, default: 0 }\n  },\n  setup(props) {\n    const count = ref(props.initialCount); // Good: const for the ref itself\n    let loopCounter; // Good: let if reassignment needed (e.g., in loop)\n\n    const doubleCount = computed(() => count.value * 2); // Good: const for computed\n\n    const increment = () => { \n      count.value++; // Modifying ref's value, not the const binding\n    };\n\n    for (loopCounter = 0; loopCounter < 5; loopCounter++) { /*... */ }\n\n    return { count, doubleCount, increment };\n  }\n}",
+            "tags": "javascript, airbnb, style, maintainability, vue-context, variables, es6",
+            "examples": []
+        },
+        {
+            "uuid": "8931f5c0-b7cc-4076-8eb8-e8faf76b7232",
+            "title": "Use object/array shorthands and spread syntax",
+            "rule": "Utilize object method shorthands, property value shorthands, and computed property names when defining objects (e.g., in `data`, `computed`, `methods`). Prefer object spread syntax (`...`) over `Object.assign` for shallow copies or merging objects.",
+            "why_is_this_important": "These ES6 features lead to more concise, readable, and maintainable code, especially within Vue component options which are often object-heavy. Spread syntax provides an immutable way to create new objects or arrays based on existing ones, fitting well with state update patterns.",
+            "severity": "Low",
+            "bad_example": "export default {\n  data: function() {\n    return { count: 0 };\n  },\n  methods: {\n    increment: function() {\n      this.count++;\n    }\n  },\n  computed: {\n    doubleCount: function() {\n      return this.count * 2;\n    }\n  }\n}\n\n// Merging objects with Object.assign\nconst newOptions = Object.assign({}, oldOptions, { enabled: true });",
+            "good_example": "const name = 'MyComponent';\n\nexport default {\n  name, // Property value shorthand\n  data() { // Method shorthand\n    return { count: 0 };\n  },\n  methods: {\n    increment() { // Method shorthand\n      this.count++;\n    }\n  },\n  computed: {\n    doubleCount() { // Method shorthand\n      return this.count * 2;\n    },\n   () { // Computed property name\n      return 'loaded';\n    }\n  }\n}\n\n// Merging objects with spread syntax\nconst newOptions = {...oldOptions, enabled: true };",
+            "tags": "javascript, airbnb, style, maintainability, vue-context, es6, objects, arrays, readability",
+            "examples": [
+                {
+                    "snippet": "data: function() { return {}; }",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "data() { return {}; }",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "const name = 'Comp';\nexport default { name: name };",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "const name = 'Comp';\nexport default { name };",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "const newArr = oldArr.concat(newItem);",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "const newArr = [...oldArr, newItem]; // Good: Array spread",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "a5b39eb0-399f-4ac6-80ee-c52ed49cca69",
+            "title": "Use destructuring for props and objects",
+            "rule": "Use object and array destructuring to access properties from objects (like `props`, `this`, context in `setup`) or elements from arrays, especially when accessing multiple items.",
+            "why_is_this_important": "Destructuring leads to cleaner and more concise code by reducing repetition when accessing object properties or array elements. It's particularly useful in Vue's `setup` function for extracting refs, props, and context, or within methods/computed properties accessing `this`.",
+            "severity": "Low",
+            "bad_example": "export default {\n  props: ['user', 'settings'],\n  computed: {\n    userName() {\n      return this.user.name;\n    },\n    theme() {\n      return this.settings.theme;\n    }\n  },\n  methods: {\n    save() {\n      const name = this.user.name;\n      const theme = this.settings.theme;\n      //... use name and theme\n    }\n  }\n}",
+            "good_example": "import { toRefs } from 'vue';\n\nexport default {\n  props: { user: Object, settings: Object },\n  setup(props) {\n    // Good: Destructure props (use toRefs for reactivity if needed)\n    const { user, settings } = toRefs(props);\n    const { emit } = getCurrentInstance(); // Destructure context\n\n    const userName = computed(() => user.value.name);\n    const theme = computed(() => settings.value.theme);\n\n    const save = () => {\n      // Access destructured refs directly\n      console.log(user.value.name, settings.value.theme);\n      emit('save');\n    };\n\n    return { userName, theme, save };\n  },\n  // Alternative in Options API methods:\n  methods: {\n    display() {\n      const { name } = this.user; // Destructure from this\n      const { theme } = this.settings;\n      console.log(name, theme);\n    }\n  }\n}",
+            "tags": "javascript, airbnb, style, maintainability, vue-context, es6, destructuring, readability, props, setup",
+            "examples": [
+                {
+                    "snippet": "const name = this.user.name;\nconst email = this.user.email;",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "const { name, email } = this.user;",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "function processCoords(coords) {\n  const x = coords;\n  const y = coords;\n}",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "function processCoords([x, y]) {\n  //...\n}",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "setup(props, context) {\n  const user = props.user;\n  const emit = context.emit;\n}",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "setup({ user }, { emit }) {\n  //...\n}",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "d4c1deb6-47ca-41fe-8bc2-c703fdb4e1c7",
+            "title": "Prefer arrow functions for callbacks",
+            "rule": "Use arrow functions (`=>`) for anonymous functions like callbacks (e.g., in lifecycle hooks, watchers, event handlers, array methods) instead of the `function` keyword, especially when needing lexical `this`.",
+            "why_is_this_important": "Arrow functions inherit the `this` context from their surrounding scope (lexical `this`). This is crucial in Vue components, as it avoids the need for `_this = this` or `.bind(this)` when accessing the component instance (`this`) inside callbacks like `setTimeout`, `setInterval`, or asynchronous operations within methods/hooks.",
+            "severity": "Low",
+            "bad_example": "export default {\n  data() { return { count: 0 }; },\n  mounted() {\n    setTimeout(function() {\n      // BAD: 'this' here is not the component instance\n      // this.count++; // This would likely fail or refer to window\n      console.log('Timer finished');\n    }, 1000);\n  }\n}",
+            "good_example": "export default {\n  data() { return { count: 0 }; },\n  mounted() {\n    setTimeout(() => {\n      // GOOD: Arrow function inherits 'this' from mounted hook\n      this.count++; \n      console.log('Timer finished, count is:', this.count);\n    }, 1000);\n  },\n  computed: {\n    // GOOD: Concise syntax for simple computed\n    doubleCount: vm => vm.count * 2 \n  }\n}",
+            "tags": "javascript, airbnb, style, maintainability, vue-context, es6, arrow-functions, this-context, callbacks",
+            "examples": []
+        },
+        {
+            "uuid": "7ba1266f-6fcb-406a-bca7-1893736eb55b",
+            "title": "Use ES Modules (`import`/`export`)",
+            "rule": "Always use ES Modules (`import` and `export`) for managing dependencies and organizing code in Vue applications. Avoid non-standard module systems or global namespace pollution.",
+            "why_is_this_important": "ES Modules are the standard JavaScript module system, crucial for code organization, reusability, tree-shaking (dead code elimination), and managing dependencies in modern front-end development, including Vue SFCs and JavaScript modules.",
+            "severity": "Medium",
+            "bad_example": "// BAD: Relying on globals or older module patterns\nvar MyUtil = require('./utils'); // CommonJS (less ideal in modern Vue)\n\nwindow.myGlobalComponent = { /*... */ };",
+            "good_example": "// GOOD: Using ES Modules\n\n// utils.js\nexport function formatData(data) { /*... */ }\nexport const UtilityConstant = 42;\n\n// MyComponent.vue\nimport { formatData, UtilityConstant } from './utils.js';\nimport AnotherComponent from './AnotherComponent.vue';\n\nexport default {\n  components: { AnotherComponent },\n  setup() {\n    const formatted = formatData(/*... */);\n    console.log(UtilityConstant);\n    //...\n  }\n}",
+            "tags": "javascript, airbnb, style, maintainability, vue-context, es6, modules, import, export, structure, sfc",
+            "examples": [
+                {
+                    "snippet": "// utils.js\nmodule.exports = { format() {} };\n// component.js\nvar utils = require('./utils');",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "// utils.js\nexport function format() {}\n// component.js\nimport { format } from './utils';",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "// api.js\nconst api = { fetch() {} };\nexport default api;\n// component.js\nimport myApi from './api';",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "9ae511a1-dea6-4a29-95e7-42b3e28495e3",
+            "title": "Use object literals for event payloads",
+            "rule": "When emitting custom events with data using `$emit`, pass an object literal as the payload instead of a raw primitive value, especially if there's a chance more data might be needed later.",
+            "why_is_this_important": "Passing an object payload makes the event emission more extensible. If you later need to add more data to the event, you can add new properties to the object without breaking existing listeners expecting a specific primitive type. It improves the maintainability and future-proofing of component communication.",
+            "severity": "Low",
+            "bad_example": "// BAD: Emitting a raw value\nthis.$emit('item-selected', itemId); \n\n// Listener might break if we later change to emit an object:\n// handleItemSelected(itemId) { /*... */ }",
+            "good_example": "// GOOD: Emitting an object payload\nthis.$emit('item-selected', { \n  itemId: itemId,\n  itemType: 'product' \n});\n\n// Listener is more robust:\n// handleItemSelected(payload) { \n//   console.log(payload.itemId, payload.itemType);\n// }",
+            "tags": "javascript, airbnb, style, maintainability, vue-context, events, emit, component-communication, extensibility",
+            "examples": [
+                {
+                    "snippet": "this.$emit('user-updated', userId);",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "this.$emit('user-updated', { userId: userId, status: 'active' });",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "25e5457a-e784-496f-9845-baa00b1f5fa5",
+            "title": "Disabling Vue.js built-in escaping is security-sensitive",
+            "rule": "Avoid using directives or features that bypass Vue's built-in HTML escaping mechanisms, such as the `v-html` directive, unless the content is known to be safe or has been properly sanitized.",
+            "why_is_this_important": "Vue automatically escapes dynamic content bound using `{{ }}` syntax to prevent Cross-Site Scripting (XSS) attacks. Using `v-html` renders raw HTML, potentially executing malicious scripts if the content originates from untrusted user input. Disabling this safety feature creates a significant security vulnerability.",
+            "severity": "High",
+            "bad_example": "<template>\n  \n  <div v-html=\"userGeneratedContent\"></div>\n</template>",
+            "good_example": "<template>\n  \n  <div>{{ userGeneratedContent }}</div>\n\n  \n  <div v-html=\"sanitizedHtmlContent\"></div> \n</template>\n\n<script>\nimport DOMPurify from 'dompurify';\n\nexport default {\n  props: ['userGeneratedContent'],\n  computed: {\n    sanitizedHtmlContent() {\n      // Example: Sanitize before rendering with v-html\n      return DOMPurify.sanitize(this.userGeneratedContent);\n    }\n  }\n}\n</script>",
+            "tags": "vue, sonarsource, security, xss, v-html, template, vulnerability",
+            "examples": [
+                {
+                    "snippet": "<div v-html=\"userInput\"></div> ",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<div>{{ userInput }}</div> ",
+                    "isCorrect": true
+                },
+                {
+                    "snippet": "<div v-html=\"sanitizedInput\"></div> ",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
             "uuid": "55a0284b-eb7f-40ae-8b8c-db3dc66e8e0a",
             "title": "Avoid equality operators in loop termination conditions",
             "rule": "Check if loops use equality operators (== or !=) in termination conditions. These can lead to infinite loops if the condition is never met exactly. Instead, use relational operators like < or > for safer loop termination.",
@@ -4737,6 +5451,912 @@
                 {
                     "snippet": "class Person {\n  final String title;\n\n  // ···\n\n  bool operator ==(Object other) => other is Person && title == other.title;\n}",
                     "isCorrect": true
+                }
+            ]
+        }
+    ],
+    "PHP": [
+        {
+            "uuid": "679bb43b-164b-43f9-9624-4171eea761cb",
+            "title": "Use Prepared (Parameterized) SQL Queries",
+            "rule": "Do not build SQL queries by directly concatenating untrusted data. Instead, use prepared statements with parameters (for example, using PDO or MySQLi) to prevent SQL Injection.",
+            "why_is_this_important": "Concatenating user input into SQL queries can allow an attacker to inject malicious commands into the database. Prepared statements ensure that data is treated as parameters, preventing unexpected SQL code execution.",
+            "severity": "High",
+            "bad_example": "<?php\n$nome = $_GET['nome'];\n$query = \"SELECT * FROM usuarios WHERE nome = '$nome'\";\n$result = mysqli_query($conn, $query);\n?>",
+            "good_example": "<?php\n$nome = $_GET['nome'];\n$stmt = $pdo->prepare(\"SELECT * FROM usuarios WHERE nome = :nome\");\n$stmt->execute(['nome' => $nome]);\n$usuarios = $stmt->fetchAll();\n?>",
+            "tags": "security, reliability",
+            "examples": [
+                {
+                    "snippet": "<?php\n$nome = $_GET['nome'];\n$query = \"SELECT * FROM usuarios WHERE nome = '$nome'\";\n$result = mysqli_query($conn, $query);\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n$nome = $_GET['nome'];\n$stmt = $pdo->prepare(\"SELECT * FROM usuarios WHERE nome = :nome\");\n$stmt->execute(['nome' => $nome]);\n$usuarios = $stmt->fetchAll();\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "6ba2e5bf-2637-4241-ad17-9140ea884e4c",
+            "title": "Escape Output to Prevent XSS",
+            "rule": "Always escape or sanitize user‐provided content before displaying it in HTML. Use functions like htmlspecialchars() to convert special characters into HTML entities.",
+            "why_is_this_important": "Without escaping output, an attacker can inject malicious JavaScript (Cross‐Site Scripting) that will execute in other users’ browsers, compromising sensitive data and application integrity.",
+            "severity": "High",
+            "bad_example": "<?php\necho \"<p>Name: \" . $_POST['nome'] . \"</p>\";\n?>",
+            "good_example": "<?php\n$nome = htmlspecialchars($_POST['nome'], ENT_QUOTES, 'UTF-8');\necho \"<p>Name: $nome</p>\";\n?>",
+            "tags": "security",
+            "examples": [
+                {
+                    "snippet": "<?php\necho \"<p>Name: \" . $_POST['nome'] . \"</p>\";\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n$nome = htmlspecialchars($_POST['nome'], ENT_QUOTES, 'UTF-8');\necho \"<p>Name: $nome</p>\";\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "eac4e25f-4ff7-401c-a14c-531824443e49",
+            "title": "Avoid Using eval() to Execute Code",
+            "rule": "Do not use the eval() function to run dynamically generated PHP code, especially if it can include user input. Look for safe alternatives like controlled function calls or explicit decision structures.",
+            "why_is_this_important": "Using eval() can lead to arbitrary code execution if malicious data is injected. It also makes code harder to debug and maintain.",
+            "severity": "High",
+            "bad_example": "<?php\n$code = $_GET['code'];\neval($code);\n?>",
+            "good_example": "<?php\n$action = $_GET['acao'];\nif ($action === 'info') {\n    phpinfo();\n}\n?>",
+            "tags": "security",
+            "examples": [
+                {
+                    "snippet": "<?php\n$code = $_GET['code'];\neval($code);\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n$action = $_GET['acao'];\nif ($action === 'info') {\n    phpinfo();\n}\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "c7a2fa14-6faf-4b73-a40d-60245116ba57",
+            "title": "Do Not Include Files Dynamically Without Validation",
+            "rule": "Avoid passing untrusted values to include/require statements. If you need to include files based on external input, strictly validate that input (for example, using a whitelist of valid filenames).",
+            "why_is_this_important": "Including files from user‐supplied paths without validation can lead to Local/Remote File Inclusion (LFI/RFI), allowing attackers to execute arbitrary code or access sensitive system files.",
+            "severity": "High",
+            "bad_example": "<?php\n$page = $_GET['pagina'];\ninclude \"$page.php\";\n?>",
+            "good_example": "<?php\n$page = $_GET['pagina'];\n$allowed = ['home', 'about', 'contact'];\nif (in_array($page, $allowed)) {\n    include $page . '.php';\n} else {\n    include '404.php';\n}\n?>",
+            "tags": "security",
+            "examples": [
+                {
+                    "snippet": "<?php\n$page = $_GET['pagina'];\ninclude \"$page.php\";\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n$page = $_GET['pagina'];\n$allowed = ['home', 'about', 'contact'];\nif (in_array($page, $allowed)) {\n    include $page . '.php';\n} else {\n    include '404.php';\n}\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "9876e598-4d51-4dfe-b0d4-6306686ef8d4",
+            "title": "Use Secure Password Hashing Functions",
+            "rule": "Do not use weak or generic hash algorithms (like MD5 or SHA1) for storing passwords. Use built‐in functions like password_hash() (with BCRYPT or Argon2) and password_verify(), which handle salting and secure algorithms automatically.",
+            "why_is_this_important": "Old hash algorithms are vulnerable to brute‐force attacks and rainbow tables, making it easier to crack passwords. Modern password‐hashing functions include salts and iteration counts, making stored passwords much harder to compromise.",
+            "severity": "High",
+            "bad_example": "<?php\n$password = $_POST['senha'];\n$hash = md5($password);\n// store $hash in database\n?>",
+            "good_example": "<?php\n$password = $_POST['senha'];\n$hash = password_hash($password, PASSWORD_DEFAULT);\n// store $hash in database\n?>",
+            "tags": "security",
+            "examples": [
+                {
+                    "snippet": "<?php\n$password = $_POST['senha'];\n$hash = md5($password);\n// store $hash in database\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n$password = $_POST['senha'];\n$hash = password_hash($password, PASSWORD_DEFAULT);\n// store $hash in database\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "359b8290-a340-4b34-9e13-4d0707b78a80",
+            "title": "Do Not Expose Sensitive Credentials in Source Code",
+            "rule": "Avoid hard‐coding credentials or sensitive information (like DB passwords, API tokens or secret keys) directly in your code. Use separate configuration files or environment variables to manage these values securely.",
+            "why_is_this_important": "Embedded credentials can be accidentally exposed (e.g., in public repos), compromising system security. Storing them externally and referencing them securely prevents critical data leaks.",
+            "severity": "High",
+            "bad_example": "<?php\n$dbuser = 'admin';\n$dbpass = 'secret123';\n$conn = new PDO('mysql:host=localhost;dbname=test', $dbuser, $dbpass);\n?>",
+            "good_example": "<?php\n$dbuser = getenv('DB_USER');\n$dbpass = getenv('DB_PASS');\n$conn = new PDO('mysql:host=localhost;dbname=test', $dbuser, $dbpass);\n?>",
+            "tags": "security",
+            "examples": [
+                {
+                    "snippet": "<?php\n$dbuser = 'admin';\n$dbpass = 'secret123';\n$conn = new PDO('mysql:host=localhost;dbname=test', $dbuser, $dbpass);\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n$dbuser = getenv('DB_USER');\n$dbpass = getenv('DB_PASS');\n$conn = new PDO('mysql:host=localhost;dbname=test', $dbuser, $dbpass);\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "bea7fb6e-b484-42ef-9014-10c87961b8cb",
+            "title": "Protect Critical Forms with CSRF Tokens",
+            "rule": "Implement anti‐CSRF tokens in forms performing sensitive actions (like state changes or deletions). Generate a unique token per session or request and validate it on the server before processing the form action.",
+            "why_is_this_important": "CSRF tokens prevent malicious sites from forging form submissions on behalf of authenticated users. Without this protection, a user could unintentionally trigger unwanted actions by visiting a malicious page.",
+            "severity": "High",
+            "bad_example": "<?php\n// No CSRF token used\nif ($_POST['acao'] === 'delete') {\n    deleteUser($_POST['id']);\n}\n?>",
+            "good_example": "<?php\n// Generate CSRF token\n$_SESSION['csrf_token'] = bin2hex(random_bytes(32));\n?>\n<form method=\"POST\">\n  <input type=\"hidden\" name=\"csrf_token\" value=\"<?= $_SESSION['csrf_token'] ?>\">\n  <!-- other fields -->\n</form>\n<?php\n// Validate CSRF token on submit\nif (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {\n    die('Invalid CSRF token');\n}\nif ($_POST['acao'] === 'delete') {\n    deleteUser($_POST['id']);\n}\n?>",
+            "tags": "security",
+            "examples": [
+                {
+                    "snippet": "<?php\n// No CSRF token used\nif ($_POST['acao'] === 'delete') {\n    deleteUser($_POST['id']);\n}\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n// Generate CSRF token\n$_SESSION['csrf_token'] = bin2hex(random_bytes(32));\n?>\n<form method=\"POST\">\n  <input type=\"hidden\" name=\"csrf_token\" value=\"<?= $_SESSION['csrf_token'] ?>\">\n  <!-- other fields -->\n</form>\n<?php\n// Validate CSRF token on submit\nif (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {\n    die('Invalid CSRF token');\n}\nif ($_POST['acao'] === 'delete') {\n    deleteUser($_POST['id']);\n}\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "971e6288-a205-4cc9-8daf-20d8087a2dfe",
+            "title": "Enable Secure Flags When Setting Cookies",
+            "rule": "When sending session or other sensitive cookies, always enable the HttpOnly and Secure flags (and consider SameSite). HttpOnly prevents JavaScript access, and Secure ensures the cookie is only sent over HTTPS.",
+            "why_is_this_important": "Without HttpOnly, malicious scripts (e.g., via XSS) can steal cookies. Without Secure, cookies may be transmitted in plaintext over HTTP, exposing them to interception. Proper cookie flags strengthen user session security.",
+            "severity": "High",
+            "bad_example": "<?php\nsetcookie('session', \\$sessionId); // no HttpOnly/Secure\n?>",
+            "good_example": "<?php\nsetcookie('session', \\$sessionId, ['httponly' => true, 'secure' => true, 'samesite' => 'Strict']);\n?>",
+            "tags": "security",
+            "examples": [
+                {
+                    "snippet": "<?php\nsetcookie('session', \\$sessionId); // no HttpOnly/Secure\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\nsetcookie('session', \\$sessionId, ['httponly' => true, 'secure' => true, 'samesite' => 'Strict']);\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "ff04646c-c803-4334-8e80-1d321c84ace7",
+            "title": "Validate and Sanitize All Input Data",
+            "rule": "Never trust data received from users, forms or requests. Always validate the expected format (e.g., numbers, emails) and sanitize/remove unexpected characters or content using appropriate techniques (filter_var, filter_input, etc.).",
+            "why_is_this_important": "Unvalidated input may contain malicious commands or malformed content, leading to security issues like SQL injection and XSS. Validation and sanitization ensure your application only handles data in expected formats, reducing risks and errors.",
+            "severity": "High",
+            "bad_example": "<?php\n$age = $_GET['idade'];\nif (\\$age > 18) {\n    // proceed\n}\n?>",
+            "good_example": "<?php\n$age = filter_input(INPUT_GET, 'idade', FILTER_VALIDATE_INT);\nif (\\$age === false) {\n    // handle invalid input\n} elseif (\\$age > 18) {\n    // proceed\n}\n?>",
+            "tags": "security, reliability",
+            "examples": [
+                {
+                    "snippet": "<?php\n$age = $_GET['idade'];\nif (\\$age > 18) {\n    // proceed\n}\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n$age = filter_input(INPUT_GET, 'idade', FILTER_VALIDATE_INT);\nif (\\$age === false) {\n    // handle invalid input\n} elseif (\\$age > 18) {\n    // proceed\n}\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "e44fe086-6c38-47dc-90c7-9a988d46e96d",
+            "title": "Use Cryptographically Secure Random Generators for Tokens",
+            "rule": "For security tokens (session IDs, CSRF tokens, password‐reset links), use cryptographically secure random functions like random_bytes() or openssl_random_pseudo_bytes(), instead of predictable functions like rand() or mt_rand().",
+            "why_is_this_important": "Common random functions are not suitable for security because they can produce predictable values. Predictable tokens allow attackers to guess session IDs or other sensitive tokens, compromising system security. Cryptographic generators ensure strong randomness.",
+            "severity": "High",
+            "bad_example": "<?php\n$token = mt_rand();\n?>",
+            "good_example": "<?php\n$token = bin2hex(random_bytes(16));\n?>",
+            "tags": "security",
+            "examples": [
+                {
+                    "snippet": "<?php\n$token = mt_rand();\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n$token = bin2hex(random_bytes(16));\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "cf28b8b2-e4b6-47fd-90eb-f89165605840",
+            "title": "Do Not Expose Error Details in Production",
+            "rule": "Configure your application not to display detailed error messages (stack traces, PHP warnings) to end users in production. Instead, log errors for developers and show a generic message to users.",
+            "why_is_this_important": "Detailed error messages can reveal sensitive information (directory structures, SQL queries, keys) useful to attackers. Logging errors internally and hiding details from users improves security and UX.",
+            "severity": "High",
+            "bad_example": "<?php\nini_set('display_errors', 1);\nerror_reporting(E_ALL);\n// showing errors in production\n?>",
+            "good_example": "<?php\nini_set('display_errors', 0);\nini_set('log_errors', 1);\nerror_reporting(E_ALL);\n// in production, errors are logged but not displayed\n?>",
+            "tags": "security, maintainability",
+            "examples": [
+                {
+                    "snippet": "<?php\nini_set('display_errors', 1);\nerror_reporting(E_ALL);\n// showing errors in production\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\nini_set('display_errors', 0);\nini_set('log_errors', 1);\nerror_reporting(E_ALL);\n// in production, errors are logged but not displayed\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "1ff19725-8e6e-48f9-9b02-52c12ced6cb8",
+            "title": "Avoid Suppressing Errors with @",
+            "rule": "Do not use the error‐suppression operator '@' before function calls or expressions. Instead, handle potential errors properly using return checks or exceptions (try/catch).",
+            "why_is_this_important": "Using '@' hides errors that may indicate serious issues, making bugs hard to find and fix. It also incurs a performance cost. Explicit error handling ensures code reliability.",
+            "severity": "Medium",
+            "bad_example": "<?php\n$file = @file_get_contents('data.txt');\n?>",
+            "good_example": "<?php\n$file = file_get_contents('data.txt');\nif (\\$file === false) {\n    error_log('Failed to read data.txt');\n}\n?>",
+            "tags": "maintainability, reliability",
+            "examples": [
+                {
+                    "snippet": "<?php\n$file = @file_get_contents('data.txt');\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n$file = file_get_contents('data.txt');\nif (\\$file === false) {\n    error_log('Failed to read data.txt');\n}\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "7c952ce3-d859-4022-8cdb-8d9a765751d0",
+            "title": "Enable strict_types Mode for Type Checking",
+            "rule": "At the top of your PHP files (before any code), declare `declare(strict_types=1)`. This forces PHP to enforce the declared parameter and return types strictly, avoiding automatic type coercion.",
+            "why_is_this_important": "With strict_types enabled, function calls with incorrect types throw TypeError instead of silently converting values. This helps catch type issues early in development, making code more robust and preventing unexpected behavior.",
+            "severity": "Medium",
+            "bad_example": "<?php\n// file without strict_types\nfunction sum(int \\$a, int \\$b): int {\n    return \\$a + \\$b;\n}\necho sum(\"5\", \"7\"); // coerces strings to ints\n?>",
+            "good_example": "<?php\ndeclare(strict_types=1);\nfunction sum(int \\$a, int \\$b): int {\n    return \\$a + \\$b;\n}\necho sum(\"5\", \"7\"); // throws TypeError\n?>",
+            "tags": "reliability, maintainability",
+            "examples": [
+                {
+                    "snippet": "<?php\n// file without strict_types\nfunction sum(int \\$a, int \\$b): int {\n    return \\$a + \\$b;\n}\necho sum(\"5\", \"7\");\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\ndeclare(strict_types=1);\nfunction sum(int \\$a, int \\$b): int {\n    return \\$a + \\$b;\n}\necho sum(\"5\", \"7\");\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "edd6868a-b8d5-4316-acef-454f2cf33762",
+            "title": "Declare Visibility on Properties and Methods",
+            "rule": "Always specify access levels (public, private, protected) when declaring class properties and methods. Don’t use the old `var` keyword for properties. Explicit visibility clarifies intent and prevents unintended access.",
+            "why_is_this_important": "Specifying visibility improves code readability and maintenance by clearly defining public interfaces versus internal details. It enforces encapsulation and avoids accidental misuse of internal members.",
+            "severity": "Low",
+            "bad_example": "<?php\nclass User {\n    var \\$name;\n    function setName(\\$name) {\n        \\$this->name = \\$name;\n    }\n}\n?>",
+            "good_example": "<?php\nclass User {\n    public string \\$name;\n    public function setName(string \\$name): void {\n        \\$this->name = \\$name;\n    }\n}\n?>",
+            "tags": "maintainability",
+            "examples": [
+                {
+                    "snippet": "<?php\nclass User {\n    var \\$name;\n    function setName(\\$name) {\n        \\$this->name = \\$name;\n    }\n}\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\nclass User {\n    public string \\$name;\n    public function setName(string \\$name): void {\n        \\$this->name = \\$name;\n    }\n}\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "e2aad39d-d5c5-4d4c-8017-e72eff162241",
+            "title": "Do Not Use goto for Control Flow",
+            "rule": "Avoid using the `goto` statement for flow control. Instead, refactor code using loops (for, while) and conditional structures (if/else, switch) for clear and maintainable logic.",
+            "why_is_this_important": "Using `goto` can create spaghetti code that’s hard to follow and prone to errors. Conventional control structures make code more readable and easier to debug.",
+            "severity": "Low",
+            "bad_example": "<?php\n// Bad goto usage\nif (!validate(\\$data)) {\n    goto error;\n}\n// ... other operations ...\nerror:\necho \"An error occurred\";\n?>",
+            "good_example": "<?php\nif (!validate(\\$data)) {\n    echo \\'An error occurred';\n} else {\n    // ... other operations ...\n}\n?>",
+            "tags": "maintainability",
+            "examples": [
+                {
+                    "snippet": "<?php\n// Bad goto usage\nif (!validate(\\$data)) {\n    goto error;\n}\n// ... other operations ...\nerror:\necho \"An error occurred\";\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\nif (!validate(\\$data)) {\n    echo \"An error occurred\";\n} else {\n    // ... other operations ...\n}\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "326273aa-573e-40fe-a244-30410601ca49",
+            "title": "Avoid Relying on Global Variables",
+            "rule": "Do not use global variables to share data across your program. Prefer passing values as function parameters or using configuration objects. Limiting variable scope makes code more predictable and less prone to side effects.",
+            "why_is_this_important": "Global variables make it hard to trace where and how data changes, leading to conflicts and unpredictable behavior. Reducing globals improves encapsulation and testability.",
+            "severity": "Medium",
+            "bad_example": "<?php\n// Using a global\n$config = [];\nfunction init() {\n    global \\$config;\n    \\$config['debug'] = true;\n}\ninit();\nif (\\$config['debug']) {\n    echo 'Debug on';\n}\n?>",
+            "good_example": "<?php\n// Pass config or use config object\\ nfunction initConfig(array \\$config): array {\n    \\$config['debug'] = true;\n    return \\$config;\n}\n\\$config = initConfig(['debug' => false]);\nif (\\$config['debug']) {\n    echo 'Debug on';\n}\n?>",
+            "tags": "maintainability",
+            "examples": [
+                {
+                    "snippet": "<?php\n// Using a global\n$config = [];\nfunction init() {\n    global \\$config;\n    \\$config['debug'] = true;\n}\ninit();\nif (\\$config['debug']) {\n    echo 'Debug on';\n}\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n// Pass config or use config object\nfunction initConfig(array \\$config): array {\n    \\$config['debug'] = true;\n    return \\$config;\n}\n\\$config = initConfig(['debug' => false]);\nif (\\$config['debug']) {\n    echo 'Debug on';\n}\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "4ad18981-ec2f-4faf-94de-7c3690216a82",
+            "title": "Do Not Ignore Exceptions Without Handling",
+            "rule": "Avoid empty catch blocks. When you catch an exception, implement meaningful handling: log the error, perform a fallback action, or rethrow after processing. Do not catch exceptions generically just to suppress them.",
+            "why_is_this_important": "Silencing exceptions hides failures that may leave the system in an inconsistent state or make debugging difficult. Proper exception handling (even just logging) ensures you’re aware of issues and handle them appropriately.",
+            "severity": "Medium",
+            "bad_example": "<?php\ntry {\n    \\$data = file_get_contents('config.json');\n} catch (Exception \\$e) {\n    // do nothing\n}\n?>",
+            "good_example": "<?php\ntry {\n    \\$data = file_get_contents('config.json');\n} catch (Exception \\$e) {\n    error_log('Failed to load config: ' . \\$e->getMessage());\n    throw \\$e; // or throw a custom exception\n}\n?>",
+            "tags": "reliability, maintainability",
+            "examples": [
+                {
+                    "snippet": "<?php\ntry {\n   \\$data = file_get_contents('config.json');\n} catch (Exception \\$e) {\n    // do nothing\n}\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\ntry {\n    \\$data = file_get_contents('config.json');\n} catch (Exception \\$e) {\n    error_log('Failed to load config: ' . \\$e->getMessage());\n    throw \\$e; // or throw a custom exception\n}\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "f44ff314-76db-48e2-9dbe-3f3d30472cc6",
+            "title": "Release External Resources After Use",
+            "rule": "After using external resources (DB connections, open files, sockets), release them properly. Use fclose(), close database connections or finally blocks to ensure cleanup even if errors occur.",
+            "why_is_this_important": "Each allocated resource consumes memory or system handles. Not releasing them can cause leaks or exhaustion (e.g., max DB connections). Proper cleanup ensures efficient operation and prevents resource‐related failures.",
+            "severity": "Medium",
+            "bad_example": "<?php\n$handle = fopen('file.txt', 'r');\n// ... read file\n// never close handle\n?>",
+            "good_example": "<?php\n\\$handle = fopen('file.txt', 'r');\ntry {\n    // ... read file\n} finally {\n    if (\\$handle) {\n        fclose(\\$handle);\n    }\n}\n?>",
+            "tags": "reliability, performance",
+            "examples": [
+                {
+                    "snippet": "<?php\n$handle = fopen('file.txt', 'r');\n// ... read file\n// never close handle\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n\\$handle = fopen('file.txt', 'r');\ntry {\n    // ... read file\n} finally {\n    if (\\$handle) {\n        fclose(\\$handle);\n    }\n}\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "2c125018-c7e7-4a6c-8ae9-e80e9b13efdc",
+            "title": "Do Not Use Deprecated or Removed Functions",
+            "rule": "Avoid functions or extensions deprecated in recent PHP versions (e.g., mysql_* or preg_replace without proper delimiters). Use modern supported alternatives like PDO/MySQLi for DB or PCRE functions (preg_match, preg_replace with correct syntax).",
+            "why_is_this_important": "Deprecated functions may be removed in future PHP releases and often lack security updates. Using up‐to‐date functions ensures compatibility, features, and security fixes, improving code longevity.",
+            "severity": "Medium",
+            "bad_example": "<?php\n// deprecated mysql_\n$link = mysql_connect('localhost','user','pass');\n?>",
+            "good_example": "<?php\n// use PDO instead of mysql_\n$pdo = new PDO('mysql:host=localhost;dbname=test','user','pass');\n?>",
+            "tags": "maintainability, reliability",
+            "examples": [
+                {
+                    "snippet": "<?php\n// deprecated mysql_\n$link = mysql_connect('localhost','user','pass');\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n// use PDO instead of mysql_\n$pdo = new PDO('mysql:host=localhost;dbname=test','user','pass');\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "63063630-fd3a-4f9c-9332-5779f5adacf9",
+            "title": "Keep Functions/Methods Single-Responsibility",
+            "rule": "Write functions and methods so each does one well-defined task. If a function handles distinct steps (validation, processing, saving, notifying), refactor into smaller focused functions.",
+            "why_is_this_important": "Single-responsibility functions are easier to read, test, and reuse. Smaller functions tend to have fewer bugs and simplify isolating issues, while making future enhancements cleaner.",
+            "severity": "Low",
+            "bad_example": "<?php\nfunction processData(\\$data) {\n    // validate\n    if (!validate(\\$data)) return false;\n    // process\n    \\$result = calculate(\\$data);\n    // save\n    saveToDb(\\$result);\n    // notify\n    sendNotification(\\$result);\n    return true;\n}\n?>",
+            "good_example": "<?php\nfunction validateData(\\$data): bool {\n    // validation logic\n}\nfunction calculateResult(\\$data) {\n    // processing logic\n}\nfunction saveResult(\\$res) {\n    // persistence logic\n}\nfunction notifyUser(\\$res) {\n    // notification logic\n}\n\nif (validateData(\\$input)) {\n    \\$res = calculateResult(\\$input);\n    saveResult(\\$res);\n    notifyUser(\\$res);\n}\n?>",
+            "tags": "maintainability",
+            "examples": [
+                {
+                    "snippet": "<?php\nfunction processData(\\$data) {\n    // validate\n    if (!validate(\\$data)) return false;\n    // process\n    \\$result = calculate(\\$data);\n    // save\n    saveToDb(\\$result);\n    // notify\n    sendNotification(\\$result);\n    return true;\n}\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\nfunction validateData(\\$data): bool {\n    // validation logic\n}\nfunction calculateResult(\\$data) {\n    // processing logic\n}\nfunction saveResult(\\$res) {\n    // persistence logic\n}\nfunction notifyUser(\\$res) {\n    // notification logic\n}\n\nif (validateData(\\$input)) {\n    \\$res = calculateResult(\\$input);\n    saveResult(\\$res);\n    notifyUser(\\$res);\n}\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "4afada6a-a96c-446e-887d-34a131c97cc9",
+            "title": "Avoid N+1 SQL Queries Inside Loops",
+            "rule": "Do not perform multiple DB queries inside a loop for data you could fetch in one query. Instead, consolidate using IN clauses or JOINs to retrieve all needed data at once.",
+            "why_is_this_important": "Looping queries (N+1 problem) causes excessive DB round-trips, degrading performance. Consolidating queries reduces load and improves response times, especially at scale.",
+            "severity": "Medium",
+            "bad_example": "<?php\n\\$ids = [1,2,3];\n\\$data = [];\nforeach (\\$ids as \\$id) {\n    \\$res = \\$pdo->query(\"SELECT * FROM items WHERE user_id = \\$id\");\n    \\$data[] = \\$res->fetch();\n}\n?>",
+            "good_example": "<?php\n\\$ids = [1,2,3];\n\\$list = implode(',', \\$ids);\n\\$stmt = \\$pdo->query(\"SELECT * FROM items WHERE user_id IN (\\$list)\");\n\\$data = \\$stmt->fetchAll();\n?>",
+            "tags": "performance, maintainability",
+            "examples": [
+                {
+                    "snippet": "<?php\n\\$ids = [1,2,3];\n\\$data = [];\nforeach (\\$ids as \\$id) {\n    \\$res = \\$pdo->query(\"SELECT * FROM items WHERE user_id = \\$id\");\n    \\$data[] = \\$res->fetch();\n}\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n\\$ids = [1,2,3];\n\\$list = implode(',', \\$ids);\n\\$stmt = \\$pdo->query(\"SELECT * FROM items WHERE user_id IN (\\$list)\");\n\\$data = \\$stmt->fetchAll();\n?>",
+                    "isCorrect": true
+                }
+            ]
+        },
+        {
+            "uuid": "02891516-a12b-4b40-a83a-868204043f77",
+            "title": "Prefer Strict Comparisons (===) Over Loose (==)",
+            "rule": "Use strict comparison operators (=== and !==) instead of loose (== and !=) in most cases. Strict comparisons check both type and value, avoiding PHP’s implicit type coercion pitfalls.",
+            "why_is_this_important": "Loose comparisons can yield unexpected results due to type juggling (e.g., \"0e123\" == 0 is true). Using === ensures both type and value match, preventing subtle bugs and security issues.",
+            "severity": "Medium",
+            "bad_example": "<?php\n\\$hash = md5(\\$input);\nif (\\$hash == \"0e123456789abcdef\") {\n    echo \"Hash matches\";\n}\n?>",
+            "good_example": "<?php\n\\$hash = md5(\\$input);\nif (\\$hash === \"0e123456789abcdef\") {\n    echo \"Hash matches\";\n}\n?>",
+            "tags": "reliability, maintainability",
+            "examples": [
+                {
+                    "snippet": "<?php\n\\$hash = md5(\\$input);\nif (\\$hash == \"0e123456789abcdef\") {\n    echo \"Hash matches\";\n}\n?>",
+                    "isCorrect": false
+                },
+                {
+                    "snippet": "<?php\n\\$hash = md5(\\$input);\nif (\\$hash === \"0e123456789abcdef\") {\n    echo \"Hash matches\";\n}\n?>",
+                    "isCorrect": true
+                }
+            ]
+        }
+    ],
+    "GO": [
+        {
+            "uuid": "ca91e42f-4ba8-4885-bca5-cea6e4178704",
+            "title": "Avoid Pointers to Interface Types",
+            "rule": "Never use a pointer to an interface type. Pass interfaces as values, since an interface already provides reference semantics to the underlying data.",
+            "why_is_this_important": "Interfaces are reference types; taking a pointer to an interface is unnecessary and can lead to confusion. It complicates function signatures without any benefit, and it doesn't change the fact that the underlying data can be a pointer.",
+            "severity": "Medium",
+            "bad_example": "type Fooer interface { Foo() }\n\nfunc UseFoo(f *Fooer) {\n    // ... using pointer to interface (unnecessary)\n}",
+            "good_example": "type Fooer interface { Foo() }\n\nfunc UseFoo(f Fooer) {\n    // ... using interface directly\n}",
+            "tags": [
+                "readability",
+                "maintainability"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "type Fooer interface { Foo() }\n\nfunc UseFoo(f *Fooer) {\n    // ... using pointer to interface (unnecessary)\n}"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "type Fooer interface { Foo() }\n\nfunc UseFoo(f Fooer) {\n    // ... using interface directly\n}"
+                }
+            ]
+        },
+        {
+            "uuid": "d132339b-b10a-46d5-8e3e-21b0b15e67f2",
+            "title": "Avoid Pointers to Slices (and Maps)",
+            "rule": "Do not use pointers to slice or map types. Slices and maps are already reference types that point to underlying data, so they can be passed by value and still allow modifications to the contents.",
+            "why_is_this_important": "Using a pointer to a slice or map is redundant and can make snippet harder to understand. Since slices and maps already have reference semantics, passing them directly is simpler and less error-prone.",
+            "severity": "Medium",
+            "bad_example": "func AddItem(list *[]string, item string) {\n    *list = append(*list, item) // using a pointer to a slice\n}",
+            "good_example": "func AddItem(list []string, item string) []string {\n    return append(list, item) // pass slice by value and return the new slice\n}",
+            "tags": [
+                "maintainability",
+                "readability"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "func AddItem(list *[]string, item string) {\n    *list = append(*list, item) // using a pointer to a slice\n}"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "func AddItem(list []string, item string) []string {\n    return append(list, item) // pass slice by value and return the new slice\n}"
+                }
+            ]
+        },
+        {
+            "uuid": "90b1556c-e49b-4339-94d7-5b768c2c2fc8",
+            "title": "Copy Slices and Maps at Boundaries",
+            "rule": "When accepting a slice or map from external snippet or returning one, consider copying it. This prevents unintentional modifications to the original data. For example, don't store a slice argument directly if the caller might modify it later; instead, make a copy for internal use.",
+            "why_is_this_important": "Slices and maps hold references to underlying data. If you keep a reference to a slice or map provided by someone else, changes in one will affect the other, potentially causing bugs or data races. Copying ensures your snippet has its own independent data, improving safety and clarity.",
+            "severity": "High",
+            "bad_example": "type Config struct {\n    allowed []string\n}\n\nfunc (c *Config) SetAllowed(a []string) {\n    c.allowed = a // storing reference directly\n}\n\n// ... elsewhere\ncfg := &Config{}\nlist := []string{\"val1\", \"val2\"}\ncfg.SetAllowed(list)\nlist[0] = \"changed\" // unintended: also changes cfg.allowed",
+            "good_example": "func (c *Config) SetAllowed(a []string) {\n    copySlice := make([]string, len(a))\n    copy(copySlice, a)\n    c.allowed = copySlice // store a copy\n}\n\n// Now modifying the original 'list' won't affect c.allowed",
+            "tags": [
+                "bug-risk",
+                "concurrency",
+                "maintainability"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "type Config struct {\n    allowed []string\n}\n\nfunc (c *Config) SetAllowed(a []string) {\n    c.allowed = a // storing reference directly\n}\n\n// ... elsewhere\ncfg := &Config{}\nlist := []string{\"val1\", \"val2\"}\ncfg.SetAllowed(list)\nlist[0] = \"changed\" // unintended: also changes cfg.allowed"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "func (c *Config) SetAllowed(a []string) {\n    copySlice := make([]string, len(a))\n    copy(copySlice, a)\n    c.allowed = copySlice // store a copy\n}\n\n// Now modifying the original 'list' won't affect c.allowed"
+                }
+            ]
+        },
+        {
+            "uuid": "a8f139d3-6884-4342-a6b5-675d2d0fa745",
+            "title": "Use defer to Release Resources",
+            "rule": "Always use `defer` to release resources like files or locks when a function has multiple exit points. Open or lock resources and immediately defer their close/unlock to ensure they get released on every code path.",
+            "why_is_this_important": "Deferring cleanup right after acquiring a resource ensures that no matter how the function exits (return or panic), the resource will be released. This prevents resource leaks and deadlocks caused by forgotten closes or unlocks.",
+            "severity": "High",
+            "bad_example": "func ReadConfig(path string) ([]byte, error) {\n    f, err := os.Open(path)\n    if err != nil {\n        return nil, err\n    }\n    data, err := io.ReadAll(f)\n    if err != nil {\n        f.Close() // closes file on error path\n        return nil, err\n    }\n    // Forgot to close file on success path\n    return data, nil\n}",
+            "good_example": "func ReadConfig(path string) ([]byte, error) {\n    f, err := os.Open(path)\n    if err != nil {\n        return nil, err\n    }\n    defer f.Close()\n    data, err := io.ReadAll(f)\n    if err != nil {\n        return nil, err\n    }\n    return data, nil\n}",
+            "tags": [
+                "bug-risk",
+                "reliability",
+                "maintainability"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "func ReadConfig(path string) ([]byte, error) {\n    f, err := os.Open(path)\n    if err != nil {\n        return nil, err\n    }\n    data, err := io.ReadAll(f)\n    if err != nil {\n        f.Close() // closes file on error path\n        return nil, err\n    }\n    // Forgot to close file on success path\n    return data, nil\n}"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "func ReadConfig(path string) ([]byte, error) {\n    f, err := os.Open(path)\n    if err != nil {\n        return nil, err\n    }\n    defer f.Close()\n    data, err := io.ReadAll(f)\n    if err != nil {\n        return nil, err\n    }\n    return data, nil\n}"
+                }
+            ]
+        },
+        {
+            "uuid": "58d2357b-6317-414b-8cda-09073ff1b904",
+            "title": "Keep Channel Buffer Size Small (0 or 1)",
+            "rule": "By default, use unbuffered channels or a buffer size of one. Only use larger buffers when necessary and carefully considered. Unbuffered channels (size 0) or a size of 1 are the most common; a large buffer can hide synchronization issues or lead to memory bloat if misused.",
+            "why_is_this_important": "Channels coordinate goroutines. Unbuffered channels ensure strict handoff, and a buffer of one provides minimal queuing. Large buffers, if chosen poorly, might mask deadlocks or produce high memory usage as goroutines pile up sends, making bugs harder to detect.",
+            "severity": "Medium",
+            "bad_example": "jobs := make(chan Job, 100) // large buffer without clear need\n\n// Producer\nfor _, j := range jobList {\n    jobs <- j // might fill up and block if consumer is slow\n}\nclose(jobs)",
+            "good_example": "jobs := make(chan Job) // unbuffered channel\n// or jobs := make(chan Job, 1) for a single-item buffer\n\nfor _, j := range jobList {\n    jobs <- j // will block if consumer is not ready, preventing overload\n}\nclose(jobs)",
+            "tags": [
+                "concurrency",
+                "maintainability"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "jobs := make(chan Job, 100) // large buffer without clear need\n\n// Producer\nfor _, j := range jobList {\n    jobs <- j // might fill up and block if consumer is slow\n}\nclose(jobs)"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "jobs := make(chan Job) // unbuffered channel\n// or jobs := make(chan Job, 1) for a single-item buffer\n\nfor _, j := range jobList {\n    jobs <- j // will block if consumer is not ready, preventing overload\n}\nclose(jobs)"
+                }
+            ]
+        },
+        {
+            "uuid": "1fe99a64-5f23-4ebf-8a32-be810d1e44e8",
+            "title": "Start Enums at 1, Reserve 0 for Default",
+            "rule": "When using iota to create enums (constant sets), start from 1 and use 0 as a 'zero value' meaning undefined or default. This way, an uninitialized variable of that enum type will not accidentally hold a valid value.",
+            "why_is_this_important": "In Go, an int's zero value is 0. If your enum uses 0 as a valid value, any variable of that enum type will default to that value even if never set, which can cause logic errors. Reserving 0 as an invalid or default state helps catch uninitialized usage.",
+            "severity": "Medium",
+            "bad_example": "type Role int\nconst (\n    RoleUser Role = iota // 0\n    RoleAdmin            // 1\n)\n\nvar r Role\nfmt.Println(r) // r is 0 -> interprets as RoleUser, even though we never set it",
+            "good_example": "type Role int\nconst (\n    _ Role = iota // 0 is skipped/reserved\n    RoleUser      // 1\n    RoleAdmin     // 2\n)\n\nvar r Role\nfmt.Println(r) // r is 0, which we treat as an undefined default",
+            "tags": [
+                "bug-risk",
+                "maintainability"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "type Role int\nconst (\n    RoleUser Role = iota // 0\n    RoleAdmin            // 1\n)\n\nvar r Role\nfmt.Println(r) // r is 0 -> interprets as RoleUser, even though we never set it"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "type Role int\nconst (\n    _ Role = iota // 0 is skipped/reserved\n    RoleUser      // 1\n    RoleAdmin     // 2\n)\n\nvar r Role\nfmt.Println(r) // r is 0, which we treat as an undefined default"
+                }
+            ]
+        },
+        {
+            "uuid": "568b34fc-e48f-429b-9c48-e48327cc6e96",
+            "title": "Use Appropriate Time Types (time.Time, time.Duration)",
+            "rule": "Use the time package's types for handling time. For example, represent instants as `time.Time` and durations or time intervals as `time.Duration` instead of raw numeric types (int, int64).",
+            "why_is_this_important": "Using dedicated time types makes the code self-documenting and less error-prone. It prevents confusion over units (seconds vs milliseconds) and provides helpful methods. This leads to clearer and more correct time calculations.",
+            "severity": "Medium",
+            "bad_example": "func ScheduleEvent(name string, ts int64) {\n    // 'ts' is a timestamp in seconds since epoch? milliseconds? unclear\n    // ...\n}\n\ntimeout := 5000 // represents 5000 milliseconds? Or microseconds?\ntime.Sleep(time.Duration(timeout)) // bug: might sleep 5 microseconds if misinterpreted",
+            "good_example": "func ScheduleEvent(name string, t time.Time) {\n    // 't' clearly represents a moment in time\n    // ...\n}\n\ntimeout := 5 * time.Second\ntime.Sleep(timeout) // clear 5 second timeout",
+            "tags": [
+                "maintainability",
+                "bug-risk"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "func ScheduleEvent(name string, ts int64) {\n    // 'ts' is a timestamp in seconds since epoch? milliseconds? unclear\n    // ...\n}\n\ntimeout := 5000 // represents 5000 milliseconds? Or microseconds?\ntime.Sleep(time.Duration(timeout)) // bug: might sleep 5 microseconds if misinterpreted"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "func ScheduleEvent(name string, t time.Time) {\n    // 't' clearly represents a moment in time\n    // ...\n}\n\ntimeout := 5 * time.Second\ntime.Sleep(timeout) // clear 5 second timeout"
+                }
+            ]
+        },
+        {
+            "uuid": "73f3b6ff-5644-4ae0-8c83-c3becf7e5f83",
+            "title": "Handle Errors Properly (Don't Ignore or Double-Handle)",
+            "rule": "Never silently ignore an error, and avoid handling an error (e.g., logging it) and then still returning it. Either handle the error fully or propagate it upward, but not both.",
+            "why_is_this_important": "Ignoring errors can lead to hidden bugs that are hard to diagnose. Logging an error and also returning it can result in duplicate logs or confusion about who is responsible for handling it. Each error should be dealt with in one place to maintain clarity and avoid surprises.",
+            "severity": "High",
+            "bad_example": "data, err := ioutil.ReadFile(\"config.json\")\nif err != nil {\n    log.Println(\"failed to read file:\", err)\n    return err // error is both logged and returned\n}\n// ... use data",
+            "good_example": "data, err := ioutil.ReadFile(\"config.json\")\nif err != nil {\n    return fmt.Errorf(\"cannot read config: %w\", err) // propagate with context (or handle fully here)\n}\n// ... use data",
+            "tags": [
+                "bug-risk",
+                "maintainability"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "data, err := ioutil.ReadFile(\"config.json\")\nif err != nil {\n    log.Println(\"failed to read file:\", err)\n    return err // error is both logged and returned\n}\n// ... use data"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "data, err := ioutil.ReadFile(\"config.json\")\nif err != nil {\n    return fmt.Errorf(\"cannot read config: %w\", err) // propagate with context (or handle fully here)\n}\n// ... use data"
+                }
+            ]
+        },
+        {
+            "uuid": "670037bd-b2fa-440b-9283-7d51a0c70dcc",
+            "title": "Wrap Errors with Context Information",
+            "rule": "When returning an error from a function, include contextual information. Use `fmt.Errorf` with `%w` (or similar error wrapping) to add a message while preserving the original error.",
+            "why_is_this_important": "Providing context in errors (such as what operation failed) makes debugging easier. Wrapping errors with `%w` retains the original error for inspection (using errors.Is/As), so the root cause isn't lost. Without context, you might get a generic error with no clue of its origin.",
+            "severity": "Medium",
+            "bad_example": "if err != nil {\n    return errors.New(\"operation failed\") // loses original error context\n}",
+            "good_example": "if err != nil {\n    return fmt.Errorf(\"operation failed: %w\", err) // wraps original error\n}",
+            "tags": [
+                "maintainability",
+                "readability"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "if err != nil {\n    return errors.New(\"operation failed\") // loses original error context\n}"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "if err != nil {\n    return fmt.Errorf(\"operation failed: %w\", err) // wraps original error\n}"
+                }
+            ]
+        },
+        {
+            "uuid": "c1ca3150-3774-4753-873d-5e6701abf514",
+            "title": "Use Consistent Error Message Style",
+            "rule": "Error strings should start with a lowercase letter and not end with punctuation. They should state what went wrong in a concise, factual manner (for example, \"file not found\", not \"File not found!\").",
+            "why_is_this_important": "Following Go conventions for error messages ensures that errors are consistent and can be combined in sentences. A lowercase, unpunctuated error string fits naturally when wrapped or printed, and maintains readability across the codebase.",
+            "severity": "Low",
+            "bad_example": "err := errors.New(\"File Not Found!\")",
+            "good_example": "err := errors.New(\"file not found\")",
+            "tags": [
+                "readability",
+                "style"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "err := errors.New(\"File Not Found!\")"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "err := errors.New(\"file not found\")"
+                }
+            ]
+        },
+        {
+            "uuid": "a8c02ee7-a447-4baa-8565-0a43492279a9",
+            "title": "Don't Panic on Regular Errors",
+            "rule": "Reserve `panic` for unrecoverable situations (like invariant violations or truly fatal errors). For expected error conditions (file not found, invalid input, etc.), return an `error` to the caller instead of panicking.",
+            "why_is_this_important": "Using panic for normal errors will crash the program and skip normal error handling logic. It makes the code less robust and harder to reuse. By returning errors, you allow the caller to decide how to handle the failure, leading to more graceful degradation and better reliability.",
+            "severity": "High",
+            "bad_example": "func GetConfig(path string) []byte {\n    data, err := os.ReadFile(path)\n    if err != nil {\n        panic(\"could not read config: \" + err.Error())\n    }\n    return data\n}",
+            "good_example": "func GetConfig(path string) ([]byte, error) {\n    data, err := os.ReadFile(path)\n    if err != nil {\n        return nil, fmt.Errorf(\"could not read config: %w\", err)\n    }\n    return data, nil\n}",
+            "tags": [
+                "reliability",
+                "bug-risk"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "func GetConfig(path string) []byte {\n    data, err := os.ReadFile(path)\n    if err != nil {\n        panic(\"could not read config: \" + err.Error())\n    }\n    return data\n}"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "func GetConfig(path string) ([]byte, error) {\n    data, err := os.ReadFile(path)\n    if err != nil {\n        return nil, fmt.Errorf(\"could not read config: %w\", err)\n    }\n    return data, nil\n}"
+                }
+            ]
+        },
+        {
+            "uuid": "9837b539-be63-4d5c-b95a-6769666169e4",
+            "title": "Handle Type Assertion Failures",
+            "rule": "Use the 'comma, ok' idiom for type assertions to safely handle cases when the assertion fails. Only use a single-value type assertion (which panics on failure) if you are absolutely sure (by prior checks or program logic) that the interface holds the correct type.",
+            "why_is_this_important": "If a type assertion is wrong, it causes a run-time panic. By using the two-value form (`value, ok := iface.(Type)`), your code can gracefully handle a bad type instead of crashing. This is especially important when dealing with interfaces like `interface{}` or `json.Unmarshalled` data where the type isn't guaranteed.",
+            "severity": "High",
+            "bad_example": "var x interface{} = getValue()\n// Assuming x should be a string, but not checking\ns := x.(string) // will panic if x isn't a string",
+            "good_example": "var x interface{} = getValue()\ns, ok := x.(string)\nif !ok {\n    return fmt.Errorf(\"unexpected type: %T\", x)\n}\n// use s safely as a string",
+            "tags": [
+                "bug-risk",
+                "reliability"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "var x interface{} = getValue()\n// Assuming x should be a string, but not checking\ns := x.(string) // will panic if x isn't a string"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "var x interface{} = getValue()\ns, ok := x.(string)\nif !ok {\n    return fmt.Errorf(\"unexpected type: %T\", x)\n}\n// use s safely as a string"
+                }
+            ]
+        },
+        {
+            "uuid": "c62eeabc-4028-4a5e-a18e-157dd157b3e0",
+            "title": "Avoid Mutable Global State",
+            "rule": "Do not use global (package-level) variables for mutable state whenever possible. Instead, encapsulate state in structs or pass it as parameters. If you must use a global variable (for configuration or caching), protect it with mutexes if concurrent access is possible and document its usage.",
+            "why_is_this_important": "Global mutable state can be modified from anywhere, which makes the program harder to understand, test, and maintain. It can introduce hidden dependencies between components and is prone to concurrency issues. Encapsulating state helps maintain invariants and makes code more modular.",
+            "severity": "Medium",
+            "bad_example": "var cache = map[string]string{}\n\nfunc SetCache(key, value string) {\n    cache[key] = value // modifies global map, not thread-safe\n}",
+            "good_example": "type Cache struct {\n    mu sync.Mutex\n    data map[string]string\n}\n\nfunc (c *Cache) Set(key, value string) {\n    c.mu.Lock()\n    c.data[key] = value\n    c.mu.Unlock()\n}\n\n// or pass *Cache around instead of using a global",
+            "tags": [
+                "maintainability",
+                "concurrency"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "var cache = map[string]string{}\n\nfunc SetCache(key, value string) {\n    cache[key] = value // modifies global map, not thread-safe\n}"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "type Cache struct {\n    mu sync.Mutex\n    data map[string]string\n}\n\nfunc (c *Cache) Set(key, value string) {\n    c.mu.Lock()\n    c.data[key] = value\n    c.mu.Unlock()\n}\n\n// or pass *Cache around instead of using a global"
+                }
+            ]
+        },
+        {
+            "uuid": "353be773-3c83-4d07-b019-237064728a91",
+            "title": "Avoid Complex init() Functions",
+            "rule": "Do not put complex logic or long-running tasks in package `init()` functions. Keep `init()` minimal (if you use it at all), such as simple registration of types or default variable initialization. Perform real setup in explicit functions (like in `main` or a setup function called by main).",
+            "why_is_this_important": "`init()` runs before `main` and in an undefined order across packages, which can lead to unpredictable behavior and make testing harder. Complex init logic can slow down program start and hide dependencies. Keeping initialization explicit improves clarity and control over program startup.",
+            "severity": "Medium",
+            "bad_example": "var DefaultClient *Client\n\nfunc init() {\n    // Complex or external setup in init\n    cfg := loadConfigFromDisk() // reading file, etc.\n    DefaultClient = NewClient(cfg)\n}",
+            "good_example": "var DefaultClient *Client\n\nfunc InitClient() error {\n    cfg, err := loadConfigFromDisk()\n    if err != nil {\n        return err\n    }\n    DefaultClient = NewClient(cfg)\n    return nil\n}\n\nfunc main() {\n    if err := InitClient(); err != nil {\n        log.Fatal(err)\n    }\n    // ... proceed with DefaultClient ready\n}",
+            "tags": [
+                "maintainability",
+                "readability"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "var DefaultClient *Client\n\nfunc init() {\n    // Complex or external setup in init\n    cfg := loadConfigFromDisk() // reading file, etc.\n    DefaultClient = NewClient(cfg)\n}"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "var DefaultClient *Client\n\nfunc InitClient() error {\n    cfg, err := loadConfigFromDisk()\n    if err != nil {\n        return err\n    }\n    DefaultClient = NewClient(cfg)\n    return nil\n}\n\nfunc main() {\n    if err := InitClient(); err != nil {\n        log.Fatal(err)\n    }\n    // ... proceed with DefaultClient ready\n}"
+                }
+            ]
+        },
+        {
+            "uuid": "467cb0ae-2b3c-4a1b-a5db-4b2086958a61",
+            "title": "Don't Leak Goroutines (No Unbounded Fire-and-Forget)",
+            "rule": "Every goroutine you start should be managed. Avoid launching \"fire-and-forget\" goroutines that run indefinitely or without any synchronization. Provide a way to stop goroutines (using a cancel context or done channel) and/or track them (e.g., with sync.WaitGroup) to prevent leaks.",
+            "why_is_this_important": "Uncontrolled goroutines can continue running and leak memory or other resources if the rest of the program moves on (for example, on shutdown or test completion). By managing goroutine lifecycles, you ensure they exit when expected, preventing resource leaks and unpredictable behavior.",
+            "severity": "High",
+            "bad_example": "func StartWorker() {\n    go func() {\n        for {\n            doWork()\n            // no exit condition, no tracking\n        }\n    }()\n}",
+            "good_example": "func StartWorker(ctx context.Context, wg *sync.WaitGroup) {\n    wg.Add(1)\n    go func() {\n        defer wg.Done()\n        for {\n            select {\n            case <-ctx.Done():\n                return // exit when signaled\n            default:\n                doWork()\n            }\n        }\n    }()\n}\n\n// Now the caller can cancel the context or wait on the WaitGroup to ensure the goroutine stops.",
+            "tags": [
+                "concurrency",
+                "bug-risk"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "func StartWorker() {\n    go func() {\n        for {\n            doWork()\n            // no exit condition, no tracking\n        }\n    }()\n}"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "func StartWorker(ctx context.Context, wg *sync.WaitGroup) {\n    wg.Add(1)\n    go func() {\n        defer wg.Done()\n        for {\n            select {\n            case <-ctx.Done():\n                return // exit when signaled\n            default:\n                doWork()\n            }\n        }\n    }()\n}\n\n// Now the caller can cancel the context or wait on the WaitGroup to ensure the goroutine stops."
+                }
+            ]
+        },
+        {
+            "uuid": "724fb8e2-3ada-49ad-8e5a-ddb2c86c2504",
+            "title": "Use sync.WaitGroup Correctly",
+            "rule": "When using a WaitGroup to synchronize goroutines, call Add() before launching each goroutine and ensure each goroutine calls Done() exactly once. Finally, call Wait() to block until all goroutines have called Done(). Misordering Add/Done or mismatched calls will cause issues.",
+            "why_is_this_important": "If you forget to Add before a goroutine or call Done more times than Add, the WaitGroup counter will go negative and panic. If you don't call Done or don't Wait properly, your program may hang. Proper usage of WaitGroup ensures no goroutines are missed and no extra signals occur, preventing panics and deadlocks.",
+            "severity": "High",
+            "bad_example": "var wg sync.WaitGroup\n\ngo func() {\n    // forgot wg.Add(1)\n    defer wg.Done() // will panic because counter was 0\n    doWork()\n}()\nwg.Wait()",
+            "good_example": "var wg sync.WaitGroup\n\nwg.Add(1)\ngo func() {\n    defer wg.Done()\n    doWork()\n}()\nwg.Wait()",
+            "tags": [
+                "concurrency",
+                "bug-risk"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "var wg sync.WaitGroup\n\ngo func() {\n    // forgot wg.Add(1)\n    defer wg.Done() // will panic because counter was 0\n    doWork()\n}()\nwg.Wait()"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "var wg sync.WaitGroup\n\nwg.Add(1)\ngo func() {\n    defer wg.Done()\n    doWork()\n}()\nwg.Wait()"
+                }
+            ]
+        },
+        {
+            "uuid": "7966e501-1a67-40e9-830a-f03868b8864d",
+            "title": "Use Context for Cancellation and Timeouts",
+            "rule": "Functions that perform external calls or long operations should accept a `context.Context` parameter and respect its cancellation. Use context timeouts or cancellation signals to stop work that is no longer needed.",
+            "why_is_this_important": "Contexts allow you to avoid goroutine leaks and respond to cancellations (like user aborts or timeouts). Ignoring context means your function may continue doing work even if the result is no longer needed (e.g., user navigated away), wasting resources. It's essential for clean shutdowns and respecting deadlines.",
+            "severity": "Medium",
+            "bad_example": "func FetchData(url string) ([]byte, error) {\n    resp, err := http.Get(url) // no way to cancel if the caller is done\n    if err != nil {\n        return nil, err\n    }\n    return io.ReadAll(resp.Body)\n}",
+            "good_example": "func FetchData(ctx context.Context, url string) ([]byte, error) {\n    req, err := http.NewRequestWithContext(ctx, \"GET\", url, nil)\n    if err != nil {\n        return nil, err\n    }\n    resp, err := http.DefaultClient.Do(req)\n    if err != nil {\n        return nil, err\n    }\n    return io.ReadAll(resp.Body)\n}",
+            "tags": [
+                "maintainability",
+                "performance",
+                "reliability"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "func FetchData(url string) ([]byte, error) {\n    resp, err := http.Get(url) // no way to cancel if the caller is done\n    if err != nil {\n        return nil, err\n    }\n    return io.ReadAll(resp.Body)\n}"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "func FetchData(ctx context.Context, url string) ([]byte, error) {\n    req, err := http.NewRequestWithContext(ctx, \"GET\", url, nil)\n    if err != nil {\n        return nil, err\n    }\n    resp, err := http.DefaultClient.Do(req)\n    if err != nil {\n        return nil, err\n    }\n    return io.ReadAll(resp.Body)\n}"
+                }
+            ]
+        },
+        {
+            "uuid": "d3fe5197-801f-4c98-a6b5-247baeafb69a",
+            "title": "Avoid Holding Large Backing Arrays via Small Slices",
+            "rule": "Be careful when slicing out a small portion of a large slice or array. The resulting slice still references the entire original array. If you only need the small portion long-term, copy that data into a new slice to avoid keeping the large array in memory.",
+            "why_is_this_important": "Slicing a large array without copying can cause memory leaks or high memory usage since the garbage collector cannot reclaim the big array as long as a small slice references it. Copying the needed data prevents unexpectedly holding onto large memory blocks.",
+            "severity": "Medium",
+            "bad_example": "bigData := make([]byte, 1000000)\nsmall := bigData[:10]\n// 'small' is tiny but still prevents GC of the 1,000,000 byte array until bigData goes out of scope",
+            "good_example": "bigData := make([]byte, 1000000)\nsmallCopy := make([]byte, 10)\ncopy(smallCopy, bigData[:10])\n// 'smallCopy' now contains the data and doesn't depend on the large array",
+            "tags": [
+                "performance",
+                "memory"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "bigData := make([]byte, 1000000)\nsmall := bigData[:10]\n// 'small' is tiny but still prevents GC of the 1,000,000 byte array until bigData goes out of scope"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "bigData := make([]byte, 1000000)\nsmallCopy := make([]byte, 10)\ncopy(smallCopy, bigData[:10])\n// 'smallCopy' now contains the data and doesn't depend on the large array"
+                }
+            ]
+        },
+        {
+            "uuid": "74f767d4-f66f-44ea-8ffc-5e5c794e6629",
+            "title": "Avoid Using defer in Hot Loops",
+            "rule": "Don't place a defer inside a loop that iterates many times (especially if the loop is performance-critical). Defer calls won't run until the function returns and each call has a small overhead; instead, perform the operation directly in the loop when possible.",
+            "why_is_this_important": "In a tight loop, deferring an operation on each iteration can lead to increased memory usage (each defer is stacked until function exit) and CPU overhead. This can slow down performance and delay resource release. It's more efficient to handle repetitive operations inline for large loops.",
+            "severity": "Medium",
+            "bad_example": "for _, file := range files {\n    f, _ := os.Open(file)\n    defer f.Close() // defers 1000x if len(files)=1000; files stay open until after loop\n    processFile(f)\n}",
+            "good_example": "for _, file := range files {\n    f, _ := os.Open(file)\n    processFile(f)\n    f.Close() // close immediately after processing each file\n}",
+            "tags": [
+                "performance",
+                "bug-risk"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "for _, file := range files {\n    f, _ := os.Open(file)\n    defer f.Close() // defers 1000x if len(files)=1000; files stay open until after loop\n    processFile(f)\n}"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "for _, file := range files {\n    f, _ := os.Open(file)\n    processFile(f)\n    f.Close() // close immediately after processing each file\n}"
+                }
+            ]
+        },
+        {
+            "uuid": "244cc95a-f2f0-48fa-9041-2b3854271651",
+            "title": "Don't Compare Addresses to nil",
+            "rule": "Never compare the address of a variable to nil (e.g., `&x == nil`). To check if a pointer is nil, compare the pointer itself to nil. The address of a variable (`&x`) will always be non-nil if `x` exists.",
+            "why_is_this_important": "Comparing `&x` to nil is a logical mistake; the condition will never be true (unless x is a nil pointer itself and you're taking the address of a pointer variable incorrectly). This bug can lead to code that never runs or always runs unexpectedly, since the condition is based on a false premise.",
+            "severity": "High",
+            "bad_example": "var ptr *int\nif &ptr != nil {\n    // This block will always execute, even if ptr is nil\n    fmt.Println(\"ptr is not nil\")\n}",
+            "good_example": "var ptr *int\nif ptr != nil {\n    // This will execute only if ptr points to a value\n    fmt.Println(\"ptr is not nil\")\n}",
+            "tags": [
+                "bug-risk"
+            ],
+            "examples": [
+                {
+                    "isCorrect": false,
+                    "snippet": "var ptr *int\nif &ptr != nil {\n    // This block will always execute, even if ptr is nil\n    fmt.Println(\"ptr is not nil\")\n}"
+                },
+                {
+                    "isCorrect": true,
+                    "snippet": "var ptr *int\nif ptr != nil {\n    // This will execute only if ptr points to a value\n    fmt.Println(\"ptr is not nil\")\n}"
                 }
             ]
         }
