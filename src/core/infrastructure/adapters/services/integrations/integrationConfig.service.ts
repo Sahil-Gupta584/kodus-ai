@@ -7,6 +7,7 @@ import { IIntegrationConfigService } from '@/core/domain/integrationConfigs/cont
 import { IntegrationConfigEntity } from '@/core/domain/integrationConfigs/entities/integration-config.entity';
 import { IIntegrationConfig } from '@/core/domain/integrationConfigs/interfaces/integration-config.interface';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
+import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { isString } from 'class-validator';
 import { v4 as uuidv4 } from 'uuid';
@@ -63,10 +64,12 @@ export class IntegrationConfigService implements IIntegrationConfigService {
     findIntegrationConfigWithTeams(
         configKey: IntegrationConfigKey,
         repositoryId: string,
+        platformType: PlatformType,
     ): Promise<IntegrationConfigEntity[]> {
         return this.integrationConfigRepository.findIntegrationConfigWithTeams(
             configKey,
             repositoryId,
+            platformType,
         );
     }
 

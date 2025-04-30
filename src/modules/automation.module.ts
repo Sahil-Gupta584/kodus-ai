@@ -41,12 +41,13 @@ import { UseCases as OrganizationAutomationUseCases } from '@/core/application/u
 import { OrganizationModule } from './organization.module';
 import { CheckinModule } from './checkin.module';
 import { ParametersModule } from './parameters.module';
-import { RunCodeReviewAutomationUseCase } from '@/core/application/use-cases/automation/runCodeReview.use-case';
+import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.use-case';
 import { CodebaseModule } from './codeBase.module';
 import { UseCases as SaveCodeReviewFeedbackUseCase } from '@/core/application/use-cases/codeReviewFeedback';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { PullRequestsModule } from './pullRequests.module';
 import { TeamArtifactsModule } from './teamArtifacts.module';
+import { LicenseModule } from '@/ee/license/license.module';
 
 @Module({
     imports: [
@@ -77,6 +78,7 @@ import { TeamArtifactsModule } from './teamArtifacts.module';
         AuthIntegrationModule,
         CheckinModule,
         TeamArtifactsModule,
+        LicenseModule
     ],
     providers: [
         ...UseCases,
@@ -130,4 +132,4 @@ import { TeamArtifactsModule } from './teamArtifacts.module';
         RunCodeReviewAutomationUseCase,
     ],
 })
-export class AutomationModule {}
+export class AutomationModule { }

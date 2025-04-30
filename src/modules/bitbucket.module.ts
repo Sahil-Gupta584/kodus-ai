@@ -8,6 +8,7 @@ import { IntegrationConfigModule } from './integrationConfig.module';
 import { ParametersModule } from './parameters.module';
 import { CodebaseModule } from './codeBase.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
+import { LicenseModule } from '@/ee/license/license.module';
 
 @Module({
     imports: [
@@ -17,6 +18,7 @@ import { PlatformIntegrationModule } from './platformIntegration.module';
         forwardRef(() => ParametersModule),
         forwardRef(() => CodebaseModule),
         forwardRef(() => PlatformIntegrationModule),
+        LicenseModule
     ],
     providers: [
         {

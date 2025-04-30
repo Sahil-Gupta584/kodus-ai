@@ -7,6 +7,7 @@ import {
 import { DeliveryStatus } from '../enums/deliveryStatus.enum';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 import { Repository } from '@/config/types/general/codeReview.type';
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
 export const PULL_REQUESTS_REPOSITORY_TOKEN = Symbol('PullRequestsRepository');
 
@@ -31,6 +32,7 @@ export interface IPullRequestsRepository {
     findByNumberAndRepository(
         prNumber: number,
         repositoryName: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null>;
     findFileWithSuggestions(
         prnumber: number,
@@ -41,6 +43,7 @@ export interface IPullRequestsRepository {
         prNumber: number,
         repoFullName: string,
         filename: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<ISuggestion[]>;
     findSuggestionsByPR(
         organizationId: string,
