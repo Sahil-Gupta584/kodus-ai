@@ -328,13 +328,13 @@ export class RunCodeReviewAutomationUseCase {
 
                 if (!automations?.length) {
                     this.logger.warn({
-                        message: `No automations configuration found. Organization: ${config.team.organization.uuid} - Team: ${config.team.uuid}`,
+                        message: `No automations configuration found. Organization: ${config?.team?.organization?.uuid} - Team: ${config?.team?.uuid}`,
                         context: RunCodeReviewAutomationUseCase.name,
                         metadata: {
                             repositoryName: params.repository?.name,
                             organizationAndTeamData: {
-                                organizationId: config.team.organization.uuid,
-                                teamId: config.team.uuid,
+                                organizationId: config?.team?.organization?.uuid,
+                                teamId: config?.team?.uuid,
                             },
                             automationId: automation.uuid,
                         },
@@ -342,8 +342,8 @@ export class RunCodeReviewAutomationUseCase {
                 } else {
                     const { organizationAndTeamData, automationId } = {
                         organizationAndTeamData: {
-                            organizationId: config.team.organization.uuid,
-                            teamId: config.team.uuid,
+                            organizationId: config?.team?.organization?.uuid,
+                            teamId: config?.team?.uuid,
                         },
                         automationId: automations[0].uuid,
                     };
