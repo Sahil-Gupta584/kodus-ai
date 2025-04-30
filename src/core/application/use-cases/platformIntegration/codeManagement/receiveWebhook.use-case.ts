@@ -1,7 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { RunCodeReviewAutomationUseCase } from '../../../../../ee/automation/runCodeReview.use-case';
 import { ChatWithKodyFromGitUseCase } from './chatWithKodyFromGit.use-case';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { SavePullRequestUseCase } from '../../pullRequests/save.use-case';
@@ -19,6 +18,7 @@ import {
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.use-case';
 
 @Injectable()
 export class ReceiveWebhookUseCase implements IUseCase {
