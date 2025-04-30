@@ -3357,23 +3357,30 @@ export class BitbucketService
                     comment.thumbsUp = 0;
                     comment.thumbsDown = 0;
 
-                    // Use a Set to track users who have reacted (ensures that we are not counting duplicate votes)
-                    const reactedUsers = new Set();
+                    // Use a Map to track the most recent reply from each user
+                    const latestReplies = new Map();
 
                     comment.replies.forEach(reply => {
-                        const userId = reply.user.uuid; // retrieves userId
+                        const userId = reply.user.uuid;
+                        const replyDate = new Date(reply.created_on).getTime()
 
-                        // Only count the reaction if the user hasn't reacted yet
-                        if (!reactedUsers.has(userId)) {
-                            if (reply.content.raw.includes(thumbsUpText)) {
-                                comment.thumbsUp++;
-                            }
-                            if (reply.content.raw.includes(thumbsDownText)) {
-                                comment.thumbsDown++;
-                            }
+                        const previousReply = latestReplies.get(userId);
 
-                            // Mark this user as having reacted
-                            reactedUsers.add(userId);
+                        // If there is no previous reply or the current reply is more recent, update the map
+                        if (!previousReply || new Date(previousReply.created_on).getTime() < replyDate) {
+                            latestReplies.set(userId, {
+                                body: reply.content.raw,
+                                created_on: replyDate,
+                            })
+                        }
+                    });
+
+                    latestReplies.forEach((reply, _) => {
+                        if (reply.body.includes(thumbsUpText)) {
+                            comment.thumbsUp++;
+                        }
+                        if (reply.body.includes(thumbsDownText)) {
+                            comment.thumbsDown++;
                         }
                     });
 
@@ -3401,7 +3408,7 @@ export class BitbucketService
                             number: pr.pull_number,
                             repository: {
                                 id: pr.repository_id,
-                                fullName: pr.repository,
+                                fullName: pr.repository.name,
                             },
                         },
                     }))
