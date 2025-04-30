@@ -321,13 +321,7 @@ export class AzureReposService
             const listOfCriticalIssues =
                 this.getListOfCriticalIssues(criticalComments);
 
-            const thumbsUpBlock = `\`\`\`\n👍\n\`\`\`\n`;
-            const thumbsDownBlock = `\`\`\`\n👎\n\`\`\`\n`;
-
-            const bodyFormatted = `${title}\n\n${listOfCriticalIssues}\n\n\n` +
-                `Was this suggestion helpful? Reply with 👍 or 👎 to help Kody learn from this interaction.\n` +
-                thumbsUpBlock +
-                thumbsDownBlock;
+            const bodyFormatted = `${title}\n\n${listOfCriticalIssues}\n\n\n`;
 
             await this.createSingleIssueComment({
                 body: bodyFormatted,
@@ -742,7 +736,9 @@ export class AzureReposService
                 TranslationsCategory.ReviewComment,
             );
 
-            const bodyFormatted = this.formatBodyForGitHub(
+
+
+            const bodyFormatted = this.formatBodyForAzure(
                 lineComment,
                 repository,
                 translations,
@@ -1938,23 +1934,31 @@ export class AzureReposService
                     comment.thumbsUp = 0;
                     comment.thumbsDown = 0;
 
-                    // Use a Set to track users who have reacted (ensures that we are not counting duplicate votes)
-                    const reactedUsers = new Set();
+                    // Use a Map to track the most recent reply from each user
+                    const latestReplies = new Map();
 
                     comment.replies.forEach(reply => {
-                        const userId = reply.author.id; // retrieves userId
+                        const userId = reply.author.id;
+                        const replyDate = new Date(reply.createdAt).getTime();
 
-                        // Only count the reaction if the user hasn't reacted yet
-                        if (!reactedUsers.has(userId)) {
-                            if (reply.body.includes(thumbsUpText)) {
-                                comment.thumbsUp++;
-                            }
-                            if (reply.body.includes(thumbsDownText)) {
-                                comment.thumbsDown++;
-                            }
+                        // Check if the user has a previous reply stored
+                        const previousReply = latestReplies.get(userId);
 
-                            // Mark this user as having reacted
-                            reactedUsers.add(userId);
+                        // If there is no previous reply or the current reply is more recent, update the map
+                        if (!previousReply || new Date(previousReply.createdAt).getTime() < replyDate) {
+                            latestReplies.set(userId, {
+                                body: reply.body,
+                                createdAt: replyDate,
+                            });
+                        }
+                    });
+
+                    latestReplies.forEach((reply, userId) => {
+                        if (reply.body.includes(thumbsUpText)) {
+                            comment.thumbsUp++;
+                        }
+                        if (reply.body.includes(thumbsDownText)) {
+                            comment.thumbsDown++;
                         }
                     });
 
@@ -1982,7 +1986,7 @@ export class AzureReposService
                             number: pr.pull_number,
                             repository: {
                                 id: pr.repository_id,
-                                fullName: pr.repository,
+                                fullName: pr.repository.name,
                             },
                         },
                     }))
@@ -2939,7 +2943,7 @@ export class AzureReposService
         return `<sub>${text}</sub>\n\n`;
     }
 
-    private formatBodyForGitHub(
+    private formatBodyForAzure(
         lineComment: any,
         repository: any,
         translations: any,
@@ -2964,6 +2968,9 @@ export class AzureReposService
             severityShield,
         ].join(' ');
 
+        const thumbsUpBlock = `\`\`\`\n👍\n\`\`\`\n`;
+        const thumbsDownBlock = `\`\`\`\n👎\n\`\`\`\n`;
+
         return [
             badges,
             codeBlock,
@@ -2972,6 +2979,8 @@ export class AzureReposService
             this.formatSub(translations.talkToKody),
             this.formatSub(translations.feedback) +
             '<!-- kody-codereview -->&#8203;\n&#8203;',
+            thumbsUpBlock,
+            thumbsDownBlock
         ]
             .join('\n')
             .trim();

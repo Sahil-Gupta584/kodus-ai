@@ -80,7 +80,6 @@ export class GetReactionsUseCase implements IUseCase {
                 continue;
             }
 
-
             const commentsLinkedToSuggestions = comments.filter((comment) =>
                 suggestions?.some(
                     (suggestion) => {
