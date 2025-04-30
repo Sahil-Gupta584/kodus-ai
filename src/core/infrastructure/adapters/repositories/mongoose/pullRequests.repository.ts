@@ -17,6 +17,7 @@ import {
 import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 import { Repository } from '@/config/types/general/codeReview.type';
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
 @Injectable()
 export class PullRequestsRepository implements IPullRequestsRepository {
@@ -79,11 +80,13 @@ export class PullRequestsRepository implements IPullRequestsRepository {
     async findByNumberAndRepository(
         pullRequestNumber: number,
         repositoryName: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null> {
         try {
             const pullRequest = await this.pullRequestsModel.findOne({
                 'number': pullRequestNumber,
                 'repository.name': repositoryName,
+                'organizationId': organizationAndTeamData.organizationId,
             });
 
             return pullRequest
@@ -130,6 +133,7 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         prNumber: number,
         repoFullName: string,
         filename: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<ISuggestion[]> {
         const result = await this.pullRequestsModel
             .aggregate([
@@ -137,6 +141,8 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                     $match: {
                         'number': prNumber,
                         'repository.fullName': repoFullName,
+                        'organizationId':
+                            organizationAndTeamData.organizationId,
                     },
                 },
                 {

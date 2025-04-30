@@ -13,10 +13,6 @@ import {
     IExecuteAutomationService,
 } from '@/shared/domain/contracts/execute.automation.service.contracts';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import {
-    AUTH_INTEGRATION_SERVICE_TOKEN,
-    IAuthIntegrationService,
-} from '@/core/domain/authIntegrations/contracts/auth-integration.service.contracts';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import {
     IIntegrationConfigService,
@@ -27,13 +23,17 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { stripCurlyBracesFromUUIDs } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-bitbucket.type';
+import {
+    ILicenseService,
+    LICENSE_SERVICE_TOKEN,
+} from '@/ee/license/interfaces/license.interface';
+import { environment } from '@/ee/configs/environment';
 
 @Injectable()
 export class RunCodeReviewAutomationUseCase {
-    constructor(
-        @Inject(AUTH_INTEGRATION_SERVICE_TOKEN)
-        private readonly authIntegrationService: IAuthIntegrationService,
+    public readonly isCloud: boolean;
 
+    constructor(
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
 
@@ -46,10 +46,15 @@ export class RunCodeReviewAutomationUseCase {
         @Inject(EXECUTE_AUTOMATION_SERVICE_TOKEN)
         private readonly executeAutomation: IExecuteAutomationService,
 
+        @Inject(LICENSE_SERVICE_TOKEN)
+        private readonly licenseService: ILicenseService,
+
         private readonly codeManagement: CodeManagementService,
 
         private logger: PinoLoggerService,
-    ) {}
+    ) {
+        this.isCloud = environment.API_CLOUD_MODE;
+    }
 
     async execute(params: {
         payload: any;
@@ -88,12 +93,27 @@ export class RunCodeReviewAutomationUseCase {
             const repository = mappedPlatform.mapRepository({
                 payload: sanitizedPayload,
             });
+
             if (!repository) {
                 return;
             }
 
+            const mappedUsers = mappedPlatform.mapUsers({
+                payload: sanitizedPayload,
+            });
+
+            let pullRequestData = null;
+            const pullRequest = mappedPlatform.mapPullRequest({
+                payload: sanitizedPayload,
+            });
+
             const teamWithAutomation = await this.findTeamWithActiveCodeReview({
                 repository,
+                platformType,
+                userGitId:
+                    mappedUsers?.user?.id?.toString() ||
+                    mappedUsers?.user?.uuid?.toString(),
+                prNumber: pullRequest?.number,
             });
 
             if (!teamWithAutomation) {
@@ -103,11 +123,6 @@ export class RunCodeReviewAutomationUseCase {
             const { organizationAndTeamData: teamData, automationId } =
                 teamWithAutomation;
             organizationAndTeamData = teamData;
-
-            let pullRequestData = null;
-            const pullRequest = mappedPlatform.mapPullRequest({
-                payload: sanitizedPayload,
-            });
 
             if (!pullRequest) {
                 // try to get the PR details from the code management when it's a github issue
@@ -272,6 +287,9 @@ export class RunCodeReviewAutomationUseCase {
 
     async findTeamWithActiveCodeReview(params: {
         repository: { id: string; name: string };
+        platformType: PlatformType;
+        userGitId?: string;
+        prNumber?: number;
     }): Promise<{
         organizationAndTeamData: OrganizationAndTeamData;
         automationId: string;
@@ -285,6 +303,7 @@ export class RunCodeReviewAutomationUseCase {
                 await this.integrationConfigService.findIntegrationConfigWithTeams(
                     IntegrationConfigKey.REPOSITORIES,
                     params.repository.id,
+                    params.platformType,
                 );
 
             if (!configs?.length) {
@@ -307,20 +326,174 @@ export class RunCodeReviewAutomationUseCase {
                     config.team.uuid,
                 );
 
-                if (automations?.length) {
-                    return {
+                if (!automations?.length) {
+                    this.logger.warn({
+                        message: `No automations configuration found. Organization: ${config?.team?.organization?.uuid} - Team: ${config?.team?.uuid}`,
+                        context: RunCodeReviewAutomationUseCase.name,
+                        metadata: {
+                            repositoryName: params.repository?.name,
+                            organizationAndTeamData: {
+                                organizationId: config?.team?.organization?.uuid,
+                                teamId: config?.team?.uuid,
+                            },
+                            automationId: automation.uuid,
+                        },
+                    });
+                } else {
+                    const { organizationAndTeamData, automationId } = {
                         organizationAndTeamData: {
-                            organizationId: config.team.organization.uuid,
-                            teamId: config.team.uuid,
+                            organizationId: config?.team?.organization?.uuid,
+                            teamId: config?.team?.uuid,
                         },
                         automationId: automations[0].uuid,
                     };
+
+                    if (this.isCloud) {
+                        const validation =
+                            await this.licenseService.validateOrganizationLicense(
+                                organizationAndTeamData,
+                            );
+
+                        if (!validation?.valid) {
+                            this.logger.warn({
+                                message: `License not active - PR#${params?.prNumber}`,
+                                context: RunCodeReviewAutomationUseCase.name,
+                                metadata: {
+                                    organizationAndTeamData,
+                                    prNumber: params?.prNumber,
+                                },
+                            });
+
+                            await this.createNoActiveSubscriptionComment({
+                                organizationAndTeamData,
+                                repository: params.repository,
+                                prNumber: params?.prNumber,
+                                noActiveSubscriptionType: 'general',
+                            });
+
+                            return null;
+                        }
+
+                        if (
+                            validation?.valid &&
+                            validation?.subscriptionStatus === 'trial'
+                        ) {
+                            return { organizationAndTeamData, automationId };
+                        }
+
+                        if (validation?.valid) {
+                            const users =
+                                await this.licenseService.getAllUsersWithLicense(
+                                    organizationAndTeamData,
+                                );
+
+                            if (params?.userGitId) {
+                                const user = users?.find(
+                                    (user) =>
+                                        user?.git_id === params?.userGitId,
+                                );
+
+                                if (user) {
+                                    return {
+                                        organizationAndTeamData,
+                                        automationId,
+                                    };
+                                }
+
+                                this.logger.warn({
+                                    message: `User License not found - PR#${params?.prNumber}`,
+                                    context:
+                                        RunCodeReviewAutomationUseCase.name,
+                                    metadata: {
+                                        organizationAndTeamData,
+                                        prNumber: params?.prNumber,
+                                    },
+                                });
+
+                                await this.createNoActiveSubscriptionComment({
+                                    organizationAndTeamData,
+                                    repository: params.repository,
+                                    prNumber: params?.prNumber,
+                                    noActiveSubscriptionType: 'user',
+                                });
+
+                                return null;
+                            }
+                        }
+                    } else {
+                        return {
+                            organizationAndTeamData,
+                            automationId,
+                        };
+                    }
                 }
             }
 
             return null;
         } catch (error) {
+            this.logger.error({
+                message: 'Automation, Repository OR License not Active',
+                context: RunCodeReviewAutomationUseCase.name,
+                error: error,
+                metadata: {
+                    ...params,
+                },
+            });
             throw new BadRequestException(error);
         }
+    }
+
+    private async createNoActiveSubscriptionComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        prNumber: number;
+        noActiveSubscriptionType: 'user' | 'general';
+    }) {
+        const repositoryPayload = {
+            id: params.repository.id,
+            name: params.repository.name,
+        };
+
+        let message = await this.noActiveSubscriptionGeneralMessage();
+
+        if (params.noActiveSubscriptionType === 'user') {
+            message = await this.noActiveSubscriptionForUser();
+        }
+
+        await this.codeManagement.createIssueComment({
+            organizationAndTeamData: params.organizationAndTeamData,
+            repository: repositoryPayload,
+            prNumber: params?.prNumber,
+            body: message,
+        });
+
+        this.logger.log({
+            message: `No active subscription found for PR#${params?.prNumber}`,
+            context: RunCodeReviewAutomationUseCase.name,
+            metadata: {
+                organizationAndTeamData: params.organizationAndTeamData,
+                repository: repositoryPayload,
+                prNumber: params?.prNumber,
+            },
+        });
+
+        return;
+    }
+
+    private async noActiveSubscriptionGeneralMessage(): Promise<string> {
+        return (
+            '## Your trial has ended! 😢\n\n' +
+            'To keep getting reviews, activate your plan [here](https://app.kodus.io/settings/subscription).\n\n' +
+            'Got questions about plans or want to see if we can extend your trial? Talk to our founders [here](https://cal.com/gabrielmalinosqui/30min).😎\n\n' +
+            '<!-- kody-codereview -->'
+        );
+    }
+
+    private async noActiveSubscriptionForUser(): Promise<string> {
+        return (
+            '## User License not found! 😢\n\n' +
+            'To perform the review, ask the admin to add a subscription for your user in [subscription management](https://app.kodus.io/settings/subscription).\n\n' +
+            '<!-- kody-codereview -->'
+        );
     }
 }

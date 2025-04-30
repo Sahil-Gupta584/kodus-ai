@@ -1,7 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { RunCodeReviewAutomationUseCase } from '../../automation/runCodeReview.use-case';
 import { ChatWithKodyFromGitUseCase } from './chatWithKodyFromGit.use-case';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { SavePullRequestUseCase } from '../../pullRequests/save.use-case';
@@ -19,6 +18,7 @@ import {
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.use-case';
 
 @Injectable()
 export class ReceiveWebhookUseCase implements IUseCase {
@@ -62,6 +62,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                     if (
                         await this.shouldTriggerCodeReviewForBitbucket(
                             params.payload,
+                            params.platformType,
                         )
                     ) {
                         await this.savePullRequestUseCase.execute(params);
@@ -73,6 +74,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
                     if (
                         await this.shouldTriggerCodeReviewForBitbucket(
                             params.payload,
+                            params.platformType,
                         )
                     ) {
                         await this.savePullRequestUseCase.execute(params);
@@ -190,10 +192,15 @@ export class ReceiveWebhookUseCase implements IUseCase {
                     name: payload.repository.name,
                 };
 
+                const userGitId = await this.getUserGitId(payload, platformType);
+
                 const teamData =
                     await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview(
                         {
                             repository,
+                            platformType,
+                            userGitId,
+                            prNumber: payload.issue.number,
                         },
                     );
 
@@ -289,6 +296,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
     // We can't know when a Bitbucket PR was updated due to a new commit or something else like new description via the webhook alone
     private async shouldTriggerCodeReviewForBitbucket(
         payload: any,
+        platformType: PlatformType,
     ): Promise<boolean> {
         if (!this.isBitbucketPullRequestEvent(payload)) {
             return false;
@@ -301,6 +309,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
             await this.integrationConfigService.findIntegrationConfigWithTeams(
                 IntegrationConfigKey.REPOSITORIES,
                 repoId,
+                platformType,
             );
 
         if (!configs || !configs?.length) {
@@ -328,6 +337,7 @@ export class ReceiveWebhookUseCase implements IUseCase {
             await this.pullRequestsService.findByNumberAndRepository(
                 pullrequest.id,
                 repository.name,
+                organizationAndTeamData,
             );
 
         if (storedPR && pullrequest.state === 'OPEN') {
@@ -350,5 +360,13 @@ export class ReceiveWebhookUseCase implements IUseCase {
             default:
                 return false;
         }
+    }
+
+    private async getUserGitId(payload: any, platformType: PlatformType) {
+        if (platformType === PlatformType.GITHUB) {
+            return payload?.sender?.id.toString();
+        }
+
+        return null;
     }
 }
