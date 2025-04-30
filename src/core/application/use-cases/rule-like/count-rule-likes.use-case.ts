@@ -7,7 +7,7 @@ export class CountRuleLikesUseCase {
         @Inject(RULE_LIKE_SERVICE_TOKEN)
         private readonly ruleLikeService: IRuleLikeService) {}
 
-    async execute(ruleId: string) {
+    async execute(ruleId: string): Promise<number> {
         return this.ruleLikeService.countByRule(ruleId);
     }
 } 
