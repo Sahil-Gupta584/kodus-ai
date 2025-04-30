@@ -1953,7 +1953,7 @@ export class AzureReposService
                         }
                     });
 
-                    latestReplies.forEach((reply, userId) => {
+                    latestReplies.forEach((reply, _) => {
                         if (reply.body.includes(thumbsUpText)) {
                             comment.thumbsUp++;
                         }
