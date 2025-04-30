@@ -12,7 +12,10 @@ export class GetTopRulesByLanguageUseCase {
         private readonly ruleLikeService: IRuleLikeService,
     ) {}
 
-    async execute(language: ProgrammingLanguage, limit?: number) {
+    async execute(
+        language: ProgrammingLanguage,
+        limit?: number,
+    ): Promise<{ ruleId: string; count: number }[]> {
         return this.ruleLikeService.topByLanguage(language, limit);
     }
 }

@@ -4,6 +4,7 @@ import {
     IRuleLikeService,
     RULE_LIKE_SERVICE_TOKEN,
 } from '@/core/domain/kodyRules/contracts/ruleLike.service.contract';
+import { RuleLikeEntity } from '@/core/domain/kodyRules/entities/ruleLike.entity';
 
 @Injectable()
 export class SetRuleLikeUseCase {
@@ -17,7 +18,7 @@ export class SetRuleLikeUseCase {
         language: ProgrammingLanguage,
         liked: boolean,
         userId?: string,
-    ) {
+    ): Promise<any> {
         return this.ruleLikeService.setLike(ruleId, language, liked, userId);
     }
 }
