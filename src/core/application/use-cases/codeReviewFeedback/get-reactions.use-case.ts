@@ -88,7 +88,7 @@ export class GetReactionsUseCase implements IUseCase {
                             return suggestion?.comment?.id === comment?.threadId;
                         }
                         else {
-                            return (comment?.notes?.[0]?.id || comment?.id);
+                            return suggestion?.comment?.id === (comment?.notes?.[0]?.id || comment?.id);
                         }
                     }
                 ),
