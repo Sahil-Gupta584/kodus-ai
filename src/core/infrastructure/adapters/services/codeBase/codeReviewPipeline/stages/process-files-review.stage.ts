@@ -864,8 +864,18 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context?.codeReviewConfig?.kodyFineTuningConfig?.enabled,
                 );
 
+            const keepedSuggestions: Partial<CodeSuggestion>[] = getDataPipelineKodyFineTunning?.keepedSuggestions?.map(suggestion => {
+                const { suggestionEmbed, ...rest } = suggestion as any;
+                return rest;
+            });
+
+            const discardedSuggestions: Partial<CodeSuggestion>[] = getDataPipelineKodyFineTunning?.discardedSuggestions?.map(suggestion => {
+                const { suggestionEmbed, ...rest } = suggestion as any;
+                return rest;
+            });
+
             discardedSuggestionsByKodyFineTuning.push(
-                ...getDataPipelineKodyFineTunning.discardedSuggestions.map(
+                ...discardedSuggestions.map(
                     (suggestion) => {
                         suggestion.priorityStatus =
                             PriorityStatus.DISCARDED_BY_KODY_FINE_TUNING;
@@ -880,8 +890,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context?.pullRequest?.number,
                     file,
                     patchWithLinesStr,
-                    getDataPipelineKodyFineTunning?.keepedSuggestions ??
-                        suggestionsWithId,
+                    keepedSuggestions,
                     context?.codeReviewConfig?.languageResultPrompt,
                     reviewModeResponse,
                 );
@@ -891,8 +900,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
             discardedSuggestionsBySafeGuard.push(
                 ...this.suggestionService.getDiscardedSuggestions(
-                    getDataPipelineKodyFineTunning?.keepedSuggestions ??
-                        suggestionsWithId,
+                    keepedSuggestions,
                     safeGuardResponse?.suggestions || [],
                     PriorityStatus.DISCARDED_BY_SAFEGUARD,
                 ),
