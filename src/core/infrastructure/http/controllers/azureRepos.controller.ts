@@ -12,7 +12,7 @@ export class AzureReposController {
     constructor(
         private readonly receiveWebhookUseCase: ReceiveWebhookUseCase,
         private logger: PinoLoggerService,
-        private cacheService: CacheService,
+        private readonly cacheService: CacheService,
     ) {}
 
     @Post('/webhook')
@@ -77,11 +77,6 @@ export class AzureReposController {
                 context: AzureReposController.name,
                 error: error,
             });
-
-            // Garante que a resposta é enviada mesmo em caso de erro
-            if (!res.headersSent) {
-                return res.status(HttpStatus.OK).send('Webhook received');
-            }
         }
     }
 
