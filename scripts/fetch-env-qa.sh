@@ -130,6 +130,7 @@ KEYS=(
     "/qa/kodus-orchestrator/CODE_MANAGEMENT_WEBHOOK_TOKEN"
 
     "/qa/kodus-orchestrator/GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK"
+    "/qa/kodus-orchestrator/GLOBAL_KODUS_SERVICE_BILLING"
 )
 
 # Lista de todas as chaves que você precisa

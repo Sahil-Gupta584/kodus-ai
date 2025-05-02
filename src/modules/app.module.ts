@@ -61,6 +61,7 @@ import { KodyFineTuningContextModule } from '@/ee/kodyFineTuning/fineTuningConte
 import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeContext.module';
 import { GlobalParametersModule } from './global-parameters.module';
 import { LicenseModule } from '@/ee/license/license.module';
+import { RuleLikeModule } from './ruleLike.module';
 
 @Module({
     imports: [
@@ -123,7 +124,8 @@ import { LicenseModule } from '@/ee/license/license.module';
         KodyFineTuningContextModule,
         KodyASTAnalyzeContextModule,
         GlobalParametersModule,
-        LicenseModule
+        LicenseModule,
+        RuleLikeModule,
     ],
     providers: [
         {
