@@ -84,7 +84,7 @@ export class GetReactionsUseCase implements IUseCase {
                 suggestions?.some(
                     (suggestion) => {
                         // We dont save the commentId for azure, but the threadId.
-                        if (comment.threadId) {
+                        if (comment?.threadId) {
                             return suggestion?.comment?.id === comment?.threadId;
                         }
                         else {

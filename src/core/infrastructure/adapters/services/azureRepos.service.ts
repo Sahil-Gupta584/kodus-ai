@@ -1937,8 +1937,13 @@ export class AzureReposService
                     const userReactions = new Map();
 
                     comment.replies.forEach(reply => {
-                        const userId = reply.author.id;
-                        const replyBody = reply.body;
+                        const userId = reply?.author?.id;
+                        const replyBody = reply?.body;
+
+                        // Check if values were found
+                        if (!userId || typeof replyBody !== 'string') {
+                            return; // Skip this reply if data is missing
+                        }
 
                         // Initialize user reaction if not already present
                         if (!userReactions.has(userId)) {
