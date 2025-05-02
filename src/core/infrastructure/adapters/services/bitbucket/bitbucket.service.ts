@@ -3357,30 +3357,29 @@ export class BitbucketService
                     comment.thumbsUp = 0;
                     comment.thumbsDown = 0;
 
-                    // Use a Map to track the most recent reply from each user
-                    const latestReplies = new Map();
+                    const userReactions = new Map();
 
                     comment.replies.forEach(reply => {
                         const userId = reply.user.uuid;
-                        const replyDate = new Date(reply.created_on).getTime()
+                        const replyBody = reply.content.raw;
 
-                        const previousReply = latestReplies.get(userId);
-
-                        // If there is no previous reply or the current reply is more recent, update the map
-                        if (!previousReply || new Date(previousReply.created_on).getTime() < replyDate) {
-                            latestReplies.set(userId, {
-                                body: reply.content.raw,
-                                created_on: replyDate,
-                            })
+                        // Initialize user reaction if not already present
+                        if (!userReactions.has(userId)) {
+                            userReactions.set(userId, { thumbsUp: false, thumbsDown: false });
                         }
-                    });
 
-                    latestReplies.forEach((reply, _) => {
-                        if (reply.body.includes(thumbsUpText)) {
+                        const userReaction = userReactions.get(userId);
+
+                        // Check for thumbs up reaction
+                        if (replyBody.includes(thumbsUpText) && !userReaction.thumbsUp) {
                             comment.thumbsUp++;
+                            userReaction.thumbsUp = true;
                         }
-                        if (reply.body.includes(thumbsDownText)) {
+
+                        // Check for thumbs down reaction
+                        if (replyBody.includes(thumbsDownText) && !userReaction.thumbsDown) {
                             comment.thumbsDown++;
+                            userReaction.thumbsDown = true;
                         }
                     });
 
@@ -3407,7 +3406,7 @@ export class BitbucketService
                             id: pr.id,
                             number: pr.pull_number,
                             repository: {
-                                id: pr.repository_id,
+                                id: pr.repository.id,
                                 fullName: pr.repository.name,
                             },
                         },
