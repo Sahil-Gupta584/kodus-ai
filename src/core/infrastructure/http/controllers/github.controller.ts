@@ -38,6 +38,17 @@ export class GithubController {
         const event = req.headers['x-github-event'] as string;
         const payload = req.body as any;
 
+        if (event === 'pull_request') {
+            if (
+                payload?.action !== 'opened' &&
+                payload?.action !== 'synchronize' &&
+                payload?.action !== 'closed' &&
+                payload?.action !== 'reopened'
+            ) {
+                return res.status(HttpStatus.OK).send('Webhook received');
+            }
+        }
+
         setImmediate(() => {
             this.logger.log({
                 message: `Webhook received, ${event}`,
