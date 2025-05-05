@@ -19,11 +19,19 @@ export interface AzureRepoCommitRef {
     url: string;
 }
 
+export enum AzurePRStatus {
+    ABANDONED = "abandoned", // closed
+    ACTIVE = "active", // open
+    COMPLETED = "completed", // merged
+    NOT_SET = "notSet", // Documentation says it's the default state.
+    ALL = "all" // Used in pull request search criteria to include all statuses.
+}
+
 export interface AzureRepoPullRequest {
     repository: Partial<AzureReposRepository>;
     pullRequestId: number;
     codeReviewId: number;
-    status: string;
+    status: AzurePRStatus;
     createdBy: AzureRepoIdentity;
     creationDate: string;
     title: string;
@@ -39,4 +47,4 @@ export interface AzureRepoPullRequest {
     reviewers: AzureRepoIdentity[];
     url: string;
     supportsIterations: boolean;
-} 
+}

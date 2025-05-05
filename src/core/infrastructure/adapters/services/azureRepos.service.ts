@@ -1,3 +1,4 @@
+
 import {
     AUTH_INTEGRATION_SERVICE_TOKEN,
     IAuthIntegrationService,
@@ -19,6 +20,7 @@ import {
     PullRequestWithFiles,
     PullRequestReviewComment,
     OneSentenceSummaryItem,
+    ReactionsInComments,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { v4 as uuidv4, v4 } from 'uuid';
@@ -66,6 +68,7 @@ import {
 } from '@/shared/utils/translations/translations';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 import { KODY_CRITICAL_ISSUE_COMMENT_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
+import { AzurePRStatus } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
@@ -85,7 +88,6 @@ export class AzureReposService
         | 'findTeamAndOrganizationIdByConfigKey'
         | 'createResponseToComment'
         | 'getAuthenticationOAuthToken'
-        | 'countReactions'
         | 'getRepositoryAllFiles'
         | 'mergePullRequest'
         | 'getUserById'
@@ -106,6 +108,7 @@ export class AzureReposService
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
     ) { }
+
 
 
     async markReviewCommentAsResolved(params: {
@@ -317,7 +320,8 @@ export class AzureReposService
                 '# Found critical issues, please review the requested changes';
             const listOfCriticalIssues =
                 this.getListOfCriticalIssues(criticalComments);
-            const bodyFormatted = `${title}\n\n${listOfCriticalIssues}`;
+
+            const bodyFormatted = `${title}\n\n${listOfCriticalIssues}\n\n\n`;
 
             await this.createSingleIssueComment({
                 body: bodyFormatted,
@@ -443,7 +447,34 @@ export class AzureReposService
                     }));
             });
 
-            return comments.sort(
+            // Group comments by threadId
+            const groupedComments = comments.reduce((acc, comment) => {
+                if (!acc[comment.threadId]) {
+                    acc[comment.threadId] = [];
+                }
+                acc[comment.threadId].push(comment);
+
+                return acc;
+            }, {});
+
+            // Creates final comment array with replies
+            const commentsWithReplyArray = Object.values(groupedComments).flatMap((group: any) => {
+                // Sort Comments by created_at
+                group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+                // The first comment of the sorted group will be the parent
+                const parentComment = {
+                    ...group[0],
+                    replies: [],
+                }
+
+                // The rest are replies
+                parentComment.replies = group.slice(1);
+
+                return parentComment;
+            })
+
+            return commentsWithReplyArray.sort(
                 (a, b) =>
                     new Date(b.createdAt).getTime() -
                     new Date(a.createdAt).getTime(),
@@ -705,7 +736,9 @@ export class AzureReposService
                 TranslationsCategory.ReviewComment,
             );
 
-            const bodyFormatted = this.formatBodyForGitHub(
+
+
+            const bodyFormatted = this.formatBodyForAzure(
                 lineComment,
                 repository,
                 translations,
@@ -1768,11 +1801,23 @@ export class AzureReposService
 
     async getPullRequestsWithFiles(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        filters?: { period?: { startDate?: string; endDate?: string } };
+        filters?: { period?: { startDate?: string; endDate?: string }, prStatus?: string };
     }): Promise<PullRequestWithFiles[] | null> {
         try {
             const { organizationAndTeamData } = params;
             const filters = params.filters ?? {};
+
+            const { prStatus } = filters;
+
+            const stateMap = {
+                open: AzurePRStatus.ACTIVE,
+                closed: AzurePRStatus.ABANDONED,
+                merged: AzurePRStatus.COMPLETED,
+            };
+
+            // Normalize the input to lowercase and look it up in the stateMap
+            const normalizedStatus = prStatus ? stateMap[prStatus.toLowerCase()] || AzurePRStatus.ACTIVE : AzurePRStatus.ACTIVE;
+
             const { startDate, endDate } = filters.period || {};
 
             const repositories: Repositories[] =
@@ -1800,13 +1845,14 @@ export class AzureReposService
                                 repositoryId: repo.id,
                                 startDate,
                                 endDate,
+                                status: normalizedStatus,
                             },
                         );
                     return { repo, prs };
                 }),
             );
 
-            const pullRequestsWithFiles: PullRequestWithFiles[] = [];
+            let pullRequestsWithFiles: PullRequestWithFiles[] = [];
 
             await Promise.all(
                 reposWithPRs.map(async ({ repo, prs }) => {
@@ -1840,9 +1886,22 @@ export class AzureReposService
 
                             const diffs =
                                 changes.map((change) => change.item) || [];
-                            return { pr, diffs };
+
+                            const prWithFileChanges: PullRequestWithFiles = {
+                                id: pr.pullRequestId,
+                                pull_number: pr.pullRequestId,
+                                state: pr.status,
+                                title: pr.title,
+                                repository: { id: repo.id, name: repo.name },
+                                repositoryData: repo as any,
+                                pullRequestFiles: diffs as any,
+                            }
+
+                            return prWithFileChanges
                         }),
                     );
+
+                    pullRequestsWithFiles.push(...prsWithDiffs);
                 }),
             );
 
@@ -1853,6 +1912,98 @@ export class AzureReposService
                 context: this.getPullRequestsWithFiles.name,
                 error: error,
                 metadata: { params },
+            });
+            return null;
+        }
+    }
+
+    async countReactions(params: {
+        comments: any[],
+        pr: any,
+    }): Promise<any[] | null> {
+        try {
+            const { comments, pr } = params;
+
+            const thumbsUpText = '👍';
+            const thumbsDownText = '👎';
+
+            const commentsWithNumberOfReactions = comments
+                .filter((comment: any) => (comment.replies && comment.replies.length > 0))
+                .map((comment: any) => {
+                    comment.totalReactions = 0;
+                    comment.thumbsUp = 0;
+                    comment.thumbsDown = 0;
+
+                    const userReactions = new Map();
+
+                    comment.replies.forEach(reply => {
+                        const userId = reply?.author?.id;
+                        const replyBody = reply?.body;
+
+                        // Check if values were found
+                        if (!userId || typeof replyBody !== 'string') {
+                            return; // Skip this reply if data is missing
+                        }
+
+                        // Initialize user reaction if not already present
+                        if (!userReactions.has(userId)) {
+                            userReactions.set(userId, { thumbsUp: false, thumbsDown: false });
+                        }
+
+                        const userReaction = userReactions.get(userId);
+
+                        // Check for thumbs up reaction
+                        if (replyBody.includes(thumbsUpText) && !userReaction.thumbsUp) {
+                            comment.thumbsUp++;
+                            userReaction.thumbsUp = true;
+                        }
+
+                        // Check for thumbs down reaction
+                        if (replyBody.includes(thumbsDownText) && !userReaction.thumbsDown) {
+                            comment.thumbsDown++;
+                            userReaction.thumbsDown = true;
+                        }
+                    });
+
+                    comment.totalReactions = comment.thumbsUp + comment.thumbsDown;
+
+                    return comment;
+                });
+
+            const reactionsInComments: ReactionsInComments[] =
+                commentsWithNumberOfReactions
+                    .filter((comment) => comment.totalReactions > 0)
+                    .map((comment: any) => ({
+                        reactions: {
+                            thumbsUp: comment.thumbsUp,
+                            thumbsDown: comment.thumbsDown,
+                        },
+                        comment: {
+                            id: comment.threadId,
+                            body: comment.body,
+                            pull_request_review_id: pr.pull_number,
+                        },
+                        pullRequest: {
+                            id: pr.id,
+                            number: pr.pull_number,
+                            repository: {
+                                id: pr.repository.id,
+                                fullName: pr.repository.name,
+                            },
+                        },
+                    }));
+
+            return reactionsInComments;
+
+        } catch (error) {
+            this.logger.error({
+                message: `Error when trying to count reactions in PR${params.pr.pull_number}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService countReactions',
+                error: error,
+                metadata: {
+                    params,
+                },
             });
             return null;
         }
@@ -2792,7 +2943,7 @@ export class AzureReposService
         return `<sub>${text}</sub>\n\n`;
     }
 
-    private formatBodyForGitHub(
+    private formatBodyForAzure(
         lineComment: any,
         repository: any,
         translations: any,
@@ -2817,6 +2968,9 @@ export class AzureReposService
             severityShield,
         ].join(' ');
 
+        const thumbsUpBlock = `\`\`\`\n👍\n\`\`\`\n`;
+        const thumbsDownBlock = `\`\`\`\n👎\n\`\`\`\n`;
+
         return [
             badges,
             codeBlock,
@@ -2825,6 +2979,8 @@ export class AzureReposService
             this.formatSub(translations.talkToKody),
             this.formatSub(translations.feedback) +
             '<!-- kody-codereview -->&#8203;\n&#8203;',
+            thumbsUpBlock,
+            thumbsDownBlock
         ]
             .join('\n')
             .trim();

@@ -39,7 +39,7 @@ export type PullRequestWithFiles = {
     pull_number: number;
     state: string;
     title: string;
-    repository: string;
+    repository: string | { id: string, name: string };
     repositoryData?: Repository;
     pullRequestFiles: PullRequestFile[] | null;
 };
@@ -58,6 +58,26 @@ export type PullRequestReviewComment = {
     }
     createdAt?: string;
     updatedAt?: string;
+}
+
+export type ReactionsInComments = {
+    reactions: {
+        thumbsUp: number;
+        thumbsDown: number;
+    }
+    comment: {
+        id: string;
+        body: string;
+        pull_request_review_id: string;
+    }
+    pullRequest: {
+        id: string;
+        number: number;
+        repository: {
+            id: string;
+            fullName: string;
+        }
+    }
 }
 
 export type PullRequestsWithChangesRequested = {

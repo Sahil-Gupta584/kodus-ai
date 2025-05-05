@@ -11,6 +11,7 @@ import {
     OneSentenceSummaryItem,
     PullRequestsWithChangesRequested,
     PullRequestReviewState,
+    ReactionsInComments,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
@@ -80,7 +81,6 @@ export class BitbucketService
         | 'getDataForCalculateDeployFrequency'
         | 'getCommitsByReleaseMode'
         | 'getAuthenticationOAuthToken'
-        | 'countReactions'
         | 'getRepositoryAllFiles'
     > {
     constructor(
@@ -945,6 +945,17 @@ export class BitbucketService
             const { organizationAndTeamData } = params;
 
             const filters = params?.filters ?? {};
+            const { prStatus } = filters ?? "OPEN";
+
+            const stateMap = {
+                open: PullRequestState.OPENED.toUpperCase(),
+                closed: "DECLINED",
+                merged: PullRequestState.MERGED.toUpperCase(),
+            };
+
+            // Normalize the input to lowercase and look it up in the stateMap
+            const normalizedStatus = stateMap[prStatus.toLowerCase()] || PullRequestState.OPENED; // Default to OPENED if not found
+
             const { startDate, endDate } = filters?.period || {};
 
             const bitbucketAuthDetail = await this.getAuthDetails(
@@ -970,17 +981,20 @@ export class BitbucketService
                         .list({
                             repo_slug: `{${repo.id}}`,
                             workspace: `{${repo.workspaceId}}`,
+                            state: normalizedStatus
                         })
                         .then((res) =>
                             this.getPaginatedResults(bitbucketAPI, res),
                         );
 
                     if (startDate && endDate) {
-                        prs = prs.filter(
-                            (pr) =>
-                                new Date(pr.created_on) >= startDate &&
-                                new Date(pr.created_on) <= endDate,
-                        );
+                        const start = new Date(startDate);
+                        const end = new Date(endDate);
+
+                        prs = prs.filter((pr) => {
+                            const createdOn = new Date(pr.created_on);
+                            return createdOn >= start && createdOn <= end;
+                        });
                     }
 
                     return { repo, prs };
@@ -1025,7 +1039,10 @@ export class BitbucketService
                                 pull_number: pr.id,
                                 state: pr.state,
                                 title: pr.title,
-                                repository: repo.name,
+                                repository: {
+                                    id: repo.id,
+                                    name: repo.name,
+                                },
                                 pullRequestFiles,
                             };
                         });
@@ -1456,7 +1473,13 @@ export class BitbucketService
                 `${lineComment?.body?.improvedCode}\n` +
                 `\`\`\`\n` +
                 `${lineComment?.body?.suggestionContent}\n\n\n\n` +
-                `${lineComment?.body?.actionStatement ? `${lineComment?.body?.actionStatement}\n\n\n\n` : ''}`;
+                `${lineComment?.body?.actionStatement ? `${lineComment?.body?.actionStatement}\n\n\n\n` : ''}` +
+                `Was this suggestion helpful? reply with 👍 or 👎 to help Kody learn from this interaction.\n`;
+
+            const thumbsUpBlock = `\`\`\`\n👍\n\`\`\`\n`;
+            const thumbsDownBlock = `\`\`\`\n👎\n\`\`\`\n`;
+
+            const updatedBodyFormatted = bodyFormatted + thumbsUpBlock + thumbsDownBlock;
 
             // added ts-ignore because _body expects a type property but Bitbucket rejects it
             const comment = await bitbucketAPI.pullrequests
@@ -1467,7 +1490,7 @@ export class BitbucketService
                     // @ts-ignore
                     _body: {
                         content: {
-                            raw: bodyFormatted,
+                            raw: updatedBodyFormatted,
                         },
                         inline: {
                             path: lineComment?.path,
@@ -2068,23 +2091,52 @@ export class BitbucketService
                 filters.repository.id,
             );
 
+            if (!workspace) {
+                return null;
+            }
+
             const bitbucketAPI =
                 this.instanceBitbucketApi(bitbucketAuthDetails);
 
-            const comments = await bitbucketAPI.pullrequests
-                .listComments({
-                    pull_request_id: filters.pullRequestNumber,
-                    repo_slug: `{${filters.repository.id}}`,
-                    workspace: `{${workspace}}`,
-                })
-                .then((res) => this.getPaginatedResults(bitbucketAPI, res));
+            if (!bitbucketAPI) {
+                return null;
+            }
+            const comments
+                = await bitbucketAPI.pullrequests
+                    .listComments({
+                        pull_request_id: filters.pullRequestNumber,
+                        repo_slug: `{${filters.repository.id}}`,
+                        workspace: `{${workspace}}`,
+                    })
+                    .then((res) => this.getPaginatedResults(bitbucketAPI, res));
 
-            return comments
+            // Adds a replies field to each comment.
+            const commentMap = comments.reduce((acc, comment) => {
+                // Initialize the replies field and map the comment by ID
+                comment.replies = [];
+                acc[comment.id] = comment;
+
+                // If the comment has a parent, add it to the parent's replies array
+                if (comment.parent) {
+                    const parentId = comment.parent.id;
+                    if (acc[parentId]) {
+                        acc[parentId].replies.push(comment);
+                    }
+                }
+
+                return acc;
+            }, {});
+
+            const organizedComments: any = Object.values(commentMap);
+
+            return organizedComments
                 .map((comment) => ({
                     id: comment?.id,
                     body: comment?.content?.raw,
                     createdAt: comment?.created_on,
                     originalCommit: comment?.pullrequest?.source?.commit?.hash,
+                    parent: comment?.parent, // present if the comment is a replies to another comment.
+                    replies: comment?.replies,
                     author: {
                         id: this.sanitizeUUId(comment?.user?.uuid),
                         username: comment?.user?.display_name,
@@ -3278,7 +3330,95 @@ export class BitbucketService
             this.logger.error({
                 message: 'Error to get pull requests with files',
                 context: BitbucketService.name,
-                serviceName: 'BitbucketService getPullRequestsWithFiles',
+                serviceName: 'BitbucketService getPullRequestReviewComments',
+                error: error,
+                metadata: {
+                    params,
+                },
+            });
+            return null;
+        }
+    }
+
+    async countReactions(params: {
+        comments: any[],
+        pr: any
+    }): Promise<any[]> {
+        try {
+            const { comments, pr } = params;
+
+            const thumbsUpText = '👍';
+            const thumbsDownText = '👎';
+
+            const commentsWithNumberOfReactions = comments
+                .filter((comment: any) => (comment.replies && comment.replies.length > 0))
+                .map((comment: any) => {
+                    comment.totalReactions = 0;
+                    comment.thumbsUp = 0;
+                    comment.thumbsDown = 0;
+
+                    const userReactions = new Map();
+
+                    comment.replies.forEach(reply => {
+                        const userId = reply.user.uuid;
+                        const replyBody = reply.content.raw;
+
+                        // Initialize user reaction if not already present
+                        if (!userReactions.has(userId)) {
+                            userReactions.set(userId, { thumbsUp: false, thumbsDown: false });
+                        }
+
+                        const userReaction = userReactions.get(userId);
+
+                        // Check for thumbs up reaction
+                        if (replyBody.includes(thumbsUpText) && !userReaction.thumbsUp) {
+                            comment.thumbsUp++;
+                            userReaction.thumbsUp = true;
+                        }
+
+                        // Check for thumbs down reaction
+                        if (replyBody.includes(thumbsDownText) && !userReaction.thumbsDown) {
+                            comment.thumbsDown++;
+                            userReaction.thumbsDown = true;
+                        }
+                    });
+
+                    comment.totalReactions = comment.thumbsUp + comment.thumbsDown;
+
+                    return comment;
+                });
+
+
+            const reactionsInComments: ReactionsInComments[] =
+                commentsWithNumberOfReactions
+                    .filter((comment) => comment.totalReactions > 0)
+                    .map((comment: any) => ({
+                        reactions: {
+                            thumbsUp: comment.thumbsUp,
+                            thumbsDown: comment.thumbsDown,
+                        },
+                        comment: {
+                            id: comment.id,
+                            body: comment.body,
+                            pull_request_review_id: pr.pull_number,
+                        },
+                        pullRequest: {
+                            id: pr.id,
+                            number: pr.pull_number,
+                            repository: {
+                                id: pr.repository.id,
+                                fullName: pr.repository.name,
+                            },
+                        },
+                    }))
+
+            return reactionsInComments;
+        }
+        catch (error) {
+            this.logger.error({
+                message: `Error when trying to count reactions in PR${params.pr.pull_number}`,
+                context: BitbucketService.name,
+                serviceName: 'BitbucketService countReactions',
                 error: error,
                 metadata: {
                     params,

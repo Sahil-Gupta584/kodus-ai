@@ -2,7 +2,7 @@ import axios from 'axios';
 import { Injectable } from '@nestjs/common';
 import { AzureReposRepository } from '@/core/domain/azureRepos/entities/azureReposRepository.type';
 import { AzureReposProject } from '@/core/domain/azureRepos/entities/azureReposProject.type';
-import { AzureRepoPullRequest } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
+import { AzurePRStatus, AzureRepoPullRequest } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
 import {
     AzureRepoIteration,
     AzureRepoChange,
@@ -79,16 +79,21 @@ export class AzureReposRequestHelper {
         repositoryId: string;
         startDate?: string;
         endDate?: string;
+        status?: AzurePRStatus;
     }): Promise<AzureRepoPullRequest[]> {
         const instance = await this.azureRequest(params);
 
+        const { status } = params;
+
+        const searchStatus = status ?? AzurePRStatus.ALL;
+
         const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests?api-version=7.1&searchCriteria.status=all`,
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests?api-version=7.1&searchCriteria.status=${searchStatus}`,
         );
 
         const pullRequests = data?.value ?? [];
 
-        if (!params.startDate && !params.endDate) {
+        if (pullRequests.length < 1 || (!params.startDate && !params.endDate)) {
             return pullRequests;
         }
 
