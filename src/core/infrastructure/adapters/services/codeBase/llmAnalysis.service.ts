@@ -156,7 +156,6 @@ export class LLMAnalysisService implements IAIAnalysisService {
                     ${context.filePath}
                 </filePath>
                 `,
-                cache_control: { type: 'ephemeral' },
             };
         }
 
@@ -175,7 +174,6 @@ export class LLMAnalysisService implements IAIAnalysisService {
                 ${context.filePath}
             </filePath>
             `,
-            cache_control: { type: 'ephemeral' },
         };
     }
 
