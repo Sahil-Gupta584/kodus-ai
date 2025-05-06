@@ -14,4 +14,6 @@ export const environment = {
      */
     API_CLOUD_MODE:
         (process.env.API_CLOUD_MODE || 'true').toLowerCase() === 'true',
+    API_DEVELOPMENT_MODE:
+        (process.env.API_DEVELOPMENT_MODE || 'false').toLowerCase() === 'true',
 };

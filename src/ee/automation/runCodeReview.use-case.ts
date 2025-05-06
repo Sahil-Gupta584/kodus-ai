@@ -32,6 +32,7 @@ import { environment } from '@/ee/configs/environment';
 @Injectable()
 export class RunCodeReviewAutomationUseCase {
     public readonly isCloud: boolean;
+    public readonly isDevelopment: boolean;
 
     constructor(
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
@@ -54,6 +55,7 @@ export class RunCodeReviewAutomationUseCase {
         private logger: PinoLoggerService,
     ) {
         this.isCloud = environment.API_CLOUD_MODE;
+        this.isDevelopment = environment.API_DEVELOPMENT_MODE;
     }
 
     async execute(params: {
@@ -333,7 +335,8 @@ export class RunCodeReviewAutomationUseCase {
                         metadata: {
                             repositoryName: params.repository?.name,
                             organizationAndTeamData: {
-                                organizationId: config?.team?.organization?.uuid,
+                                organizationId:
+                                    config?.team?.organization?.uuid,
                                 teamId: config?.team?.uuid,
                             },
                             automationId: automation.uuid,
@@ -348,60 +351,16 @@ export class RunCodeReviewAutomationUseCase {
                         automationId: automations[0].uuid,
                     };
 
-                    if (this.isCloud) {
-                        const validation =
-                            await this.licenseService.validateOrganizationLicense(
-                                organizationAndTeamData,
-                            );
-
-                        if (!validation?.valid) {
-                            this.logger.warn({
-                                message: `License not active - PR#${params?.prNumber}`,
-                                context: RunCodeReviewAutomationUseCase.name,
-                                metadata: {
-                                    organizationAndTeamData,
-                                    prNumber: params?.prNumber,
-                                },
-                            });
-
-                            await this.createNoActiveSubscriptionComment({
-                                organizationAndTeamData,
-                                repository: params.repository,
-                                prNumber: params?.prNumber,
-                                noActiveSubscriptionType: 'general',
-                            });
-
-                            return null;
-                        }
-
-                        if (
-                            validation?.valid &&
-                            validation?.subscriptionStatus === 'trial'
-                        ) {
-                            return { organizationAndTeamData, automationId };
-                        }
-
-                        if (validation?.valid) {
-                            const users =
-                                await this.licenseService.getAllUsersWithLicense(
+                    if (!this.isDevelopment) {
+                        if (this.isCloud) {
+                            const validation =
+                                await this.licenseService.validateOrganizationLicense(
                                     organizationAndTeamData,
                                 );
 
-                            if (params?.userGitId) {
-                                const user = users?.find(
-                                    (user) =>
-                                        user?.git_id === params?.userGitId,
-                                );
-
-                                if (user) {
-                                    return {
-                                        organizationAndTeamData,
-                                        automationId,
-                                    };
-                                }
-
+                            if (!validation?.valid) {
                                 this.logger.warn({
-                                    message: `User License not found - PR#${params?.prNumber}`,
+                                    message: `License not active - PR#${params?.prNumber}`,
                                     context:
                                         RunCodeReviewAutomationUseCase.name,
                                     metadata: {
@@ -414,18 +373,70 @@ export class RunCodeReviewAutomationUseCase {
                                     organizationAndTeamData,
                                     repository: params.repository,
                                     prNumber: params?.prNumber,
-                                    noActiveSubscriptionType: 'user',
+                                    noActiveSubscriptionType: 'general',
                                 });
 
                                 return null;
                             }
+
+                            if (
+                                validation?.valid &&
+                                validation?.subscriptionStatus === 'trial'
+                            ) {
+                                return {
+                                    organizationAndTeamData,
+                                    automationId,
+                                };
+                            }
+
+                            if (validation?.valid) {
+                                const users =
+                                    await this.licenseService.getAllUsersWithLicense(
+                                        organizationAndTeamData,
+                                    );
+
+                                if (params?.userGitId) {
+                                    const user = users?.find(
+                                        (user) =>
+                                            user?.git_id === params?.userGitId,
+                                    );
+
+                                    if (user) {
+                                        return {
+                                            organizationAndTeamData,
+                                            automationId,
+                                        };
+                                    }
+
+                                    this.logger.warn({
+                                        message: `User License not found - PR#${params?.prNumber}`,
+                                        context:
+                                            RunCodeReviewAutomationUseCase.name,
+                                        metadata: {
+                                            organizationAndTeamData,
+                                            prNumber: params?.prNumber,
+                                        },
+                                    });
+
+                                    await this.createNoActiveSubscriptionComment(
+                                        {
+                                            organizationAndTeamData,
+                                            repository: params.repository,
+                                            prNumber: params?.prNumber,
+                                            noActiveSubscriptionType: 'user',
+                                        },
+                                    );
+
+                                    return null;
+                                }
+                            }
                         }
-                    } else {
-                        return {
-                            organizationAndTeamData,
-                            automationId,
-                        };
                     }
+
+                    return {
+                        organizationAndTeamData,
+                        automationId,
+                    };
                 }
             }
 
