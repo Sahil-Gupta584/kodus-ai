@@ -35,11 +35,11 @@ import { AutomationStatus } from '@/core/domain/automation/enums/automation-stat
 import { AutomationType } from '@/core/domain/automation/enums/automation-type';
 import {
     AUTOMATION_SERVICE_TOKEN,
-    IAutomationService
+    IAutomationService,
 } from '@/core/domain/automation/contracts/automation.service';
 import {
     TEAM_AUTOMATION_SERVICE_TOKEN,
-    ITeamAutomationService
+    ITeamAutomationService,
 } from '@/core/domain/automation/contracts/team-automation.service';
 
 const API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED =
@@ -159,7 +159,10 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     automationType: AutomationType.AUTOMATION_CODE_REVIEW,
                 });
 
-                if (!codeReviewAutomation || codeReviewAutomation.length === 0) {
+                if (
+                    !codeReviewAutomation ||
+                    codeReviewAutomation.length === 0
+                ) {
                     this.logger.error({
                         message: 'Code review automation not found',
                         context: CheckIfPRCanBeApprovedCronProvider.name,
@@ -188,18 +191,15 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     continue;
                 }
 
-                const allExecutions =
-                    await this.automationExecutionService.find({
-                        teamAutomation: { uuid: teamAutomation[0].uuid },
-                        status: AutomationStatus.SUCCESS,
-                    });
-
                 const sevenDaysAgo = new Date();
                 sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-                const automationExecutions = allExecutions?.filter(
-                    (exec) => new Date(exec.createdAt) >= sevenDaysAgo,
-                );
+                const automationExecutions =
+                    await this.automationExecutionService.findByPeriodAndTeamAutomationId(
+                        sevenDaysAgo,
+                        new Date(),
+                        teamAutomation[0].uuid,
+                    );
 
                 const automationExecutionsPRs = automationExecutions?.map(
                     (execution) => execution?.dataExecution?.pullRequestNumber,
