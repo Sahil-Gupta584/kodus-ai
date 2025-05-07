@@ -210,4 +210,29 @@ export class AutomationExecutionRepository
             console.log(error);
         }
     }
+
+    async findByPeriodAndTeamAutomationId(
+        startDate: Date,
+        endDate: Date,
+        teamAutomationId: string,
+    ): Promise<AutomationExecutionEntity[]> {
+        try {
+            const queryBuilder =
+                this.automationExecutionRepository.createQueryBuilder(
+                    'automation_execution',
+                );
+            queryBuilder.where(
+                'automation_execution.createdAt BETWEEN :startDate AND :endDate',
+                { startDate, endDate },
+            );
+            queryBuilder.andWhere(
+                'automation_execution.team_automation_id = :teamAutomationId',
+                { teamAutomationId },
+            );
+            const result = await queryBuilder.getMany();
+            return mapSimpleModelsToEntities(result, AutomationExecutionEntity);
+        } catch (error) {
+            console.log(error);
+        }
+    }
 }

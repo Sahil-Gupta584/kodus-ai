@@ -22,4 +22,9 @@ export interface IAutomationExecutionRepository {
         dataExecutionFilter: Partial<any>,
         additionalFilters?: Partial<any>,
     ): Promise<AutomationExecutionEntity | null>;
+    findByPeriodAndTeamAutomationId(
+        startDate: Date,
+        endDate: Date,
+        teamAutomationId: string,
+    ): Promise<AutomationExecutionEntity[]>;
 }

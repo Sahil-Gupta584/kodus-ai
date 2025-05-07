@@ -13,7 +13,7 @@ export class AutomationExecutionService implements IAutomationExecutionService {
     constructor(
         @Inject(AUTOMATION_EXECUTION_REPOSITORY_TOKEN)
         private readonly automationExecutionRepository: IAutomationExecutionRepository,
-    ) { }
+    ) {}
 
     findLatestExecutionByDataExecutionFilter(
         dataExecutionFilter: Partial<any>,
@@ -63,6 +63,18 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         filter?: Partial<IAutomationExecution>,
     ): Promise<AutomationExecutionEntity[]> {
         return this.automationExecutionRepository.find(filter);
+    }
+
+    findByPeriodAndTeamAutomationId(
+        startDate: Date,
+        endDate: Date,
+        teamAutomationId: string,
+    ): Promise<AutomationExecutionEntity[]> {
+        return this.automationExecutionRepository.findByPeriodAndTeamAutomationId(
+            startDate,
+            endDate,
+            teamAutomationId,
+        );
     }
 
     register(
