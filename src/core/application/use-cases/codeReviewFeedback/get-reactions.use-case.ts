@@ -18,7 +18,7 @@ export class GetReactionsUseCase implements IUseCase {
 
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
         private readonly pullRequestService: IPullRequestsService,
-    ) {}
+    ) { }
 
     async execute(organizationAndTeamData: OrganizationAndTeamData) {
         const period = this.calculatePeriod();
@@ -82,9 +82,15 @@ export class GetReactionsUseCase implements IUseCase {
 
             const commentsLinkedToSuggestions = comments.filter((comment) =>
                 suggestions?.some(
-                    (suggestion) =>
-                        suggestion?.comment?.id ===
-                        (comment?.notes?.[0]?.id || comment?.id),
+                    (suggestion) => {
+                        // We dont save the commentId for azure, but the threadId.
+                        if (comment?.threadId) {
+                            return suggestion?.comment?.id === comment?.threadId;
+                        }
+                        else {
+                            return suggestion?.comment?.id === (comment?.notes?.[0]?.id || comment?.id);
+                        }
+                    }
                 ),
             );
 

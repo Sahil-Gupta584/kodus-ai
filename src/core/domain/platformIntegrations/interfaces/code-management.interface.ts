@@ -113,4 +113,10 @@ export interface ICodeManagementService
         organizationAndTeamData: OrganizationAndTeamData;
         repository: Partial<Repository>;
     }): Promise<PullRequestsWithChangesRequested[] | null>;
+
+    checkIfPullRequestShouldBeApproved(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string };
+    }): Promise<any | null>;
 }

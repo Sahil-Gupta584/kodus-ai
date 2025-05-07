@@ -71,6 +71,7 @@ export class SavePullRequestUseCase {
                     await this.integrationConfigService.findIntegrationConfigWithTeams(
                         IntegrationConfigKey.REPOSITORIES,
                         repository.id,
+                        platformType
                     );
 
                 if (!configs || !configs.length) {

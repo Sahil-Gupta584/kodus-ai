@@ -952,4 +952,24 @@ export class CodeManagementService implements ICodeManagementService {
 
         return codeManagementService.getListOfValidReviews(params);
     }
+
+    async checkIfPullRequestShouldBeApproved(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            prNumber: number;
+            repository: { id: string; name: string };
+        },
+        type?: PlatformType,
+    ): Promise<any | null> {
+        if (!type) {
+            type = await this.getTypeIntegration(
+                extractOrganizationAndTeamData(params),
+            );
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.checkIfPullRequestShouldBeApproved(params);
+    }
 }

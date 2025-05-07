@@ -19,6 +19,7 @@ import { createNestedConditions } from '@/shared/infrastructure/repositories/fil
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { STATUS } from '@/config/types/database/status.type';
+import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 
 @Injectable()
 export class IntegrationConfigRepository
@@ -219,6 +220,7 @@ export class IntegrationConfigRepository
     async findIntegrationConfigWithTeams(
         configKey: IntegrationConfigKey,
         repositoryId: string,
+        platform: PlatformType,
     ): Promise<IntegrationConfigEntity[]> {
         try {
             const configs = await this.integrationConfigRepository.find({
@@ -231,6 +233,10 @@ export class IntegrationConfigRepository
                     }),
                     team: {
                         status: STATUS.ACTIVE,
+                    },
+                    integration: {
+                        platform,
+                        status: true,
                     },
                 },
                 relations: ['integration', 'team', 'team.organization'],

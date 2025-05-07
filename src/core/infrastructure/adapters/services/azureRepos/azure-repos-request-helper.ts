@@ -2,7 +2,7 @@ import axios from 'axios';
 import { Injectable } from '@nestjs/common';
 import { AzureReposRepository } from '@/core/domain/azureRepos/entities/azureReposRepository.type';
 import { AzureReposProject } from '@/core/domain/azureRepos/entities/azureReposProject.type';
-import { AzureRepoPullRequest } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
+import { AzurePRStatus, AzureRepoPullRequest } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
 import {
     AzureRepoIteration,
     AzureRepoChange,
@@ -11,13 +11,14 @@ import {
     AzureRepoPRThread,
     AzureRepoSubscription,
     AzureRepoCommentType,
+    AzureRepoReviewerWithVote,
 } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
 import { decrypt } from '@/shared/utils/crypto';
 import { FileChange } from '@/config/types/general/codeReview.type';
 
 @Injectable()
 export class AzureReposRequestHelper {
-    constructor() {}
+    constructor() { }
 
     async getProjects(params: {
         orgName: string;
@@ -78,16 +79,21 @@ export class AzureReposRequestHelper {
         repositoryId: string;
         startDate?: string;
         endDate?: string;
+        status?: AzurePRStatus;
     }): Promise<AzureRepoPullRequest[]> {
         const instance = await this.azureRequest(params);
 
+        const { status } = params;
+
+        const searchStatus = status ?? AzurePRStatus.ALL;
+
         const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests?api-version=7.1&searchCriteria.status=all`,
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests?api-version=7.1&searchCriteria.status=${searchStatus}`,
         );
 
         const pullRequests = data?.value ?? [];
 
-        if (!params.startDate && !params.endDate) {
+        if (pullRequests.length < 1 || (!params.startDate && !params.endDate)) {
             return pullRequests;
         }
 
@@ -631,6 +637,22 @@ export class AzureReposRequestHelper {
 
         const { data } = await instance.put(url, payload);
         return data;
+    }
+
+    async getListOfPullRequestReviewers(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        prId: number;
+    }): Promise<AzureRepoReviewerWithVote[]> {
+        const instance = await this.azureRequest(params);
+
+        const url = `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullRequests/${params.prId}/reviewers/?api-version=7.1`;
+
+        const { data } = await instance.get(url);
+
+        return data?.value ?? [];
     }
 
     async getRepositoryContentFile(params: {

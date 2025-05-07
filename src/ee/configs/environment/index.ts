@@ -15,7 +15,6 @@ let environment: Environment;
 
 // Caminhos absolutos relativos ao arquivo atual
 const prodPath = join(__dirname, 'environment.js'); // esse é gerado no build
-const devPath = join(__dirname, 'environment.dev.js'); // sempre presente
 
 if (existsSync(prodPath)) {
     // 🟢 Docker QA/Prod: injetado no build

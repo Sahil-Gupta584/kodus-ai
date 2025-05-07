@@ -6,7 +6,6 @@ import {
 } from '@/core/domain/codeBase/contracts/CommentManagerService.contract';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 
 @Injectable()
 export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -28,7 +27,7 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
             context.pullRequest.number,
             context.repository,
             context.changedFiles,
-            context.codeReviewConfig.languageResultPrompt,
+            context.codeReviewConfig?.languageResultPrompt ?? 'en-US',
             context.platformType,
         );
 

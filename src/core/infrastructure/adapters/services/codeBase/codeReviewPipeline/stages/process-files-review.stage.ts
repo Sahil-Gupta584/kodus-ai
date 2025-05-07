@@ -864,8 +864,18 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context?.codeReviewConfig?.kodyFineTuningConfig?.enabled,
                 );
 
+            const keepedSuggestions: Partial<CodeSuggestion>[] = getDataPipelineKodyFineTunning?.keepedSuggestions?.map(suggestion => {
+                const { suggestionEmbed, ...rest } = suggestion as any;
+                return rest;
+            });
+
+            const discardedSuggestions: Partial<CodeSuggestion>[] = getDataPipelineKodyFineTunning?.discardedSuggestions?.map(suggestion => {
+                const { suggestionEmbed, ...rest } = suggestion as any;
+                return rest;
+            });
+
             discardedSuggestionsByKodyFineTuning.push(
-                ...getDataPipelineKodyFineTunning.discardedSuggestions.map(
+                ...discardedSuggestions.map(
                     (suggestion) => {
                         suggestion.priorityStatus =
                             PriorityStatus.DISCARDED_BY_KODY_FINE_TUNING;
@@ -880,8 +890,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context?.pullRequest?.number,
                     file,
                     patchWithLinesStr,
-                    getDataPipelineKodyFineTunning?.keepedSuggestions ??
-                    suggestionsWithId,
+                    keepedSuggestions,
                     context?.codeReviewConfig?.languageResultPrompt,
                     reviewModeResponse,
                 );
@@ -891,8 +900,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
             discardedSuggestionsBySafeGuard.push(
                 ...this.suggestionService.getDiscardedSuggestions(
-                    getDataPipelineKodyFineTunning?.keepedSuggestions ??
-                    suggestionsWithId,
+                    keepedSuggestions,
                     safeGuardResponse?.suggestions || [],
                     PriorityStatus.DISCARDED_BY_SAFEGUARD,
                 ),
@@ -943,6 +951,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                         context?.pullRequest?.number,
                         context?.pullRequest?.base?.repo?.fullName,
                         file.filename,
+                        context.organizationAndTeamData,
                     );
 
                 if (savedSuggestions?.length > 0) {
@@ -950,7 +959,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                         (suggestion) =>
                             suggestion.deliveryStatus === DeliveryStatus.SENT &&
                             suggestion.implementationStatus ===
-                            ImplementationStatus.NOT_IMPLEMENTED,
+                                ImplementationStatus.NOT_IMPLEMENTED,
                     );
 
                     if (mergedSuggestions?.length > 0) {
@@ -1051,6 +1060,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         const pr = await this.pullRequestService.findByNumberAndRepository(
             prNumber,
             repository.name,
+            organizationAndTeamData,
         );
 
         let implementedSuggestionsCommentIds =
@@ -1077,13 +1087,13 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
         const foundComments = isPlatformTypeGithub
             ? reviewComments.filter((comment) =>
-                implementedSuggestionsCommentIds.includes(
-                    Number(comment.fullDatabaseId),
-                ),
-            )
+                  implementedSuggestionsCommentIds.includes(
+                      Number(comment.fullDatabaseId),
+                  ),
+              )
             : reviewComments.filter((comment) =>
-                implementedSuggestionsCommentIds.includes(comment.id),
-            );
+                  implementedSuggestionsCommentIds.includes(comment.id),
+              );
 
         if (foundComments?.length > 0) {
             const promises = foundComments.map(
@@ -1107,7 +1117,12 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             // timeout mechanism for the Promise.allSettled operation to prevent potential hanging.
             await Promise.race([
                 Promise.allSettled(promises),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Operation timed out')), 30000))
+                new Promise((_, reject) =>
+                    setTimeout(
+                        () => reject(new Error('Operation timed out')),
+                        30000,
+                    ),
+                ),
             ]);
         }
     }
@@ -1124,7 +1139,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                         (suggestion) =>
                             suggestion.comment &&
                             suggestion.implementationStatus !==
-                            ImplementationStatus.NOT_IMPLEMENTED &&
+                                ImplementationStatus.NOT_IMPLEMENTED &&
                             suggestion.deliveryStatus === DeliveryStatus.SENT,
                     )
                     .forEach((filteredSuggestion) => {

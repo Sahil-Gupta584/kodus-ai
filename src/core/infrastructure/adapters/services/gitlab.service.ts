@@ -1,5 +1,4 @@
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
-import { DeployFrequency } from '@/core/domain/platformIntegrations/types/codeManagement/deployFrequency.type';
 import {
     PullRequestCodeReviewTime,
     PullRequestReviewComment,
@@ -41,7 +40,6 @@ import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { PinoLoggerService } from './logger/pino.service';
 import { PromptService } from './prompt.service';
-import { CommitLeadTimeForChange } from '@/core/domain/platformIntegrations/types/codeManagement/commitLeadTimeForChange.type';
 import * as moment from 'moment-timezone';
 import { Commit } from '@/config/types/general/commit.type';
 import { IntegrationConfigEntity } from '@/core/domain/integrationConfigs/entities/integration-config.entity';
@@ -66,6 +64,7 @@ import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
+import { KODY_CODE_REVIEW_COMPLETED_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
@@ -2215,6 +2214,64 @@ export class GitlabService
         }
     }
 
+    async checkIfPullRequestShouldBeApproved(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string };
+    }): Promise<any | null> {
+        try {
+            const { organizationAndTeamData, repository, prNumber } = params;
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const approvalSettings =
+                await gitlabAPI.MergeRequestApprovals.showConfiguration(
+                    repository.id,
+                    { mergerequestIId: prNumber },
+                );
+
+            const currentUser = await gitlabAPI.Users.showCurrentUser();
+
+            const approvedBy = approvalSettings?.approved_by;
+
+            const isApprovedByCurrentUser = approvedBy
+                ? approvedBy.some(
+                      (approval) => approval?.user?.id === currentUser.id,
+                  )
+                : false;
+
+            if (isApprovedByCurrentUser) {
+                return null;
+            }
+
+            await this.approvePullRequest({
+                organizationAndTeamData,
+                prNumber,
+                repository,
+            });
+
+            this.logger.log({
+                message: `Approved pull request #${prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService approvePullRequest',
+                metadata: params,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error to approve pull request #${params.prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService checkIfPullRequestShouldBeApproved',
+                error: error,
+                metadata: params,
+            });
+            return null;
+        }
+    }
+
     async approvePullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string };
@@ -2524,7 +2581,7 @@ export class GitlabService
                     return (
                         firstDiscussionComment.resolvable &&
                         !firstDiscussionComment.body.includes(
-                            '## Code Review Completed! 🔥',
+                            KODY_CODE_REVIEW_COMPLETED_MARKER,
                         )
                     ); // Exclude comments with the specific string
                 })

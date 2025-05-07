@@ -60,6 +60,8 @@ import { FileReviewModule } from '@/ee/codeReview/fileReviewContextPreparation/f
 import { KodyFineTuningContextModule } from '@/ee/kodyFineTuning/fineTuningContext/kodyFineTuningContext.module';
 import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeContext.module';
 import { GlobalParametersModule } from './global-parameters.module';
+import { LicenseModule } from '@/ee/license/license.module';
+import { RuleLikeModule } from './ruleLike.module';
 
 @Module({
     imports: [
@@ -122,6 +124,8 @@ import { GlobalParametersModule } from './global-parameters.module';
         KodyFineTuningContextModule,
         KodyASTAnalyzeContextModule,
         GlobalParametersModule,
+        LicenseModule,
+        RuleLikeModule,
     ],
     providers: [
         {

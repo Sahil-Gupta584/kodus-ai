@@ -26,11 +26,21 @@ import {
     CodeReviewConfigWithRepositoryInfo,
 } from '@/config/types/general/codeReview.type';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
-import {
-    IIntegrationService,
-    INTEGRATION_SERVICE_TOKEN,
-} from '@/core/domain/integrations/contracts/integration.service.contracts';
 import { AzureRepoCommentTypeString } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
+import {
+    AUTOMATION_EXECUTION_SERVICE_TOKEN,
+    IAutomationExecutionService,
+} from '@/core/domain/automation/contracts/automation-execution.service';
+import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
+import { AutomationType } from '@/core/domain/automation/enums/automation-type';
+import {
+    AUTOMATION_SERVICE_TOKEN,
+    IAutomationService,
+} from '@/core/domain/automation/contracts/automation.service';
+import {
+    TEAM_AUTOMATION_SERVICE_TOKEN,
+    ITeamAutomationService,
+} from '@/core/domain/automation/contracts/team-automation.service';
 
 const API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED =
     process.env.API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED;
@@ -49,10 +59,16 @@ export class CheckIfPRCanBeApprovedCronProvider {
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
         private readonly pullRequestService: IPullRequestsService,
 
-        @Inject(INTEGRATION_SERVICE_TOKEN)
-        private readonly integrationService: IIntegrationService,
-
         private readonly codeManagementService: CodeManagementService,
+
+        @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
+        private readonly automationExecutionService: IAutomationExecutionService,
+
+        @Inject(AUTOMATION_SERVICE_TOKEN)
+        private readonly automationService: IAutomationService,
+
+        @Inject(TEAM_AUTOMATION_SERVICE_TOKEN)
+        private readonly teamAutomationService: ITeamAutomationService,
     ) {}
 
     @Cron(API_CRON_CHECK_IF_PR_SHOULD_BE_APPROVED, {
@@ -139,16 +155,67 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     continue;
                 }
 
+                const codeReviewAutomation = await this.automationService.find({
+                    automationType: AutomationType.AUTOMATION_CODE_REVIEW,
+                });
+
+                if (
+                    !codeReviewAutomation ||
+                    codeReviewAutomation.length === 0
+                ) {
+                    this.logger.error({
+                        message: 'Code review automation not found',
+                        context: CheckIfPRCanBeApprovedCronProvider.name,
+                        metadata: {
+                            organizationAndTeamData,
+                            timestamp: new Date().toISOString(),
+                        },
+                    });
+                    continue;
+                }
+
+                const teamAutomation = await this.teamAutomationService.find({
+                    team: { uuid: team.uuid },
+                    automation: { uuid: codeReviewAutomation[0].uuid },
+                });
+
+                if (!teamAutomation || teamAutomation.length === 0) {
+                    this.logger.error({
+                        message: 'Team automation for code review not found',
+                        context: CheckIfPRCanBeApprovedCronProvider.name,
+                        metadata: {
+                            organizationAndTeamData,
+                            timestamp: new Date().toISOString(),
+                        },
+                    });
+                    continue;
+                }
+
+                const sevenDaysAgo = new Date();
+                sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+                const automationExecutions =
+                    await this.automationExecutionService.findByPeriodAndTeamAutomationId(
+                        sevenDaysAgo,
+                        new Date(),
+                        teamAutomation[0].uuid,
+                    );
+
+                const automationExecutionsPRs = automationExecutions?.map(
+                    (execution) => execution?.dataExecution?.pullRequestNumber,
+                );
+
                 const openPullRequests = await this.pullRequestService.find({
                     status: PullRequestState.OPENED,
                     organizationId: organizationId,
-                });
+                    number: { $in: automationExecutionsPRs },
+                } as any);
 
                 if (!openPullRequests || openPullRequests?.length === 0) {
                     continue;
                 }
 
-                openPullRequests.map(async (pr) => {
+                openPullRequests?.map(async (pr) => {
                     const repository = pr.repository;
 
                     const codeReviewConfigFromRepo =
@@ -227,28 +294,24 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     );
             }
 
+            if (platformType === PlatformType.AZURE_REPOS) {
+                reviewComments = reviewComments.filter(
+                    (comment) =>
+                        comment?.commentType ===
+                        AzureRepoCommentTypeString.CODE,
+                );
+            }
+
             if (!reviewComments || reviewComments.length < 1) {
                 return false;
             }
 
-            let isEveryReviewCommentResolved = null;
-
-            if (platformType === PlatformType.AZURE_REPOS) {
-                isEveryReviewCommentResolved = reviewComments
-                    .filter(
-                        (comment) =>
-                            comment?.commentType ===
-                            AzureRepoCommentTypeString.CODE,
-                    )
-                    ?.every((reviewComment) => reviewComment.isResolved);
-            } else {
-                isEveryReviewCommentResolved = reviewComments?.every(
-                    (reviewComment) => reviewComment.isResolved,
-                );
-            }
+            const isEveryReviewCommentResolved = reviewComments?.every(
+                (reviewComment) => reviewComment.isResolved,
+            );
 
             if (isEveryReviewCommentResolved) {
-                await this.codeManagementService.approvePullRequest(
+                await this.codeManagementService.checkIfPullRequestShouldBeApproved(
                     {
                         organizationAndTeamData,
                         prNumber,
