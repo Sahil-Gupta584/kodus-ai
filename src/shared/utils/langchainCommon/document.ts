@@ -678,6 +678,10 @@ const getDeepseekByNovitaAI = (
         callbacks: [],
     };
 
+    if (options?.model) {
+        options.model = `deepseek/${options.model}`;
+    }
+
     const finalOptions = options
         ? { ...defaultOptions, ...options }
         : defaultOptions;
