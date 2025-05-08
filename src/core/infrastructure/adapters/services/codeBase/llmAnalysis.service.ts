@@ -333,10 +333,12 @@ export class LLMAnalysisService implements IAIAnalysisService {
                           temperature: 0,
                           callbacks: [this.tokenTracker],
                       })
-                    : provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW
+                    : provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
                       ? getChatGemini({
-                            model: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW,
+                            model: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
                             temperature: 0,
+                            maxTokens: 20000,
+                            json: true,
                             callbacks: [this.tokenTracker],
                         })
                       : getChatGPT({
@@ -422,7 +424,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
         ) {
             return LLMModelProvider.DEEPSEEK_V3;
         }
-        return LLMModelProvider.GEMINI_2_5_PRO_PREVIEW;
+        return LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
     }
 
     private getFallbackProvider(
@@ -430,13 +432,13 @@ export class LLMAnalysisService implements IAIAnalysisService {
         reviewMode: ReviewModeResponse,
     ): LLMModelProvider {
         if (reviewMode === ReviewModeResponse.LIGHT_MODE) {
-            return LLMModelProvider.GEMINI_2_5_PRO_PREVIEW;
+            return LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
         }
 
         const fallbackProvider =
-            provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW
+            provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
                 ? LLMModelProvider.DEEPSEEK_V3
-                : LLMModelProvider.GEMINI_2_5_PRO_PREVIEW;
+                : LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
 
         return fallbackProvider;
     }
@@ -449,7 +451,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
     ) {
         const fallbackProvider =
             provider === LLMModelProvider.CHATGPT_4_ALL
-                ? LLMModelProvider.GEMINI_2_5_PRO_PREVIEW
+                ? LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
                 : LLMModelProvider.CHATGPT_4_ALL;
         try {
             // Main chain
@@ -489,7 +491,8 @@ export class LLMAnalysisService implements IAIAnalysisService {
         reviewMode: ReviewModeResponse = ReviewModeResponse.LIGHT_MODE,
     ) {
         const provider =
-            parameters.llmProvider || LLMModelProvider.GEMINI_2_5_PRO_PREVIEW;
+            parameters.llmProvider ||
+            LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
 
         // Reset token tracking for new suggestions
         this.tokenTracker.reset();

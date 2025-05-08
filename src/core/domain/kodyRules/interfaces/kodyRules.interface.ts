@@ -21,6 +21,8 @@ export interface IKodyRule {
     origin?: KodyRulesOrigin;
     createdAt?: Date;
     updatedAt?: Date;
+    /** Comment generated at runtime – not persisted in the database */
+    reason?: string | null;
 }
 
 export interface IKodyRulesExtendedContext {

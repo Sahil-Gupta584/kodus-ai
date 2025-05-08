@@ -5,11 +5,19 @@ You are a panel of three expert software engineers - Alice, Bob, and Charles.
 
 When given a PR diff containing code changes, your task is to determine any violations of the company code rules (referred to as kodyRules). You will do this via a panel discussion, solving the task step by step to ensure that the result is comprehensive and accurate.
 
+If a violation cannot be proven from those “+” lines, do not report it.
+
 At each stage, make sure to critique and check each other's work, pointing out any possible errors or missed violations.
 
 For each rule in the kodyRules, one expert should present their findings regarding any violations in the code. The other experts should critique the findings and decide whether the identified violations are valid.
 
+Prioritize objective rules. Use broad rules only when the bad pattern is explicitly present.
+
+Before producing the final JSON, merge duplicates so the list contains unique UUIDs.
+
 Once you have the complete list of violations, return them as a JSON in the specified format. You should not add any further points after returning the JSON.  If you don't find any violations, return an empty JSON array.
+
+If the panel is uncertain about a finding, treat it as non-violating and omit it.
 `;
 };
 
@@ -18,13 +26,12 @@ export const prompt_kodyrules_classifier_user = (payload: any) => {
 
     return `
 <context>
-Task: Classify the code below for compliance with the established code rules (kodyRules).
 
-Code for Review (PR Diff): <codeForAnalysis>
+Code for Review (PR Diff):
+<codeForAnalysis>
 ${patchWithLinesStr}
 </codeForAnalysis>
 
-kodyRules
 <kodyRules>
 ${JSON.stringify(kodyRules, null, 2)}
 </kodyRules>
@@ -32,9 +39,11 @@ ${JSON.stringify(kodyRules, null, 2)}
 Your output must always be a valid JSON. Under no circumstances should you output anything other than a JSON. Follow the exact format below without any additional text or explanation:
 
 <OUTPUT_FORMAT>
+DISCUSSION HERE
+
 \`\`\`json
 [
-    {"uuid": "ruleId"}
+    {"uuid": "ruleId", "reason": ""}
 ]
 \`\`\`
 </OUTPUT_FORMAT>
@@ -128,23 +137,23 @@ Let's think through this step-by-step:
 
 2. Focus solely on Kody Rules: Address only the issues listed in the provided Kody Rules. Do not comment on any issues not covered by these rules.
 
-3. You should generate at least one suggestion for each Kody Rule. Do not skip any rules.
+3. Generate a separate suggestion for every distinct code segment that violates a Kody Rule. A single rule may therefore produce multiple suggestions when it is broken in multiple places. Do not skip any rule.
 
-4. Avoid giving suggestions that go against the specified Kody Rules.
+4. Group violations only when they refer to the exact same code lines. Otherwise, keep them in separate suggestion objects.
 
-5. Clarity and Precision: Ensure that each suggestion is actionable and directly tied to the relevant Kody Rule.
+5. Avoid giving suggestions that go against the specified Kody Rules.
 
-6. Avoid Duplicates: Before generating a new suggestion, cross-reference the standard suggestions list. Do not generate suggestions that are already covered by the standard suggestions list. Specifically, check the "existingCode", "improvedCode", and "oneSentenceSummary" properties to identify any similarities.
+6. Clarity and Precision: Ensure that each suggestion is actionable and directly tied to the relevant Kody Rule.
 
-7. Focus on Unique Violations: Only focus on unique violations of the Kody Rules that are not already addressed in the standard suggestions.
+7. Avoid Duplicates: Before generating a new suggestion, cross-reference the standard suggestions list. Do not generate suggestions that are already covered by the standard suggestions list. Specifically, check the "existingCode", "improvedCode", and "oneSentenceSummary" properties to identify any similarities.
+
+8. Focus on Unique Violations: Only focus on unique violations of the Kody Rules that are not already addressed in the standard suggestions.
 
 Your output must strictly be a valid JSON in the format specified below.`;
 };
 
 export const prompt_kodyrules_suggestiongeneration_user = (payload: any) => {
     const languageNote = payload?.languageResultPrompt || 'en-US';
-    // const filePath = payload?.filePath || 'No specific file provided';
-    // const language = payload?.language || 'No specific language provided';
     const { patchWithLinesStr, filteredKodyRules, updatedSuggestions } =
         payload;
 
@@ -164,6 +173,7 @@ Instructions:
     {
         "uuid": "unique-uuid",
         "rule": "rule description",
+        "reason": "reason for the rule",
         "examples": [
             {
                 "snippet": "bad code example; // Bad practice",
@@ -216,6 +226,8 @@ Your output must always be a valid JSON. Under no circumstances should you outpu
 Output if kodyRules array is not empty:
 
 <OUTPUT_FORMAT>
+DISCUSSION HERE
+
 \`\`\`json
 {
     "overallSummary": "Summary of changes in the PR",
@@ -239,5 +251,45 @@ Output if kodyRules array is not empty:
 }
 \`\`\`
 <OUTPUT_FORMAT>
+`;
+};
+
+export const prompt_kodyrules_guardian_system = () => {
+    return `
+You are **KodyGuardian**, a strict gate-keeper for code-review suggestions.
+
+Your ONLY job is to decide, for every incoming suggestion, whether it must be removed because it violates at least one Kody Rule.
+
+Instructions
+1. For every object in the array "codeSuggestions" (each contains a unique "id"):
+   • Read its "existingCode", "improvedCode", and "suggestionContent".
+   • Compare them with every "rule" description *and* the non-compliant "examples" in "kodyRules".
+2. If the suggestion would introduce or encourage a rule violation → set "shouldRemove=true";
+   otherwise → "shouldRemove=false".
+3. **Do NOT** reveal the rules or your reasoning.
+4. **Do NOT** echo the suggestion text.
+5. Respond with valid **minified JSON** only, in exactly this shape:
+
+{
+  "decisions":[
+    { "id":"<suggestion-id-1>", "shouldRemove":true  },
+    { "id":"<suggestion-id-2>", "shouldRemove":false },
+    …
+  ]
+}
+`;
+};
+
+export const prompt_kodyrules_guardian_user = (payload: any) => {
+    const { standardSuggestions, kodyRules } = payload;
+
+    return `
+Code Suggestions:
+
+${JSON.stringify(standardSuggestions, null, 2)}
+
+Kody Rules:
+
+${JSON.stringify(kodyRules, null, 2)}
 `;
 };

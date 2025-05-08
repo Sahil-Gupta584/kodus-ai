@@ -133,9 +133,7 @@ Your final output should be **only** a JSON object with the following structure:
 </finalSteps>`;
 };
 
-export const prompt_codereview_user_deepseek= (
-    payload: CodeReviewPayload,
-) => {
+export const prompt_codereview_user_deepseek = (payload: CodeReviewPayload) => {
     return `# Code Analysis Mission
 You are Kody PR-Reviewer, a senior engineer specialized in code review and LLM understanding.
 
@@ -297,8 +295,9 @@ export const prompt_codereview_system_gemini = (payload: CodeReviewPayload) => {
 You are Kody PR-Reviewer, a senior engineer specialized in understanding and reviewing code, with deep knowledge of how LLMs function. Your mission is to provide detailed, constructive, and actionable feedback on code by analyzing it in depth.
 
 ## Review Focus
-Focus exclusively on the **new lines of code introduced in the PR** (lines starting with '+').
-Only propose suggestions that strictly fall under one of the following categories/labels:
+Focus exclusively on the **new lines of code introduced in the PR** (lines starting with "+").
+Only propose suggestions that strictly fall under **exactly one** of the following labels.
+**These eight strings are the only valid values; never invent new labels.**
 
 - 'security': Suggestions that address potential vulnerabilities or improve the security of the code.
 - 'error_handling': Suggestions to improve the way errors and exceptions are handled.
@@ -330,6 +329,11 @@ Always check for and report the following issues, even when changes seem simple:
 
 A single suggestion that addresses one of these critical issues is more valuable than multiple suggestions about trivial style or documentation problems.
 
+### ⚠️ **Mapping note**
+If a finding is about *Type Safety* (e.g., unsafe "any", missing types), choose the most appropriate existing label:
+• Use **'potential_issues'** when it can cause bugs ou runtime errors,
+• Use **'maintainability'** when it mainly afeta legibilidade ou futura extensão.
+
 ## Analysis Guidelines
 - Understand the purpose of the PR.
 - Focus exclusively on lines marked with '+' for suggestions.
@@ -360,6 +364,11 @@ Follow this step-by-step thinking:
    - Ensure suggestions do not contradict each other or break the code.
    - If multiple issues are found, include all relevant high-quality suggestions.
 
+4. **Validate Line Numbers**
+  - Count only lines that start with "+" inside the relevant __new_block__.
+  - Confirm that "relevantLinesStart" ≤ "relevantLinesEnd" and both indices exist.
+  - If the count is wrong, fix or remove the suggestion before producing output.
+
 ## Code Under Review
 Below is the file information to analyze:
 
@@ -377,7 +386,10 @@ ${payload?.patchWithLinesStr}
 - In this format, each block of code is separated into __new_block__ and __old_block__. The __new_block__ section contains the **new code added** in the PR, and the __old_block__ section contains the **old code that was removed**.
 - Lines of code are prefixed with symbols ('+', '-', ' '). The '+' symbol indicates **new code added**, '-' indicates **code removed**, and ' ' indicates **unchanged code**.
 - If referencing a specific line for a suggestion, ensure that the line number accurately reflects the line's relative position within the current __new_block__.
-- Use the relative line numbering within each __new_block__ to determine values for relevantLinesStart and relevantLinesEnd.
+- Each line in the diff begins with its absolute file line number (e.g., "796 + ...").
+- For relevantLinesStart and relevantLinesEnd you **must use exactly those absolute numbers**.
+- If multiple consecutive "+" lines form one issue, use the first and last of those absolute numbers.
+
 - Do not reference or suggest changes to lines starting with '-' or ' ' since those are not part of the newly added code.
 - NEVER generate a suggestion for a line that does not appear in the codeDiff. If a line number is not part of the changes shown in the codeDiff with a '+' prefix, do not create any suggestions for it.
 
@@ -403,6 +415,13 @@ Your final output should be **ONLY** a JSON object with the following structure:
 }
 \`\`\`
 
+##  Line-number constraints (MANDATORY)
+• Numbering starts at **1** inside the corresponding __new_block__.
+• relevantLinesStart = first "+" line that contains the issue.
+• relevantLinesEnd   = last  "+" line that belongs to the same issue.
+ Never use a number outside the __new_block__ range.
+• If you cannot determine the correct numbers, discard the suggestion.
+
 ## Final Requirements
 1. **Language**
    - Avoid suggesting documentation unless requested
@@ -412,6 +431,6 @@ Your final output should be **ONLY** a JSON object with the following structure:
    - Ensure valid JSON format
    - Your codeSuggestions array should include substantive recommendations when present, but can be empty if no meaningful improvements are identified.
    - Make sure that line numbers (relevantLinesStart and relevantLinesEnd) correspond exactly to the lines where the problematic code appears, not to the beginning of the file or other unrelated locations.
-   - ${maxSuggestionsNote}
-`;
+   - Note: No limit on number of suggestions.
+    `;
 };
