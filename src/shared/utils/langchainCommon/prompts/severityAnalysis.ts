@@ -1,7 +1,7 @@
 import { CodeSuggestion } from '@/config/types/general/codeReview.type';
 
 export const prompt_severity_analysis_user = (
-    codeSuggestions: CodeSuggestion[],
+    codeSuggestions: Partial<CodeSuggestion>[],
 ) => {
     return `# Code Review Severity Analyzer
 You are an expert code reviewer tasked with analyzing code suggestions and assigning accurate severity levels based on real impact.

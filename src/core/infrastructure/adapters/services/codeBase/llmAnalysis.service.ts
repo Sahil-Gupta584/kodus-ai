@@ -556,8 +556,15 @@ export class LLMAnalysisService implements IAIAnalysisService {
 
             const chain = RunnableSequence.from([
                 async (input: any) => {
-                    const humanPrompt =
-                        prompt_severity_analysis_user(codeSuggestions);
+                    const humanPrompt = prompt_severity_analysis_user(
+                        codeSuggestions?.map((s) => ({
+                            id: s.id,
+                            label: s.label,
+                            suggestionContent: s.suggestionContent,
+                            existingCode: s.existingCode,
+                            improvedCode: s.improvedCode,
+                        })),
+                    );
 
                     return [
                         {
