@@ -40,7 +40,6 @@ import {
     prompt_codereview_user_deepseek,
 } from '@/shared/utils/langchainCommon/prompts/configuration/codeReview';
 import {
-    prompt_severity_analysis_system,
     prompt_severity_analysis_user,
 } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
 
@@ -554,14 +553,11 @@ export class LLMAnalysisService implements IAIAnalysisService {
 
             const chain = RunnableSequence.from([
                 async () => {
-                    const systemPrompt = prompt_severity_analysis_system();
                     const humanPrompt = prompt_severity_analysis_user(
                         codeSuggestions,
-                        selectedCategories,
                     );
 
                     return [
-                        new SystemMessage(systemPrompt),
                         new HumanMessage(humanPrompt),
                     ];
                 },
