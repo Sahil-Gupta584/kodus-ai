@@ -940,8 +940,7 @@ export class SuggestionService implements ISuggestionService {
     public async analyzeSuggestionsSeverity(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
-        codeSuggestions: any[],
-        selectedCategories: ReviewOptions,
+        codeSuggestions: CodeSuggestion[],
     ) {
         try {
             if (!codeSuggestions?.length) {
@@ -949,12 +948,11 @@ export class SuggestionService implements ISuggestionService {
             }
 
             const chain =
-                await this.aiAnalysisService.createSeverityAnalysisChain(
+                await this.aiAnalysisService.createSeverityAnalysisChainWithFallback(
                     organizationAndTeamData,
                     prNumber,
-                    LLMModelProvider.CHATGPT_4_ALL,
+                    LLMModelProvider.DEEPSEEK_V3_0324,
                     codeSuggestions,
-                    structuredClone(selectedCategories),
                 );
 
             const result = await chain.invoke({});

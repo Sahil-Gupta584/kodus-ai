@@ -642,12 +642,11 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         });
     }
 
-    async createSeverityAnalysisChain(
+    createSeverityAnalysisChainWithFallback(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         provider: LLMModelProvider,
-        codeSuggestions: any[],
-        selectedCategories: object,
+        codeSuggestions: CodeSuggestion[],
     ): Promise<any> {
         throw new Error('Method not implemented.');
     }

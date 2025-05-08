@@ -39,9 +39,7 @@ import {
     prompt_codereview_system_gemini,
     prompt_codereview_user_deepseek,
 } from '@/shared/utils/langchainCommon/prompts/configuration/codeReview';
-import {
-    prompt_severity_analysis_user,
-} from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
+import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -529,39 +527,51 @@ export class LLMAnalysisService implements IAIAnalysisService {
     //#endregion
 
     //#region Severity Analysis
-    public async createSeverityAnalysisChain(
+    private async createSeverityAnalysisChain(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         provider: LLMModelProvider,
-        codeSuggestions: any[],
-        selectedCategories: object,
+        codeSuggestions: CodeSuggestion[],
     ) {
         try {
-            const model =
-                provider === LLMModelProvider.CHATGPT_4_ALL
-                    ? getChatGPT({
+            let llm =
+                provider === LLMModelProvider.DEEPSEEK_V3_0324
+                    ? getDeepseekByNovitaAI({
+                          model: LLMModelProvider.DEEPSEEK_V3_0324,
+                          temperature: 0,
+                          maxTokens: 8000,
+                      })
+                    : getChatGPT({
                           model: getLLMModelProviderWithFallback(
                               LLMModelProvider.CHATGPT_4_ALL,
                           ),
                           temperature: 0,
-                          callbacks: [this.tokenTracker],
-                      })
-                    : getChatVertexAI({
-                          temperature: 0,
-                          callbacks: [this.tokenTracker],
                       });
 
+            if (provider === LLMModelProvider.CHATGPT_4_ALL) {
+                llm = llm.bind({
+                    response_format: { type: 'json_object' },
+                });
+            }
+
             const chain = RunnableSequence.from([
-                async () => {
-                    const humanPrompt = prompt_severity_analysis_user(
-                        codeSuggestions,
-                    );
+                async (input: any) => {
+                    const humanPrompt =
+                        prompt_severity_analysis_user(codeSuggestions);
 
                     return [
-                        new HumanMessage(humanPrompt),
+                        {
+                            role: 'user',
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: humanPrompt,
+                                },
+                            ],
+                        },
                     ];
                 },
-                model,
+                llm,
                 new StringOutputParser(),
             ]);
 
@@ -572,9 +582,67 @@ export class LLMAnalysisService implements IAIAnalysisService {
                 error,
                 context: LLMAnalysisService.name,
                 metadata: {
-                    organizationAndTeamData,
-                    prNumber,
+                    organizationAndTeamData: organizationAndTeamData,
+                    prNumber: prNumber,
                     provider,
+                },
+            });
+        }
+    }
+
+    public async createSeverityAnalysisChainWithFallback(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        provider: LLMModelProvider,
+        codeSuggestions: CodeSuggestion[],
+    ) {
+        const fallbackProvider =
+            provider === LLMModelProvider.CHATGPT_4_ALL
+                ? LLMModelProvider.DEEPSEEK_V3
+                : LLMModelProvider.CHATGPT_4_ALL;
+
+        try {
+            // Chain principal
+            const mainChain = await this.createSeverityAnalysisChain(
+                organizationAndTeamData,
+                prNumber,
+                provider,
+                codeSuggestions,
+            );
+
+            // Chain de fallback
+            const fallbackChain = await this.createSeverityAnalysisChain(
+                organizationAndTeamData,
+                prNumber,
+                fallbackProvider,
+                codeSuggestions,
+            );
+
+            // Configurar chain com fallback
+            return mainChain
+                .withFallbacks({
+                    fallbacks: [fallbackChain],
+                })
+                .withConfig({
+                    runName: 'severityAnalysis',
+                    metadata: {
+                        organizationId: organizationAndTeamData?.organizationId,
+                        teamId: organizationAndTeamData?.teamId,
+                        pullRequestId: prNumber,
+                        provider: provider,
+                        fallbackProvider: fallbackProvider,
+                    },
+                });
+        } catch (error) {
+            this.logger.error({
+                message: 'Error creating severity analysis chain with fallback',
+                error,
+                context: LLMAnalysisService.name,
+                metadata: {
+                    provider,
+                    fallbackProvider,
+                    organizationAndTeamData: organizationAndTeamData,
+                    prNumber: prNumber,
                 },
             });
             throw error;
