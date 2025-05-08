@@ -598,7 +598,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
     ) {
         const fallbackProvider =
             provider === LLMModelProvider.CHATGPT_4_ALL
-                ? LLMModelProvider.DEEPSEEK_V3
+                ? LLMModelProvider.DEEPSEEK_V3_0324
                 : LLMModelProvider.CHATGPT_4_ALL;
 
         try {
