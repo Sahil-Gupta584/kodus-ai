@@ -4,6 +4,7 @@ FROM --platform=linux/amd64 node:22.14.0-slim AS deps
 
 ARG API_CLOUD_MODE
 ENV API_CLOUD_MODE=${API_CLOUD_MODE}
+ENV API_DEVELOPMENT_MODE=false
 
 ARG RELEASE_VERSION
 ENV SENTRY_RELEASE=$RELEASE_VERSION
@@ -20,6 +21,7 @@ FROM deps AS build
 
 ARG API_CLOUD_MODE
 ENV API_CLOUD_MODE=${API_CLOUD_MODE}
+ENV API_DEVELOPMENT_MODE=false
 
 WORKDIR /usr/src/app
 # Copia todo o projeto (inclui o environment.template.ts)
@@ -29,7 +31,7 @@ COPY . .
 RUN mkdir -p ee/configs/environment
 
 # Gera o environment.ts substituindo o placeholder
-RUN sed "s/__CLOUD_MODE__/${API_CLOUD_MODE}/g" src/ee/configs/environment/environment.template.ts > src/ee/configs/environment/environment.ts
+RUN sed -e "s/__CLOUD_MODE__/${API_CLOUD_MODE}/g" -e "s/__DEVELOPMENT_MODE__/false/g" src/ee/configs/environment/environment.template.ts >src/ee/configs/environment/environment.ts
 
 RUN yarn build:production
 
