@@ -33,6 +33,7 @@ import {
 import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisService.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -674,6 +675,10 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
 
             parsedResponse.codeSuggestions =
                 parsedResponse?.codeSuggestions?.map((suggestion) => {
+                    if (!suggestion?.id || !uuidValidate(suggestion?.id)) {
+                        suggestion.id = uuidv4();
+                    }
+
                     if (suggestion.label) {
                         return suggestion;
                     }
