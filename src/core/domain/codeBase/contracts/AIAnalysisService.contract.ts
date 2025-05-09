@@ -58,4 +58,10 @@ export interface IAIAnalysisService {
         file: FileChange,
         codeDiff: string,
     ): Promise<ReviewModeResponse>;
+    severityAnalysisAssignment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        provider: LLMModelProvider,
+        codeSuggestions: CodeSuggestion[],
+    ): Promise<Partial<CodeSuggestion>[]>
 }

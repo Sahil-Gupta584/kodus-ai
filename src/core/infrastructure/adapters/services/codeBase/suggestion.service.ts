@@ -909,27 +909,73 @@ export class SuggestionService implements ISuggestionService {
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         suggestions: Partial<CodeSuggestion>[],
-        severityLevels: Map<number, string>,
+        severityLevels: Partial<CodeSuggestion>[],
     ): Partial<CodeSuggestion>[] {
         try {
-            return suggestions.map((suggestion, index) => ({
-                ...suggestion,
-                id: suggestion?.id || uuidv4(),
-                severity: severityLevels.get(index + 1) || 'medium',
-            }));
+
+            if (!suggestions?.length) {
+                return [];
+            }
+
+            return suggestions.map((suggestion) => {
+                const severityLevel = severityLevels?.find(
+                    (level) => level.id === suggestion.id,
+                );
+
+                // Se não encontrar uma severidade específica, usa a existente ou define como 'medium'
+                const severity = severityLevel?.severity || 'medium';
+
+                if (!severityLevel?.severity) {
+                    this.logger.warn({
+                        message: `Suggestion severity not found in severity levels`,
+                        context: SuggestionService.name,
+                        metadata: {
+                            suggestionId: suggestion.id,
+                            suggestionLabel: suggestion.label,
+                            prNumber,
+                            organizationAndTeamData,
+                        },
+                    });
+                }
+
+                return {
+                    ...suggestion,
+                    severity,
+                };
+            });
         } catch (error) {
             this.logger.error({
                 message: `Failed to merge suggestions with severity levels for PR#${prNumber}`,
                 context: SuggestionService.name,
                 error: error,
                 metadata: {
-                    suggestionsCount: suggestions.length,
-                    severityLevelsCount: severityLevels.size,
+                    suggestionsCount: suggestions?.length,
+                    severityLevelsCount: severityLevels?.length,
                     organizationAndTeamData,
                     prNumber: prNumber,
                 },
             });
-            return suggestions;
+
+            // Em caso de erro, retorna as sugestões com severidade padrão
+            return suggestions.map(suggestion => {
+                const defaultSeverity = suggestion?.severity || 'medium';
+
+                this.logger.warn({
+                    message: `Suggestion received default severity due to error in merge process`,
+                    context: SuggestionService.name,
+                    metadata: {
+                        suggestionId: suggestion.id,
+                        suggestionLabel: suggestion.label,
+                        prNumber,
+                        organizationAndTeamData,
+                    },
+                });
+
+                return {
+                    ...suggestion,
+                    severity: defaultSeverity
+                };
+            });
         }
     }
 
@@ -947,25 +993,18 @@ export class SuggestionService implements ISuggestionService {
                 return [];
             }
 
-            const chain =
-                await this.aiAnalysisService.createSeverityAnalysisChainWithFallback(
-                    organizationAndTeamData,
-                    prNumber,
-                    LLMModelProvider.DEEPSEEK_V3_0324,
-                    codeSuggestions,
-                );
-
-            const result = await chain.invoke({});
-            const severityLevels = this.parseSeverityResults(
+            const result = await this.aiAnalysisService.severityAnalysisAssignment(
                 organizationAndTeamData,
-                result,
+                prNumber,
+                LLMModelProvider.DEEPSEEK_V3_0324,
+                codeSuggestions,
             );
 
             const suggestionsWithSeverity = this.mergeSuggestionsWithSeverity(
                 organizationAndTeamData,
                 prNumber,
                 codeSuggestions,
-                severityLevels,
+                result,
             );
 
             const suggestionsLog = suggestionsWithSeverity?.map(
@@ -999,42 +1038,6 @@ export class SuggestionService implements ISuggestionService {
                     prNumber: prNumber,
                 },
             });
-        }
-    }
-
-    /**
-     * Interprets the severity analysis results
-     * @private
-     */
-    private parseSeverityResults(
-        organizationAndTeamData: OrganizationAndTeamData,
-        result: string,
-    ): Map<number, string> {
-        try {
-            const severityMap = new Map();
-            const matches = result.match(/<results>([\s\S]*?)<\/results>/);
-
-            if (matches && matches[1]) {
-                matches[1].split('\n').forEach((line) => {
-                    const [id, severity] = line.trim().split('|');
-                    if (id && severity) {
-                        severityMap.set(parseInt(id), severity);
-                    }
-                });
-            }
-
-            return severityMap;
-        } catch (error) {
-            this.logger.log({
-                message: 'Failed to parse severity results',
-                context: SuggestionService.name,
-                error: error,
-                metadata: {
-                    resultContent: result,
-                    organizationAndTeamData,
-                },
-            });
-            return new Map();
         }
     }
 
