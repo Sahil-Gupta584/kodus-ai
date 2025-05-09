@@ -147,7 +147,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             }
 
             return new Map(
-                parsedResponse.decisions.map((decision) => [
+                parsedResponse?.decisions?.map((decision) => [
                     decision.id,
                     decision.shouldRemove,
                 ]),
