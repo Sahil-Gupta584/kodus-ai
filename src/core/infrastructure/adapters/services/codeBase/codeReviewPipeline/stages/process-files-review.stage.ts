@@ -904,7 +904,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 await this.suggestionService.analyzeSuggestionsSeverity(
                     context?.organizationAndTeamData,
                     context?.pullRequest?.number,
-                    safeGuardResponse?.suggestions ?? suggestionsWithId,
+                    safeGuardResponse?.suggestions,
                     context?.codeReviewConfig?.reviewOptions,
                 );
 

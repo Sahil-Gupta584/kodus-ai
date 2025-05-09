@@ -778,4 +778,13 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
     ): Promise<ReviewModeResponse> {
         throw new Error('Method not implemented.');
     }
+
+    severityAnalysisAssignment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        provider: LLMModelProvider,
+        codeSuggestions: CodeSuggestion[],
+    ): Promise<CodeSuggestion[]> {
+        throw new Error('Method not implemented.');
+    }
 }

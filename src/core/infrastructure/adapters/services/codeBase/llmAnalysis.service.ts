@@ -658,6 +658,56 @@ export class LLMAnalysisService implements IAIAnalysisService {
             throw error;
         }
     }
+
+    async severityAnalysisAssignment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        provider: LLMModelProvider,
+        codeSuggestions: CodeSuggestion[],
+    ): Promise<Partial<CodeSuggestion>[]> {
+        const baseContext = {
+            organizationAndTeamData,
+            prNumber,
+            codeSuggestions,
+        };
+
+        const chain = await this.createSeverityAnalysisChainWithFallback(
+            organizationAndTeamData,
+            prNumber,
+            provider,
+            codeSuggestions,
+        );
+
+        try {
+            const result = await chain.invoke(baseContext);
+
+            const suggestionsWithSeverityAnalysis =
+                this.llmResponseProcessor.processResponse(
+                    organizationAndTeamData,
+                    prNumber,
+                    result,
+                );
+
+            const suggestionsWithSeverity =
+                suggestionsWithSeverityAnalysis?.codeSuggestions || [];
+
+            return suggestionsWithSeverity;
+        } catch (error) {
+            this.logger.error({
+                message:
+                    'Error executing validate implemented suggestions chain:',
+                error,
+                context: LLMAnalysisService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    provider,
+                },
+            });
+        }
+
+        return codeSuggestions;
+    }
     //#endregion
 
     //#region Filter Suggestions Safe Guard
