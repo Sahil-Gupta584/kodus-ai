@@ -757,23 +757,9 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context,
                 );
 
-            const kodyRulesSuggestions =
-                await this.codeAnalysisOrchestrator.executeKodyRulesAnalysis(
-                    context?.organizationAndTeamData,
-                    context?.pullRequest?.number,
-                    { file, patchWithLinesStr },
-                    context,
-                    {
-                        overallSummary: standardAnalysisResult?.overallSummary,
-                        codeSuggestions:
-                            standardAnalysisResult?.codeSuggestions,
-                    },
-                );
-
             const finalResult = await this.processAnalysisResult(
                 standardAnalysisResult,
                 context,
-                kodyRulesSuggestions,
             );
 
             return { ...finalResult, file };
@@ -803,7 +789,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
     private async processAnalysisResult(
         result: AIAnalysisResult,
         context: AnalysisContext,
-        kodyRulesSuggestions: any,
     ): Promise<IFinalAnalysisResult> {
         const { reviewModeResponse } = context;
         const { file, patchWithLinesStr } = context.fileChangeContext;
@@ -864,24 +849,28 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context?.codeReviewConfig?.kodyFineTuningConfig?.enabled,
                 );
 
-            const keepedSuggestions: Partial<CodeSuggestion>[] = getDataPipelineKodyFineTunning?.keepedSuggestions?.map(suggestion => {
-                const { suggestionEmbed, ...rest } = suggestion as any;
-                return rest;
-            });
+            const keepedSuggestions: Partial<CodeSuggestion>[] =
+                getDataPipelineKodyFineTunning?.keepedSuggestions?.map(
+                    (suggestion) => {
+                        const { suggestionEmbed, ...rest } = suggestion as any;
+                        return rest;
+                    },
+                );
 
-            const discardedSuggestions: Partial<CodeSuggestion>[] = getDataPipelineKodyFineTunning?.discardedSuggestions?.map(suggestion => {
-                const { suggestionEmbed, ...rest } = suggestion as any;
-                return rest;
-            });
+            const discardedSuggestions: Partial<CodeSuggestion>[] =
+                getDataPipelineKodyFineTunning?.discardedSuggestions?.map(
+                    (suggestion) => {
+                        const { suggestionEmbed, ...rest } = suggestion as any;
+                        return rest;
+                    },
+                );
 
             discardedSuggestionsByKodyFineTuning.push(
-                ...discardedSuggestions.map(
-                    (suggestion) => {
-                        suggestion.priorityStatus =
-                            PriorityStatus.DISCARDED_BY_KODY_FINE_TUNING;
-                        return suggestion;
-                    },
-                ),
+                ...discardedSuggestions.map((suggestion) => {
+                    suggestion.priorityStatus =
+                        PriorityStatus.DISCARDED_BY_KODY_FINE_TUNING;
+                    return suggestion;
+                }),
             );
 
             const safeGuardResponse =
@@ -921,17 +910,30 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
             let mergedSuggestions = [];
 
-            // Se tem sugestões do Kody Rules, adiciona
+            const kodyRulesSuggestions =
+                await this.codeAnalysisOrchestrator.executeKodyRulesAnalysis(
+                    context?.organizationAndTeamData,
+                    context?.pullRequest?.number,
+                    { file, patchWithLinesStr },
+                    context,
+                    {
+                        overallSummary: result?.overallSummary,
+                        codeSuggestions: suggestionsWithSeverity,
+                    },
+                );
+
             if (kodyRulesSuggestions?.codeSuggestions?.length > 0) {
                 mergedSuggestions.push(...kodyRulesSuggestions.codeSuggestions);
             }
 
             // Se tem sugestões com severidade, adiciona também
-            if (suggestionsWithSeverity?.length > 0) {
+            if (
+                !kodyRulesSuggestions?.codeSuggestions?.length &&
+                suggestionsWithSeverity?.length > 0
+            ) {
                 mergedSuggestions.push(...suggestionsWithSeverity);
             }
 
-            // TESTAR
             const kodyASTSuggestions =
                 await this.kodyAstAnalyzeContextPreparation.prepareKodyASTAnalyzeContext(
                     context,
@@ -942,7 +944,12 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 ...(kodyASTSuggestions?.codeSuggestions || []),
             ];
 
-            const VALID_ACTIONS = ['synchronize', 'update', 'updated', 'git.pullrequest.updated'];
+            const VALID_ACTIONS = [
+                'synchronize',
+                'update',
+                'updated',
+                'git.pullrequest.updated',
+            ];
 
             // If it's a commit, validate repeated suggestions
             if (context?.action && VALID_ACTIONS.includes(context.action)) {
