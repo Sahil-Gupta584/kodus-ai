@@ -999,44 +999,6 @@ export class SuggestionService implements ISuggestionService {
         }
     }
 
-    /**
-     * Interprets the severity analysis results
-     * @private
-     */
-    private parseSeverityResults(
-        organizationAndTeamData: OrganizationAndTeamData,
-        result: string,
-    ): Map<number, string> {
-        try {
-            const severityMap = new Map();
-            const parsedResult = JSON.parse(result);
-
-            if (parsedResult?.codeSuggestions?.length > 0) {
-                parsedResult.codeSuggestions.forEach((suggestion) => {
-                    if (suggestion.id && suggestion.severity) {
-                        severityMap.set(
-                            parseInt(suggestion.id),
-                            suggestion.severity,
-                        );
-                    }
-                });
-            }
-
-            return severityMap;
-        } catch (error) {
-            this.logger.log({
-                message: 'Failed to parse severity results',
-                context: SuggestionService.name,
-                error: error,
-                metadata: {
-                    resultContent: result,
-                    organizationAndTeamData,
-                },
-            });
-            return new Map();
-        }
-    }
-
     private async normalizeSeverity(
         suggestions: Partial<CodeSuggestion>[],
     ): Promise<Partial<CodeSuggestion>[]> {
