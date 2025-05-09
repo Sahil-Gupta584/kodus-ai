@@ -909,22 +909,27 @@ export class SuggestionService implements ISuggestionService {
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         suggestions: Partial<CodeSuggestion>[],
-        severityLevels: Map<number, string>,
+        severityLevels: Partial<CodeSuggestion>[],
     ): Partial<CodeSuggestion>[] {
         try {
-            return suggestions.map((suggestion, index) => ({
-                ...suggestion,
-                id: suggestion?.id || uuidv4(),
-                severity: severityLevels.get(index + 1) || 'medium',
-            }));
+            return suggestions.map((suggestion) => {
+                const severityLevel = severityLevels.find(
+                    (level) => level.id === suggestion.id,
+                );
+
+                return {
+                    ...suggestion,
+                    severity: severityLevel?.severity || 'medium',
+                };
+            });
         } catch (error) {
             this.logger.error({
                 message: `Failed to merge suggestions with severity levels for PR#${prNumber}`,
                 context: SuggestionService.name,
                 error: error,
                 metadata: {
-                    suggestionsCount: suggestions.length,
-                    severityLevelsCount: severityLevels.size,
+                    suggestionsCount: suggestions?.length,
+                    severityLevelsCount: severityLevels?.length,
                     organizationAndTeamData,
                     prNumber: prNumber,
                 },
@@ -932,7 +937,6 @@ export class SuggestionService implements ISuggestionService {
             return suggestions;
         }
     }
-
     /**
      * Analyzes and assigns severity levels to code suggestions
      * @public
@@ -947,25 +951,18 @@ export class SuggestionService implements ISuggestionService {
                 return [];
             }
 
-            const chain =
-                await this.aiAnalysisService.createSeverityAnalysisChainWithFallback(
-                    organizationAndTeamData,
-                    prNumber,
-                    LLMModelProvider.DEEPSEEK_V3_0324,
-                    codeSuggestions,
-                );
-
-            const result = await chain.invoke({});
-            const severityLevels = this.parseSeverityResults(
+            const result = await this.aiAnalysisService.severityAnalysisAssignment(
                 organizationAndTeamData,
-                result,
+                prNumber,
+                LLMModelProvider.DEEPSEEK_V3_0324,
+                codeSuggestions,
             );
 
             const suggestionsWithSeverity = this.mergeSuggestionsWithSeverity(
                 organizationAndTeamData,
                 prNumber,
                 codeSuggestions,
-                severityLevels,
+                result,
             );
 
             const suggestionsLog = suggestionsWithSeverity?.map(
@@ -1012,13 +1009,15 @@ export class SuggestionService implements ISuggestionService {
     ): Map<number, string> {
         try {
             const severityMap = new Map();
-            const matches = result.match(/<results>([\s\S]*?)<\/results>/);
+            const parsedResult = JSON.parse(result);
 
-            if (matches && matches[1]) {
-                matches[1].split('\n').forEach((line) => {
-                    const [id, severity] = line.trim().split('|');
-                    if (id && severity) {
-                        severityMap.set(parseInt(id), severity);
+            if (parsedResult?.codeSuggestions?.length > 0) {
+                parsedResult.codeSuggestions.forEach((suggestion) => {
+                    if (suggestion.id && suggestion.severity) {
+                        severityMap.set(
+                            parseInt(suggestion.id),
+                            suggestion.severity,
+                        );
                     }
                 });
             }

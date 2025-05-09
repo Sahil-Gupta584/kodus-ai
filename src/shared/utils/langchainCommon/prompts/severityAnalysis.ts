@@ -65,13 +65,23 @@ For each suggestion, identify any of these severity flags:
 ## Response Format
 Respond ONLY with the suggestion ID and severity level in this exact format:
 \`\`\`
-<severityAnalysis>
- <results>
-1|critical
-2|high
-3|medium
-</results>
-</severityAnalysis>
+{
+  "codeSuggestions": [
+    {
+      "id": string,
+      "severity": "high"
+    },
+    {
+      "id": string,
+      "severity": "critical"
+    },
+    {
+      "id": string,
+      "severity": "medium"
+    },
+    ...
+  ]
+}
 \`\`\`
 No explanations or additional text.
 
