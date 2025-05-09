@@ -31,6 +31,10 @@ const tryParseJSONObject = (payload: any) => {
 
 const tryParseJSONObjectWithFallback = (payload: any) => {
     try {
+        if (payload.length <= 0) {
+            return null;
+        }
+
         return JSON5.parse(payload);
     } catch (err) {
         try {
@@ -43,6 +47,7 @@ const tryParseJSONObjectWithFallback = (payload: any) => {
                     .replace(/\\/g, '') // Remove backslashes (escape characters)
                     .replace(/\/\*[\s\S]*?\*\//g, '') // Remove multi-line comments (/* comment */)
                     .replace(/<[^>]*>/g, '') // Remove HTML tags (e.g., <tag>)
+                    .replace(/^`+|`+$/g, '') // Remove backticks at the beginning and end
                     .trim();
 
                 return JSON.parse(cleanedPayload);
