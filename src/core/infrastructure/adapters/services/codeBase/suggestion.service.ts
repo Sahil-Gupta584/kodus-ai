@@ -912,14 +912,35 @@ export class SuggestionService implements ISuggestionService {
         severityLevels: Partial<CodeSuggestion>[],
     ): Partial<CodeSuggestion>[] {
         try {
+
+            if (!suggestions?.length) {
+                return [];
+            }
+
             return suggestions.map((suggestion) => {
-                const severityLevel = severityLevels.find(
+                const severityLevel = severityLevels?.find(
                     (level) => level.id === suggestion.id,
                 );
 
+                // Se não encontrar uma severidade específica, usa a existente ou define como 'medium'
+                const severity = severityLevel?.severity || 'medium';
+
+                if (!severityLevel?.severity) {
+                    this.logger.warn({
+                        message: `Suggestion severity not found in severity levels`,
+                        context: SuggestionService.name,
+                        metadata: {
+                            suggestionId: suggestion.id,
+                            suggestionLabel: suggestion.label,
+                            prNumber,
+                            organizationAndTeamData,
+                        },
+                    });
+                }
+
                 return {
                     ...suggestion,
-                    severity: severityLevel?.severity || 'medium',
+                    severity,
                 };
             });
         } catch (error) {
@@ -934,9 +955,30 @@ export class SuggestionService implements ISuggestionService {
                     prNumber: prNumber,
                 },
             });
-            return suggestions;
+
+            // Em caso de erro, retorna as sugestões com severidade padrão
+            return suggestions.map(suggestion => {
+                const defaultSeverity = suggestion?.severity || 'medium';
+
+                this.logger.warn({
+                    message: `Suggestion received default severity due to error in merge process`,
+                    context: SuggestionService.name,
+                    metadata: {
+                        suggestionId: suggestion.id,
+                        suggestionLabel: suggestion.label,
+                        prNumber,
+                        organizationAndTeamData,
+                    },
+                });
+
+                return {
+                    ...suggestion,
+                    severity: defaultSeverity
+                };
+            });
         }
     }
+
     /**
      * Analyzes and assigns severity levels to code suggestions
      * @public
