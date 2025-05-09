@@ -518,6 +518,7 @@ const getChatGemini = (
         maxTokens?: number;
         verbose?: boolean;
         callbacks?: BaseCallbackHandler[];
+        json?: boolean;
     } | null,
 ) => {
     const defaultOptions = {
@@ -528,6 +529,7 @@ const getChatGemini = (
         verbose: false,
         streaming: false,
         callbacks: [],
+        json: false,
     };
 
     const finalOptions = options
@@ -542,6 +544,7 @@ const getChatGemini = (
         maxOutputTokens: finalOptions.maxTokens,
         verbose: finalOptions.verbose,
         callbacks: finalOptions.callbacks,
+        json: finalOptions.json,
     });
 };
 
@@ -677,6 +680,10 @@ const getDeepseekByNovitaAI = (
         streaming: false,
         callbacks: [],
     };
+
+    if (options?.model) {
+        options.model = `deepseek/${options.model}`;
+    }
 
     const finalOptions = options
         ? { ...defaultOptions, ...options }

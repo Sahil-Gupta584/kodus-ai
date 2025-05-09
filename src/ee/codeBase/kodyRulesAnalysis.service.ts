@@ -23,6 +23,8 @@ import { getKodyRulesForFile } from '@/shared/utils/glob-utils';
 import {
     prompt_kodyrules_classifier_system,
     prompt_kodyrules_classifier_user,
+    prompt_kodyrules_guardian_system,
+    prompt_kodyrules_guardian_user,
     prompt_kodyrules_suggestiongeneration_system,
     prompt_kodyrules_suggestiongeneration_user,
     prompt_kodyrules_updatestdsuggestions_system,
@@ -117,6 +119,50 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
     private readonly anthropic: Anthropic;
     private readonly tokenTracker: TokenTrackingHandler;
 
+    /**
+     * Processa a resposta do LLM sobre decisões de violações
+     * @param response String contendo a resposta do LLM
+     * @returns Map com o ID da violação e se deve ser removida ou não, ou null em caso de erro
+     */
+    private processViolationDecisions(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        response: string,
+    ): Map<string, boolean> | null {
+        try {
+            const cleanResponse = response.replace(/```json\n|```/g, '');
+            const parsedResponse = tryParseJSONObject(cleanResponse);
+
+            if (!parsedResponse?.decisions) {
+                this.logger.error({
+                    message: 'Failed to parse violation decisions response',
+                    context: KodyRulesAnalysisService.name,
+                    metadata: {
+                        originalResponse: response,
+                        cleanResponse,
+                        prNumber,
+                    },
+                });
+                return null;
+            }
+
+            return new Map(
+                parsedResponse?.decisions?.map((decision) => [
+                    decision.id,
+                    decision.shouldRemove,
+                ]),
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Error processing violation decisions',
+                context: KodyRulesAnalysisService.name,
+                error,
+                metadata: { organizationAndTeamData, prNumber, response },
+            });
+            return null;
+        }
+    }
+
     constructor(private readonly logger: PinoLoggerService) {
         this.anthropic = new Anthropic({
             apiKey: process.env.API_ANTHROPIC_API_KEY,
@@ -137,7 +183,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             !!suggestions?.codeSuggestions &&
             suggestions?.codeSuggestions?.length > 0;
 
-        const provider = LLMModelProvider.GEMINI_1_5_PRO;
+        const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
         // Reset token tracking for new analysis
         this.tokenTracker.reset();
 
@@ -179,6 +225,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 classifiedKodyRulesChain,
                 updateStandardSuggestionsChain,
                 generateKodyRulesSuggestionsChain,
+                guardianKodyRulesChain,
             ] = await Promise.all([
                 this.createAnalysisChainWithFallback(
                     provider,
@@ -200,6 +247,13 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     prompt_kodyrules_suggestiongeneration_system,
                     prompt_kodyrules_suggestiongeneration_user,
                     'generateKodyRulesSuggestionsAnalyzeCodeWithAI',
+                ),
+                this.createAnalysisChainWithFallback(
+                    provider,
+                    baseContext,
+                    prompt_kodyrules_guardian_system,
+                    prompt_kodyrules_guardian_user,
+                    'guardianKodyRulesAnalyzeCodeWithAI',
                 ),
             ]);
 
@@ -277,6 +331,23 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 ];
             }
 
+            const guardianKodyRulesResult = await guardianKodyRulesChain.invoke(
+                {
+                    standardSuggestions: finalOutput.codeSuggestions,
+                    kodyRules: extendedContext.filteredKodyRules,
+                },
+            );
+
+            const guardianKodyRules = this.processViolationDecisions(
+                organizationAndTeamData,
+                prNumber,
+                guardianKodyRulesResult,
+            );
+
+            finalOutput.codeSuggestions = finalOutput.codeSuggestions.filter(
+                (suggestion) => !guardianKodyRules?.get(suggestion.id),
+            );
+
             return this.addSeverityToSuggestions(
                 finalOutput,
                 context?.codeReviewConfig?.kodyRules || [],
@@ -318,10 +389,10 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     .filter(Boolean);
 
                 // If there are severities, use the first one
-                if (severities.length > 0) {
+                if (severities && severities.length > 0) {
                     return {
                         ...suggestion,
-                        severity: severities[0],
+                        severity: severities[0]?.toLowerCase(),
                     };
                 }
 
@@ -380,9 +451,9 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         runName?: string,
     ) {
         const fallbackProvider =
-            provider === LLMModelProvider.GEMINI_1_5_PRO
+            provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
                 ? LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET
-                : LLMModelProvider.GEMINI_1_5_PRO;
+                : LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
         try {
             const mainChain = await this.createProviderChain(
                 provider,
@@ -435,9 +506,14 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
     ) {
         try {
             let llm =
-                provider === LLMModelProvider.GEMINI_1_5_PRO
+                provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
                     ? getChatGemini({
+                          model: getLLMModelProviderWithFallback(
+                              LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                          ),
                           temperature: 0,
+                          maxTokens: 20000,
+                          json: true,
                           callbacks: [this.tokenTracker],
                       })
                     : getChatVertexAI({
@@ -509,9 +585,9 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     .trim();
             }
 
-            let parsedResponse = tryParseJSONObject(cleanResponse);
+            const parsedResponse = tryParseJSONObject(cleanResponse);
 
-            if (!parsedResponse) {
+            if (!parsedResponse?.length) {
                 this.logger.error({
                     message: 'Failed to parse classifier response',
                     context: KodyRulesAnalysisService.name,
@@ -523,13 +599,17 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 return null;
             }
 
-            const filteredRules = allRules.filter((rule) =>
-                parsedResponse.some(
-                    (responseRule) => responseRule.uuid === rule.uuid,
-                ),
+            const responseMap = new Map(
+                parsedResponse.map((rule) => [rule.uuid, rule.reason]),
             );
 
-            return filteredRules;
+            return allRules
+                .filter((rule) => rule.uuid && responseMap.has(rule.uuid))
+                .map((rule) => {
+                    const baseRule = { ...rule };
+                    const reason = responseMap.get(rule.uuid!);
+                    return { ...baseRule, reason } as Partial<IKodyRule>;
+                });
         } catch (error) {
             this.logger.error({
                 message: 'Error processing classifier response',
@@ -642,12 +722,11 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         });
     }
 
-    async createSeverityAnalysisChain(
+    createSeverityAnalysisChainWithFallback(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         provider: LLMModelProvider,
-        codeSuggestions: any[],
-        selectedCategories: object,
+        codeSuggestions: CodeSuggestion[],
     ): Promise<any> {
         throw new Error('Method not implemented.');
     }
@@ -697,6 +776,15 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         file: FileChange,
         codeDiff: string,
     ): Promise<ReviewModeResponse> {
+        throw new Error('Method not implemented.');
+    }
+
+    severityAnalysisAssignment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        provider: LLMModelProvider,
+        codeSuggestions: CodeSuggestion[],
+    ): Promise<CodeSuggestion[]> {
         throw new Error('Method not implemented.');
     }
 }

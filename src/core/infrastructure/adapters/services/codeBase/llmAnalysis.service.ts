@@ -39,10 +39,7 @@ import {
     prompt_codereview_system_gemini,
     prompt_codereview_user_deepseek,
 } from '@/shared/utils/langchainCommon/prompts/configuration/codeReview';
-import {
-    prompt_severity_analysis_system,
-    prompt_severity_analysis_user,
-} from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
+import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -336,10 +333,12 @@ export class LLMAnalysisService implements IAIAnalysisService {
                           temperature: 0,
                           callbacks: [this.tokenTracker],
                       })
-                    : provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW
+                    : provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
                       ? getChatGemini({
-                            model: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW,
+                            model: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
                             temperature: 0,
+                            maxTokens: 20000,
+                            json: true,
                             callbacks: [this.tokenTracker],
                         })
                       : getChatGPT({
@@ -425,7 +424,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
         ) {
             return LLMModelProvider.DEEPSEEK_V3;
         }
-        return LLMModelProvider.GEMINI_2_5_PRO_PREVIEW;
+        return LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
     }
 
     private getFallbackProvider(
@@ -433,13 +432,13 @@ export class LLMAnalysisService implements IAIAnalysisService {
         reviewMode: ReviewModeResponse,
     ): LLMModelProvider {
         if (reviewMode === ReviewModeResponse.LIGHT_MODE) {
-            return LLMModelProvider.GEMINI_2_5_PRO_PREVIEW;
+            return LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
         }
 
         const fallbackProvider =
-            provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW
+            provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
                 ? LLMModelProvider.DEEPSEEK_V3
-                : LLMModelProvider.GEMINI_2_5_PRO_PREVIEW;
+                : LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
 
         return fallbackProvider;
     }
@@ -452,7 +451,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
     ) {
         const fallbackProvider =
             provider === LLMModelProvider.CHATGPT_4_ALL
-                ? LLMModelProvider.GEMINI_2_5_PRO_PREVIEW
+                ? LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
                 : LLMModelProvider.CHATGPT_4_ALL;
         try {
             // Main chain
@@ -492,7 +491,8 @@ export class LLMAnalysisService implements IAIAnalysisService {
         reviewMode: ReviewModeResponse = ReviewModeResponse.LIGHT_MODE,
     ) {
         const provider =
-            parameters.llmProvider || LLMModelProvider.GEMINI_2_5_PRO_PREVIEW;
+            parameters.llmProvider ||
+            LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
 
         // Reset token tracking for new suggestions
         this.tokenTracker.reset();
@@ -530,42 +530,58 @@ export class LLMAnalysisService implements IAIAnalysisService {
     //#endregion
 
     //#region Severity Analysis
-    public async createSeverityAnalysisChain(
+    private async createSeverityAnalysisChain(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         provider: LLMModelProvider,
-        codeSuggestions: any[],
-        selectedCategories: object,
+        codeSuggestions: CodeSuggestion[],
     ) {
         try {
-            const model =
-                provider === LLMModelProvider.CHATGPT_4_ALL
-                    ? getChatGPT({
+            let llm =
+                provider === LLMModelProvider.DEEPSEEK_V3_0324
+                    ? getDeepseekByNovitaAI({
+                          model: LLMModelProvider.DEEPSEEK_V3_0324,
+                          temperature: 0,
+                          maxTokens: 8000,
+                      })
+                    : getChatGPT({
                           model: getLLMModelProviderWithFallback(
                               LLMModelProvider.CHATGPT_4_ALL,
                           ),
                           temperature: 0,
-                          callbacks: [this.tokenTracker],
-                      })
-                    : getChatVertexAI({
-                          temperature: 0,
-                          callbacks: [this.tokenTracker],
                       });
 
+            if (provider === LLMModelProvider.CHATGPT_4_ALL) {
+                llm = llm.bind({
+                    response_format: { type: 'json_object' },
+                });
+            }
+
             const chain = RunnableSequence.from([
-                async () => {
-                    const systemPrompt = prompt_severity_analysis_system();
+                async (input: any) => {
                     const humanPrompt = prompt_severity_analysis_user(
-                        codeSuggestions,
-                        selectedCategories,
+                        codeSuggestions?.map((s) => ({
+                            id: s.id,
+                            label: s.label,
+                            suggestionContent: s.suggestionContent,
+                            existingCode: s.existingCode,
+                            improvedCode: s.improvedCode,
+                        })),
                     );
 
                     return [
-                        new SystemMessage(systemPrompt),
-                        new HumanMessage(humanPrompt),
+                        {
+                            role: 'user',
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: humanPrompt,
+                                },
+                            ],
+                        },
                     ];
                 },
-                model,
+                llm,
                 new StringOutputParser(),
             ]);
 
@@ -576,13 +592,121 @@ export class LLMAnalysisService implements IAIAnalysisService {
                 error,
                 context: LLMAnalysisService.name,
                 metadata: {
+                    organizationAndTeamData: organizationAndTeamData,
+                    prNumber: prNumber,
+                    provider,
+                },
+            });
+        }
+    }
+
+    public async createSeverityAnalysisChainWithFallback(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        provider: LLMModelProvider,
+        codeSuggestions: CodeSuggestion[],
+    ) {
+        const fallbackProvider =
+            provider === LLMModelProvider.CHATGPT_4_ALL
+                ? LLMModelProvider.DEEPSEEK_V3_0324
+                : LLMModelProvider.CHATGPT_4_ALL;
+
+        try {
+            // Chain principal
+            const mainChain = await this.createSeverityAnalysisChain(
+                organizationAndTeamData,
+                prNumber,
+                provider,
+                codeSuggestions,
+            );
+
+            // Chain de fallback
+            const fallbackChain = await this.createSeverityAnalysisChain(
+                organizationAndTeamData,
+                prNumber,
+                fallbackProvider,
+                codeSuggestions,
+            );
+
+            // Configurar chain com fallback
+            return mainChain
+                .withFallbacks({
+                    fallbacks: [fallbackChain],
+                })
+                .withConfig({
+                    runName: 'severityAnalysis',
+                    metadata: {
+                        organizationId: organizationAndTeamData?.organizationId,
+                        teamId: organizationAndTeamData?.teamId,
+                        pullRequestId: prNumber,
+                        provider: provider,
+                        fallbackProvider: fallbackProvider,
+                    },
+                });
+        } catch (error) {
+            this.logger.error({
+                message: 'Error creating severity analysis chain with fallback',
+                error,
+                context: LLMAnalysisService.name,
+                metadata: {
+                    provider,
+                    fallbackProvider,
+                    organizationAndTeamData: organizationAndTeamData,
+                    prNumber: prNumber,
+                },
+            });
+            throw error;
+        }
+    }
+
+    async severityAnalysisAssignment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        provider: LLMModelProvider,
+        codeSuggestions: CodeSuggestion[],
+    ): Promise<Partial<CodeSuggestion>[]> {
+        const baseContext = {
+            organizationAndTeamData,
+            prNumber,
+            codeSuggestions,
+        };
+
+        const chain = await this.createSeverityAnalysisChainWithFallback(
+            organizationAndTeamData,
+            prNumber,
+            provider,
+            codeSuggestions,
+        );
+
+        try {
+            const result = await chain.invoke(baseContext);
+
+            const suggestionsWithSeverityAnalysis =
+                this.llmResponseProcessor.processResponse(
+                    organizationAndTeamData,
+                    prNumber,
+                    result,
+                );
+
+            const suggestionsWithSeverity =
+                suggestionsWithSeverityAnalysis?.codeSuggestions || [];
+
+            return suggestionsWithSeverity;
+        } catch (error) {
+            this.logger.error({
+                message:
+                    'Error executing validate implemented suggestions chain:',
+                error,
+                context: LLMAnalysisService.name,
+                metadata: {
                     organizationAndTeamData,
                     prNumber,
                     provider,
                 },
             });
-            throw error;
         }
+
+        return codeSuggestions;
     }
     //#endregion
 
