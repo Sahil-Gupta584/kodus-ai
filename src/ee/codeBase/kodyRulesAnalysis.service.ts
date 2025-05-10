@@ -122,9 +122,11 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
     private readonly tokenTracker: TokenTrackingHandler;
 
     /**
-     * Processa a resposta do LLM sobre decisões de violações
-     * @param response String contendo a resposta do LLM
-     * @returns Map com o ID da violação e se deve ser removida ou não, ou null em caso de erro
+     * Process the LLM response about violation decisions
+     * @param organizationAndTeamData Organization and team data
+     * @param prNumber Pull request number
+     * @param response String containing the LLM response
+     * @returns Map with the violation ID and if it should be removed or not, or null in case of error
      */
     private processViolationDecisions(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -592,8 +594,9 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             const parsedResponse = tryParseJSONObject(cleanResponse);
 
             if (!parsedResponse?.length) {
-                this.logger.error({
-                    message: 'Failed to parse classifier response',
+                this.logger.warn({
+                    message:
+                        'Failed to parse classifier response OR not response',
                     context: KodyRulesAnalysisService.name,
                     metadata: {
                         originalResponse: response,

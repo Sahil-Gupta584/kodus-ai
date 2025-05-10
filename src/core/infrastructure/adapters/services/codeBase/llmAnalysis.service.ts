@@ -134,6 +134,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
             fileContent: string;
             language: string;
             filePath: string;
+            suggestions?: CodeSuggestion[];
         },
         reviewMode: ReviewModeResponse,
     ) {
@@ -145,32 +146,42 @@ export class LLMAnalysisService implements IAIAnalysisService {
             return {
                 type: 'text',
                 text: `
-                <codeDiff>
-                    ${context.patchWithLinesStr}
-                </codeDiff>
+## Context
 
-                <filePath>
-                    ${context.filePath}
-                </filePath>
-                `,
+<codeDiff>
+    ${context.patchWithLinesStr}
+</codeDiff>
+
+<filePath>
+    ${context.filePath}
+</filePath>
+
+<suggestionsContext>
+    ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
+</suggestionsContext>`,
             };
         }
 
         return {
             type: 'text',
             text: `
-            <fileContent>
-                ${context.fileContent}
-            </fileContent>
+## Context
 
-            <codeDiff>
-                ${context.patchWithLinesStr}
-            </codeDiff>
+<fileContent>
+    ${context.fileContent}
+</fileContent>
 
-            <filePath>
-                ${context.filePath}
-            </filePath>
-            `,
+<codeDiff>
+    ${context.patchWithLinesStr}
+</codeDiff>
+
+<filePath>
+    ${context.filePath}
+</filePath>
+
+<suggestionsContext>
+${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
+</suggestionsContext>`,
         };
     }
 
@@ -733,7 +744,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
                 }
             });
 
-            const provider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+            const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
             const baseContext = {
                 organizationAndTeamData,
                 file: {
@@ -839,10 +850,8 @@ export class LLMAnalysisService implements IAIAnalysisService {
         reviewMode: ReviewModeResponse,
         context: any,
     ) {
-        const fallbackProvider =
-            provider === LLMModelProvider.CHATGPT_4_ALL
-                ? LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET
-                : LLMModelProvider.CHATGPT_4_ALL;
+        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+
         try {
             const mainChain = await this.createSafeGuardProviderChain(
                 organizationAndTeamData,
@@ -900,56 +909,45 @@ export class LLMAnalysisService implements IAIAnalysisService {
     ) {
         try {
             let llm =
-                provider === LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET
-                    ? getChatVertexAI({
+                provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
+                    ? getChatGemini({
+                          model: getLLMModelProviderWithFallback(
+                              LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                          ),
                           temperature: 0,
+                          maxTokens: 20000,
+                          json: true,
                           callbacks: [this.tokenTracker],
                       })
-                    : getChatGPT({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
+                    : getChatVertexAI({
                           temperature: 0,
                           callbacks: [this.tokenTracker],
                       });
 
             const chain = RunnableSequence.from([
                 async (input: any) => {
-                    const systemPrompt = prompt_codeReviewSafeguard_system();
-                    const humanPrompt = prompt_codeReviewSafeguard_user(
+                    const systemPrompt = prompt_codeReviewSafeguard_system(
                         input.languageResultPrompt,
                     );
 
                     return [
                         {
+                            role: 'system',
+                            content: systemPrompt,
+                        },
+                        {
                             role: 'user',
                             content: [
-                                // Required for pipeline steps that use file or codeDiff
                                 this.preparePrefixChainForCache(
                                     {
                                         fileContent: input.file.fileContent,
                                         patchWithLinesStr: input.codeDiff,
                                         language: input.file.language,
                                         filePath: input.file.filename,
+                                        suggestions: input?.suggestions,
                                     },
                                     reviewMode,
                                 ),
-                                {
-                                    type: 'text',
-                                    text: `<suggestionsContext>${JSON.stringify(input?.suggestions, null, 2) || 'No suggestions provided'}</suggestionsContext>`,
-                                },
-                                {
-                                    type: 'text',
-                                    text: systemPrompt,
-                                },
-                                {
-                                    type: 'text',
-                                    text: humanPrompt,
-                                },
-                                {
-                                    type: 'text',
-                                    text: 'Start analysis',
-                                },
                             ],
                         },
                     ];
