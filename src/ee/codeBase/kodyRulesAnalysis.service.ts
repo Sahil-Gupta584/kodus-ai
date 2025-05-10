@@ -6,6 +6,7 @@ import {
     CodeSuggestion,
     ReviewModeResponse,
     FileChange,
+    ReviewOptions,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { RunnableSequence } from '@langchain/core/runnables';
@@ -280,6 +281,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 updateStandardSuggestionsResult,
                 fileContext,
                 provider,
+                extendedContext,
             );
 
             if (!classifiedRules || classifiedRules?.length === 0) {
@@ -313,6 +315,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 generatedKodyRulesSuggestionsResult,
                 fileContext,
                 provider,
+                extendedContext,
             );
 
             let finalOutput = {
@@ -625,12 +628,34 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         }
     }
 
+    private processSuggestionLabels(
+        suggestions: CodeSuggestion[],
+        reviewOptions: ReviewOptions,
+    ): CodeSuggestion[] {
+        const availableLabels = Object.keys(reviewOptions);
+
+        return suggestions.map((suggestion) => {
+            if (
+                (suggestion.label ?? '') === '' ||
+                !availableLabels.includes(suggestion?.label)
+            ) {
+                return {
+                    ...suggestion,
+                    label: 'kody_rules',
+                };
+            }
+
+            return suggestion;
+        });
+    }
+
     private processLLMResponse(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         response: string,
         fileContext: FileChangeContext,
         provider: LLMModelProvider,
+        extendedContext: any,
     ): AIAnalysisResult | null {
         try {
             if (!response) {
@@ -673,21 +698,32 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     }));
             }
 
-            parsedResponse.codeSuggestions =
-                parsedResponse?.codeSuggestions?.map((suggestion) => {
-                    if (!suggestion?.id || !uuidValidate(suggestion?.id)) {
-                        suggestion.id = uuidv4();
-                    }
-
-                    if (suggestion.label) {
+            if (parsedResponse?.codeSuggestions) {
+                parsedResponse.codeSuggestions =
+                    parsedResponse.codeSuggestions.map((suggestion) => {
+                        if (!suggestion?.id || !uuidValidate(suggestion?.id)) {
+                            return {
+                                ...suggestion,
+                                id: uuidv4(),
+                            };
+                        }
                         return suggestion;
-                    }
+                    });
 
-                    return {
-                        ...suggestion,
-                        label: 'kody_rules',
-                    };
-                });
+                if (extendedContext?.reviewOptions) {
+                    parsedResponse.codeSuggestions =
+                        this.processSuggestionLabels(
+                            parsedResponse.codeSuggestions,
+                            extendedContext.reviewOptions,
+                        );
+                } else {
+                    parsedResponse.codeSuggestions =
+                        parsedResponse.codeSuggestions.map((suggestion) => ({
+                            ...suggestion,
+                            label: suggestion.label ?? 'kody_rules',
+                        }));
+                }
+            }
 
             this.logTokenUsage({
                 tokenUsages: parsedResponse.codeSuggestions,

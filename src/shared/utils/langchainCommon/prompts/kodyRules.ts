@@ -89,6 +89,7 @@ Let's think through this step-by-step:
             "relevantLinesStart": "starting_line",
             "relevantLinesEnd": "ending_line",
             "label": string,
+            "severity": string,
             "brokenKodyRulesIds": [
                 "uuid"
             ]
