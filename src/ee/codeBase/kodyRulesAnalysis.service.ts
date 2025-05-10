@@ -594,8 +594,9 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             const parsedResponse = tryParseJSONObject(cleanResponse);
 
             if (!parsedResponse?.length) {
-                this.logger.error({
-                    message: 'Failed to parse classifier response',
+                this.logger.warn({
+                    message:
+                        'Failed to parse classifier response OR not response',
                     context: KodyRulesAnalysisService.name,
                     metadata: {
                         originalResponse: response,
