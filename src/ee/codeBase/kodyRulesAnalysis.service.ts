@@ -337,23 +337,6 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 ];
             }
 
-            const guardianKodyRulesResult = await guardianKodyRulesChain.invoke(
-                {
-                    standardSuggestions: finalOutput.codeSuggestions,
-                    kodyRules: extendedContext.filteredKodyRules,
-                },
-            );
-
-            const guardianKodyRules = this.processViolationDecisions(
-                organizationAndTeamData,
-                prNumber,
-                guardianKodyRulesResult,
-            );
-
-            finalOutput.codeSuggestions = finalOutput.codeSuggestions.filter(
-                (suggestion) => !guardianKodyRules?.get(suggestion.id),
-            );
-
             return this.addSeverityToSuggestions(
                 finalOutput,
                 context?.codeReviewConfig?.kodyRules || [],
