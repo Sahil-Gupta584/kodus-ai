@@ -14,8 +14,10 @@ import { OpenAIAssistantRunnable } from 'langchain/experimental/openai_assistant
 import axios from 'axios';
 import { traceable } from 'langsmith/traceable';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '../get-llm-model-provider.util';
+import {
+    LLMModelProvider,
+    MODEL_STRATEGIES,
+} from '@/shared/domain/enums/llm-model-provider.enum';
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks';
 import { ChatVertexAI } from '@langchain/google-vertexai';
 import { ChatTogetherAI } from '@langchain/community/chat_models/togetherai';
@@ -114,12 +116,12 @@ const getChatGPT = (
         maxTokens?: number;
         verbose?: boolean;
         callbacks?: BaseCallbackHandler[];
+        baseURL?: string;
+        apiKey?: string;
     } | null,
 ): any => {
     const defaultOptions = {
-        model: getLLMModelProviderWithFallback(
-            LLMModelProvider.CHATGPT_4_TURBO,
-        ),
+        model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4_1].modelName,
         temperature: 0,
         cache: true,
         maxRetries: 10,
@@ -128,6 +130,8 @@ const getChatGPT = (
         verbose: false,
         streaming: false,
         callbacks: [],
+        baseURL: options?.baseURL ? options.baseURL : null,
+        apiKey: options?.apiKey ? options.apiKey : null,
     };
 
     const finalOptions = options
@@ -142,6 +146,10 @@ const getChatGPT = (
         streaming: finalOptions.streaming,
         verbose: finalOptions.verbose,
         callbacks: finalOptions.callbacks,
+        configuration: {
+            baseURL: finalOptions.baseURL,
+            apiKey: finalOptions.apiKey,
+        },
     });
 };
 
@@ -160,9 +168,7 @@ const getOpenAI = (
     } | null,
 ): any => {
     const defaultOptions = {
-        model: getLLMModelProviderWithFallback(
-            LLMModelProvider.CHATGPT_3_5_TURBO,
-        ),
+        model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4_1].modelName,
         temperature: 0,
         cache: true,
         maxRetries: 10,
@@ -375,70 +381,6 @@ const getWorkItemIdsFromData = (data: any) => {
     return ids;
 };
 
-const getDoingAndWaitingColumns = async (columns) => {
-    try {
-        const llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(LLMModelProvider.CHATGPT_4),
-        }).bind({
-            response_format: { type: 'json_object' },
-        });
-
-        const wipColumns = columns
-            .filter((column) => {
-                return column.column == 'wip';
-            })
-            .map((column) => {
-                return {
-                    id: column.id,
-                    name: column.name,
-                };
-            });
-
-        const promptWaitingColumns = prompt_getWaitingColumns(
-            JSON.stringify(wipColumns),
-        );
-
-        const promptDoingColumn = prompt_getDoingColumnName(
-            JSON.stringify(wipColumns),
-        );
-
-        const llmWaitingColmmnResponse = JSON.parse(
-            String((await llm.invoke(promptWaitingColumns)).content),
-        );
-
-        const llmDoingColumnResponse = JSON.parse(
-            String((await llm.invoke(promptDoingColumn)).content),
-        );
-
-        return {
-            waitingColumns: llmWaitingColmmnResponse,
-            doingColumn: llmDoingColumnResponse,
-        };
-    } catch (error) {}
-};
-
-const getBugTypes = async (workItemTypes) => {
-    try {
-        const llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(LLMModelProvider.CHATGPT_4),
-        }).bind({
-            response_format: { type: 'json_object' },
-        });
-
-        const promptBugTypes = prompt_getBugTypes(
-            JSON.stringify(workItemTypes),
-        );
-
-        const llmBugTypesResponse = JSON.parse(
-            String((await llm.invoke(promptBugTypes)).content),
-        );
-
-        return {
-            bugTypes: llmBugTypesResponse,
-        };
-    } catch (error) {}
-};
-
 const traceCustomLLMCall = async (
     inputMessage: any,
     outputMessage: string,
@@ -487,9 +429,7 @@ const getChatAnthropic = (
     } | null,
 ): any => {
     const defaultOptions = {
-        model: getLLMModelProviderWithFallback(
-            LLMModelProvider.CLAUDE_3_5_SONNET,
-        ),
+        model: MODEL_STRATEGIES[LLMModelProvider.CLAUDE_3_5_SONNET].modelName,
         temperature: 0,
         maxTokens: 4000,
         verbose: false,
@@ -522,7 +462,7 @@ const getChatGemini = (
     } | null,
 ) => {
     const defaultOptions = {
-        model: getLLMModelProviderWithFallback(LLMModelProvider.GEMINI_1_5_PRO),
+        model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW].modelName,
         temperature: 0,
         topP: 1,
         maxTokens: 8192,
@@ -599,9 +539,7 @@ const getChatVertexAI = (
     } | null,
 ): any => {
     const defaultOptions = {
-        model: getLLMModelProviderWithFallback(
-            LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET,
-        ),
+        model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06].modelName,
         temperature: 0,
         maxTokens: 4000,
         verbose: false,
@@ -742,8 +680,6 @@ export {
     estimateTokenCount,
     checkOpenAIResult,
     getWorkItemIdsFromData,
-    getDoingAndWaitingColumns,
-    getBugTypes,
     getOpenAIAssistant,
     getOpenAIAssistantFileContent,
     traceCustomLLMCall,
