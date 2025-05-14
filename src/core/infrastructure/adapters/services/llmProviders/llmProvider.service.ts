@@ -4,6 +4,7 @@ import {
     FactoryInput,
     LLMModelProvider,
     MODEL_STRATEGIES,
+    ModelStrategy,
 } from '@/shared/domain/enums/llm-model-provider.enum';
 
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
@@ -38,7 +39,7 @@ export class LLMProviderService {
         }
 
         /** Cloud mode – follows the strategy table */
-        const strategy = MODEL_STRATEGIES[options.model];
+        const strategy = MODEL_STRATEGIES[options.model] as ModelStrategy;
         if (!strategy) {
             this.logger.error({
                 message: 'Unsupported provider',
@@ -69,9 +70,10 @@ export class LLMProviderService {
             maxTokens: options.maxTokens,
             callbacks: options.callbacks,
             baseURL,
+            json: options.jsonMode,
         } satisfies FactoryInput);
 
-        if (options.jsonMode) {
+        if (options.jsonMode && strategy.provider === 'openai') {
             llm = llm.bind({ response_format: { type: 'json_object' } });
         }
 

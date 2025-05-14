@@ -22,8 +22,7 @@ import {
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
 import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
 
 @Injectable()
 export class GenericQueryAgentProvider implements IAgentRouterStrategy {
@@ -81,9 +80,7 @@ export class GenericQueryAgentProvider implements IAgentRouterStrategy {
                     sessionId: runParams?.sessionId,
                 },
                 {
-                    model: getLLMModelProviderWithFallback(
-                        LLMModelProvider.CHATGPT_4_ALL,
-                    ),
+                    model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O],
                 },
             );
 

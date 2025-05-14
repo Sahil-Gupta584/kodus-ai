@@ -16,8 +16,7 @@ import {
     MessagesPlaceholder,
 } from '@langchain/core/prompts';
 import { conversationChatMemory } from '@/shared/utils/langchainCommon/conversationChatMemory';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
 
 @Injectable()
 export class DefaultAgentProvider
@@ -75,9 +74,7 @@ export class DefaultAgentProvider
                     sessionId: runParams?.sessionId,
                 },
                 {
-                    model: getLLMModelProviderWithFallback(
-                        LLMModelProvider.CHATGPT_4_TURBO,
-                    ),
+                    model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
                 },
             );
 

@@ -462,7 +462,8 @@ const getChatGemini = (
     } | null,
 ) => {
     const defaultOptions = {
-        model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW].modelName,
+        model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW]
+            .modelName,
         temperature: 0,
         topP: 1,
         maxTokens: 8192,
@@ -539,7 +540,8 @@ const getChatVertexAI = (
     } | null,
 ): any => {
     const defaultOptions = {
-        model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06].modelName,
+        model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06]
+            .modelName,
         temperature: 0,
         maxTokens: 4000,
         verbose: false,
@@ -566,37 +568,6 @@ const getChatVertexAI = (
         temperature: finalOptions.temperature,
         maxOutputTokens: finalOptions.maxTokens,
         verbose: finalOptions.verbose,
-        callbacks: finalOptions.callbacks,
-    });
-};
-
-const getDeepseekByTogetherAI = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
-    } | null,
-): any => {
-    const defaultOptions = {
-        model: 'deepseek-ai/DeepSeek-V3',
-        temperature: 0,
-        maxTokens: 8000,
-        verbose: false,
-        streaming: false,
-        callbacks: [],
-    };
-
-    const finalOptions = options
-        ? { ...defaultOptions, ...options }
-        : defaultOptions;
-
-    return new ChatTogetherAI({
-        model: finalOptions.model,
-        togetherAIApiKey: process.env.TOGETHER_AI_API_KEY,
-        temperature: finalOptions.temperature,
-        maxTokens: finalOptions.maxTokens,
         callbacks: finalOptions.callbacks,
     });
 };

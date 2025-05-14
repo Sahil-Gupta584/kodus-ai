@@ -14,6 +14,7 @@ export type FactoryInput = {
     callbacks?: BaseCallbackHandler[];
     baseURL?: string;
     apiKey?: string;
+    json?: boolean;
 };
 
 export enum LLMModelProvider {
@@ -45,6 +46,7 @@ export enum LLMModelProvider {
 }
 
 export interface ModelStrategy {
+    provider: string;
     factory: (...args: any[]) => any; // use o tipo correto do seu SDK
     modelName: string; // slug real aceito pela API
     baseURL?: string; // se precisar override
@@ -53,74 +55,90 @@ export interface ModelStrategy {
 export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     // OpenAI
     [LLMModelProvider.OPENAI_GPT_4O]: {
+        provider: 'openai',
         factory: getChatGPT,
         modelName: 'gpt-4o',
     },
     [LLMModelProvider.OPENAI_GPT_4O_MINI]: {
+        provider: 'openai',
         factory: getChatGPT,
         modelName: 'gpt-4o-mini',
     },
     [LLMModelProvider.OPENAI_GPT_4_1]: {
+        provider: 'openai',
         factory: getChatGPT,
         modelName: 'gpt-4.1',
     },
     [LLMModelProvider.OPENAI_GPT_O4_MINI]: {
+        provider: 'openai',
         factory: getChatGPT,
         modelName: 'o4-mini',
     },
 
     // Anthropic
     [LLMModelProvider.CLAUDE_3_5_SONNET]: {
+        provider: 'anthropic',
         factory: getChatAnthropic,
         modelName: 'claude-3-5-sonnet-20241022',
     },
 
     // Google Gemini
     [LLMModelProvider.GEMINI_2_0_FLASH]: {
+        provider: 'google',
         factory: getChatGemini,
         modelName: 'gemini-2.0-flash',
     },
     [LLMModelProvider.GEMINI_2_5_PRO_PREVIEW]: {
+        provider: 'google',
         factory: getChatGemini,
         modelName: 'gemini-2.5-pro-preview-03-25',
     },
     [LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06]: {
+        provider: 'google',
         factory: getChatGemini,
         modelName: 'gemini-2.5-pro-preview-05-06',
     },
     [LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_05_06]: {
+        provider: 'google',
         factory: getChatGemini,
         modelName: 'gemini-2.5-flash-preview-05-06',
     },
 
     // Vertex AI
     [LLMModelProvider.VERTEX_GEMINI_2_0_FLASH]: {
+        provider: 'vertex',
         factory: getChatVertexAI,
         modelName: 'gemini-2.0-flash',
     },
     [LLMModelProvider.VERTEX_GEMINI_2_5_PRO_PREVIEW]: {
+        provider: 'vertex',
         factory: getChatVertexAI,
         modelName: 'gemini-2.5-pro-preview-03-25',
     },
     [LLMModelProvider.VERTEX_GEMINI_2_5_PRO_PREVIEW_05_06]: {
+        provider: 'vertex',
         factory: getChatVertexAI,
         modelName: 'gemini-2.5-pro-preview-05-06',
     },
     [LLMModelProvider.VERTEX_GEMINI_2_5_FLASH_PREVIEW_05_06]: {
+        provider: 'vertex',
         factory: getChatVertexAI,
         modelName: 'gemini-2.5-flash-preview-05-06',
     },
     [LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET]: {
+        provider: 'vertex',
         factory: getChatVertexAI,
         modelName: 'claude-3-5-sonnet-v2@20241022',
     },
 
     // Deepseek
     [LLMModelProvider.NOVITA_DEEPSEEK_V3]: {
+        provider: 'novita',
         factory: getDeepseekByNovitaAI,
         modelName: 'deepseek-v3',
     },
     [LLMModelProvider.NOVITA_DEEPSEEK_V3_0324]: {
+        provider: 'novita',
         factory: getDeepseekByNovitaAI,
         modelName: 'deepseek-v3-0324',
     },

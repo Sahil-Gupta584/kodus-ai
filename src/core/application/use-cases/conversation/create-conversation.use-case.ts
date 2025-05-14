@@ -12,12 +12,12 @@ import {
     PARAMETERS_SERVICE_TOKEN,
     IParametersService,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
+import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
 import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { prompt_generate_conversation_title } from '@/shared/utils/langchainCommon/prompts';
 import { Inject, Injectable } from '@nestjs/common';
@@ -41,6 +41,7 @@ export class CreateConversationUseCase implements IUseCase {
         },
 
         private logger: PinoLoggerService,
+        private readonly llmProviderService: LLMProviderService,
     ) {}
 
     async execute(params: any): Promise<{ uuid: string }> {
@@ -111,10 +112,11 @@ export class CreateConversationUseCase implements IUseCase {
 
         while (retryCount < maxRetries) {
             try {
-                let llm = getChatGPT({
-                    model: getLLMModelProviderWithFallback(
-                        LLMModelProvider.CHATGPT_4_ALL,
-                    ),
+                let llm = this.llmProviderService.getLLMProvider({
+                    model: LLMModelProvider.VERTEX_GEMINI_2_5_FLASH_PREVIEW_05_06,
+                    temperature: 0,
+                    maxTokens: -1,
+                    jsonMode: true,
                 });
 
                 const language = (
