@@ -26,7 +26,7 @@ export class PullRequestHandlerService implements IPullRequestManagerService {
         organizationAndTeamData: OrganizationAndTeamData,
         repository: { name: string; id: any },
         pullRequest: any,
-        ignorePaths: string[],
+        ignorePaths?: string[],
         lastCommit?: string,
     ): Promise<FileChange[]> {
         try {

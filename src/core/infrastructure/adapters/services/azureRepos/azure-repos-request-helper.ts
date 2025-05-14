@@ -754,6 +754,30 @@ export class AzureReposRequestHelper {
         return data;
     }
 
+    async replyToThreadComment(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        prId: number;
+        threadId: number;
+        comment: string;
+    }): Promise<any> {
+        const instance = await this.azureRequest(params);
+
+        const payload = {
+            content: params.comment,
+            commentType: AzureRepoCommentType.TEXT,
+        };
+
+        const { data } = await instance.post(
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullRequests/${params.prId}/threads/${params.threadId}/comments?api-version=7.1`,
+            payload,
+        );
+
+        return data;
+    }
+
     async getUser(params: {
         orgName: string;
         token: string;
