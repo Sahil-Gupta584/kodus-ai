@@ -83,8 +83,6 @@ export class AzureReposService
             | 'getPullRequestReviewThreads'
             | 'getListOfValidReviews'
             | 'getPullRequestsWithChangesRequested'
-            | 'findTeamAndOrganizationIdByConfigKey'
-            | 'createResponseToComment'
             | 'getAuthenticationOAuthToken'
             | 'getRepositoryAllFiles'
             | 'mergePullRequest'
@@ -104,6 +102,84 @@ export class AzureReposService
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
     ) {}
+
+    async createResponseToComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        prNumber: number;
+        body: string;
+        threadId: number;
+    }): Promise<any | null> {
+        try {
+            const {
+                organizationAndTeamData,
+                repository,
+                prNumber,
+                body,
+                threadId,
+            } = params;
+
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            const response =
+                await this.azureReposRequestHelper.replyToThreadComment({
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                    threadId,
+                    comment: body,
+                });
+
+            return response;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error creating response to pull request comment',
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService createResponseToComment',
+                error,
+                metadata: { params },
+            });
+            return null;
+        }
+    }
+
+    async findTeamAndOrganizationIdByConfigKey(
+        params: any,
+    ): Promise<IntegrationConfigEntity | null> {
+        try {
+            const integrationConfig =
+                await this.integrationConfigService.findOne({
+                    configKey: IntegrationConfigKey.REPOSITORIES,
+                    configValue: [{ id: params?.repository?.id?.toString() }],
+                });
+
+            return integrationConfig &&
+                integrationConfig?.configValue?.length > 0
+                ? integrationConfig
+                : null;
+        } catch (err) {
+            this.logger.error({
+                message: 'Error to find team and organization id by config key',
+                context: AzureReposService.name,
+                serviceName:
+                    'AzureReposService findTeamAndOrganizationIdByConfigKey',
+                error: err,
+                metadata: {
+                    params,
+                },
+            });
+            throw new BadRequestException(err);
+        }
+    }
 
     async markReviewCommentAsResolved(params: {
         organizationAndTeamData: OrganizationAndTeamData;

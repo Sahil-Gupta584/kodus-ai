@@ -6,6 +6,7 @@ import {
     CodeSuggestion,
     ReviewModeResponse,
     FileChange,
+    ReviewOptions,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { RunnableSequence } from '@langchain/core/runnables';
@@ -33,6 +34,7 @@ import {
 import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisService.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -120,9 +122,11 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
     private readonly tokenTracker: TokenTrackingHandler;
 
     /**
-     * Processa a resposta do LLM sobre decisões de violações
-     * @param response String contendo a resposta do LLM
-     * @returns Map com o ID da violação e se deve ser removida ou não, ou null em caso de erro
+     * Process the LLM response about violation decisions
+     * @param organizationAndTeamData Organization and team data
+     * @param prNumber Pull request number
+     * @param response String containing the LLM response
+     * @returns Map with the violation ID and if it should be removed or not, or null in case of error
      */
     private processViolationDecisions(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -279,6 +283,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 updateStandardSuggestionsResult,
                 fileContext,
                 provider,
+                extendedContext,
             );
 
             if (!classifiedRules || classifiedRules?.length === 0) {
@@ -312,6 +317,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 generatedKodyRulesSuggestionsResult,
                 fileContext,
                 provider,
+                extendedContext,
             );
 
             let finalOutput = {
@@ -330,23 +336,6 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     ...updatedSuggestions?.codeSuggestions,
                 ];
             }
-
-            const guardianKodyRulesResult = await guardianKodyRulesChain.invoke(
-                {
-                    standardSuggestions: finalOutput.codeSuggestions,
-                    kodyRules: extendedContext.filteredKodyRules,
-                },
-            );
-
-            const guardianKodyRules = this.processViolationDecisions(
-                organizationAndTeamData,
-                prNumber,
-                guardianKodyRulesResult,
-            );
-
-            finalOutput.codeSuggestions = finalOutput.codeSuggestions.filter(
-                (suggestion) => !guardianKodyRules?.get(suggestion.id),
-            );
 
             return this.addSeverityToSuggestions(
                 finalOutput,
@@ -460,12 +449,14 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 context,
                 systemPromptFn,
                 userPromptFn,
+                'primary',
             );
             const fallbackChain = await this.createProviderChain(
                 fallbackProvider,
                 context,
                 systemPromptFn,
                 userPromptFn,
+                'fallback',
             );
 
             // Used withFallbacks to configure the fallback correctly
@@ -474,6 +465,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     fallbacks: [fallbackChain],
                 })
                 .withConfig({
+                    tags: this.buildTags(provider, 'primary'),
                     runName,
                     metadata: {
                         organizationId:
@@ -503,6 +495,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         context: any,
         systemPromptFn: SystemPromptFn,
         userPromptFn: UserPromptFn,
+        tier: 'primary' | 'fallback',
     ) {
         try {
             let llm =
@@ -523,6 +516,8 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                           temperature: 0,
                           callbacks: [this.tokenTracker],
                       });
+
+            const tags = this.buildTags(provider, 'primary');
 
             // Create the chain using the correct provider
             const chain = RunnableSequence.from([
@@ -553,7 +548,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 },
                 llm,
                 new StringOutputParser(),
-            ]);
+            ]).withConfig({ tags });
 
             return chain;
         } catch (error) {
@@ -588,8 +583,9 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             const parsedResponse = tryParseJSONObject(cleanResponse);
 
             if (!parsedResponse?.length) {
-                this.logger.error({
-                    message: 'Failed to parse classifier response',
+                this.logger.warn({
+                    message:
+                        'Failed to parse classifier response OR not response',
                     context: KodyRulesAnalysisService.name,
                     metadata: {
                         originalResponse: response,
@@ -624,12 +620,34 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         }
     }
 
+    private processSuggestionLabels(
+        suggestions: CodeSuggestion[],
+        reviewOptions: ReviewOptions,
+    ): CodeSuggestion[] {
+        const availableLabels = Object.keys(reviewOptions);
+
+        return suggestions.map((suggestion) => {
+            if (
+                (suggestion.label ?? '') === '' ||
+                !availableLabels.includes(suggestion?.label)
+            ) {
+                return {
+                    ...suggestion,
+                    label: 'kody_rules',
+                };
+            }
+
+            return suggestion;
+        });
+    }
+
     private processLLMResponse(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         response: string,
         fileContext: FileChangeContext,
         provider: LLMModelProvider,
+        extendedContext: any,
     ): AIAnalysisResult | null {
         try {
             if (!response) {
@@ -672,17 +690,32 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     }));
             }
 
-            parsedResponse.codeSuggestions =
-                parsedResponse?.codeSuggestions?.map((suggestion) => {
-                    if (suggestion.label) {
+            if (parsedResponse?.codeSuggestions) {
+                parsedResponse.codeSuggestions =
+                    parsedResponse.codeSuggestions.map((suggestion) => {
+                        if (!suggestion?.id || !uuidValidate(suggestion?.id)) {
+                            return {
+                                ...suggestion,
+                                id: uuidv4(),
+                            };
+                        }
                         return suggestion;
-                    }
+                    });
 
-                    return {
-                        ...suggestion,
-                        label: 'kody_rules',
-                    };
-                });
+                if (extendedContext?.reviewOptions) {
+                    parsedResponse.codeSuggestions =
+                        this.processSuggestionLabels(
+                            parsedResponse.codeSuggestions,
+                            extendedContext.reviewOptions,
+                        );
+                } else {
+                    parsedResponse.codeSuggestions =
+                        parsedResponse.codeSuggestions.map((suggestion) => ({
+                            ...suggestion,
+                            label: suggestion.label ?? 'kody_rules',
+                        }));
+                }
+            }
 
             this.logTokenUsage({
                 tokenUsages: parsedResponse.codeSuggestions,
@@ -709,6 +742,13 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             });
             return null;
         }
+    }
+
+    private buildTags(
+        provider: LLMModelProvider,
+        tier: 'primary' | 'fallback',
+    ) {
+        return [`model:${provider}`, `tier:${tier}`, 'kodyRules'];
     }
 
     private async logTokenUsage(metadata: any) {

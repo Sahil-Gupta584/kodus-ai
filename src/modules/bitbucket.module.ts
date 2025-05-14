@@ -27,6 +27,6 @@ import { LicenseModule } from '@/ee/license/license.module';
         },
     ],
     controllers: [BitbucketController],
-    exports: [],
+    exports: [BITBUCKET_SERVICE_TOKEN],
 })
 export class BitbucketModule {}

@@ -60,12 +60,12 @@ import {
 import { Response as BitbucketResponse } from 'bitbucket/src/request/types';
 import { CreateAuthIntegrationStatus } from '@/shared/domain/enums/create-auth-integration-status.enum';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
-import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 import {
     KODY_CODE_REVIEW_COMPLETED_MARKER,
     KODY_CRITICAL_ISSUE_COMMENT_MARKER,
     KODY_START_COMMAND_MARKER,
 } from '@/shared/utils/codeManagement/codeCommentMarkers';
+import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -2794,7 +2794,7 @@ export class BitbucketService
 
         const repo = repositories.find((repo) => repo.id === repositoryId);
 
-        return repo.workspaceId || null;
+        return repo?.workspaceId || null;
     }
 
     private async getRepoById(
