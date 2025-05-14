@@ -49,6 +49,10 @@ interface Comment {
     diff_hunk?: string;
     discussion_id?: string;
     originalCommit?: any;
+    // Azure Repos specific properties
+    threadId?: number;
+    thread?: any;
+    commentType?: string;
 }
 
 @Injectable()
@@ -93,7 +97,10 @@ export class ChatWithKodyFromGitUseCase {
                 });
 
             const commentId = this.getCommentId(params);
-            const comment = allComments?.find((c) => c.id === commentId);
+            const comment =
+                params.platformType !== PlatformType.AZURE_REPOS
+                    ? allComments?.find((c) => c.id === commentId)
+                    : this.getReviewThreadByCommentId(commentId, allComments);
 
             if (!comment) {
                 return;
@@ -104,6 +111,11 @@ export class ChatWithKodyFromGitUseCase {
                     message:
                         'Comment made by Kody or does not mention Kody/Kodus. Ignoring.',
                     context: ChatWithKodyFromGitUseCase.name,
+                    serviceName: ChatWithKodyFromGitUseCase.name,
+                    metadata: {
+                        repository,
+                        pullRequestNumber,
+                    },
                 });
                 return;
             }
@@ -137,6 +149,7 @@ export class ChatWithKodyFromGitUseCase {
                 organizationAndTeamData,
                 inReplyToId: comment.id,
                 discussionId: params.payload?.object_attributes?.discussion_id,
+                threadId: comment.threadId,
                 body: response,
                 repository,
                 prNumber: pullRequestNumber,
@@ -145,6 +158,7 @@ export class ChatWithKodyFromGitUseCase {
             this.logger.error({
                 message: 'Error while executing the git comment response agent',
                 context: ChatWithKodyFromGitUseCase.name,
+                serviceName: ChatWithKodyFromGitUseCase.name,
                 error,
             });
         }
@@ -238,6 +252,54 @@ export class ChatWithKodyFromGitUseCase {
         }
     }
 
+    private getReviewThreadByCommentId(
+        commentId: number,
+        reviewComments: any[],
+    ): any | null {
+        try {
+            let thread = null;
+            let targetComment = null;
+
+            for (const commentThread of reviewComments) {
+                // Check if the main comment matches the ID
+                if (commentThread.id === commentId) {
+                    thread = commentThread;
+                    targetComment = commentThread;
+                    break;
+                }
+
+                // Check if any reply matches the ID
+                const matchingReply = commentThread.replies?.find(
+                    (reply: any) => reply.id === commentId,
+                );
+
+                if (matchingReply) {
+                    thread = commentThread;
+                    targetComment = matchingReply;
+                    break;
+                }
+            }
+
+            if (thread && targetComment) {
+                // Return the exact format requested
+                return {
+                    ...targetComment,
+                    thread,
+                };
+            }
+
+            return null;
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to find thread by commentId',
+                context: 'AzureReposService.getReviewThreadByCommentId',
+                error,
+                metadata: { commentId },
+            });
+            return null;
+        }
+    }
+
     private getCommentId(params: WebhookParams): number {
         switch (params.platformType) {
             case PlatformType.GITHUB:
@@ -258,9 +320,10 @@ export class ChatWithKodyFromGitUseCase {
     }
 
     private shouldIgnoreComment(
-        comment: Comment,
+        comment: any,
         platformType: PlatformType,
     ): boolean {
+        // For all platforms, check if the comment is from Kody or doesn't mention Kody
         return (
             this.isKodyComment(comment, platformType) ||
             !this.mentionsKody(comment, platformType)
@@ -286,13 +349,12 @@ export class ChatWithKodyFromGitUseCase {
             case PlatformType.GITLAB:
                 return comment?.originalCommit;
             case PlatformType.BITBUCKET:
-                // No Bitbucket, procuramos pelo comentário original usando o parent.id
-                // Se o comentário não tem parent, ele é o comentário original
+                // If the comment doesn't have a parent, it is the original comment
                 if (!comment?.parent?.id) {
                     return undefined;
                 }
 
-                // Encontrar o comentário original que é do Kody
+                // Find the original comment that is a reply to the parent comment
                 const originalComment = allComments.find(
                     (c) =>
                         c.id === comment.parent.id &&
@@ -301,16 +363,12 @@ export class ChatWithKodyFromGitUseCase {
 
                 return originalComment;
             case PlatformType.AZURE_REPOS:
-                // No Azure Repos, procuramos pelo comentário original usando o parentCommentId
-                if (!comment?.in_reply_to_id) {
-                    return undefined;
+                // For Azure Repos, check if this is a reply to a thread
+                if (comment.threadId && comment.id !== comment.threadId) {
+                    // This is a reply, find the original thread comment
+                    const originalComment = comment.thread;
+                    return originalComment;
                 }
-
-                return allComments.find(
-                    (originalComment) =>
-                        originalComment.id === comment.in_reply_to_id &&
-                        this.isKodyComment(originalComment, platformType),
-                );
             default:
                 this.logger.warn({
                     message: `Unsupported platform type: ${platformType}`,
@@ -327,16 +385,13 @@ export class ChatWithKodyFromGitUseCase {
     ): Comment[] {
         switch (platformType) {
             case PlatformType.GITHUB:
-                // Para GitHub, filtramos as respostas usando in_reply_to_id
                 return allComments.filter(
                     (reply) =>
                         reply.in_reply_to_id === comment.in_reply_to_id &&
                         !this.isKodyComment(reply, platformType),
                 );
             case PlatformType.BITBUCKET:
-                // Para Bitbucket, precisamos processar a estrutura específica dos comentários
                 if (comment.parent?.id) {
-                    // Se o comentário atual é uma resposta, encontramos o comentário original
                     const originalComment = allComments.find(
                         (c) => c.id === comment.parent.id,
                     );
@@ -345,16 +400,13 @@ export class ChatWithKodyFromGitUseCase {
                         return [];
                     }
 
-                    // Verificamos se o comentário original tem replies estruturadas
                     if (
                         originalComment.replies &&
                         Array.isArray(originalComment.replies)
                     ) {
-                        // Filtramos as respostas que não são do Kody e não são o comentário atual
                         const validReplies = [];
 
                         for (const reply of originalComment.replies) {
-                            // Verificamos se a resposta tem conteúdo válido
                             if (
                                 reply.content?.raw === '' ||
                                 reply.deleted === true
@@ -362,12 +414,9 @@ export class ChatWithKodyFromGitUseCase {
                                 continue;
                             }
 
-                            // Verificamos se não é o comentário atual
                             if (reply.id === comment.id) {
                                 continue;
                             }
-
-                            // Verificamos se não é um comentário do Kody
                             if (
                                 this.isKodyComment(
                                     {
@@ -383,7 +432,6 @@ export class ChatWithKodyFromGitUseCase {
                                 continue;
                             }
 
-                            // Se a resposta tem content.raw, usamos isso como body
                             if (reply.content?.raw) {
                                 validReplies.push({
                                     ...reply,
@@ -398,14 +446,31 @@ export class ChatWithKodyFromGitUseCase {
                     }
                 }
             case PlatformType.AZURE_REPOS:
-                // Para Azure, filtramos as respostas usando in_reply_to_id
+                if (comment.threadId) {
+                    const thread = allComments.find(
+                        (c) => c.threadId === comment.threadId,
+                    );
+
+                    if (
+                        thread &&
+                        thread.replies &&
+                        Array.isArray(thread.replies)
+                    ) {
+                        return thread.replies.filter(
+                            (reply) =>
+                                reply.id !== comment.id &&
+                                !this.isKodyComment(reply, platformType),
+                        );
+                    }
+                    return [];
+                }
+
                 return allComments.filter(
                     (reply) =>
                         reply.in_reply_to_id === comment.in_reply_to_id &&
                         !this.isKodyComment(reply, platformType),
                 );
             case PlatformType.GITLAB:
-                // Para GitLab, mantemos a lu00f3gica original
                 return allComments.filter(
                     (reply) =>
                         reply.in_reply_to_id === comment.in_reply_to_id &&
@@ -443,8 +508,9 @@ export class ChatWithKodyFromGitUseCase {
                 };
             case PlatformType.AZURE_REPOS:
                 return {
-                    login: params.payload?.resource?.createdBy?.displayName,
-                    id: params.payload?.resource?.createdBy?.id,
+                    login: params.payload?.resource?.comment?.author
+                        ?.displayName,
+                    id: params.payload?.resource?.comment?.author?.id,
                 };
             default:
                 this.logger.warn({
@@ -506,10 +572,9 @@ export class ChatWithKodyFromGitUseCase {
                 ? 'kody-codereview'
                 : 'kody|code-review';
 
-        const teste =
+        return (
             ['kody', 'kodus'].some((keyword) => login?.includes(keyword)) ||
-            body.includes(bodyWithoutMarkdown);
-
-        return teste;
+            body.includes(bodyWithoutMarkdown)
+        );
     }
 }
