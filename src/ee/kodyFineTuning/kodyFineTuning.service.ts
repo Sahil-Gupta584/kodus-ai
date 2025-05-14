@@ -38,9 +38,10 @@ import { ISuggestionEmbedded } from './domain/suggestionEmbedded/interfaces/sugg
 @Injectable()
 export class KodyFineTuningService {
     private readonly MAX_CLUSTERS = 50;
-    private readonly DIVISOR_FOR_CLUSTER_QUANTITY = 2;
-    private readonly SIMILARITY_THRESHOLD_NEGATIVE = 0.75;
-    private readonly SIMILARITY_THRESHOLD_POSITIVE = 0.75;
+    private readonly DIVISOR_FOR_CLUSTER_QUANTITY = 4;
+    private readonly SIMILARITY_THRESHOLD_NEGATIVE = 0.65;
+    private readonly SIMILARITY_THRESHOLD_POSITIVE = 0.65;
+    private readonly SIMILARITY_THRESHOLD_CLUSTER = 0.5;
 
     constructor(
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
@@ -692,11 +693,23 @@ export class KodyFineTuningService {
                 (a, b) => b.similarity - a.similarity,
             );
             const mostSimilarCluster = sortedClusters[0]?.clusterId || 0;
+
+            if (
+                sortedClusters[0]?.similarity <
+                this.SIMILARITY_THRESHOLD_CLUSTER
+            ) {
+                return {
+                    analyzedSuggestion: newSuggestion,
+                    fineTuningDecision: FineTuningDecision.UNCERTAIN,
+                };
+            }
+
             return {
                 analyzedSuggestion: newSuggestion,
                 fineTuningDecision: await this.analyzeClusterFeedback(
                     existingClusterizedSuggestions,
                     mostSimilarCluster,
+                    newSuggestionEmbedded,
                 ),
             };
         } catch (error) {
@@ -725,38 +738,112 @@ export class KodyFineTuningService {
     }
 
     private async analyzeClusterFeedback(
-        suggestions: IClusterizedSuggestion[],
+        existingClusterizedSuggestions: IClusterizedSuggestion[],
         clusterId: number,
+        newSuggestionEmbedded: number[],
     ): Promise<FineTuningDecision> {
-        const clusterSuggestions = suggestions.filter(
-            (s) => s.cluster === clusterId,
-        );
-        const total = clusterSuggestions.length;
+        try {
+            // Obter os thresholds configurados
+            const { positiveThreshold, negativeThreshold } =
+                await this.defineFineTuningThresholds();
 
-        const positiveCount = clusterSuggestions.filter(
-            (s) =>
-                s.originalSuggestion.feedbackType ===
-                    FeedbackType.POSITIVE_REACTION ||
-                s.originalSuggestion.feedbackType ===
-                    FeedbackType.SUGGESTION_IMPLEMENTED,
-        ).length;
+            // Filtrar sugestões do cluster específico
+            const clusterSuggestions = existingClusterizedSuggestions.filter(
+                (s) => s.cluster === clusterId,
+            );
 
-        const negativeCount = clusterSuggestions.filter(
-            (s) =>
-                s.originalSuggestion.feedbackType ===
-                FeedbackType.NEGATIVE_REACTION,
-        ).length;
+            if (clusterSuggestions.length === 0) {
+                return FineTuningDecision.UNCERTAIN;
+            }
 
-        const positiveRatio = positiveCount / total;
-        const negativeRatio = negativeCount / total;
+            // 1. Verificar se todas as sugestões no cluster têm o mesmo tipo de feedback
+            const allPositive = clusterSuggestions.every(
+                (suggestion) =>
+                    suggestion.originalSuggestion.feedbackType ===
+                        'positiveReaction' ||
+                    suggestion.originalSuggestion.feedbackType ===
+                        'suggestionImplemented',
+            );
 
-        const { positiveThreshold, negativeThreshold } =
-            await this.defineFineTuningThresholds();
+            const allNegative = clusterSuggestions.every(
+                (suggestion) =>
+                    suggestion.originalSuggestion.feedbackType ===
+                    'negativeReaction',
+            );
 
-        if (positiveRatio >= positiveThreshold) return FineTuningDecision.KEEP;
-        if (negativeRatio >= negativeThreshold)
-            return FineTuningDecision.DISCARD;
-        return FineTuningDecision.UNCERTAIN;
+            // Se todas tiverem o mesmo feedback, retornar imediatamente
+            if (allPositive) {
+                return FineTuningDecision.KEEP;
+            } else if (allNegative) {
+                return FineTuningDecision.DISCARD;
+            }
+
+            // 2. Analisar cada sugestão individualmente se houver feedback misto
+            // Calcular similaridade com cada sugestão individual no cluster
+            const suggestionsWithSimilarity = await Promise.all(
+                clusterSuggestions.map(async (suggestion) => {
+                    const suggestionEmbedding =
+                        suggestion.originalSuggestion.suggestionEmbed;
+
+                    return {
+                        suggestion,
+                        similarity: this.calculateCosineSimilarity(
+                            newSuggestionEmbedded,
+                            suggestionEmbedding,
+                        ),
+                        isPositive:
+                            suggestion.originalSuggestion.feedbackType ===
+                                'positiveReaction' ||
+                            suggestion.originalSuggestion.feedbackType ===
+                                'suggestionImplemented',
+                    };
+                }),
+            );
+
+            // Ordenar por similaridade (maior primeiro)
+            const sortedSuggestions = suggestionsWithSimilarity.sort(
+                (a, b) => b.similarity - a.similarity,
+            );
+
+            // Contadores para decisões
+            let keepDecision = 0;
+            let discardDecision = 0;
+
+            // Analisar cada sugestão e incrementar os contadores apropriados
+            for (const suggestionData of sortedSuggestions) {
+                if (
+                    suggestionData.isPositive &&
+                    suggestionData.similarity >= positiveThreshold
+                ) {
+                    keepDecision += 1;
+                } else if (
+                    !suggestionData.isPositive &&
+                    suggestionData.similarity >= negativeThreshold
+                ) {
+                    discardDecision += 1;
+                }
+            }
+
+            // Tomar decisão baseada na contagem
+            if (keepDecision > 0 && keepDecision > discardDecision) {
+                return FineTuningDecision.KEEP;
+            } else if (discardDecision > 0 && discardDecision > keepDecision) {
+                return FineTuningDecision.DISCARD;
+            } else {
+                return FineTuningDecision.UNCERTAIN;
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error in analyzeClusterFeedback',
+                error,
+                context: KodyFineTuningService.name,
+                metadata: {
+                    clusterId,
+                    existingClusterizedSuggestions,
+                },
+            });
+            return FineTuningDecision.UNCERTAIN;
+        }
     }
 
     private calculateClusterCentroids(
@@ -839,6 +926,94 @@ export class KodyFineTuningService {
         }
 
         const results = [];
+
+        suggestionsToAnalyze = [
+            {
+                relevantFile:
+                    'src/core/infrastructure/adapters/services/bitbucket/bitbucket.service.ts',
+                language: 'TypeScript',
+                suggestionContent:
+                    'Consider moving the comment filtering logic to a separate helper function for better maintainability and reusability. This would make the code more modular and easier to test.',
+                existingCode:
+                    '.filter((comment) => {\n                    return !comment?.content?.raw.includes("## Code Review Completed! 🔥") &&\n                        !comment?.content?.raw.includes("# Found critical issues please"); // Exclude comments with the specific strings\n                })',
+                improvedCode:
+                    '.filter((comment) => this.shouldIncludeComment(comment))',
+                oneSentenceSummary:
+                    'Extract comment filtering logic to a helper function for better maintainability.',
+                relevantLinesStart: 3185,
+                relevantLinesEnd: 3188,
+                label: 'maintainability',
+                id: '03f8ffdd-379a-484f-8143-c7f1f90e2a9d',
+            },
+            {
+                relevantFile:
+                    'src/core/infrastructure/adapters/services/bitbucket/bitbucket.service.ts',
+                language: 'TypeScript',
+                suggestionContent:
+                    'Add null checks for comment.content and comment.content.raw to prevent potential runtime errors when accessing these properties.',
+                existingCode:
+                    '!comment?.content?.raw.includes("## Code Review Completed! 🔥") &&\n                        !comment?.content?.raw.includes("# Found critical issues please")',
+                improvedCode:
+                    'comment?.content?.raw && !comment.content.raw.includes("## Code Review Completed! 🔥") &&\n                        !comment.content.raw.includes("# Found critical issues please")',
+                oneSentenceSummary:
+                    'Add null checks for comment content to prevent runtime errors.',
+                relevantLinesStart: 3186,
+                relevantLinesEnd: 3187,
+                label: 'error_handling',
+                id: '9a44decd-56d7-463e-a050-7a776f30c781',
+            },
+            {
+                relevantFile:
+                    'src/core/infrastructure/adapters/services/cron/CheckIfPRCanBeApproved.cron.ts',
+                language: 'typescript',
+                suggestionContent:
+                    'The commented-out code block from lines 233-236 appears to be unused. If this logic for Bitbucket platform handling at this specific point is no longer needed or has been moved, it should be removed to improve code clarity and reduce clutter.',
+                existingCode:
+                    '            // if (platformType === PlatformType.BITBUCKET) {\n            //     await this.getValidUserReviews({ organizationAndTeamData, prNumber, repository, reviewComments });\n            //     return true;\n            // }',
+                improvedCode:
+                    "// Commented-out code removed for clarity if it's no longer needed.",
+                oneSentenceSummary:
+                    'Remove commented-out code block that seems unused to improve maintainability.',
+                relevantLinesStart: 233,
+                relevantLinesEnd: 236,
+                label: 'maintainability',
+                id: '00faf63b-1210-44e1-b835-85526a8732d3',
+            },
+            {
+                relevantFile:
+                    'src/core/infrastructure/adapters/services/cron/CheckIfPRCanBeApproved.cron.ts',
+                language: 'typescript',
+                suggestionContent:
+                    "The type of `reviewComment` within the `.every()` callback is implicitly `any` because `reviewComments` is typed as `any[]` (declared on line 226). Accessing `reviewComment.isResolved` without a defined type can lead to runtime errors if the property doesn't exist, is undefined, or is not a boolean. Define a specific interface for review comments (e.g., `PullRequestReviewComment` or a custom type) and type `reviewComments` accordingly to ensure type safety.",
+                existingCode:
+                    '        const isEveryReviewCommentResolved = reviewComments?.every((reviewComment) => reviewComment.isResolved);',
+                improvedCode:
+                    '// Define or import a specific type for review comments, e.g.:\n// interface ReviewCommentWithType {\n//   isResolved: boolean;\n//   // other properties...\n// }\n// Ensure reviewComments is typed, e.g., reviewComments: ReviewCommentWithType[]\n\nconst isEveryReviewCommentResolved = reviewComments?.every((reviewComment: ReviewCommentWithType) => reviewComment.isResolved);',
+                oneSentenceSummary:
+                    'Add a specific type for `reviewComment` to prevent potential runtime errors when accessing `isResolved`.',
+                relevantLinesStart: 333,
+                relevantLinesEnd: 333,
+                label: 'potential_issues',
+                id: 'b3a14386-4bb3-4944-8318-16b3a6c3a4e2',
+            },
+            {
+                relevantFile:
+                    'src/core/infrastructure/adapters/services/cron/CheckIfPRCanBeApproved.cron.ts',
+                language: 'typescript',
+                suggestionContent:
+                    "The large block of commented-out code from lines 346-377 should be removed if it's no longer relevant or has been superseded by other logic. Keeping dead code can lead to confusion, increase maintenance overhead, and make the codebase harder to understand.",
+                existingCode:
+                    '        // const kodyReviewer = kodyUser\n        //     ? pr.participants.find((participant) => participant.id === kodyUser?.author.id)\n        //     : null;\n        //\n        // if (kodyReviewer && kodyReviewer?.approved) {\n        //     return true;\n        // }\n        //\n        // const anyReviewerApproved = reviewers.some((reviewer) => reviewer.approved);\n        //\n        // if (anyReviewerApproved) {\n        //     return true;\n        // }\n        //\n        // const validReviews = reviewComments.filter((reviewComment) => {\n        //     return reviewers.some((reviewer) => reviewer.id === reviewComment.author.id);\n        // });\n        //\n        // const unresolvedReviews = validReviews.filter((review) => review.isResolved === false);\n        //\n        // if (unresolvedReviews.length < 1) {\n        //     await this.codeManagementService.approvePullRequest({\n        //         organizationAndTeamData,\n        //         prNumber,\n        //         repository: {\n        //             name: repository.name,\n        //             id: repository.id,\n        //         }\n        //     }, PlatformType.BITBUCKET);\n        //     return true;\n        // }\n        // return false;',
+                improvedCode:
+                    '// Large block of commented-out code removed for clarity and maintainability.',
+                oneSentenceSummary:
+                    'Remove large block of commented-out code to improve code clarity and maintainability.',
+                relevantLinesStart: 346,
+                relevantLinesEnd: 377,
+                label: 'maintainability',
+                id: '624ebfb8-c630-401f-9f42-8c4f467b14bf',
+            },
+        ];
 
         for (const newSuggestion of suggestionsToAnalyze) {
             const newEmbedding =

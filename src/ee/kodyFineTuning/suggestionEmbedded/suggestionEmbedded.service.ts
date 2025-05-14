@@ -285,7 +285,7 @@ export class SuggestionEmbeddedService implements ISuggestionEmbeddedService {
             return null;
         }
 
-        const textToEmbed = `${suggestion.suggestionContent} ${suggestion.suggestionContent} ${suggestion.label} ${this.tokenizeCode(suggestion.improvedCode)}`;
+        const textToEmbed = `${suggestion.suggestionContent} ${suggestion.oneSentenceSummary} ${suggestion.label}`;
         const result = await getOpenAIEmbedding(textToEmbed);
         return result?.data[0]?.embedding;
     }
