@@ -402,11 +402,10 @@ export class AzureReposRequestHelper {
     }): Promise<AzureRepoChange[]> {
         const instance = await this.azureRequest(params);
         let allChanges: AzureRepoChange[] = [];
-        let hasMoreChanges = true;
         let skip = 0;
-        const top = 100;
+        let top = 100;
 
-        while (hasMoreChanges) {
+        while (true) {
             const { data } = await instance.get(
                 `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests/${params.pullRequestId}/iterations/${params.iterationId}/changes?api-version=7.1&$top=${top}&$skip=${skip}`,
             );
@@ -414,12 +413,15 @@ export class AzureReposRequestHelper {
             const changeEntries = data?.changeEntries ?? [];
             allChanges = [...allChanges, ...changeEntries];
 
-            // Verify if we have reached the end of the changes
-            if (changeEntries?.length < top) {
-                hasMoreChanges = false;
-            } else {
-                skip += top; // Next page
+            if (data.nextSkip === undefined) {
+                break;
             }
+
+            if (data.nextTop !== undefined) {
+                top = data.nextTop;
+            }
+
+            skip = data.nextSkip;
         }
 
         return allChanges;
