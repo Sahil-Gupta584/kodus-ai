@@ -2,7 +2,10 @@ import axios from 'axios';
 import { Injectable } from '@nestjs/common';
 import { AzureReposRepository } from '@/core/domain/azureRepos/entities/azureReposRepository.type';
 import { AzureReposProject } from '@/core/domain/azureRepos/entities/azureReposProject.type';
-import { AzurePRStatus, AzureRepoPullRequest } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
+import {
+    AzurePRStatus,
+    AzureRepoPullRequest,
+} from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
 import {
     AzureRepoIteration,
     AzureRepoChange,
@@ -18,7 +21,7 @@ import { FileChange } from '@/config/types/general/codeReview.type';
 
 @Injectable()
 export class AzureReposRequestHelper {
-    constructor() { }
+    constructor() {}
 
     async getProjects(params: {
         orgName: string;
@@ -398,12 +401,28 @@ export class AzureReposRequestHelper {
         iterationId: number | string;
     }): Promise<AzureRepoChange[]> {
         const instance = await this.azureRequest(params);
+        let allChanges: AzureRepoChange[] = [];
+        let hasMoreChanges = true;
+        let skip = 0;
+        const top = 100;
 
-        const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests/${params.pullRequestId}/iterations/${params.iterationId}/changes?api-version=7.1`,
-        );
+        while (hasMoreChanges) {
+            const { data } = await instance.get(
+                `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests/${params.pullRequestId}/iterations/${params.iterationId}/changes?api-version=7.1&$top=${top}&$skip=${skip}`,
+            );
 
-        return data?.changeEntries ?? [];
+            const changeEntries = data?.changeEntries ?? [];
+            allChanges = [...allChanges, ...changeEntries];
+
+            // Verify if we have reached the end of the changes
+            if (changeEntries?.length < top) {
+                hasMoreChanges = false;
+            } else {
+                skip += top; // Next page
+            }
+        }
+
+        return allChanges;
     }
 
     async getCommits(params: {
