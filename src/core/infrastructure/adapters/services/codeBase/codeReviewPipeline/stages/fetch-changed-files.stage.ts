@@ -49,7 +49,7 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
             context.organizationAndTeamData,
             context.repository,
             context.pullRequest,
-            context.codeReviewConfig.ignorePaths,
+            context?.codeReviewConfig?.ignorePaths,
             lastExecution?.dataExecution?.lastAnalyzedCommit,
         );
 
@@ -57,6 +57,9 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
             this.logger.warn({
                 message: `No files to review after filtering PR#${context.pullRequest.number}`,
                 context: FetchChangedFilesStage.name,
+                metadata: {
+                    organizationAndTeamData: context?.organizationAndTeamData,
+                },
             });
             return this.updateContext(context, (draft) => {
                 draft.status = PipelineStatus.SKIP;

@@ -2,6 +2,7 @@ import { Module, OnModuleInit, forwardRef } from '@nestjs/common';
 import { ModulesContainer } from '@nestjs/core';
 import { JiraModule } from './jira.module';
 import { GithubModule } from './github.module';
+import { BitbucketModule } from './bitbucket.module';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
 import { IProjectManagementService } from '@/core/domain/platformIntegrations/interfaces/project-management.interface';
 import { PlatformIntegrationFactory } from '@/core/infrastructure/adapters/services/platformIntegration/platformIntegration.factory';
@@ -46,6 +47,11 @@ import { CodebaseModule } from './codeBase.module';
 import { KodyRulesModule } from './kodyRules.module';
 import { BitbucketService } from '@/core/infrastructure/adapters/services/bitbucket/bitbucket.service';
 import { AzureReposModule } from './azureRepos.module';
+import { GitHubPullRequestHandler } from '@/core/infrastructure/adapters/webhooks/github/githubPullRequest.handler';
+import { GitLabMergeRequestHandler } from '@/core/infrastructure/adapters/webhooks/gitlab/gitlabPullRequest.handler';
+import { BitbucketPullRequestHandler } from '@/core/infrastructure/adapters/webhooks/bitbucket/bitbucketPullRequest.handler';
+import { AzureReposPullRequestHandler } from '@/core/infrastructure/adapters/webhooks/azureRepos/azureReposPullRequest.handler';
+import { IWebhookEventHandler } from '@/core/domain/platformIntegrations/interfaces/webhook-event-handler.interface';
 @Module({
     imports: [
         forwardRef(() => IntegrationModule),
@@ -72,6 +78,7 @@ import { AzureReposModule } from './azureRepos.module';
         forwardRef(() => CodebaseModule),
         forwardRef(() => KodyRulesModule),
         forwardRef(() => AzureReposModule),
+        forwardRef(() => BitbucketModule),
         PullRequestsModule,
     ],
     providers: [
@@ -89,7 +96,28 @@ import { AzureReposModule } from './azureRepos.module';
         GitlabService,
         DiscordService,
         AzureBoardsService,
-        BitbucketService,
+
+        // Webhook handlers
+        GitHubPullRequestHandler,
+        {
+            provide: 'GITHUB_WEBHOOK_HANDLER',
+            useExisting: GitHubPullRequestHandler,
+        },
+        GitLabMergeRequestHandler,
+        {
+            provide: 'GITLAB_WEBHOOK_HANDLER',
+            useExisting: GitLabMergeRequestHandler,
+        },
+        BitbucketPullRequestHandler,
+        {
+            provide: 'BITBUCKET_WEBHOOK_HANDLER',
+            useExisting: BitbucketPullRequestHandler,
+        },
+        AzureReposPullRequestHandler,
+        {
+            provide: 'AZURE_REPOS_WEBHOOK_HANDLER',
+            useExisting: AzureReposPullRequestHandler,
+        },
     ],
     controllers: [
         CodeManagementController,
@@ -109,7 +137,7 @@ export class PlatformIntegrationModule implements OnModuleInit {
     constructor(
         private modulesContainer: ModulesContainer,
         private integrationFactory: PlatformIntegrationFactory,
-    ) { }
+    ) {}
 
     onModuleInit() {
         const providers = [...this.modulesContainer.values()]

@@ -449,12 +449,14 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 context,
                 systemPromptFn,
                 userPromptFn,
+                'primary',
             );
             const fallbackChain = await this.createProviderChain(
                 fallbackProvider,
                 context,
                 systemPromptFn,
                 userPromptFn,
+                'fallback',
             );
 
             // Used withFallbacks to configure the fallback correctly
@@ -463,6 +465,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     fallbacks: [fallbackChain],
                 })
                 .withConfig({
+                    tags: this.buildTags(provider, 'primary'),
                     runName,
                     metadata: {
                         organizationId:
@@ -492,6 +495,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         context: any,
         systemPromptFn: SystemPromptFn,
         userPromptFn: UserPromptFn,
+        tier: 'primary' | 'fallback',
     ) {
         try {
             let llm =
@@ -512,6 +516,8 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                           temperature: 0,
                           callbacks: [this.tokenTracker],
                       });
+
+            const tags = this.buildTags(provider, 'primary');
 
             // Create the chain using the correct provider
             const chain = RunnableSequence.from([
@@ -542,7 +548,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 },
                 llm,
                 new StringOutputParser(),
-            ]);
+            ]).withConfig({ tags });
 
             return chain;
         } catch (error) {
@@ -736,6 +742,13 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             });
             return null;
         }
+    }
+
+    private buildTags(
+        provider: LLMModelProvider,
+        tier: 'primary' | 'fallback',
+    ) {
+        return [`model:${provider}`, `tier:${tier}`, 'kodyRules'];
     }
 
     private async logTokenUsage(metadata: any) {
