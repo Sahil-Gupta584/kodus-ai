@@ -192,8 +192,8 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
     }
 
     private shouldTriggerCodeReviewForGitLab(params: any): boolean {
-        const objectAttributes = params.payload?.object_attributes || {};
-        const changes = params.payload?.changes || {};
+        const objectAttributes = params?.object_attributes || {};
+        const changes = params?.changes || {};
 
         // Verify if it's a new MR
         if (objectAttributes.action === 'open') {

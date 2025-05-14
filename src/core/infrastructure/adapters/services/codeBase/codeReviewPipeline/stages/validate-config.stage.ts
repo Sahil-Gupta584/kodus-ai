@@ -7,6 +7,8 @@ import {
 import { CodeReviewConfig } from '@/config/types/general/codeReview.type';
 import { PinoLoggerService } from '../../../logger/pino.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
+import { OrganizationAndTeamDataDto } from '@/core/infrastructure/http/dtos/organizationAndTeamData.dto';
+import { PipelineStatus } from '../../../pipeline/interfaces/pipeline-context.interface';
 
 @Injectable()
 export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -44,10 +46,20 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             const errorMessage = `PR #${context.pullRequest.number} skipped due to config rules.`;
             this.logger.warn({
                 message: errorMessage,
+                serviceName: ValidateConfigStage.name,
                 context: this.stageName,
+                metadata: {
+                    prNumber: context?.pullRequest?.number,
+                    repositoryName: context?.repository?.name,
+                    id: context?.repository?.id,
+                    organizationAndTeamData: context?.organizationAndTeamData,
+                },
             });
 
-            throw new Error(errorMessage);
+            return this.updateContext(context, (draft) => {
+                draft.status = PipelineStatus.SKIP;
+                draft.codeReviewConfig = config;
+            });
         }
 
         // Atualiza o contexto imutavelmente usando o Immer
