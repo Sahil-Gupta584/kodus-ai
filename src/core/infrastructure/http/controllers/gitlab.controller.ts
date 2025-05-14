@@ -16,6 +16,8 @@ export class GitlabController {
         const event = req.headers['x-gitlab-event'] as string;
         const payload = req.body as any;
 
+        res.status(HttpStatus.OK).send('Webhook received');
+
         setImmediate(() => {
             this.logger.log({
                 message: `Webhook received, ${event}`,
@@ -32,9 +34,5 @@ export class GitlabController {
                 platformType: PlatformType.GITLAB,
             });
         });
-
-        console.log('@event webhook', event);
-        console.log('Webhook received');
-        return res.status(HttpStatus.OK).send('Webhook received');
     }
 }
