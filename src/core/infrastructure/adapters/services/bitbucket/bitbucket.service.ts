@@ -64,25 +64,30 @@ import {
     REPOSITORY_MANAGER_TOKEN,
 } from '@/core/domain/repository/contracts/repository-manager.contract';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
-import { KODY_CODE_REVIEW_COMPLETED_MARKER, KODY_CRITICAL_ISSUE_COMMENT_MARKER, KODY_START_COMMAND_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
+import {
+    KODY_CODE_REVIEW_COMPLETED_MARKER,
+    KODY_CRITICAL_ISSUE_COMMENT_MARKER,
+    KODY_START_COMMAND_MARKER,
+} from '@/shared/utils/codeManagement/codeCommentMarkers';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
 export class BitbucketService
     implements
-    IBitbucketService,
-    Omit<
-        ICodeManagementService,
-        | 'getOrganizations'
-        | 'getListOfValidReviews'
-        | 'getUserByEmailOrName'
-        | 'getPullRequestReviewThreads'
-        | 'getUserById'
-        | 'getDataForCalculateDeployFrequency'
-        | 'getCommitsByReleaseMode'
-        | 'getAuthenticationOAuthToken'
-        | 'getRepositoryAllFiles'
-    > {
+        IBitbucketService,
+        Omit<
+            ICodeManagementService,
+            | 'getOrganizations'
+            | 'getListOfValidReviews'
+            | 'getUserByEmailOrName'
+            | 'getPullRequestReviewThreads'
+            | 'getUserById'
+            | 'getDataForCalculateDeployFrequency'
+            | 'getCommitsByReleaseMode'
+            | 'getAuthenticationOAuthToken'
+            | 'getRepositoryAllFiles'
+        >
+{
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
         private readonly integrationService: IIntegrationService,
@@ -102,7 +107,7 @@ export class BitbucketService
         private readonly promptService: PromptService,
 
         private readonly logger: PinoLoggerService,
-    ) { }
+    ) {}
 
     async getPullRequestsWithChangesRequested(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -945,16 +950,17 @@ export class BitbucketService
             const { organizationAndTeamData } = params;
 
             const filters = params?.filters ?? {};
-            const { prStatus } = filters ?? "OPEN";
+            const { prStatus } = filters ?? 'OPEN';
 
             const stateMap = {
                 open: PullRequestState.OPENED.toUpperCase(),
-                closed: "DECLINED",
+                closed: 'DECLINED',
                 merged: PullRequestState.MERGED.toUpperCase(),
             };
 
             // Normalize the input to lowercase and look it up in the stateMap
-            const normalizedStatus = stateMap[prStatus.toLowerCase()] || PullRequestState.OPENED; // Default to OPENED if not found
+            const normalizedStatus =
+                stateMap[prStatus.toLowerCase()] || PullRequestState.OPENED; // Default to OPENED if not found
 
             const { startDate, endDate } = filters?.period || {};
 
@@ -981,7 +987,7 @@ export class BitbucketService
                         .list({
                             repo_slug: `{${repo.id}}`,
                             workspace: `{${repo.workspaceId}}`,
-                            state: normalizedStatus
+                            state: normalizedStatus,
                         })
                         .then((res) =>
                             this.getPaginatedResults(bitbucketAPI, res),
@@ -1479,7 +1485,8 @@ export class BitbucketService
             const thumbsUpBlock = `\`\`\`\n👍\n\`\`\`\n`;
             const thumbsDownBlock = `\`\`\`\n👎\n\`\`\`\n`;
 
-            const updatedBodyFormatted = bodyFormatted + thumbsUpBlock + thumbsDownBlock;
+            const updatedBodyFormatted =
+                bodyFormatted + thumbsUpBlock + thumbsDownBlock;
 
             // added ts-ignore because _body expects a type property but Bitbucket rejects it
             const comment = await bitbucketAPI.pullrequests
@@ -1496,7 +1503,7 @@ export class BitbucketService
                             path: lineComment?.path,
                             to: this.sanitizeLine(
                                 params.lineComment.start_line ??
-                                params.lineComment.line,
+                                    params.lineComment.line,
                             ),
                         },
                     },
@@ -2101,14 +2108,13 @@ export class BitbucketService
             if (!bitbucketAPI) {
                 return null;
             }
-            const comments
-                = await bitbucketAPI.pullrequests
-                    .listComments({
-                        pull_request_id: filters.pullRequestNumber,
-                        repo_slug: `{${filters.repository.id}}`,
-                        workspace: `{${workspace}}`,
-                    })
-                    .then((res) => this.getPaginatedResults(bitbucketAPI, res));
+            const comments = await bitbucketAPI.pullrequests
+                .listComments({
+                    pull_request_id: filters.pullRequestNumber,
+                    repo_slug: `{${filters.repository.id}}`,
+                    workspace: `{${workspace}}`,
+                })
+                .then((res) => this.getPaginatedResults(bitbucketAPI, res));
 
             // Adds a replies field to each comment.
             const commentMap = comments.reduce((acc, comment) => {
@@ -2796,7 +2802,7 @@ export class BitbucketService
 
         const repo = repositories.find((repo) => repo.id === repositoryId);
 
-        return repo.workspaceId || null;
+        return repo?.workspaceId || null;
     }
 
     private async getRepoById(
@@ -2870,8 +2876,8 @@ export class BitbucketService
     }
 
     async checkIfPullRequestShouldBeApproved(params: {
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
         repository: { id: string; name: string };
     }) {
         try {
@@ -2897,33 +2903,42 @@ export class BitbucketService
                 this.logger.warn({
                     message: 'Bitbucket auth details not found',
                     context: this.checkIfPullRequestShouldBeApproved.name,
-                    metadata: { organizationAndTeamData }
+                    metadata: { organizationAndTeamData },
                 });
                 return null;
             }
 
-            const currentUser = (await bitbucketAPI.users.getAuthedUser({})).data;
+            const currentUser = (await bitbucketAPI.users.getAuthedUser({}))
+                .data;
 
-            const activities = await bitbucketAPI.pullrequests.listActivities({
-                repo_slug: `{${repository.id}}`,
-                workspace: `{${workspace}}`,
-                pull_request_id: prNumber,
-            }).then((res) => this.getPaginatedResults(bitbucketAPI, res));
+            const activities = await bitbucketAPI.pullrequests
+                .listActivities({
+                    repo_slug: `{${repository.id}}`,
+                    workspace: `{${workspace}}`,
+                    pull_request_id: prNumber,
+                })
+                .then((res) => this.getPaginatedResults(bitbucketAPI, res));
 
-            const isApprovedByCurrentUser = activities
-                .find((activity: any) => activity.approval?.user?.uuid === currentUser?.uuid);
+            const isApprovedByCurrentUser = activities.find(
+                (activity: any) =>
+                    activity.approval?.user?.uuid === currentUser?.uuid,
+            );
 
             if (isApprovedByCurrentUser) {
                 return null;
             }
 
-            await this.approvePullRequest({ organizationAndTeamData, prNumber, repository });
-
+            await this.approvePullRequest({
+                organizationAndTeamData,
+                prNumber,
+                repository,
+            });
         } catch (error) {
             this.logger.error({
                 message: `Error to approve pull request #${params.prNumber}`,
                 context: BitbucketService.name,
-                serviceName: 'BitbucketService checkIfPullRequestShouldBeApproved',
+                serviceName:
+                    'BitbucketService checkIfPullRequestShouldBeApproved',
                 error: error,
                 metadata: {
                     params,
@@ -3171,8 +3186,9 @@ export class BitbucketService
                 queryString += `created_on >= "${filters.startDate}"`;
             }
             if (filters?.endDate) {
-                queryString += `${queryString ? ' AND ' : ''
-                    }created_on <= "${filters.endDate}"`;
+                queryString += `${
+                    queryString ? ' AND ' : ''
+                }created_on <= "${filters.endDate}"`;
             }
 
             const pullRequests = await bitbucketAPI.pullrequests
@@ -3340,10 +3356,7 @@ export class BitbucketService
         }
     }
 
-    async countReactions(params: {
-        comments: any[],
-        pr: any
-    }): Promise<any[]> {
+    async countReactions(params: { comments: any[]; pr: any }): Promise<any[]> {
         try {
             const { comments, pr } = params;
 
@@ -3351,7 +3364,10 @@ export class BitbucketService
             const thumbsDownText = '👎';
 
             const commentsWithNumberOfReactions = comments
-                .filter((comment: any) => (comment.replies && comment.replies.length > 0))
+                .filter(
+                    (comment: any) =>
+                        comment.replies && comment.replies.length > 0,
+                )
                 .map((comment: any) => {
                     comment.totalReactions = 0;
                     comment.thumbsUp = 0;
@@ -3359,35 +3375,44 @@ export class BitbucketService
 
                     const userReactions = new Map();
 
-                    comment.replies.forEach(reply => {
+                    comment.replies.forEach((reply) => {
                         const userId = reply.user.uuid;
                         const replyBody = reply.content.raw;
 
                         // Initialize user reaction if not already present
                         if (!userReactions.has(userId)) {
-                            userReactions.set(userId, { thumbsUp: false, thumbsDown: false });
+                            userReactions.set(userId, {
+                                thumbsUp: false,
+                                thumbsDown: false,
+                            });
                         }
 
                         const userReaction = userReactions.get(userId);
 
                         // Check for thumbs up reaction
-                        if (replyBody.includes(thumbsUpText) && !userReaction.thumbsUp) {
+                        if (
+                            replyBody.includes(thumbsUpText) &&
+                            !userReaction.thumbsUp
+                        ) {
                             comment.thumbsUp++;
                             userReaction.thumbsUp = true;
                         }
 
                         // Check for thumbs down reaction
-                        if (replyBody.includes(thumbsDownText) && !userReaction.thumbsDown) {
+                        if (
+                            replyBody.includes(thumbsDownText) &&
+                            !userReaction.thumbsDown
+                        ) {
                             comment.thumbsDown++;
                             userReaction.thumbsDown = true;
                         }
                     });
 
-                    comment.totalReactions = comment.thumbsUp + comment.thumbsDown;
+                    comment.totalReactions =
+                        comment.thumbsUp + comment.thumbsDown;
 
                     return comment;
                 });
-
 
             const reactionsInComments: ReactionsInComments[] =
                 commentsWithNumberOfReactions
@@ -3410,11 +3435,10 @@ export class BitbucketService
                                 fullName: pr.repository.name,
                             },
                         },
-                    }))
+                    }));
 
             return reactionsInComments;
-        }
-        catch (error) {
+        } catch (error) {
             this.logger.error({
                 message: `Error when trying to count reactions in PR${params.pr.pull_number}`,
                 context: BitbucketService.name,

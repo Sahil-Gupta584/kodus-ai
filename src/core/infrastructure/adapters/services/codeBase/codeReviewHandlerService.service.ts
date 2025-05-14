@@ -750,12 +750,12 @@ export class CodeReviewHandlerService {
             files: changedFiles,
             lastExecution: lastExecution
                 ? {
-                    commentId: lastExecution?.dataExecution?.commentId,
-                    noteId: lastExecution?.dataExecution?.noteId,
-                    threadId: lastExecution?.dataExecution?.threadId,
-                    lastAnalyzedCommit:
-                        lastExecution?.dataExecution?.lastAnalyzedCommit,
-                }
+                      commentId: lastExecution?.dataExecution?.commentId,
+                      noteId: lastExecution?.dataExecution?.noteId,
+                      threadId: lastExecution?.dataExecution?.threadId,
+                      lastAnalyzedCommit:
+                          lastExecution?.dataExecution?.lastAnalyzedCommit,
+                  }
                 : undefined,
         };
     }
@@ -842,6 +842,7 @@ export class CodeReviewHandlerService {
             this.logger.log({
                 message: `Iniciando pipeline de code review para PR#${pullRequest.number}`,
                 context: CodeReviewHandlerService.name,
+                serviceName: CodeReviewHandlerService.name,
                 metadata: {
                     organizationId: organizationAndTeamData.organizationId,
                     teamId: organizationAndTeamData.teamId,
@@ -856,9 +857,12 @@ export class CodeReviewHandlerService {
             this.logger.log({
                 message: `Pipeline de code review concluído com sucesso para PR#${pullRequest.number}`,
                 context: CodeReviewHandlerService.name,
+                serviceName: CodeReviewHandlerService.name,
                 metadata: {
                     overallCommentsCount: result?.overallComments?.length,
                     suggestionsCount: result?.lineComments?.length || 0,
+                    organizationAndTeamData,
+                    pullRequestNumber: pullRequest.number,
                 },
             });
 

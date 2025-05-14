@@ -49,6 +49,8 @@ export class GithubController {
             }
         }
 
+        res.status(HttpStatus.OK).send('Webhook received');
+
         setImmediate(() => {
             this.logger.log({
                 message: `Webhook received, ${event}`,
@@ -65,10 +67,6 @@ export class GithubController {
                 platformType: PlatformType.GITHUB,
             });
         });
-
-        console.log('@event webhook', event);
-        console.log('Webhook received');
-        return res.status(HttpStatus.OK).send('Webhook received');
     }
 
     @Get('/integration')
