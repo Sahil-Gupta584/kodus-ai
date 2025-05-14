@@ -1,4 +1,3 @@
-
 import {
     AUTH_INTEGRATION_SERVICE_TOKEN,
     IAuthIntegrationService,
@@ -73,25 +72,25 @@ import { AzurePRStatus } from '@/core/domain/azureRepos/entities/azureRepoPullRe
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
     implements
-    Omit<
-        ICodeManagementService,
-        | 'getOrganizations'
-        | 'getPullRequestDetails'
-        | 'getWorkflows'
-        | 'getListMembers'
-        | 'getCommitsByReleaseMode'
-        | 'getPullRequestsForRTTM'
-        | 'createCommentInPullRequest'
-        | 'getPullRequestReviewThreads'
-        | 'getListOfValidReviews'
-        | 'getPullRequestsWithChangesRequested'
-        | 'findTeamAndOrganizationIdByConfigKey'
-        | 'createResponseToComment'
-        | 'getAuthenticationOAuthToken'
-        | 'getRepositoryAllFiles'
-        | 'mergePullRequest'
-        | 'getUserById'
-    > {
+        Omit<
+            ICodeManagementService,
+            | 'getOrganizations'
+            | 'getPullRequestDetails'
+            | 'getWorkflows'
+            | 'getListMembers'
+            | 'getCommitsByReleaseMode'
+            | 'getPullRequestsForRTTM'
+            | 'createCommentInPullRequest'
+            | 'getPullRequestReviewThreads'
+            | 'getListOfValidReviews'
+            | 'getPullRequestsWithChangesRequested'
+            | 'createResponseToComment'
+            | 'getAuthenticationOAuthToken'
+            | 'getRepositoryAllFiles'
+            | 'mergePullRequest'
+            | 'getUserById'
+        >
+{
     constructor(
         @Inject(INTEGRATION_SERVICE_TOKEN)
         private readonly integrationService: IIntegrationService,
@@ -107,9 +106,36 @@ export class AzureReposService
 
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
-    ) { }
+    ) {}
 
+    async findTeamAndOrganizationIdByConfigKey(
+        params: any,
+    ): Promise<IntegrationConfigEntity | null> {
+        try {
+            const integrationConfig =
+                await this.integrationConfigService.findOne({
+                    configKey: IntegrationConfigKey.REPOSITORIES,
+                    configValue: [{ id: params?.repository?.id?.toString() }],
+                });
 
+            return integrationConfig &&
+                integrationConfig?.configValue?.length > 0
+                ? integrationConfig
+                : null;
+        } catch (err) {
+            this.logger.error({
+                message: 'Error to find team and organization id by config key',
+                context: AzureReposService.name,
+                serviceName:
+                    'AzureReposService findTeamAndOrganizationIdByConfigKey',
+                error: err,
+                metadata: {
+                    params,
+                },
+            });
+            throw new BadRequestException(err);
+        }
+    }
 
     async markReviewCommentAsResolved(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -163,7 +189,7 @@ export class AzureReposService
     async checkIfPullRequestShouldBeApproved(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         prNumber: number;
-        repository: { id: string; name: string; };
+        repository: { id: string; name: string };
     }): Promise<any | null> {
         try {
             const { organizationAndTeamData, prNumber, repository } = params;
@@ -187,23 +213,30 @@ export class AzureReposService
                 throw new Error('Unable to identify reviewer from PAT.');
             }
 
-            const reviewers = await this.azureReposRequestHelper.getListOfPullRequestReviewers({
-                orgName,
-                projectId,
-                repositoryId: repository.id,
-                prId: prNumber,
-                token
-            });
+            const reviewers =
+                await this.azureReposRequestHelper.getListOfPullRequestReviewers(
+                    {
+                        orgName,
+                        projectId,
+                        repositoryId: repository.id,
+                        prId: prNumber,
+                        token,
+                    },
+                );
 
             const isApprovedByCurrentUser = reviewers
-                ? reviewers?.some((reviewer) => (reviewer.id === currentUserId))
+                ? reviewers?.some((reviewer) => reviewer.id === currentUserId)
                 : false;
 
             if (isApprovedByCurrentUser) {
                 return null;
             }
 
-            const result = await this.approvePullRequest({ organizationAndTeamData, prNumber, repository });
+            const result = await this.approvePullRequest({
+                organizationAndTeamData,
+                prNumber,
+                repository,
+            });
 
             return result;
         } catch (error) {
@@ -458,21 +491,27 @@ export class AzureReposService
             }, {});
 
             // Creates final comment array with replies
-            const commentsWithReplyArray = Object.values(groupedComments).flatMap((group: any) => {
+            const commentsWithReplyArray = Object.values(
+                groupedComments,
+            ).flatMap((group: any) => {
                 // Sort Comments by created_at
-                group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+                group.sort(
+                    (a, b) =>
+                        new Date(a.createdAt).getTime() -
+                        new Date(b.createdAt).getTime(),
+                );
 
                 // The first comment of the sorted group will be the parent
                 const parentComment = {
                     ...group[0],
                     replies: [],
-                }
+                };
 
                 // The rest are replies
                 parentComment.replies = group.slice(1);
 
                 return parentComment;
-            })
+            });
 
             return commentsWithReplyArray.sort(
                 (a, b) =>
@@ -735,8 +774,6 @@ export class AzureReposService
                 language,
                 TranslationsCategory.ReviewComment,
             );
-
-
 
             const bodyFormatted = this.formatBodyForAzure(
                 lineComment,
@@ -1659,8 +1696,9 @@ export class AzureReposService
                 queryString += `created_on >= "${filters.startDate}"`;
             }
             if (filters?.endDate) {
-                queryString += `${queryString ? ' AND ' : ''
-                    }created_on <= "${filters.endDate}"`;
+                queryString += `${
+                    queryString ? ' AND ' : ''
+                }created_on <= "${filters.endDate}"`;
             }
 
             const projectId = await this.getProjectIdFromRepository(
@@ -1801,7 +1839,10 @@ export class AzureReposService
 
     async getPullRequestsWithFiles(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        filters?: { period?: { startDate?: string; endDate?: string }, prStatus?: string };
+        filters?: {
+            period?: { startDate?: string; endDate?: string };
+            prStatus?: string;
+        };
     }): Promise<PullRequestWithFiles[] | null> {
         try {
             const { organizationAndTeamData } = params;
@@ -1816,7 +1857,9 @@ export class AzureReposService
             };
 
             // Normalize the input to lowercase and look it up in the stateMap
-            const normalizedStatus = prStatus ? stateMap[prStatus.toLowerCase()] || AzurePRStatus.ACTIVE : AzurePRStatus.ACTIVE;
+            const normalizedStatus = prStatus
+                ? stateMap[prStatus.toLowerCase()] || AzurePRStatus.ACTIVE
+                : AzurePRStatus.ACTIVE;
 
             const { startDate, endDate } = filters.period || {};
 
@@ -1895,9 +1938,9 @@ export class AzureReposService
                                 repository: { id: repo.id, name: repo.name },
                                 repositoryData: repo as any,
                                 pullRequestFiles: diffs as any,
-                            }
+                            };
 
-                            return prWithFileChanges
+                            return prWithFileChanges;
                         }),
                     );
 
@@ -1918,8 +1961,8 @@ export class AzureReposService
     }
 
     async countReactions(params: {
-        comments: any[],
-        pr: any,
+        comments: any[];
+        pr: any;
     }): Promise<any[] | null> {
         try {
             const { comments, pr } = params;
@@ -1928,7 +1971,10 @@ export class AzureReposService
             const thumbsDownText = '👎';
 
             const commentsWithNumberOfReactions = comments
-                .filter((comment: any) => (comment.replies && comment.replies.length > 0))
+                .filter(
+                    (comment: any) =>
+                        comment.replies && comment.replies.length > 0,
+                )
                 .map((comment: any) => {
                     comment.totalReactions = 0;
                     comment.thumbsUp = 0;
@@ -1936,7 +1982,7 @@ export class AzureReposService
 
                     const userReactions = new Map();
 
-                    comment.replies.forEach(reply => {
+                    comment.replies.forEach((reply) => {
                         const userId = reply?.author?.id;
                         const replyBody = reply?.body;
 
@@ -1947,25 +1993,35 @@ export class AzureReposService
 
                         // Initialize user reaction if not already present
                         if (!userReactions.has(userId)) {
-                            userReactions.set(userId, { thumbsUp: false, thumbsDown: false });
+                            userReactions.set(userId, {
+                                thumbsUp: false,
+                                thumbsDown: false,
+                            });
                         }
 
                         const userReaction = userReactions.get(userId);
 
                         // Check for thumbs up reaction
-                        if (replyBody.includes(thumbsUpText) && !userReaction.thumbsUp) {
+                        if (
+                            replyBody.includes(thumbsUpText) &&
+                            !userReaction.thumbsUp
+                        ) {
                             comment.thumbsUp++;
                             userReaction.thumbsUp = true;
                         }
 
                         // Check for thumbs down reaction
-                        if (replyBody.includes(thumbsDownText) && !userReaction.thumbsDown) {
+                        if (
+                            replyBody.includes(thumbsDownText) &&
+                            !userReaction.thumbsDown
+                        ) {
                             comment.thumbsDown++;
                             userReaction.thumbsDown = true;
                         }
                     });
 
-                    comment.totalReactions = comment.thumbsUp + comment.thumbsDown;
+                    comment.totalReactions =
+                        comment.thumbsUp + comment.thumbsDown;
 
                     return comment;
                 });
@@ -1994,7 +2050,6 @@ export class AzureReposService
                     }));
 
             return reactionsInComments;
-
         } catch (error) {
             this.logger.error({
                 message: `Error when trying to count reactions in PR${params.pr.pull_number}`,
@@ -2978,9 +3033,9 @@ export class AzureReposService
             actionStatement,
             this.formatSub(translations.talkToKody),
             this.formatSub(translations.feedback) +
-            '<!-- kody-codereview -->&#8203;\n&#8203;',
+                '<!-- kody-codereview -->&#8203;\n&#8203;',
             thumbsUpBlock,
-            thumbsDownBlock
+            thumbsDownBlock,
         ]
             .join('\n')
             .trim();
