@@ -85,8 +85,10 @@ import {
     ProjectManagementConnectionStatus,
     ValidateProjectManagementIntegration,
 } from '@/shared/utils/decorators/validate-project-management-integration.decorator';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import {
+    LLMModelProvider,
+    MODEL_STRATEGIES,
+} from '@/shared/domain/enums/llm-model-provider.enum';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.JIRA, 'projectManagement')
@@ -818,9 +820,8 @@ export class JiraService
     private async getDoingAndWaitingColumns(columns) {
         try {
             const llm = getChatGPT({
-                model: getLLMModelProviderWithFallback(
-                    LLMModelProvider.CHATGPT_4_TURBO,
-                ),
+                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
+                    .modelName,
             }).bind({
                 response_format: { type: 'json_object' },
             });
@@ -1026,9 +1027,8 @@ export class JiraService
     private getBugTypes = async (workItemTypes) => {
         try {
             const llm = getChatGPT({
-                model: getLLMModelProviderWithFallback(
-                    LLMModelProvider.CHATGPT_4_TURBO,
-                ),
+                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
+                    .modelName,
             }).bind({
                 response_format: { type: 'json_object' },
             });

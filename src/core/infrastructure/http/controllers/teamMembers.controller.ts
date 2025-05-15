@@ -14,7 +14,6 @@ import {
     Query,
 } from '@nestjs/common';
 import { TeamQueryDto } from '../dtos/teamId-query-dto';
-import { PredictTeamCreationUseCase } from '@/core/application/use-cases/teamMembers/automatic-team-creation.use-case';
 import { SendInvitesUseCase } from '@/core/application/use-cases/teamMembers/send-invites.use-case';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { DeleteTeamMembersUseCase } from '@/core/application/use-cases/teamMembers/delete.use-case';
@@ -25,7 +24,6 @@ export class TeamMembersController {
         private readonly createOrUpdateTeamMembersUseCase: CreateOrUpdateTeamMembersUseCase,
         private readonly getTeamMembersUseCase: GetTeamMembersUseCase,
         private readonly getTeamMemberByRelationsUseCase: GetTeamMemberByRelationsUseCase,
-        private readonly predictTeamCreationUseCase: PredictTeamCreationUseCase,
         private readonly sendInvitesUseCase: SendInvitesUseCase,
         private readonly deleteTeamMembersUseCase: DeleteTeamMembersUseCase,
     ) {}
@@ -48,11 +46,6 @@ export class TeamMembersController {
             body.teamId,
             body.members,
         );
-    }
-
-    @Post('/predict-team')
-    public async predictTeamCreation() {
-        return this.predictTeamCreationUseCase.execute();
     }
 
     @Post('/send-invite')

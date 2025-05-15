@@ -113,7 +113,7 @@ export class SuggestionService implements ISuggestionService {
                 await this.aiAnalysisService.validateImplementedSuggestions(
                     organizationAndTeamData,
                     prNumber,
-                    LLMModelProvider.DEEPSEEK_V3,
+                    LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     codePatch,
                     filteredSuggestions,
                 );
@@ -376,7 +376,7 @@ export class SuggestionService implements ISuggestionService {
                 await this.commentManagerService.repeatedCodeReviewSuggestionClustering(
                     organizationAndTeamData,
                     prNumber,
-                    LLMModelProvider.DEEPSEEK_V3,
+                    LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     suggestions,
                 );
 
@@ -996,7 +996,7 @@ export class SuggestionService implements ISuggestionService {
             const result = await this.aiAnalysisService.severityAnalysisAssignment(
                 organizationAndTeamData,
                 prNumber,
-                LLMModelProvider.DEEPSEEK_V3_0324,
+                LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                 codeSuggestions,
             );
 

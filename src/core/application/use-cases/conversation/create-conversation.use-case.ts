@@ -13,6 +13,7 @@ import {
     IParametersService,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
@@ -41,6 +42,8 @@ export class CreateConversationUseCase implements IUseCase {
         },
 
         private logger: PinoLoggerService,
+        
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
     ) {}
 
@@ -80,9 +83,11 @@ export class CreateConversationUseCase implements IUseCase {
             }
 
             const newConversation = {
-                title,
+                title: typeof title === 'string' ? title : JSON.stringify(title),
                 type: SenderType.USER,
                 sessionId: newSession.uuid,
+                organizationId,
+                teamId,
             };
 
             const response =

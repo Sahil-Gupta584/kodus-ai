@@ -22,14 +22,15 @@ import {
     getChatGPT,
     getDeepseekByNovitaAI,
 } from '@/shared/utils/langchainCommon/document';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
 import { prompt_detectBreakingChanges } from '@/shared/utils/langchainCommon/prompts/detectBreakingChanges';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { LLMResponseProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/transforms/llmResponseProcessor.transform';
 import { ChangeResult, DiffAnalyzerService } from './diffAnalyzer.service';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 
 @Injectable()
 export class CodeAstAnalysisService implements IASTAnalysisService {
@@ -41,6 +42,8 @@ export class CodeAstAnalysisService implements IASTAnalysisService {
         private readonly diffAnalyzerService: DiffAnalyzerService,
         private readonly codeManagementService: CodeManagementService,
         private readonly logger: PinoLoggerService,
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
     }
@@ -50,7 +53,7 @@ export class CodeAstAnalysisService implements IASTAnalysisService {
         reviewModeResponse: ReviewModeResponse,
     ): Promise<AIAnalysisResult> {
         try {
-            const provider = LLMModelProvider.DEEPSEEK_V3;
+            const provider = LLMModelProvider.NOVITA_DEEPSEEK_V3_0324;
 
             const baseContext = await this.prepareAnalysisContext(context);
 
@@ -299,7 +302,7 @@ export class CodeAstAnalysisService implements IASTAnalysisService {
         provider: LLMModelProvider,
         context: AnalysisContext,
     ) {
-        const fallbackProvider = LLMModelProvider.CHATGPT_4_ALL;
+        const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
 
         try {
             const mainChain = await this.createAnalysisProviderChain(provider);
@@ -336,23 +339,12 @@ export class CodeAstAnalysisService implements IASTAnalysisService {
 
     private async createAnalysisProviderChain(provider: LLMModelProvider) {
         try {
-            let llm =
-                provider === LLMModelProvider.DEEPSEEK_V3
-                    ? getDeepseekByNovitaAI({
-                          temperature: 0,
-                      })
-                    : getChatGPT({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
-                          temperature: 0,
-                      });
-
-            if (provider === LLMModelProvider.CHATGPT_4_ALL) {
-                llm = llm.bind({
-                    response_format: { type: 'json_object' },
-                });
-            }
+            let llm = this.llmProviderService.getLLMProvider({
+                model: provider,
+                temperature: 0,
+                maxTokens: 1000,
+                jsonMode: true,
+            });
 
             const chain = RunnableSequence.from([
                 async (input: any) => {

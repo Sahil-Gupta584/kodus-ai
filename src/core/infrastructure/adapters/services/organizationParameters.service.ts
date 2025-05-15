@@ -19,8 +19,10 @@ import { PromptService } from './prompt.service';
 import { ValidateProjectManagementIntegration } from '@/shared/utils/decorators/validate-project-management-integration.decorator';
 import { ProjectManagementService } from './platformIntegration/projectManagement.service';
 import { PinoLoggerService } from './logger/pino.service';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import {
+    LLMModelProvider,
+    MODEL_STRATEGIES,
+} from '@/shared/domain/enums/llm-model-provider.enum';
 
 @Injectable()
 export class OrganizationParametersService
@@ -201,9 +203,7 @@ export class OrganizationParametersService
         categorizedWorkItemTypesParameter?: any,
     ) {
         const llm = await getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_ALL,
-            ),
+            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
         }).bind({
             response_format: { type: 'json_object' },
         });

@@ -7,8 +7,10 @@ import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { PinoLoggerService } from '../logger/pino.service';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
+import { LLMProviderService } from '../llmProviders/llmProvider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -89,7 +91,11 @@ type UserPromptFn = (input: any) => string;
 export class PromptRunnerService {
     private readonly tokenTracker: TokenTrackingHandlerService;
 
-    constructor(private readonly logger: PinoLoggerService) {
+    constructor(
+        private readonly logger: PinoLoggerService,
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN) 
+        private readonly llmProvider: LLMProviderService,
+    ) {
         this.tokenTracker = new TokenTrackingHandlerService();
     }
 
@@ -188,31 +194,12 @@ export class PromptRunnerService {
         try {
             const { provider, context, systemPromptFn, userPromptFn } = params;
 
-            let llm;
-            switch (provider) {
-                case LLMModelProvider.GEMINI_1_5_PRO:
-                    llm = getChatGemini({
-                        model: LLMModelProvider.GEMINI_1_5_PRO,
-                        temperature: 0,
-                        callbacks: [this.tokenTracker],
-                    });
-                    break;
-                case LLMModelProvider.GEMINI_2_0_FLASH:
-                    llm = getChatGemini({
-                        model: LLMModelProvider.GEMINI_2_0_FLASH,
-                        temperature: 0,
-                        callbacks: [this.tokenTracker],
-                    });
-                    break;
-                case LLMModelProvider.DEEPSEEK_V3:
-                    llm = getDeepseekByNovitaAI({
-                        temperature: 0,
-                        callbacks: [this.tokenTracker],
-                    });
-                    break;
-                default:
-                    throw new Error('Provider not supported');
-            }
+            let llm = this.llmProvider.getLLMProvider({
+                model: provider,
+                temperature: 0,
+                maxTokens: -1, 
+                jsonMode: false,
+            });
 
             // Create the chain using the correct provider
             const chain = RunnableSequence.from([

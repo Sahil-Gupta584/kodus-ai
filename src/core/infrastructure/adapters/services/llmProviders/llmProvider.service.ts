@@ -1,4 +1,3 @@
-import OpenAI from 'openai';
 import { PinoLoggerService } from '../logger/pino.service';
 import {
     FactoryInput,
@@ -9,8 +8,12 @@ import {
 
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { getChatGPT } from '@/shared/utils/langchainCommon/document';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { ILLMProviderService } from './llmProvider.service.contract';
+import { Injectable } from '@nestjs/common';
 
-export class LLMProviderService {
+@Injectable()
+export class LLMProviderService implements ILLMProviderService {
     constructor(private readonly logger: PinoLoggerService) {}
 
     getLLMProvider(options: {
@@ -19,7 +22,7 @@ export class LLMProviderService {
         maxTokens: number;
         callbacks?: BaseCallbackHandler[];
         jsonMode: boolean;
-    }) {
+    }): BaseChatModel {
         const envMode = process.env.API_LLM_PROVIDER_MODEL ?? 'auto';
 
         if (envMode !== 'auto') {

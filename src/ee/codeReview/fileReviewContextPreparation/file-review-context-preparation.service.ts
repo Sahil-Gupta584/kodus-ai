@@ -166,7 +166,7 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
         const response = await this.aiAnalysisService.selectReviewMode(
             options.context.organizationAndTeamData,
             options.context.pullRequest.number,
-            LLMModelProvider.DEEPSEEK_V3,
+            LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
             options.fileChangeContext.file,
             options.patch,
         );

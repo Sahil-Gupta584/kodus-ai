@@ -68,7 +68,6 @@ import { ValidateProjectManagementIntegration } from '@/shared/utils/decorators/
 import { ArtifactsToolType } from '@/shared/domain/enums/artifacts-tool-type.enum';
 import { IntegrationStatusFilter } from '@/core/domain/team/interfaces/team.interface';
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
 import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
 
 @Injectable()
@@ -237,126 +236,6 @@ export class OrganizationArtifactsService
         } catch (error) {
             this.logger.error({
                 message: 'Error executing OrganizationArtifacts Weekly',
-                context: OrganizationArtifactsService.name,
-                error: error,
-                metadata: {
-                    teamId: organizationAndTeamData.teamId,
-                    organizationId: organizationAndTeamData.organizationId,
-                },
-            });
-            throw error;
-        }
-    }
-
-    @ValidateProjectManagementIntegration({ allowPartialTeamConnection: true })
-    async executeDaily(organizationAndTeamData: OrganizationAndTeamData) {
-        try {
-            const teams = await this.teamsService.findTeamsWithIntegrations({
-                organizationId: organizationAndTeamData.organizationId,
-                status: STATUS.ACTIVE,
-                integrationStatus: IntegrationStatusFilter.CONFIGURED,
-                integrationCategories: [IntegrationCategory.PROJECT_MANAGEMENT],
-                // Currently, there are only project-level artifacts at the organization level
-            });
-
-            if (!teams || teams?.length === 0) {
-                return;
-            }
-
-            const dataLoadedByTeam: IOrganizationArtifacExecutiontPayload[] =
-                [];
-
-            const flowMetricsConfig = await generateFlowMetricsConfig({
-                interval: MetricsAnalysisInterval.LAST_WEEK,
-            });
-
-            for (const team of teams) {
-                const newOrganizationAndTeamData = {
-                    ...organizationAndTeamData,
-                    teamId: team.uuid,
-                };
-
-                const teamMethodology =
-                    await this.integrationConfigService.findIntegrationConfigFormatted<string>(
-                        IntegrationConfigKey.TEAM_PROJECT_MANAGEMENT_METHODOLOGY,
-                        newOrganizationAndTeamData,
-                    );
-
-                const organizationTeamArtifactsFromParameters = (
-                    await this.parametersService.findByKey(
-                        ParametersKey.ORGANIZATION_ARTIFACTS_CONFIG,
-                        newOrganizationAndTeamData,
-                    )
-                )?.configValue;
-
-                const result = await this.processData(
-                    newOrganizationAndTeamData,
-                    teamMethodology,
-                    OrganizationAnalysisType.DAILY,
-                    flowMetricsConfig,
-                );
-
-                if (!result) {
-                    return;
-                }
-
-                const {
-                    workItemsDefault,
-                    bugTypeIdentifiers,
-                    workItemTypes,
-                    workItemsWithDeliveryStatus,
-                    wipColumns,
-                    period,
-                } = result;
-
-                dataLoadedByTeam.push({
-                    teamName: team.name,
-                    organizationAndTeamData: newOrganizationAndTeamData,
-                    bugTypeIdentifiers,
-                    workItemTypes,
-                    frequenceType: 'daily',
-                    teamMethodology,
-                    workItems: workItemsDefault,
-                    workItemsWithDeliveryStatus,
-                    wipColumns,
-                    period,
-                    organizationTeamArtifactsFromParameters,
-                });
-            }
-
-            for (const artifact of await this.filterArtifactsToUse('daily')) {
-                if (dataLoadedByTeam && dataLoadedByTeam.length > 0) {
-                    const artifactExecution = this.artifactSelector(
-                        artifact.name,
-                    );
-                    let artifactResult = null;
-
-                    if (
-                        artifactExecution &&
-                        artifact.name === 'DuplicateEffortWarning'
-                    ) {
-                        artifactResult = await artifactExecution?.execute(
-                            artifact,
-                            dataLoadedByTeam,
-                            this.runDuplicateEffortWarningLLM.bind(this),
-                        );
-                    } else {
-                        artifactResult = artifactExecution?.execute(
-                            artifact,
-                            dataLoadedByTeam,
-                        );
-                    }
-
-                    if (!artifactResult) {
-                        continue;
-                    }
-
-                    this.organizationArtifactsRepository.create(artifactResult);
-                }
-            }
-        } catch (error) {
-            this.logger.error({
-                message: 'Error executing OrganizationArtifacts Daily',
                 context: OrganizationArtifactsService.name,
                 error: error,
                 metadata: {
@@ -602,73 +481,6 @@ export class OrganizationArtifactsService
                 artifact.status &&
                 artifact.frequenceTypes?.includes(frequenceType),
         );
-    }
-
-    private async runDuplicateEffortWarningLLM(
-        duplicateWorkItems: {
-            workItems: Item[];
-            teamId: string;
-            teamName: string;
-        }[],
-        organizationId: string,
-    ) {
-        try {
-            const teamsId: string[] = [];
-            const llm = getChatGPT({
-                model: getLLMModelProviderWithFallback(
-                    LLMModelProvider.CHATGPT_4_TURBO,
-                ),
-            }).bind({
-                response_format: { type: 'json_object' },
-            });
-
-            const workItemsMerged: any[] = [];
-            duplicateWorkItems.forEach((data) => {
-                teamsId.push(data.teamId);
-                const workItemFormatted = data?.workItems
-                    ?.filter(
-                        (filterWorkItem: Item) => filterWorkItem?.description,
-                    )
-                    ?.map((workItem: Item) => ({
-                        id: workItem.id,
-                        key: workItem.key,
-                        name: workItem.name,
-                        description: workItem?.description,
-                        teamName: data.teamName,
-                    }));
-
-                workItemsMerged.push(workItemFormatted);
-            });
-
-            const workItemsFormatted = workItemsMerged.flatMap((item) => item);
-
-            const promptRewriteArtifacts =
-                await this.promptService.getCompleteContextPromptByName(
-                    'prompt_duplicateEffortWarning',
-                    {
-                        organizationAndTeamData: {
-                            organizationId: organizationId,
-                        },
-                        payload: JSON.stringify(workItemsFormatted),
-                        promptIsForChat: false,
-                    },
-                );
-
-            const artifactsForCheckin = await llm.invoke(
-                promptRewriteArtifacts,
-                {
-                    metadata: {
-                        module: 'AutomationSprintRetro',
-                        teamsId: teamsId,
-                        submodule: 'RewriteArtifacts',
-                    },
-                },
-            );
-
-            return artifactsForCheckin;
-        } catch (error) {
-            console.log(error);
-        }
     }
 
     private async processData(

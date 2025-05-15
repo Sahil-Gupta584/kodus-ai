@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { IAIAnalysisService } from '../../../../domain/codeBase/contracts/AIAnalysisService.contract';
 import {
     FileChangeContext,
@@ -37,6 +37,7 @@ import {
 import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
 import { prompt_codeReviewSafeguard_system } from '@/shared/utils/langchainCommon/prompts';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -120,6 +121,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
 
     constructor(
         private readonly logger: PinoLoggerService,
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();

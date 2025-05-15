@@ -15,8 +15,7 @@ import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageCont
 import { Inject, Injectable } from '@nestjs/common';
 import * as moment from 'moment-timezone';
 import { PinoLoggerService } from '../../logger/pino.service';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
 
 @Injectable()
 export class ReleaseNotesSection {
@@ -112,9 +111,7 @@ export class ReleaseNotesSection {
                 );
 
             const llm = getChatGPT({
-                model: getLLMModelProviderWithFallback(
-                    LLMModelProvider.CHATGPT_4_ALL,
-                ),
+                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
             }).bind({
                 response_format: { type: 'json_object' },
             });

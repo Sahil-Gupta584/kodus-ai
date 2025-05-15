@@ -34,8 +34,7 @@ import {
 } from '@langchain/core/messages';
 
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
 
 type Action = {
     id: number;
@@ -137,9 +136,7 @@ export class ToolExecutionService implements IToolExecutionService {
         memory: any,
     ) {
         const model = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_ALL,
-            ),
+            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
         }).bind({
             response_format: { type: 'json_object' },
         });

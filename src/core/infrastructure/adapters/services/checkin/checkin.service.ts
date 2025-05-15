@@ -30,8 +30,7 @@ import { ModuleCategory } from '@/core/domain/snoozedItems/enums/module-category
 import { SectionType as SectionTypeEnum } from '@/core/domain/snoozedItems/enums/section-type.enum';
 import { ITeam } from '@/core/domain/team/interfaces/team.interface';
 import { ValidateCommunicationManagementIntegration } from '@/shared/utils/decorators/validate-communication-management-integration.decorator';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
 
 @Injectable()
 export class CheckinService implements ICheckinService {
@@ -263,9 +262,7 @@ export class CheckinService implements ICheckinService {
     ): Promise<any> {
         try {
             const llm = await getChatGPT({
-                model: getLLMModelProviderWithFallback(
-                    LLMModelProvider.CHATGPT_4_ALL,
-                ),
+                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
             }).bind({
                 response_format: { type: 'json_object' },
             });

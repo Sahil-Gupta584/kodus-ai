@@ -44,8 +44,7 @@ import { IntegrationEntity } from '@/core/domain/integrations/entities/integrati
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
 import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
 import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { PromptService } from '../prompt.service';
@@ -610,9 +609,7 @@ export class BitbucketService
             }
 
             let llm = getChatGPT({
-                model: getLLMModelProviderWithFallback(
-                    LLMModelProvider.CHATGPT_4_TURBO,
-                ),
+                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
             }).bind({
                 response_format: { type: 'json_object' },
             });

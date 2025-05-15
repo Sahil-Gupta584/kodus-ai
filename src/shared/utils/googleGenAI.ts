@@ -1,6 +1,6 @@
-import { getLLMModelProviderWithFallback } from "./get-llm-model-provider.util";
 
-import { LLMModelProvider } from "../domain/enums/llm-model-provider.enum";
+
+import { LLMModelProvider, MODEL_STRATEGIES } from "../domain/enums/llm-model-provider.enum";
 
 const {
     GoogleGenerativeAI,
@@ -16,9 +16,7 @@ export const getGemini = async (params?: {
     const genAI = new GoogleGenerativeAI(process.env.API_GOOGLE_AI_API_KEY);
 
     const llm = genAI.getGenerativeModel({
-        model: params.model || getLLMModelProviderWithFallback(
-            LLMModelProvider.GEMINI_1_5_PRO,
-        ),
+        model: params.model || MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06].modelName,
     });
 
     return llm.startChat({

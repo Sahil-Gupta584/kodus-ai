@@ -72,8 +72,7 @@ import {
 } from '@/core/domain/organizationMetrics/contracts/organizationMetrics.service.contract';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { GitHubReaction } from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
 import {
     getTranslationsForLanguageByCategory,
     TranslationsCategory,
@@ -1660,9 +1659,7 @@ export class GithubService
         }
 
         let llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
+            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
         }).bind({
             response_format: { type: 'json_object' },
         });
@@ -1731,9 +1728,7 @@ export class GithubService
         }
 
         let llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
+            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
         }).bind({
             response_format: { type: 'json_object' },
         });

@@ -29,7 +29,6 @@ import {
     IIntegrationService,
     INTEGRATION_SERVICE_TOKEN,
 } from '@/core/domain/integrations/contracts/integration.service.contracts';
-import { getGemini } from '@/shared/utils/googleGenAI';
 import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
@@ -43,8 +42,8 @@ import {
     IAgentExecutionService,
 } from '@/core/domain/agents/contracts/agent-execution.service.contracts';
 import { IAgentExecution } from '@/core/domain/agents/interfaces/agent-execution.interface';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
+import { getGemini } from '@/shared/utils/googleGenAI';
 
 export class PromptRouter {
     constructor(
@@ -174,19 +173,6 @@ export class PromptRouter {
                     SystemMessagePromptTemplate.fromTemplate(
                         `Please select an appropriate route based on the provided user input and conversation memory:
 
-                        - projectInsights:
-                            - **When to choose**: When the user is seeking insights or explanations about the overall project, team performance or request for task (one or more) information or insights, including project-wide metrics, team health, or strategic issues.
-                            - **Choosing signals**: Look for keywords or phrases that indicate a focus on project or team-level concerns, such as "project metrics", "team performance", "lead time", "throughput", "sprint review", "retrospective insights", "bug rate", and other terms related to project management methodologies (e.g., Agile, Scrum, Kanban).
-                            - **Example**:
-                                - "Can you provide an overview of the team's performance this quarter?"
-                                - "Why has our lead time decreased last month?"
-                                - "What factors contributed to our increased throughput?"
-                                - "Can we analyze the trend in new bugs introduced in the recent sprints?"
-                                - "What are the key metrics indicating our project health?"
-                                - "How can we improve our sprint velocity based on the last retrospective?"
-                                - "How is the aging for task GE-18?"
-                                - "What is the delivery date for task JRA-22?"
-
                         - genericQuery:
                             - **When to choose**: When the user's request involves general questions or mundane tasks that do not fit into other specific categories.
                             - **Choosing signals**: Look for general questions, simple calculations, or non-specific queries.
@@ -206,9 +192,7 @@ export class PromptRouter {
             });
 
             const chat = getChatGPT({
-                model: getLLMModelProviderWithFallback(
-                    LLMModelProvider.CHATGPT_4_TURBO,
-                ),
+                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName
             });
             const functionCallingModel = chat.bind({
                 functions: [
@@ -300,9 +284,7 @@ export class PromptRouter {
             );
 
         const gemini = await getGemini({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.GEMINI_1_5_PRO_EXP,
-            ),
+            model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_05_06].modelName,
             temperature: 0,
         });
         let response = '';
@@ -316,9 +298,7 @@ export class PromptRouter {
                 promptFormatter,
                 response,
                 'FormatterMessage',
-                getLLMModelProviderWithFallback(
-                    LLMModelProvider.GEMINI_1_5_PRO_EXP,
-                ),
+                MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_05_06].modelName,
             );
         } catch (error) {
             response = message;

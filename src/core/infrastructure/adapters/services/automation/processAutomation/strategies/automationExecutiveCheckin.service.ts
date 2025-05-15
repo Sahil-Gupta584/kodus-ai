@@ -50,8 +50,10 @@ import {
 } from '@/core/domain/integrations/contracts/integration.service.contracts';
 import { ValidateCommunicationManagementIntegration } from '@/shared/utils/decorators/validate-communication-management-integration.decorator';
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import {
+    LLMModelProvider,
+    MODEL_STRATEGIES,
+} from '@/shared/domain/enums/llm-model-provider.enum';
 
 @Injectable()
 export class AutomationExecutiveCheckin
@@ -434,9 +436,7 @@ export class AutomationExecutiveCheckin
             );
 
         const llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_ALL,
-            ),
+            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
             temperature: 0,
         });
 
@@ -470,9 +470,7 @@ export class AutomationExecutiveCheckin
             );
 
         const llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_ALL,
-            ),
+            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
             temperature: 0,
         });
 

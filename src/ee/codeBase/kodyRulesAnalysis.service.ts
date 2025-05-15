@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import {
     FileChangeContext,
     AnalysisContext,
@@ -31,6 +31,7 @@ import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisS
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -165,6 +166,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
 
     constructor(
         private readonly logger: PinoLoggerService,
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
     ) {
         this.anthropic = new Anthropic({

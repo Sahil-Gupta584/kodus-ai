@@ -14,8 +14,7 @@ import {
     IMetricsFactory,
     METRICS_FACTORY_TOKEN,
 } from '@/core/domain/metrics/contracts/metrics.factory.contract';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
 
 @Injectable()
 export class CheckinInsightsService implements ICheckinInsightsService {
@@ -38,9 +37,7 @@ export class CheckinInsightsService implements ICheckinInsightsService {
         const fomattedMetrics = await this.formatMetricsDataToInsights(metrics);
 
         const llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
+            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
         }).bind({
             response_format: { type: 'json_object' },
         });

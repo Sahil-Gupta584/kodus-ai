@@ -44,8 +44,7 @@ import {
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { TeamMethodology } from '@/shared/domain/enums/team-methodology.enum';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
 
 @Injectable()
 export class AutomationSprintRetroService implements IAutomationFactory {
@@ -474,9 +473,7 @@ export class AutomationSprintRetroService implements IAutomationFactory {
             );
 
         const llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
+            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
         }).bind({
             response_format: { type: 'json_object' },
         });
@@ -517,9 +514,7 @@ export class AutomationSprintRetroService implements IAutomationFactory {
         message: string,
     ) {
         const llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
+            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
         }).bind({
             response_format: { type: 'json_object' },
         });

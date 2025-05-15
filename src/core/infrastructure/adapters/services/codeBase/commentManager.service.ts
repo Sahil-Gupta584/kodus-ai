@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ICommentManagerService } from '../../../../domain/codeBase/contracts/CommentManagerService.contract';
 import { CodeManagementService } from '../platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '../logger/pino.service';
@@ -18,8 +18,10 @@ import {
     getChatGPT,
     getDeepseekByNovitaAI,
 } from '@/shared/utils/langchainCommon/document';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import {
+    LLMModelProvider,
+    MODEL_STRATEGIES,
+} from '@/shared/domain/enums/llm-model-provider.enum';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { prompt_repeated_suggestion_clustering_system } from '@/shared/utils/langchainCommon/prompts/repeatedCodeReviewSuggestionClustering';
@@ -37,6 +39,8 @@ import {
     TranslationsCategory,
 } from '@/shared/utils/translations/translations';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
+import { LLMProviderService } from '../llmProviders/llmProvider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
@@ -45,6 +49,8 @@ export class CommentManagerService implements ICommentManagerService {
     constructor(
         private readonly codeManagementService: CodeManagementService,
         private readonly logger: PinoLoggerService,
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
     }
@@ -75,9 +81,8 @@ export class CommentManagerService implements ICommentManagerService {
                     });
 
                 let llm = getChatGPT({
-                    model: getLLMModelProviderWithFallback(
-                        LLMModelProvider.CHATGPT_4_ALL,
-                    ),
+                    model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
+                        .modelName,
                 });
 
                 // Building the base prompt
@@ -727,9 +732,9 @@ ${reviewOptionsMarkdown}
         context: any,
     ) {
         const fallbackProvider =
-            provider === LLMModelProvider.CHATGPT_4_ALL
-                ? LLMModelProvider.DEEPSEEK_V3
-                : LLMModelProvider.CHATGPT_4_ALL;
+            provider === LLMModelProvider.OPENAI_GPT_4O
+                ? LLMModelProvider.NOVITA_DEEPSEEK_V3
+                : LLMModelProvider.OPENAI_GPT_4O;
 
         try {
             // Main chain
@@ -788,24 +793,12 @@ ${reviewOptionsMarkdown}
         context: any,
     ) {
         try {
-            let llm =
-                provider === LLMModelProvider.DEEPSEEK_V3
-                    ? getDeepseekByNovitaAI({
-                          temperature: 0,
-                          maxTokens: 8000,
-                      })
-                    : getChatGPT({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL_MINI,
-                          ),
-                          temperature: 0,
-                      });
-
-            if (provider === LLMModelProvider.CHATGPT_4_ALL_MINI) {
-                llm = llm.bind({
-                    response_format: { type: 'json_object' },
-                });
-            }
+            let llm = this.llmProviderService.getLLMProvider({
+                model: provider,
+                temperature: 0,
+                maxTokens: 8000,
+                jsonMode: true,
+            });
 
             const chain = RunnableSequence.from([
                 async (input: any) => {
