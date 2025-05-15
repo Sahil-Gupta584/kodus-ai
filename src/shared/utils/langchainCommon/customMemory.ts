@@ -11,10 +11,7 @@ import {
 } from '@langchain/community/memory/chat_memory';
 import { encoding_for_model, TiktokenModel } from 'tiktoken';
 import { getBufferString } from '@langchain/core/messages';
-import {
-    LLMModelProvider,
-    MODEL_STRATEGIES,
-} from '@/shared/domain/enums/llm-model-provider.enum';
+import { MODEL_STRATEGIES, LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
 
 // Definition of the input for the custom memory
 export interface CustomChatMemoryInput extends BaseChatMemoryInput {

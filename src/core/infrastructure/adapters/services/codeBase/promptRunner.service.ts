@@ -1,4 +1,4 @@
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
 import {
     getChatGemini,
     getDeepseekByNovitaAI,
@@ -93,7 +93,7 @@ export class PromptRunnerService {
 
     constructor(
         private readonly logger: PinoLoggerService,
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN) 
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProvider: LLMProviderService,
     ) {
         this.tokenTracker = new TokenTrackingHandlerService();
@@ -197,7 +197,7 @@ export class PromptRunnerService {
             let llm = this.llmProvider.getLLMProvider({
                 model: provider,
                 temperature: 0,
-                maxTokens: -1, 
+                maxTokens: -1,
                 jsonMode: false,
             });
 

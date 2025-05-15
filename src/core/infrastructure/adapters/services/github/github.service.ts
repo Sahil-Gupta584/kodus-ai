@@ -72,7 +72,6 @@ import {
 } from '@/core/domain/organizationMetrics/contracts/organizationMetrics.service.contract';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { GitHubReaction } from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
-import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
 import {
     getTranslationsForLanguageByCategory,
     TranslationsCategory,
@@ -92,6 +91,7 @@ import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { LLMModelProvider, MODEL_STRATEGIES } from '../llmProviders/llm-model-provider.service';
 
 interface GitHubAuthResponse {
     token: string;

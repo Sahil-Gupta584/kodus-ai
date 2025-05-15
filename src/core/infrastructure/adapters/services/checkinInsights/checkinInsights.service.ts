@@ -14,7 +14,7 @@ import {
     IMetricsFactory,
     METRICS_FACTORY_TOKEN,
 } from '@/core/domain/metrics/contracts/metrics.factory.contract';
-import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../llmProviders/llm-model-provider.service';
 
 @Injectable()
 export class CheckinInsightsService implements ICheckinInsightsService {

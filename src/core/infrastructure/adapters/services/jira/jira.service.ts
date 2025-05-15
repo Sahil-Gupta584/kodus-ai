@@ -85,10 +85,7 @@ import {
     ProjectManagementConnectionStatus,
     ValidateProjectManagementIntegration,
 } from '@/shared/utils/decorators/validate-project-management-integration.decorator';
-import {
-    LLMModelProvider,
-    MODEL_STRATEGIES,
-} from '@/shared/domain/enums/llm-model-provider.enum';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../llmProviders/llm-model-provider.service';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.JIRA, 'projectManagement')

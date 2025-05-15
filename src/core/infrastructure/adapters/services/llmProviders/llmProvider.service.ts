@@ -1,16 +1,10 @@
 import { PinoLoggerService } from '../logger/pino.service';
-import {
-    FactoryInput,
-    LLMModelProvider,
-    MODEL_STRATEGIES,
-    ModelStrategy,
-} from '@/shared/domain/enums/llm-model-provider.enum';
-
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ILLMProviderService } from './llmProvider.service.contract';
 import { Injectable } from '@nestjs/common';
+import { LLMModelProvider, MODEL_STRATEGIES, ModelStrategy, FactoryInput } from './llm-model-provider.service';
 
 @Injectable()
 export class LLMProviderService implements ILLMProviderService {
@@ -19,9 +13,9 @@ export class LLMProviderService implements ILLMProviderService {
     getLLMProvider(options: {
         model: LLMModelProvider | string;
         temperature: number;
-        maxTokens: number;
         callbacks?: BaseCallbackHandler[];
-        jsonMode: boolean;
+        maxTokens?: number;
+        jsonMode?: boolean;
     }): BaseChatModel {
         const envMode = process.env.API_LLM_PROVIDER_MODEL ?? 'auto';
 

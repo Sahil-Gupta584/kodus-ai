@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
 
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';

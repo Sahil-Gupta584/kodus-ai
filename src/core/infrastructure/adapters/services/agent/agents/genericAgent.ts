@@ -22,7 +22,7 @@ import {
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
 import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
-import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../../llmProviders/llm-model-provider.service';
 
 @Injectable()
 export class GenericQueryAgentProvider implements IAgentRouterStrategy {

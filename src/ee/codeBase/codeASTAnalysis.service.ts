@@ -17,7 +17,7 @@ import { CodeKnowledgeGraphService } from './ast/services/code-knowledge-graph.s
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
 import {
     getChatGPT,
     getDeepseekByNovitaAI,

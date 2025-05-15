@@ -14,14 +14,10 @@ import { OpenAIAssistantRunnable } from 'langchain/experimental/openai_assistant
 import axios from 'axios';
 import { traceable } from 'langsmith/traceable';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
-import {
-    LLMModelProvider,
-    MODEL_STRATEGIES,
-} from '@/shared/domain/enums/llm-model-provider.enum';
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks';
 import { ChatVertexAI } from '@langchain/google-vertexai';
-import { ChatTogetherAI } from '@langchain/community/chat_models/togetherai';
 import { ChatNovitaAI } from '@langchain/community/chat_models/novita';
+import { MODEL_STRATEGIES, LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
 
 interface OpenAIEmbeddingResponse {
     data: Array<{

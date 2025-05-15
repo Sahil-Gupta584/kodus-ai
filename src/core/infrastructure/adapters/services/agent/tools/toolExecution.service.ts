@@ -34,7 +34,7 @@ import {
 } from '@langchain/core/messages';
 
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
-import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../../llmProviders/llm-model-provider.service';
 
 type Action = {
     id: number;

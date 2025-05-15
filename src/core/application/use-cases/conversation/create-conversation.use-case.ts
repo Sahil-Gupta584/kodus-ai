@@ -12,14 +12,13 @@ import {
     PARAMETERS_SERVICE_TOKEN,
     IParametersService,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { prompt_generate_conversation_title } from '@/shared/utils/langchainCommon/prompts';
 import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
@@ -42,7 +41,7 @@ export class CreateConversationUseCase implements IUseCase {
         },
 
         private logger: PinoLoggerService,
-        
+
         @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
     ) {}
@@ -118,7 +117,7 @@ export class CreateConversationUseCase implements IUseCase {
         while (retryCount < maxRetries) {
             try {
                 let llm = this.llmProviderService.getLLMProvider({
-                    model: LLMModelProvider.VERTEX_GEMINI_2_5_FLASH_PREVIEW_05_06,
+                    model: LLMModelProvider.VERTEX_GEMINI_2_5_FLASH_PREVIEW_04_17,
                     temperature: 0,
                     maxTokens: -1,
                     jsonMode: true,

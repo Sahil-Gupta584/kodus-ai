@@ -23,10 +23,6 @@ import {
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { HumanMessage } from '@langchain/core/messages';
 import { z } from 'zod';
-import {
-    LLMModelProvider,
-    MODEL_STRATEGIES,
-} from '@/shared/domain/enums/llm-model-provider.enum';
 import { LLMResponseProcessor } from './utils/transforms/llmResponseProcessor.transform';
 import { prompt_validateImplementedSuggestions } from '@/shared/utils/langchainCommon/prompts/validateImplementedSuggestions';
 import { prompt_selectorLightOrHeavyMode_system } from '@/shared/utils/langchainCommon/prompts/seletorLightOrHeavyMode';
@@ -38,6 +34,7 @@ import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/pr
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
 import { prompt_codeReviewSafeguard_system } from '@/shared/utils/langchainCommon/prompts';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
+import { LLMModelProvider, MODEL_STRATEGIES } from '../llmProviders/llm-model-provider.service';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -343,7 +340,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             let llm = this.llmProviderService.getLLMProvider({
                 model: provider,
                 temperature: 0,
-                maxTokens: -1,
                 jsonMode: true,
                 callbacks: [this.tokenTracker],
             });
@@ -533,7 +529,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             let llm = this.llmProviderService.getLLMProvider({
                 model: provider,
                 temperature: 0,
-                maxTokens: -1,
                 jsonMode: true,
                 callbacks: [this.tokenTracker],
             });
@@ -881,7 +876,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             let llm = this.llmProviderService.getLLMProvider({
                 model: provider,
                 temperature: 0,
-                maxTokens: -1,
                 jsonMode: true,
                 callbacks: [this.tokenTracker],
             });
@@ -1252,7 +1246,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 temperature: 0,
                 callbacks: [this.tokenTracker],
                 jsonMode: true,
-                maxTokens: -1,
             });
 
             const chain = RunnableSequence.from([
@@ -1415,7 +1408,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 temperature: 0,
                 callbacks: [this.tokenTracker],
                 jsonMode: true,
-                maxTokens: -1,
             });
 
             const chain = RunnableSequence.from([

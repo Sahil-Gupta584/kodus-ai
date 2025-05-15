@@ -16,7 +16,7 @@ import {
     MessagesPlaceholder,
 } from '@langchain/core/prompts';
 import { conversationChatMemory } from '@/shared/utils/langchainCommon/conversationChatMemory';
-import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../../llmProviders/llm-model-provider.service';
 
 @Injectable()
 export class DefaultAgentProvider

@@ -42,8 +42,8 @@ import {
     IAgentExecutionService,
 } from '@/core/domain/agents/contracts/agent-execution.service.contracts';
 import { IAgentExecution } from '@/core/domain/agents/interfaces/agent-execution.interface';
-import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
 import { getGemini } from '@/shared/utils/googleGenAI';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../../llmProviders/llm-model-provider.service';
 
 export class PromptRouter {
     constructor(
@@ -284,7 +284,7 @@ export class PromptRouter {
             );
 
         const gemini = await getGemini({
-            model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_05_06].modelName,
+            model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_04_17].modelName,
             temperature: 0,
         });
         let response = '';
@@ -298,7 +298,7 @@ export class PromptRouter {
                 promptFormatter,
                 response,
                 'FormatterMessage',
-                MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_05_06].modelName,
+                MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_04_17].modelName,
             );
         } catch (error) {
             response = message;

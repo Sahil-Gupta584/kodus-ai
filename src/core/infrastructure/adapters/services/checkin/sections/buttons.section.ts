@@ -4,7 +4,7 @@ import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PromptService } from '../../prompt.service';
-import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../../llmProviders/llm-model-provider.service';
 
 @Injectable()
 export class ButtonsSection {

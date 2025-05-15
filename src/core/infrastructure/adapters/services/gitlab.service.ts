@@ -50,10 +50,6 @@ import {
 import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { CodeManagementConnectionStatus } from '@/shared/utils/decorators/validate-code-management-integration.decorator';
-import {
-    LLMModelProvider,
-    MODEL_STRATEGIES,
-} from '@/shared/domain/enums/llm-model-provider.enum';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 import {
     getTranslationsForLanguageByCategory,
@@ -70,6 +66,7 @@ import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { KODY_CODE_REVIEW_COMPLETED_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
+import { MODEL_STRATEGIES, LLMModelProvider } from './llmProviders/llm-model-provider.service';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')

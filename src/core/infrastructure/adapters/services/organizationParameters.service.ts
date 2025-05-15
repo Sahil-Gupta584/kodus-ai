@@ -19,10 +19,7 @@ import { PromptService } from './prompt.service';
 import { ValidateProjectManagementIntegration } from '@/shared/utils/decorators/validate-project-management-integration.decorator';
 import { ProjectManagementService } from './platformIntegration/projectManagement.service';
 import { PinoLoggerService } from './logger/pino.service';
-import {
-    LLMModelProvider,
-    MODEL_STRATEGIES,
-} from '@/shared/domain/enums/llm-model-provider.enum';
+import { MODEL_STRATEGIES, LLMModelProvider } from './llmProviders/llm-model-provider.service';
 
 @Injectable()
 export class OrganizationParametersService

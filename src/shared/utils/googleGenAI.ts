@@ -1,6 +1,6 @@
+import { MODEL_STRATEGIES, LLMModelProvider } from "@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service";
 
 
-import { LLMModelProvider, MODEL_STRATEGIES } from "../domain/enums/llm-model-provider.enum";
 
 const {
     GoogleGenerativeAI,

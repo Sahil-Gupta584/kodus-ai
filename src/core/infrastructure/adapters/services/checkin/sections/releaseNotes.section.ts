@@ -15,7 +15,7 @@ import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageCont
 import { Inject, Injectable } from '@nestjs/common';
 import * as moment from 'moment-timezone';
 import { PinoLoggerService } from '../../logger/pino.service';
-import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../../llmProviders/llm-model-provider.service';
 
 @Injectable()
 export class ReleaseNotesSection {

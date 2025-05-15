@@ -44,7 +44,6 @@ import { IntegrationEntity } from '@/core/domain/integrations/entities/integrati
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
 import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
-import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
 import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { PromptService } from '../prompt.service';
@@ -68,6 +67,7 @@ import {
     KODY_CRITICAL_ISSUE_COMMENT_MARKER,
     KODY_START_COMMAND_MARKER,
 } from '@/shared/utils/codeManagement/codeCommentMarkers';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../llmProviders/llm-model-provider.service';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')

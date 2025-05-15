@@ -44,7 +44,7 @@ import {
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { TeamMethodology } from '@/shared/domain/enums/team-methodology.enum';
-import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../../../llmProviders/llm-model-provider.service';
 
 @Injectable()
 export class AutomationSprintRetroService implements IAutomationFactory {

@@ -50,10 +50,7 @@ import {
 } from '@/core/domain/integrations/contracts/integration.service.contracts';
 import { ValidateCommunicationManagementIntegration } from '@/shared/utils/decorators/validate-communication-management-integration.decorator';
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
-import {
-    LLMModelProvider,
-    MODEL_STRATEGIES,
-} from '@/shared/domain/enums/llm-model-provider.enum';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../../../llmProviders/llm-model-provider.service';
 
 @Injectable()
 export class AutomationExecutiveCheckin

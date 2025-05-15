@@ -7,7 +7,7 @@ import {
     ReviewModeResponse,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
 
 export interface IAIAnalysisService {
     analyzeCodeWithAI(

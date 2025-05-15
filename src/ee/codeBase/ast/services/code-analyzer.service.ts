@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CodeGraph, FunctionAnalysis } from '../contracts/CodeGraph';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
 import { JsonOutputParser } from '@langchain/core/output_parsers';
 import {
     getChatGPT,

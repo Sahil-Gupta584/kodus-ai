@@ -7,7 +7,7 @@ import {
     SummaryConfig,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 
 export const COMMENT_MANAGER_SERVICE_TOKEN = Symbol('CommentManagerService');

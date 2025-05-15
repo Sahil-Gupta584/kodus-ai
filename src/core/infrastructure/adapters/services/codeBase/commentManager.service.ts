@@ -18,10 +18,6 @@ import {
     getChatGPT,
     getDeepseekByNovitaAI,
 } from '@/shared/utils/langchainCommon/document';
-import {
-    LLMModelProvider,
-    MODEL_STRATEGIES,
-} from '@/shared/domain/enums/llm-model-provider.enum';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { prompt_repeated_suggestion_clustering_system } from '@/shared/utils/langchainCommon/prompts/repeatedCodeReviewSuggestionClustering';
@@ -41,6 +37,7 @@ import {
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../llmProviders/llm-model-provider.service';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {

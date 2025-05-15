@@ -30,7 +30,7 @@ import { ModuleCategory } from '@/core/domain/snoozedItems/enums/module-category
 import { SectionType as SectionTypeEnum } from '@/core/domain/snoozedItems/enums/section-type.enum';
 import { ITeam } from '@/core/domain/team/interfaces/team.interface';
 import { ValidateCommunicationManagementIntegration } from '@/shared/utils/decorators/validate-communication-management-integration.decorator';
-import { LLMModelProvider, MODEL_STRATEGIES } from '@/shared/domain/enums/llm-model-provider.enum';
+import { MODEL_STRATEGIES, LLMModelProvider } from '../llmProviders/llm-model-provider.service';
 
 @Injectable()
 export class CheckinService implements ICheckinService {
