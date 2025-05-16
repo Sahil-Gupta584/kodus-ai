@@ -19,6 +19,7 @@ export interface ICodeReviewFeedbackRepository {
     getNativeCollection(): any;
     findByOrganizationAndSyncedFlag(
         organizationId: string,
+        repositoryId: string,
         syncedEmbeddedSuggestions: boolean,
     ): Promise<CodeReviewFeedbackEntity[]>;
     updateSyncedSuggestionsFlag(

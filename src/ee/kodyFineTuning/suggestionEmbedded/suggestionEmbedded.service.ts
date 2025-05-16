@@ -52,7 +52,7 @@ export class SuggestionEmbeddedService implements ISuggestionEmbeddedService {
     async bulkCreateFromMongoData(
         suggestions: ISuggestionToEmbed[],
     ): Promise<SuggestionEmbeddedEntity[] | undefined> {
-        const SuggestionEmbeddeds = await Promise.all(
+        const suggestionEmbeddeds = await Promise.all(
             suggestions
                 .filter((suggestion) => suggestion?.id)
                 .map(async (suggestion) => {
@@ -66,7 +66,7 @@ export class SuggestionEmbeddedService implements ISuggestionEmbeddedService {
                 }),
         );
 
-        return SuggestionEmbeddeds.filter(
+        return suggestionEmbeddeds.filter(
             (suggestion) => suggestion?.suggestionEmbed,
         );
     }
@@ -257,35 +257,16 @@ export class SuggestionEmbeddedService implements ISuggestionEmbeddedService {
         };
     }
 
-    private tokenizeCode(code: string): string {
-        return code
-            .replace(/\s+/g, ' ') // Normalize spaces
-            .replace(/[;,{}()[\]]/g, ' ') // Replace punctuation with spaces
-            .replace(
-                /\b(const|let|var|function|return|if|else|for|while)\b/g,
-                '',
-            ) // Remove common keywords
-            .split(/\s+/)
-            .filter(
-                (token) =>
-                    token.length > 2 &&
-                    !['the', 'this', 'and', 'for'].includes(token),
-            )
-            .join(' ') // Remove short tokens and common words
-            .toLowerCase()
-            .trim();
-    }
-
     private async embeddingText(suggestion: any): Promise<number[]> {
         if (
             !suggestion?.suggestionContent ||
-            !suggestion?.label ||
-            !suggestion?.improvedCode
+            !suggestion?.oneSentenceSummary ||
+            !suggestion?.label
         ) {
             return null;
         }
 
-        const textToEmbed = `${suggestion.suggestionContent} ${suggestion.suggestionContent} ${suggestion.label} ${this.tokenizeCode(suggestion.improvedCode)}`;
+        const textToEmbed = `${suggestion.suggestionContent} ${suggestion.oneSentenceSummary} ${suggestion.label}`;
         const result = await getOpenAIEmbedding(textToEmbed);
         return result?.data[0]?.embedding;
     }
