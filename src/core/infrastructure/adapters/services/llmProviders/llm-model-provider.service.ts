@@ -28,7 +28,9 @@ const getChatGPT = (
         streaming: false,
         callbacks: [],
         baseURL: options?.baseURL ? options.baseURL : null,
-        apiKey: options?.apiKey ? options.apiKey : null,
+        apiKey: options?.apiKey
+            ? options.apiKey
+            : process.env.API_OPENAI_API_KEY,
     };
 
     const finalOptions = options
@@ -37,7 +39,7 @@ const getChatGPT = (
 
     return new ChatOpenAI({
         modelName: finalOptions.model,
-        openAIApiKey: process.env.API_OPEN_AI_API_KEY,
+        openAIApiKey: finalOptions.apiKey,
         temperature: finalOptions.temperature,
         maxTokens: finalOptions.maxTokens,
         streaming: finalOptions.streaming,
@@ -57,6 +59,7 @@ const getChatAnthropic = (
         maxTokens?: number;
         verbose?: boolean;
         callbacks?: BaseCallbackHandler[];
+        json?: boolean;
     } | null,
 ): any => {
     const defaultOptions = {
@@ -68,6 +71,7 @@ const getChatAnthropic = (
         verbose: false,
         streaming: false,
         callbacks: [],
+        json: false,
     };
 
     const finalOptions = options
@@ -131,13 +135,16 @@ const getChatVertexAI = (
         maxTokens?: number;
         verbose?: boolean;
         callbacks?: BaseCallbackHandler[];
+        json?: boolean;
     } | null,
 ): any => {
     const defaultOptions = {
         model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06]
             .modelName,
         temperature: 0,
-        maxTokens: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06].defaultMaxTokens,
+        maxTokens:
+            MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06]
+                .defaultMaxTokens,
         verbose: false,
         streaming: false,
         callbacks: [],
@@ -178,14 +185,16 @@ const getDeepseekByNovitaAI = (
     const defaultOptions = {
         model: MODEL_STRATEGIES[LLMModelProvider.NOVITA_DEEPSEEK_V3].modelName,
         temperature: 0,
-        maxTokens: MODEL_STRATEGIES[LLMModelProvider.NOVITA_DEEPSEEK_V3].defaultMaxTokens,
+        maxTokens:
+            MODEL_STRATEGIES[LLMModelProvider.NOVITA_DEEPSEEK_V3]
+                .defaultMaxTokens,
         verbose: false,
         streaming: false,
         callbacks: [],
     };
 
     if (options?.model) {
-        options.model = `deepseek/${options.model}`;
+        options.model = `${options.model}`;
     }
 
     const finalOptions = options
@@ -344,7 +353,7 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     [LLMModelProvider.NOVITA_DEEPSEEK_V3]: {
         provider: 'novita',
         factory: getDeepseekByNovitaAI,
-        modelName: 'deepseek/deepseek-v3',
+        modelName: 'deepseek/deepseek_v3',
         defaultMaxTokens: 20000,
     },
     [LLMModelProvider.NOVITA_DEEPSEEK_V3_0324]: {

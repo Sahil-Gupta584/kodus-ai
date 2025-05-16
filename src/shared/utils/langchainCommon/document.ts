@@ -17,7 +17,10 @@ import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks';
 import { ChatVertexAI } from '@langchain/google-vertexai';
 import { ChatNovitaAI } from '@langchain/community/chat_models/novita';
-import { MODEL_STRATEGIES, LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
 
 interface OpenAIEmbeddingResponse {
     data: Array<{
@@ -127,7 +130,9 @@ const getChatGPT = (
         streaming: false,
         callbacks: [],
         baseURL: options?.baseURL ? options.baseURL : null,
-        apiKey: options?.apiKey ? options.apiKey : null,
+        apiKey: options?.apiKey
+            ? options.apiKey
+            : process.env.API_OPENAI_API_KEY,
     };
 
     const finalOptions = options
@@ -136,7 +141,7 @@ const getChatGPT = (
 
     return new ChatOpenAI({
         modelName: finalOptions.model,
-        openAIApiKey: process.env.API_OPEN_AI_API_KEY,
+        openAIApiKey: finalOptions.apiKey,
         temperature: finalOptions.temperature,
         maxTokens: finalOptions.maxTokens,
         streaming: finalOptions.streaming,

@@ -37,7 +37,10 @@ import {
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
-import { MODEL_STRATEGIES, LLMModelProvider } from '../llmProviders/llm-model-provider.service';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '../llmProviders/llm-model-provider.service';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
@@ -59,7 +62,7 @@ export class CommentManagerService implements ICommentManagerService {
         organizationAndTeamData: OrganizationAndTeamData,
         languageResultPrompt: string,
         summaryConfig: SummaryConfig,
-    ) {
+    ): Promise<string> {
         if (!summaryConfig?.generatePRSummary) {
             return null;
         }
@@ -77,9 +80,9 @@ export class CommentManagerService implements ICommentManagerService {
                         prNumber: pullRequest?.number,
                     });
 
-                let llm = getChatGPT({
-                    model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
-                        .modelName,
+                let llm = this.llmProviderService.getLLMProvider({
+                    model: LLMModelProvider.OPENAI_GPT_4O,
+                    temperature: 0,
                 });
 
                 // Building the base prompt
@@ -144,7 +147,7 @@ Avoid making assumptions or including inferred details not present in the provid
                     finalDescription = `${updatedPR.body}\n\n---\n\n${finalDescription}`;
                 }
 
-                return finalDescription;
+                return finalDescription.toString();
             } catch (error) {
                 this.logger.error({
                     message: `Error generateOverallComment pull request: PR#${pullRequest?.number}`,
