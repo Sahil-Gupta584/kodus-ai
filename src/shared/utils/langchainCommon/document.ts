@@ -132,7 +132,7 @@ const getChatGPT = (
         baseURL: options?.baseURL ? options.baseURL : null,
         apiKey: options?.apiKey
             ? options.apiKey
-            : process.env.API_OPENAI_API_KEY,
+            : process.env.API_OPEN_AI_API_KEY,
     };
 
     const finalOptions = options
