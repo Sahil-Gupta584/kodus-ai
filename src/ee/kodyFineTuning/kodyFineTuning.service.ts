@@ -35,13 +35,14 @@ import { IGlobalParametersService } from '@/core/domain/global-parameters/contra
 import { GLOBAL_PARAMETERS_SERVICE_TOKEN } from '@/core/domain/global-parameters/contracts/global-parameters.service.contract';
 import { GlobalParametersKey } from '@/shared/domain/enums/global-parameters-key.enum';
 import { ISuggestionEmbedded } from './domain/suggestionEmbedded/interfaces/suggestionEmbedded.interface';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
 @Injectable()
 export class KodyFineTuningService {
     private readonly MAX_CLUSTERS = 50;
     private readonly DIVISOR_FOR_CLUSTER_QUANTITY = 4;
-    private readonly SIMILARITY_THRESHOLD_NEGATIVE = 0.65;
-    private readonly SIMILARITY_THRESHOLD_POSITIVE = 0.65;
-    private readonly SIMILARITY_THRESHOLD_CLUSTER = 0.5;
+    private readonly SIMILARITY_THRESHOLD_NEGATIVE = 0.6;
+    private readonly SIMILARITY_THRESHOLD_POSITIVE = 0.6;
+    private readonly SIMILARITY_THRESHOLD_CLUSTER = 0.6;
 
     constructor(
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
@@ -273,6 +274,7 @@ export class KodyFineTuningService {
         const suggestionsWithFeedback = await this.getSuggestionsWithFeedback(
             suggestionsToEmbed,
             organizationId,
+            repository.id,
         );
 
         const implementedSuggestions = await this.getImplementedSuggestions(
@@ -296,15 +298,15 @@ export class KodyFineTuningService {
         const suggestionsWithFeedbackFilteredLabels =
             refinedSuggestions.uniqueSuggestionsWithFeedback.filter(
                 (suggestion) =>
-                    suggestion.label !== 'kody_rules' &&
-                    suggestion.label !== 'breaking_changes',
+                    suggestion.label !== LabelType.KODY_RULES &&
+                    suggestion.label !== LabelType.BREAKING_CHANGES,
             );
 
         const implementedSuggestionsFilteredLabels =
             refinedSuggestions.uniqueImplementedSuggestions.filter(
                 (suggestion) =>
-                    suggestion.label !== 'kody_rules' &&
-                    suggestion.label !== 'breaking_changes',
+                    suggestion.label !== LabelType.KODY_RULES &&
+                    suggestion.label !== LabelType.BREAKING_CHANGES,
             );
 
         const suggestionsToNormalize = [
@@ -353,10 +355,12 @@ export class KodyFineTuningService {
 
     private async getCodeReviewFeedback(
         organizationId: string,
+        repositoryId: string,
         syncedEmbeddedSuggestions: boolean,
     ): Promise<ICodeReviewFeedback[]> {
         return await this.codeReviewFeedbackService.findByOrganizationAndSyncedFlag(
             organizationId,
+            repositoryId,
             syncedEmbeddedSuggestions,
         );
     }
@@ -364,10 +368,12 @@ export class KodyFineTuningService {
     private async getSuggestionsWithFeedback(
         allSuggestions: ISuggestionToEmbed[],
         organizationId: string,
+        repositoryId: string,
     ): Promise<ISuggestionToEmbed[]> {
         try {
             const feedbacks = await this.getCodeReviewFeedback(
                 organizationId,
+                repositoryId,
                 false,
             );
 
@@ -427,10 +433,22 @@ export class KodyFineTuningService {
                 );
             }
 
-            if (pullRequests?.length > 0) {
+            if (embeddedSuggestions?.length > 0) {
+                await Promise.all(
+                    embeddedSuggestions?.map(async (suggestion) => {
+                        await this.codeReviewFeedbackService.updateSyncedSuggestionsFlag(
+                            organizationId,
+                            true,
+                            suggestion?.suggestionId,
+                        );
+                    }),
+                );
+
                 let pullRequestNumbers: number[] = [
                     ...new Set(
-                        pullRequests?.map((pullRequest) => pullRequest.number),
+                        embeddedSuggestions?.map(
+                            (suggestion) => suggestion.pullRequestNumber,
+                        ),
                     ),
                 ];
 
@@ -440,26 +458,30 @@ export class KodyFineTuningService {
                     );
                 }
 
+                // Agrupa as sugestões por PR para verificar quais realmente têm sugestões
+                const suggestionsByPR = embeddedSuggestions.reduce(
+                    (acc, suggestion) => {
+                        const prNumber = suggestion.pullRequestNumber;
+                        if (!acc[prNumber]) {
+                            acc[prNumber] = [];
+                        }
+                        acc[prNumber].push(suggestion);
+                        return acc;
+                    },
+                    {},
+                );
+
+                // Atualiza apenas os PRs que têm sugestões
                 await Promise.all(
                     pullRequestNumbers?.map(async (pullRequestNumber) => {
-                        await this.pullRequestsService.updateSyncedSuggestionsFlag(
-                            pullRequestNumber,
-                            repository.id,
-                            organizationId,
-                            true,
-                        );
-                    }),
-                );
-            }
-
-            if (embeddedSuggestions?.length > 0) {
-                await Promise.all(
-                    embeddedSuggestions?.map(async (suggestion) => {
-                        await this.codeReviewFeedbackService.updateSyncedSuggestionsFlag(
-                            organizationId,
-                            true,
-                            suggestion?.suggestionId,
-                        );
+                        if (suggestionsByPR[pullRequestNumber]?.length > 0) {
+                            await this.pullRequestsService.updateSyncedSuggestionsFlag(
+                                pullRequestNumber,
+                                repository.id,
+                                organizationId,
+                                true,
+                            );
+                        }
                     }),
                 );
 
@@ -629,6 +651,7 @@ export class KodyFineTuningService {
                             uuid: suggestion.uuid,
                             suggestionId: suggestion.suggestionId,
                             suggestionContent: suggestion.suggestionContent,
+                            oneSentenceSummary: suggestion?.oneSentenceSummary,
                             suggestionEmbed: suggestion.suggestionEmbed,
                             improvedCode: suggestion.improvedCode,
                             severity: suggestion.severity as SeverityLevel,
@@ -639,7 +662,7 @@ export class KodyFineTuningService {
                             repositoryId: suggestion.repositoryId,
                             repositoryFullName: suggestion.repositoryFullName,
                             organization: {
-                                uuid: suggestion.organization?.uuid,
+                                uuid: suggestion?.organization?.uuid,
                             },
                             language: item.language,
                         },
@@ -737,6 +760,104 @@ export class KodyFineTuningService {
         return dotProduct / (magnitudeA * magnitudeB);
     }
 
+    private async unanimousFeedbackInCluster(
+        clusterSuggestions: IClusterizedSuggestion[],
+    ): Promise<FineTuningDecision> {
+        const allPositive = clusterSuggestions.every(
+            (suggestion) =>
+                suggestion.originalSuggestion.feedbackType ===
+                    FeedbackType.POSITIVE_REACTION ||
+                suggestion.originalSuggestion.feedbackType ===
+                    FeedbackType.SUGGESTION_IMPLEMENTED,
+        );
+
+        const allNegative = clusterSuggestions.every(
+            (suggestion) =>
+                suggestion.originalSuggestion.feedbackType ===
+                FeedbackType.NEGATIVE_REACTION,
+        );
+
+        if (allPositive) {
+            return FineTuningDecision.KEEP;
+        } else if (allNegative) {
+            return FineTuningDecision.DISCARD;
+        }
+
+        return FineTuningDecision.UNCERTAIN;
+    }
+
+    private async analyzeSuggestionsSimilarity(
+        clusterSuggestions: IClusterizedSuggestion[],
+        newSuggestionEmbedded: number[],
+    ): Promise<
+        {
+            suggestion: IClusterizedSuggestion;
+            similarity: number;
+            isPositive: boolean;
+        }[]
+    > {
+        const suggestionsWithSimilarity = await Promise.all(
+            clusterSuggestions.map(async (suggestion) => {
+                const suggestionEmbedding =
+                    suggestion.originalSuggestion.suggestionEmbed;
+
+                return {
+                    suggestion,
+                    similarity: this.calculateCosineSimilarity(
+                        newSuggestionEmbedded,
+                        suggestionEmbedding,
+                    ),
+                    isPositive:
+                        suggestion.originalSuggestion.feedbackType ===
+                            FeedbackType.POSITIVE_REACTION ||
+                        suggestion.originalSuggestion.feedbackType ===
+                            FeedbackType.SUGGESTION_IMPLEMENTED,
+                };
+            }),
+        );
+
+        const sortedSuggestions = suggestionsWithSimilarity.sort(
+            (a, b) => b.similarity - a.similarity,
+        );
+
+        return sortedSuggestions;
+    }
+
+    private async defineFineTuningDecisionBySimilarity(
+        sortedSuggestions: {
+            suggestion: IClusterizedSuggestion;
+            similarity: number;
+            isPositive: boolean;
+        }[],
+        positiveThreshold: number,
+        negativeThreshold: number,
+    ): Promise<FineTuningDecision> {
+        let keepDecision = 0;
+        let discardDecision = 0;
+
+        for (const suggestionData of sortedSuggestions) {
+            if (
+                suggestionData.isPositive &&
+                suggestionData.similarity >= positiveThreshold
+            ) {
+                keepDecision += 1;
+            } else if (
+                !suggestionData.isPositive &&
+                suggestionData.similarity >= negativeThreshold
+            ) {
+                discardDecision += 1;
+            }
+        }
+
+        if (keepDecision > 0 && keepDecision > discardDecision) {
+            return FineTuningDecision.KEEP;
+        } else if (discardDecision > 0 && discardDecision > keepDecision) {
+            return FineTuningDecision.DISCARD;
+        } else {
+            return FineTuningDecision.UNCERTAIN;
+        }
+    }
+
     private async analyzeClusterFeedback(
         existingClusterizedSuggestions: IClusterizedSuggestion[],
         clusterId: number,
@@ -756,82 +877,26 @@ export class KodyFineTuningService {
                 return FineTuningDecision.UNCERTAIN;
             }
 
-            // 1. Verificar se todas as sugestões no cluster têm o mesmo tipo de feedback
-            const allPositive = clusterSuggestions.every(
-                (suggestion) =>
-                    suggestion.originalSuggestion.feedbackType ===
-                        'positiveReaction' ||
-                    suggestion.originalSuggestion.feedbackType ===
-                        'suggestionImplemented',
-            );
+            const feedbackTypeUnanimous =
+                await this.unanimousFeedbackInCluster(clusterSuggestions);
 
-            const allNegative = clusterSuggestions.every(
-                (suggestion) =>
-                    suggestion.originalSuggestion.feedbackType ===
-                    'negativeReaction',
-            );
-
-            // Se todas tiverem o mesmo feedback, retornar imediatamente
-            if (allPositive) {
-                return FineTuningDecision.KEEP;
-            } else if (allNegative) {
-                return FineTuningDecision.DISCARD;
+            if (feedbackTypeUnanimous !== FineTuningDecision.UNCERTAIN) {
+                return feedbackTypeUnanimous;
             }
 
-            // 2. Analisar cada sugestão individualmente se houver feedback misto
-            // Calcular similaridade com cada sugestão individual no cluster
-            const suggestionsWithSimilarity = await Promise.all(
-                clusterSuggestions.map(async (suggestion) => {
-                    const suggestionEmbedding =
-                        suggestion.originalSuggestion.suggestionEmbed;
-
-                    return {
-                        suggestion,
-                        similarity: this.calculateCosineSimilarity(
-                            newSuggestionEmbedded,
-                            suggestionEmbedding,
-                        ),
-                        isPositive:
-                            suggestion.originalSuggestion.feedbackType ===
-                                'positiveReaction' ||
-                            suggestion.originalSuggestion.feedbackType ===
-                                'suggestionImplemented',
-                    };
-                }),
+            const sortedSuggestions = await this.analyzeSuggestionsSimilarity(
+                clusterSuggestions,
+                newSuggestionEmbedded,
             );
 
-            // Ordenar por similaridade (maior primeiro)
-            const sortedSuggestions = suggestionsWithSimilarity.sort(
-                (a, b) => b.similarity - a.similarity,
-            );
+            const fineTuningDecision =
+                await this.defineFineTuningDecisionBySimilarity(
+                    sortedSuggestions,
+                    positiveThreshold,
+                    negativeThreshold,
+                );
 
-            // Contadores para decisões
-            let keepDecision = 0;
-            let discardDecision = 0;
-
-            // Analisar cada sugestão e incrementar os contadores apropriados
-            for (const suggestionData of sortedSuggestions) {
-                if (
-                    suggestionData.isPositive &&
-                    suggestionData.similarity >= positiveThreshold
-                ) {
-                    keepDecision += 1;
-                } else if (
-                    !suggestionData.isPositive &&
-                    suggestionData.similarity >= negativeThreshold
-                ) {
-                    discardDecision += 1;
-                }
-            }
-
-            // Tomar decisão baseada na contagem
-            if (keepDecision > 0 && keepDecision > discardDecision) {
-                return FineTuningDecision.KEEP;
-            } else if (discardDecision > 0 && discardDecision > keepDecision) {
-                return FineTuningDecision.DISCARD;
-            } else {
-                return FineTuningDecision.UNCERTAIN;
-            }
+            return fineTuningDecision;
         } catch (error) {
             this.logger.error({
                 message: 'Error in analyzeClusterFeedback',
@@ -912,7 +977,7 @@ export class KodyFineTuningService {
         organizationId: string,
         repository: { id: string; full_name: string; language: string },
         prNumber: number,
-        suggestionsToAnalyze: Partial<CodeSuggestion>[],
+        suggestionsToAnalyze: any[],
         mainClusterizedSuggestions: IClusterizedSuggestion[],
     ): Promise<{
         keepedSuggestions: Partial<CodeSuggestion>[];
@@ -928,6 +993,18 @@ export class KodyFineTuningService {
         const results = [];
 
         for (const newSuggestion of suggestionsToAnalyze) {
+            if (
+                newSuggestion?.label === LabelType.KODY_RULES ||
+                newSuggestion?.label === LabelType.BREAKING_CHANGES
+            ) {
+                results.push({
+                    analyzedSuggestion: newSuggestion,
+                    fineTuningDecision: FineTuningDecision.KEEP,
+                });
+
+                continue;
+            }
+
             const newEmbedding =
                 await this.suggestionEmbeddedService.embedSuggestionsForISuggestionToEmbed(
                     [newSuggestion],
@@ -950,6 +1027,11 @@ export class KodyFineTuningService {
                 !clusterizedSuggestions?.length ||
                 clusterizedSuggestions?.length < 50
             ) {
+                results.push({
+                    analyzedSuggestion: newSuggestion,
+                    fineTuningDecision: FineTuningDecision.KEEP,
+                });
+
                 continue;
             }
 
