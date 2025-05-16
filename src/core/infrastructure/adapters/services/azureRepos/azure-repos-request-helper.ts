@@ -401,12 +401,30 @@ export class AzureReposRequestHelper {
         iterationId: number | string;
     }): Promise<AzureRepoChange[]> {
         const instance = await this.azureRequest(params);
+        let allChanges: AzureRepoChange[] = [];
+        let skip = 0;
+        let top = 100;
 
-        const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests/${params.pullRequestId}/iterations/${params.iterationId}/changes?api-version=7.1`,
-        );
+        while (true) {
+            const { data } = await instance.get(
+                `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests/${params.pullRequestId}/iterations/${params.iterationId}/changes?api-version=7.1&$top=${top}&$skip=${skip}`,
+            );
 
-        return data?.changeEntries ?? [];
+            const changeEntries = data?.changeEntries ?? [];
+            allChanges = [...allChanges, ...changeEntries];
+
+            if (data.nextSkip === undefined) {
+                break;
+            }
+
+            if (data.nextTop !== undefined) {
+                top = data.nextTop;
+            }
+
+            skip = data.nextSkip;
+        }
+
+        return allChanges;
     }
 
     async getCommits(params: {
