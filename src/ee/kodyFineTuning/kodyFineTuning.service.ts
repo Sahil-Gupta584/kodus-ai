@@ -977,7 +977,7 @@ export class KodyFineTuningService {
         organizationId: string,
         repository: { id: string; full_name: string; language: string },
         prNumber: number,
-        suggestionsToAnalyze: any[],
+        suggestionsToAnalyze: Partial<CodeSuggestion>[],
         mainClusterizedSuggestions: IClusterizedSuggestion[],
     ): Promise<{
         keepedSuggestions: Partial<CodeSuggestion>[];
