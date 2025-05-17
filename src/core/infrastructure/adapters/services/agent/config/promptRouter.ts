@@ -169,7 +169,7 @@ export class PromptRouter {
         try {
             const zodSchema = z.object({
                 route: z
-                    .enum(['projectInsights', 'genericQuery'])
+                    .enum(['genericQuery'])
                     .describe('The name of the action mentioned in the text.'),
             });
 
