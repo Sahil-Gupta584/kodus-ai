@@ -74,7 +74,7 @@ export class DefaultAgentProvider
                     sessionId: runParams?.sessionId,
                 },
                 {
-                    model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
+                    model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName
                 },
             );
 
