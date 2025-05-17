@@ -13,5 +13,6 @@ export interface ISuggestionEmbedded {
     feedbackType: string;
     improvedCode: string;
     suggestionContent: string;
+    oneSentenceSummary?: string;
     language: string;
  }

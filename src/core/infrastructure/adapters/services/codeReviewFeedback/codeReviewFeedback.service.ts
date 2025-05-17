@@ -43,10 +43,12 @@ export class CodeReviewFeedbackService implements ICodeReviewFeedbackService {
 
     findByOrganizationAndSyncedFlag(
         organizationId: string,
+        repositoryId: string,
         syncedEmbeddedSuggestions: boolean,
     ): Promise<CodeReviewFeedbackEntity[]> {
         return this.codeReviewFeedbackRepository.findByOrganizationAndSyncedFlag(
             organizationId,
+            repositoryId,
             syncedEmbeddedSuggestions,
         );
     }
