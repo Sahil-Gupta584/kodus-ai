@@ -1,9 +1,5 @@
 import { z } from 'zod';
 
-import {
-    getChatGPT,
-    traceCustomLLMCall,
-} from '@/shared/utils/langchainCommon/document';
 import zodToJsonSchema from 'zod-to-json-schema';
 import { JsonOutputFunctionsParser } from 'langchain/output_parsers';
 import { Inject } from '@nestjs/common';
@@ -43,7 +39,13 @@ import {
 } from '@/core/domain/agents/contracts/agent-execution.service.contracts';
 import { IAgentExecution } from '@/core/domain/agents/interfaces/agent-execution.interface';
 import { getGemini } from '@/shared/utils/googleGenAI';
-import { MODEL_STRATEGIES, LLMModelProvider } from '../../llmProviders/llm-model-provider.service';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '../../llmProviders/llm-model-provider.service';
+import { traceCustomLLMCall } from '@/shared/utils/langchainCommon/document';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../../llmProviders/llmProvider.service';
 
 export class PromptRouter {
     constructor(
@@ -61,6 +63,9 @@ export class PromptRouter {
 
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
+
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
 
         private readonly promptService: PromptService,
         private logger: PinoLoggerService,
@@ -191,25 +196,14 @@ export class PromptRouter {
                 inputVariables: ['inputText', 'memory'],
             });
 
-            const chat = getChatGPT({
-                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName
-            });
-            const functionCallingModel = chat.bind({
-                functions: [
-                    {
-                        name: 'output_formatter',
-                        description:
-                            'Should always be used to properly format output',
-                        parameters: zodToJsonSchema(zodSchema),
-                    },
-                ],
-                function_call: { name: 'output_formatter' },
+            const llm = this.llmProviderService.getLLMProvider({
+                model: LLMModelProvider.OPENAI_GPT_4O,
+                temperature: 0,
             });
 
             const outputParser = new JsonOutputFunctionsParser();
-            const chain = prompt
-                .pipe(functionCallingModel as any)
-                .pipe(outputParser);
+
+            const chain = prompt.pipe(llm).pipe(outputParser);
 
             const collection = this.memoryService.getNativeCollection();
             const memory = createMemoryInstance(
@@ -284,7 +278,9 @@ export class PromptRouter {
             );
 
         const gemini = await getGemini({
-            model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_04_17].modelName,
+            model: MODEL_STRATEGIES[
+                LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_04_17
+            ].modelName,
             temperature: 0,
         });
         let response = '';
@@ -298,7 +294,9 @@ export class PromptRouter {
                 promptFormatter,
                 response,
                 'FormatterMessage',
-                MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_04_17].modelName,
+                MODEL_STRATEGIES[
+                    LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_04_17
+                ].modelName,
             );
         } catch (error) {
             response = message;

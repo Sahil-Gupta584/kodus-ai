@@ -10,18 +10,25 @@ import { ProjectManagementService } from '@/core/infrastructure/adapters/service
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { Inject, Injectable } from '@nestjs/common';
 import * as moment from 'moment-timezone';
 import { PinoLoggerService } from '../../logger/pino.service';
-import { MODEL_STRATEGIES, LLMModelProvider } from '../../llmProviders/llm-model-provider.service';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '../../llmProviders/llm-model-provider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../../llmProviders/llmProvider.service';
 
 @Injectable()
 export class ReleaseNotesSection {
     constructor(
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
+
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
 
         private readonly promptService: PromptService,
 
@@ -110,15 +117,20 @@ export class ReleaseNotesSection {
                     },
                 );
 
-            const llm = getChatGPT({
-                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
-            }).bind({
-                response_format: { type: 'json_object' },
+            const llm = this.llmProviderService.getLLMProvider({
+                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
+                    .modelName,
+                temperature: 0,
+                jsonMode: true,
             });
 
             const categories = safelyParseMessageContent(
                 (
-                    await llm.invoke(promptGenerateWeekResume, {
+                    await llm.invoke(await promptGenerateWeekResume.format({
+                        organizationAndTeamData,
+                        payload: `Closed Tasks: ${JSON.stringify(doneTasks)} \n\n ${isGitConnected ? `Closed Pull Requests: ${JSON.stringify(closedPRs)}` : ''}`,
+                        promptIsForChat: false,
+                    }), {
                         metadata: {
                             module: 'AutomationWeeklyCheckin',
                             teamId: organizationAndTeamData.teamId,

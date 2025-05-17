@@ -2,10 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CodeGraph, FunctionAnalysis } from '../contracts/CodeGraph';
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
 import { JsonOutputParser } from '@langchain/core/output_parsers';
-import {
-    getChatGPT,
-    getDeepseekByNovitaAI,
-} from '@/shared/utils/langchainCommon/document';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { prompt_checkSimilarFunctions_system } from '@/shared/utils/langchainCommon/prompts/checkSimilarFunctions';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';

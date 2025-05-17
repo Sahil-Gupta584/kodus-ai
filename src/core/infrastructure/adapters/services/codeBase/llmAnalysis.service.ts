@@ -12,9 +12,6 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '../logger/pino.service';
-import {
-    getChatGPT,
-} from '@/shared/utils/langchainCommon/document';
 import { RunnableSequence } from '@langchain/core/runnables';
 import {
     StringOutputParser,
@@ -34,7 +31,10 @@ import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/pr
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
 import { prompt_codeReviewSafeguard_system } from '@/shared/utils/langchainCommon/prompts';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
-import { LLMModelProvider, MODEL_STRATEGIES } from '../llmProviders/llm-model-provider.service';
+import {
+    LLMModelProvider,
+    MODEL_STRATEGIES,
+} from '../llmProviders/llm-model-provider.service';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -1049,12 +1049,10 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         context: any,
     ) {
         try {
-            let llm = getChatGPT({
+            let llm = this.llmProviderService.getLLMProvider({
                 model: MODEL_STRATEGIES[provider].modelName,
                 temperature: 0,
                 callbacks: [this.tokenTracker],
-            }).bind({
-                response_format: { type: 'json_object' },
             });
 
             const parser = StructuredOutputParser.fromZodSchema(

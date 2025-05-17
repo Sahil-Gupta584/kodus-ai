@@ -45,7 +45,6 @@ import {
 } from '@/core/domain/integrationConfigs/types/projectManagement/columns.type';
 import { IntegrationServiceDecorator } from '@/shared/utils/decorators/integration-service.decorator';
 import { StatusCategoryToColumn } from '@/shared/domain/enums/status-category-jira.enum';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import {
     prompt_getWaitingColumns,
     prompt_getBugTypes,
@@ -85,7 +84,12 @@ import {
     ProjectManagementConnectionStatus,
     ValidateProjectManagementIntegration,
 } from '@/shared/utils/decorators/validate-project-management-integration.decorator';
-import { MODEL_STRATEGIES, LLMModelProvider } from '../llmProviders/llm-model-provider.service';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '../llmProviders/llm-model-provider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../llmProviders/llmProvider.service';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.JIRA, 'projectManagement')
@@ -117,6 +121,9 @@ export class JiraService
 
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
+
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
 
         private readonly projectManagementService: ProjectManagementService,
 
@@ -816,11 +823,11 @@ export class JiraService
 
     private async getDoingAndWaitingColumns(columns) {
         try {
-            const llm = getChatGPT({
+            const llm = this.llmProviderService.getLLMProvider({
                 model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
                     .modelName,
-            }).bind({
-                response_format: { type: 'json_object' },
+                temperature: 0,
+                jsonMode: true,
             });
 
             const wipColumns = columns
@@ -1023,11 +1030,11 @@ export class JiraService
 
     private getBugTypes = async (workItemTypes) => {
         try {
-            const llm = getChatGPT({
+            const llm = this.llmProviderService.getLLMProvider({
                 model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
                     .modelName,
-            }).bind({
-                response_format: { type: 'json_object' },
+                temperature: 0,
+                jsonMode: true,
             });
 
             const promptBugTypes = prompt_getBugTypes(

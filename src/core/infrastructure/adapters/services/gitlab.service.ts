@@ -36,7 +36,6 @@ import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { PinoLoggerService } from './logger/pino.service';
 import { PromptService } from './prompt.service';
@@ -66,7 +65,13 @@ import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { KODY_CODE_REVIEW_COMPLETED_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
-import { MODEL_STRATEGIES, LLMModelProvider } from './llmProviders/llm-model-provider.service';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from './llmProviders/llm-model-provider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from './llmProviders/llmProvider.service.contract';
+import { throws } from 'assert';
+import { LLMProviderService } from './llmProviders/llmProvider.service';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
@@ -101,6 +106,9 @@ export class GitlabService
 
         @Inject(REPOSITORY_MANAGER_TOKEN)
         private readonly repositoryManager: IRepositoryManager,
+
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
 
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
@@ -1018,10 +1026,10 @@ export class GitlabService
             return [];
         }
 
-        let llm = getChatGPT({
-            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
-        }).bind({
-            response_format: { type: 'json_object' },
+        let llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const promptWorkflows =
@@ -1034,12 +1042,19 @@ export class GitlabService
                 },
             );
 
-        const chain = await llm.invoke(promptWorkflows, {
-            metadata: {
-                module: 'Setup',
-                submodule: 'GetProductionDeployment',
+        const chain = await llm.invoke(
+            await promptWorkflows.format({
+                organizationAndTeamData,
+                payload: JSON.stringify(workflows),
+                promptIsForChat: false,
+            }),
+            {
+                metadata: {
+                    module: 'Setup',
+                    submodule: 'GetProductionDeployment',
+                },
             },
-        });
+        );
 
         return safelyParseMessageContent(chain.content).repos;
     }
@@ -1127,10 +1142,10 @@ export class GitlabService
             return [];
         }
 
-        let llm = getChatGPT({
-            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
-        }).bind({
-            response_format: { type: 'json_object' },
+        let llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const promptReleases =
@@ -1143,12 +1158,19 @@ export class GitlabService
                 },
             );
 
-        const chain = await llm.invoke(promptReleases, {
-            metadata: {
-                module: 'Setup',
-                submodule: 'GetProductionReleases',
+        const chain = await llm.invoke(
+            await promptReleases.format({
+                organizationAndTeamData,
+                payload: JSON.stringify(releases),
+                promptIsForChat: false,
+            }),
+            {
+                metadata: {
+                    module: 'Setup',
+                    submodule: 'GetProductionReleases',
+                },
             },
-        });
+        );
 
         const repos = safelyParseMessageContent(chain.content).repos;
 

@@ -9,7 +9,6 @@ import { convertToOpenAITool } from '@langchain/core/utils/function_calling';
 
 import { z } from 'zod';
 import { RunnableSequence } from '@langchain/core/runnables';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import {
     ChatPromptTemplate,
     MessagesPlaceholder,
@@ -34,7 +33,12 @@ import {
 } from '@langchain/core/messages';
 
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
-import { MODEL_STRATEGIES, LLMModelProvider } from '../../llmProviders/llm-model-provider.service';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '../../llmProviders/llm-model-provider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../../llmProviders/llmProvider.service';
 
 type Action = {
     id: number;
@@ -55,6 +59,9 @@ export class ToolExecutionService implements IToolExecutionService {
 
         @Inject(TOOL_MANAGER_SERVICE_TOKEN)
         private readonly toolManagerService: IToolManagerService,
+
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
     ) {}
 
     findTools(toolDefinition: string[]): ITool<any, any>[] {
@@ -135,10 +142,10 @@ export class ToolExecutionService implements IToolExecutionService {
         toolDefinitions: any,
         memory: any,
     ) {
-        const model = getChatGPT({
-            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
-        }).bind({
-            response_format: { type: 'json_object' },
+        const llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const prompt = await this.getPromptWithToolsDefinition(
@@ -156,7 +163,7 @@ export class ToolExecutionService implements IToolExecutionService {
                 history: (previousOutput) => previousOutput.memory.history,
             },
             prompt,
-            model,
+            llm,
             this.structuredOutputParser,
         ]).withConfig({
             runName: 'ExecuteSearchTools',

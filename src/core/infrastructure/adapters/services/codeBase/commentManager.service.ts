@@ -14,10 +14,6 @@ import {
     ClusteringType,
 } from '@/config/types/general/codeReview.type';
 
-import {
-    getChatGPT,
-    getDeepseekByNovitaAI,
-} from '@/shared/utils/langchainCommon/document';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { prompt_repeated_suggestion_clustering_system } from '@/shared/utils/langchainCommon/prompts/repeatedCodeReviewSuggestionClustering';

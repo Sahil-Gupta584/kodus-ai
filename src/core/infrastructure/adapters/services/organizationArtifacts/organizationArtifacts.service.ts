@@ -56,7 +56,6 @@ import {
 } from '../metrics/processMetrics/metricAnalyzerAndFormatter';
 import { METRICS_TYPE } from '@/core/domain/metrics/enums/metrics.enum';
 import { OrganizationArtifactsEntity } from '@/core/domain/organizationArtifacts/entities/organizationArtifacts.entity';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { PromptService } from '../prompt.service';
 import { STATUS } from '@/config/types/database/status.type';
 import { HighWorkloadPerTeamArtifact } from './artifacts/highWorkloadPerTeam.artifact';

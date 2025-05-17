@@ -1,14 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { PinoLoggerService } from '../../logger/pino.service';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PromptService } from '../../prompt.service';
-import { MODEL_STRATEGIES, LLMModelProvider } from '../../llmProviders/llm-model-provider.service';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '../../llmProviders/llm-model-provider.service';
+import { LLMProviderService } from '../../llmProviders/llmProvider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
 
 @Injectable()
 export class ButtonsSection {
     constructor(
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
+
         private readonly logger: PinoLoggerService,
 
         private readonly promptService: PromptService,
@@ -65,15 +72,19 @@ export class ButtonsSection {
                 },
             );
 
-        const llm = getChatGPT({
-            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
-        }).bind({
-            response_format: { type: 'json_object' },
+        const llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const { buttons } = safelyParseMessageContent(
             (
-                await llm.invoke(promptGenerateWeekResume, {
+                await llm.invoke(await promptGenerateWeekResume.format({
+                    organizationAndTeamData,
+                    payload: JSON.stringify(sections),
+                    promptIsForChat: false,
+                }), {
                     metadata: {
                         module: 'CheckinSections',
                         teamId: organizationAndTeamData.teamId,

@@ -44,7 +44,6 @@ import { IntegrationEntity } from '@/core/domain/integrations/entities/integrati
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
 import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { PromptService } from '../prompt.service';
 import moment from 'moment';
@@ -67,7 +66,12 @@ import {
     KODY_CRITICAL_ISSUE_COMMENT_MARKER,
     KODY_START_COMMAND_MARKER,
 } from '@/shared/utils/codeManagement/codeCommentMarkers';
-import { MODEL_STRATEGIES, LLMModelProvider } from '../llmProviders/llm-model-provider.service';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '../llmProviders/llm-model-provider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../llmProviders/llmProvider.service';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -102,6 +106,9 @@ export class BitbucketService
 
         @Inject(REPOSITORY_MANAGER_TOKEN)
         private readonly repositoryManager: IRepositoryManager,
+
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
 
         private readonly promptService: PromptService,
 
@@ -608,10 +615,11 @@ export class BitbucketService
                 return [];
             }
 
-            let llm = getChatGPT({
-                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
-            }).bind({
-                response_format: { type: 'json_object' },
+            let llm = this.llmProviderService.getLLMProvider({
+                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
+                    .modelName,
+                temperature: 0,
+                jsonMode: true,
             });
 
             const promptWorkflows =
@@ -624,13 +632,16 @@ export class BitbucketService
                     },
                 );
 
-            const chain = await llm.invoke(promptWorkflows, {
+            const chain = await llm.invoke(await promptWorkflows.format({
+                organizationAndTeamData,
+                payload: JSON.stringify(workflows),
+                promptIsForChat: false,
+            }), {
                 metadata: {
                     module: 'Setup',
                     submodule: 'GetProductionDeployment',
                 },
             });
-
             return safelyParseMessageContent(chain.content).repos;
         } catch (error) {
             this.logger.error({
@@ -1454,7 +1465,6 @@ export class BitbucketService
             if (!bitbucketAuthDetails) {
                 return null;
             }
-
             const workspace = await this.getWorkspaceFromRepository(
                 organizationAndTeamData,
                 repository.id,
@@ -1865,7 +1875,6 @@ export class BitbucketService
             if (!commentData?.id) {
                 throw new Error(`Failed to create comment in PR#${prNumber}`);
             }
-
             this.logger.log({
                 message: `Created issue comment for PR#${prNumber}`,
                 context: this.createSingleIssueComment.name,
@@ -3553,3 +3562,6 @@ export class BitbucketService
         };
     }
 }
+
+
+

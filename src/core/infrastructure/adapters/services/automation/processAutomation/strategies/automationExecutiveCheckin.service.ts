@@ -36,7 +36,6 @@ import {
 } from '@/core/domain/metrics/contracts/metrics.service.contract';
 import { ProfileConfigService } from '../../../profileConfig.service';
 import { PROFILE_CONFIG_SERVICE_TOKEN } from '@/core/domain/profileConfigs/contracts/profileConfig.service.contract';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import * as moment from 'moment-timezone';
 import { CHECKIN_TYPE } from '@/core/domain/checkinHistory/enums/checkin-type.enum';
 import {
@@ -50,7 +49,12 @@ import {
 } from '@/core/domain/integrations/contracts/integration.service.contracts';
 import { ValidateCommunicationManagementIntegration } from '@/shared/utils/decorators/validate-communication-management-integration.decorator';
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
-import { MODEL_STRATEGIES, LLMModelProvider } from '../../../llmProviders/llm-model-provider.service';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '../../../llmProviders/llm-model-provider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../../../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../../../llmProviders/llmProvider.service';
 
 @Injectable()
 export class AutomationExecutiveCheckin
@@ -81,8 +85,8 @@ export class AutomationExecutiveCheckin
         @Inject(PROFILE_CONFIG_SERVICE_TOKEN)
         private readonly profileConfigService: ProfileConfigService,
 
-        @Inject(INTEGRATION_SERVICE_TOKEN)
-        private readonly integrationService: IIntegrationService,
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
 
         private readonly communicationService: CommunicationService,
 
@@ -432,18 +436,25 @@ export class AutomationExecutiveCheckin
                 },
             );
 
-        const llm = getChatGPT({
-            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
+        const llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
             temperature: 0,
         });
 
         const resumedMetrics = (
-            await llm.invoke(promptExecutiveCheckinResumeMetrics, {
-                metadata: {
-                    module: 'AutomationExecutiveCheckin',
-                    organizationId: organizationId,
+            await llm.invoke(
+                await promptExecutiveCheckinResumeMetrics.format({
+                    organizationAndTeamData: { organizationId, teamId },
+                    payload: JSON.stringify({ data: metrics }),
+                    promptIsForChat: false,
+                }),
+                {
+                    metadata: {
+                        module: 'AutomationExecutiveCheckin',
+                        organizationId: organizationId,
+                    },
                 },
-            })
+            )
         ).content;
 
         return resumedMetrics;
@@ -466,18 +477,25 @@ export class AutomationExecutiveCheckin
                 },
             );
 
-        const llm = getChatGPT({
-            model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
+        const llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
             temperature: 0,
         });
 
         const mostImportantArtifactSummary = (
-            await llm.invoke(promptExecutiveCheckinResumeImportantArtifacts, {
-                metadata: {
-                    module: 'AutomationExecutiveCheckin',
-                    organizationId: organizationId,
+            await llm.invoke(
+                await promptExecutiveCheckinResumeImportantArtifacts.format({
+                    organizationAndTeamData: { organizationId, teamId },
+                    payload: JSON.stringify({ data: artifacts }),
+                    promptIsForChat: false,
+                }),
+                {
+                    metadata: {
+                        module: 'AutomationExecutiveCheckin',
+                        organizationId: organizationId,
+                    },
                 },
-            })
+            )
         ).content;
 
         return mostImportantArtifactSummary;

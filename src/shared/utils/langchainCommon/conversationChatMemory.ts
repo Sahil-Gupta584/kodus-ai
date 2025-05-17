@@ -1,8 +1,8 @@
 import { MongoDBChatMessageHistory } from '@langchain/mongodb';
 import { ConversationChain } from 'langchain/chains';
-import { getChatGPT } from './document';
 import { ChainValues } from '@langchain/core/dist/utils/types';
 import { CustomChatMemory } from './customMemory';
+import { getChatGPT } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
 
 /**
  * Creates a new instance of ConversationSummaryBufferMemory with the given chatHistory and summaryPrompt.
@@ -46,6 +46,8 @@ const invokeConversationChain = async (
         verbose?: boolean;
     },
 ) => {
+
+    
     const chain = new ConversationChain({
         llm: getChatGPT(configs || { verbose: true }),
         prompt: chatPrompt,

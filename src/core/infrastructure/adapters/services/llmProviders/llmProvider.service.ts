@@ -1,6 +1,5 @@
 import { PinoLoggerService } from '../logger/pino.service';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ILLMProviderService } from './llmProvider.service.contract';
 import { Injectable } from '@nestjs/common';
@@ -9,6 +8,7 @@ import {
     MODEL_STRATEGIES,
     ModelStrategy,
     FactoryInput,
+    getChatGPT,
 } from './llm-model-provider.service';
 
 @Injectable()
@@ -54,7 +54,8 @@ export class LLMProviderService implements ILLMProviderService {
                 });
 
                 const llm = getChatGPT({
-                    model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
+                    model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
+                        .modelName,
                     temperature: options.temperature,
                     maxTokens: options.maxTokens,
                     callbacks: options.callbacks,

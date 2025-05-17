@@ -5,17 +5,15 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { ChatVertexAI } from '@langchain/google-vertexai';
 import { ChatOpenAI } from '@langchain/openai';
 
-const getChatGPT = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
-        baseURL?: string;
-        apiKey?: string;
-    } | null,
-): any => {
+export const getChatGPT = (options?: {
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+    verbose?: boolean;
+    callbacks?: BaseCallbackHandler[];
+    baseURL?: string;
+    apiKey?: string;
+}): any => {
     const defaultOptions = {
         model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4_1].modelName,
         temperature: 0,

@@ -14,7 +14,6 @@ import {
     SectionType,
 } from '@/core/domain/parameters/types/configValue.type';
 import { PromptService } from '../prompt.service';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { INTEGRATION_SERVICE_TOKEN } from '@/core/domain/integrations/contracts/integration.service.contracts';
@@ -30,7 +29,12 @@ import { ModuleCategory } from '@/core/domain/snoozedItems/enums/module-category
 import { SectionType as SectionTypeEnum } from '@/core/domain/snoozedItems/enums/section-type.enum';
 import { ITeam } from '@/core/domain/team/interfaces/team.interface';
 import { ValidateCommunicationManagementIntegration } from '@/shared/utils/decorators/validate-communication-management-integration.decorator';
-import { MODEL_STRATEGIES, LLMModelProvider } from '../llmProviders/llm-model-provider.service';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '../llmProviders/llm-model-provider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../llmProviders/llmProvider.service';
 
 @Injectable()
 export class CheckinService implements ICheckinService {
@@ -40,6 +44,9 @@ export class CheckinService implements ICheckinService {
 
         @Inject(SNOOZED_ITEMS_SERVICE_TOKEN)
         private readonly snoozedItemsService: ISnoozedItemsService,
+
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
 
         private readonly logger: PinoLoggerService,
 
@@ -261,10 +268,11 @@ export class CheckinService implements ICheckinService {
         checkinName: string,
     ): Promise<any> {
         try {
-            const llm = await getChatGPT({
-                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
-            }).bind({
-                response_format: { type: 'json_object' },
+            const llm = this.llmProviderService.getLLMProvider({
+                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
+                    .modelName,
+                temperature: 0,
+                jsonMode: true,
             });
 
             const integrations =
@@ -297,7 +305,11 @@ export class CheckinService implements ICheckinService {
 
             const checkinNotification = safelyParseMessageContent(
                 (
-                    await llm.invoke(promptCheckin, {
+                    await llm.invoke(await promptCheckin.format({
+                        organizationAndTeamData,
+                        payload: payload,
+                        promptIsForChat: false,
+                    }), {
                         metadata: {
                             submodule: 'GetWarnings',
                             module: 'AutomationDailyCheckin',
