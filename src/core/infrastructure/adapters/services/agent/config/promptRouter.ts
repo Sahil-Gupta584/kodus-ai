@@ -210,7 +210,19 @@ export class PromptRouter {
                 collection,
                 determineRouteParams,
                 2,
-            );
+            )
+
+            const functionCallingModel = llm.bind({
+                functions: [
+                    {
+                        name: 'output_formatter',
+                        description:
+                            'Should always be used to properly format output',
+                        parameters: zodToJsonSchema(zodSchema),
+                    },
+                ],
+                function_call: { name: 'output_formatter' },
+            });
 
             const { history } = await memory.loadMemoryVariables({});
 

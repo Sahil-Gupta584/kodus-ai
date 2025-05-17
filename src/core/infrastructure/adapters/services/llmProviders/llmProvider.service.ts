@@ -10,18 +10,26 @@ import {
     FactoryInput,
     getChatGPT,
 } from './llm-model-provider.service';
+import { ChatOpenAI } from '@langchain/openai';
+import { Runnable } from '@langchain/core/runnables';
+import { ChatAnthropic } from '@langchain/anthropic';
+import { ChatVertexAI } from '@langchain/google-vertexai';
+
+type LLMProviderOptions = {
+    model: LLMModelProvider | string;
+    temperature: number;
+    callbacks?: BaseCallbackHandler[];
+    maxTokens?: number;
+    jsonMode?: boolean;
+};
+
+type LLMProviderReturn = ChatOpenAI | ChatAnthropic | ChatVertexAI | Runnable;
 
 @Injectable()
 export class LLMProviderService implements ILLMProviderService {
     constructor(private readonly logger: PinoLoggerService) {}
 
-    getLLMProvider(options: {
-        model: LLMModelProvider | string;
-        temperature: number;
-        callbacks?: BaseCallbackHandler[];
-        maxTokens?: number;
-        jsonMode?: boolean;
-    }): BaseChatModel {
+    getLLMProvider(options: LLMProviderOptions): LLMProviderReturn {
         try {
             const envMode = process.env.API_LLM_PROVIDER_MODEL ?? 'auto';
 
