@@ -203,15 +203,6 @@ export class PromptRouter {
 
             const outputParser = new JsonOutputFunctionsParser();
 
-            const chain = prompt.pipe(llm).pipe(outputParser);
-
-            const collection = this.memoryService.getNativeCollection();
-            const memory = createMemoryInstance(
-                collection,
-                determineRouteParams,
-                2,
-            )
-
             const functionCallingModel = llm.bind({
                 functions: [
                     {
@@ -223,6 +214,17 @@ export class PromptRouter {
                 ],
                 function_call: { name: 'output_formatter' },
             });
+
+            const chain = prompt
+                .pipe(functionCallingModel as any)
+                .pipe(outputParser);
+
+            const collection = this.memoryService.getNativeCollection();
+            const memory = createMemoryInstance(
+                collection,
+                determineRouteParams,
+                2,
+            );
 
             const { history } = await memory.loadMemoryVariables({});
 

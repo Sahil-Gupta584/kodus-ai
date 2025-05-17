@@ -11,7 +11,7 @@ import { ResolverFactory } from '@/ee/codeBase/ast/resolvers/ResolverFactory';
 import { CodeQualityAnalyzerService } from '@/ee/codeBase/ast/services/code-quality-analyzer.service';
 import { CodeKnowledgeGraphService } from '@/ee/codeBase/ast/services/code-knowledge-graph.service';
 import { TypeScriptParser } from '@/ee/codeBase/ast/parsers/TypeScriptParser';
-import { LLMProviderModule } from '@/modules/llmProvider.module';
+import { LLMProviderModule } from './llmProvider.module';
 
 const services = [
     TreeSitterService,
