@@ -433,22 +433,10 @@ export class KodyFineTuningService {
                 );
             }
 
-            if (embeddedSuggestions?.length > 0) {
-                await Promise.all(
-                    embeddedSuggestions?.map(async (suggestion) => {
-                        await this.codeReviewFeedbackService.updateSyncedSuggestionsFlag(
-                            organizationId,
-                            true,
-                            suggestion?.suggestionId,
-                        );
-                    }),
-                );
-
+            if (pullRequests?.length > 0) {
                 let pullRequestNumbers: number[] = [
                     ...new Set(
-                        embeddedSuggestions?.map(
-                            (suggestion) => suggestion.pullRequestNumber,
-                        ),
+                        pullRequests?.map((pullRequest) => pullRequest.number),
                     ),
                 ];
 
@@ -458,30 +446,26 @@ export class KodyFineTuningService {
                     );
                 }
 
-                // Agrupa as sugestões por PR para verificar quais realmente têm sugestões
-                const suggestionsByPR = embeddedSuggestions.reduce(
-                    (acc, suggestion) => {
-                        const prNumber = suggestion.pullRequestNumber;
-                        if (!acc[prNumber]) {
-                            acc[prNumber] = [];
-                        }
-                        acc[prNumber].push(suggestion);
-                        return acc;
-                    },
-                    {},
-                );
-
-                // Atualiza apenas os PRs que têm sugestões
                 await Promise.all(
                     pullRequestNumbers?.map(async (pullRequestNumber) => {
-                        if (suggestionsByPR[pullRequestNumber]?.length > 0) {
-                            await this.pullRequestsService.updateSyncedSuggestionsFlag(
-                                pullRequestNumber,
-                                repository.id,
-                                organizationId,
-                                true,
-                            );
-                        }
+                        await this.pullRequestsService.updateSyncedSuggestionsFlag(
+                            pullRequestNumber,
+                            repository.id,
+                            organizationId,
+                            true,
+                        );
+                    }),
+                );
+            }
+
+            if (embeddedSuggestions?.length > 0) {
+                await Promise.all(
+                    embeddedSuggestions?.map(async (suggestion) => {
+                        await this.codeReviewFeedbackService.updateSyncedSuggestionsFlag(
+                            organizationId,
+                            true,
+                            suggestion?.suggestionId,
+                        );
                     }),
                 );
 
@@ -687,8 +671,7 @@ export class KodyFineTuningService {
     }
 
     private async compareSuggestionsWithClusters(
-        newSuggestion: Partial<CodeSuggestion>,
-        newSuggestionEmbedded: number[],
+        newSuggestion: Partial<ISuggestionEmbedded>,
         existingClusterizedSuggestions: IClusterizedSuggestion[],
     ): Promise<{
         analyzedSuggestion: Partial<CodeSuggestion>;
@@ -705,7 +688,7 @@ export class KodyFineTuningService {
                 ([clusterId, centroid]) => ({
                     clusterId: Number(clusterId),
                     similarity: this.calculateCosineSimilarity(
-                        newSuggestionEmbedded,
+                        newSuggestion?.suggestionEmbed,
                         centroid,
                     ),
                 }),
@@ -732,7 +715,7 @@ export class KodyFineTuningService {
                 fineTuningDecision: await this.analyzeClusterFeedback(
                     existingClusterizedSuggestions,
                     mostSimilarCluster,
-                    newSuggestionEmbedded,
+                    newSuggestion?.suggestionEmbed,
                 ),
             };
         } catch (error) {
@@ -742,7 +725,6 @@ export class KodyFineTuningService {
                 context: KodyFineTuningService.name,
                 metadata: {
                     newSuggestion,
-                    newSuggestionEmbedded,
                     existingClusterizedSuggestions,
                 },
             });
@@ -1005,15 +987,6 @@ export class KodyFineTuningService {
                 continue;
             }
 
-            const newEmbedding =
-                await this.suggestionEmbeddedService.embedSuggestionsForISuggestionToEmbed(
-                    [newSuggestion],
-                    organizationId,
-                    prNumber,
-                    repository.id,
-                    repository.full_name,
-                );
-
             const clusterizedSuggestions =
                 await this.defineWhichClusterShouldBeUsed(
                     organizationId,
@@ -1037,7 +1010,6 @@ export class KodyFineTuningService {
 
             const comparison = await this.compareSuggestionsWithClusters(
                 newSuggestion,
-                newEmbedding[0].suggestionEmbed,
                 clusterizedSuggestions,
             );
             results.push(comparison);
