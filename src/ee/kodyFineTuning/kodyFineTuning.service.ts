@@ -688,7 +688,7 @@ export class KodyFineTuningService {
                 ([clusterId, centroid]) => ({
                     clusterId: Number(clusterId),
                     similarity: this.calculateCosineSimilarity(
-                        newSuggestion.suggestionEmbed,
+                        newSuggestion?.suggestionEmbed,
                         centroid,
                     ),
                 }),
@@ -715,7 +715,7 @@ export class KodyFineTuningService {
                 fineTuningDecision: await this.analyzeClusterFeedback(
                     existingClusterizedSuggestions,
                     mostSimilarCluster,
-                    newSuggestion.suggestionEmbed,
+                    newSuggestion?.suggestionEmbed,
                 ),
             };
         } catch (error) {
