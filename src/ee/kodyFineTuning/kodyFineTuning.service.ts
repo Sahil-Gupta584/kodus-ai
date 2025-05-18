@@ -433,22 +433,10 @@ export class KodyFineTuningService {
                 );
             }
 
-            if (embeddedSuggestions?.length > 0) {
-                await Promise.all(
-                    embeddedSuggestions?.map(async (suggestion) => {
-                        await this.codeReviewFeedbackService.updateSyncedSuggestionsFlag(
-                            organizationId,
-                            true,
-                            suggestion?.suggestionId,
-                        );
-                    }),
-                );
-
+            if (pullRequests?.length > 0) {
                 let pullRequestNumbers: number[] = [
                     ...new Set(
-                        embeddedSuggestions?.map(
-                            (suggestion) => suggestion.pullRequestNumber,
-                        ),
+                        pullRequests?.map((pullRequest) => pullRequest.number),
                     ),
                 ];
 
@@ -458,30 +446,26 @@ export class KodyFineTuningService {
                     );
                 }
 
-                // Agrupa as sugestões por PR para verificar quais realmente têm sugestões
-                const suggestionsByPR = embeddedSuggestions.reduce(
-                    (acc, suggestion) => {
-                        const prNumber = suggestion.pullRequestNumber;
-                        if (!acc[prNumber]) {
-                            acc[prNumber] = [];
-                        }
-                        acc[prNumber].push(suggestion);
-                        return acc;
-                    },
-                    {},
-                );
-
-                // Atualiza apenas os PRs que têm sugestões
                 await Promise.all(
                     pullRequestNumbers?.map(async (pullRequestNumber) => {
-                        if (suggestionsByPR[pullRequestNumber]?.length > 0) {
-                            await this.pullRequestsService.updateSyncedSuggestionsFlag(
-                                pullRequestNumber,
-                                repository.id,
-                                organizationId,
-                                true,
-                            );
-                        }
+                        await this.pullRequestsService.updateSyncedSuggestionsFlag(
+                            pullRequestNumber,
+                            repository.id,
+                            organizationId,
+                            true,
+                        );
+                    }),
+                );
+            }
+
+            if (embeddedSuggestions?.length > 0) {
+                await Promise.all(
+                    embeddedSuggestions?.map(async (suggestion) => {
+                        await this.codeReviewFeedbackService.updateSyncedSuggestionsFlag(
+                            organizationId,
+                            true,
+                            suggestion?.suggestionId,
+                        );
                     }),
                 );
 
