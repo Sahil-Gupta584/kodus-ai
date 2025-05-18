@@ -687,8 +687,7 @@ export class KodyFineTuningService {
     }
 
     private async compareSuggestionsWithClusters(
-        newSuggestion: Partial<CodeSuggestion>,
-        newSuggestionEmbedded: number[],
+        newSuggestion: Partial<ISuggestionEmbedded>,
         existingClusterizedSuggestions: IClusterizedSuggestion[],
     ): Promise<{
         analyzedSuggestion: Partial<CodeSuggestion>;
@@ -705,7 +704,7 @@ export class KodyFineTuningService {
                 ([clusterId, centroid]) => ({
                     clusterId: Number(clusterId),
                     similarity: this.calculateCosineSimilarity(
-                        newSuggestionEmbedded,
+                        newSuggestion.suggestionEmbed,
                         centroid,
                     ),
                 }),
@@ -732,7 +731,7 @@ export class KodyFineTuningService {
                 fineTuningDecision: await this.analyzeClusterFeedback(
                     existingClusterizedSuggestions,
                     mostSimilarCluster,
-                    newSuggestionEmbedded,
+                    newSuggestion.suggestionEmbed,
                 ),
             };
         } catch (error) {
@@ -742,7 +741,6 @@ export class KodyFineTuningService {
                 context: KodyFineTuningService.name,
                 metadata: {
                     newSuggestion,
-                    newSuggestionEmbedded,
                     existingClusterizedSuggestions,
                 },
             });
@@ -1005,15 +1003,6 @@ export class KodyFineTuningService {
                 continue;
             }
 
-            const newEmbedding =
-                await this.suggestionEmbeddedService.embedSuggestionsForISuggestionToEmbed(
-                    [newSuggestion],
-                    organizationId,
-                    prNumber,
-                    repository.id,
-                    repository.full_name,
-                );
-
             const clusterizedSuggestions =
                 await this.defineWhichClusterShouldBeUsed(
                     organizationId,
@@ -1037,7 +1026,6 @@ export class KodyFineTuningService {
 
             const comparison = await this.compareSuggestionsWithClusters(
                 newSuggestion,
-                newEmbedding[0].suggestionEmbed,
                 clusterizedSuggestions,
             );
             results.push(comparison);
