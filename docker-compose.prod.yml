@@ -13,6 +13,7 @@ services:
         environment:
             - ENV=production
             - API_NODE_ENV=production
+            - NODE_OPTIONS=--max-old-space-size=8192
         env_file:
             - .env.prod
         networks:
