@@ -204,7 +204,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         reviewModeResponse: ReviewModeResponse,
         context: AnalysisContext,
     ): Promise<AIAnalysisResult> {
-        const provider = this.getInitialProvider(context, reviewModeResponse);
+        const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
 
         // Reset token tracking for new analysis
         this.tokenTracker.reset();
@@ -289,7 +289,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         context: any,
         reviewMode: ReviewModeResponse,
     ) {
-        const fallbackProvider = this.getFallbackProvider(provider, reviewMode);
+        const fallbackProvider = LLMModelProvider.DEEPSEEK_V3;
 
         try {
             const mainChain = await this.createAnalysisProviderChain(
