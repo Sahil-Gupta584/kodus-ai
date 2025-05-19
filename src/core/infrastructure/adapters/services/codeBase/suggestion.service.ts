@@ -242,7 +242,7 @@ export class SuggestionService implements ISuggestionService {
             ?.filter(
                 (suggestion) =>
                     !!suggestion.id &&
-                    !(filteredSuggestions || []).some(
+                    !(filteredSuggestions || [])?.some(
                         (filtered) =>
                             filtered?.id && filtered?.id === suggestion?.id,
                     ),
