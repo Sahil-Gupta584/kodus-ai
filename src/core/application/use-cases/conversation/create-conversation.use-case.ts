@@ -119,7 +119,6 @@ export class CreateConversationUseCase implements IUseCase {
                 let llm = this.llmProviderService.getLLMProvider({
                     model: LLMModelProvider.VERTEX_GEMINI_2_5_FLASH_PREVIEW_04_17,
                     temperature: 0,
-                    maxTokens: -1,
                     jsonMode: true,
                 });
 

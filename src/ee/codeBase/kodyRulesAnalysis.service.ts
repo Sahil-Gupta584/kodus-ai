@@ -502,7 +502,6 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             let llm = this.llmProviderService.getLLMProvider({
                 model: provider,
                 temperature: 0,
-                maxTokens: -1,
                 jsonMode: true,
                 callbacks: [this.tokenTracker],
             });

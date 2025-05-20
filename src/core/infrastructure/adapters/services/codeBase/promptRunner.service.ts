@@ -194,7 +194,6 @@ export class PromptRunnerService {
             let llm = this.llmProvider.getLLMProvider({
                 model: provider,
                 temperature: 0,
-                maxTokens: -1,
                 jsonMode: false,
             });
 

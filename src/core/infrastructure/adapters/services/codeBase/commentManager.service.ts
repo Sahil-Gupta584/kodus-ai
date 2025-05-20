@@ -792,7 +792,6 @@ ${reviewOptionsMarkdown}
             let llm = this.llmProviderService.getLLMProvider({
                 model: provider,
                 temperature: 0,
-                maxTokens: 8000,
                 jsonMode: true,
             });
 

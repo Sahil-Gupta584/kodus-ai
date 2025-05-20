@@ -338,7 +338,6 @@ export class CodeAstAnalysisService implements IASTAnalysisService {
             let llm = this.llmProviderService.getLLMProvider({
                 model: provider,
                 temperature: 0,
-                maxTokens: 1000,
                 jsonMode: true,
             });
 

@@ -1263,7 +1263,6 @@ export class CodeAnalyzerService {
             let llm = this.llmProviderService.getLLMProvider({
                 model: provider,
                 temperature: 0,
-                maxTokens: -1,
                 jsonMode: true,
             });
 

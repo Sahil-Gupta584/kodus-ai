@@ -289,7 +289,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         context: any,
         reviewMode: ReviewModeResponse,
     ) {
-        const fallbackProvider = LLMModelProvider.DEEPSEEK_V3;
+        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
         try {
             const mainChain = await this.createAnalysisProviderChain(
@@ -398,38 +398,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             });
             throw error;
         }
-    }
-    //#endregion
-
-    //#region Light Mode Functions
-    private getInitialProvider(
-        context: AnalysisContext,
-        reviewModeResponse: ReviewModeResponse,
-    ): LLMModelProvider {
-        if (
-            reviewModeResponse === ReviewModeResponse.LIGHT_MODE &&
-            context?.codeReviewConfig?.reviewModeConfig ===
-                ReviewModeConfig.LIGHT_MODE_FULL
-        ) {
-            return LLMModelProvider.NOVITA_DEEPSEEK_V3_0324;
-        }
-        return LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
-    }
-
-    private getFallbackProvider(
-        provider: LLMModelProvider,
-        reviewMode: ReviewModeResponse,
-    ): LLMModelProvider {
-        if (reviewMode === ReviewModeResponse.LIGHT_MODE) {
-            return LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
-        }
-
-        const fallbackProvider =
-            provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
-                ? LLMModelProvider.NOVITA_DEEPSEEK_V3_0324
-                : LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
-
-        return fallbackProvider;
     }
     //#endregion
 
