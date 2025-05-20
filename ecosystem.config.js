@@ -5,7 +5,7 @@ module.exports = {
             script: './dist/main.js', // Caminho atualizado
             out_file: '/app/logs/kodus-orchestrator/out.log',
             error_file: '/app/logs/kodus-orchestrator/error.log',
-            node_args: '--heapsnapshot-signal=SIGUSR2 --prof',
+            node_args: '--heapsnapshot-signal=SIGUSR2',
             env_homolog: {
                 API_NODE_ENV: 'homolog',
             },
