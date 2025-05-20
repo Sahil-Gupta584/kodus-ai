@@ -6,8 +6,8 @@ import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { CreateUserOrganizationDto } from '../dtos/create-user-organization.dto';
 import { OAuthLoginUseCase } from '@/core/application/use-cases/auth/oauth-login.use-case';
 import { CreateUserOrganizationOAuthDto } from '../dtos/create-user-organization-oauth.dto';
-import { ForgotPasswordUseCase } from '@/core/application/use-cases/auth/forgot-password.use-case';
-import { ResetPasswordUseCase } from '@/core/application/use-cases/auth/reset-password.use-case';
+import { ForgotPasswordUseCase } from '@/core/application/use-cases/auth/forgotPassword.useCase';
+import { ResetPasswordUseCase } from '@/core/application/use-cases/auth/resetPassword.useCase';
 
 @Controller('auth')
 export class AuthController {

@@ -19,7 +19,6 @@ export class ForgotPasswordUseCase {
 
     async execute(email: string) {
         try {
-
             const user = await this.authService.validateUser({ email });
             if (!user) {
                 throw new NotFoundException('User Not found.');
@@ -28,13 +27,14 @@ export class ForgotPasswordUseCase {
                 user.uuid,
                 email,
             );
-            const sendForgotPasswordEmailRes = await sendForgotPasswordEmail(
-                user,
+            await sendForgotPasswordEmail(
+                user.email,
+                user.organization.name,
                 token,
             );
             return { message: 'Reset link sent.' };
         } catch (error) {
-            throw new InternalServerErrorException();
+            throw new InternalServerErrorException(error);
         }
     }
 }

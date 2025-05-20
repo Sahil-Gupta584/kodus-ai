@@ -25,9 +25,9 @@ export class ResetPasswordUseCase {
     async execute(token: string, newPassword: string) {
         try {
             const decode = await this.authService.verifyForgotPassToken(token);
-            if (!decode?.userId) {
+            if (!decode?.email) {
                 throw new UnauthorizedException(
-                    'Token does not contain user ID',
+                    'Token does not contain user email',
                 );
             }
             const password = await this.authService.hashPassword(

@@ -44,7 +44,7 @@ const sendInvite = async (user, adminUserEmail, invite) => {
     }
 };
 
-const sendForgotPasswordEmail = async (user, token) => {
+const sendForgotPasswordEmail = async (email:string,name:string, token:string) => {
     try {
         const webUrl = process.env.API_USER_INVITE_BASE_URL;
 
@@ -52,21 +52,20 @@ const sendForgotPasswordEmail = async (user, token) => {
             apiKey: process.env.API_MAILSEND_API_TOKEN,
         });
 
-        const recipients = [new Recipient(user.email, user.name)];
+        const recipients = [new Recipient(email, name)];
         const sentFrom = new Sender('info@domain.com');
 
         const personalization = [
             {
-                email: user.email,
+                email: email,
                 data: {
                     account: {
-                        name: user.email,
+                        name: email,
                     },
                     resetLink: `${webUrl}/forgot-password/reset?token=${token}`,
                 },
             },
         ];
-        console.log(`${webUrl}/forgot-password/reset?token=${token}`);
 
         const emailParams = new EmailParams()
             .setFrom(sentFrom)

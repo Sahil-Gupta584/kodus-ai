@@ -148,16 +148,19 @@ export class AuthService implements IAuthService {
         }
     }
 
-    async createForgotPassToken(userId: string, email: string) {
+    async createForgotPassToken(uuid: string, email: string) {
         try {
             const user = await this.validateUser({
                 email,
             });
-            if (!user) {
+            if (!user|| !user.uuid) {
                 throw new UnauthorizedException('api.users.unauthorized');
             }
+             if (user.uuid !== uuid) {
+                 throw new UnauthorizedException('User ID does not match the provided email.');
+            }
             const token = await this.jwtService.signAsync(
-                { userId, email },
+                { uuid, email },
                 {
                     secret: this.jwtConfig.secret,
                     expiresIn: '24h',
