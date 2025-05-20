@@ -54,7 +54,13 @@ export class KodyFineTuningContextPreparationServiceEE extends BaseKodyFineTunin
         keepedSuggestions: Partial<CodeSuggestion>[];
         discardedSuggestions: Partial<CodeSuggestion>[];
     }> {
-        // Verifica se o fine tuning está habilitado
+        if (!suggestionsToAnalyze || suggestionsToAnalyze.length === 0) {
+            return {
+                keepedSuggestions: [],
+                discardedSuggestions: [],
+            };
+        }
+
         if (!isFineTuningEnabled) {
             return {
                 keepedSuggestions: suggestionsToAnalyze,

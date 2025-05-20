@@ -238,13 +238,13 @@ export class SuggestionService implements ISuggestionService {
         filteredSuggestions: Partial<CodeSuggestion>[],
         discardReason: PriorityStatus,
     ): Partial<CodeSuggestion>[] {
-        return allSuggestions
+        return (allSuggestions || [])
             ?.filter(
                 (suggestion) =>
                     !!suggestion.id &&
-                    !filteredSuggestions.some(
+                    !(filteredSuggestions || [])?.some(
                         (filtered) =>
-                            filtered.id && filtered.id === suggestion.id,
+                            filtered?.id && filtered?.id === suggestion?.id,
                     ),
             )
             ?.map((suggestion) => ({
