@@ -1,4 +1,9 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+    Inject,
+    Injectable,
+    InternalServerErrorException,
+    UnauthorizedException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -139,6 +144,38 @@ export class AuthService implements IAuthService {
         } catch (e) {
             throw new UnauthorizedException(
                 'Refresh token is invalid or has expired',
+            );
+        }
+    }
+
+    async createForgotPassToken(userId: string, email: string) {
+        try {
+            const user = await this.validateUser({
+                email,
+            });
+            if (!user) {
+                throw new UnauthorizedException('api.users.unauthorized');
+            }
+            const token = await this.jwtService.signAsync(
+                { userId, email },
+                {
+                    secret: this.jwtConfig.secret,
+                    expiresIn: '24h',
+                },
+            );
+            return token;
+        } catch (e) {
+            throw new InternalServerErrorException('Failed to create token');
+        }
+    }
+    async verifyForgotPassToken(token: string) {
+        try {
+            return this.jwtService.verify(token, {
+                secret: this.jwtConfig.secret,
+            });
+        } catch (e) {
+            throw new UnauthorizedException(
+                'Reset password token is invalid or has expired',
             );
         }
     }

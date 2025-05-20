@@ -44,4 +44,41 @@ const sendInvite = async (user, adminUserEmail, invite) => {
     }
 };
 
-export { sendInvite };
+const sendForgotPasswordEmail = async (user, token) => {
+    try {
+        const webUrl = process.env.API_USER_INVITE_BASE_URL;
+
+        const mailersend = new MailerSend({
+            apiKey: process.env.API_MAILSEND_API_TOKEN,
+        });
+
+        const recipients = [new Recipient(user.email, user.name)];
+        const sentFrom = new Sender('info@domain.com');
+
+        const personalization = [
+            {
+                email: user.email,
+                data: {
+                    account: {
+                        name: user.email,
+                    },
+                    resetLink: `${webUrl}/forgot-password/reset?token=${token}`,
+                },
+            },
+        ];
+        console.log(`${webUrl}/forgot-password/reset?token=${token}`);
+
+        const emailParams = new EmailParams()
+            .setFrom(sentFrom)
+            .setTo(recipients)
+            .setSubject('Reset your Kodus password')
+            .setTemplateId('z3m5jgrmxpm4dpyo')
+            .setPersonalization(personalization);
+
+        return await mailersend.email.send(emailParams);
+    } catch (error) {
+        console.error('sendForgotPasswordEmail error:', error);
+    }
+};
+
+export { sendInvite, sendForgotPasswordEmail };
