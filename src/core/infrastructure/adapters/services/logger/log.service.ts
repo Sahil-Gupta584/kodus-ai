@@ -14,6 +14,10 @@ export class LogService implements ILogService {
         private readonly logRepository: ILogRepository,
     ) {}
 
+    createMany(logs: Array<Omit<ILog, 'uuid'>>): Promise<void> {
+        return this.logRepository.createMany(logs);
+    }
+
     findOne(filter?: Partial<ILog>): Promise<LogEntity> {
         return this.logRepository.findOne(filter);
     }

@@ -29,22 +29,27 @@ const shouldPrettyPrint = (process.env.API_LOG_PRETTY || 'false') === 'true';
 
 @Injectable()
 export class PinoLoggerService implements LoggerService {
+    private logBuffer: Array<Omit<ILog, 'uuid'>> = [];
+    private readonly MAX_BUFFER_SIZE = 50;
+    private readonly FLUSH_INTERVAL_MS = 10000;
+    private flushIntervalId: NodeJS.Timeout | null = null;
+
     private baseLogger = pino({
         level: process.env.API_LOG_LEVEL || 'info',
         transport:
             shouldPrettyPrint && !isProduction
                 ? {
-                    target: 'pino-pretty',
-                    options: {
-                        colorize: true,
-                        translateTime: 'SYS:standard',
-                        ignore: 'pid,hostname',
-                        levelFirst: true,
-                        errorProps: 'message,stack', // Includes the error stack in the output
-                        messageFormat:
-                            '{level} - {serviceName} - {context} - {msg}',
-                    },
-                }
+                      target: 'pino-pretty',
+                      options: {
+                          colorize: true,
+                          translateTime: 'SYS:standard',
+                          ignore: 'pid,hostname',
+                          levelFirst: true,
+                          errorProps: 'message,stack', // Includes the error stack in the output
+                          messageFormat:
+                              '{level} - {serviceName} - {context} - {msg}',
+                      },
+                  }
                 : undefined,
         formatters: {
             level(label) {
@@ -97,10 +102,84 @@ export class PinoLoggerService implements LoggerService {
     constructor(
         @Inject(LOG_SERVICE_TOKEN)
         private readonly logService: ILogService,
-    ) { }
+    ) {
+        this.startFlushInterval();
+    }
+
+    private startFlushInterval(): void {
+        if (this.flushIntervalId) {
+            clearInterval(this.flushIntervalId);
+        }
+        this.flushIntervalId = setInterval(() => {
+            this.flushLogs().catch((err) =>
+                this.handleFlushError(err, '[Interval Flush]'),
+            );
+        }, this.FLUSH_INTERVAL_MS);
+    }
+
+    public stopFlushInterval(): void {
+        if (this.flushIntervalId) {
+            clearInterval(this.flushIntervalId);
+            this.flushIntervalId = null;
+        }
+        this.flushLogs().catch((err) =>
+            this.handleFlushError(err, '[Shutdown Flush]'),
+        );
+        console.log(
+            '[PinoLoggerService] Flush interval stopped and final logs flushed.',
+        );
+    }
+
+    private async flushLogs(): Promise<void> {
+        if (this.logBuffer.length === 0) {
+            return;
+        }
+
+        const logsToInsert = [...this.logBuffer];
+        this.logBuffer = [];
+
+        try {
+            await this.logService.createMany(logsToInsert);
+        } catch (error) {
+            this.handleFlushError(error, '[Batch Insert Error]', logsToInsert);
+        }
+    }
+
+    private handleFlushError(
+        error: any,
+        contextMessage: string,
+        failedLogs?: Array<Omit<ILog, 'uuid'>>,
+    ): void {
+        console.error(
+            `[PinoLoggerService] ${contextMessage}: Error flushing logs to MongoDB:`,
+            error,
+        );
+        if (failedLogs && failedLogs.length > 0) {
+            console.error(
+                `[PinoLoggerService] ${contextMessage}: ${failedLogs.length} logs failed to insert. First few:`,
+                JSON.stringify(failedLogs.slice(0, 3)),
+            );
+        }
+    }
+
+    // Para NestJS, implementar onModuleDestroy ou beforeApplicationShutdown
+    async onModuleDestroy(): Promise<void> {
+        // Ou beforeApplicationShutdown
+        this.stopFlushInterval();
+    }
 
     private async saveLogToDB(log: Omit<ILog, 'uuid'>) {
-        await this.logService.register(log);
+        const logData: Omit<ILog, 'uuid'> = {
+            ...log,
+        };
+
+        this.logBuffer.push(logData);
+
+        if (this.logBuffer.length >= this.MAX_BUFFER_SIZE) {
+            this.flushLogs().catch((err) =>
+                this.handleFlushError(err, '[Buffer Full Flush]'),
+            );
+        }
     }
 
     private getTraceContext() {
@@ -206,13 +285,16 @@ export class PinoLoggerService implements LoggerService {
         { message, context, serviceName, error, metadata = {} }: LogArguments,
     ) {
         if (this.shouldSkipLog(context)) {
-            return
-        };
+            return;
+        }
 
         const contextStr = this.extractContextInfo(context);
 
         // Now we are correctly calling `createChildLogger`
-        const childLogger = this.createChildLogger(serviceName || 'UnknownService', contextStr);
+        const childLogger = this.createChildLogger(
+            serviceName || 'UnknownService',
+            contextStr,
+        );
 
         const logObject = this.buildLogObject(serviceName, metadata, error);
 
