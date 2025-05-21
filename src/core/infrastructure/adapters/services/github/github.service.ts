@@ -4011,10 +4011,10 @@ export class GithubService
         const { authMode } = integration.authIntegration.authDetails;
 
         if (authMode === AuthMode.OAUTH) {
-            // Se for OAuth, remove a instalação do app
             if (integration.authIntegration.authDetails.installationId) {
                 try {
-                    await octokit.apps.deleteInstallation({
+                    const appOctokit = this.createOctokitInstance();
+                    await appOctokit.apps.deleteInstallation({
                         installation_id:
                             integration.authIntegration.authDetails
                                 .installationId,

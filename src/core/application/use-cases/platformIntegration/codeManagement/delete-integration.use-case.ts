@@ -48,11 +48,8 @@ export class DeleteIntegrationUseCase {
 
         const integrationConfig = await this.integrationConfigService.findOne({
             configKey: IntegrationConfigKey.REPOSITORIES,
-            configValue: [
-                {
-                    id: integration.authIntegration.authDetails.installationId,
-                },
-            ],
+            integration: { uuid: integration.uuid },
+            team: { uuid: params.teamId },
         });
 
         if (integrationConfig) {
