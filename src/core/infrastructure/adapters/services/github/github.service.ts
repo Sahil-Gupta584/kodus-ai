@@ -3984,4 +3984,87 @@ export class GithubService
             return null;
         }
     }
+
+    async deleteIntegration(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const authDetails = await this.getGithubAuthDetails(
+            params.organizationAndTeamData,
+        );
+
+        const octokit = await this.instanceOctokit(
+            params.organizationAndTeamData,
+        );
+
+        const integration = await this.integrationService.findOne({
+            organization: {
+                uuid: params.organizationAndTeamData.organizationId,
+            },
+            team: { uuid: params.organizationAndTeamData.teamId },
+            platform: PlatformType.GITHUB,
+        });
+
+        if (!integration?.authIntegration?.authDetails) {
+            return;
+        }
+
+        const { authMode } = integration.authIntegration.authDetails;
+
+        if (authMode === AuthMode.OAUTH) {
+            // Se for OAuth, remove a instalação do app
+            if (integration.authIntegration.authDetails.installationId) {
+                try {
+                    await octokit.apps.deleteInstallation({
+                        installation_id:
+                            integration.authIntegration.authDetails
+                                .installationId,
+                    });
+                } catch (error) {
+                    this.logger.error({
+                        message: 'Error deleting GitHub installation',
+                        context: GithubService.name,
+                        error: error,
+                    });
+                }
+            }
+        } else if (authMode === AuthMode.TOKEN) {
+            const repositories =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
+
+            if (repositories) {
+                for (const repo of repositories) {
+                    try {
+                        const { data: webhooks } =
+                            await octokit.repos.listWebhooks({
+                                owner: authDetails.org,
+                                repo: repo.name,
+                            });
+
+                        const webhookUrl =
+                            process.env.API_GITHUB_CODE_MANAGEMENT_WEBHOOK;
+                        const webhookToDelete = webhooks.find(
+                            (webhook) => webhook.config.url === webhookUrl,
+                        );
+
+                        if (webhookToDelete) {
+                            await octokit.repos.deleteWebhook({
+                                owner: authDetails.org,
+                                repo: repo.name,
+                                hook_id: webhookToDelete.id,
+                            });
+                        }
+                    } catch (error) {
+                        this.logger.error({
+                            message: `Error deleting webhook for repository ${repo.name}`,
+                            context: GithubService.name,
+                            error: error,
+                        });
+                    }
+                }
+            }
+        }
+    }
 }
