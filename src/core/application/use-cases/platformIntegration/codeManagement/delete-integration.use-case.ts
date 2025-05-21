@@ -39,7 +39,7 @@ export class DeleteIntegrationUseCase {
             return;
         }
 
-        await this.codeManagementService.deleteIntegration({
+        await this.codeManagementService.deleteWebhook({
             organizationAndTeamData: {
                 organizationId: params.organizationId,
                 teamId: params.teamId,
