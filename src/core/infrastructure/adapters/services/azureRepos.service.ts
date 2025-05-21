@@ -3147,4 +3147,80 @@ export class AzureReposService
 
         return criticalIssuesSummaryArray;
     }
+
+    async deleteIntegration(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const authDetails = await this.getAuthDetails(
+            params.organizationAndTeamData,
+        );
+
+        // Se for conexão via PAT, remove os webhooks
+        if (authDetails.authMode === AuthMode.TOKEN) {
+            const repositories =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
+
+            if (repositories) {
+                for (const repo of repositories) {
+                    try {
+                        const projectId = await this.getProjectIdFromRepository(
+                            params.organizationAndTeamData,
+                            repo.id,
+                        );
+
+                        if (!projectId) {
+                            continue;
+                        }
+
+                        const subs =
+                            await this.azureReposRequestHelper.listSubscriptionsByProject(
+                                {
+                                    orgName: authDetails.orgName,
+                                    token: authDetails.token,
+                                    projectId,
+                                },
+                            );
+
+                        const webhookUrl =
+                            process.env
+                                .GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK!;
+                        const allMatching = subs.filter(
+                            (s) =>
+                                s.publisherInputs?.repository === repo.id &&
+                                s.consumerInputs?.url?.includes(webhookUrl),
+                        );
+
+                        for (const existing of allMatching) {
+                            await this.azureReposRequestHelper.deleteWebhookById(
+                                {
+                                    orgName: authDetails.orgName,
+                                    token: authDetails.token,
+                                    subscriptionId: existing.id,
+                                },
+                            );
+
+                            this.logger.log({
+                                message: `Webhook removed for repository ${repo.name} (id=${existing.id})`,
+                                context: this.deleteIntegration.name,
+                                metadata: {
+                                    repository: repo.name,
+                                    subscriptionId: existing.id,
+                                },
+                            });
+                        }
+                    } catch (error) {
+                        this.logger.error({
+                            message: `Error deleting webhook for repository ${repo.name}`,
+                            context: this.deleteIntegration.name,
+                            error: error,
+                            metadata: { repository: repo.name },
+                        });
+                    }
+                }
+            }
+        }
+    }
 }
