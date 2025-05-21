@@ -1,18 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { CodeGraph, FunctionAnalysis } from '../contracts/CodeGraph';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { JsonOutputParser } from '@langchain/core/output_parsers';
-import {
-    getChatGPT,
-    getDeepseekByNovitaAI,
-} from '@/shared/utils/langchainCommon/document';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { prompt_checkSimilarFunctions_system } from '@/shared/utils/langchainCommon/prompts/checkSimilarFunctions';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { SyntaxNode } from 'tree-sitter';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { ChangeResult, FunctionResult } from '../../diffAnalyzer.service';
+import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 
 export enum NodeType {
     CLASS = 'CLASS',
@@ -124,7 +121,11 @@ export class CodeAnalyzerService {
     private nodes: EnrichGraphNode[] = [];
     private relationships = new Map<string, EnrichGraphEdge>();
 
-    constructor(private readonly logger: PinoLoggerService) {}
+    constructor(
+        private readonly logger: PinoLoggerService,
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
+    ) {}
 
     async checkFunctionSimilarity(
         context: {
@@ -1218,11 +1219,11 @@ export class CodeAnalyzerService {
     }) {
         try {
             const mainChain = await this.createProviderChain(
-                LLMModelProvider.DEEPSEEK_V3,
+                LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                 JSON.stringify(context.functions),
             );
             const fallbackChain = await this.createProviderChain(
-                LLMModelProvider.CHATGPT_4_ALL,
+                LLMModelProvider.OPENAI_GPT_4O,
                 JSON.stringify(context.functions),
             );
 
@@ -1246,8 +1247,8 @@ export class CodeAnalyzerService {
                 error,
                 context: CodeAnalyzerService.name,
                 metadata: {
-                    provider: LLMModelProvider.DEEPSEEK_V3,
-                    fallbackProvider: LLMModelProvider.CHATGPT_4_ALL,
+                    provider: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
+                    fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
                 },
             });
             throw error;
@@ -1259,23 +1260,11 @@ export class CodeAnalyzerService {
         context: string,
     ) {
         try {
-            let llm =
-                provider === LLMModelProvider.DEEPSEEK_V3
-                    ? getDeepseekByNovitaAI({
-                          temperature: 0,
-                      })
-                    : getChatGPT({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
-                          temperature: 0,
-                      });
-
-            if (provider === LLMModelProvider.CHATGPT_4_ALL) {
-                llm = llm.bind({
-                    response_format: { type: 'json_object' },
-                });
-            }
+            let llm = this.llmProviderService.getLLMProvider({
+                model: provider,
+                temperature: 0,
+                jsonMode: true,
+            });
 
             const chain = RunnableSequence.from([
                 async (input: any) => {

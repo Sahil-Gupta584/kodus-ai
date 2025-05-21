@@ -18,7 +18,6 @@ import { TeamsModule } from './team.module';
 import { TeamArtifactsModule } from './teamArtifacts.module';
 import { SprintModule } from './sprint.module';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
-import { ExecuteOrganizationArtifactsUseCase } from '@/core/application/use-cases/organizationArtifacts/execute-organization-artifacts.use-case';
 
 @Module({
     imports: [
@@ -36,7 +35,6 @@ import { ExecuteOrganizationArtifactsUseCase } from '@/core/application/use-case
     ],
     providers: [
         ...UseCases,
-        ExecuteOrganizationArtifactsUseCase,
         PromptService,
         {
             provide: ORGANIZATION_ARTIFACTS_SERVICE_TOKEN,
@@ -51,7 +49,6 @@ import { ExecuteOrganizationArtifactsUseCase } from '@/core/application/use-case
     exports: [
         ORGANIZATION_ARTIFACTS_SERVICE_TOKEN,
         ORGANIZATION_ARTIFACTS_REPOSITORY_TOKEN,
-        ExecuteOrganizationArtifactsUseCase,
     ],
 })
 export class OrganizationArtifactsModule {}

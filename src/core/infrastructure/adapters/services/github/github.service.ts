@@ -39,7 +39,6 @@ import {
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import * as moment from 'moment-timezone';
 import {
@@ -72,8 +71,6 @@ import {
 } from '@/core/domain/organizationMetrics/contracts/organizationMetrics.service.contract';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { GitHubReaction } from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
 import {
     getTranslationsForLanguageByCategory,
     TranslationsCategory,
@@ -93,6 +90,12 @@ import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import {
+    LLMModelProvider,
+    MODEL_STRATEGIES,
+} from '../llmProviders/llmModelProvider.helper';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../llmProviders/llmProvider.service';
 
 interface GitHubAuthResponse {
     token: string;
@@ -141,6 +144,9 @@ export class GithubService
 
         @Inject(REPOSITORY_MANAGER_TOKEN)
         private readonly repositoryManager: IRepositoryManager,
+
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
 
         private readonly cacheService: CacheService,
 
@@ -1659,12 +1665,10 @@ export class GithubService
             return [];
         }
 
-        let llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
-        }).bind({
-            response_format: { type: 'json_object' },
+        let llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const promptWorkflows =
@@ -1677,12 +1681,19 @@ export class GithubService
                 },
             );
 
-        const chain = await llm.invoke(promptWorkflows, {
-            metadata: {
-                module: 'Setup',
-                submodule: 'GetProductionDeployment',
+        const chain = await llm.invoke(
+            await promptWorkflows.format({
+                organizationAndTeamData,
+                payload: JSON.stringify(workflows),
+                promptIsForChat: false,
+            }),
+            {
+                metadata: {
+                    module: 'Setup',
+                    submodule: 'GetProductionDeployment',
+                },
             },
-        });
+        );
 
         return safelyParseMessageContent(chain.content).repos;
     }
@@ -1730,12 +1741,10 @@ export class GithubService
             return [];
         }
 
-        let llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
-        }).bind({
-            response_format: { type: 'json_object' },
+        let llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const promptReleases =
@@ -1748,12 +1757,19 @@ export class GithubService
                 },
             );
 
-        const chain = await llm.invoke(promptReleases, {
-            metadata: {
-                module: 'Setup',
-                submodule: 'GetProductionReleases',
+        const chain = await llm.invoke(
+            await promptReleases.format({
+                organizationAndTeamData,
+                payload: JSON.stringify(releases),
+                promptIsForChat: false,
+            }),
+            {
+                metadata: {
+                    module: 'Setup',
+                    submodule: 'GetProductionReleases',
+                },
             },
-        });
+        );
 
         const repos = safelyParseMessageContent(chain.content).repos;
 
