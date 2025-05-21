@@ -3555,4 +3555,77 @@ export class BitbucketService
             },
         };
     }
+
+    async deleteIntegration(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const authDetails = await this.getAuthDetails(
+            params.organizationAndTeamData,
+        );
+        const bitbucketAPI = this.instanceBitbucketApi(authDetails);
+
+        if (authDetails.authMode === AuthMode.TOKEN) {
+            const repositories = <Repositories[]>(
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                )
+            );
+
+            const webhookUrl =
+                process.env.GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK;
+
+            if (!webhookUrl) {
+                this.logger.error({
+                    message: 'Bitbucket webhook URL not found',
+                    context: BitbucketService.name,
+                });
+                return;
+            }
+
+            for (const repo of repositories) {
+                try {
+                    const existingHooks = await bitbucketAPI.webhooks
+                        .listForRepo({
+                            repo_slug: `{${repo.id}}`,
+                            workspace: `{${repo.workspaceId}}`,
+                        })
+                        .then((res) =>
+                            this.getPaginatedResults(bitbucketAPI, res),
+                        );
+
+                    const webhook = existingHooks.find(
+                        (hook) => hook.url === webhookUrl,
+                    );
+
+                    if (webhook) {
+                        await bitbucketAPI.repositories.deleteWebhook({
+                            repo_slug: `{${repo.id}}`,
+                            workspace: `{${repo.workspaceId}}`,
+                            uid: webhook.uuid,
+                        });
+
+                        this.logger.log({
+                            message: `Webhook deleted successfully for repository ${repo.name}`,
+                            context: BitbucketService.name,
+                            metadata: {
+                                repository: repo.name,
+                                workspace: repo.workspaceId,
+                            },
+                        });
+                    }
+                } catch (error) {
+                    this.logger.error({
+                        message: `Error deleting Bitbucket webhook for repository ${repo.name}`,
+                        context: BitbucketService.name,
+                        error: error,
+                        metadata: {
+                            repository: repo.name,
+                            workspace: repo.workspaceId,
+                        },
+                    });
+                }
+            }
+        }
+    }
 }
