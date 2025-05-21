@@ -247,11 +247,11 @@ export enum LLMModelProvider {
 }
 
 export interface ModelStrategy {
-    provider: string;
-    factory: (...args: any[]) => any;
-    modelName: string;
-    defaultMaxTokens: number;
-    baseURL?: string;
+    readonly provider: string;
+    readonly factory: (...args: any[]) => any;
+    readonly modelName: string;
+    readonly defaultMaxTokens: number;
+    readonly baseURL?: string;
 }
 
 export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {

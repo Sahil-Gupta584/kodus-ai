@@ -12,7 +12,7 @@ import {
     FunctionsAffectResult,
     FunctionSimilarity,
 } from '@/ee/codeBase/ast/services/code-analyzer.service';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];

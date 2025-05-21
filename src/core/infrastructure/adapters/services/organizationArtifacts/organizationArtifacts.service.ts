@@ -67,7 +67,7 @@ import { ValidateProjectManagementIntegration } from '@/shared/utils/decorators/
 import { ArtifactsToolType } from '@/shared/domain/enums/artifacts-tool-type.enum';
 import { IntegrationStatusFilter } from '@/core/domain/team/interfaces/team.interface';
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 
 @Injectable()
 export class OrganizationArtifactsService

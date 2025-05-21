@@ -17,7 +17,7 @@ import {
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { BaseFileReviewContextPreparation } from '@/core/infrastructure/adapters/services/fileReviewContextPreparation/base-file-review-context-preparation.service';
 import { ReviewModeOptions } from '@/shared/interfaces/file-review-context-preparation.interface';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisService.contract';
 import { LLM_ANALYSIS_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/codeBase/llmAnalysis.service';
 

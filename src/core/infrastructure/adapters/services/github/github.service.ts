@@ -93,7 +93,7 @@ import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.
 import {
     LLMModelProvider,
     MODEL_STRATEGIES,
-} from '../llmProviders/llm-model-provider.service';
+} from '../llmProviders/llmModelProvider.helper';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
 

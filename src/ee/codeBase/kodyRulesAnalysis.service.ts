@@ -13,7 +13,7 @@ import { RunnableSequence } from '@langchain/core/runnables';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import Anthropic from '@anthropic-ai/sdk';
 import { getKodyRulesForFile } from '@/shared/utils/glob-utils';
 import {

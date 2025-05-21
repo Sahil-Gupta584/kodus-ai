@@ -9,7 +9,7 @@ import {
     ModelStrategy,
     FactoryInput,
     getChatGPT,
-} from './llm-model-provider.service';
+} from './llmModelProvider.helper';
 import { ChatOpenAI } from '@langchain/openai';
 import { Runnable } from '@langchain/core/runnables';
 import { ChatAnthropic } from '@langchain/anthropic';
@@ -53,10 +53,13 @@ export class LLMProviderService implements ILLMProviderService {
             const strategy = MODEL_STRATEGIES[options.model] as ModelStrategy;
             if (!strategy) {
                 this.logger.error({
-                    message: 'Unsupported provider',
+                    message: `Unsupported provider: ${options.model}`,
                     error: new Error(`Unsupported provider: ${options.model}`),
                     metadata: {
-                        model: options.model,
+                        requestedModel: options.model,
+                        temperature: options.temperature,
+                        maxTokens: options.maxTokens,
+                        jsonMode: options.jsonMode,
                     },
                     context: LLMProviderService.name,
                 });
@@ -93,7 +96,12 @@ export class LLMProviderService implements ILLMProviderService {
         } catch (error) {
             this.logger.error({
                 message: 'Error getting LLM provider',
-                error,
+                metadata: {
+                    attemptedModel: options.model,
+                    attemptedTemperature: options.temperature,
+                    attemptedMaxTokens: options.maxTokens,
+                    attemptedJsonMode: options.jsonMode,
+                },
                 context: LLMProviderService.name,
             });
 

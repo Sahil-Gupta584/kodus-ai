@@ -6,7 +6,7 @@ import { PromptService } from '../../prompt.service';
 import {
     MODEL_STRATEGIES,
     LLMModelProvider,
-} from '../../llmProviders/llm-model-provider.service';
+} from '../../llmProviders/llmModelProvider.helper';
 import { LLMProviderService } from '../../llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
 

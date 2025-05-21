@@ -17,7 +17,7 @@ import { CodeKnowledgeGraphService } from './ast/services/code-knowledge-graph.s
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { prompt_detectBreakingChanges } from '@/shared/utils/langchainCommon/prompts/detectBreakingChanges';
 import { Inject, Injectable } from '@nestjs/common';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';

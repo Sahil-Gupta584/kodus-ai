@@ -46,7 +46,7 @@ import { TeamMethodology } from '@/shared/domain/enums/team-methodology.enum';
 import {
     MODEL_STRATEGIES,
     LLMModelProvider,
-} from '../../../llmProviders/llm-model-provider.service';
+} from '../../../llmProviders/llmModelProvider.helper';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../../../llmProviders/llmProvider.service.contract';
 import { LLMProviderService } from '../../../llmProviders/llmProvider.service';
 

@@ -34,7 +34,7 @@ import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.
 import {
     LLMModelProvider,
     MODEL_STRATEGIES,
-} from '../llmProviders/llm-model-provider.service';
+} from '../llmProviders/llmModelProvider.helper';
 
 // Interface for token tracking
 interface TokenUsage {

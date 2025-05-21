@@ -5,7 +5,7 @@ import {
     UncategorizedComment,
     CommentFrequency,
 } from './types/commentAnalysis.type';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { PinoLoggerService } from '../logger/pino.service';
 import {
     prompt_CommentCategorizerSystem,

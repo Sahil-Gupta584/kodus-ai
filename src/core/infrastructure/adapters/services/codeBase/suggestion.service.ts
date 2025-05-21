@@ -25,7 +25,7 @@ import {
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@/core/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { PinoLoggerService } from '../logger/pino.service';
 import {
     COMMENT_MANAGER_SERVICE_TOKEN,

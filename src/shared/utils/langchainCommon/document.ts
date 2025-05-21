@@ -20,7 +20,7 @@ import { ChatNovitaAI } from '@langchain/community/chat_models/novita';
 import {
     MODEL_STRATEGIES,
     LLMModelProvider,
-} from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
+} from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 
 interface OpenAIEmbeddingResponse {
     data: Array<{

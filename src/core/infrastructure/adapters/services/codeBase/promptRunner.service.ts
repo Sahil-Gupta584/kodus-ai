@@ -1,4 +1,4 @@
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { StringOutputParser } from '@langchain/core/output_parsers';

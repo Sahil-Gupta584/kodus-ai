@@ -1,4 +1,4 @@
-import { MODEL_STRATEGIES, LLMModelProvider } from "@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service";
+import { MODEL_STRATEGIES, LLMModelProvider } from "@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper";
 
 
 

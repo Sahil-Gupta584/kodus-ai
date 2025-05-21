@@ -2,7 +2,7 @@ import { MongoDBChatMessageHistory } from '@langchain/mongodb';
 import { ConversationChain } from 'langchain/chains';
 import { ChainValues } from '@langchain/core/dist/utils/types';
 import { CustomChatMemory } from './customMemory';
-import { getChatGPT } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
+import { getChatGPT } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 
 /**
  * Creates a new instance of ConversationSummaryBufferMemory with the given chatHistory and summaryPrompt.

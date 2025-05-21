@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CodeGraph, FunctionAnalysis } from '../contracts/CodeGraph';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llm-model-provider.service';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { JsonOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { prompt_checkSimilarFunctions_system } from '@/shared/utils/langchainCommon/prompts/checkSimilarFunctions';
