@@ -116,7 +116,7 @@ export interface ICodeManagementService
         repository: { id: string; name: string };
     }): Promise<any | null>;
 
-    deleteIntegration(params: {
+    deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void>;
 

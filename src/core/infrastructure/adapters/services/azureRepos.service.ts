@@ -3148,7 +3148,7 @@ export class AzureReposService
         return criticalIssuesSummaryArray;
     }
 
-    async deleteIntegration(params: {
+    async deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void> {
         const authDetails = await this.getAuthDetails(
@@ -3204,7 +3204,7 @@ export class AzureReposService
 
                             this.logger.log({
                                 message: `Webhook removed for repository ${repo.name} (id=${existing.id})`,
-                                context: this.deleteIntegration.name,
+                                context: this.deleteWebhook.name,
                                 metadata: {
                                     repository: repo.name,
                                     subscriptionId: existing.id,
@@ -3214,7 +3214,7 @@ export class AzureReposService
                     } catch (error) {
                         this.logger.error({
                             message: `Error deleting webhook for repository ${repo.name}`,
-                            context: this.deleteIntegration.name,
+                            context: this.deleteWebhook.name,
                             error: error,
                             metadata: { repository: repo.name },
                         });

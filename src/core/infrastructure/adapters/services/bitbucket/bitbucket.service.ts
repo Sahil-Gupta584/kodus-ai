@@ -3556,7 +3556,7 @@ export class BitbucketService
         };
     }
 
-    async deleteIntegration(params: {
+    async deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void> {
         const authDetails = await this.getAuthDetails(
@@ -3607,7 +3607,7 @@ export class BitbucketService
 
                         this.logger.log({
                             message: `Webhook deleted successfully for repository ${repo.name}`,
-                            context: BitbucketService.name,
+                            context: this.deleteWebhook.name,
                             metadata: {
                                 repository: repo.name,
                                 workspace: repo.workspaceId,
@@ -3617,7 +3617,7 @@ export class BitbucketService
                 } catch (error) {
                     this.logger.error({
                         message: `Error deleting Bitbucket webhook for repository ${repo.name}`,
-                        context: BitbucketService.name,
+                        context: this.deleteWebhook.name,
                         error: error,
                         metadata: {
                             repository: repo.name,

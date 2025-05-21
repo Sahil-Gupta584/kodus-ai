@@ -3985,7 +3985,7 @@ export class GithubService
         }
     }
 
-    async deleteIntegration(params: {
+    async deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void> {
         const authDetails = await this.getGithubAuthDetails(
@@ -4022,7 +4022,7 @@ export class GithubService
                 } catch (error) {
                     this.logger.error({
                         message: 'Error deleting GitHub installation',
-                        context: GithubService.name,
+                        context: this.deleteWebhook.name,
                         error: error,
                     });
                 }
@@ -4059,7 +4059,7 @@ export class GithubService
                     } catch (error) {
                         this.logger.error({
                             message: `Error deleting webhook for repository ${repo.name}`,
-                            context: GithubService.name,
+                            context: this.deleteWebhook.name,
                             error: error,
                         });
                     }
