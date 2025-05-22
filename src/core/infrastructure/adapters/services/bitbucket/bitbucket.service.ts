@@ -72,6 +72,7 @@ import {
 } from '../llmProviders/llmModelProvider.helper';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -113,6 +114,8 @@ export class BitbucketService
         private readonly promptService: PromptService,
 
         private readonly logger: PinoLoggerService,
+
+        private readonly configService: ConfigService,
     ) {}
 
     async getPullRequestsWithChangesRequested(params: {
@@ -632,16 +635,19 @@ export class BitbucketService
                     },
                 );
 
-            const chain = await llm.invoke(await promptWorkflows.format({
-                organizationAndTeamData,
-                payload: JSON.stringify(workflows),
-                promptIsForChat: false,
-            }), {
-                metadata: {
-                    module: 'Setup',
-                    submodule: 'GetProductionDeployment',
+            const chain = await llm.invoke(
+                await promptWorkflows.format({
+                    organizationAndTeamData,
+                    payload: JSON.stringify(workflows),
+                    promptIsForChat: false,
+                }),
+                {
+                    metadata: {
+                        module: 'Setup',
+                        submodule: 'GetProductionDeployment',
+                    },
                 },
-            });
+            );
             return safelyParseMessageContent(chain.content).repos;
         } catch (error) {
             this.logger.error({
@@ -3578,8 +3584,9 @@ export class BitbucketService
                 )
             );
 
-            const webhookUrl =
-                process.env.GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK;
+            const webhookUrl = this.configService.get<string>(
+                'GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK',
+            );
 
             if (!webhookUrl) {
                 this.logger.error({
@@ -3617,7 +3624,8 @@ export class BitbucketService
                             metadata: {
                                 repository: repo.name,
                                 workspace: repo.workspaceId,
-                                organizationAndTeamData: params.organizationAndTeamData,
+                                organizationAndTeamData:
+                                    params.organizationAndTeamData,
                             },
                         });
                     }
@@ -3629,7 +3637,8 @@ export class BitbucketService
                         metadata: {
                             repository: repo.name,
                             workspace: repo.workspaceId,
-                            organizationAndTeamData: params.organizationAndTeamData,
+                            organizationAndTeamData:
+                                params.organizationAndTeamData,
                         },
                     });
                 }
@@ -3637,6 +3646,3 @@ export class BitbucketService
         }
     }
 }
-
-
-

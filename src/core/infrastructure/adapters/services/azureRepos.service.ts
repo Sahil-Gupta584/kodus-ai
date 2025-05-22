@@ -68,6 +68,7 @@ import {
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 import { KODY_CRITICAL_ISSUE_COMMENT_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 import { AzurePRStatus } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
+import { ConfigService } from '@nestjs/config';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
@@ -105,6 +106,7 @@ export class AzureReposService
 
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
+        private readonly configService: ConfigService,
     ) {}
 
     async createResponseToComment(params: {
@@ -3185,8 +3187,9 @@ export class AzureReposService
                             );
 
                         const webhookUrl =
-                            process.env
-                                .GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK!;
+                            this.configService.get<string>(
+                                'GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK'!,
+                            );
                         const allMatching = subs.filter(
                             (s) =>
                                 s.publisherInputs?.repository === repo.id &&

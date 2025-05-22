@@ -72,6 +72,7 @@ import {
 import { LLM_PROVIDER_SERVICE_TOKEN } from './llmProviders/llmProvider.service.contract';
 import { throws } from 'assert';
 import { LLMProviderService } from './llmProviders/llmProvider.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
@@ -112,6 +113,7 @@ export class GitlabService
 
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
+        private readonly configService: ConfigService,
     ) {}
 
     async getPullRequestByNumber(params: {
@@ -2731,8 +2733,9 @@ export class GitlabService
             for (const repo of repositories) {
                 try {
                     const webhooks = await gitlabAPI.ProjectHooks.all(repo.id);
-                    const webhookUrl =
-                        process.env.API_GITLAB_CODE_MANAGEMENT_WEBHOOK;
+                    const webhookUrl = this.configService.get<string>(
+                        'API_GITLAB_CODE_MANAGEMENT_WEBHOOK',
+                    );
 
                     const webhookToDelete = webhooks.find(
                         (webhook) => webhook.url === webhookUrl,

@@ -96,6 +96,7 @@ import {
 } from '../llmProviders/llmModelProvider.helper';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
+import { ConfigService } from '@nestjs/config';
 
 interface GitHubAuthResponse {
     token: string;
@@ -152,6 +153,7 @@ export class GithubService
 
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
+        private readonly configService: ConfigService,
     ) {}
 
     private async handleIntegration(
@@ -4062,8 +4064,10 @@ export class GithubService
                                 repo: repo.name,
                             });
 
-                        const webhookUrl =
-                            process.env.API_GITHUB_CODE_MANAGEMENT_WEBHOOK;
+                        const webhookUrl = this.configService.get<string>(
+                            'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
+                        );
+
                         const webhookToDelete = webhooks.find(
                             (webhook) => webhook.config.url === webhookUrl,
                         );
