@@ -34,7 +34,7 @@ export class ForgotPasswordUseCase {
             );
             return { message: 'Reset link sent.' };
         } catch (error) {
-            throw new InternalServerErrorException(error);
+            throw new InternalServerErrorException('Failed to send reset link.');
         }
     }
 }

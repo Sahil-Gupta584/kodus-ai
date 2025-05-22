@@ -13,6 +13,10 @@ import {
     UnauthorizedException,
 } from '@nestjs/common';
 
+interface DecodedPayload {
+  readonly email: string;
+}
+
 @Injectable()
 export class ResetPasswordUseCase {
     constructor(
@@ -24,7 +28,7 @@ export class ResetPasswordUseCase {
 
     async execute(token: string, newPassword: string) {
         try {
-            const decode = await this.authService.verifyForgotPassToken(token);
+            const decode:DecodedPayload = await this.authService.verifyForgotPassToken(token);
             if (!decode?.email) {
                 throw new UnauthorizedException(
                     'Token does not contain user email',
@@ -34,7 +38,7 @@ export class ResetPasswordUseCase {
                 newPassword,
                 10,
             );
-            const sendForgotPasswordEmailRes = await this.usersService.update(
+            await this.usersService.update(
                 { email: decode.email },
                 { password },
             );

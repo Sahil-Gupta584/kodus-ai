@@ -54,6 +54,7 @@ const sendForgotPasswordEmail = async (email:string,name:string, token:string) =
 
         const recipients = [new Recipient(email, name)];
         const sentFrom = new Sender('info@domain.com');
+console.log('reset-link', `${webUrl}/forgot-password/reset?token=${token}`);
 
         const personalization = [
             {
