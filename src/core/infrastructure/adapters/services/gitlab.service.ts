@@ -2749,6 +2749,10 @@ export class GitlabService
                         message: `Error deleting webhook for repository ${repo.name}`,
                         context: GitlabService.name,
                         error: error,
+                        metadata: {
+                            organizationAndTeamData: params.organizationAndTeamData,
+                            repoId: repo.id,
+                        },
                     });
                 }
             }

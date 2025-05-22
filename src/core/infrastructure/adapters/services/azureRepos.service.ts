@@ -3206,6 +3206,7 @@ export class AzureReposService
                                 message: `Webhook removed for repository ${repo.name} (id=${existing.id})`,
                                 context: this.deleteWebhook.name,
                                 metadata: {
+                                    organizationAndTeamData: params.organizationAndTeamData,
                                     repository: repo.name,
                                     subscriptionId: existing.id,
                                 },
@@ -3216,7 +3217,10 @@ export class AzureReposService
                             message: `Error deleting webhook for repository ${repo.name}`,
                             context: this.deleteWebhook.name,
                             error: error,
-                            metadata: { repository: repo.name },
+                            metadata: {
+                                organizationAndTeamData: params.organizationAndTeamData,
+                                repository: repo.name,
+                            },
                         });
                     }
                 }

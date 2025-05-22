@@ -3617,6 +3617,7 @@ export class BitbucketService
                             metadata: {
                                 repository: repo.name,
                                 workspace: repo.workspaceId,
+                                organizationAndTeamData: params.organizationAndTeamData,
                             },
                         });
                     }
@@ -3628,6 +3629,7 @@ export class BitbucketService
                         metadata: {
                             repository: repo.name,
                             workspace: repo.workspaceId,
+                            organizationAndTeamData: params.organizationAndTeamData,
                         },
                     });
                 }

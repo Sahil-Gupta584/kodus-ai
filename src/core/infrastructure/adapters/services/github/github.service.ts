@@ -4040,6 +4040,9 @@ export class GithubService
                         message: 'Error deleting GitHub installation',
                         context: this.deleteWebhook.name,
                         error: error,
+                        metadata: {
+                            organizationAndTeamData: params.organizationAndTeamData,
+                        },
                     });
                 }
             }
@@ -4077,6 +4080,10 @@ export class GithubService
                             message: `Error deleting webhook for repository ${repo.name}`,
                             context: this.deleteWebhook.name,
                             error: error,
+                            metadata: {
+                                organizationAndTeamData: params.organizationAndTeamData,
+                                repoId: repo.id,
+                            },
                         });
                     }
                 }
