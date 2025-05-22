@@ -72,6 +72,7 @@ import {
 import { LLM_PROVIDER_SERVICE_TOKEN } from './llmProviders/llmProvider.service.contract';
 import { throws } from 'assert';
 import { LLMProviderService } from './llmProviders/llmProvider.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
@@ -112,6 +113,7 @@ export class GitlabService
 
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
+        private readonly configService: ConfigService,
     ) {}
 
     async getPullRequestByNumber(params: {
@@ -2697,6 +2699,66 @@ export class GitlabService
             throw new BadRequestException(
                 'Failed to mark discussion as resolved for merge request',
             );
+        }
+    }
+
+    async deleteWebhook(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const authDetails = await this.getAuthDetails(
+            params.organizationAndTeamData,
+        );
+
+        const gitlabAPI = this.instanceGitlabApi(authDetails);
+
+        const integration = await this.integrationService.findOne({
+            organization: {
+                uuid: params.organizationAndTeamData.organizationId,
+            },
+            team: { uuid: params.organizationAndTeamData.teamId },
+            platform: PlatformType.GITLAB,
+        });
+
+        if (!integration?.authIntegration?.authDetails) {
+            return;
+        }
+
+        const repositories =
+            await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                params.organizationAndTeamData,
+                IntegrationConfigKey.REPOSITORIES,
+            );
+
+        if (repositories) {
+            for (const repo of repositories) {
+                try {
+                    const webhooks = await gitlabAPI.ProjectHooks.all(repo.id);
+                    const webhookUrl = this.configService.get<string>(
+                        'API_GITLAB_CODE_MANAGEMENT_WEBHOOK',
+                    );
+
+                    const webhookToDelete = webhooks.find(
+                        (webhook) => webhook.url === webhookUrl,
+                    );
+
+                    if (webhookToDelete) {
+                        await gitlabAPI.ProjectHooks.remove(
+                            repo.id,
+                            webhookToDelete.id,
+                        );
+                    }
+                } catch (error) {
+                    this.logger.error({
+                        message: `Error deleting webhook for repository ${repo.name}`,
+                        context: GitlabService.name,
+                        error: error,
+                        metadata: {
+                            organizationAndTeamData: params.organizationAndTeamData,
+                            repoId: repo.id,
+                        },
+                    });
+                }
+            }
         }
     }
 }

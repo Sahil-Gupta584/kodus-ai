@@ -72,6 +72,7 @@ import {
 } from '../llmProviders/llmModelProvider.helper';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -113,6 +114,8 @@ export class BitbucketService
         private readonly promptService: PromptService,
 
         private readonly logger: PinoLoggerService,
+
+        private readonly configService: ConfigService,
     ) {}
 
     async getPullRequestsWithChangesRequested(params: {
@@ -632,16 +635,19 @@ export class BitbucketService
                     },
                 );
 
-            const chain = await llm.invoke(await promptWorkflows.format({
-                organizationAndTeamData,
-                payload: JSON.stringify(workflows),
-                promptIsForChat: false,
-            }), {
-                metadata: {
-                    module: 'Setup',
-                    submodule: 'GetProductionDeployment',
+            const chain = await llm.invoke(
+                await promptWorkflows.format({
+                    organizationAndTeamData,
+                    payload: JSON.stringify(workflows),
+                    promptIsForChat: false,
+                }),
+                {
+                    metadata: {
+                        module: 'Setup',
+                        submodule: 'GetProductionDeployment',
+                    },
                 },
-            });
+            );
             return safelyParseMessageContent(chain.content).repos;
         } catch (error) {
             this.logger.error({
@@ -3561,7 +3567,82 @@ export class BitbucketService
             },
         };
     }
+
+    async deleteWebhook(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const authDetails = await this.getAuthDetails(
+            params.organizationAndTeamData,
+        );
+        const bitbucketAPI = this.instanceBitbucketApi(authDetails);
+
+        if (authDetails.authMode === AuthMode.TOKEN) {
+            const repositories = <Repositories[]>(
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                )
+            );
+
+            const webhookUrl = this.configService.get<string>(
+                'GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK',
+            );
+
+            if (!webhookUrl) {
+                this.logger.error({
+                    message: 'Bitbucket webhook URL not found',
+                    context: BitbucketService.name,
+                });
+                return;
+            }
+
+            for (const repo of repositories) {
+                try {
+                    const existingHooks = await bitbucketAPI.webhooks
+                        .listForRepo({
+                            repo_slug: `{${repo.id}}`,
+                            workspace: `{${repo.workspaceId}}`,
+                        })
+                        .then((res) =>
+                            this.getPaginatedResults(bitbucketAPI, res),
+                        );
+
+                    const webhook = existingHooks.find(
+                        (hook) => hook.url === webhookUrl,
+                    );
+
+                    if (webhook) {
+                        await bitbucketAPI.repositories.deleteWebhook({
+                            repo_slug: `{${repo.id}}`,
+                            workspace: `{${repo.workspaceId}}`,
+                            uid: webhook.uuid,
+                        });
+
+                        this.logger.log({
+                            message: `Webhook deleted successfully for repository ${repo.name}`,
+                            context: this.deleteWebhook.name,
+                            metadata: {
+                                repository: repo.name,
+                                workspace: repo.workspaceId,
+                                organizationAndTeamData:
+                                    params.organizationAndTeamData,
+                            },
+                        });
+                    }
+                } catch (error) {
+                    this.logger.error({
+                        message: `Error deleting Bitbucket webhook for repository ${repo.name}`,
+                        context: this.deleteWebhook.name,
+                        error: error,
+                        metadata: {
+                            repository: repo.name,
+                            workspace: repo.workspaceId,
+                            organizationAndTeamData:
+                                params.organizationAndTeamData,
+                        },
+                    });
+                }
+            }
+        }
+    }
 }
-
-
-

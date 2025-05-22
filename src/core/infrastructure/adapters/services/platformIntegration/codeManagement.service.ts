@@ -4,7 +4,11 @@ import {
     IIntegrationService,
     INTEGRATION_SERVICE_TOKEN,
 } from '@/core/domain/integrations/contracts/integration.service.contracts';
-import { PullRequestReviewComment, PullRequests, PullRequestsWithChangesRequested } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
+import {
+    PullRequestReviewComment,
+    PullRequests,
+    PullRequestsWithChangesRequested,
+} from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
@@ -13,7 +17,11 @@ import { DoraMetricsConfig } from '@/core/domain/metrics/contracts/doraMetrics.f
 import { Commit } from '@/config/types/general/commit.type';
 import { extractOrganizationAndTeamData } from '@/shared/utils/helpers';
 import { CodeManagementConnectionStatus } from '@/shared/utils/decorators/validate-code-management-integration.decorator';
-import { CommentResult, Repository, ReviewComment } from '@/config/types/general/codeReview.type';
+import {
+    CommentResult,
+    Repository,
+    ReviewComment,
+} from '@/config/types/general/codeReview.type';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
 
 @Injectable()
@@ -22,7 +30,7 @@ export class CodeManagementService implements ICodeManagementService {
         @Inject(forwardRef(() => INTEGRATION_SERVICE_TOKEN))
         private readonly integrationService: IIntegrationService,
         private platformIntegrationFactory: PlatformIntegrationFactory,
-    ) { }
+    ) {}
 
     async getTypeIntegration(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -730,7 +738,7 @@ export class CodeManagementService implements ICodeManagementService {
             organizationAndTeamData: OrganizationAndTeamData;
             repository: { name: string; id: string };
             prNumber: number;
-            criticalComments: CommentResult[]
+            criticalComments: CommentResult[];
         },
         type?: PlatformType,
     ) {
@@ -834,16 +842,17 @@ export class CodeManagementService implements ICodeManagementService {
             );
         }
 
-        const codeManagementService = this.platformIntegrationFactory.getCodeManagementService(type);
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
 
         return codeManagementService.markReviewCommentAsResolved(params);
     }
 
     async getPullRequestReviewComments(
         params: {
-            organizationAndTeamData: OrganizationAndTeamData,
-            repository: Partial<Repository>,
-            prNumber: number,
+            organizationAndTeamData: OrganizationAndTeamData;
+            repository: Partial<Repository>;
+            prNumber: number;
         },
         type?: PlatformType,
     ): Promise<PullRequestReviewComment[] | null> {
@@ -853,10 +862,10 @@ export class CodeManagementService implements ICodeManagementService {
             );
         }
 
-        const codeManagementService = this.platformIntegrationFactory.getCodeManagementService(type);
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
 
         return codeManagementService.getPullRequestReviewComments(params);
-
     }
 
     async getPullRequestsByRepository(
@@ -882,12 +891,13 @@ export class CodeManagementService implements ICodeManagementService {
         return codeManagementService.getPullRequestsByRepository(params);
     }
 
-    async getPullRequestReviewThreads(params:
-        {
+    async getPullRequestReviewThreads(
+        params: {
             organizationAndTeamData: OrganizationAndTeamData;
-            repository: Partial<Repository>; prNumber: number;
+            repository: Partial<Repository>;
+            prNumber: number;
         },
-        type?: PlatformType
+        type?: PlatformType,
     ): Promise<any | null> {
         if (!type) {
             type = await this.getTypeIntegration(
@@ -899,34 +909,36 @@ export class CodeManagementService implements ICodeManagementService {
             this.platformIntegrationFactory.getCodeManagementService(type);
 
         return codeManagementService.getPullRequestReviewThreads(params);
-
     }
 
-    async getPullRequestsWithChangesRequested(params: {
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: Partial<Repository>,
-    },
-        type?: PlatformType
+    async getPullRequestsWithChangesRequested(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            repository: Partial<Repository>;
+        },
+        type?: PlatformType,
     ): Promise<PullRequestsWithChangesRequested[] | null> {
-
         if (!type) {
             type = await this.getTypeIntegration(
-                extractOrganizationAndTeamData(params)
-            )
+                extractOrganizationAndTeamData(params),
+            );
         }
 
         const codeManagementService =
             this.platformIntegrationFactory.getCodeManagementService(type);
 
-        return codeManagementService.getPullRequestsWithChangesRequested(params);
+        return codeManagementService.getPullRequestsWithChangesRequested(
+            params,
+        );
     }
 
-    async getListOfValidReviews(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        repository: Partial<Repository>;
-        prNumber: number;
-    },
-        type?: PlatformType
+    async getListOfValidReviews(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            repository: Partial<Repository>;
+            prNumber: number;
+        },
+        type?: PlatformType,
     ): Promise<any[] | null> {
         if (!type) {
             type = await this.getTypeIntegration(
@@ -938,14 +950,16 @@ export class CodeManagementService implements ICodeManagementService {
             this.platformIntegrationFactory.getCodeManagementService(type);
 
         return codeManagementService.getListOfValidReviews(params);
-
     }
 
-    async checkIfPullRequestShouldBeApproved(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        prNumber: number;
-        repository: { id: string; name: string; };
-    }, type?: PlatformType): Promise<any | null> {
+    async checkIfPullRequestShouldBeApproved(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            prNumber: number;
+            repository: { id: string; name: string };
+        },
+        type?: PlatformType,
+    ): Promise<any | null> {
         if (!type) {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
@@ -956,5 +970,22 @@ export class CodeManagementService implements ICodeManagementService {
             this.platformIntegrationFactory.getCodeManagementService(type);
 
         return codeManagementService.checkIfPullRequestShouldBeApproved(params);
+    }
+
+    async deleteWebhook(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const type = await this.getTypeIntegration(
+            params.organizationAndTeamData,
+        );
+
+        if (!type) {
+            return;
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.deleteWebhook(params);
     }
 }

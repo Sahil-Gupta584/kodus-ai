@@ -96,6 +96,7 @@ import {
 } from '../llmProviders/llmModelProvider.helper';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
+import { ConfigService } from '@nestjs/config';
 
 interface GitHubAuthResponse {
     token: string;
@@ -152,6 +153,7 @@ export class GithubService
 
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
+        private readonly configService: ConfigService,
     ) {}
 
     private async handleIntegration(
@@ -3998,6 +4000,98 @@ export class GithubService
             });
 
             return null;
+        }
+    }
+
+    async deleteWebhook(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const authDetails = await this.getGithubAuthDetails(
+            params.organizationAndTeamData,
+        );
+
+        const octokit = await this.instanceOctokit(
+            params.organizationAndTeamData,
+        );
+
+        const integration = await this.integrationService.findOne({
+            organization: {
+                uuid: params.organizationAndTeamData.organizationId,
+            },
+            team: { uuid: params.organizationAndTeamData.teamId },
+            platform: PlatformType.GITHUB,
+        });
+
+        if (!integration?.authIntegration?.authDetails) {
+            return;
+        }
+
+        const { authMode } = integration.authIntegration.authDetails;
+
+        if (authMode === AuthMode.OAUTH) {
+            if (integration.authIntegration.authDetails.installationId) {
+                try {
+                    const appOctokit = this.createOctokitInstance();
+                    await appOctokit.apps.deleteInstallation({
+                        installation_id:
+                            integration.authIntegration.authDetails
+                                .installationId,
+                    });
+                } catch (error) {
+                    this.logger.error({
+                        message: 'Error deleting GitHub installation',
+                        context: this.deleteWebhook.name,
+                        error: error,
+                        metadata: {
+                            organizationAndTeamData: params.organizationAndTeamData,
+                        },
+                    });
+                }
+            }
+        } else if (authMode === AuthMode.TOKEN) {
+            const repositories =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
+
+            if (repositories) {
+                for (const repo of repositories) {
+                    try {
+                        const { data: webhooks } =
+                            await octokit.repos.listWebhooks({
+                                owner: authDetails.org,
+                                repo: repo.name,
+                            });
+
+                        const webhookUrl = this.configService.get<string>(
+                            'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
+                        );
+
+                        const webhookToDelete = webhooks.find(
+                            (webhook) => webhook.config.url === webhookUrl,
+                        );
+
+                        if (webhookToDelete) {
+                            await octokit.repos.deleteWebhook({
+                                owner: authDetails.org,
+                                repo: repo.name,
+                                hook_id: webhookToDelete.id,
+                            });
+                        }
+                    } catch (error) {
+                        this.logger.error({
+                            message: `Error deleting webhook for repository ${repo.name}`,
+                            context: this.deleteWebhook.name,
+                            error: error,
+                            metadata: {
+                                organizationAndTeamData: params.organizationAndTeamData,
+                                repoId: repo.id,
+                            },
+                        });
+                    }
+                }
+            }
         }
     }
 }

@@ -68,6 +68,7 @@ import {
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 import { KODY_CRITICAL_ISSUE_COMMENT_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 import { AzurePRStatus } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
+import { ConfigService } from '@nestjs/config';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
@@ -105,6 +106,7 @@ export class AzureReposService
 
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
+        private readonly configService: ConfigService,
     ) {}
 
     async createResponseToComment(params: {
@@ -3146,5 +3148,86 @@ export class AzureReposService
             });
 
         return criticalIssuesSummaryArray;
+    }
+
+    async deleteWebhook(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const authDetails = await this.getAuthDetails(
+            params.organizationAndTeamData,
+        );
+
+        // Se for conexão via PAT, remove os webhooks
+        if (authDetails.authMode === AuthMode.TOKEN) {
+            const repositories =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
+
+            if (repositories) {
+                for (const repo of repositories) {
+                    try {
+                        const projectId = await this.getProjectIdFromRepository(
+                            params.organizationAndTeamData,
+                            repo.id,
+                        );
+
+                        if (!projectId) {
+                            continue;
+                        }
+
+                        const subs =
+                            await this.azureReposRequestHelper.listSubscriptionsByProject(
+                                {
+                                    orgName: authDetails.orgName,
+                                    token: authDetails.token,
+                                    projectId,
+                                },
+                            );
+
+                        const webhookUrl =
+                            this.configService.get<string>(
+                                'GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK'!,
+                            );
+                        const allMatching = subs.filter(
+                            (s) =>
+                                s.publisherInputs?.repository === repo.id &&
+                                s.consumerInputs?.url?.includes(webhookUrl),
+                        );
+
+                        for (const existing of allMatching) {
+                            await this.azureReposRequestHelper.deleteWebhookById(
+                                {
+                                    orgName: authDetails.orgName,
+                                    token: authDetails.token,
+                                    subscriptionId: existing.id,
+                                },
+                            );
+
+                            this.logger.log({
+                                message: `Webhook removed for repository ${repo.name} (id=${existing.id})`,
+                                context: this.deleteWebhook.name,
+                                metadata: {
+                                    organizationAndTeamData: params.organizationAndTeamData,
+                                    repository: repo.name,
+                                    subscriptionId: existing.id,
+                                },
+                            });
+                        }
+                    } catch (error) {
+                        this.logger.error({
+                            message: `Error deleting webhook for repository ${repo.name}`,
+                            context: this.deleteWebhook.name,
+                            error: error,
+                            metadata: {
+                                organizationAndTeamData: params.organizationAndTeamData,
+                                repository: repo.name,
+                            },
+                        });
+                    }
+                }
+            }
+        }
     }
 }
