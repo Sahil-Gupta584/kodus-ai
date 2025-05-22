@@ -2721,72 +2721,35 @@ export class GitlabService
             return;
         }
 
-        const { authMode } = integration.authIntegration.authDetails;
+        const repositories =
+            await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                params.organizationAndTeamData,
+                IntegrationConfigKey.REPOSITORIES,
+            );
 
-        if (authMode === AuthMode.OAUTH) {
-            try {
-                if (integration.authIntegration.authDetails.accessToken) {
-                    const axios = require('axios');
-                    const gitlabUrl = 'https://gitlab.com';
+        if (repositories) {
+            for (const repo of repositories) {
+                try {
+                    const webhooks = await gitlabAPI.ProjectHooks.all(repo.id);
+                    const webhookUrl =
+                        process.env.API_GITLAB_CODE_MANAGEMENT_WEBHOOK;
 
-                    const response = await axios.post(
-                        `${gitlabUrl}/oauth/revoke`,
-                        {
-                            token: integration.authIntegration.authDetails
-                                .accessToken,
-                            client_id: process.env.GLOBAL_GITLAB_CLIENT_ID,
-                            client_secret:
-                                process.env.GLOBAL_GITLAB_CLIENT_SECRET,
-                        },
+                    const webhookToDelete = webhooks.find(
+                        (webhook) => webhook.url === webhookUrl,
                     );
 
-                    if (response.status === 200) {
-                        this.logger.log({
-                            message: 'GitLab OAuth token successfully revoked',
-                            context: GitlabService.name,
-                        });
-                    }
-                }
-            } catch (error) {
-                this.logger.error({
-                    message: 'Error deleting GitLab installation',
-                    context: GitlabService.name,
-                    error: error,
-                });
-            }
-        } else if (authMode === AuthMode.TOKEN) {
-            const repositories =
-                await this.findOneByOrganizationAndTeamDataAndConfigKey(
-                    params.organizationAndTeamData,
-                    IntegrationConfigKey.REPOSITORIES,
-                );
-
-            if (repositories) {
-                for (const repo of repositories) {
-                    try {
-                        const webhooks = await gitlabAPI.ProjectHooks.all(
+                    if (webhookToDelete) {
+                        await gitlabAPI.ProjectHooks.remove(
                             repo.id,
+                            webhookToDelete.id,
                         );
-                        const webhookUrl =
-                            process.env.API_GITLAB_CODE_MANAGEMENT_WEBHOOK;
-
-                        const webhookToDelete = webhooks.find(
-                            (webhook) => webhook.url === webhookUrl,
-                        );
-
-                        if (webhookToDelete) {
-                            await gitlabAPI.ProjectHooks.remove(
-                                repo.id,
-                                webhookToDelete.id,
-                            );
-                        }
-                    } catch (error) {
-                        this.logger.error({
-                            message: `Error deleting webhook for repository ${repo.name}`,
-                            context: GitlabService.name,
-                            error: error,
-                        });
                     }
+                } catch (error) {
+                    this.logger.error({
+                        message: `Error deleting webhook for repository ${repo.name}`,
+                        context: GitlabService.name,
+                        error: error,
+                    });
                 }
             }
         }
