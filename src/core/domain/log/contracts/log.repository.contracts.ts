@@ -5,6 +5,7 @@ export const LOG_REPOSITORY_TOKEN = Symbol('LogRepository');
 
 export interface ILogRepository {
     create(log: Omit<ILog, 'uuid'>): Promise<LogEntity | void>;
+    createMany(logs: Array<Omit<ILog, 'uuid'>>): Promise<void>;
     update(
         filter: Partial<ILog>,
         data: Partial<ILog>,

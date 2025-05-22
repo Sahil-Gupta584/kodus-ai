@@ -17,6 +17,22 @@ export class LogDatabaseRepository implements ILogRepository {
         private readonly logModel: Model<LogModel>,
     ) {}
 
+    // Em LogRepository
+    async createMany(logs: Array<Omit<ILog, 'uuid'>>): Promise<void> {
+        if (!logs || logs.length === 0) {
+            return;
+        }
+        try {
+            await this.logModel.insertMany(logs, { ordered: false });
+        } catch (error) {
+            console.error(
+                'Erro ao inserir logs em lote (batch) no repositório:',
+                error,
+            );
+            throw error;
+        }
+    }
+
     async findOne(filter?: Partial<ILog>): Promise<LogEntity> {
         try {
             const log = await this.logModel.findOne(filter).exec();

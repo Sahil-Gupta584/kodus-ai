@@ -9,12 +9,10 @@ import { MESSAGE_BROKER_SERVICE_TOKEN } from '@/shared/domain/contracts/message-
 import { MessageBrokerService } from '@/core/infrastructure/adapters/services/messageBroker/messageBroker.service';
 import { OrganizationMetricsConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/organizationMetrics.consumer';
 import { OrganizationMetricsModule } from './organizationMetrics.module';
-import { OrganizationArtifactDailyConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/organizationArtifactsDaily.consumer';
 import { OrganizationArtifactsModule } from './organizationArtifacts.module';
 import { OrganizationArtifactWeeklyConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/organizationArtifactsWeekly.consumer';
 import { TeamArtifactDailyConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/teamArtifactsDaily.consumer';
 import { TeamArtifactWeeklyConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/teamArtifactsWeekly.consumer';
-import { EnrichTeamArtifactWeeklyConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/enrichTeamArtifactsWeekly.consumer';
 import { WeeklyExecutiveCheckinConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/weeklyExecutiveCheckin.consumer';
 import { AutomationStrategyModule } from './automationStrategy.module';
 import { MetricsFlowDailyConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/flowMetricsDaily.consumer';
@@ -112,11 +110,9 @@ export class RabbitMQWrapperModule {
                 MetricsFlowDailyConsumer,
                 MetricsDoraDailyConsumer,
                 OrganizationMetricsConsumer,
-                OrganizationArtifactDailyConsumer,
                 OrganizationArtifactWeeklyConsumer,
                 TeamArtifactDailyConsumer,
                 TeamArtifactWeeklyConsumer,
-                EnrichTeamArtifactWeeklyConsumer,
                 WeeklyExecutiveCheckinConsumer,
                 CodeReviewFeedbackConsumer,
                 RabbitmqConsumeErrorFilter,
