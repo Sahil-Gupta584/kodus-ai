@@ -315,9 +315,9 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
             case 'OPEN':
                 return true;
             case 'MERGED':
-                return true;
+                return false;
             case 'DECLINED':
-                return true;
+                return false;
             default:
                 return false;
         }
