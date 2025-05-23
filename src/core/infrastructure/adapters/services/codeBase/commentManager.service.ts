@@ -81,6 +81,18 @@ export class CommentManagerService implements ICommentManagerService {
                     temperature: 0,
                 });
 
+                this.logger.log({
+                    message: `GenerateSummaryPR: Start PR#${pullRequest?.number}`,
+                    context: CommentManagerService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        pullRequestNumber: pullRequest?.number,
+                        repositoryId: repository.id,
+                        summaryConfig,
+                        updatedPR: updatedPR?.body,
+                    },
+                });
+
                 // Building the base prompt
                 let promptBase = `Based on the file change summaries provided below, generate a precise description for this pull request.
 The description should strictly reflect the information provided in the summaries and the pull request metadata.
@@ -140,8 +152,32 @@ Avoid making assumptions or including inferred details not present in the provid
                     summaryConfig?.behaviourForExistingDescription ===
                         BehaviourForExistingDescription.CONCATENATE
                 ) {
+                    this.logger.log({
+                        message: `GenerateSummaryPR: Concatenate behavior for PR#${pullRequest?.number}`,
+                        context: CommentManagerService.name,
+                        metadata: {
+                            organizationAndTeamData,
+                            pullRequestNumber: pullRequest?.number,
+                            repositoryId: repository.id,
+                            summaryConfig,
+                            updatedPR: updatedPR?.body,
+                        },
+                    });
+
                     finalDescription = `${updatedPR.body}\n\n---\n\n${finalDescription}`;
                 }
+
+                this.logger.log({
+                    message: `GenerateSummaryPR: End PR#${pullRequest?.number}`,
+                    context: CommentManagerService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        pullRequestNumber: pullRequest?.number,
+                        repositoryId: repository.id,
+                        summaryConfig,
+                        finalDescription,
+                    },
+                });
 
                 return finalDescription.toString();
             } catch (error) {
