@@ -76,21 +76,22 @@ export class CommentManagerService implements ICommentManagerService {
                         prNumber: pullRequest?.number,
                     });
 
-                let llm = this.llmProviderService.getLLMProvider({
-                    model: LLMModelProvider.OPENAI_GPT_4O,
-                    temperature: 0,
-                });
-
+                // Log for debugging
                 this.logger.log({
-                    message: `GenerateSummaryPR: Start PR#${pullRequest?.number}`,
+                    message: `GenerateSummaryPR: Start PR#${pullRequest?.number}. After get PR data`,
                     context: CommentManagerService.name,
                     metadata: {
                         organizationAndTeamData,
                         pullRequestNumber: pullRequest?.number,
                         repositoryId: repository.id,
                         summaryConfig,
-                        updatedPR: updatedPR?.body,
+                        prDescription: updatedPR?.body,
                     },
+                });
+
+                let llm = this.llmProviderService.getLLMProvider({
+                    model: LLMModelProvider.OPENAI_GPT_4O,
+                    temperature: 0,
                 });
 
                 // Building the base prompt
@@ -152,29 +153,32 @@ Avoid making assumptions or including inferred details not present in the provid
                     summaryConfig?.behaviourForExistingDescription ===
                         BehaviourForExistingDescription.CONCATENATE
                 ) {
+                    // Log for debugging
                     this.logger.log({
-                        message: `GenerateSummaryPR: Concatenate behavior for PR#${pullRequest?.number}`,
+                        message: `GenerateSummaryPR: Concatenate behavior for PR#${pullRequest?.number}. Before concatenate`,
                         context: CommentManagerService.name,
                         metadata: {
                             organizationAndTeamData,
                             pullRequestNumber: pullRequest?.number,
                             repositoryId: repository.id,
                             summaryConfig,
-                            updatedPR: updatedPR?.body,
+                            body: updatedPR?.body,
                         },
                     });
 
                     finalDescription = `${updatedPR.body}\n\n---\n\n${finalDescription}`;
                 }
 
+                // Log for debugging
                 this.logger.log({
-                    message: `GenerateSummaryPR: End PR#${pullRequest?.number}`,
+                    message: `GenerateSummaryPR: End PR#${pullRequest?.number}. After concatenate`,
                     context: CommentManagerService.name,
                     metadata: {
                         organizationAndTeamData,
                         pullRequestNumber: pullRequest?.number,
                         repositoryId: repository.id,
                         summaryConfig,
+                        body: updatedPR?.body,
                         finalDescription,
                     },
                 });
