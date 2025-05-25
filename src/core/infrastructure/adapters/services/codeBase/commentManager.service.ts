@@ -83,7 +83,7 @@ export class CommentManagerService implements ICommentManagerService {
                     metadata: {
                         organizationAndTeamData,
                         pullRequestNumber: pullRequest?.number,
-                        repositoryId: repository.id,
+                        repositoryId: repository?.id,
                         summaryConfig,
                         prDescription: updatedPR?.body,
                     },
@@ -160,7 +160,7 @@ Avoid making assumptions or including inferred details not present in the provid
                         metadata: {
                             organizationAndTeamData,
                             pullRequestNumber: pullRequest?.number,
-                            repositoryId: repository.id,
+                            repositoryId: repository?.id,
                             summaryConfig,
                             body: updatedPR?.body,
                         },
@@ -176,7 +176,7 @@ Avoid making assumptions or including inferred details not present in the provid
                     metadata: {
                         organizationAndTeamData,
                         pullRequestNumber: pullRequest?.number,
-                        repositoryId: repository.id,
+                        repositoryId: repository?.id,
                         summaryConfig,
                         body: updatedPR?.body,
                         finalDescription,
