@@ -3,7 +3,6 @@ import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.
 import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
 import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
 import { ImplementationStatus } from '@/core/domain/pullRequests/enums/implementationStatus.enum';
 
 import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
@@ -12,6 +11,7 @@ import {
     FunctionsAffectResult,
     FunctionSimilarity,
 } from '@/ee/codeBase/ast/services/code-analyzer.service';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { FunctionAnalysis } from '@/ee/codeBase/ast/types/types';
 
 export interface IFinalAnalysisResult {

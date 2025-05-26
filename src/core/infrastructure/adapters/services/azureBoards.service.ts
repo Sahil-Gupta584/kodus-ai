@@ -38,7 +38,6 @@ import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { StatusCategoryToColumn } from '@/shared/domain/enums/status-category-azure-boards.enum';
 
 import { IntegrationServiceDecorator } from '@/shared/utils/decorators/integration-service.decorator';
-import { getDoingAndWaitingColumns } from '@/shared/utils/langchainCommon/document';
 import { Inject, Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { ProjectManagementConnectionStatus } from '@/shared/utils/decorators/validate-project-management-integration.decorator';
@@ -501,21 +500,6 @@ export class AzureBoardsService
         integration,
         teamId,
     ) {
-        const { waitingColumns, doingColumn } =
-            await getDoingAndWaitingColumns(columns);
-
-        this.integrationConfigService.createOrUpdateConfig(
-            IntegrationConfigKey.DOING_COLUMN,
-            doingColumn || {},
-            integration?.uuid,
-            teamId,
-        );
-
-        this.integrationConfigService.createOrUpdateConfig(
-            IntegrationConfigKey.WAITING_COLUMNS,
-            waitingColumns.waiting_columns || [],
-            integration?.uuid,
-            teamId,
-        );
+        return {};
     }
 }

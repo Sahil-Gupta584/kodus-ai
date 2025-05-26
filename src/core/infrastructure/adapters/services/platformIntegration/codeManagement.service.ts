@@ -972,4 +972,21 @@ export class CodeManagementService implements ICodeManagementService {
 
         return codeManagementService.checkIfPullRequestShouldBeApproved(params);
     }
+
+    async deleteWebhook(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const type = await this.getTypeIntegration(
+            params.organizationAndTeamData,
+        );
+
+        if (!type) {
+            return;
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.deleteWebhook(params);
+    }
 }

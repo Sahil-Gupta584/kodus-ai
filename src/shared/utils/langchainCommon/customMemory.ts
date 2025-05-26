@@ -11,8 +11,7 @@ import {
 } from '@langchain/community/memory/chat_memory';
 import { encoding_for_model, TiktokenModel } from 'tiktoken';
 import { getBufferString } from '@langchain/core/messages';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '../get-llm-model-provider.util';
+import { MODEL_STRATEGIES, LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 
 // Definition of the input for the custom memory
 export interface CustomChatMemoryInput extends BaseChatMemoryInput {
@@ -53,9 +52,7 @@ export class CustomChatMemory
         let totalTokens = 0;
         const maxTokens = 12000;
         const encoder = encoding_for_model(
-            getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ) as TiktokenModel,
+            MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName as TiktokenModel,
         );
         const filteredMessages = [];
 

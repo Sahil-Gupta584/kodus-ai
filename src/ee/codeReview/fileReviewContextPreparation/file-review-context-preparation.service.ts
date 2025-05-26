@@ -17,7 +17,7 @@ import {
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { BaseFileReviewContextPreparation } from '@/core/infrastructure/adapters/services/fileReviewContextPreparation/base-file-review-context-preparation.service';
 import { ReviewModeOptions } from '@/shared/interfaces/file-review-context-preparation.interface';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisService.contract';
 import { LLM_ANALYSIS_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/codeBase/llmAnalysis.service';
 
@@ -166,7 +166,7 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
         const response = await this.aiAnalysisService.selectReviewMode(
             options.context.organizationAndTeamData,
             options.context.pullRequest.number,
-            LLMModelProvider.DEEPSEEK_V3,
+            LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
             options.fileChangeContext.file,
             options.patch,
         );

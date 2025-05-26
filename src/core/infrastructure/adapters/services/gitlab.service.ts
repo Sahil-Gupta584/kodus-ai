@@ -36,7 +36,6 @@ import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { PinoLoggerService } from './logger/pino.service';
 import { PromptService } from './prompt.service';
@@ -50,8 +49,6 @@ import {
 import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { CodeManagementConnectionStatus } from '@/shared/utils/decorators/validate-code-management-integration.decorator';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 import {
     getTranslationsForLanguageByCategory,
@@ -65,6 +62,14 @@ import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLe
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 import { KODY_CODE_REVIEW_COMPLETED_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from './llmProviders/llmModelProvider.helper';
+import { LLM_PROVIDER_SERVICE_TOKEN } from './llmProviders/llmProvider.service.contract';
+import { throws } from 'assert';
+import { LLMProviderService } from './llmProviders/llmProvider.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
@@ -97,8 +102,12 @@ export class GitlabService
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parameterService: IParametersService,
 
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
+
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
+        private readonly configService: ConfigService,
     ) {}
 
     async getPullRequestByNumber(params: {
@@ -1013,12 +1022,10 @@ export class GitlabService
             return [];
         }
 
-        let llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
-        }).bind({
-            response_format: { type: 'json_object' },
+        let llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const promptWorkflows =
@@ -1031,12 +1038,19 @@ export class GitlabService
                 },
             );
 
-        const chain = await llm.invoke(promptWorkflows, {
-            metadata: {
-                module: 'Setup',
-                submodule: 'GetProductionDeployment',
+        const chain = await llm.invoke(
+            await promptWorkflows.format({
+                organizationAndTeamData,
+                payload: JSON.stringify(workflows),
+                promptIsForChat: false,
+            }),
+            {
+                metadata: {
+                    module: 'Setup',
+                    submodule: 'GetProductionDeployment',
+                },
             },
-        });
+        );
 
         return safelyParseMessageContent(chain.content).repos;
     }
@@ -1124,12 +1138,10 @@ export class GitlabService
             return [];
         }
 
-        let llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
-        }).bind({
-            response_format: { type: 'json_object' },
+        let llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const promptReleases =
@@ -1142,12 +1154,19 @@ export class GitlabService
                 },
             );
 
-        const chain = await llm.invoke(promptReleases, {
-            metadata: {
-                module: 'Setup',
-                submodule: 'GetProductionReleases',
+        const chain = await llm.invoke(
+            await promptReleases.format({
+                organizationAndTeamData,
+                payload: JSON.stringify(releases),
+                promptIsForChat: false,
+            }),
+            {
+                metadata: {
+                    module: 'Setup',
+                    submodule: 'GetProductionReleases',
+                },
             },
-        });
+        );
 
         const repos = safelyParseMessageContent(chain.content).repos;
 
@@ -2672,6 +2691,67 @@ export class GitlabService
             throw new BadRequestException(
                 'Failed to mark discussion as resolved for merge request',
             );
+        }
+    }
+
+    async deleteWebhook(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const authDetails = await this.getAuthDetails(
+            params.organizationAndTeamData,
+        );
+
+        const gitlabAPI = this.instanceGitlabApi(authDetails);
+
+        const integration = await this.integrationService.findOne({
+            organization: {
+                uuid: params.organizationAndTeamData.organizationId,
+            },
+            team: { uuid: params.organizationAndTeamData.teamId },
+            platform: PlatformType.GITLAB,
+        });
+
+        if (!integration?.authIntegration?.authDetails) {
+            return;
+        }
+
+        const repositories =
+            await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                params.organizationAndTeamData,
+                IntegrationConfigKey.REPOSITORIES,
+            );
+
+        if (repositories) {
+            for (const repo of repositories) {
+                try {
+                    const webhooks = await gitlabAPI.ProjectHooks.all(repo.id);
+                    const webhookUrl = this.configService.get<string>(
+                        'API_GITLAB_CODE_MANAGEMENT_WEBHOOK',
+                    );
+
+                    const webhookToDelete = webhooks.find(
+                        (webhook) => webhook.url === webhookUrl,
+                    );
+
+                    if (webhookToDelete) {
+                        await gitlabAPI.ProjectHooks.remove(
+                            repo.id,
+                            webhookToDelete.id,
+                        );
+                    }
+                } catch (error) {
+                    this.logger.error({
+                        message: `Error deleting webhook for repository ${repo.name}`,
+                        context: GitlabService.name,
+                        error: error,
+                        metadata: {
+                            organizationAndTeamData:
+                                params.organizationAndTeamData,
+                            repoId: repo.id,
+                        },
+                    });
+                }
+            }
         }
     }
 }

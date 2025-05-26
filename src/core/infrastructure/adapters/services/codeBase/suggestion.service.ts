@@ -25,7 +25,7 @@ import {
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@/core/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { PinoLoggerService } from '../logger/pino.service';
 import {
     COMMENT_MANAGER_SERVICE_TOKEN,
@@ -113,7 +113,7 @@ export class SuggestionService implements ISuggestionService {
                 await this.aiAnalysisService.validateImplementedSuggestions(
                     organizationAndTeamData,
                     prNumber,
-                    LLMModelProvider.DEEPSEEK_V3,
+                    LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     codePatch,
                     filteredSuggestions,
                 );
@@ -238,13 +238,13 @@ export class SuggestionService implements ISuggestionService {
         filteredSuggestions: Partial<CodeSuggestion>[],
         discardReason: PriorityStatus,
     ): Partial<CodeSuggestion>[] {
-        return allSuggestions
+        return (allSuggestions || [])
             ?.filter(
                 (suggestion) =>
                     !!suggestion.id &&
-                    !filteredSuggestions.some(
+                    !(filteredSuggestions || [])?.some(
                         (filtered) =>
-                            filtered.id && filtered.id === suggestion.id,
+                            filtered?.id && filtered?.id === suggestion?.id,
                     ),
             )
             ?.map((suggestion) => ({
@@ -376,7 +376,7 @@ export class SuggestionService implements ISuggestionService {
                 await this.commentManagerService.repeatedCodeReviewSuggestionClustering(
                     organizationAndTeamData,
                     prNumber,
-                    LLMModelProvider.DEEPSEEK_V3,
+                    LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     suggestions,
                 );
 
@@ -996,7 +996,7 @@ export class SuggestionService implements ISuggestionService {
             const result = await this.aiAnalysisService.severityAnalysisAssignment(
                 organizationAndTeamData,
                 prNumber,
-                LLMModelProvider.DEEPSEEK_V3_0324,
+                LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                 codeSuggestions,
             );
 

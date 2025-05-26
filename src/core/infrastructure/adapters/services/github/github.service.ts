@@ -39,7 +39,6 @@ import {
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import * as moment from 'moment-timezone';
 import {
@@ -72,8 +71,6 @@ import {
 } from '@/core/domain/organizationMetrics/contracts/organizationMetrics.service.contract';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { GitHubReaction } from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
 import {
     getTranslationsForLanguageByCategory,
     TranslationsCategory,
@@ -90,6 +87,13 @@ import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLe
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
+import {
+    LLMModelProvider,
+    MODEL_STRATEGIES,
+} from '../llmProviders/llmModelProvider.helper';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../llmProviders/llmProvider.service';
+import { ConfigService } from '@nestjs/config';
 
 interface GitHubAuthResponse {
     token: string;
@@ -136,10 +140,14 @@ export class GithubService
         @Inject(DORA_METRICS_FACTORY_TOKEN)
         private readonly doraMetricsFactory: IDoraMetricsFactory,
 
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
+
         private readonly cacheService: CacheService,
 
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
+        private readonly configService: ConfigService,
     ) {}
 
     private async handleIntegration(
@@ -1653,12 +1661,10 @@ export class GithubService
             return [];
         }
 
-        let llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
-        }).bind({
-            response_format: { type: 'json_object' },
+        let llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const promptWorkflows =
@@ -1671,12 +1677,19 @@ export class GithubService
                 },
             );
 
-        const chain = await llm.invoke(promptWorkflows, {
-            metadata: {
-                module: 'Setup',
-                submodule: 'GetProductionDeployment',
+        const chain = await llm.invoke(
+            await promptWorkflows.format({
+                organizationAndTeamData,
+                payload: JSON.stringify(workflows),
+                promptIsForChat: false,
+            }),
+            {
+                metadata: {
+                    module: 'Setup',
+                    submodule: 'GetProductionDeployment',
+                },
             },
-        });
+        );
 
         return safelyParseMessageContent(chain.content).repos;
     }
@@ -1724,12 +1737,10 @@ export class GithubService
             return [];
         }
 
-        let llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
-        }).bind({
-            response_format: { type: 'json_object' },
+        let llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const promptReleases =
@@ -1742,12 +1753,19 @@ export class GithubService
                 },
             );
 
-        const chain = await llm.invoke(promptReleases, {
-            metadata: {
-                module: 'Setup',
-                submodule: 'GetProductionReleases',
+        const chain = await llm.invoke(
+            await promptReleases.format({
+                organizationAndTeamData,
+                payload: JSON.stringify(releases),
+                promptIsForChat: false,
+            }),
+            {
+                metadata: {
+                    module: 'Setup',
+                    submodule: 'GetProductionReleases',
+                },
             },
-        });
+        );
 
         const repos = safelyParseMessageContent(chain.content).repos;
 
@@ -3974,6 +3992,100 @@ export class GithubService
             });
 
             return null;
+        }
+    }
+
+    async deleteWebhook(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const authDetails = await this.getGithubAuthDetails(
+            params.organizationAndTeamData,
+        );
+
+        const octokit = await this.instanceOctokit(
+            params.organizationAndTeamData,
+        );
+
+        const integration = await this.integrationService.findOne({
+            organization: {
+                uuid: params.organizationAndTeamData.organizationId,
+            },
+            team: { uuid: params.organizationAndTeamData.teamId },
+            platform: PlatformType.GITHUB,
+        });
+
+        if (!integration?.authIntegration?.authDetails) {
+            return;
+        }
+
+        const { authMode } = integration.authIntegration.authDetails;
+
+        if (authMode === AuthMode.OAUTH) {
+            if (integration.authIntegration.authDetails.installationId) {
+                try {
+                    const appOctokit = this.createOctokitInstance();
+                    await appOctokit.apps.deleteInstallation({
+                        installation_id:
+                            integration.authIntegration.authDetails
+                                .installationId,
+                    });
+                } catch (error) {
+                    this.logger.error({
+                        message: 'Error deleting GitHub installation',
+                        context: this.deleteWebhook.name,
+                        error: error,
+                        metadata: {
+                            organizationAndTeamData:
+                                params.organizationAndTeamData,
+                        },
+                    });
+                }
+            }
+        } else if (authMode === AuthMode.TOKEN) {
+            const repositories =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
+
+            if (repositories) {
+                for (const repo of repositories) {
+                    try {
+                        const { data: webhooks } =
+                            await octokit.repos.listWebhooks({
+                                owner: authDetails.org,
+                                repo: repo.name,
+                            });
+
+                        const webhookUrl = this.configService.get<string>(
+                            'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
+                        );
+
+                        const webhookToDelete = webhooks.find(
+                            (webhook) => webhook.config.url === webhookUrl,
+                        );
+
+                        if (webhookToDelete) {
+                            await octokit.repos.deleteWebhook({
+                                owner: authDetails.org,
+                                repo: repo.name,
+                                hook_id: webhookToDelete.id,
+                            });
+                        }
+                    } catch (error) {
+                        this.logger.error({
+                            message: `Error deleting webhook for repository ${repo.name}`,
+                            context: this.deleteWebhook.name,
+                            error: error,
+                            metadata: {
+                                organizationAndTeamData:
+                                    params.organizationAndTeamData,
+                                repoId: repo.id,
+                            },
+                        });
+                    }
+                }
+            }
         }
     }
 }

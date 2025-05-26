@@ -6,7 +6,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { Request } from 'express';
 import { ExecuteTeamArtifactsUseCase } from '../teamArtifacts/execute-teamArtifacts';
-import { ExecuteOrganizationArtifactsUseCase } from '../organizationArtifacts/execute-organization-artifacts.use-case';
 import { STATUS } from '@/config/types/database/status.type';
 import { SaveCategoryWorkItemsTypesUseCase } from '../organizationParameters/save-category-workitems-types.use-case';
 import { CreateOrUpdateParametersUseCase } from '../parameters/create-or-update-use-case';
@@ -19,7 +18,6 @@ import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 export class FinishSetupUseCase {
     constructor(
         private readonly teamArtifactsUseCase: ExecuteTeamArtifactsUseCase,
-        private readonly organizationArtifactsUseCase: ExecuteOrganizationArtifactsUseCase,
         private readonly saveCategoryWorkItemsTypesUseCase: SaveCategoryWorkItemsTypesUseCase,
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
         private readonly saveAllTeamMetricsHistoryUseCase: SaveAllTeamMetricsHistoryUseCase,
@@ -74,22 +72,7 @@ export class FinishSetupUseCase {
                                         organizationId: organizationId,
                                         type: 'weekly',
                                     }),
-                                ]).then(async () => {
-                                    await Promise.all([
-                                        this.organizationArtifactsUseCase.execute(
-                                            {
-                                                organizationId: organizationId,
-                                                type: 'daily',
-                                            },
-                                        ),
-                                        this.organizationArtifactsUseCase.execute(
-                                            {
-                                                organizationId: organizationId,
-                                                type: 'weekly',
-                                            },
-                                        ),
-                                    ]);
-                                });
+                                ]).then(async () => {});
                             })
                             .then(async () => {
                                 await this.createOrUpdateParametersUseCase.execute(

@@ -25,7 +25,7 @@ services:
     db_postgres:
         build:
             context: ./docker/postgres
-        image: postgres:latest
+        image: pgvector/pgvector:pg16
         container_name: db_postgres
         ports:
             - '5432:5432'

@@ -13,7 +13,6 @@ export interface IOrganizationArtifactsService
         organizationAndTeamData: OrganizationAndTeamData,
         artifactsToolType?: ArtifactsToolType,
     );
-    executeDaily(organizationAndTeamData: OrganizationAndTeamData);
     getRecentOrganizationArtifactsWithPrevious(
         organizationAndTeamData: OrganizationAndTeamData,
         weeksLimit: number,

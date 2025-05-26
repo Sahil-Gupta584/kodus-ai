@@ -11,12 +11,7 @@ import { IASTAnalysisService } from '@/core/domain/codeBase/contracts/ASTAnalysi
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import {
-    getChatGPT,
-    getDeepseekByNovitaAI,
-} from '@/shared/utils/langchainCommon/document';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { prompt_detectBreakingChanges } from '@/shared/utils/langchainCommon/prompts/detectBreakingChanges';
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
@@ -40,6 +35,8 @@ import {
     ProtoPlatformType,
     RepositoryData,
 } from '@kodus/kodus-proto';
+import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -56,6 +53,8 @@ export class CodeAstAnalysisService
 
         @Inject('AST_MICROSERVICE')
         private readonly astMicroserviceClient: ClientGrpc,
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
     }
@@ -71,7 +70,7 @@ export class CodeAstAnalysisService
         reviewModeResponse: ReviewModeResponse,
     ): Promise<AIAnalysisResult> {
         try {
-            const provider = LLMModelProvider.DEEPSEEK_V3;
+            const provider = LLMModelProvider.NOVITA_DEEPSEEK_V3_0324;
 
             const baseContext = await this.prepareAnalysisContext(context);
 
@@ -400,7 +399,7 @@ export class CodeAstAnalysisService
         provider: LLMModelProvider,
         context: AnalysisContext,
     ) {
-        const fallbackProvider = LLMModelProvider.CHATGPT_4_ALL;
+        const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
 
         try {
             const mainChain = await this.createAnalysisProviderChain(provider);
@@ -437,23 +436,11 @@ export class CodeAstAnalysisService
 
     private async createAnalysisProviderChain(provider: LLMModelProvider) {
         try {
-            let llm =
-                provider === LLMModelProvider.DEEPSEEK_V3
-                    ? getDeepseekByNovitaAI({
-                          temperature: 0,
-                      })
-                    : getChatGPT({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
-                          temperature: 0,
-                      });
-
-            if (provider === LLMModelProvider.CHATGPT_4_ALL) {
-                llm = llm.bind({
-                    response_format: { type: 'json_object' },
-                });
-            }
+            let llm = this.llmProviderService.getLLMProvider({
+                model: provider,
+                temperature: 0,
+                jsonMode: true,
+            });
 
             const chain = RunnableSequence.from([
                 async (input: any) => {

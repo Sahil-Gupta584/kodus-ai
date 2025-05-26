@@ -44,9 +44,6 @@ import { IntegrationEntity } from '@/core/domain/integrations/entities/integrati
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
 import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { PromptService } from '../prompt.service';
 import moment from 'moment';
@@ -66,6 +63,13 @@ import {
     KODY_START_COMMAND_MARKER,
 } from '@/shared/utils/codeManagement/codeCommentMarkers';
 import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '../llmProviders/llmModelProvider.helper';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../llmProviders/llmProvider.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -98,9 +102,14 @@ export class BitbucketService
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parameterService: IParametersService,
 
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
+
         private readonly promptService: PromptService,
 
         private readonly logger: PinoLoggerService,
+
+        private readonly configService: ConfigService,
     ) {}
 
     async getPullRequestsWithChangesRequested(params: {
@@ -601,12 +610,11 @@ export class BitbucketService
                 return [];
             }
 
-            let llm = getChatGPT({
-                model: getLLMModelProviderWithFallback(
-                    LLMModelProvider.CHATGPT_4_TURBO,
-                ),
-            }).bind({
-                response_format: { type: 'json_object' },
+            let llm = this.llmProviderService.getLLMProvider({
+                model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
+                    .modelName,
+                temperature: 0,
+                jsonMode: true,
             });
 
             const promptWorkflows =
@@ -619,13 +627,19 @@ export class BitbucketService
                     },
                 );
 
-            const chain = await llm.invoke(promptWorkflows, {
-                metadata: {
-                    module: 'Setup',
-                    submodule: 'GetProductionDeployment',
+            const chain = await llm.invoke(
+                await promptWorkflows.format({
+                    organizationAndTeamData,
+                    payload: JSON.stringify(workflows),
+                    promptIsForChat: false,
+                }),
+                {
+                    metadata: {
+                        module: 'Setup',
+                        submodule: 'GetProductionDeployment',
+                    },
                 },
-            });
-
+            );
             return safelyParseMessageContent(chain.content).repos;
         } catch (error) {
             this.logger.error({
@@ -1449,7 +1463,6 @@ export class BitbucketService
             if (!bitbucketAuthDetails) {
                 return null;
             }
-
             const workspace = await this.getWorkspaceFromRepository(
                 organizationAndTeamData,
                 repository.id,
@@ -1860,7 +1873,6 @@ export class BitbucketService
             if (!commentData?.id) {
                 throw new Error(`Failed to create comment in PR#${prNumber}`);
             }
-
             this.logger.log({
                 message: `Created issue comment for PR#${prNumber}`,
                 context: this.createSingleIssueComment.name,
@@ -3546,5 +3558,83 @@ export class BitbucketService
                 id: this.sanitizeUUId(pr.author?.uuid),
             },
         };
+    }
+
+    async deleteWebhook(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const authDetails = await this.getAuthDetails(
+            params.organizationAndTeamData,
+        );
+        const bitbucketAPI = this.instanceBitbucketApi(authDetails);
+
+        if (authDetails.authMode === AuthMode.TOKEN) {
+            const repositories = <Repositories[]>(
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                )
+            );
+
+            const webhookUrl = this.configService.get<string>(
+                'GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK',
+            );
+
+            if (!webhookUrl) {
+                this.logger.error({
+                    message: 'Bitbucket webhook URL not found',
+                    context: BitbucketService.name,
+                });
+                return;
+            }
+
+            for (const repo of repositories) {
+                try {
+                    const existingHooks = await bitbucketAPI.webhooks
+                        .listForRepo({
+                            repo_slug: `{${repo.id}}`,
+                            workspace: `{${repo.workspaceId}}`,
+                        })
+                        .then((res) =>
+                            this.getPaginatedResults(bitbucketAPI, res),
+                        );
+
+                    const webhook = existingHooks.find(
+                        (hook) => hook.url === webhookUrl,
+                    );
+
+                    if (webhook) {
+                        await bitbucketAPI.repositories.deleteWebhook({
+                            repo_slug: `{${repo.id}}`,
+                            workspace: `{${repo.workspaceId}}`,
+                            uid: webhook.uuid,
+                        });
+
+                        this.logger.log({
+                            message: `Webhook deleted successfully for repository ${repo.name}`,
+                            context: this.deleteWebhook.name,
+                            metadata: {
+                                repository: repo.name,
+                                workspace: repo.workspaceId,
+                                organizationAndTeamData:
+                                    params.organizationAndTeamData,
+                            },
+                        });
+                    }
+                } catch (error) {
+                    this.logger.error({
+                        message: `Error deleting Bitbucket webhook for repository ${repo.name}`,
+                        context: this.deleteWebhook.name,
+                        error: error,
+                        metadata: {
+                            repository: repo.name,
+                            workspace: repo.workspaceId,
+                            organizationAndTeamData:
+                                params.organizationAndTeamData,
+                        },
+                    });
+                }
+            }
+        }
     }
 }

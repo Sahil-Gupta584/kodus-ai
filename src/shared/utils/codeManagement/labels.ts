@@ -1,6 +1,6 @@
 import * as labels from '@/core/infrastructure/adapters/services/automation/processAutomation/config/codeReview/labels.json';
 
-enum LabelType {
+export enum LabelType {
     PERFORMANCE_AND_OPTIMIZATION = 'performance_and_optimization',
     SECURITY = 'security',
     ERROR_HANDLING = 'error_handling',

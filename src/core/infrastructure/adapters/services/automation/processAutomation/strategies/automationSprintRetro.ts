@@ -16,7 +16,6 @@ import {
     IAutomationExecutionService,
 } from '@/core/domain/automation/contracts/automation-execution.service';
 import { ProjectManagementService } from '../../../platformIntegration/projectManagement.service';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { PromptService } from '../../../prompt.service';
 import { PinoLoggerService } from '../../../logger/pino.service';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
@@ -44,8 +43,12 @@ import {
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { TeamMethodology } from '@/shared/domain/enums/team-methodology.enum';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '../../../llmProviders/llmModelProvider.helper';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../../../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../../../llmProviders/llmProvider.service';
 
 @Injectable()
 export class AutomationSprintRetroService implements IAutomationFactory {
@@ -66,6 +69,8 @@ export class AutomationSprintRetroService implements IAutomationFactory {
         private readonly sprintService: ISprintService,
         @Inject(METRICS_FACTORY_TOKEN)
         private readonly metricsFactory: IMetricsFactory,
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
         private readonly logger: PinoLoggerService,
         private readonly promptService: PromptService,
         private readonly communicationService: CommunicationService,
@@ -473,23 +478,28 @@ export class AutomationSprintRetroService implements IAutomationFactory {
                 },
             );
 
-        const llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
-        }).bind({
-            response_format: { type: 'json_object' },
+        const llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const categoriesForCheckin = safelyParseMessageContent(
             (
-                await llm.invoke(promptGeneratSprintResume, {
-                    metadata: {
-                        module: 'AutomationSprintRetro',
-                        teamId: organizationAndTeamData.teamId,
-                        submodule: 'SprintResume',
+                await llm.invoke(
+                    await promptGeneratSprintResume.format({
+                        organizationAndTeamData,
+                        payload: JSON.stringify(workItems),
+                        promptIsForChat: false,
+                    }),
+                    {
+                        metadata: {
+                            module: 'AutomationSprintRetro',
+                            teamId: organizationAndTeamData.teamId,
+                            submodule: 'SprintResume',
+                        },
                     },
-                })
+                )
             ).content,
         ).categories;
 
@@ -498,13 +508,20 @@ export class AutomationSprintRetroService implements IAutomationFactory {
         if (currentSprint.value?.artifacts?.length > 0) {
             artifactsForCheckin = safelyParseMessageContent(
                 (
-                    await llm.invoke(promptRewriteArtifacts, {
-                        metadata: {
-                            module: 'AutomationSprintRetro',
-                            teamId: organizationAndTeamData.teamId,
-                            submodule: 'RewriteArtifacts',
+                    await llm.invoke(
+                        await promptRewriteArtifacts.format({
+                            organizationAndTeamData,
+                            payload: `Team Artifacts For the Last Sprint \n ${JSON.stringify(currentSprint.value?.artifacts)} \n\n ${previousArtifactsMessage}`,
+                            promptIsForChat: false,
+                        }),
+                        {
+                            metadata: {
+                                module: 'AutomationSprintRetro',
+                                teamId: organizationAndTeamData.teamId,
+                                submodule: 'RewriteArtifacts',
+                            },
                         },
-                    })
+                    )
                 ).content,
             ).artifacts;
         }
@@ -516,12 +533,10 @@ export class AutomationSprintRetroService implements IAutomationFactory {
         organizationAndTeamData: OrganizationAndTeamData,
         message: string,
     ) {
-        const llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
-        }).bind({
-            response_format: { type: 'json_object' },
+        const llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const promptContext =
@@ -536,13 +551,20 @@ export class AutomationSprintRetroService implements IAutomationFactory {
 
         return safelyParseMessageContent(
             (
-                await llm.invoke(promptContext, {
-                    metadata: {
-                        module: 'AutomationSprintRetro',
-                        teamId: organizationAndTeamData.teamId,
-                        submodule: 'GenerateQuestions',
+                await llm.invoke(
+                    await promptContext.format({
+                        organizationAndTeamData,
+                        promptIsForChat: false,
+                        payload: JSON.stringify(message),
+                    }),
+                    {
+                        metadata: {
+                            module: 'AutomationSprintRetro',
+                            teamId: organizationAndTeamData.teamId,
+                            submodule: 'GenerateQuestions',
+                        },
                     },
-                })
+                )
             ).content,
         ).questions;
     }

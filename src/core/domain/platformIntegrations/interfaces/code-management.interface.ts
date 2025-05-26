@@ -119,4 +119,8 @@ export interface ICodeManagementService
         prNumber: number;
         repository: { id: string; name: string };
     }): Promise<any | null>;
+
+    deleteWebhook(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void>;
 }

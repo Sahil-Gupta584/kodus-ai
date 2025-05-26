@@ -5,7 +5,7 @@ import {
     UncategorizedComment,
     CommentFrequency,
 } from './types/commentAnalysis.type';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { PinoLoggerService } from '../logger/pino.service';
 import {
     prompt_CommentCategorizerSystem,
@@ -73,8 +73,8 @@ export class CommentAnalysisService {
                     payload: {
                         comments: filteredComments,
                     },
-                    provider: LLMModelProvider.GEMINI_2_0_FLASH,
-                    fallbackProvider: LLMModelProvider.DEEPSEEK_V3,
+                    provider: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                    fallbackProvider: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     systemPromptFn: prompt_CommentCategorizerSystem,
                     userPromptFn: prompt_CommentCategorizerUser,
                     runName: 'commentCategorizer',
@@ -156,8 +156,8 @@ export class CommentAnalysisService {
                     comments: filteredComments,
                     rules: filteredLibraryKodyRules,
                 },
-                provider: LLMModelProvider.GEMINI_2_0_FLASH,
-                fallbackProvider: LLMModelProvider.DEEPSEEK_V3,
+                provider: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                fallbackProvider: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                 systemPromptFn: prompt_KodyRulesGeneratorSystem,
                 userPromptFn: prompt_KodyRulesGeneratorUser,
                 runName: 'kodyRulesGenerator',
@@ -185,8 +185,8 @@ export class CommentAnalysisService {
                             existingRules,
                             newRules: genereatedWithUuids,
                         },
-                        provider: LLMModelProvider.GEMINI_2_0_FLASH,
-                        fallbackProvider: LLMModelProvider.DEEPSEEK_V3,
+                        provider: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                        fallbackProvider: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                         systemPromptFn:
                             prompt_KodyRulesGeneratorDuplicateFilterSystem,
                         userPromptFn:
@@ -217,8 +217,8 @@ export class CommentAnalysisService {
                     payload: {
                         rules: deduplicatedRules,
                     },
-                    provider: LLMModelProvider.GEMINI_2_0_FLASH,
-                    fallbackProvider: LLMModelProvider.DEEPSEEK_V3,
+                    provider: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                    fallbackProvider: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     systemPromptFn:
                         prompt_KodyRulesGeneratorQualityFilterSystem,
                     userPromptFn: prompt_KodyRulesGeneratorQualityFilterUser,
@@ -309,8 +309,8 @@ export class CommentAnalysisService {
             const filteredCommentsIds =
                 await this.promptRunnerService.runPrompt({
                     payload: params,
-                    provider: LLMModelProvider.GEMINI_2_0_FLASH,
-                    fallbackProvider: LLMModelProvider.DEEPSEEK_V3,
+                    provider: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                    fallbackProvider: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     systemPromptFn: prompt_CommentIrrelevanceFilterSystem,
                     userPromptFn: prompt_CommentIrrelevanceFilterUser,
                     runName: 'commentIrrelevanceFilter',
