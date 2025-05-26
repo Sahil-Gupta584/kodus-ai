@@ -132,7 +132,11 @@ export class CodeAstAnalysisService
                     fullName:
                         repository.full_name ||
                         `${repository.owner}/${repository.name}`,
-                    platform: platformType as 'github' | 'gitlab' | 'bitbucket',
+                    platform: platformType as
+                        | 'github'
+                        | 'gitlab'
+                        | 'bitbucket'
+                        | 'azure-devops',
                     language: repository.language || 'unknown',
                 },
                 organizationAndTeamData,
@@ -150,7 +154,11 @@ export class CodeAstAnalysisService
                     fullName:
                         repository.full_name ||
                         `${repository.owner}/${repository.name}`,
-                    platform: platformType as 'github' | 'gitlab' | 'bitbucket',
+                    platform: platformType as
+                        | 'github'
+                        | 'gitlab'
+                        | 'bitbucket'
+                        | 'azure-devops',
                     language: repository.language || 'unknown',
                 },
                 organizationAndTeamData,
@@ -185,7 +193,7 @@ export class CodeAstAnalysisService
                     );
                 },
                 {
-                    timeout: 480000, // 8 minutes
+                    timeout: 900000, // 15 minutes
                     errorThresholdPercentage: 50, // 50% of failures
                     resetTimeout: 30000, // 30 seconds
                 },
