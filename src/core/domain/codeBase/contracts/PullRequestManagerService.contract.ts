@@ -1,5 +1,6 @@
 import { FileChange } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { PullRequestAuthor } from '../../platformIntegrations/types/codeManagement/pullRequests.type';
 
 export const PULL_REQUEST_MANAGER_SERVICE_TOKEN = Symbol(
     'PullRequestManagerService',
@@ -20,7 +21,7 @@ export interface IPullRequestManagerService {
         lastCommit?: string,
     ): Promise<FileChange[]>;
 
-    getPullRequestsAuthorsOrderedByContributions(
+    getPullRequestAuthorsWithCache(
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<any>;
+    ): Promise<PullRequestAuthor[]>;
 }
