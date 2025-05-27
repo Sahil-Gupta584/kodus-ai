@@ -20,6 +20,7 @@ import {
     PullRequestReviewComment,
     OneSentenceSummaryItem,
     ReactionsInComments,
+    PullRequestAuthor,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { v4 as uuidv4, v4 } from 'uuid';
@@ -109,6 +110,100 @@ export class AzureReposService
         private readonly configService: ConfigService,
     ) {}
 
+    async getPullRequestAuthors(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<PullRequestAuthor[]> {
+        try {
+            const { organizationAndTeamData } = params;
+
+            if (!organizationAndTeamData.organizationId) {
+                return [];
+            }
+
+            const azureAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            const { orgName, token } = azureAuthDetail;
+
+            const repositories: Repositories[] =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
+
+            if (
+                !repositories ||
+                repositories.length === 0 ||
+                !azureAuthDetail
+            ) {
+                return [];
+            }
+
+            const since = new Date();
+            since.setDate(since.getDate() - 60);
+
+            const authorsSet = new Set<string>();
+            const authorsData = new Map<string, PullRequestAuthor>();
+
+            // Busca paralela otimizada
+            const repoPromises = repositories.slice(0, 20).map(async (repo) => {
+                try {
+                    const prs = await this.getPullRequestsByRepository({
+                        organizationAndTeamData,
+                        repository: {
+                            id: repo.id,
+                            name: repo.name,
+                        },
+                        filters: {
+                            startDate: since.toISOString(),
+                            endDate: new Date().toISOString(),
+                        },
+                    });
+
+                    // Para na primeira contribuição de cada usuário
+                    for (const pr of prs || []) {
+                        if (pr.author_id) {
+                            const userId = pr.author_id.toString();
+
+                            if (!authorsSet.has(userId)) {
+                                authorsSet.add(userId);
+                                authorsData.set(userId, {
+                                    id: pr.author_id,
+                                    name: pr.author_name || pr.author_id,
+                                });
+                            }
+                        }
+                    }
+                } catch (error) {
+                    this.logger.error({
+                        message: 'Error in getPullRequestAuthors',
+                        context: 'AzureService',
+                        error: error,
+                        metadata: {
+                            organizationAndTeamData,
+                            repositoryId: repo.id,
+                        },
+                    });
+                }
+            });
+
+            await Promise.all(repoPromises);
+
+            return Array.from(authorsData.values()).sort((a, b) =>
+                a.name.localeCompare(b.name),
+            );
+        } catch (err) {
+            this.logger.error({
+                message: 'Error in getPullRequestAuthors',
+                context: 'AzureService',
+                error: err,
+                metadata: {
+                    organizationAndTeamData: params?.organizationAndTeamData,
+                },
+            });
+            return [];
+        }
+    }
     async createResponseToComment(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { id: string; name: string };
@@ -3186,10 +3281,9 @@ export class AzureReposService
                                 },
                             );
 
-                        const webhookUrl =
-                            this.configService.get<string>(
-                                'GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK'!,
-                            );
+                        const webhookUrl = this.configService.get<string>(
+                            'GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK'!,
+                        );
                         const allMatching = subs.filter(
                             (s) =>
                                 s.publisherInputs?.repository === repo.id &&
@@ -3209,7 +3303,8 @@ export class AzureReposService
                                 message: `Webhook removed for repository ${repo.name} (id=${existing.id})`,
                                 context: this.deleteWebhook.name,
                                 metadata: {
-                                    organizationAndTeamData: params.organizationAndTeamData,
+                                    organizationAndTeamData:
+                                        params.organizationAndTeamData,
                                     repository: repo.name,
                                     subscriptionId: existing.id,
                                 },
@@ -3221,7 +3316,8 @@ export class AzureReposService
                             context: this.deleteWebhook.name,
                             error: error,
                             metadata: {
-                                organizationAndTeamData: params.organizationAndTeamData,
+                                organizationAndTeamData:
+                                    params.organizationAndTeamData,
                                 repository: repo.name,
                             },
                         });
