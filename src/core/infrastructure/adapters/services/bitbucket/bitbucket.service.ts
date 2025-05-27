@@ -224,7 +224,7 @@ export class BitbucketService
             const authorsSet = new Set<string>();
             const authorsData = new Map<string, PullRequestAuthor>();
 
-            const repoPromises = repositories.slice(0, 20).map(async (repo) => {
+            const repoPromises = repositories.map(async (repo) => {
                 try {
                     const prs = await bitbucketAPI.pullrequests
                         .list({

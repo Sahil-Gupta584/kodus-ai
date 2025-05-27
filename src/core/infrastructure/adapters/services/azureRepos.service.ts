@@ -145,7 +145,7 @@ export class AzureReposService
             const authorsData = new Map<string, PullRequestAuthor>();
 
             // Busca paralela otimizada
-            const repoPromises = repositories.slice(0, 20).map(async (repo) => {
+            const repoPromises = repositories.map(async (repo) => {
                 try {
                     const prs = await this.getPullRequestsByRepository({
                         organizationAndTeamData,
