@@ -788,7 +788,7 @@ export class GithubService
             const authorsData = new Map<string, PullRequestAuthor>();
 
             // Busca paralela otimizada
-            const repoPromises = allRepositories.slice(0, 20).map(async (repo) => {
+            const repoPromises = allRepositories.map(async (repo) => {
                 try {
                     const { data } = await octokit.rest.pulls.list({
                         owner: githubAuthDetail?.org,

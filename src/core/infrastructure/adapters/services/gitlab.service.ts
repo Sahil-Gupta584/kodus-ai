@@ -147,7 +147,7 @@ export class GitlabService
             const authorsData = new Map<string, PullRequestAuthor>();
 
             // Busca paralela otimizada
-            const repoPromises = repositories.slice(0, 20).map(async (repo) => {
+            const repoPromises = repositories.map(async (repo) => {
                 try {
                     const mergeRequests = await gitlabAPI.MergeRequests.all({
                         projectId: repo.id,
