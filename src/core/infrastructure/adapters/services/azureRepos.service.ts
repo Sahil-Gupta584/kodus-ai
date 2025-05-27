@@ -123,7 +123,6 @@ export class AzureReposService
             const azureAuthDetail = await this.getAuthDetails(
                 organizationAndTeamData,
             );
-            const { orgName, token } = azureAuthDetail;
 
             const repositories: Repositories[] =
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(

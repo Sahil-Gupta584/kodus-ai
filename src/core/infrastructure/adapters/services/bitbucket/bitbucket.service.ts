@@ -150,7 +150,11 @@ export class BitbucketService
                     this.logger.warn({
                         message: 'Skipping PR with missing author ID',
                         context: BitbucketService.name,
-                        metadata: { pr },
+                        metadata: {
+                            organizationAndTeamData:
+                                params?.organizationAndTeamData,
+                            pullRequest: pr?.pull_number,
+                        },
                     });
                     return acc;
                 }
