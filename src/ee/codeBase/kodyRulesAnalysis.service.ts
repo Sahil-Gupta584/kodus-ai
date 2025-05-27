@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import {
     FileChangeContext,
     AnalysisContext,
@@ -13,12 +13,7 @@ import { RunnableSequence } from '@langchain/core/runnables';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import {
-    getChatGemini,
-    getChatVertexAI,
-} from '@/shared/utils/langchainCommon/document';
+import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import Anthropic from '@anthropic-ai/sdk';
 import { getKodyRulesForFile } from '@/shared/utils/glob-utils';
 import {
@@ -35,6 +30,8 @@ import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interfac
 import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisService.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
+import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -167,7 +164,11 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         }
     }
 
-    constructor(private readonly logger: PinoLoggerService) {
+    constructor(
+        private readonly logger: PinoLoggerService,
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
+    ) {
         this.anthropic = new Anthropic({
             apiKey: process.env.API_ANTHROPIC_API_KEY,
         });
@@ -337,23 +338,6 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 ];
             }
 
-            const guardianKodyRulesResult = await guardianKodyRulesChain.invoke(
-                {
-                    standardSuggestions: finalOutput.codeSuggestions,
-                    kodyRules: extendedContext.filteredKodyRules,
-                },
-            );
-
-            const guardianKodyRules = this.processViolationDecisions(
-                organizationAndTeamData,
-                prNumber,
-                guardianKodyRulesResult,
-            );
-
-            finalOutput.codeSuggestions = finalOutput.codeSuggestions.filter(
-                (suggestion) => !guardianKodyRules?.get(suggestion.id),
-            );
-
             return this.addSeverityToSuggestions(
                 finalOutput,
                 context?.codeReviewConfig?.kodyRules || [],
@@ -466,12 +450,14 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 context,
                 systemPromptFn,
                 userPromptFn,
+                'primary',
             );
             const fallbackChain = await this.createProviderChain(
                 fallbackProvider,
                 context,
                 systemPromptFn,
                 userPromptFn,
+                'fallback',
             );
 
             // Used withFallbacks to configure the fallback correctly
@@ -480,6 +466,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     fallbacks: [fallbackChain],
                 })
                 .withConfig({
+                    tags: this.buildTags(provider, 'primary'),
                     runName,
                     metadata: {
                         organizationId:
@@ -509,26 +496,17 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         context: any,
         systemPromptFn: SystemPromptFn,
         userPromptFn: UserPromptFn,
+        tier: 'primary' | 'fallback',
     ) {
         try {
-            let llm =
-                provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
-                    ? getChatGemini({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
-                          ),
-                          temperature: 0,
-                          maxTokens: 20000,
-                          json: true,
-                          callbacks: [this.tokenTracker],
-                      })
-                    : getChatVertexAI({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET,
-                          ),
-                          temperature: 0,
-                          callbacks: [this.tokenTracker],
-                      });
+            let llm = this.llmProviderService.getLLMProvider({
+                model: provider,
+                temperature: 0,
+                jsonMode: true,
+                callbacks: [this.tokenTracker],
+            });
+
+            const tags = this.buildTags(provider, 'primary');
 
             // Create the chain using the correct provider
             const chain = RunnableSequence.from([
@@ -559,7 +537,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 },
                 llm,
                 new StringOutputParser(),
-            ]);
+            ]).withConfig({ tags });
 
             return chain;
         } catch (error) {
@@ -753,6 +731,13 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             });
             return null;
         }
+    }
+
+    private buildTags(
+        provider: LLMModelProvider,
+        tier: 'primary' | 'fallback',
+    ) {
+        return [`model:${provider}`, `tier:${tier}`, 'kodyRules'];
     }
 
     private async logTokenUsage(metadata: any) {

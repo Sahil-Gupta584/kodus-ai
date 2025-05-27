@@ -2,6 +2,7 @@ import { CommitLeadTimeForChange } from '../types/codeManagement/commitLeadTimeF
 import { DeployFrequency } from '../types/codeManagement/deployFrequency.type';
 import { Organization } from '../types/codeManagement/organization.type';
 import {
+    PullRequestAuthor,
     PullRequestCodeReviewTime,
     PullRequestDetails,
     PullRequestReviewComment,
@@ -110,10 +111,18 @@ export interface ICodeManagementService
         repository: Partial<Repository>,
     }): Promise<PullRequestsWithChangesRequested[] | null>
 
+    getPullRequestAuthors(params: {
+        organizationAndTeamData: OrganizationAndTeamData,
+    }): Promise<PullRequestAuthor[]>
+
     checkIfPullRequestShouldBeApproved(params: {
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         repository: { id: string; name: string };
     }): Promise<any | null>;
+
+    deleteWebhook(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void>;
 
 }

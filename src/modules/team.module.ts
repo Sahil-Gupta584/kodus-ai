@@ -1,5 +1,4 @@
 import { SaveFlowMetricsToDbUseCase } from '@/core/application/use-cases/metrics/save-db-flow-metrics.use-case';
-import { ExecuteOrganizationArtifactsUseCase } from '@/core/application/use-cases/organizationArtifacts/execute-organization-artifacts.use-case';
 import { SaveOrganizationMetricsToDbUseCase } from '@/core/application/use-cases/organizationMetrics/save-metrics.use-case';
 import { UseCases } from '@/core/application/use-cases/team';
 import { CreateTeamUseCase } from '@/core/application/use-cases/team/create.use-case';
@@ -17,7 +16,6 @@ import { UsersModule } from './user.module';
 import { OrganizationArtifactsModule } from './organizationArtifacts.module';
 import { OrganizationMetricsModule } from './organizationMetrics.module';
 import { MetricsModule } from './metrics.module';
-import { SaveCategoryWorkItemsTypesUseCase } from '@/core/application/use-cases/organizationParameters/save-category-workitems-types.use-case';
 import { OrganizationParametersModule } from './organizationParameters.module';
 import { OrganizationParametersService } from '@/core/infrastructure/adapters/services/organizationParameters.service';
 import { JiraModule } from './jira.module';
@@ -50,9 +48,7 @@ import { TeamArtifactsModule } from './teamArtifacts.module';
     ],
     providers: [
         ...UseCases,
-        SaveCategoryWorkItemsTypesUseCase,
         ExecuteTeamArtifactsUseCase,
-        ExecuteOrganizationArtifactsUseCase,
         SaveFlowMetricsToDbUseCase,
         SaveAllTeamMetricsHistoryUseCase,
         SaveAllOrganizationMetricsHistoryUseCase,

@@ -27,7 +27,9 @@ import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-k
 import { IntegrationEntity } from '@/core/domain/integrations/entities/integration.entity';
 import { GithubAuthDetail } from '@/core/domain/authIntegrations/types/github-auth-detail.type';
 import {
+    AuthorContributions,
     OneSentenceSummaryItem,
+    PullRequestAuthor,
     PullRequestCodeReviewTime,
     PullRequestDetails,
     PullRequestFile,
@@ -39,7 +41,6 @@ import {
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import * as moment from 'moment-timezone';
 import {
@@ -72,8 +73,6 @@ import {
 } from '@/core/domain/organizationMetrics/contracts/organizationMetrics.service.contract';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { GitHubReaction } from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
 import {
     getTranslationsForLanguageByCategory,
     TranslationsCategory,
@@ -93,6 +92,13 @@ import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import {
+    LLMModelProvider,
+    MODEL_STRATEGIES,
+} from '../llmProviders/llmModelProvider.helper';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../llmProviders/llmProvider.service';
+import { ConfigService } from '@nestjs/config';
 
 interface GitHubAuthResponse {
     token: string;
@@ -105,14 +111,15 @@ interface GitHubAuthResponse {
 @IntegrationServiceDecorator(PlatformType.GITHUB, 'codeManagement')
 export class GithubService
     implements
-    IGithubService,
-    Omit<
-        ICodeManagementService,
-        | 'getOrganizations'
-        | 'getUserById'
-        | 'getLanguageRepository'
-        | 'createSingleIssueComment'
-    > {
+        IGithubService,
+        Omit<
+            ICodeManagementService,
+            | 'getOrganizations'
+            | 'getUserById'
+            | 'getLanguageRepository'
+            | 'createSingleIssueComment'
+        >
+{
     private readonly MAX_RETRY_ATTEMPTS = 2;
     private readonly TTL = 50 * 60 * 1000; // 50 minutes
 
@@ -141,12 +148,15 @@ export class GithubService
         @Inject(REPOSITORY_MANAGER_TOKEN)
         private readonly repositoryManager: IRepositoryManager,
 
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
+
         private readonly cacheService: CacheService,
 
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
-    ) { }
-
+        private readonly configService: ConfigService,
+    ) {}
 
     private async handleIntegration(
         integration: any,
@@ -550,6 +560,7 @@ export class GithubService
             },
         );
     }
+
     /**
      * Retrieves the authentication details for a specific GitHub Oauth organization.
      *
@@ -753,6 +764,83 @@ export class GithubService
             return pullRequests;
         } catch (err) {
             console.error(err);
+            return [];
+        }
+    }
+
+    async getPullRequestAuthors(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<PullRequestAuthor[]> {
+        try {
+            const githubAuthDetail = await this.getGithubAuthDetails(params.organizationAndTeamData);
+            const allRepositories = await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                params?.organizationAndTeamData,
+                IntegrationConfigKey.REPOSITORIES,
+            );
+
+            if (!githubAuthDetail || !allRepositories) return [];
+
+            const octokit = await this.instanceOctokit(params?.organizationAndTeamData);
+            const since = new Date();
+            since.setDate(since.getDate() - 60);
+
+            const authorsSet = new Set<string>();
+            const authorsData = new Map<string, PullRequestAuthor>();
+
+            // Busca paralela otimizada
+            const repoPromises = allRepositories.map(async (repo) => {
+                try {
+                    const { data } = await octokit.rest.pulls.list({
+                        owner: githubAuthDetail?.org,
+                        repo: repo.name,
+                        state: 'all',
+                        since: since.toISOString(),
+                        per_page: 100,
+                        sort: 'created',
+                        direction: 'desc',
+                    });
+
+                    // Para na primeira contribuição de cada usuário
+                    for (const pr of data) {
+                        if (pr.user?.id) {
+                            const userId = pr.user.id.toString();
+
+                            if (!authorsSet.has(userId)) {
+                                authorsSet.add(userId);
+                                authorsData.set(userId, {
+                                    id: pr.user.id.toString(),
+                                    name: pr.user.login,
+                                });
+                            }
+                        }
+                    }
+
+                } catch (error) {
+                    this.logger.error({
+                        message: 'Error in getPullRequestAuthors',
+                        context: GithubService.name,
+                        error: error,
+                        metadata: {
+                            organizationAndTeamData: params?.organizationAndTeamData,
+                        },
+                    });
+                }
+            });
+
+            await Promise.all(repoPromises);
+
+            return Array.from(authorsData.values())
+                .sort((a, b) => a.name.localeCompare(b.name));
+
+        } catch (err) {
+            this.logger.error({
+                message: 'Error in getPullRequestAuthors',
+                context: GithubService.name,
+                error: err,
+                metadata: {
+                    organizationAndTeamData: params?.organizationAndTeamData,
+                },
+            });
             return [];
         }
     }
@@ -1659,12 +1747,10 @@ export class GithubService
             return [];
         }
 
-        let llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
-        }).bind({
-            response_format: { type: 'json_object' },
+        let llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const promptWorkflows =
@@ -1677,12 +1763,19 @@ export class GithubService
                 },
             );
 
-        const chain = await llm.invoke(promptWorkflows, {
-            metadata: {
-                module: 'Setup',
-                submodule: 'GetProductionDeployment',
+        const chain = await llm.invoke(
+            await promptWorkflows.format({
+                organizationAndTeamData,
+                payload: JSON.stringify(workflows),
+                promptIsForChat: false,
+            }),
+            {
+                metadata: {
+                    module: 'Setup',
+                    submodule: 'GetProductionDeployment',
+                },
             },
-        });
+        );
 
         return safelyParseMessageContent(chain.content).repos;
     }
@@ -1730,12 +1823,10 @@ export class GithubService
             return [];
         }
 
-        let llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
-        }).bind({
-            response_format: { type: 'json_object' },
+        let llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const promptReleases =
@@ -1748,12 +1839,19 @@ export class GithubService
                 },
             );
 
-        const chain = await llm.invoke(promptReleases, {
-            metadata: {
-                module: 'Setup',
-                submodule: 'GetProductionReleases',
+        const chain = await llm.invoke(
+            await promptReleases.format({
+                organizationAndTeamData,
+                payload: JSON.stringify(releases),
+                promptIsForChat: false,
+            }),
+            {
+                metadata: {
+                    module: 'Setup',
+                    submodule: 'GetProductionReleases',
+                },
             },
-        });
+        );
 
         const repos = safelyParseMessageContent(chain.content).repos;
 
@@ -1902,7 +2000,7 @@ export class GithubService
                         if (
                             secondToLastDeploy &&
                             lastDeploy.teamConfig?.configValue?.type ===
-                            'deployment'
+                                'deployment'
                         ) {
                             commits = await this.getCommitsForTagName(
                                 octokit,
@@ -1913,7 +2011,7 @@ export class GithubService
                         } else if (
                             secondToLastDeploy &&
                             lastDeploy.teamConfig?.configValue?.type ===
-                            'releases'
+                                'releases'
                         ) {
                             commits = await this.getCommitsForTagName(
                                 octokit,
@@ -2420,7 +2518,7 @@ export class GithubService
             actionStatement,
             this.formatSub(translations.talkToKody),
             this.formatSub(translations.feedback) +
-            '<!-- kody-codereview -->&#8203;\n&#8203;',
+                '<!-- kody-codereview -->&#8203;\n&#8203;',
         ]
             .join('\n')
             .trim();
@@ -2631,13 +2729,13 @@ export class GithubService
                         // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
                         return firstComment
                             ? {
-                                id: firstComment.id, // Used to actually resolve the thread
-                                threadId: reviewThread.id,
-                                isResolved: reviewThread.isResolved,
-                                isOutdated: reviewThread.isOutdated,
-                                fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
-                                body: firstComment.body,
-                            }
+                                  id: firstComment.id, // Used to actually resolve the thread
+                                  threadId: reviewThread.id,
+                                  isResolved: reviewThread.isResolved,
+                                  isOutdated: reviewThread.isOutdated,
+                                  fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
+                                  body: firstComment.body,
+                              }
                             : null;
                     })
                     .filter((comment) => comment !== null);
@@ -2857,13 +2955,6 @@ export class GithubService
                 metadata: { ...params },
             });
         }
-    }
-
-    private shouldIndexRepositories(params: any): boolean {
-        return (
-            params.configKey === IntegrationConfigKey.REPOSITORIES &&
-            params?.configValue?.length > 0
-        );
     }
 
     async getCommitsForPullRequestForCodeReview(
@@ -3213,15 +3304,15 @@ export class GithubService
                 reactions: {
                     thumbsUp: isOAuth
                         ? Math.max(
-                            0,
-                            comment.reactions[GitHubReaction.THUMBS_UP] - 1,
-                        )
+                              0,
+                              comment.reactions[GitHubReaction.THUMBS_UP] - 1,
+                          )
                         : comment.reactions[GitHubReaction.THUMBS_UP],
                     thumbsDown: isOAuth
                         ? Math.max(
-                            0,
-                            comment.reactions[GitHubReaction.THUMBS_DOWN] - 1,
-                        )
+                              0,
+                              comment.reactions[GitHubReaction.THUMBS_DOWN] - 1,
+                          )
                         : comment.reactions[GitHubReaction.THUMBS_DOWN],
                 },
                 comment: {
@@ -3421,7 +3512,7 @@ export class GithubService
     async checkIfPullRequestShouldBeApproved(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         prNumber: number;
-        repository: { id: string; name: string; };
+        repository: { id: string; name: string };
     }): Promise<any | null> {
         const { organizationAndTeamData, prNumber, repository } = params;
 
@@ -3485,7 +3576,11 @@ export class GithubService
         if (lastMy?.state === 'APPROVED') {
             return;
         } else {
-            await this.approvePullRequest({ organizationAndTeamData, prNumber, repository });
+            await this.approvePullRequest({
+                organizationAndTeamData,
+                prNumber,
+                repository,
+            });
         }
     }
 
@@ -3913,13 +4008,13 @@ export class GithubService
                         // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
                         return firstComment
                             ? {
-                                id: firstComment.id, // Used to actually resolve the thread
-                                threadId: reviewThread.id,
-                                isResolved: reviewThread.isResolved,
-                                isOutdated: reviewThread.isOutdated,
-                                fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
-                                body: firstComment.body,
-                            }
+                                  id: firstComment.id, // Used to actually resolve the thread
+                                  threadId: reviewThread.id,
+                                  isResolved: reviewThread.isResolved,
+                                  isOutdated: reviewThread.isOutdated,
+                                  fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
+                                  body: firstComment.body,
+                              }
                             : null;
                     })
                     .filter((comment) => comment !== null);
@@ -3946,11 +4041,11 @@ export class GithubService
                     // So we need one of them to actually mark the thread as resolved and the other to match the id we saved in the database.
                     return firstComment
                         ? {
-                            id: firstComment.id, // Used to actually resolve the thread
-                            reviewId: review.id,
-                            fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
-                            body: firstComment.body,
-                        }
+                              id: firstComment.id, // Used to actually resolve the thread
+                              reviewId: review.id,
+                              fullDatabaseId: firstComment.fullDatabaseId, // The REST API id, used to match comments saved in the database.
+                              body: firstComment.body,
+                          }
                         : null;
                 })
                 .filter((comment) => comment !== null);
@@ -3985,6 +4080,100 @@ export class GithubService
             });
 
             return null;
+        }
+    }
+
+    async deleteWebhook(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<void> {
+        const authDetails = await this.getGithubAuthDetails(
+            params.organizationAndTeamData,
+        );
+
+        const octokit = await this.instanceOctokit(
+            params.organizationAndTeamData,
+        );
+
+        const integration = await this.integrationService.findOne({
+            organization: {
+                uuid: params.organizationAndTeamData.organizationId,
+            },
+            team: { uuid: params.organizationAndTeamData.teamId },
+            platform: PlatformType.GITHUB,
+        });
+
+        if (!integration?.authIntegration?.authDetails) {
+            return;
+        }
+
+        const { authMode } = integration.authIntegration.authDetails;
+
+        if (authMode === AuthMode.OAUTH) {
+            if (integration.authIntegration.authDetails.installationId) {
+                try {
+                    const appOctokit = this.createOctokitInstance();
+                    await appOctokit.apps.deleteInstallation({
+                        installation_id:
+                            integration.authIntegration.authDetails
+                                .installationId,
+                    });
+                } catch (error) {
+                    this.logger.error({
+                        message: 'Error deleting GitHub installation',
+                        context: this.deleteWebhook.name,
+                        error: error,
+                        metadata: {
+                            organizationAndTeamData:
+                                params.organizationAndTeamData,
+                        },
+                    });
+                }
+            }
+        } else if (authMode === AuthMode.TOKEN) {
+            const repositories =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
+
+            if (repositories) {
+                for (const repo of repositories) {
+                    try {
+                        const { data: webhooks } =
+                            await octokit.repos.listWebhooks({
+                                owner: authDetails.org,
+                                repo: repo.name,
+                            });
+
+                        const webhookUrl = this.configService.get<string>(
+                            'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
+                        );
+
+                        const webhookToDelete = webhooks.find(
+                            (webhook) => webhook.config.url === webhookUrl,
+                        );
+
+                        if (webhookToDelete) {
+                            await octokit.repos.deleteWebhook({
+                                owner: authDetails.org,
+                                repo: repo.name,
+                                hook_id: webhookToDelete.id,
+                            });
+                        }
+                    } catch (error) {
+                        this.logger.error({
+                            message: `Error deleting webhook for repository ${repo.name}`,
+                            context: this.deleteWebhook.name,
+                            error: error,
+                            metadata: {
+                                organizationAndTeamData:
+                                    params.organizationAndTeamData,
+                                repoId: repo.id,
+                            },
+                        });
+                    }
+                }
+            }
         }
     }
 }

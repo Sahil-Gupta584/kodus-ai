@@ -11,7 +11,6 @@ import { IOrganizationParametersService } from '@/core/domain/organizationParame
 import { OrganizationParametersEntity } from '@/core/domain/organizationParameters/entities/organizationParameters.entity';
 import { IOrganizationParameters } from '@/core/domain/organizationParameters/interfaces/organizationParameters.interface';
 import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageContent';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
@@ -19,8 +18,12 @@ import { PromptService } from './prompt.service';
 import { ValidateProjectManagementIntegration } from '@/shared/utils/decorators/validate-project-management-integration.decorator';
 import { ProjectManagementService } from './platformIntegration/projectManagement.service';
 import { PinoLoggerService } from './logger/pino.service';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from './llmProviders/llmModelProvider.helper';
+import { LLM_PROVIDER_SERVICE_TOKEN } from './llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from './llmProviders/llmProvider.service';
 
 @Injectable()
 export class OrganizationParametersService
@@ -35,7 +38,8 @@ export class OrganizationParametersService
 
         private readonly promptService: PromptService,
 
-        private readonly projectManagementService: ProjectManagementService,
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
 
         private readonly logger: PinoLoggerService,
     ) {}
@@ -200,12 +204,9 @@ export class OrganizationParametersService
         workItemsTypesToCategorize: any,
         categorizedWorkItemTypesParameter?: any,
     ) {
-        const llm = await getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_ALL,
-            ),
-        }).bind({
-            response_format: { type: 'json_object' },
+        const llm = await this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
         });
 
         let payload: any;
@@ -230,13 +231,20 @@ export class OrganizationParametersService
 
         const categorizedWorkItemTypes = safelyParseMessageContent(
             (
-                await llm.invoke(prompt_categorizeWorkItemTypes, {
-                    metadata: {
-                        submodule: 'CategorizeWorkItemTypes',
-                        module: 'CategorizedWorkItemsTypes',
-                        teamId: organizationAndTeamData.teamId,
+                await llm.invoke(
+                    await prompt_categorizeWorkItemTypes.format({
+                        organizationAndTeamData,
+                        promptIsForChat: false,
+                        payload: payload,
+                    }),
+                    {
+                        metadata: {
+                            submodule: 'CategorizeWorkItemTypes',
+                            module: 'CategorizedWorkItemsTypes',
+                            teamId: organizationAndTeamData.teamId,
+                        },
                     },
-                })
+                )
             ).content,
         );
 

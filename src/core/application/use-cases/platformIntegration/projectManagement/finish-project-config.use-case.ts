@@ -6,7 +6,6 @@ import { Request } from 'express';
 import { SaveAllTeamMetricsHistoryUseCase } from '../../metrics/save-all-metrics-history.use-case';
 import { SaveAllOrganizationMetricsHistoryUseCase } from '../../organizationMetrics/save-metrics-history.use-case';
 import { SaveCategoryWorkItemsTypesUseCase } from '../../organizationParameters/save-category-workitems-types.use-case';
-import { ExecuteOrganizationArtifactsUseCase } from '../../organizationArtifacts/execute-organization-artifacts.use-case';
 import { ExecuteTeamArtifactsUseCase } from '../../teamArtifacts/execute-teamArtifacts';
 import { CreateOrUpdateParametersUseCase } from '../../parameters/create-or-update-use-case';
 import { MetricsCategory } from '@/shared/domain/enums/metric-category.enum';
@@ -22,7 +21,6 @@ import { ArtifactsToolType } from '@/shared/domain/enums/artifacts-tool-type.enu
 export class FinishProjectConfigUseCase implements IUseCase {
     constructor(
         private readonly teamArtifactsUseCase: ExecuteTeamArtifactsUseCase,
-        private readonly organizationArtifactsUseCase: ExecuteOrganizationArtifactsUseCase,
         private readonly saveCategoryWorkItemsTypesUseCase: SaveCategoryWorkItemsTypesUseCase,
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
         private readonly saveAllTeamMetricsHistoryUseCase: SaveAllTeamMetricsHistoryUseCase,
@@ -92,16 +90,6 @@ export class FinishProjectConfigUseCase implements IUseCase {
             organizationId: organizationId,
             type: 'weekly',
             artifactsToolType: ArtifactsToolType.PROJECT_MANAGEMENT,
-        });
-
-        await this.organizationArtifactsUseCase.execute({
-            organizationId: organizationId,
-            type: 'daily',
-        });
-
-        await this.organizationArtifactsUseCase.execute({
-            organizationId: organizationId,
-            type: 'weekly',
         });
     }
 

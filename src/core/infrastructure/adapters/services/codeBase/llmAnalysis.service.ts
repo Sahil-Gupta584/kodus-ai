@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { IAIAnalysisService } from '../../../../domain/codeBase/contracts/AIAnalysisService.contract';
 import {
     FileChangeContext,
@@ -12,26 +12,14 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '../logger/pino.service';
-import {
-    getChatGemini,
-    getChatGPT,
-    getChatVertexAI,
-    getDeepseekByNovitaAI,
-} from '@/shared/utils/langchainCommon/document';
 import { RunnableSequence } from '@langchain/core/runnables';
 import {
     StringOutputParser,
     StructuredOutputParser,
 } from '@langchain/core/output_parsers';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { HumanMessage } from '@langchain/core/messages';
 import { z } from 'zod';
-import {
-    prompt_codeReviewSafeguard_system,
-    prompt_codeReviewSafeguard_user,
-} from '@/shared/utils/langchainCommon/prompts/codeReviewSafeguard';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
 import { LLMResponseProcessor } from './utils/transforms/llmResponseProcessor.transform';
 import { prompt_validateImplementedSuggestions } from '@/shared/utils/langchainCommon/prompts/validateImplementedSuggestions';
 import { prompt_selectorLightOrHeavyMode_system } from '@/shared/utils/langchainCommon/prompts/seletorLightOrHeavyMode';
@@ -40,6 +28,13 @@ import {
     prompt_codereview_user_deepseek,
 } from '@/shared/utils/langchainCommon/prompts/configuration/codeReview';
 import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
+import { LLMProviderService } from '../llmProviders/llmProvider.service';
+import { prompt_codeReviewSafeguard_system } from '@/shared/utils/langchainCommon/prompts';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
+import {
+    LLMModelProvider,
+    MODEL_STRATEGIES,
+} from '../llmProviders/llmModelProvider.helper';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -121,7 +116,11 @@ export class LLMAnalysisService implements IAIAnalysisService {
     private readonly tokenTracker: TokenTrackingHandler;
     private readonly llmResponseProcessor: LLMResponseProcessor;
 
-    constructor(private readonly logger: PinoLoggerService) {
+    constructor(
+        private readonly logger: PinoLoggerService,
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
+    ) {
         this.tokenTracker = new TokenTrackingHandler();
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
     }
@@ -205,7 +204,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         reviewModeResponse: ReviewModeResponse,
         context: AnalysisContext,
     ): Promise<AIAnalysisResult> {
-        const provider = this.getInitialProvider(context, reviewModeResponse);
+        const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
 
         // Reset token tracking for new analysis
         this.tokenTracker.reset();
@@ -290,7 +289,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         context: any,
         reviewMode: ReviewModeResponse,
     ) {
-        const fallbackProvider = this.getFallbackProvider(provider, reviewMode);
+        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
         try {
             const mainChain = await this.createAnalysisProviderChain(
@@ -338,35 +337,14 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         reviewModeResponse: ReviewModeResponse,
     ) {
         try {
-            let llm =
-                provider === LLMModelProvider.DEEPSEEK_V3
-                    ? getDeepseekByNovitaAI({
-                          temperature: 0,
-                          callbacks: [this.tokenTracker],
-                      })
-                    : provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
-                      ? getChatGemini({
-                            model: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
-                            temperature: 0,
-                            maxTokens: 20000,
-                            json: true,
-                            callbacks: [this.tokenTracker],
-                        })
-                      : getChatGPT({
-                            model: getLLMModelProviderWithFallback(
-                                LLMModelProvider.CHATGPT_4_ALL,
-                            ),
-                            temperature: 0,
-                            callbacks: [this.tokenTracker],
-                        });
+            let llm = this.llmProviderService.getLLMProvider({
+                model: provider,
+                temperature: 0,
+                jsonMode: true,
+                callbacks: [this.tokenTracker],
+            });
 
-            if (provider === LLMModelProvider.CHATGPT_4_ALL) {
-                llm = llm.bind({
-                    response_format: { type: 'json_object' },
-                });
-            }
-
-            if (provider === LLMModelProvider.DEEPSEEK_V3) {
+            if (provider === LLMModelProvider.NOVITA_DEEPSEEK_V3) {
                 const lightModeChain = RunnableSequence.from([
                     async (input: any) => {
                         return [
@@ -423,47 +401,15 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
     }
     //#endregion
 
-    //#region Light Mode Functions
-    private getInitialProvider(
-        context: AnalysisContext,
-        reviewModeResponse: ReviewModeResponse,
-    ): LLMModelProvider {
-        if (
-            reviewModeResponse === ReviewModeResponse.LIGHT_MODE &&
-            context?.codeReviewConfig?.reviewModeConfig ===
-                ReviewModeConfig.LIGHT_MODE_FULL
-        ) {
-            return LLMModelProvider.DEEPSEEK_V3;
-        }
-        return LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
-    }
-
-    private getFallbackProvider(
-        provider: LLMModelProvider,
-        reviewMode: ReviewModeResponse,
-    ): LLMModelProvider {
-        if (reviewMode === ReviewModeResponse.LIGHT_MODE) {
-            return LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
-        }
-
-        const fallbackProvider =
-            provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
-                ? LLMModelProvider.DEEPSEEK_V3
-                : LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
-
-        return fallbackProvider;
-    }
-    //#endregion
-
     //#region Generate Code Suggestions
     private async createSuggestionsChainWithFallback(
         provider: LLMModelProvider,
         reviewMode: ReviewModeResponse,
     ) {
         const fallbackProvider =
-            provider === LLMModelProvider.CHATGPT_4_ALL
+            provider === LLMModelProvider.OPENAI_GPT_4O
                 ? LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
-                : LLMModelProvider.CHATGPT_4_ALL;
+                : LLMModelProvider.OPENAI_GPT_4O;
         try {
             // Main chain
             const mainChain = await this.createAnalysisChainWithFallback(
@@ -548,25 +494,12 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         codeSuggestions: CodeSuggestion[],
     ) {
         try {
-            let llm =
-                provider === LLMModelProvider.DEEPSEEK_V3_0324
-                    ? getDeepseekByNovitaAI({
-                          model: LLMModelProvider.DEEPSEEK_V3_0324,
-                          temperature: 0,
-                          maxTokens: 8000,
-                      })
-                    : getChatGPT({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
-                          temperature: 0,
-                      });
-
-            if (provider === LLMModelProvider.CHATGPT_4_ALL) {
-                llm = llm.bind({
-                    response_format: { type: 'json_object' },
-                });
-            }
+            let llm = this.llmProviderService.getLLMProvider({
+                model: provider,
+                temperature: 0,
+                jsonMode: true,
+                callbacks: [this.tokenTracker],
+            });
 
             const chain = RunnableSequence.from([
                 async (input: any) => {
@@ -618,9 +551,9 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         codeSuggestions: CodeSuggestion[],
     ) {
         const fallbackProvider =
-            provider === LLMModelProvider.CHATGPT_4_ALL
-                ? LLMModelProvider.DEEPSEEK_V3_0324
-                : LLMModelProvider.CHATGPT_4_ALL;
+            provider === LLMModelProvider.OPENAI_GPT_4O
+                ? LLMModelProvider.NOVITA_DEEPSEEK_V3_0324
+                : LLMModelProvider.OPENAI_GPT_4O;
 
         try {
             // Chain principal
@@ -908,21 +841,12 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         context?: any,
     ) {
         try {
-            let llm =
-                provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
-                    ? getChatGemini({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
-                          ),
-                          temperature: 0,
-                          maxTokens: 20000,
-                          json: true,
-                          callbacks: [this.tokenTracker],
-                      })
-                    : getChatVertexAI({
-                          temperature: 0,
-                          callbacks: [this.tokenTracker],
-                      });
+            let llm = this.llmProviderService.getLLMProvider({
+                model: provider,
+                temperature: 0,
+                jsonMode: true,
+                callbacks: [this.tokenTracker],
+            });
 
             const chain = RunnableSequence.from([
                 async (input: any) => {
@@ -1005,7 +929,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 });
 
                 // Fallback for LLM
-                const provider = LLMModelProvider.CHATGPT_4_ALL_MINI;
+                const provider = LLMModelProvider.OPENAI_GPT_4O_MINI;
                 const baseContext = { safeGuardResponse };
 
                 const chain =
@@ -1046,9 +970,9 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 context,
             );
             const fallbackProvider =
-                provider === LLMModelProvider.CHATGPT_4_ALL_MINI
-                    ? LLMModelProvider.CHATGPT_4_ALL
-                    : LLMModelProvider.CHATGPT_4_ALL_MINI;
+                provider === LLMModelProvider.OPENAI_GPT_4O_MINI
+                    ? LLMModelProvider.OPENAI_GPT_4O
+                    : LLMModelProvider.OPENAI_GPT_4O_MINI;
             const fallbackChain =
                 await this.createExtractSuggestionsProviderChain(
                     organizationAndTeamData,
@@ -1093,19 +1017,10 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         context: any,
     ) {
         try {
-            let llm = getChatGPT({
-                model:
-                    provider === LLMModelProvider.CHATGPT_4_ALL_MINI
-                        ? getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL_MINI,
-                          )
-                        : getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
+            let llm = this.llmProviderService.getLLMProvider({
+                model: MODEL_STRATEGIES[provider].modelName,
                 temperature: 0,
                 callbacks: [this.tokenTracker],
-            }).bind({
-                response_format: { type: 'json_object' },
             });
 
             const parser = StructuredOutputParser.fromZodSchema(
@@ -1230,9 +1145,9 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         context: any,
     ) {
         const fallbackProvider =
-            provider === LLMModelProvider.CHATGPT_4_ALL
-                ? LLMModelProvider.DEEPSEEK_V3
-                : LLMModelProvider.CHATGPT_4_ALL;
+            provider === LLMModelProvider.OPENAI_GPT_4O
+                ? LLMModelProvider.NOVITA_DEEPSEEK_V3_0324
+                : LLMModelProvider.OPENAI_GPT_4O;
 
         try {
             // Chain principal
@@ -1292,24 +1207,12 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         context: any,
     ) {
         try {
-            let llm =
-                provider === LLMModelProvider.DEEPSEEK_V3
-                    ? getDeepseekByNovitaAI({
-                          temperature: 0,
-                          maxTokens: 8000,
-                      })
-                    : getChatGPT({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
-                          temperature: 0,
-                      });
-
-            if (provider === LLMModelProvider.CHATGPT_4_ALL) {
-                llm = llm.bind({
-                    response_format: { type: 'json_object' },
-                });
-            }
+            let llm = this.llmProviderService.getLLMProvider({
+                model: provider,
+                temperature: 0,
+                callbacks: [this.tokenTracker],
+                jsonMode: true,
+            });
 
             const chain = RunnableSequence.from([
                 async (input: any) => {
@@ -1406,9 +1309,9 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         context: any,
     ) {
         const fallbackProvider =
-            provider === LLMModelProvider.CHATGPT_4_ALL
-                ? LLMModelProvider.DEEPSEEK_V3
-                : LLMModelProvider.CHATGPT_4_ALL;
+            provider === LLMModelProvider.OPENAI_GPT_4O
+                ? LLMModelProvider.NOVITA_DEEPSEEK_V3_0324
+                : LLMModelProvider.OPENAI_GPT_4O;
 
         try {
             // Main chain
@@ -1466,24 +1369,12 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         context: any,
     ) {
         try {
-            let llm =
-                provider === LLMModelProvider.DEEPSEEK_V3
-                    ? getDeepseekByNovitaAI({
-                          temperature: 0,
-                          maxTokens: 8000,
-                      })
-                    : getChatGPT({
-                          model: getLLMModelProviderWithFallback(
-                              LLMModelProvider.CHATGPT_4_ALL,
-                          ),
-                          temperature: 0,
-                      });
-
-            if (provider === LLMModelProvider.CHATGPT_4_ALL) {
-                llm = llm.bind({
-                    response_format: { type: 'json_object' },
-                });
-            }
+            let llm = this.llmProviderService.getLLMProvider({
+                model: provider,
+                temperature: 0,
+                callbacks: [this.tokenTracker],
+                jsonMode: true,
+            });
 
             const chain = RunnableSequence.from([
                 async (input: any) => {

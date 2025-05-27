@@ -7,6 +7,8 @@ import { GetTeamInfosByTenantNameAndTeamNameUseCase } from './get-team-infos-by-
 import { FinishSetupUseCase } from './finish-setup.use-case';
 import { DeleteTeamUseCase } from './delete.use-case';
 import { ListTeamsWithIntegrationsUseCase } from './list-with-integrations.use-case';
+import { SaveCategoryWorkItemsTypesUseCase } from '../organizationParameters/save-category-workitems-types.use-case';
+
 export const UseCases = [
     CreateTeamUseCase,
     UpdateTeamUseCase,
@@ -17,4 +19,5 @@ export const UseCases = [
     FinishSetupUseCase,
     DeleteTeamUseCase,
     ListTeamsWithIntegrationsUseCase,
+    SaveCategoryWorkItemsTypesUseCase,
 ];

@@ -14,10 +14,6 @@ export interface IOrganizationParametersService
         configValue: any,
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<OrganizationParametersEntity | boolean>;
-    createOrUpdateWorkItemsConfig(
-        organizationParametersKey: OrganizationParametersKey,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<OrganizationParametersEntity>;
     findByKey(
         configKey: OrganizationParametersKey,
         organizationAndTeamData: OrganizationAndTeamData,

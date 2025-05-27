@@ -5,6 +5,10 @@ import { Prop, SchemaFactory, Schema } from '@nestjs/mongoose';
     collection: 'log',
     timestamps: true,
     autoIndex: true,
+    writeConcern: {
+        w: 1,
+        j: true,
+    },
 })
 export class LogModel extends CoreDocument {
     @Prop({ type: String })

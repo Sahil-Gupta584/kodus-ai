@@ -2,7 +2,10 @@ import axios from 'axios';
 import { Injectable } from '@nestjs/common';
 import { AzureReposRepository } from '@/core/domain/azureRepos/entities/azureReposRepository.type';
 import { AzureReposProject } from '@/core/domain/azureRepos/entities/azureReposProject.type';
-import { AzurePRStatus, AzureRepoPullRequest } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
+import {
+    AzurePRStatus,
+    AzureRepoPullRequest,
+} from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
 import {
     AzureRepoIteration,
     AzureRepoChange,
@@ -18,7 +21,7 @@ import { FileChange } from '@/config/types/general/codeReview.type';
 
 @Injectable()
 export class AzureReposRequestHelper {
-    constructor() { }
+    constructor() {}
 
     async getProjects(params: {
         orgName: string;
@@ -398,12 +401,30 @@ export class AzureReposRequestHelper {
         iterationId: number | string;
     }): Promise<AzureRepoChange[]> {
         const instance = await this.azureRequest(params);
+        let allChanges: AzureRepoChange[] = [];
+        let skip = 0;
+        let top = 100;
 
-        const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests/${params.pullRequestId}/iterations/${params.iterationId}/changes?api-version=7.1`,
-        );
+        while (true) {
+            const { data } = await instance.get(
+                `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests/${params.pullRequestId}/iterations/${params.iterationId}/changes?api-version=7.1&$top=${top}&$skip=${skip}`,
+            );
 
-        return data?.changeEntries ?? [];
+            const changeEntries = data?.changeEntries ?? [];
+            allChanges = [...allChanges, ...changeEntries];
+
+            if (data.nextSkip === undefined) {
+                break;
+            }
+
+            if (data.nextTop !== undefined) {
+                top = data.nextTop;
+            }
+
+            skip = data.nextSkip;
+        }
+
+        return allChanges;
     }
 
     async getCommits(params: {
@@ -730,6 +751,30 @@ export class AzureReposRequestHelper {
                 content: params.content,
                 commentType: AzureRepoCommentType.TEXT,
             },
+        );
+
+        return data;
+    }
+
+    async replyToThreadComment(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        prId: number;
+        threadId: number;
+        comment: string;
+    }): Promise<any> {
+        const instance = await this.azureRequest(params);
+
+        const payload = {
+            content: params.comment,
+            commentType: AzureRepoCommentType.TEXT,
+        };
+
+        const { data } = await instance.post(
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullRequests/${params.prId}/threads/${params.threadId}/comments?api-version=7.1`,
+            payload,
         );
 
         return data;

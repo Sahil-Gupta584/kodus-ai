@@ -1,4 +1,3 @@
-import { getChatGPT } from '@/shared/utils/langchainCommon/document';
 import { Inject, Injectable } from '@nestjs/common';
 import * as moment from 'moment-timezone';
 import { PromptService } from '../prompt.service';
@@ -14,8 +13,12 @@ import {
     IMetricsFactory,
     METRICS_FACTORY_TOKEN,
 } from '@/core/domain/metrics/contracts/metrics.factory.contract';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '@/shared/utils/get-llm-model-provider.util';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '../llmProviders/llmModelProvider.helper';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
+import { LLMProviderService } from '../llmProviders/llmProvider.service';
 
 @Injectable()
 export class CheckinInsightsService implements ICheckinInsightsService {
@@ -24,6 +27,9 @@ export class CheckinInsightsService implements ICheckinInsightsService {
 
         @Inject(METRICS_FACTORY_TOKEN)
         private readonly metricsFactory: IMetricsFactory,
+
+        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
+        private readonly llmProviderService: LLMProviderService,
     ) {}
 
     async getInsightsForOffTrackItems(
@@ -37,12 +43,10 @@ export class CheckinInsightsService implements ICheckinInsightsService {
 
         const fomattedMetrics = await this.formatMetricsDataToInsights(metrics);
 
-        const llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(
-                LLMModelProvider.CHATGPT_4_TURBO,
-            ),
-        }).bind({
-            response_format: { type: 'json_object' },
+        const llm = this.llmProviderService.getLLMProvider({
+            model: LLMModelProvider.OPENAI_GPT_4O,
+            temperature: 0,
+            jsonMode: true,
         });
 
         const payload = `Below is the information required for your analysis. Team metrics history: ${JSON.stringify(fomattedMetrics)}, Team board column ordering: ${JSON.stringify(wipColumns)}, and here are the overdue work items for you to generate insights: ${JSON.stringify(workItemsOffTrack)};`;
@@ -59,7 +63,11 @@ export class CheckinInsightsService implements ICheckinInsightsService {
 
         const insights = await safelyParseMessageContent(
             (
-                await llm.invoke(promptInsights, {
+                await llm.invoke(await promptInsights.format({
+                    organizationAndTeamData,
+                    promptIsForChat: false,
+                    payload: payload,
+                }), {
                     metadata: {
                         submodule: 'GenerateInsightsForCheckin',
                         module: 'AutomationTeamProgress',

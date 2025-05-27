@@ -14,12 +14,13 @@ import { OpenAIAssistantRunnable } from 'langchain/experimental/openai_assistant
 import axios from 'axios';
 import { traceable } from 'langsmith/traceable';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
-import { LLMModelProvider } from '@/shared/domain/enums/llm-model-provider.enum';
-import { getLLMModelProviderWithFallback } from '../get-llm-model-provider.util';
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks';
 import { ChatVertexAI } from '@langchain/google-vertexai';
-import { ChatTogetherAI } from '@langchain/community/chat_models/togetherai';
 import { ChatNovitaAI } from '@langchain/community/chat_models/novita';
+import {
+    MODEL_STRATEGIES,
+    LLMModelProvider,
+} from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 
 interface OpenAIEmbeddingResponse {
     data: Array<{
@@ -96,92 +97,6 @@ const splitPayloadIntoChunks = async (
     });
 
     return await splitter.splitDocuments(payload);
-};
-
-/**
- * Returns a new instance of ChatOpenAI with the specified options.
- *
- * @param {object} options - An optional object containing the following properties:
- *   - model: A string representing the model to use (default: 'gpt-4-turbo').
- *   - temperature: A number representing the temperature (default: 0).
- *   - maxTokens: A number representing the maximum number of tokens (default: -1).
- * @return {ChatOpenAI} A new instance of ChatOpenAI.
- */
-const getChatGPT = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
-    } | null,
-): any => {
-    const defaultOptions = {
-        model: getLLMModelProviderWithFallback(
-            LLMModelProvider.CHATGPT_4_TURBO,
-        ),
-        temperature: 0,
-        cache: true,
-        maxRetries: 10,
-        maxConcurrency: 10,
-        maxTokens: -1,
-        verbose: false,
-        streaming: false,
-        callbacks: [],
-    };
-
-    const finalOptions = options
-        ? { ...defaultOptions, ...options }
-        : defaultOptions;
-
-    return new ChatOpenAI({
-        modelName: finalOptions.model,
-        openAIApiKey: process.env.API_OPEN_AI_API_KEY,
-        temperature: finalOptions.temperature,
-        maxTokens: finalOptions.maxTokens,
-        streaming: finalOptions.streaming,
-        verbose: finalOptions.verbose,
-        callbacks: finalOptions.callbacks,
-    });
-};
-
-/**
- * Generates an instance of the OpenAI class with the specified options.
- *
- * @param {Object} options - The options for configuring the OpenAI instance. (optional)
- * @param {string} options.model - The model to use. Defaults to 'gpt-3.5-turbo-16k'. (optional)
- * @param {number} options.temperature - The temperature value. Defaults to 0. (optional)
- * @return {OpenAI} An instance of the OpenAI class.
- */
-const getOpenAI = (
-    options?: {
-        model?: string;
-        temperature?: number;
-    } | null,
-): any => {
-    const defaultOptions = {
-        model: getLLMModelProviderWithFallback(
-            LLMModelProvider.CHATGPT_3_5_TURBO,
-        ),
-        temperature: 0,
-        cache: true,
-        maxRetries: 10,
-        maxConcurrency: 10,
-        maxTokens: -1,
-        streaming: false,
-    };
-
-    const finalOptions = options
-        ? { ...defaultOptions, ...options }
-        : defaultOptions;
-
-    return new OpenAI({
-        modelName: finalOptions.model,
-        openAIApiKey: process.env.API_OPEN_AI_API_KEY,
-        temperature: finalOptions.temperature,
-        maxTokens: finalOptions.maxTokens,
-        streaming: finalOptions.streaming,
-    });
 };
 
 /**
@@ -375,70 +290,6 @@ const getWorkItemIdsFromData = (data: any) => {
     return ids;
 };
 
-const getDoingAndWaitingColumns = async (columns) => {
-    try {
-        const llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(LLMModelProvider.CHATGPT_4),
-        }).bind({
-            response_format: { type: 'json_object' },
-        });
-
-        const wipColumns = columns
-            .filter((column) => {
-                return column.column == 'wip';
-            })
-            .map((column) => {
-                return {
-                    id: column.id,
-                    name: column.name,
-                };
-            });
-
-        const promptWaitingColumns = prompt_getWaitingColumns(
-            JSON.stringify(wipColumns),
-        );
-
-        const promptDoingColumn = prompt_getDoingColumnName(
-            JSON.stringify(wipColumns),
-        );
-
-        const llmWaitingColmmnResponse = JSON.parse(
-            String((await llm.invoke(promptWaitingColumns)).content),
-        );
-
-        const llmDoingColumnResponse = JSON.parse(
-            String((await llm.invoke(promptDoingColumn)).content),
-        );
-
-        return {
-            waitingColumns: llmWaitingColmmnResponse,
-            doingColumn: llmDoingColumnResponse,
-        };
-    } catch (error) {}
-};
-
-const getBugTypes = async (workItemTypes) => {
-    try {
-        const llm = getChatGPT({
-            model: getLLMModelProviderWithFallback(LLMModelProvider.CHATGPT_4),
-        }).bind({
-            response_format: { type: 'json_object' },
-        });
-
-        const promptBugTypes = prompt_getBugTypes(
-            JSON.stringify(workItemTypes),
-        );
-
-        const llmBugTypesResponse = JSON.parse(
-            String((await llm.invoke(promptBugTypes)).content),
-        );
-
-        return {
-            bugTypes: llmBugTypesResponse,
-        };
-    } catch (error) {}
-};
-
 const traceCustomLLMCall = async (
     inputMessage: any,
     outputMessage: string,
@@ -466,236 +317,6 @@ const traceCustomLLMCall = async (
     );
 
     return await chatModel({ messages });
-};
-
-/**
- * Returns a new instance of ChatAnthropic with the specified options.
- *
- * @param {object} options - An optional object containing the following properties:
- *   - model: A string representing the model to use (default: 'claude-3-sonnet-20240229').
- *   - temperature: A number representing the temperature (default: 0).
- *   - maxTokens: A number representing the maximum number of tokens (default: 4000).
- * @return {ChatAnthropic} A new instance of ChatAnthropic.
- */
-const getChatAnthropic = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
-    } | null,
-): any => {
-    const defaultOptions = {
-        model: getLLMModelProviderWithFallback(
-            LLMModelProvider.CLAUDE_3_5_SONNET,
-        ),
-        temperature: 0,
-        maxTokens: 4000,
-        verbose: false,
-        streaming: false,
-        callbacks: [],
-    };
-
-    const finalOptions = options
-        ? { ...defaultOptions, ...options }
-        : defaultOptions;
-
-    return new ChatAnthropic({
-        modelName: finalOptions.model,
-        anthropicApiKey: process.env.API_ANTHROPIC_API_KEY,
-        temperature: finalOptions.temperature,
-        maxTokens: finalOptions.maxTokens,
-        callbacks: finalOptions.callbacks,
-    });
-};
-
-const getChatGemini = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        topP?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
-        json?: boolean;
-    } | null,
-) => {
-    const defaultOptions = {
-        model: getLLMModelProviderWithFallback(LLMModelProvider.GEMINI_1_5_PRO),
-        temperature: 0,
-        topP: 1,
-        maxTokens: 8192,
-        verbose: false,
-        streaming: false,
-        callbacks: [],
-        json: false,
-    };
-
-    const finalOptions = options
-        ? { ...defaultOptions, ...options }
-        : defaultOptions;
-
-    return new ChatGoogleGenerativeAI({
-        model: finalOptions.model,
-        apiKey: process.env.API_GOOGLE_AI_API_KEY,
-        temperature: finalOptions.temperature,
-        topP: finalOptions.topP,
-        maxOutputTokens: finalOptions.maxTokens,
-        verbose: finalOptions.verbose,
-        callbacks: finalOptions.callbacks,
-        json: finalOptions.json,
-    });
-};
-
-/**
- * Returns a new instance of ChatFireworks configured to use the Deepseek model
- * through the Fireworks API.
- *
- * @param {object} options - An optional object containing the following properties:
- *   - model: String representing the model (default: 'accounts/fireworks/models/deepseek-v3')
- *   - temperature: Number representing the temperature (default: 0)
- *   - maxTokens: Number representing the maximum number of tokens (default: 4000)
- * @return {ChatFireworks} A new instance of ChatFireworks
- */
-const getDeepseekByFireworks = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
-    } | null,
-): any => {
-    const defaultOptions = {
-        model: 'accounts/fireworks/models/deepseek-v3',
-        temperature: 0,
-        maxTokens: 4000,
-        verbose: false,
-        streaming: false,
-        callbacks: [],
-    };
-
-    const finalOptions = options
-        ? { ...defaultOptions, ...options }
-        : defaultOptions;
-
-    return new ChatFireworks({
-        modelName: finalOptions.model,
-        apiKey: process.env.API_FIREWORKS_API_KEY,
-        temperature: finalOptions.temperature,
-        maxTokens: finalOptions.maxTokens,
-        callbacks: finalOptions.callbacks,
-    });
-};
-
-const getChatVertexAI = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
-    } | null,
-): any => {
-    const defaultOptions = {
-        model: getLLMModelProviderWithFallback(
-            LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET,
-        ),
-        temperature: 0,
-        maxTokens: 4000,
-        verbose: false,
-        streaming: false,
-        callbacks: [],
-    };
-
-    const finalOptions = options
-        ? { ...defaultOptions, ...options }
-        : defaultOptions;
-
-    const credentials = Buffer.from(
-        process.env.API_VERTEX_AI_API_KEY || '',
-        'base64',
-    ).toString('utf-8');
-
-    return new ChatVertexAI({
-        model: finalOptions.model,
-        authOptions: {
-            credentials: JSON.parse(credentials),
-            projectId: JSON.parse(credentials).project_id,
-        },
-        location: 'us-east5',
-        temperature: finalOptions.temperature,
-        maxOutputTokens: finalOptions.maxTokens,
-        verbose: finalOptions.verbose,
-        callbacks: finalOptions.callbacks,
-    });
-};
-
-const getDeepseekByTogetherAI = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
-    } | null,
-): any => {
-    const defaultOptions = {
-        model: 'deepseek-ai/DeepSeek-V3',
-        temperature: 0,
-        maxTokens: 8000,
-        verbose: false,
-        streaming: false,
-        callbacks: [],
-    };
-
-    const finalOptions = options
-        ? { ...defaultOptions, ...options }
-        : defaultOptions;
-
-    return new ChatTogetherAI({
-        model: finalOptions.model,
-        togetherAIApiKey: process.env.TOGETHER_AI_API_KEY,
-        temperature: finalOptions.temperature,
-        maxTokens: finalOptions.maxTokens,
-        callbacks: finalOptions.callbacks,
-    });
-};
-
-const getDeepseekByNovitaAI = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
-    } | null,
-): any => {
-    const defaultOptions = {
-        model: 'deepseek/deepseek_v3',
-        temperature: 0,
-        maxTokens: 8000,
-        verbose: false,
-        streaming: false,
-        callbacks: [],
-    };
-
-    if (options?.model) {
-        options.model = `deepseek/${options.model}`;
-    }
-
-    const finalOptions = options
-        ? { ...defaultOptions, ...options }
-        : defaultOptions;
-
-    return new ChatNovitaAI({
-        model: finalOptions.model,
-        apiKey: process.env.API_NOVITA_AI_API_KEY,
-        temperature: finalOptions.temperature,
-        maxTokens: finalOptions.maxTokens,
-        callbacks: finalOptions.callbacks,
-    });
 };
 
 const getOpenAIEmbedding = async (
@@ -734,22 +355,13 @@ const getOpenAIEmbedding = async (
 export {
     createDocument,
     createDataPointDocument,
-    getChatGPT,
-    getChatAnthropic,
-    getOpenAI,
     getEmbedding,
     splitPayloadIntoChunks,
     estimateTokenCount,
     checkOpenAIResult,
     getWorkItemIdsFromData,
-    getDoingAndWaitingColumns,
-    getBugTypes,
     getOpenAIAssistant,
     getOpenAIAssistantFileContent,
     traceCustomLLMCall,
-    getChatGemini,
-    getDeepseekByFireworks,
-    getChatVertexAI,
-    getDeepseekByNovitaAI,
     getOpenAIEmbedding,
 };

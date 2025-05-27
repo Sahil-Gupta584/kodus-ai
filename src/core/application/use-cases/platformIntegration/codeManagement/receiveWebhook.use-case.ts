@@ -1,136 +1,70 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { ChatWithKodyFromGitUseCase } from './chatWithKodyFromGit.use-case';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
-import { SavePullRequestUseCase } from '../../pullRequests/save.use-case';
-import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
-import { getMappedPlatform } from '@/shared/utils/webhooks';
-import { IWebhookBitbucketPullRequestEvent } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-bitbucket.type';
+
 import {
-    PULL_REQUESTS_SERVICE_TOKEN,
-    IPullRequestsService,
-} from '@/core/domain/pullRequests/contracts/pullRequests.service.contracts';
-import { BitbucketService } from '@/core/infrastructure/adapters/services/bitbucket/bitbucket.service';
-import {
-    INTEGRATION_CONFIG_SERVICE_TOKEN,
-    IIntegrationConfigService,
-} from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
-import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
-import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.use-case';
+    IWebhookEventHandler,
+    IWebhookEventParams,
+} from '@/core/domain/platformIntegrations/interfaces/webhook-event-handler.interface';
 
 @Injectable()
 export class ReceiveWebhookUseCase implements IUseCase {
+    private readonly webhookHandlersMap: Map<
+        PlatformType,
+        IWebhookEventHandler
+    >;
+
     constructor(
+        @Inject('GITHUB_WEBHOOK_HANDLER')
+        private readonly githubPullRequestHandler: IWebhookEventHandler,
+
+        @Inject('GITLAB_WEBHOOK_HANDLER')
+        private readonly gitlabMergeRequestHandler: IWebhookEventHandler,
+
+        @Inject('BITBUCKET_WEBHOOK_HANDLER')
+        private readonly bitbucketPullRequestHandler: IWebhookEventHandler,
+
+        @Inject('AZURE_REPOS_WEBHOOK_HANDLER')
+        private readonly azureReposPullRequestHandler: IWebhookEventHandler,
+
         private readonly logger: PinoLoggerService,
-        private readonly runCodeReviewAutomationUseCase: RunCodeReviewAutomationUseCase,
-        private readonly chatWithKodyFromGitUseCase: ChatWithKodyFromGitUseCase,
-        private readonly savePullRequestUseCase: SavePullRequestUseCase,
-        private readonly codeManagement: CodeManagementService,
+    ) {
+        // Inicializar o mapa de handlers por tipo de plataforma
+        this.webhookHandlersMap = new Map<PlatformType, IWebhookEventHandler>([
+            [PlatformType.GITHUB, githubPullRequestHandler],
+            [PlatformType.GITLAB, gitlabMergeRequestHandler],
+            [PlatformType.BITBUCKET, bitbucketPullRequestHandler],
+            [PlatformType.AZURE_REPOS, azureReposPullRequestHandler],
+        ]);
+    }
 
-        @Inject(PULL_REQUESTS_SERVICE_TOKEN)
-        private readonly pullRequestsService: IPullRequestsService,
-
-        @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
-        private readonly integrationConfigService: IIntegrationConfigService,
-
-        private readonly bitbuckerService: BitbucketService,
-    ) { }
-
-    public async execute(params: {
-        payload: any;
-        event: string;
-        platformType: PlatformType;
-    }): Promise<void> {
+    public async execute(params: IWebhookEventParams): Promise<void> {
         try {
-            switch (params?.event) {
-                case 'pull_request': // GitHub
-                    await this.savePullRequestUseCase.execute(params);
-                    this.runCodeReviewAutomationUseCase.execute(params);
-                    break;
+            const handler = this.webhookHandlersMap.get(params.platformType);
 
-                case 'Merge Request Hook': // GitLab
-                    if (this.shouldTriggerCodeReviewForGitLab(params)) {
-                        await this.savePullRequestUseCase.execute(params);
-                        this.runCodeReviewAutomationUseCase.execute(params);
-                    }
-                    break;
+            if (handler && handler.canHandle(params)) {
+                this.logger.debug({
+                    message: `Processing ${params.event} with handler ${handler.constructor.name}`,
+                    serviceName: ReceiveWebhookUseCase.name,
+                    metadata: {
+                        eventName: params.event,
+                        platformType: params.platformType,
+                    },
+                    context: ReceiveWebhookUseCase.name,
+                });
 
-                case 'pullrequest:created': // Bitbucket
-                case 'pullrequest:updated':
-                    if (
-                        await this.shouldTriggerCodeReviewForBitbucket(
-                            params.payload,
-                            params.platformType,
-                        )
-                    ) {
-                        await this.savePullRequestUseCase.execute(params);
-                        this.runCodeReviewAutomationUseCase.execute(params);
-                    }
-                    break;
-                case 'pullrequest:rejected':
-                case 'pullrequest:fulfilled':
-                    if (
-                        await this.shouldTriggerCodeReviewForBitbucket(
-                            params.payload,
-                            params.platformType,
-                        )
-                    ) {
-                        await this.savePullRequestUseCase.execute(params);
-                    }
-                    break;
-
-                case 'pullrequest:comment_created':
-                    this.isStartCommand(params);
-                    break;
-
-                case 'issue_comment':
-                    this.isStartCommand(params);
-                    break;
-                case 'pull_request_review_comment':
-                case 'Note Hook':
-                    if (
-                        params.payload?.object_attributes?.action ===
-                        'create' &&
-                        !params.payload?.object_attributes?.change_position &&
-                        !params.payload?.object_attributes?.type
-                    ) {
-                        this.isStartCommand(params);
-                    } else {
-                        this.chatWithKodyFromGitUseCase.execute(params);
-                    }
-                    break;
-
-                // Azure DevOps events
-                case 'git.pullrequest.created':
-                case 'git.pullrequest.updated':
-                    await this.savePullRequestUseCase.execute(params);
-                    this.runCodeReviewAutomationUseCase.execute(params);
-                    break;
-                case 'git.pullrequest.merge.attempted':
-                    await this.savePullRequestUseCase.execute(params);
-                    break;
-                case 'ms.vss-code.git-pullrequest-comment-event':
-                    const comment = params.payload?.resource.comment.content;
-                    const pullRequestId =
-                        params.payload?.resource?.pullRequest?.status ===
-                        'active';
-
-                    if (comment && pullRequestId) {
-                        this.isStartCommand(params);
-                    }
-
-                    break;
-
-                default:
-                    this.logger.warn({
-                        message: `Evento não tratado: ${params?.event}`,
-                        context: ReceiveWebhookUseCase.name,
-                        metadata: {
-                            event: params?.event,
-                        },
-                    });
+                handler.execute(params);
+            } else {
+                this.logger.debug({
+                    message: `No handler found for event ${params.event}`,
+                    serviceName: ReceiveWebhookUseCase.name,
+                    metadata: {
+                        eventName: params.event,
+                        platformType: params.platformType,
+                    },
+                    context: ReceiveWebhookUseCase.name,
+                });
             }
         } catch (error) {
             this.logger.error({
@@ -143,230 +77,5 @@ export class ReceiveWebhookUseCase implements IUseCase {
                 },
             });
         }
-    }
-
-    private async isStartCommand(params: {
-        payload: any;
-        event: string;
-        platformType: PlatformType;
-    }) {
-        const { payload, event, platformType } = params;
-
-        const mappedPlatform = getMappedPlatform(platformType);
-        if (!mappedPlatform) {
-            return;
-        }
-
-        const comment = mappedPlatform.mapComment({ payload });
-        if (!comment || !comment.body || payload?.action === 'deleted') {
-            return;
-        }
-
-        const commandPattern = /^\s*@kody\s+start-review/i;
-        const isStartCommand = commandPattern.test(comment.body);
-
-        // procura exatamente: <!-- kody-codereview -->
-        const reviewMarkerPattern = /<!--\s*kody-codereview\s*-->/i;
-        const hasReviewMarker = reviewMarkerPattern.test(comment.body);
-
-        const pullRequest = mappedPlatform.mapPullRequest({ payload });
-
-        if (isStartCommand && !hasReviewMarker) {
-            this.logger.log({
-                message: `@kody start command detected in PR#${pullRequest?.number}`,
-                context: ReceiveWebhookUseCase.name,
-                metadata: {
-                    ...params,
-                },
-            });
-
-            let pullRequestData = null;
-            if (
-                platformType === PlatformType.GITHUB &&
-                !payload?.pull_request &&
-                payload?.issue &&
-                payload?.issue?.number
-            ) {
-                const repository = {
-                    id: payload.repository.id,
-                    name: payload.repository.name,
-                };
-
-                const userGitId = await this.getUserGitId(payload, platformType);
-
-                const teamData =
-                    await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview(
-                        {
-                            repository,
-                            platformType,
-                            userGitId,
-                            prNumber: payload.issue.number,
-                        },
-                    );
-
-                if (teamData?.organizationAndTeamData) {
-                    pullRequestData =
-                        await this.codeManagement.getPullRequestDetails({
-                            organizationAndTeamData:
-                                teamData?.organizationAndTeamData,
-                            repository,
-                            prNumber: payload.issue.number,
-                        });
-                }
-            }
-
-            const updatedParams = {
-                ...params,
-                payload: {
-                    ...payload,
-                    action: 'synchronize',
-                    origin: 'command',
-                    pull_request:
-                        pullRequestData || pullRequest || payload?.pull_request,
-                },
-            };
-
-            await this.savePullRequestUseCase.execute(updatedParams);
-            await this.runCodeReviewAutomationUseCase.execute(updatedParams);
-            return;
-        }
-        return;
-    }
-
-    private shouldTriggerCodeReviewForGitLab(params: any): boolean {
-        const objectAttributes = params.payload?.object_attributes || {};
-        const changes = params.payload?.changes || {};
-
-        // Verify if it's a new MR
-        if (objectAttributes.action === 'open') {
-            return true;
-        }
-
-        // Verify if it's a new commit
-        const lastCommitId = objectAttributes.last_commit?.id;
-        const oldRev = objectAttributes.oldrev;
-
-        if (lastCommitId && oldRev && lastCommitId !== oldRev) {
-            return true;
-        }
-
-        // Verify if it's a merge
-        if (
-            objectAttributes.state === 'merged' ||
-            objectAttributes.action === 'merge'
-        ) {
-            return true;
-        }
-
-        // Verify if the PR is closed.
-        if (
-            objectAttributes.state === 'closed' ||
-            objectAttributes.action === 'close'
-        ) {
-            return true;
-        }
-
-        // Ignore if it's an update to the description
-        if (objectAttributes.action === 'update' && changes.description) {
-            return false;
-        }
-
-        // For all other cases, return false
-        return false;
-    }
-
-    private isBitbucketPullRequestEvent(
-        event: any,
-    ): event is IWebhookBitbucketPullRequestEvent {
-        const pullRequest = event?.pullrequest;
-        const actor = event?.actor;
-        const repository = event?.repository;
-        const areUndefined =
-            pullRequest === undefined ||
-            actor === undefined ||
-            repository === undefined;
-
-        if (areUndefined) {
-            return false;
-        }
-
-        return true;
-    }
-
-    // We can't know when a Bitbucket PR was updated due to a new commit or something else like new description via the webhook alone
-    private async shouldTriggerCodeReviewForBitbucket(
-        payload: any,
-        platformType: PlatformType,
-    ): Promise<boolean> {
-        if (!this.isBitbucketPullRequestEvent(payload)) {
-            return false;
-        }
-
-        const { pullrequest, repository } = payload;
-        const repoId = repository.uuid.slice(1, repository.uuid.length - 1);
-
-        const configs =
-            await this.integrationConfigService.findIntegrationConfigWithTeams(
-                IntegrationConfigKey.REPOSITORIES,
-                repoId,
-                platformType,
-            );
-
-        if (!configs || !configs?.length) {
-            return false;
-        }
-
-        const organizationAndTeamData: OrganizationAndTeamData = configs.map(
-            (config) => ({
-                organizationId: config.team.organization.uuid,
-                teamId: config.team.uuid,
-            }),
-        )[0];
-
-        const pullRequestCommits =
-            await this.bitbuckerService.getCommitsForPullRequestForCodeReview({
-                organizationAndTeamData,
-                repository: {
-                    id: repoId,
-                    name: repository.name,
-                },
-                prNumber: pullrequest.id,
-            });
-
-        const storedPR =
-            await this.pullRequestsService.findByNumberAndRepository(
-                pullrequest.id,
-                repository.name,
-                organizationAndTeamData,
-            );
-
-        if (storedPR && pullrequest.state === 'OPEN') {
-            const prCommit = pullRequestCommits[pullRequestCommits.length - 1];
-            const storedPRCommitHashes = storedPR?.commits?.map(
-                (commit) => commit.sha,
-            );
-            if (storedPRCommitHashes?.includes(prCommit?.sha)) {
-                return false;
-            }
-        }
-
-        switch (pullrequest.state) {
-            case 'OPEN':
-                return true;
-            case 'MERGED':
-                return true;
-            case 'DECLINED':
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    private async getUserGitId(payload: any, platformType: PlatformType) {
-        if (platformType === PlatformType.GITHUB) {
-            return payload?.sender?.id.toString();
-        }
-
-        return null;
     }
 }

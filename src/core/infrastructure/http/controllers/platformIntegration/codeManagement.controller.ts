@@ -4,7 +4,7 @@ import { GetCodeManagementMemberListUseCase } from '@/core/application/use-cases
 import { GetRepositoriesUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-repositories';
 import { VerifyConnectionUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/verify-connection.use-case';
 import { Repository } from '@/core/domain/integrationConfigs/types/codeManagement/repositories.type';
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query } from '@nestjs/common';
 import { TeamQueryDto } from '../../dtos/teamId-query-dto';
 import { GetOrganizationUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-organizations.use-case';
 import { SaveCodeConfigUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/save-config.use-case';
@@ -16,6 +16,7 @@ import { CreatePRCodeReviewUseCase } from '@/core/application/use-cases/platform
 import { GetCodeReviewStartedUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-code-review-started.use-case';
 import { FinishOnboardingDTO } from '../../dtos/finish-onboarding.dto';
 import { FinishOnboardingUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/finish-onboarding.use-case';
+import { DeleteIntegrationUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/delete-integration.use-case';
 
 @Controller('code-management')
 export class CodeManagementController {
@@ -34,6 +35,7 @@ export class CodeManagementController {
         private readonly createPRCodeReviewUseCase: CreatePRCodeReviewUseCase,
         private readonly getCodeReviewStartedUseCase: GetCodeReviewStartedUseCase,
         private readonly finishOnboardingUseCase: FinishOnboardingUseCase,
+        private readonly deleteIntegrationUseCase: DeleteIntegrationUseCase,
     ) { }
 
     @Get('/repositories/org')
@@ -141,5 +143,10 @@ export class CodeManagementController {
         body: FinishOnboardingDTO,
     ) {
         return await this.finishOnboardingUseCase.execute(body);
+    }
+
+    @Delete('/delete-integration')
+    public async deleteIntegration(@Query() query: { organizationId: string, teamId: string }) {
+        return await this.deleteIntegrationUseCase.execute(query);
     }
 }

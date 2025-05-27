@@ -104,6 +104,7 @@ export class CodeReviewFeedbackRepository
 
     async findByOrganizationAndSyncedFlag(
         organizationId: string,
+        repositoryId: string,
         syncedEmbeddedSuggestions: boolean,
     ): Promise<CodeReviewFeedbackEntity[]> {
         try {
@@ -116,6 +117,10 @@ export class CodeReviewFeedbackRepository
                     { syncedEmbeddedSuggestions },
                     { syncedEmbeddedSuggestions: { $exists: false } },
                 ];
+            }
+
+            if (repositoryId) {
+                filter['pullRequest.repository.id'] = repositoryId;
             }
 
             const docs = await this.codeReviewFeedbackModel.find(filter).exec();

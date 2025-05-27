@@ -17,7 +17,6 @@ import { ParametersModule } from './parameters.module';
 import { ExecuteTeamArtifactsUseCase } from '@/core/application/use-cases/teamArtifacts/execute-teamArtifacts';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
 import { TeamsModule } from './team.module';
-import { EnrichTeamArtifactsUseCase } from '@/core/application/use-cases/teamArtifacts/enrich-team-artifacts.use-case';
 
 @Module({
     imports: [
@@ -33,7 +32,6 @@ import { EnrichTeamArtifactsUseCase } from '@/core/application/use-cases/teamArt
     ],
     providers: [
         ...UseCases,
-        EnrichTeamArtifactsUseCase,
         ExecuteTeamArtifactsUseCase,
         PromptService,
         {
@@ -50,7 +48,6 @@ import { EnrichTeamArtifactsUseCase } from '@/core/application/use-cases/teamArt
         TEAM_ARTIFACTS_SERVICE_TOKEN,
         TEAM_ARTIFACTS_REPOSITORY_TOKEN,
         ExecuteTeamArtifactsUseCase,
-        EnrichTeamArtifactsUseCase,
     ],
 })
 export class TeamArtifactsModule {}
