@@ -27,7 +27,9 @@ import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-k
 import { IntegrationEntity } from '@/core/domain/integrations/entities/integration.entity';
 import { GithubAuthDetail } from '@/core/domain/authIntegrations/types/github-auth-detail.type';
 import {
+    AuthorContributions,
     OneSentenceSummaryItem,
+    PullRequestAuthor,
     PullRequestCodeReviewTime,
     PullRequestDetails,
     PullRequestFile,
@@ -558,6 +560,7 @@ export class GithubService
             },
         );
     }
+
     /**
      * Retrieves the authentication details for a specific GitHub Oauth organization.
      *
@@ -761,6 +764,83 @@ export class GithubService
             return pullRequests;
         } catch (err) {
             console.error(err);
+            return [];
+        }
+    }
+
+    async getPullRequestAuthors(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<PullRequestAuthor[]> {
+        try {
+            const githubAuthDetail = await this.getGithubAuthDetails(params.organizationAndTeamData);
+            const allRepositories = await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                params?.organizationAndTeamData,
+                IntegrationConfigKey.REPOSITORIES,
+            );
+
+            if (!githubAuthDetail || !allRepositories) return [];
+
+            const octokit = await this.instanceOctokit(params?.organizationAndTeamData);
+            const since = new Date();
+            since.setDate(since.getDate() - 60);
+
+            const authorsSet = new Set<string>();
+            const authorsData = new Map<string, PullRequestAuthor>();
+
+            // Busca paralela otimizada
+            const repoPromises = allRepositories.slice(0, 20).map(async (repo) => {
+                try {
+                    const { data } = await octokit.rest.pulls.list({
+                        owner: githubAuthDetail?.org,
+                        repo: repo.name,
+                        state: 'all',
+                        since: since.toISOString(),
+                        per_page: 100,
+                        sort: 'created',
+                        direction: 'desc',
+                    });
+
+                    // Para na primeira contribuição de cada usuário
+                    for (const pr of data) {
+                        if (pr.user?.id) {
+                            const userId = pr.user.id.toString();
+
+                            if (!authorsSet.has(userId)) {
+                                authorsSet.add(userId);
+                                authorsData.set(userId, {
+                                    id: pr.user.id.toString(),
+                                    name: pr.user.login,
+                                });
+                            }
+                        }
+                    }
+
+                } catch (error) {
+                    this.logger.error({
+                        message: 'Error in getPullRequestAuthors',
+                        context: GithubService.name,
+                        error: error,
+                        metadata: {
+                            organizationAndTeamData: params?.organizationAndTeamData,
+                        },
+                    });
+                }
+            });
+
+            await Promise.all(repoPromises);
+
+            return Array.from(authorsData.values())
+                .sort((a, b) => a.name.localeCompare(b.name));
+
+        } catch (err) {
+            this.logger.error({
+                message: 'Error in getPullRequestAuthors',
+                context: GithubService.name,
+                error: err,
+                metadata: {
+                    organizationAndTeamData: params?.organizationAndTeamData,
+                },
+            });
             return [];
         }
     }
@@ -4043,7 +4123,8 @@ export class GithubService
                         context: this.deleteWebhook.name,
                         error: error,
                         metadata: {
-                            organizationAndTeamData: params.organizationAndTeamData,
+                            organizationAndTeamData:
+                                params.organizationAndTeamData,
                         },
                     });
                 }
@@ -4085,7 +4166,8 @@ export class GithubService
                             context: this.deleteWebhook.name,
                             error: error,
                             metadata: {
-                                organizationAndTeamData: params.organizationAndTeamData,
+                                organizationAndTeamData:
+                                    params.organizationAndTeamData,
                                 repoId: repo.id,
                             },
                         });

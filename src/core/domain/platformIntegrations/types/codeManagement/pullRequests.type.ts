@@ -99,3 +99,17 @@ export type OneSentenceSummaryItem = {
     id?: number;
     oneSentenceSummary: string;
 }
+
+export type PullRequestAuthor={
+    id: string;
+    name: string;
+    contributions?: number;
+}
+
+export type AuthorContributions = {
+    [key: string]: {
+        id: number;
+        name: string;
+        count: number;
+    };
+}

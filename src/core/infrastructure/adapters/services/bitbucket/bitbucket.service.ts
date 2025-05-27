@@ -12,6 +12,7 @@ import {
     PullRequestsWithChangesRequested,
     PullRequestReviewState,
     ReactionsInComments,
+    PullRequestAuthor,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
@@ -73,6 +74,7 @@ import {
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
 import { ConfigService } from '@nestjs/config';
+import { AuthorContribution } from '@/core/domain/pullRequests/interfaces/authorContributor.interface';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -118,6 +120,171 @@ export class BitbucketService
         private readonly configService: ConfigService,
     ) {}
 
+    async getPullRequestAuthors(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+        },
+    ): Promise<PullRequestAuthor[]> {
+        try {
+            const startDate = new Date();
+            const endDate = new Date(startDate);
+            endDate.setDate(startDate.getDate() - 60);
+
+            const pullRequests =
+                await this.getPullRequests({
+                    organizationAndTeamData: params.organizationAndTeamData,
+                    filters: {
+                        startDate: endDate.toISOString(), // Reversing the dates to fetch the last 15 days
+                        endDate: startDate.toISOString(),
+                    },
+                });
+
+            // Group the PRs by author and count the contributions
+            const authorContributions = pullRequests.reduce<
+                Record<string, AuthorContribution>
+            >((acc, pr) => {
+                const authorId = pr.author_id;
+                const authorName = pr.author_name;
+
+                if (!authorId) {
+                    this.logger.warn({
+                        message: 'Skipping PR with missing author ID',
+                        context: BitbucketService.name,
+                        metadata: {
+                            organizationAndTeamData:
+                                params?.organizationAndTeamData,
+                            pullRequest: pr?.pull_number,
+                        },
+                    });
+                    return acc;
+                }
+
+                if (!acc[authorId]) {
+                    acc[authorId] = {
+                        id: authorId,
+                        name: authorName,
+                        contributions: 0,
+                    };
+                }
+
+                acc[authorId].contributions++;
+                return acc;
+            }, {});
+
+            // Convert to array and sort by number of contributions
+            const sortedAuthors = Object.values<AuthorContribution>(
+                authorContributions,
+            ).sort((a, b) => a.name.localeCompare(b.name));
+
+            return sortedAuthors.map((author) => ({
+                id: this.sanitizeUUId(author.id.toString()),
+                name: author.name,
+            }));
+        } catch (error) {
+            this.logger.error({
+                message: 'Error fetching pull request authors',
+                context: BitbucketService.name,
+                error,
+                metadata: {
+                    organizationAndTeamData: params?.organizationAndTeamData,
+                },
+            });
+            throw error;
+        }
+    }
+
+    async getPullRequestAuthors_OLD(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<PullRequestAuthor[]> {
+        try {
+            const { organizationAndTeamData } = params;
+
+            if (!organizationAndTeamData.organizationId) {
+                return [];
+            }
+
+            const bitbucketAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            const repositories = <Repositories[]>(
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                )
+            );
+
+            if (!bitbucketAuthDetail || !repositories) {
+                return [];
+            }
+
+            const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
+            const since = new Date();
+            since.setDate(since.getDate() - 60);
+
+            const authorsSet = new Set<string>();
+            const authorsData = new Map<string, PullRequestAuthor>();
+
+            const repoPromises = repositories.slice(0, 20).map(async (repo) => {
+                try {
+                    const prs = await bitbucketAPI.pullrequests
+                        .list({
+                            repo_slug: `{${repo.id}}`,
+                            workspace: `{${repo.workspaceId}}`,
+                            sort: '-created_on',
+                            pagelen: 100,
+                        })
+                        .then((res) =>
+                            this.getPaginatedResults(bitbucketAPI, res),
+                        );
+
+                    // Para na primeira contribuição de cada usuário
+                    for (const pr of prs) {
+                        if (new Date(pr.created_on) < since) continue;
+
+                        if (pr.author?.uuid) {
+                            const userId = this.sanitizeUUId(pr.author.uuid);
+
+                            if (!authorsSet.has(userId)) {
+                                authorsSet.add(userId);
+                                authorsData.set(userId, {
+                                    id: userId,
+                                    name:
+                                        (pr.author.display_name as string) ||
+                                        (pr.author.nickname as string),
+                                });
+                            }
+                        }
+                    }
+                } catch (error) {
+                    this.logger.error({
+                        message: 'Error in getPullRequestAuthors',
+                        context: BitbucketService.name,
+                        error: error,
+                        metadata: {
+                            organizationAndTeamData,
+                            repositoryId: repo.id,
+                        },
+                    });
+                }
+            });
+
+            await Promise.all(repoPromises);
+
+            return Array.from(authorsData.values()).sort((a, b) =>
+                a.name.localeCompare(b.name),
+            );
+        } catch (err) {
+            this.logger.error({
+                message: 'Error in getPullRequestAuthors',
+                context: BitbucketService.name,
+                error: err,
+                metadata: {
+                    organizationAndTeamData: params?.organizationAndTeamData,
+                },
+            });
+            return [];
+        }
+    }
     async getPullRequestsWithChangesRequested(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: Partial<Repository>;
