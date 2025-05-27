@@ -1,5 +1,6 @@
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
 import {
+    PullRequestAuthor,
     PullRequestCodeReviewTime,
     PullRequestReviewComment,
     PullRequests,
@@ -115,6 +116,92 @@ export class GitlabService
         private readonly logger: PinoLoggerService,
         private readonly configService: ConfigService,
     ) {}
+
+    async getPullRequestAuthors(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<PullRequestAuthor[]> {
+        try {
+            if (!params?.organizationAndTeamData.organizationId) {
+                return [];
+            }
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                params.organizationAndTeamData,
+            );
+            const repositories = <Repositories[]>(
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params?.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                )
+            );
+
+            if (!gitlabAuthDetail || !repositories) {
+                return [];
+            }
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+            const since = new Date();
+            since.setDate(since.getDate() - 60);
+
+            const authorsSet = new Set<string>();
+            const authorsData = new Map<string, PullRequestAuthor>();
+
+            // Busca paralela otimizada
+            const repoPromises = repositories.slice(0, 20).map(async (repo) => {
+                try {
+                    const mergeRequests = await gitlabAPI.MergeRequests.all({
+                        projectId: repo.id,
+                        createdAfter: since.toISOString(),
+                        perPage: 100,
+                        orderBy: 'created_at',
+                        sort: 'desc',
+                    });
+
+                    // Para na primeira contribuição de cada usuário
+                    for (const mr of mergeRequests) {
+                        if (mr.author?.id) {
+                            const userId = mr.author.id.toString();
+
+                            if (!authorsSet.has(userId)) {
+                                authorsSet.add(userId);
+                                authorsData.set(userId, {
+                                    id: mr.author.id,
+                                    name: mr.author.name || mr.author.username,
+                                });
+                            }
+                        }
+                    }
+                } catch (error) {
+                    this.logger.error({
+                        message: 'Error in getPullRequestAuthors',
+                        context: GitlabService.name,
+                        error: error,
+                        metadata: {
+                            organizationAndTeamData:
+                                params?.organizationAndTeamData,
+                            repositoryId: repo.id,
+                        },
+                    });
+                }
+            });
+
+            await Promise.all(repoPromises);
+
+            return Array.from(authorsData.values()).sort((a, b) =>
+                a.name.localeCompare(b.name),
+            );
+        } catch (err) {
+            this.logger.error({
+                message: 'Error in getPullRequestAuthors',
+                context: GitlabService.name,
+                error: err,
+                metadata: {
+                    organizationAndTeamData: params?.organizationAndTeamData,
+                },
+            });
+            return [];
+        }
+    }
 
     async getPullRequestByNumber(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -2753,7 +2840,8 @@ export class GitlabService
                         context: GitlabService.name,
                         error: error,
                         metadata: {
-                            organizationAndTeamData: params.organizationAndTeamData,
+                            organizationAndTeamData:
+                                params.organizationAndTeamData,
                             repoId: repo.id,
                         },
                     });
