@@ -57,7 +57,10 @@ const sendForgotPasswordEmail = async (
         });
 
         const recipients = [new Recipient(email, name)];
-        const sentFrom = new Sender('info@domain.com');
+        const sentFrom = new Sender(
+            'kody@notifications.kodus.io',
+            'Kody from Kodus',
+        );
 
         const personalization = [
             {
