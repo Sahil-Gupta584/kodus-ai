@@ -173,7 +173,7 @@ export class BitbucketService
             ).sort((a, b) => a.name.localeCompare(b.name));
 
             return sortedAuthors.map((author) => ({
-                id: Number(author.id),
+                id: this.sanitizeUUId(author.id.toString()),
                 name: author.name,
             }));
         } catch (error) {
@@ -220,7 +220,6 @@ export class BitbucketService
             const authorsSet = new Set<string>();
             const authorsData = new Map<string, PullRequestAuthor>();
 
-            // Busca paralela otimizada
             const repoPromises = repositories.slice(0, 20).map(async (repo) => {
                 try {
                     const prs = await bitbucketAPI.pullrequests
@@ -236,7 +235,6 @@ export class BitbucketService
 
                     // Para na primeira contribuição de cada usuário
                     for (const pr of prs) {
-                        // Filtra por data dos últimos 60 dias
                         if (new Date(pr.created_on) < since) continue;
 
                         if (pr.author?.uuid) {
@@ -245,7 +243,7 @@ export class BitbucketService
                             if (!authorsSet.has(userId)) {
                                 authorsSet.add(userId);
                                 authorsData.set(userId, {
-                                    id: Number(userId),
+                                    id: userId,
                                     name:
                                         (pr.author.display_name as string) ||
                                         (pr.author.nickname as string),

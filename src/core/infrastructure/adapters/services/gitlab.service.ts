@@ -165,7 +165,7 @@ export class GitlabService
                             if (!authorsSet.has(userId)) {
                                 authorsSet.add(userId);
                                 authorsData.set(userId, {
-                                    id: mr.author.id,
+                                    id: mr.author.id.toString(),
                                     name: mr.author.name || mr.author.username,
                                 });
                             }

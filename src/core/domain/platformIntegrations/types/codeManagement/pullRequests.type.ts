@@ -101,7 +101,7 @@ export type OneSentenceSummaryItem = {
 }
 
 export type PullRequestAuthor={
-    id: number;
+    id: string;
     name: string;
     contributions?: number;
 }

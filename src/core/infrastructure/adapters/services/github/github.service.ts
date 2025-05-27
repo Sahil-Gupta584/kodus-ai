@@ -808,7 +808,7 @@ export class GithubService
                             if (!authorsSet.has(userId)) {
                                 authorsSet.add(userId);
                                 authorsData.set(userId, {
-                                    id: pr.user.id,
+                                    id: pr.user.id.toString(),
                                     name: pr.user.login,
                                 });
                             }
