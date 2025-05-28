@@ -32,6 +32,8 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
             '/auth/refresh',
             '/auth/login',
             '/auth/signup',
+            '/auth/forgot-password',
+            '/auth/reset-password',
             '/auth/oauth',
             '/user/email',
             '/diagnostic/updateDiagnostic',

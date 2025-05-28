@@ -16,4 +16,6 @@ export interface IAuthService {
     refreshToken(oldRefreshToken: string): Promise<any>;
     hashPassword(password: string, saltOrRounds: number): Promise<string>;
     match(enteredPassword: string, hashedPassword: string): Promise<boolean>;
+    createForgotPassToken(userId: string, email: string): Promise<string>;
+    verifyForgotPassToken(token: string): Promise<any>;
 }
