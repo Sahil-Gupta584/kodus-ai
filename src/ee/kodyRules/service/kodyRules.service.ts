@@ -50,7 +50,16 @@ export class KodyRulesService implements IKodyRulesService {
     }
 
     async find(filter?: Partial<IKodyRules>): Promise<KodyRulesEntity[]> {
-        return this.kodyRulesRepository.find(filter);
+        const entities = await this.kodyRulesRepository.find(filter);
+
+        return entities?.map((entity) => {
+            const normalized = entity.toObject();
+            normalized.rules = normalized.rules.map((rule) => ({
+                ...rule,
+                severity: rule.severity?.toLowerCase() as any,
+            }));
+            return KodyRulesEntity.create(normalized);
+        });
     }
 
     async findByOrganizationId(
