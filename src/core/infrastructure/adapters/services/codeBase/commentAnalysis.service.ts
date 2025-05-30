@@ -27,6 +27,7 @@ import {
     prompt_KodyRulesGeneratorUser,
 } from '@/shared/utils/langchainCommon/prompts/kodyRulesGenerator';
 import {
+    BehaviourForExistingDescription,
     CodeReviewConfig,
     ReviewOptions,
 } from '@/config/types/general/codeReview.type';
@@ -387,6 +388,11 @@ export class CommentAnalysisService {
                 suggestionControl: {
                     ...defaultConfig.suggestionControl,
                     severityLevelFilter: SeverityLevel.HIGH,
+                },
+                summary: {
+                    ...defaultConfig.summary,
+                    behaviourForExistingDescription:
+                        BehaviourForExistingDescription.CONCATENATE,
                 },
                 kodyRulesGeneratorEnabled: true,
             };
