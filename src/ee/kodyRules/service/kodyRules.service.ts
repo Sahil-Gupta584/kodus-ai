@@ -56,7 +56,7 @@ export class KodyRulesService implements IKodyRulesService {
             const normalized = entity.toObject();
             normalized.rules = normalized.rules.map((rule) => ({
                 ...rule,
-                severity: rule.severity?.toLowerCase() as any,
+                severity: rule.severity?.toLowerCase(),
             }));
             return KodyRulesEntity.create(normalized);
         });
