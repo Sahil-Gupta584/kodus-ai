@@ -39,7 +39,7 @@ export class KodyRulesService implements IKodyRulesService {
         return this.kodyRulesRepository.create(kodyRules);
     }
 
-    async findById(uuid: string): Promise<KodyRulesEntity | null> {
+    async findById(uuid: string): Promise<IKodyRule | null> {
         return this.kodyRulesRepository.findById(uuid);
     }
 
