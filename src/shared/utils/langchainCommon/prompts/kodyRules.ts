@@ -294,3 +294,37 @@ Kody Rules:
 ${JSON.stringify(kodyRules, null, 2)}
 `;
 };
+
+/** kody rules extract UUID from suggestion content */
+export const prompt_kodyrules_extract_id_system = () => {
+    return `
+You are a UUID extraction specialist. Your only task is to find and extract UUID patterns from text content.
+
+A UUID follows this exact pattern: 8-4-4-4-12 hexadecimal characters (example: 9de28bd7-a06d-429a-97ab-02e5fef91096)
+
+Instructions:
+1. Scan the provided text for any UUID patterns
+2. Extract all UUIDs found
+3. Return them as a JSON array
+4. If no UUIDs are found, return an empty array
+
+Your response must be valid JSON only, no explanations.
+`;
+};
+
+export const prompt_kodyrules_extract_id_user = (payload: any) => {
+    const { suggestionContent } = payload;
+
+    return `
+Extract all UUID patterns from this text:
+
+${suggestionContent}
+
+Return format:
+\`\`\`json
+{
+    "ids": ["uuid1", "uuid2", ...]
+}
+\`\`\`
+`;
+};
