@@ -65,10 +65,18 @@ export class KodyRulesRepository implements IKodyRulesRepository {
     //#endregion
 
     //#region Get/Find
-    async findById(uuid: string): Promise<KodyRulesEntity | null> {
+    async findById(uuid: string): Promise<any | null> {
         try {
-            const doc = await this.kodyRulesModel.findById(uuid).exec();
-            return doc ? mapSimpleModelToEntity(doc, KodyRulesEntity) : null;
+            const pipeline = [
+                { $match: { 'rules.uuid': uuid } },
+                { $unwind: '$rules' },
+                { $match: { 'rules.uuid': uuid } },
+                { $replaceRoot: { newRoot: '$rules' } }
+            ];
+
+            const result = await this.kodyRulesModel.aggregate(pipeline).exec();
+            return result.length > 0 ? result[0] : null;
+
         } catch (error) {
             throw error;
         }

@@ -23,6 +23,7 @@ import { GenerateKodyRulesDTO } from '../dtos/generate-kody-rules.dto';
 import { ChangeStatusKodyRulesDTO } from '../dtos/change-status-kody-rules.dto';
 import { ChangeStatusKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/change-status-kody-rules.use-case';
 import { REQUEST } from '@nestjs/core';
+import { FindRuleByIdKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/find-rule-by-id.use-case';
 
 @Controller('kody-rules')
 export class KodyRulesController {
@@ -37,6 +38,7 @@ export class KodyRulesController {
         private readonly addLibraryKodyRulesUseCase: AddLibraryKodyRulesUseCase,
         private readonly generateKodyRulesUseCase: GenerateKodyRulesUseCase,
         private readonly changeStatusKodyRulesUseCase: ChangeStatusKodyRulesUseCase,
+        private readonly findRuleByIdKodyRulesUseCase: FindRuleByIdKodyRulesUseCase,
 
         @Inject(REQUEST)
         private readonly request: Request & {
@@ -56,6 +58,16 @@ export class KodyRulesController {
             body,
             this.request.user.organization.uuid,
         );
+    }
+
+    @Get('/find-by-id')
+    public async findById(
+        @Query('ruleId')
+        ruleId: string,
+    ) {
+        const rule = await this.findRuleByIdKodyRulesUseCase.execute(ruleId);
+
+        return rule;
     }
 
     @Get('/find-by-organization-id')
