@@ -277,7 +277,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     let updatedContent = suggestion?.suggestionContent || '';
 
                     const uuidRegex =
-                        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{24}/gi;
+                        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
                     let foundIds: string[] =
                         updatedContent.match(uuidRegex) || [];
 
