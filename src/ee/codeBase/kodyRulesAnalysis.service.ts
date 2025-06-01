@@ -19,6 +19,8 @@ import { getKodyRulesForFile } from '@/shared/utils/glob-utils';
 import {
     prompt_kodyrules_classifier_system,
     prompt_kodyrules_classifier_user,
+    prompt_kodyrules_extract_id_system,
+    prompt_kodyrules_extract_id_user,
     prompt_kodyrules_guardian_system,
     prompt_kodyrules_guardian_user,
     prompt_kodyrules_suggestiongeneration_system,
@@ -34,6 +36,7 @@ import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmP
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
+import { string } from 'joi';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -191,20 +194,29 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         const updatedSuggestions = await Promise.all(
             suggestions.codeSuggestions.map(async (suggestion) => {
                 try {
-                    let updatedContent = suggestion.suggestionContent;
+                    let updatedContent = suggestion?.suggestionContent || '';
 
-                    // Regex para encontrar UUIDs no conteúdo
                     const uuidRegex =
                         /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-                    const foundIds = updatedContent.match(uuidRegex);
+                    let foundIds: string[] =
+                        updatedContent.match(uuidRegex) || [];
 
                     if (!foundIds?.length) {
-                        // Fallback: usar prompt LLM para extrair IDs
-                        // Chamada do prompt
-                        return suggestion;
+                        const extractedIds =
+                            await this.extractKodyRuleIdsFromContent(
+                                updatedContent,
+                                organizationAndTeamData,
+                                prNumber,
+                                suggestion,
+                            );
+
+                        if (extractedIds.length > 0) {
+                            foundIds = extractedIds;
+                        } else {
+                            return suggestion;
+                        }
                     }
 
-                    // Processar cada ID encontrado
                     for (const ruleId of foundIds) {
                         try {
                             const rule =
@@ -214,7 +226,6 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                                 continue;
                             }
 
-                            // Construir o link baseado no repositoryId
                             const baseUrl = process.env.WEB_BASE_URL || '';
                             let ruleLink: string;
 
@@ -224,7 +235,6 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                                 ruleLink = `${baseUrl}/settings/code-review/${rule.repositoryId}/kody-rules/${ruleId}`;
                             }
 
-                            // Substituir o ID pelo link markdown
                             const markdownLink = `[${rule.title}](${ruleLink})`;
                             updatedContent = updatedContent.replace(
                                 ruleId,
@@ -241,7 +251,6 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                                     prNumber,
                                 },
                             });
-                            // Se der erro, mantém o ID original
                             continue;
                         }
                     }
@@ -262,8 +271,6 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                             prNumber,
                         },
                     });
-
-                    // Se der erro, retorna a sugestão original
                     return suggestion;
                 }
             }),
@@ -273,6 +280,53 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             ...suggestions,
             codeSuggestions: updatedSuggestions,
         };
+    }
+
+    private async extractKodyRuleIdsFromContent(
+        updatedContent: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        suggestion: Partial<CodeSuggestion>,
+    ): Promise<string[]> {
+        try {
+            const extractionChain = await this.createAnalysisChainWithFallback(
+                LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_05_20,
+                { suggestionContent: updatedContent },
+                prompt_kodyrules_extract_id_system,
+                prompt_kodyrules_extract_id_user,
+                'extractKodyRuleIdsFromContent',
+                LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+            );
+
+            const extractionResult = await extractionChain.invoke({
+                suggestionContent: updatedContent,
+            });
+
+            if (extractionResult) {
+                const cleanResponse = extractionResult.replace(
+                    /```json\n|```/g,
+                    '',
+                );
+                const parsedIds = tryParseJSONObject(cleanResponse);
+
+                if (parsedIds?.ids?.length) {
+                    return parsedIds.ids;
+                }
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error in LLM fallback for ID extraction',
+                context: KodyRulesAnalysisService.name,
+                error,
+                metadata: {
+                    suggestionId: suggestion.id,
+                    organizationAndTeamData,
+                    prNumber,
+                },
+            });
+        }
+
+        return [];
     }
 
     async analyzeCodeWithAI(
@@ -545,11 +599,17 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         systemPromptFn: SystemPromptFn,
         userPromptFn: UserPromptFn,
         runName?: string,
+        fallbackProvider?: LLMModelProvider,
     ) {
-        const fallbackProvider =
-            provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
-                ? LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET
-                : LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
+        let fallbackProviderToExecute = fallbackProvider;
+
+        if (!fallbackProvider) {
+            fallbackProviderToExecute =
+                provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
+                    ? LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET
+                    : LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
+        }
+
         try {
             const mainChain = await this.createProviderChain(
                 provider,
@@ -559,7 +619,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 'primary',
             );
             const fallbackChain = await this.createProviderChain(
-                fallbackProvider,
+                fallbackProviderToExecute,
                 context,
                 systemPromptFn,
                 userPromptFn,
@@ -580,7 +640,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                         teamId: context?.organizationAndTeamData?.teamId,
                         pullRequestId: context?.pullRequest?.number,
                         provider: provider,
-                        fallbackProvider: fallbackProvider,
+                        fallbackProvider: fallbackProviderToExecute,
                     },
                 });
         } catch (error) {
@@ -590,7 +650,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 context: KodyRulesAnalysisService.name,
                 metadata: {
                     provider,
-                    fallbackProvider,
+                    fallbackProvider: fallbackProviderToExecute,
                 },
             });
             throw error;
