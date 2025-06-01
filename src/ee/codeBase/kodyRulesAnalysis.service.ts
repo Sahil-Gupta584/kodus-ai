@@ -182,6 +182,86 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         this.tokenTracker = new TokenTrackingHandler();
     }
 
+    private async buildKodyRuleLinkAndRepalceIds(
+        foundIds: string[],
+        updatedContent: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+    ): Promise<string> {
+        // Processar todos os IDs encontrados
+        for (const ruleId of foundIds) {
+            try {
+                const rule = await this.kodyRulesService.findById(ruleId);
+
+                if (!rule) {
+                    continue;
+                }
+
+                const baseUrl = process.env.WEB_BASE_URL || '';
+                let ruleLink: string;
+
+                if (rule.repositoryId === 'global') {
+                    ruleLink = `${baseUrl}/settings/code-review/global/kody-rules/${ruleId}`;
+                } else {
+                    ruleLink = `${baseUrl}/settings/code-review/${rule.repositoryId}/kody-rules/${ruleId}`;
+                }
+
+                const markdownLink = `[${rule.title}](${ruleLink})`;
+
+                // Verificar se o ID está entre crases simples `id`
+                const singleBacktickPattern = new RegExp(
+                    `\`${this.escapeRegex(ruleId)}\``,
+                    'g',
+                );
+                if (singleBacktickPattern.test(updatedContent)) {
+                    updatedContent = updatedContent.replace(
+                        singleBacktickPattern,
+                        markdownLink,
+                    );
+                    continue;
+                }
+
+                // Verificar se o ID está entre blocos de código ```id```
+                const tripleBacktickPattern = new RegExp(
+                    `\`\`\`${this.escapeRegex(ruleId)}\`\`\``,
+                    'g',
+                );
+                if (tripleBacktickPattern.test(updatedContent)) {
+                    updatedContent = updatedContent.replace(
+                        tripleBacktickPattern,
+                        markdownLink,
+                    );
+                    continue;
+                }
+
+                const idPattern = new RegExp(this.escapeRegex(ruleId), 'g');
+                updatedContent = updatedContent.replace(
+                    idPattern,
+                    markdownLink,
+                );
+            } catch (error) {
+                this.logger.error({
+                    message: 'Error fetching Kody Rule details',
+                    context: KodyRulesAnalysisService.name,
+                    error,
+                    metadata: {
+                        ruleId,
+                        organizationAndTeamData,
+                        prNumber,
+                    },
+                });
+                continue;
+            }
+        }
+
+        return updatedContent;
+    }
+
+    // Função auxiliar para escapar caracteres especiais no regex
+    private escapeRegex(string: string): string {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
     private async replaceKodyRuleIdsWithLinks(
         suggestions: AIAnalysisResult,
         organizationAndTeamData: OrganizationAndTeamData,
@@ -197,11 +277,13 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     let updatedContent = suggestion?.suggestionContent || '';
 
                     const uuidRegex =
-                        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+                        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{24}/gi;
                     let foundIds: string[] =
                         updatedContent.match(uuidRegex) || [];
 
+                    // Primeira tentativa: Regex
                     if (!foundIds?.length) {
+                        // Segunda tentativa: LLM para extrair IDs
                         const extractedIds =
                             await this.extractKodyRuleIdsFromContent(
                                 updatedContent,
@@ -213,51 +295,30 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                         if (extractedIds.length > 0) {
                             foundIds = extractedIds;
                         } else {
-                            return suggestion;
-                        }
-                    }
-
-                    for (const ruleId of foundIds) {
-                        try {
-                            const rule =
-                                await this.kodyRulesService.findById(ruleId);
-
-                            if (!rule) {
-                                continue;
-                            }
-
-                            const baseUrl = process.env.WEB_BASE_URL || '';
-                            let ruleLink: string;
-
-                            if (rule.repositoryId === 'global') {
-                                ruleLink = `${baseUrl}/settings/code-review/global/kody-rules/${ruleId}`;
+                            // Terceira tentativa: Usar brokenKodyRulesIds como fallback
+                            const brokenIds = (suggestion as any)
+                                ?.brokenKodyRulesIds;
+                            if (brokenIds?.length > 0) {
+                                const firstRuleId = brokenIds[0];
+                                updatedContent += `\n\nKody Rules Violation: ${firstRuleId}`;
+                                foundIds = [firstRuleId];
                             } else {
-                                ruleLink = `${baseUrl}/settings/code-review/${rule.repositoryId}/kody-rules/${ruleId}`;
+                                return suggestion;
                             }
-
-                            const markdownLink = `[${rule.title}](${ruleLink})`;
-                            updatedContent = updatedContent.replace(
-                                ruleId,
-                                markdownLink,
-                            );
-                        } catch (error) {
-                            this.logger.error({
-                                message: 'Error fetching Kody Rule details',
-                                context: KodyRulesAnalysisService.name,
-                                error,
-                                metadata: {
-                                    ruleId,
-                                    organizationAndTeamData,
-                                    prNumber,
-                                },
-                            });
-                            continue;
                         }
                     }
+
+                    const updatedContentWithLinks =
+                        await this.buildKodyRuleLinkAndRepalceIds(
+                            foundIds,
+                            updatedContent,
+                            organizationAndTeamData,
+                            prNumber,
+                        );
 
                     return {
                         ...suggestion,
-                        suggestionContent: updatedContent,
+                        suggestionContent: updatedContentWithLinks,
                     };
                 } catch (error) {
                     this.logger.error({
