@@ -10,7 +10,7 @@ export interface IKodyRulesRepository {
         kodyRules: Omit<IKodyRules, 'uuid'>,
     ): Promise<KodyRulesEntity | null>;
 
-    findById(uuid: string): Promise<KodyRulesEntity | null>;
+    findById(uuid: string): Promise<IKodyRule | null>;
     findOne(filter?: Partial<IKodyRules>): Promise<KodyRulesEntity | null>;
     find(filter?: Partial<IKodyRules>): Promise<KodyRulesEntity[]>;
     findByOrganizationId(
