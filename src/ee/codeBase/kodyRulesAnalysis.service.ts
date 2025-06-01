@@ -197,7 +197,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     continue;
                 }
 
-                const baseUrl = process.env.WEB_BASE_URL || '';
+                const baseUrl = process.env.API_USER_INVITE_BASE_URL || '';
                 let ruleLink: string;
 
                 if (rule.repositoryId === 'global') {
