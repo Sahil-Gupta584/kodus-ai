@@ -206,7 +206,9 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     ruleLink = `${baseUrl}/settings/code-review/${rule.repositoryId}/kody-rules/${ruleId}`;
                 }
 
-                const markdownLink = `[${rule.title}](${ruleLink})`;
+                const escapeMarkdownSyntax = (text: string): string =>
+                    text.replace(/([\[\]\\`*_{}()#+\-.!])/g, '\\$1');
+                const markdownLink = `[${escapeMarkdownSyntax(rule.title)}](${ruleLink})`;
 
                 // Verificar se o ID está entre crases simples `id`
                 const singleBacktickPattern = new RegExp(
@@ -243,7 +245,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 this.logger.error({
                     message: 'Error fetching Kody Rule details',
                     context: KodyRulesAnalysisService.name,
-                    error,
+                    error: error,
                     metadata: {
                         ruleId,
                         organizationAndTeamData,
@@ -281,21 +283,22 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     let foundIds: string[] =
                         updatedContent.match(uuidRegex) || [];
 
-                    // Primeira tentativa: Regex
                     if (!foundIds?.length) {
-                        // Segunda tentativa: LLM para extrair IDs
-                        const extractedIds =
-                            await this.extractKodyRuleIdsFromContent(
-                                updatedContent,
-                                organizationAndTeamData,
-                                prNumber,
-                                suggestion,
-                            );
+                        let extractedIds: string[] = [];
+
+                        if (suggestion?.suggestionContent) {
+                            extractedIds =
+                                await this.extractKodyRuleIdsFromContent(
+                                    updatedContent,
+                                    organizationAndTeamData,
+                                    prNumber,
+                                    suggestion,
+                                );
+                        }
 
                         if (extractedIds.length > 0) {
                             foundIds = extractedIds;
                         } else {
-                            // Terceira tentativa: Usar brokenKodyRulesIds como fallback
                             const brokenIds = (suggestion as any)
                                 ?.brokenKodyRulesIds;
                             if (brokenIds?.length > 0) {
