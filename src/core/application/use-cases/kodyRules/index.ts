@@ -5,7 +5,6 @@ import { DeleteByOrganizationIdKodyRulesUseCase } from './delete-by-organization
 import { DeleteRuleInOrganizationByIdKodyRulesUseCase } from './delete-rule-in-organization-by-id.use-case';
 import { FindByOrganizationIdKodyRulesUseCase } from './find-by-organization-id.use-case';
 import { FindLibraryKodyRulesUseCase } from './find-library-kody-rules.use-case';
-import { FindRuleByIdKodyRulesUseCase } from './find-rule-by-id.use-case';
 import { FindRuleInOrganizationByRuleIdKodyRulesUseCase } from './find-rule-in-organization-by-id.use-case';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from './find-rules-in-organization-by-filter.use-case';
 import { GenerateKodyRulesUseCase } from './generate-kody-rules.use-case';
@@ -21,5 +20,4 @@ export const UseCases = [
     AddLibraryKodyRulesUseCase,
     GenerateKodyRulesUseCase,
     ChangeStatusKodyRulesUseCase,
-    FindRuleByIdKodyRulesUseCase,
 ];
