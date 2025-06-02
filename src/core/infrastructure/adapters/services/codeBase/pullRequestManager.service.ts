@@ -5,13 +5,15 @@ import { CodeManagementService } from '../platformIntegration/codeManagement.ser
 import { PinoLoggerService } from '../logger/pino.service';
 import { IPullRequestManagerService } from '../../../../domain/codeBase/contracts/PullRequestManagerService.contract';
 import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
-import { AuthorContribution } from '@/core/domain/pullRequests/interfaces/authorContributor.interface';
+import { PullRequestAuthor } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
+import { CacheService } from '@/shared/utils/cache/cache.service';
 
 @Injectable()
 export class PullRequestHandlerService implements IPullRequestManagerService {
     constructor(
         private readonly codeManagementService: CodeManagementService,
         private readonly logger: PinoLoggerService,
+        private readonly cacheService: CacheService,
     ) {}
 
     async getPullRequestDetails(
@@ -136,57 +138,30 @@ export class PullRequestHandlerService implements IPullRequestManagerService {
         }
     }
 
-    async getPullRequestsAuthorsOrderedByContributions(
+    async getPullRequestAuthorsWithCache(
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<AuthorContribution[]> {
-        try {
-            const startDate = new Date();
-            const endDate = new Date(startDate);
-            endDate.setDate(startDate.getDate() - 60);
+    ): Promise<PullRequestAuthor[]> {
+        const cacheKey = `pr_authors_60d_${organizationAndTeamData.organizationId}`;
+        const TTL = 10 * 60 * 1000; // 10 minutos
 
-            const pullRequests =
-                await this.codeManagementService.getPullRequests({
+        try {
+            const cachedAuthors =
+                await this.cacheService.getFromCache<PullRequestAuthor[]>(
+                    cacheKey,
+                );
+
+            if (cachedAuthors?.length > 0) {
+                return cachedAuthors;
+            }
+
+            const authors =
+                await this.codeManagementService.getPullRequestAuthors({
                     organizationAndTeamData,
-                    filters: {
-                        startDate: endDate.toISOString(), // Reversing the dates to fetch the last 15 days
-                        endDate: startDate.toISOString(),
-                    },
                 });
 
-            // Group the PRs by author and count the contributions
-            const authorContributions = pullRequests.reduce<
-                Record<string, AuthorContribution>
-            >((acc, pr) => {
-                const authorId = pr.author_id;
-                const authorName = pr.author_name;
+            await this.cacheService.addToCache(cacheKey, authors, TTL);
 
-                if (!authorId) {
-                    this.logger.warn({
-                        message: 'Skipping PR with missing author ID',
-                        context: PullRequestHandlerService.name,
-                        metadata: { pr },
-                    });
-                    return acc;
-                }
-
-                if (!acc[authorId]) {
-                    acc[authorId] = {
-                        id: authorId,
-                        name: authorName,
-                        contributions: 0,
-                    };
-                }
-
-                acc[authorId].contributions++;
-                return acc;
-            }, {});
-
-            // Convert to array and sort by number of contributions
-            const sortedAuthors = Object.values<AuthorContribution>(
-                authorContributions,
-            ).sort((a, b) => b.contributions - a.contributions);
-
-            return sortedAuthors;
+            return authors;
         } catch (error) {
             this.logger.error({
                 message: 'Error fetching pull request authors',

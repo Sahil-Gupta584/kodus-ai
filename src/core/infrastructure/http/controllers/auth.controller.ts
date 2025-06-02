@@ -6,6 +6,8 @@ import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { CreateUserOrganizationDto } from '../dtos/create-user-organization.dto';
 import { OAuthLoginUseCase } from '@/core/application/use-cases/auth/oauth-login.use-case';
 import { CreateUserOrganizationOAuthDto } from '../dtos/create-user-organization-oauth.dto';
+import { ForgotPasswordUseCase } from '@/core/application/use-cases/auth/forgotPasswordUseCase';
+import { ResetPasswordUseCase } from '@/core/application/use-cases/auth/resetPasswordUseCase';
 
 @Controller('auth')
 export class AuthController {
@@ -15,6 +17,8 @@ export class AuthController {
         private readonly logoutUseCase: LogoutUseCase,
         private readonly createOrganizationUseCase: CreateOrganizationUseCase,
         private readonly oAuthLoginUseCase: OAuthLoginUseCase,
+        private readonly forgotPasswordUseCase: ForgotPasswordUseCase,
+        private readonly resetPasswordUseCase: ResetPasswordUseCase,
     ) {}
 
     @Post('login')
@@ -42,6 +46,18 @@ export class AuthController {
                 email,
                 password,
             },
+        );
+    }
+
+    @Post('forgot-password')
+    async forgotPassword(@Body() body: { email: string }) {
+        return await this.forgotPasswordUseCase.execute(body.email);
+    }
+    @Post('reset-password')
+    async resetPassword(@Body() body: { token: string; newPassword: string }) {
+        return await this.resetPasswordUseCase.execute(
+            body.token,
+            body.newPassword,
         );
     }
 

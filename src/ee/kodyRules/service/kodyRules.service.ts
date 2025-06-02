@@ -39,7 +39,7 @@ export class KodyRulesService implements IKodyRulesService {
         return this.kodyRulesRepository.create(kodyRules);
     }
 
-    async findById(uuid: string): Promise<KodyRulesEntity | null> {
+    async findById(uuid: string): Promise<IKodyRule | null> {
         return this.kodyRulesRepository.findById(uuid);
     }
 
@@ -50,7 +50,16 @@ export class KodyRulesService implements IKodyRulesService {
     }
 
     async find(filter?: Partial<IKodyRules>): Promise<KodyRulesEntity[]> {
-        return this.kodyRulesRepository.find(filter);
+        const entities = await this.kodyRulesRepository.find(filter);
+
+        return entities?.map((entity) => {
+            const normalized = entity.toObject();
+            normalized.rules = normalized.rules.map((rule) => ({
+                ...rule,
+                severity: rule.severity?.toLowerCase(),
+            }));
+            return KodyRulesEntity.create(normalized);
+        });
     }
 
     async findByOrganizationId(
@@ -104,7 +113,7 @@ export class KodyRulesService implements IKodyRulesService {
                 title: kodyRule.title,
                 rule: kodyRule.rule,
                 path: kodyRule.path,
-                severity: kodyRule.severity,
+                severity: kodyRule.severity?.toLowerCase(),
                 status: kodyRule.status ?? KodyRulesStatus.ACTIVE,
                 repositoryId: kodyRule?.repositoryId,
                 examples: kodyRule?.examples,
@@ -134,7 +143,7 @@ export class KodyRulesService implements IKodyRulesService {
                 title: kodyRule.title,
                 rule: kodyRule.rule,
                 path: kodyRule.path,
-                severity: kodyRule.severity,
+                severity: kodyRule.severity?.toLowerCase(),
                 status: kodyRule.status ?? KodyRulesStatus.ACTIVE,
                 repositoryId: kodyRule?.repositoryId,
                 examples: kodyRule?.examples,

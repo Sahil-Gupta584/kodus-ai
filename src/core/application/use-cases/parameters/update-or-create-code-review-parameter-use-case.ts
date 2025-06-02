@@ -119,7 +119,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             generatePRSummary: true,
             customInstructions: '',
             behaviourForExistingDescription:
-                BehaviourForExistingDescription.REPLACE,
+                BehaviourForExistingDescription.CONCATENATE,
         };
     }
 

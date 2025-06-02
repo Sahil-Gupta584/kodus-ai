@@ -5,6 +5,7 @@ import {
     INTEGRATION_SERVICE_TOKEN,
 } from '@/core/domain/integrations/contracts/integration.service.contracts';
 import {
+    PullRequestAuthor,
     PullRequestReviewComment,
     PullRequests,
     PullRequestsWithChangesRequested,
@@ -263,6 +264,24 @@ export class CodeManagementService implements ICodeManagementService {
             this.platformIntegrationFactory.getCodeManagementService(type);
 
         return codeManagementService.getPullRequestsForRTTM(params);
+    }
+
+    async getPullRequestAuthors(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+        },
+        type?: PlatformType,
+    ): Promise<PullRequestAuthor[]> {
+        if (!type) {
+            type = await this.getTypeIntegration(
+                extractOrganizationAndTeamData(params),
+            );
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.getPullRequestAuthors(params);
     }
 
     async getOrganizations(

@@ -89,7 +89,7 @@ const ENABLE_CODE_REVIEW_AST =
 @Injectable()
 export class CodeReviewHandlerService {
     private readonly concurrencyLimit = 10;
-    private readonly max_files_to_analyze = 200;
+    private readonly max_files_to_analyze = 500;
 
     constructor(
         @Inject(CODE_BASE_CONFIG_SERVICE_TOKEN)
