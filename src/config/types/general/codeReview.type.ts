@@ -10,7 +10,7 @@ import {
     EnrichGraph,
     FunctionsAffectResult,
     FunctionSimilarity,
-} from '@/ee/codeBase/ast/services/code-analyzer.service';
+} from '@/ee/kodyAST/code-analyzer.service';
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { FunctionAnalysis } from '@/ee/codeBase/ast/types/types';
 

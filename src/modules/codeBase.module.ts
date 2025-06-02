@@ -17,7 +17,7 @@ import {
 import { TeamsModule } from './team.module';
 import { CodeReviewHandlerService } from '@/core/infrastructure/adapters/services/codeBase/codeReviewHandlerService.service';
 import { KodyRulesModule } from './kodyRules.module';
-import { AstModule } from './ast.module';
+import { KodyASTModule } from '../ee/kodyAST/kodyAST.module';
 import { PullRequestsModule } from './pullRequests.module';
 import { SUGGESTION_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/SuggestionService.contract';
 import { SuggestionEmbeddedModule } from './suggestionEmbedded.module';
@@ -26,7 +26,6 @@ import { PromptRunnerService } from '@/core/infrastructure/adapters/services/cod
 import { CommentAnalysisService } from '@/core/infrastructure/adapters/services/codeBase/commentAnalysis.service';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 
-import { AST_ANALYSIS_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
 import { SuggestionService } from '@/core/infrastructure/adapters/services/codeBase/suggestion.service';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
 import { KodyFineTuningService } from '@/ee/kodyFineTuning/kodyFineTuning.service';
@@ -38,15 +37,13 @@ import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeC
 import CodeBaseConfigService from '@/ee/codeBase/codeBaseConfig.service';
 import { CodeAnalysisOrchestrator } from '@/ee/codeBase/codeAnalysisOrchestrator.service';
 import { DiffAnalyzerService } from '@/ee/codeBase/diffAnalyzer.service';
-import { CodeAstAnalysisService } from '@/ee/codeBase/codeASTAnalysis.service';
+import { CodeAstAnalysisService } from '@/ee/kodyAST/codeASTAnalysis.service';
 import {
     KODY_RULES_ANALYSIS_SERVICE_TOKEN,
     KodyRulesAnalysisService,
 } from '@/ee/codeBase/kodyRulesAnalysis.service';
 import { GlobalParametersModule } from './global-parameters.module';
 import { LogModule } from './log.module';
-import { ClientsModule } from '@nestjs/microservices';
-import { AST_MICROSERVICE_OPTIONS } from '@/config/microservices/ast-options';
 import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeBase.controller';
 
 @Module({
@@ -59,7 +56,6 @@ import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeB
         forwardRef(() => AutomationModule),
         forwardRef(() => TeamsModule),
         forwardRef(() => KodyRulesModule),
-        forwardRef(() => AstModule),
         forwardRef(() => PullRequestsModule),
         forwardRef(() => SuggestionEmbeddedModule),
         forwardRef(() => OrganizationParametersModule),
@@ -70,9 +66,8 @@ import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeB
         forwardRef(() => KodyFineTuningContextModule),
         forwardRef(() => KodyASTAnalyzeContextModule),
         forwardRef(() => GlobalParametersModule),
+        KodyASTModule.register(),
         LogModule,
-
-        ClientsModule.register([AST_MICROSERVICE_OPTIONS]),
     ],
     providers: [
         {
@@ -96,10 +91,6 @@ import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeB
             useClass: KodyRulesAnalysisService,
         },
         {
-            provide: AST_ANALYSIS_SERVICE_TOKEN,
-            useClass: CodeAstAnalysisService,
-        },
-        {
             provide: SUGGESTION_SERVICE_TOKEN,
             useClass: SuggestionService,
         },
@@ -114,7 +105,7 @@ import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeB
     exports: [
         PULL_REQUEST_MANAGER_SERVICE_TOKEN,
         LLM_ANALYSIS_SERVICE_TOKEN,
-        AST_ANALYSIS_SERVICE_TOKEN,
+
         COMMENT_MANAGER_SERVICE_TOKEN,
         CODE_BASE_CONFIG_SERVICE_TOKEN,
         KODY_RULES_ANALYSIS_SERVICE_TOKEN,
