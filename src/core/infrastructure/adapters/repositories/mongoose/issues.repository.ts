@@ -8,6 +8,7 @@ import {
 import { IssuesModel } from './schema/issues.model';
 import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
+import { IIssuesRepository } from '@/core/domain/issues/contracts/issues.repository';
 
 
 @Injectable()
