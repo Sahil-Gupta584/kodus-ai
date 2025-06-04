@@ -8,6 +8,8 @@ export interface IIssue {
     language: string;
     representativeSuggestion: ISuggestion;
     contributingSuggestionIds: string[];
+    repositoryId: string;
+    organizationId: string;
     createdAt: string;
     updatedAt: string;
 }

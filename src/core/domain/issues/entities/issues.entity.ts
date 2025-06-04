@@ -10,6 +10,8 @@ export class IssuesEntity implements Entity<IIssue> {
     public language: string;
     public representativeSuggestion: any;
     public contributingSuggestionIds: string[];
+    public repositoryId: string;
+    public organizationId: string;
     public createdAt: string;
     public updatedAt: string;
 
@@ -21,6 +23,8 @@ export class IssuesEntity implements Entity<IIssue> {
         this.language = issue.language;
         this.representativeSuggestion = issue.representativeSuggestion;
         this.contributingSuggestionIds = issue.contributingSuggestionIds;
+        this.repositoryId = issue.repositoryId;
+        this.organizationId = issue.organizationId;
         this.createdAt = issue.createdAt;
         this.updatedAt = issue.updatedAt;
     }
@@ -34,6 +38,8 @@ export class IssuesEntity implements Entity<IIssue> {
             language: this.language,
             representativeSuggestion: this.representativeSuggestion,
             contributingSuggestionIds: this.contributingSuggestionIds,
+            repositoryId: this.repositoryId,
+            organizationId: this.organizationId,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
         };
@@ -48,6 +54,8 @@ export class IssuesEntity implements Entity<IIssue> {
             language: this.language,
             representativeSuggestion: this.representativeSuggestion,
             contributingSuggestionIds: this.contributingSuggestionIds,
+            repositoryId: this.repositoryId,
+            organizationId: this.organizationId,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
         };
