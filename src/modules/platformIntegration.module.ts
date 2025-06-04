@@ -52,6 +52,7 @@ import { GitLabMergeRequestHandler } from '@/core/infrastructure/adapters/webhoo
 import { BitbucketPullRequestHandler } from '@/core/infrastructure/adapters/webhooks/bitbucket/bitbucketPullRequest.handler';
 import { AzureReposPullRequestHandler } from '@/core/infrastructure/adapters/webhooks/azureRepos/azureReposPullRequest.handler';
 import { IWebhookEventHandler } from '@/core/domain/platformIntegrations/interfaces/webhook-event-handler.interface';
+import { IssuesModule } from './issues.module';
 @Module({
     imports: [
         forwardRef(() => IntegrationModule),
@@ -79,6 +80,7 @@ import { IWebhookEventHandler } from '@/core/domain/platformIntegrations/interfa
         forwardRef(() => KodyRulesModule),
         forwardRef(() => AzureReposModule),
         forwardRef(() => BitbucketModule),
+        forwardRef(() => IssuesModule),
         PullRequestsModule,
     ],
     providers: [
