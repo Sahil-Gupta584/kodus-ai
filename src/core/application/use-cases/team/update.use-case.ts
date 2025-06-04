@@ -4,6 +4,7 @@ import {
     ITeamService,
 } from '@/core/domain/team/contracts/team.service.contract';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
+import posthogClient from '@/shared/utils/posthog';
 import { ConflictException, Inject } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
@@ -41,7 +42,7 @@ export class UpdateTeamUseCase implements IUseCase {
             throw new ConflictException('api.team.team_name_already_exists');
         }
 
-        await this.teamService.update(
+        const team = await this.teamService.update(
             {
                 uuid: payload.teamId,
                 organization: { uuid: this.request.user.organization.uuid },
@@ -51,5 +52,7 @@ export class UpdateTeamUseCase implements IUseCase {
                 name: payload.teamName,
             },
         );
+
+        posthogClient.teamIdentify(team);
     }
 }
