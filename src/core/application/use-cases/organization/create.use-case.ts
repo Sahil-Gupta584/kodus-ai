@@ -16,6 +16,7 @@ import {
 } from '@/core/domain/user/contracts/user.service.contract';
 import { identify, track } from '@/shared/utils/segment';
 import { generateRandomOrgName } from '@/shared/utils/helpers';
+import posthogClient from '@/shared/utils/posthog';
 
 @Injectable()
 export class CreateOrganizationUseCase implements IUseCase {
@@ -74,6 +75,8 @@ export class CreateOrganizationUseCase implements IUseCase {
             });
 
             track(userCreated.uuid, 'signed_up');
+
+            posthogClient.organizationIdentify(createdOrganization);
 
             await this.sendWebhook(user, payload, createdOrganization.name);
 
