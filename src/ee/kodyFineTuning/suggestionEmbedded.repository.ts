@@ -1,4 +1,3 @@
-
 import {
     mapSimpleModelToEntity,
     mapSimpleModelsToEntities,
@@ -19,6 +18,33 @@ export class SuggestionEmbeddedDatabaseRepository
         @InjectRepository(SuggestionEmbeddedModel)
         private readonly SuggestionEmbeddedRepository: Repository<SuggestionEmbeddedModel>,
     ) {}
+
+    async bulkInsert(
+        entities: ISuggestionEmbedded[],
+    ): Promise<SuggestionEmbeddedEntity[] | undefined> {
+        try {
+            if (entities.length === 0) {
+                return;
+            }
+
+            await this.SuggestionEmbeddedRepository.createQueryBuilder(
+                'SuggestionEmbedded',
+            )
+                .insert()
+                .into(SuggestionEmbeddedModel)
+                .values(entities)
+                .execute();
+
+            return entities.map((plain) =>
+                mapSimpleModelToEntity(plain as any, SuggestionEmbeddedEntity),
+            );
+        } catch (error) {
+            throw new Error(
+                'Error in bulk insert of suggestion embeddings',
+                error,
+            );
+        }
+    }
 
     async create(
         entity: ISuggestionEmbedded,
@@ -58,7 +84,6 @@ export class SuggestionEmbeddedDatabaseRepository
 
             return undefined;
         } catch (error) {
-            console.log(error);
             throw new Error('Error creating suggestion embedding');
         }
     }
@@ -90,7 +115,6 @@ export class SuggestionEmbeddedDatabaseRepository
                 SuggestionEmbeddedEntity,
             );
         } catch (error) {
-            console.log(error);
             throw new Error('Error finding suggestion embeddings');
         }
     }
@@ -110,7 +134,6 @@ export class SuggestionEmbeddedDatabaseRepository
                 ? mapSimpleModelToEntity(embedding, SuggestionEmbeddedEntity)
                 : undefined;
         } catch (error) {
-            console.log(error);
             throw new Error('Error finding suggestion embedding');
         }
     }
@@ -129,7 +152,6 @@ export class SuggestionEmbeddedDatabaseRepository
                 ? mapSimpleModelToEntity(embedding, SuggestionEmbeddedEntity)
                 : undefined;
         } catch (error) {
-            console.log(error);
             throw new Error('Error finding suggestion embedding by ID');
         }
     }
@@ -177,7 +199,6 @@ export class SuggestionEmbeddedDatabaseRepository
 
             return undefined;
         } catch (error) {
-            console.log(error);
             throw new Error('Error updating suggestion embedding');
         }
     }

@@ -1,16 +1,15 @@
-import { Injectable } from "@nestjs/common";
-import { ISuggestionEmbeddedService } from "../domain/suggestionEmbedded/contracts/suggestionEmbedded.service.contract";
-import { SuggestionEmbeddedDatabaseRepository } from "../suggestionEmbedded.repository";
-import { PinoLoggerService } from "@/core/infrastructure/adapters/services/logger/pino.service";
-import { ISuggestionEmbedded } from "../domain/suggestionEmbedded/interfaces/suggestionEmbedded.interface";
-import { SuggestionEmbeddedEntity } from "../domain/suggestionEmbedded/entities/suggestionEmbedded.entity";
-import { ISuggestionToEmbed } from "@/core/domain/pullRequests/interfaces/pullRequests.interface";
-import { FindManyOptions } from "typeorm";
-import { CodeSuggestion } from "@/config/types/general/codeReview.type";
-import { KodyFineTuningService } from "../kodyFineTuning.service";
-import { getOpenAIEmbedding } from "@/shared/utils/langchainCommon/document";
-import { FeedbackType } from "../domain/enums/feedbackType.enum";
-
+import { Injectable } from '@nestjs/common';
+import { ISuggestionEmbeddedService } from '../domain/suggestionEmbedded/contracts/suggestionEmbedded.service.contract';
+import { SuggestionEmbeddedDatabaseRepository } from '../suggestionEmbedded.repository';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { ISuggestionEmbedded } from '../domain/suggestionEmbedded/interfaces/suggestionEmbedded.interface';
+import { SuggestionEmbeddedEntity } from '../domain/suggestionEmbedded/entities/suggestionEmbedded.entity';
+import { ISuggestionToEmbed } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { FindManyOptions } from 'typeorm';
+import { CodeSuggestion } from '@/config/types/general/codeReview.type';
+import { KodyFineTuningService } from '../kodyFineTuning.service';
+import { getOpenAIEmbedding } from '@/shared/utils/langchainCommon/document';
+import { FeedbackType } from '../domain/enums/feedbackType.enum';
 
 export interface SuggestionEmbeddedFeedbacks {
     positiveFeedbacks: number;
@@ -43,6 +42,12 @@ export class SuggestionEmbeddedService implements ISuggestionEmbeddedService {
         private readonly logger: PinoLoggerService,
     ) {}
 
+    bulkInsert(
+        entities: ISuggestionEmbedded[],
+    ): Promise<SuggestionEmbeddedEntity[] | undefined> {
+        return this.SuggestionEmbeddedRepository.bulkInsert(entities);
+    }
+
     create(
         entity: ISuggestionEmbedded,
     ): Promise<SuggestionEmbeddedEntity | undefined> {
@@ -52,23 +57,25 @@ export class SuggestionEmbeddedService implements ISuggestionEmbeddedService {
     async bulkCreateFromMongoData(
         suggestions: ISuggestionToEmbed[],
     ): Promise<SuggestionEmbeddedEntity[] | undefined> {
-        const suggestionEmbeddeds = await Promise.all(
-            suggestions
-                .filter((suggestion) => suggestion?.id)
-                .map(async (suggestion) => {
-                    const suggestionEmbedded =
-                        await this.embedSuggestionToSaveData(suggestion);
-                    if (suggestionEmbedded) {
-                        return this.SuggestionEmbeddedRepository.create(
-                            suggestionEmbedded,
-                        );
-                    }
-                }),
+        const cleanSuggestions = suggestions.filter(this.isValidSuggestion);
+
+        if (cleanSuggestions.length === 0) {
+            return [];
+        }
+
+        const allResults = await Promise.all(
+            cleanSuggestions.map((suggestion) =>
+                this.embedSuggestionToSaveData(suggestion),
+            ),
         );
 
-        return suggestionEmbeddeds.filter(
-            (suggestion) => suggestion?.suggestionEmbed,
+        const toInsert: ISuggestionEmbedded[] = allResults.filter(
+            (x): x is ISuggestionEmbedded => !!x,
         );
+
+        const insertedEntities = await this.bulkInsert(toInsert);
+
+        return insertedEntities;
     }
 
     async find(
@@ -354,5 +361,23 @@ export class SuggestionEmbeddedService implements ISuggestionEmbeddedService {
             },
             total: result.length,
         };
+    }
+
+    private isValidSuggestion(
+        s: ISuggestionToEmbed | null | undefined,
+    ): s is ISuggestionToEmbed {
+        const UUID_REGEX =
+            /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+        return (
+            !!s &&
+            typeof s.id === 'string' &&
+            UUID_REGEX.test(s.id) &&
+            !!s.suggestionContent &&
+            !!s.oneSentenceSummary &&
+            !!s.label &&
+            !!s.severity &&
+            !!s.feedbackType
+        );
     }
 }

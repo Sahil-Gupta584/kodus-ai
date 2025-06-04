@@ -82,7 +82,7 @@ export interface IPullRequestsRepository {
         updateData: Partial<ISuggestion>,
     ): Promise<PullRequestsEntity | null>;
     updateSyncedSuggestionsFlag(
-        pullRequestNumber: number,
+        pullRequestNumbers: number[],
         repositoryId: string,
         organizationId: string,
         synced: boolean,

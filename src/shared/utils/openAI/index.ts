@@ -53,7 +53,7 @@ const openAIRetrieveFileContent = async (file_id: string) => {
 
 const openAIDeleteFile = async (file_id: string) => {
     try {
-        await openai.files.del(file_id);
+        await openai.files.delete(file_id);
     } catch (error) {
         console.log(error);
     }

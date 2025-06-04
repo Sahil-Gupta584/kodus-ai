@@ -24,7 +24,7 @@ export interface ICodeReviewFeedbackRepository {
     ): Promise<CodeReviewFeedbackEntity[]>;
     updateSyncedSuggestionsFlag(
         organizationId: string,
+        suggestionIds: string[],
         syncedEmbeddedSuggestions: boolean,
-        suggestionId: string,
     ): Promise<CodeReviewFeedbackEntity | null>;
 }

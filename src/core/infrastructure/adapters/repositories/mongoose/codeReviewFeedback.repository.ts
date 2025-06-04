@@ -113,10 +113,9 @@ export class CodeReviewFeedbackRepository
             };
 
             if (syncedEmbeddedSuggestions !== undefined) {
-                filter['$or'] = [
-                    { syncedEmbeddedSuggestions },
-                    { syncedEmbeddedSuggestions: { $exists: false } },
-                ];
+                filter.syncedEmbeddedSuggestions = {
+                    $ne: !syncedEmbeddedSuggestions,
+                };
             }
 
             if (repositoryId) {
@@ -133,26 +132,29 @@ export class CodeReviewFeedbackRepository
 
     async updateSyncedSuggestionsFlag(
         organizationId: string,
+        suggestionIds: string[],
         syncedEmbeddedSuggestions: boolean,
-        suggestionId: string,
     ): Promise<CodeReviewFeedbackEntity | null> {
         try {
-            const doc = await this.codeReviewFeedbackModel.findOneAndUpdate(
-                {
-                    suggestionId: suggestionId,
-                    organizationId: organizationId,
-                },
-                {
-                    $set: {
-                        syncedEmbeddedSuggestions: syncedEmbeddedSuggestions,
-                    },
-                },
-                { new: true },
+            const validIds = suggestionIds.filter(
+                (id) => typeof id === 'string' && id.length > 0,
             );
+            if (validIds.length === 0) {
+                return null;
+            }
 
-            return doc
-                ? mapSimpleModelToEntity(doc, CodeReviewFeedbackEntity)
-                : null;
+            const filter = {
+                organizationId: organizationId,
+                suggestionId: { $in: validIds },
+            };
+
+            const update = {
+                $set: { syncedEmbeddedSuggestions: syncedEmbeddedSuggestions },
+            };
+
+            await this.codeReviewFeedbackModel.updateMany(filter, update);
+
+            return null;
         } catch (error) {
             console.log(error);
         }

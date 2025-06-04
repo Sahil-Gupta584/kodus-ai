@@ -1,26 +1,11 @@
 import { Document } from '@langchain/core/documents';
-import { ChatOpenAI, OpenAI, OpenAIEmbeddings } from '@langchain/openai';
-import { ChatAnthropic } from '@langchain/anthropic';
-import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { OpenAIEmbeddings } from '@langchain/openai';
 import 'dotenv/config';
 import { TokenTextSplitter } from 'langchain/text_splitter';
-import {
-    prompt_getBugTypes,
-    prompt_getWaitingColumns,
-} from '@/shared/utils/langchainCommon/prompts';
-import { prompt_getDoingColumnName } from '@/shared/utils/langchainCommon/prompts/configuration/getDoingColumnName';
 import { shouldProcessNotBugItems } from '../helpers';
 import { OpenAIAssistantRunnable } from 'langchain/experimental/openai_assistant';
 import axios from 'axios';
 import { traceable } from 'langsmith/traceable';
-import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
-import { ChatFireworks } from '@langchain/community/chat_models/fireworks';
-import { ChatVertexAI } from '@langchain/google-vertexai';
-import { ChatNovitaAI } from '@langchain/community/chat_models/novita';
-import {
-    MODEL_STRATEGIES,
-    LLMModelProvider,
-} from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 
 interface OpenAIEmbeddingResponse {
     data: Array<{
@@ -218,68 +203,6 @@ const getOpenAIAssistantFileContent = async (fileId: string) => {
     return response.data;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const checkOpenAIResult_deprecated = (input: any, output: any) => {
-    try {
-        const inputIds = input
-            .filter(
-                (workItem: any) =>
-                    workItem.workItemType.name.toLowerCase() !== 'error' &&
-                    workItem.workItemType.name.toLowerCase() !== 'bug',
-            )
-            .map((workItem: any) => workItem.workItemId);
-
-        const outputIds: any[] = output.map((item: any) =>
-            item.workItemId.toString(),
-        ); // Converting to string for comparison
-
-        const outputKeys = output.map((item: any) => item.workItemKey);
-
-        const missingIds: any[] = inputIds.filter(
-            (workItemId: number) => !outputIds.includes(workItemId),
-        );
-
-        if (missingIds.length > 0)
-            return {
-                response: false,
-                message: `Missing WorkItems in the return object: [${missingIds.join(
-                    ',',
-                )}]`,
-            };
-
-        if (inputIds.length !== outputIds.length)
-            return {
-                response: false,
-                message: `Different result sizes between output object and input object.`,
-            };
-
-        const hasDuplicateKeys = new Set(outputKeys).size !== outputKeys.length;
-        const hasDuplicateIds = new Set(outputIds).size !== outputIds.length;
-
-        if (hasDuplicateIds)
-            return {
-                response: false,
-                message: `There are WorkItems with duplicate IDs in the return object.`,
-            };
-
-        if (hasDuplicateKeys)
-            return {
-                response: false,
-                message: `There are WorkItems with duplicate keys in the return object.`,
-            };
-
-        return {
-            response: true,
-            message: `Correct result!`,
-        };
-    } catch (error) {
-        return {
-            response: false,
-            message: `Error while verifying the result: ${error.message}`,
-        };
-    }
-};
-
 const getWorkItemIdsFromData = (data: any) => {
     const ids: any[] = [];
     data.data.forEach((column: any) => {
@@ -319,6 +242,26 @@ const traceCustomLLMCall = async (
     return await chatModel({ messages });
 };
 
+let embedder: OpenAIEmbeddings | null = null;
+
+const getEmbedder = (options?: { model?: string; apiKey?: string }) => {
+    if (!embedder) {
+        const defaultOptions = {
+            model: 'text-embedding-3-small',
+            apiKey: process.env.API_OPEN_AI_API_KEY,
+        };
+
+        const config = { ...defaultOptions, ...options };
+
+        embedder = new OpenAIEmbeddings({
+            openAIApiKey: config.apiKey,
+            modelName: config.model,
+        });
+    }
+
+    return embedder;
+};
+
 const getOpenAIEmbedding = async (
     input: string,
     options?: {
@@ -333,11 +276,9 @@ const getOpenAIEmbedding = async (
 
     const config = { ...defaultOptions, ...options };
 
-    const embeddings = new OpenAIEmbeddings({
-        openAIApiKey: config.apiKey,
-        modelName: config.model,
-    });
-    const embeddingVector = await embeddings.embedQuery(input);
+    const embedder = getEmbedder(config);
+
+    const embeddingVector = await embedder.embedQuery(input);
 
     return {
         data: [
