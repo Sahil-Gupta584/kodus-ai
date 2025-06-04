@@ -143,11 +143,12 @@ describe('PostHogClient', () => {
 
         it('should not call isFeatureEnabled when PostHog is not initialized', async () => {
             const posthogClient = await getClient('');
-            posthogClient.isFeatureEnabled('test-feature', {
+            const isFeatureEnabled = await posthogClient.isFeatureEnabled('test-feature', {
                 uuid: '123',
                 organization: { uuid: '456' },
             } as IUser);
             expect(posthogClient['posthog']).toBeNull();
+            expect(isFeatureEnabled).toBe(true);
         });
     });
 });
