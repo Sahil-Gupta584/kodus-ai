@@ -17,7 +17,7 @@ import { PinoLoggerService } from '../../../logger/pino.service';
 export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipelineContext> {
     stageName = 'FetchChangedFilesStage';
 
-    private maxFilesToAnalyze = 200;
+    private maxFilesToAnalyze = 500;
 
     constructor(
         @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
