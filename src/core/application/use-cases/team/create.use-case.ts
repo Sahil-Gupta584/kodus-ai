@@ -13,6 +13,7 @@ import {
     PlatformConfigValue,
 } from '@/core/domain/parameters/types/configValue.type';
 import { STATUS } from '@/config/types/database/status.type';
+import posthogClient from '@/shared/utils/posthog';
 
 export class CreateTeamUseCase implements IUseCase {
     constructor(
@@ -61,6 +62,8 @@ export class CreateTeamUseCase implements IUseCase {
             if (team && team?.uuid) {
                 this.savePlatormConfigsParameters(orgId, team.uuid);
             }
+
+            posthogClient.teamIdentify(team);
 
             return team;
         } catch (error) {
