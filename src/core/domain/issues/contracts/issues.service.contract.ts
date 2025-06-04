@@ -11,12 +11,6 @@ export interface IIssuesService extends IIssuesRepository {
     findOne(filter?: Partial<IIssue>): Promise<IssuesEntity | null>;
     find(filter?: Partial<IIssue>): Promise<IssuesEntity[]>;
 
-    findOpenByFile(
-        organizationId: string,
-        repositoryId: string,
-        filePath: string,
-    ): Promise<IssuesEntity[]>;
-
     updateStatus(
         uuid: string,
         status: 'open' | 'resolved' | 'dismissed',

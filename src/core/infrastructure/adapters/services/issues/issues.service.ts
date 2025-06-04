@@ -4,6 +4,7 @@ import { IIssuesRepository } from '@/core/domain/issues/contracts/issues.reposit
 import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { IIssuesService } from '@/core/domain/issues/contracts/issues.service.contract';
+import { IssueStatus } from '@/config/types/general/issues.type';
 
 @Injectable()
 export class IssuesService implements IIssuesService {
@@ -32,15 +33,17 @@ export class IssuesService implements IIssuesService {
         return this.issuesRepository.find(filter);
     }
 
-    async findOpenByFile(
+    async findByFileAndStatus(
         organizationId: string,
         repositoryId: string,
         filePath: string,
-    ): Promise<IssuesEntity[]> {
-        return this.issuesRepository.findOpenByFile(
+        status?: IssueStatus,
+    ): Promise<IssuesEntity[] | null> {
+        return this.issuesRepository.findByFileAndStatus(
             organizationId,
             repositoryId,
             filePath,
+            status,
         );
     }
 
