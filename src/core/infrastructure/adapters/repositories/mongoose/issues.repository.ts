@@ -6,10 +6,10 @@ import {
     mapSimpleModelsToEntities,
 } from '@/shared/infrastructure/repositories/mappers';
 import { IssuesModel } from './schema/issues.model';
+import { IIssuesRepository } from '@/core/domain/issues/contracts/issues.repository';
 import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
-import { IIssuesRepository } from '@/core/domain/issues/contracts/issues.repository';
-
+import { IssueStatus } from '@/config/types/general/issues.type';
 
 @Injectable()
 export class IssuesRepository implements IIssuesRepository {
@@ -26,7 +26,6 @@ export class IssuesRepository implements IIssuesRepository {
         }
     }
 
-    //#region Create
     async create(issue: Omit<IIssue, 'uuid'>): Promise<IssuesEntity> {
         try {
             const saved = await this.issuesModel.create(issue);
@@ -35,12 +34,10 @@ export class IssuesRepository implements IIssuesRepository {
             throw error;
         }
     }
-    //#endregion
 
-    //#region Get/Find
     async findById(uuid: string): Promise<IssuesEntity | null> {
         try {
-            const doc = await this.issuesModel.findOne({ uuid }).exec();
+            const doc = await this.issuesModel.findById(uuid).exec();
             return doc ? mapSimpleModelToEntity(doc, IssuesEntity) : null;
         } catch (error) {
             throw error;
@@ -65,46 +62,53 @@ export class IssuesRepository implements IIssuesRepository {
         }
     }
 
-    async findOpenByFile(
+    async findByFileAndStatus(
         organizationId: string,
         repositoryId: string,
         filePath: string,
-    ): Promise<IssuesEntity[]> {
+        status?: IssueStatus,
+    ): Promise<IssuesEntity[] | null> {
         try {
-            const docs = await this.issuesModel.find({
-                'representativeSuggestion.organizationId': organizationId,
-                'representativeSuggestion.repository.id': repositoryId,
-                filePath: filePath,
-                status: 'open',
-            }).exec();
+            const issues = await this.issuesModel
+                .find({
+                    'organizationId': organizationId,
+                    'repositoryId': repositoryId,
+                    'filePath': filePath,
+                    'status': status ? status : { $ne: IssueStatus.OPEN },
+                })
+                .exec();
 
-            return mapSimpleModelsToEntities(docs, IssuesEntity);
+            return issues
+                ? mapSimpleModelsToEntities(issues, IssuesEntity)
+                : null;
         } catch (error) {
             throw error;
         }
     }
 
-    async findBySuggestionId(suggestionId: string): Promise<IssuesEntity | null> {
+    async findBySuggestionId(
+        suggestionId: string,
+    ): Promise<IssuesEntity | null> {
         try {
-            const doc = await this.issuesModel.findOne({
-                contributingSuggestionIds: suggestionId,
-            }).exec();
+            const doc = await this.issuesModel
+                .findOne({
+                    contributingSuggestionIds: suggestionId,
+                })
+                .exec();
 
             return doc ? mapSimpleModelToEntity(doc, IssuesEntity) : null;
         } catch (error) {
             throw error;
         }
     }
-    //#endregion
 
-    //#region Update
     async update(
         issue: IssuesEntity,
         updateData: Omit<Partial<IIssue>, 'uuid' | 'id'>,
     ): Promise<IssuesEntity | null> {
         try {
-            const doc = await this.issuesModel.findOneAndUpdate(
-                { _id: issue.uuid },
+            const doc = await this.issuesModel.findByIdAndUpdate(
+                issue.uuid,
                 { $set: updateData },
                 { new: true },
             );
@@ -119,9 +123,13 @@ export class IssuesRepository implements IIssuesRepository {
         status: 'open' | 'resolved' | 'dismissed',
     ): Promise<IssuesEntity | null> {
         try {
-            const doc = await this.issuesModel.findOneAndUpdate(
-                { _id: uuid },
-                { $set: { status } },
+            const doc = await this.issuesModel.findByIdAndUpdate(
+                uuid,
+                {
+                    $set: {
+                        'representativeSuggestion.implementationStatus': status,
+                    },
+                },
                 { new: true },
             );
             return doc ? mapSimpleModelToEntity(doc, IssuesEntity) : null;
@@ -135,12 +143,12 @@ export class IssuesRepository implements IIssuesRepository {
         suggestionIds: string[],
     ): Promise<IssuesEntity | null> {
         try {
-            const doc = await this.issuesModel.findOneAndUpdate(
-                { _id: uuid },
+            const doc = await this.issuesModel.findByIdAndUpdate(
+                uuid,
                 {
                     $addToSet: {
-                        contributingSuggestionIds: { $each: suggestionIds }
-                    }
+                        contributingSuggestionIds: { $each: suggestionIds },
+                    },
                 },
                 { new: true },
             );
@@ -149,5 +157,4 @@ export class IssuesRepository implements IIssuesRepository {
             throw error;
         }
     }
-    //#endregion
 }

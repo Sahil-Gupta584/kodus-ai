@@ -1,3 +1,4 @@
+import { IssueStatus } from '@/config/types/general/issues.type';
 import { IssuesEntity } from '../entities/issues.entity';
 import { IIssue } from '../interfaces/issues.interface';
 
@@ -12,11 +13,12 @@ export interface IIssuesRepository {
     findOne(filter?: Partial<IIssue>): Promise<IssuesEntity | null>;
     find(filter?: Partial<IIssue>): Promise<IssuesEntity[]>;
 
-    findOpenByFile(
+    findByFileAndStatus(
         organizationId: string,
         repositoryId: string,
         filePath: string,
-    ): Promise<IssuesEntity[]>;
+        status?: IssueStatus,
+    ): Promise<IssuesEntity[] | null>;
 
     findBySuggestionId(suggestionId: string): Promise<IssuesEntity | null>;
 
