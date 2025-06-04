@@ -48,9 +48,8 @@ export class KodyIssuesManagementService
             );
 
             // 2. Agrupar por arquivo
-            const suggestionsByFile = this.groupSuggestionsByFile(
-                allSuggestions,
-            );
+            const suggestionsByFile =
+                this.groupSuggestionsByFile(allSuggestions);
 
             // 3. Para cada arquivo, fazer merge com issues existentes
             const changedFiles = Object.keys(suggestionsByFile);
@@ -106,16 +105,13 @@ export class KodyIssuesManagementService
                 return;
             }
 
-            // 2. Preparar dados para o prompt
+            // 2. Preparar dados para o prompt (com array de issues)
             const promptData = {
                 filePath,
-                existingIssues: existingIssues
-                    ? {
-                          issueId: existingIssues.uuid,
-                          representativeSuggestion:
-                              existingIssues.representativeSuggestion,
-                      }
-                    : null,
+                existingIssues: existingIssues.map((issue) => ({
+                    issueId: issue.uuid,
+                    representativeSuggestion: issue.representativeSuggestion,
+                })),
                 newSuggestions: newSuggestions.map((suggestion) => ({
                     id: suggestion.id,
                     language: suggestion.language,
