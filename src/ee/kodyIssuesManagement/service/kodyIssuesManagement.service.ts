@@ -10,6 +10,7 @@ import { KodyIssuesAnalysisService } from '@/ee/codeBase/kodyIssuesAnalysis.serv
 import { KODY_ISSUES_ANALYSIS_SERVICE_TOKEN } from '@/ee/codeBase/kodyIssuesAnalysis.service';
 import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.enum';
 import { IssueStatus } from '@/config/types/general/issues.type';
+import { CodeSuggestion } from '@/config/types/general/codeReview.type';
 
 @Injectable()
 export class KodyIssuesManagementService
@@ -33,6 +34,7 @@ export class KodyIssuesManagementService
         organizationId: string;
         repositoryId: string;
         repositoryName: string;
+        files: any[];
     }): Promise<void> {
         try {
             this.logger.log({
@@ -67,6 +69,7 @@ export class KodyIssuesManagementService
             await this.resolveExistingIssues(
                 params.organizationId,
                 params.repositoryId,
+                params.files,
                 changedFiles,
             );
         } catch (error) {
@@ -120,6 +123,8 @@ export class KodyIssuesManagementService
                     existingCode: suggestion.existingCode,
                     improvedCode: suggestion.improvedCode,
                     oneSentenceSummary: suggestion.oneSentenceSummary,
+                    severity: suggestion.severity,
+                    label: suggestion.label,
                 })),
             };
 
@@ -151,37 +156,162 @@ export class KodyIssuesManagementService
     async createNewIssues(
         organizationId: string,
         repositoryId: string,
-        unmatchedSuggestions: any[],
+        unmatchedSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
-        // TODO: Implementar depois
-        for (const suggestion of unmatchedSuggestions) {
-            await this.issuesService.create({
-                title:
-                    suggestion.oneSentenceSummary ||
-                    `Issue in ${suggestion.relevantFile}`,
-                description: suggestion.suggestionContent,
-                filePath: suggestion.relevantFile,
-                language: suggestion.language,
-                representativeSuggestion: suggestion,
-                contributingSuggestionIds: [suggestion.id],
-                repositoryId,
-                organizationId,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
+        try {
+            const suggestionsByFile =
+                this.groupSuggestionsByFile(unmatchedSuggestions);
+
+            for (const [filePath, suggestions] of Object.entries(
+                suggestionsByFile,
+            )) {
+                const promptData = {
+                    filePath,
+                    unmatchedSuggestions: (
+                        suggestions as Partial<CodeSuggestion>[]
+                    ).map((suggestion: Partial<CodeSuggestion>) => ({
+                        id: suggestion.id,
+                        language: suggestion.language,
+                        relevantFile: suggestion.relevantFile,
+                        suggestionContent: suggestion.suggestionContent,
+                        existingCode: suggestion.existingCode,
+                        improvedCode: suggestion.improvedCode,
+                        oneSentenceSummary: suggestion.oneSentenceSummary,
+                    })),
+                };
+
+                const llmResult =
+                    await this.kodyIssuesAnalysisService.createNewIssues(
+                        organizationId,
+                        promptData,
+                    );
+
+                if (llmResult?.newlyFormedIssues) {
+                    for (const newIssue of llmResult.newlyFormedIssues) {
+                        const representativeSuggestion =
+                            this.findSuggestionById(
+                                unmatchedSuggestions,
+                                newIssue.representativeSuggestion.id,
+                            );
+
+                        await this.issuesService.create({
+                            title: newIssue.title,
+                            description: newIssue.description,
+                            filePath: newIssue.filePath,
+                            language: newIssue.language,
+                            label: representativeSuggestion?.label || 'unknown',
+                            severity:
+                                representativeSuggestion?.severity || 'medium',
+                            representativeSuggestion:
+                                newIssue.representativeSuggestion,
+                            contributingSuggestionIds:
+                                newIssue.contributingSuggestionIds,
+                            status: IssueStatus.OPEN,
+                            repositoryId,
+                            organizationId,
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString(),
+                        });
+                    }
+                }
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error creating new issues',
+                context: KodyIssuesManagementService.name,
+                error,
+                metadata: { organizationId, repositoryId },
             });
+            throw error;
         }
     }
 
     async resolveExistingIssues(
         organizationId: string,
         repositoryId: string,
+        files: any[],
         changedFiles: string[],
     ): Promise<void> {
-        // TODO: Implementar depois
-        this.logger.log({
-            message: 'Resolving existing issues - TODO',
-            context: KodyIssuesManagementService.name,
-        });
+        try {
+            for (const filePath of changedFiles) {
+                const fileData = files.find((f) => f.path === filePath);
+                if (!fileData) continue;
+
+                // Buscar issues abertas para o arquivo
+                const openIssues = await this.issuesService.findByFileAndStatus(
+                    organizationId,
+                    repositoryId,
+                    filePath,
+                    IssueStatus.OPEN,
+                );
+
+                if (!openIssues.length) continue;
+
+                // Construir conteúdo do arquivo (usando patch como aproximação)
+                const currentCode =
+                    this.extractCodeFromPatch(fileData.patch) ||
+                    'Content not available';
+
+                const promptData = {
+                    filePath,
+                    language: fileData.suggestions?.[0]?.language || 'unknown',
+                    currentCode,
+                    issues: openIssues.map((issue) => ({
+                        issueId: issue.uuid,
+                        title: issue.title,
+                        description: issue.description,
+                        representativeSuggestion:
+                            issue.representativeSuggestion,
+                        contributingSuggestionIds:
+                            issue.contributingSuggestionIds,
+                    })),
+                };
+
+                const llmResult =
+                    await this.kodyIssuesAnalysisService.resolveExistingIssues(
+                        organizationId,
+                        promptData,
+                    );
+
+                if (llmResult?.issueVerificationResults) {
+                    for (const resolution of llmResult.issueVerificationResults) {
+                        if (!resolution.isIssuePresentInCode) {
+                            await this.issuesService.updateStatus(
+                                resolution.issueId,
+                                IssueStatus.RESOLVED,
+                            );
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error resolving existing issues',
+                context: KodyIssuesManagementService.name,
+                error,
+                metadata: { organizationId, repositoryId },
+            });
+            throw error;
+        }
+    }
+
+    private extractCodeFromPatch(patch: string): string {
+        if (!patch) return '';
+
+        // Extrai linhas que não começam com - (removidas)
+        return patch
+            .split('\n')
+            .filter((line) => !line.startsWith('-') && !line.startsWith('@@'))
+            .map((line) => (line.startsWith('+') ? line.substring(1) : line))
+            .join('\n');
+    }
+    private findSuggestionById(
+        unmatchedSuggestions: any[],
+        suggestionId: string,
+    ) {
+        return unmatchedSuggestions.find(
+            (suggestion) => suggestion.id === suggestionId,
+        );
     }
 
     private async getAllSuggestionsFromPr(
@@ -228,7 +358,7 @@ export class KodyIssuesManagementService
         }, []);
     }
 
-    private groupSuggestionsByFile(suggestions: any[]) {
+    private groupSuggestionsByFile(suggestions: Partial<CodeSuggestion>[]) {
         return suggestions.reduce((acc, suggestion) => {
             const filePath = suggestion.relevantFile;
             if (!acc[filePath]) {
@@ -243,13 +373,13 @@ export class KodyIssuesManagementService
         organizationId: string,
         repositoryId: string,
         mergeResult: any,
-        newSuggestions: any[],
+        newSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
         if (!mergeResult?.matches) {
             return;
         }
 
-        const unmatchedSuggestions: any[] = [];
+        const unmatchedSuggestions: Partial<CodeSuggestion>[] = [];
 
         for (const match of mergeResult.matches) {
             const suggestion = newSuggestions.find(

@@ -7,9 +7,15 @@ import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmPro
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { Inject } from '@nestjs/common';
-import { prompt_kodyissues_merge_suggestions_into_issues_system } from '@/shared/utils/langchainCommon/prompts/kodyIssuesManagement';
+import {
+    prompt_kodyissues_create_new_issues_system,
+    prompt_kodyissues_merge_suggestions_into_issues_system,
+    prompt_kodyissues_resolve_issues_system,
+} from '@/shared/utils/langchainCommon/prompts/kodyIssuesManagement';
 
-export const KODY_ISSUES_ANALYSIS_SERVICE_TOKEN = Symbol('KodyIssuesAnalysisService');
+export const KODY_ISSUES_ANALYSIS_SERVICE_TOKEN = Symbol(
+    'KodyIssuesAnalysisService',
+);
 
 @Injectable()
 export class KodyIssuesAnalysisService {
@@ -36,10 +42,63 @@ export class KodyIssuesAnalysisService {
             const result = await chain.invoke(promptData);
 
             return this.processLLMResponse(result, organizationId);
-
         } catch (error) {
             this.logger.error({
                 message: 'Error in mergeSuggestionsIntoIssues',
+                context: KodyIssuesAnalysisService.name,
+                error,
+                metadata: { organizationId },
+            });
+            throw error;
+        }
+    }
+
+    async createNewIssues(
+        organizationId: string,
+        promptData: any,
+    ): Promise<any> {
+        try {
+            const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
+
+            const chain = await this.createAnalysisChain(
+                provider,
+                prompt_kodyissues_create_new_issues_system,
+                'createNewIssues',
+            );
+
+            const result = await chain.invoke(promptData);
+
+            return this.processLLMResponse(result, organizationId);
+        } catch (error) {
+            this.logger.error({
+                message: 'Error in createNewIssues',
+                context: KodyIssuesAnalysisService.name,
+                error,
+                metadata: { organizationId },
+            });
+            throw error;
+        }
+    }
+
+    async resolveExistingIssues(
+        organizationId: string,
+        promptData: any,
+    ): Promise<any> {
+        try {
+            const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
+
+            const chain = await this.createAnalysisChain(
+                provider,
+                prompt_kodyissues_resolve_issues_system,
+                'resolveExistingIssues',
+            );
+
+            const result = await chain.invoke(promptData);
+
+            return this.processLLMResponse(result, organizationId);
+        } catch (error) {
+            this.logger.error({
+                message: 'Error in resolveExistingIssues',
                 context: KodyIssuesAnalysisService.name,
                 error,
                 metadata: { organizationId },
