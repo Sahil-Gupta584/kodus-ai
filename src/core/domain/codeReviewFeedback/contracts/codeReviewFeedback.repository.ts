@@ -26,5 +26,5 @@ export interface ICodeReviewFeedbackRepository {
         organizationId: string,
         suggestionIds: string[],
         syncedEmbeddedSuggestions: boolean,
-    ): Promise<CodeReviewFeedbackEntity | null>;
+    ): Promise<void>;
 }

@@ -134,7 +134,7 @@ export class CodeReviewFeedbackRepository
         organizationId: string,
         suggestionIds: string[],
         syncedEmbeddedSuggestions: boolean,
-    ): Promise<CodeReviewFeedbackEntity | null> {
+    ): Promise<void> {
         try {
             const validIds = suggestionIds.filter(
                 (id) => typeof id === 'string' && id.length > 0,
@@ -153,8 +153,6 @@ export class CodeReviewFeedbackRepository
             };
 
             await this.codeReviewFeedbackModel.updateMany(filter, update);
-
-            return null;
         } catch (error) {
             console.log(error);
         }

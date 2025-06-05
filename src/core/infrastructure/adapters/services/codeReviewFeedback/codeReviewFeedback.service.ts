@@ -99,7 +99,7 @@ export class CodeReviewFeedbackService implements ICodeReviewFeedbackService {
         organizationId: string,
         suggestionIds: string[],
         syncedEmbeddedSuggestions: boolean,
-    ): Promise<CodeReviewFeedbackEntity | null> {
+    ): Promise<void> {
         return this.codeReviewFeedbackRepository.updateSyncedSuggestionsFlag(
             organizationId,
             suggestionIds,

@@ -244,7 +244,10 @@ const traceCustomLLMCall = async (
 
 let embedder: OpenAIEmbeddings | null = null;
 
-const getEmbedder = (options?: { model?: string; apiKey?: string }) => {
+const getEmbedder = (options?: {
+    model?: string;
+    apiKey?: string;
+}): OpenAIEmbeddings => {
     if (!embedder) {
         const defaultOptions = {
             model: 'text-embedding-3-small',

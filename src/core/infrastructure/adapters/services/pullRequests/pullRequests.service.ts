@@ -183,7 +183,7 @@ export class PullRequestsService implements IPullRequestsService {
         repositoryId: string,
         organizationId: string,
         synced: boolean,
-    ): Promise<PullRequestsEntity | null> {
+    ): Promise<void> {
         return this.pullRequestsRepository.updateSyncedSuggestionsFlag(
             pullRequestNumbers,
             repositoryId,

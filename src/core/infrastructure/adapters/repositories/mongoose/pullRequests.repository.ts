@@ -216,7 +216,7 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         repository: Pick<Repository, 'id' | 'fullName'>,
         status?: PullRequestState,
         syncedEmbeddedSuggestions?: boolean,
-        batchSize = 50,
+        batchSize: number = 50,
     ): Promise<PullRequestsEntity[]> {
         try {
             if (!organizationId || !repository?.id) {
@@ -517,7 +517,7 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         repositoryId: string,
         organizationId: string,
         synced: boolean,
-    ): Promise<PullRequestsEntity | null> {
+    ): Promise<void> {
         try {
             const validNumbers = pullRequestNumbers.filter(
                 (n) => typeof n === 'number',
@@ -536,8 +536,6 @@ export class PullRequestsRepository implements IPullRequestsRepository {
             const update = { $set: { syncedEmbeddedSuggestions: synced } };
 
             await this.pullRequestsModel.updateMany(filter, update);
-
-            return null;
         } catch (error) {
             throw error;
         }

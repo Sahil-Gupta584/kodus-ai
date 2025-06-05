@@ -86,5 +86,5 @@ export interface IPullRequestsRepository {
         repositoryId: string,
         organizationId: string,
         synced: boolean,
-    ): Promise<PullRequestsEntity | null>;
+    ): Promise<void>;
 }
