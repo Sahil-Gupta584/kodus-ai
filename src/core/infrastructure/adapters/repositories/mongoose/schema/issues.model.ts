@@ -1,6 +1,8 @@
 import { IssueStatus } from '@/config/types/general/issues.type';
 import { ISuggestion } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { CoreDocument } from '@/shared/infrastructure/repositories/model/mongodb';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
 @Schema({
@@ -20,6 +22,12 @@ export class IssuesModel extends CoreDocument {
 
     @Prop({ type: String, required: true })
     public language: string;
+
+    @Prop({ type: String, required: true })
+    public label: LabelType;
+
+    @Prop({ type: String, required: true })
+    public severity: SeverityLevel;
 
     @Prop({ type: Object, required: true })
     public representativeSuggestion: ISuggestion;
