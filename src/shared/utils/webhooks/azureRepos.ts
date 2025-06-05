@@ -84,7 +84,7 @@ export class AzureReposMappedPlatform implements IMappedPlatform {
             id: repo.id ? String(repo.id) : '',
             name: repo.name ?? '',
             language: null,
-            fullName: extractRepoFullName(pullRequest),
+            fullName: extractRepoFullName(pullRequest) ?? repo.name ?? '',
         };
     }
 
