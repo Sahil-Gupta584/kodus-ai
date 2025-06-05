@@ -97,13 +97,13 @@ export class CodeReviewFeedbackService implements ICodeReviewFeedbackService {
 
     async updateSyncedSuggestionsFlag(
         organizationId: string,
+        suggestionIds: string[],
         syncedEmbeddedSuggestions: boolean,
-        suggestionId: string,
-    ): Promise<CodeReviewFeedbackEntity | null> {
+    ): Promise<void> {
         return this.codeReviewFeedbackRepository.updateSyncedSuggestionsFlag(
             organizationId,
+            suggestionIds,
             syncedEmbeddedSuggestions,
-            suggestionId,
         );
     }
 }

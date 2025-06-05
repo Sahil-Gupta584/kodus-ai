@@ -847,23 +847,14 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     },
                     suggestionsWithId,
                     context?.codeReviewConfig?.kodyFineTuningConfig?.enabled,
+                    context?.clusterizedSuggestions,
                 );
 
             const keepedSuggestions: Partial<CodeSuggestion>[] =
-                getDataPipelineKodyFineTunning?.keepedSuggestions?.map(
-                    (suggestion) => {
-                        const { suggestionEmbed, ...rest } = suggestion as any;
-                        return rest;
-                    },
-                );
+                getDataPipelineKodyFineTunning?.keepedSuggestions;
 
             const discardedSuggestions: Partial<CodeSuggestion>[] =
-                getDataPipelineKodyFineTunning?.discardedSuggestions?.map(
-                    (suggestion) => {
-                        const { suggestionEmbed, ...rest } = suggestion as any;
-                        return rest;
-                    },
-                );
+                getDataPipelineKodyFineTunning?.discardedSuggestions;
 
             discardedSuggestionsByKodyFineTuning.push(
                 ...discardedSuggestions.map((suggestion) => {

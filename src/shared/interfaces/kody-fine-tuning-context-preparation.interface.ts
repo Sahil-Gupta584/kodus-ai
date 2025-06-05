@@ -4,6 +4,7 @@
  */
 
 import { CodeSuggestion } from '@/config/types/general/codeReview.type';
+import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 
 export const KODY_FINE_TUNING_CONTEXT_PREPARATION_TOKEN = Symbol(
     'KodyFineTuningContextPreparation',
@@ -16,8 +17,8 @@ export interface IKodyFineTuningContextPreparationService {
      * @param prNumber Pull Request number
      * @param repository Repository information
      * @param suggestionsToAnalyze Suggestions to be analyzed
-     * @param clusterizedSuggestions Clusterized suggestions
      * @param isFineTuningEnabled Whether fine tuning is enabled
+     * @param clusterizedSuggestions Clusterized suggestions
      * @returns Array of analyzed suggestions
      */
     prepareKodyFineTuningContext(
@@ -29,6 +30,7 @@ export interface IKodyFineTuningContextPreparationService {
         },
         suggestionsToAnalyze: CodeSuggestion[],
         isFineTuningEnabled: boolean,
+        clusterizedSuggestions: IClusterizedSuggestion[],
     ): Promise<{
         keepedSuggestions: Partial<CodeSuggestion>[];
         discardedSuggestions: Partial<CodeSuggestion>[];
