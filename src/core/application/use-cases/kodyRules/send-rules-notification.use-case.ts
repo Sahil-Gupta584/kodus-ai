@@ -113,6 +113,7 @@ export class SendRulesNotificationUseCase {
                 emailUsers,
                 emailRules,
                 organization.name,
+                this.logger,
             );
 
             // Log dos resultados

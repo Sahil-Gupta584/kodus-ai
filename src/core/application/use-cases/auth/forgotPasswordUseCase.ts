@@ -3,6 +3,7 @@ import {
     IAuthService,
 } from '@/core/domain/auth/contracts/auth.service.contracts';
 import { sendForgotPasswordEmail } from '@/shared/utils/email/sendMail';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import {
     Inject,
     Injectable,
@@ -15,6 +16,7 @@ export class ForgotPasswordUseCase {
     constructor(
         @Inject(AUTH_SERVICE_TOKEN)
         private readonly authService: IAuthService,
+        private readonly logger: PinoLoggerService,
     ) {}
 
     async execute(email: string) {
@@ -31,6 +33,7 @@ export class ForgotPasswordUseCase {
                 user.email,
                 user.organization.name,
                 token,
+                this.logger,
             );
             return { message: 'Reset link sent.' };
         } catch (error) {
