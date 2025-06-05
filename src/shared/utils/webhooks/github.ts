@@ -77,7 +77,7 @@ export class GithubMappedPlatform implements IMappedPlatform {
             language: repository?.language,
             fullName:
                 extractRepoFullName(params?.payload?.pull_request) ??
-                repository.name ??
+                repository?.name ??
                 '',
         };
     }
