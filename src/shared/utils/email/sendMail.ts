@@ -87,4 +87,59 @@ const sendForgotPasswordEmail = async (
     }
 };
 
-export { sendInvite, sendForgotPasswordEmail };
+const sendKodyRulesNotification = async (
+    users: Array<{ email: string; name: string }>,
+    rules: Array<{ title: string; rule: string; severity: string }>,
+    organizationName: string,
+) => {
+    try {
+        const mailersend = new MailerSend({
+            apiKey: process.env.API_MAILSEND_API_TOKEN,
+        });
+
+        const sentFrom = new Sender(
+            'kody@notifications.kodus.io',
+            'Kody from Kodus',
+        );
+
+        // Limitar regras para máximo 3 itens
+        const limitedRules = rules.slice(0, 3);
+
+        // Enviar email para cada usuário individualmente para personalização
+        const emailPromises = users.map(async (user) => {
+            const recipients = [new Recipient(user.email, user.name)];
+            
+            const personalization = [
+                {
+                    email: user.email,
+                    data: {
+                        user: {
+                            name: user.name,
+                        },
+                        organization: {
+                            name: organizationName,
+                        },
+                        rules: limitedRules,
+                        rulesCount: rules.length,
+                    },
+                },
+            ];
+
+            const emailParams = new EmailParams()
+                .setFrom(sentFrom)
+                .setTo(recipients)
+                .setSubject(`New Kody Rules Generated for ${organizationName}`)
+                .setTemplateId('yzkq340nv50gd796')
+                .setPersonalization(personalization);
+
+            return await mailersend.email.send(emailParams);
+        });
+
+        return await Promise.allSettled(emailPromises);
+    } catch (error) {
+        console.error('sendKodyRulesNotification error:', error);
+        throw error;
+    }
+};
+
+export { sendInvite, sendForgotPasswordEmail, sendKodyRulesNotification };
