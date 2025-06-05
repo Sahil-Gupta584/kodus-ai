@@ -29,6 +29,10 @@ export class IssuesEntity implements Entity<IIssue> {
         this.updatedAt = issue.updatedAt;
     }
 
+    public static create(issue: IIssue): IssuesEntity {
+        return new IssuesEntity(issue);
+    }
+
     toJson(): IIssue {
         return {
             uuid: this.uuid,

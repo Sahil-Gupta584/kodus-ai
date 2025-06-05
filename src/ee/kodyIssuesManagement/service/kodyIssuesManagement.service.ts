@@ -95,7 +95,7 @@ export class KodyIssuesManagementService
                 IssueStatus.OPEN,
             );
 
-            if (!existingIssues) {
+            if (!existingIssues || existingIssues?.length === 0) {
                 // Se não há issues existentes, todas as suggestions são novas
                 await this.createNewIssues(
                     organizationId,

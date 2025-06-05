@@ -75,8 +75,7 @@ export class IssuesRepository implements IIssuesRepository {
                     'repositoryId': repositoryId,
                     'filePath': filePath,
                     'status': status ? status : { $ne: IssueStatus.OPEN },
-                })
-                .exec();
+                });
 
             return issues
                 ? mapSimpleModelsToEntities(issues, IssuesEntity)
