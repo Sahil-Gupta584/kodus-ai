@@ -26,6 +26,7 @@ export interface IKodyIssuesManagementService {
     resolveExistingIssues(
         organizationId: string,
         repositoryId: string,
+        files: any[],
         changedFiles: string[],
     ): Promise<void>;
 }

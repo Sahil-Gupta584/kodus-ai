@@ -16,6 +16,7 @@ export class ProcessPrClosedUseCase implements IUseCase {
             organizationId: params.organizationId,
             repositoryId: params.repository.id,
             repositoryName: params.repository.name,
+            files: params.files,
         });
     }
 }

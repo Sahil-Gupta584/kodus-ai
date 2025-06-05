@@ -91,7 +91,7 @@ Example Output Schema:
 * Do not include comments, explanations, or any markdown formatting in the JSON output. Your entire response must be the JSON object itself.`;
 };
 
-export const prompt_kodyissues_create_new_issues_system = (payload: any) => {
+export const prompt_kodyissues_create_new_issues_system = () => {
     return `You are Kody-Issue-Creator, an expert system responsible for processing code suggestions that have NOT been matched to any existing open issues by a previous analysis (e.g., by Kody-Matcher). Your primary goal is to analyze a list of these unmatched suggestions for a single file, group those suggestions that refer to the *exact same underlying new code defect*, and then, for each group (or for individual suggestions if no grouping is appropriate), define and output the details for a new, consolidated issue.
 
     You will receive one JSON object as input, containing the file path and an array of unmatched code suggestions:
@@ -183,6 +183,7 @@ You will receive a JSON object with the following structure:
   "currentCode": "string",
   "issues": [
     {
+      "issueId": "string",
       "title": "string",
       "description": "string",
       "representativeSuggestion": {
