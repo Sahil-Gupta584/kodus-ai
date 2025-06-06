@@ -116,7 +116,7 @@ const sendForgotPasswordEmail = async (
 
 const sendKodyRulesNotification = async (
     users: Array<{ email: string; name: string }>,
-    rules: Array<{ title: string; rule: string; severity: string }>,
+    rules: Array<string>,
     organizationName: string,
     logger?: PinoLoggerService,
 ) => {

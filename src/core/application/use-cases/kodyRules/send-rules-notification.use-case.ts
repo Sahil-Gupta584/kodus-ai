@@ -11,12 +11,6 @@ import {
 import { STATUS } from '@/config/types/database/status.type';
 import { sendKodyRulesNotification } from '@/shared/utils/email/sendMail';
 
-export interface RuleNotificationData {
-    title: string;
-    rule: string;
-    severity: string;
-}
-
 @Injectable()
 export class SendRulesNotificationUseCase {
     constructor(
@@ -31,7 +25,7 @@ export class SendRulesNotificationUseCase {
 
     async execute(
         organizationId: string,
-        rules: RuleNotificationData[],
+        rules: string[],
     ): Promise<void> {
         try {
             this.logger.log({
@@ -91,11 +85,7 @@ export class SendRulesNotificationUseCase {
             }));
 
             // Formatar dados das regras para o template
-            const emailRules = rules.map((rule) => ({
-                title: rule.title,
-                rule: rule.rule,
-                severity: rule.severity.toLowerCase(),
-            }));
+            const emailRules = rules.map((rule) => rule);
 
             this.logger.log({
                 message: 'Sending email notifications',
