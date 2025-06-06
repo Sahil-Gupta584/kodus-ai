@@ -17,10 +17,5 @@ export const AST_MICROSERVICE_OPTIONS = {
         loader: {
             includeDirs: [resolve(cwd(), 'node_modules/@kodus/kodus-proto')],
         },
-        credentials: credentials.createSsl(
-            fs.readFileSync(resolve(cwd(), 'certs/ca.crt')),
-            fs.readFileSync(resolve(cwd(), 'certs/client.key')),
-            fs.readFileSync(resolve(cwd(), 'certs/client.crt')),
-        ),
     },
 } as ClientProviderOptions;
