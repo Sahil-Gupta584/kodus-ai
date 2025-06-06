@@ -65,7 +65,6 @@ export type CodeGraphContext = {
 };
 
 export type CodeAnalysisAST = {
-    processedChunk?: string;
     headCodeGraph: CodeGraphContext;
     baseCodeGraph: CodeGraphContext;
     headCodeGraphEnriched?: EnrichGraph;

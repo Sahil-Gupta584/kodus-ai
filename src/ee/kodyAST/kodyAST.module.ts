@@ -10,6 +10,7 @@ import { AST_MICROSERVICE_OPTIONS } from '@/ee/configs/microservices/ast-options
 import { AST_ANALYSIS_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
 import { CodeAstAnalysisService } from '@/ee/kodyAST/codeASTAnalysis.service';
 import { environment } from '@/ee/configs/environment';
+import { ASTDeserializerService } from './ast-deserializer.service';
 
 @Module({})
 export class KodyASTModule {
@@ -21,7 +22,11 @@ export class KodyASTModule {
             forwardRef(() => LLMProviderModule),
             LogModule,
         ];
-        const exports = [CodeAnalyzerService, AST_ANALYSIS_SERVICE_TOKEN];
+        const exports = [
+            CodeAnalyzerService,
+            AST_ANALYSIS_SERVICE_TOKEN,
+            ASTDeserializerService,
+        ];
 
         if (
             environment.API_CLOUD_MODE &&
@@ -39,6 +44,7 @@ export class KodyASTModule {
                         provide: AST_ANALYSIS_SERVICE_TOKEN,
                         useClass: CodeAstAnalysisService,
                     },
+                    ASTDeserializerService,
                 ],
                 exports,
             };
@@ -58,6 +64,10 @@ export class KodyASTModule {
                 {
                     provide: CodeAnalyzerService,
                     useValue: null,
+                },
+                {
+                    provide: ASTDeserializerService,
+                    useClass: null,
                 },
             ],
             exports,

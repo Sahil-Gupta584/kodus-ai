@@ -33,13 +33,16 @@ import * as CircuitBreaker from 'opossum';
 import {
     AST_ANALYZER_SERVICE_NAME,
     ASTAnalyzerServiceClient,
-    BuildEnrichedGraphResponse,
+    GetGraphsResponse,
+    GetGraphsResponseData as SerializedGraphs,
     ProtoAuthMode,
     ProtoPlatformType,
     RepositoryData,
-} from '@kodus/kodus-proto';
+} from '@kodus/kodus-proto/v2';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
+import { concatUint8Arrays } from '@/shared/utils/buffer/arrays';
+import { ASTDeserializerService } from './ast-deserializer.service';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -53,6 +56,7 @@ export class CodeAstAnalysisService
         private readonly diffAnalyzerService: DiffAnalyzerService,
         private readonly codeManagementService: CodeManagementService,
         private readonly logger: PinoLoggerService,
+        private readonly astDeserializerService: ASTDeserializerService,
 
         @Inject('AST_MICROSERVICE')
         private readonly astMicroserviceClient: ClientGrpc,
@@ -174,8 +178,15 @@ export class CodeAstAnalysisService
             let result: CodeAnalysisAST;
             const breaker = new CircuitBreaker(
                 async () => {
+                    const init = this.astMicroservice.initializeRepository({
+                        baseRepo: baseDirParams,
+                        headRepo: headDirParams,
+                    });
+
+                    await lastValueFrom(init);
+
                     const buildEnrichedGraphRes =
-                        this.astMicroservice.buildEnrichedGraph({
+                        this.astMicroservice.getGraphs({
                             baseRepo: baseDirParams,
                             headRepo: headDirParams,
                         });
@@ -185,12 +196,17 @@ export class CodeAstAnalysisService
                             reduce((acc, chunk) => {
                                 return {
                                     ...acc,
-                                    ...chunk,
-                                    data: acc.data + chunk.data,
+                                    data: concatUint8Arrays(
+                                        acc.data,
+                                        chunk.data,
+                                    ),
                                 };
                             }),
                             map((data) => {
-                                return this.parseGraphResponse(data);
+                                const jsonData = new TextDecoder().decode(
+                                    data.data,
+                                );
+                                return this.parseGraphResponse(jsonData);
                             }),
                         ),
                     );
@@ -218,16 +234,12 @@ export class CodeAstAnalysisService
         }
     }
 
-    private parseGraphResponse(graph: BuildEnrichedGraphResponse) {
+    private parseGraphResponse(graph: string) {
         if (!graph) {
             return null;
         }
 
-        if (graph.code !== 0) {
-            throw new Error(`Error in buildEnrichedGraph: ${graph.error}`);
-        }
-
-        const parsedGraph = JSON.parse(graph.data);
+        const parsedGraph = JSON.parse(graph) as SerializedGraphs;
         if (!parsedGraph) {
             throw new Error('Error parsing graph data');
         }
@@ -247,27 +259,23 @@ export class CodeAstAnalysisService
             },
         };
 
-        if (parsedGraph.baseCodeGraph) {
-            deserialized.baseCodeGraph.cloneDir =
-                parsedGraph?.baseCodeGraph?.cloneDir;
+        if (parsedGraph.baseGraph) {
             deserialized.baseCodeGraph.codeGraphFunctions = this.objectToMap(
-                parsedGraph?.baseCodeGraph?.codeGraphFunctions,
+                parsedGraph?.baseGraph?.functions,
             );
         }
 
-        if (parsedGraph.headCodeGraph) {
-            deserialized.headCodeGraph.cloneDir =
-                parsedGraph?.headCodeGraph?.cloneDir;
+        if (parsedGraph.headGraph) {
             deserialized.headCodeGraph.codeGraphFunctions = this.objectToMap(
-                parsedGraph?.headCodeGraph?.codeGraphFunctions,
+                parsedGraph?.headGraph?.functions,
             );
         }
 
-        if (parsedGraph.headCodeGraphEnriched) {
-            deserialized.headCodeGraphEnriched.nodes =
-                parsedGraph?.headCodeGraphEnriched?.nodes;
-            deserialized.headCodeGraphEnriched.relationships =
-                parsedGraph?.headCodeGraphEnriched?.relationships;
+        if (parsedGraph.enrichHeadGraph) {
+            deserialized.headCodeGraphEnriched =
+                this.astDeserializerService.deserializeEnrichedGraph(
+                    parsedGraph.enrichHeadGraph,
+                );
         }
 
         return deserialized;

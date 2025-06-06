@@ -230,7 +230,7 @@ export interface FunctionAnalysis {
     functionHash: string;
     signatureHash: string;
     bodyNode?: any;
-    fullText: string;
+    fullText?: string;
 }
 
 /**

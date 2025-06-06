@@ -45,7 +45,7 @@
         "@google/generative-ai": "^0.24.1",
         "@grpc/grpc-js": "^1.13.3",
         "@grpc/proto-loader": "^0.7.15",
-        "@kodus/kodus-proto": "^1.0.2",
+        "@kodus/kodus-proto": "^2.0.3",
         "@langchain/anthropic": "^0.3.20",
         "@langchain/cohere": "^0.3.3",
         "@langchain/community": "^0.3.42",
