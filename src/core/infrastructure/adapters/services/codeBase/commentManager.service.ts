@@ -37,6 +37,11 @@ import {
     MODEL_STRATEGIES,
     LLMModelProvider,
 } from '../llmProviders/llmModelProvider.helper';
+import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
+import {
+    IParametersService,
+    PARAMETERS_SERVICE_TOKEN,
+} from '@/core/domain/parameters/contracts/parameters.service.contract';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
@@ -47,6 +52,8 @@ export class CommentManagerService implements ICommentManagerService {
         private readonly logger: PinoLoggerService,
         @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
+        @Inject(PARAMETERS_SERVICE_TOKEN)
+        private readonly parametersService: IParametersService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
     }
@@ -835,10 +842,17 @@ ${reviewOptionsMarkdown}
                 jsonMode: true,
             });
 
+            const language = (
+                await this.parametersService.findByKey(
+                    ParametersKey.LANGUAGE_CONFIG,
+                    organizationAndTeamData,
+                )
+            )?.configValue;
+
             const chain = RunnableSequence.from([
                 async (input: any) => {
                     const systemPrompt =
-                        prompt_repeated_suggestion_clustering_system();
+                        prompt_repeated_suggestion_clustering_system(language);
 
                     return [
                         {
