@@ -216,33 +216,110 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         repository: Pick<Repository, 'id' | 'fullName'>,
         status?: PullRequestState,
         syncedEmbeddedSuggestions?: boolean,
+        batchSize: number = 50,
     ): Promise<PullRequestsEntity[]> {
         try {
-            if (!organizationId || !repository || !repository?.id) {
-                throw new Error(
-                    `Missing organizationId or repositoryId. org: ${organizationId}, repo.id: ${repository?.id}, repo: ${JSON.stringify(repository)}`,
-                );
+            if (!organizationId || !repository?.id) {
+                throw new Error('Missing organizationId or repositoryId');
             }
 
-            const filter: any = {
+            const matchStage: Record<string, any> = {
                 organizationId,
                 'repository.id': repository.id.toString(),
             };
 
-            if (status) {
-                filter.status = status;
-            }
-
             if (syncedEmbeddedSuggestions !== undefined) {
-                filter['$or'] = [
-                    { syncedEmbeddedSuggestions },
-                    { syncedEmbeddedSuggestions: { $exists: false } },
-                ];
+                matchStage.syncedEmbeddedSuggestions = {
+                    $ne: !syncedEmbeddedSuggestions,
+                };
             }
 
-            const docs = await this.pullRequestsModel.find(filter).exec();
+            if (status) {
+                matchStage.status = status;
+            }
 
-            return mapSimpleModelsToEntities(docs, PullRequestsEntity);
+            /* ---------- regex para validar UUID no $expr/$regexMatch ---------- */
+            const UUID_REGEX =
+                '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-' +
+                '[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
+
+            const pipeline = [
+                { $match: matchStage },
+                {
+                    $addFields: {
+                        files: {
+                            $filter: {
+                                input: '$files',
+                                as: 'file',
+                                cond: {
+                                    $gt: [{ $size: '$$file.suggestions' }, 0],
+                                },
+                            },
+                        },
+                    },
+                },
+                { $match: { $expr: { $gt: [{ $size: '$files' }, 0] } } },
+                {
+                    $addFields: {
+                        files: {
+                            $map: {
+                                input: '$files',
+                                as: 'f',
+                                in: {
+                                    id: '$$f.id',
+                                    sha: '$$f.sha',
+                                    path: '$$f.path',
+                                    filename: '$$f.filename',
+                                    status: '$$f.status',
+
+                                    suggestions: {
+                                        $filter: {
+                                            input: '$$f.suggestions',
+                                            as: 's',
+                                            cond: {
+                                                $and: [
+                                                    { $ne: ['$$s.id', null] },
+                                                    { $ne: ['$$s.id', ''] },
+                                                    {
+                                                        $regexMatch: {
+                                                            input: '$$s.id',
+                                                            regex: UUID_REGEX,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                {
+                    $project: {
+                        '_id': 1,
+                        'uuid': 1,
+                        'number': 1,
+                        'organizationId': 1,
+                        'syncedEmbeddedSuggestions': 1,
+                        'repository.id': 1,
+                        'repository.fullName': 1,
+                        'files': 1,
+                    },
+                },
+            ];
+
+            const cursor = this.pullRequestsModel
+                .aggregate(pipeline)
+                .allowDiskUse(true)
+                .cursor({ batchSize });
+
+            const result: PullRequestsEntity[] = [];
+            for await (const pr of cursor) {
+                result.push(mapSimpleModelToEntity(pr, PullRequestsEntity));
+            }
+
+            return result;
         } catch (error) {
             throw error;
         }
@@ -436,23 +513,29 @@ export class PullRequestsRepository implements IPullRequestsRepository {
     }
 
     async updateSyncedSuggestionsFlag(
-        pullRequestNumber: number,
+        pullRequestNumbers: number[],
         repositoryId: string,
         organizationId: string,
         synced: boolean,
-    ): Promise<PullRequestsEntity | null> {
+    ): Promise<void> {
         try {
-            const doc = await this.pullRequestsModel.findOneAndUpdate(
-                {
-                    'number': pullRequestNumber,
-                    'repository.id': repositoryId,
-                    'organizationId': organizationId,
-                },
-                { $set: { syncedEmbeddedSuggestions: synced } },
-                { new: true },
+            const validNumbers = pullRequestNumbers.filter(
+                (n) => typeof n === 'number',
             );
 
-            return doc ? mapSimpleModelToEntity(doc, PullRequestsEntity) : null;
+            if (!validNumbers?.length) {
+                return null;
+            }
+
+            const filter = {
+                'number': { $in: validNumbers },
+                'repository.id': repositoryId,
+                'organizationId': organizationId,
+            };
+
+            const update = { $set: { syncedEmbeddedSuggestions: synced } };
+
+            await this.pullRequestsModel.updateMany(filter, update);
         } catch (error) {
             throw error;
         }

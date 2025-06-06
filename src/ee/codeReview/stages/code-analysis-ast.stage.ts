@@ -27,7 +27,7 @@ export class CodeAnalysisASTStage extends BasePipelineStage<CodeReviewPipelineCo
             !ENABLE_CODE_REVIEW_AST ||
             !context.codeReviewConfig.reviewOptions?.breaking_changes
         ) {
-            return context; // não executa se AST estiver desabilitado
+            return context;
         }
 
         const codeAnalysisAST =

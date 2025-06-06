@@ -36,6 +36,7 @@ import { GLOBAL_PARAMETERS_SERVICE_TOKEN } from '@/core/domain/global-parameters
 import { GlobalParametersKey } from '@/shared/domain/enums/global-parameters-key.enum';
 import { ISuggestionEmbedded } from './domain/suggestionEmbedded/interfaces/suggestionEmbedded.interface';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
+
 @Injectable()
 export class KodyFineTuningService {
     private readonly MAX_CLUSTERS = 50;
@@ -66,45 +67,26 @@ export class KodyFineTuningService {
         prNumber: number,
         language?: string,
     ): Promise<IClusterizedSuggestion[]> {
-        const embeddedSuggestions: Partial<CodeSuggestion>[] = [];
-        let suggestions: Partial<CodeSuggestion>[] = [];
-
         await this.syncronizeSuggestions(organizationId, repository, prNumber);
 
-        const fineTuningType = await this.verifyFineTuningType(
+        const verifyFineTuning = await this.verifyFineTuningType(
             organizationId,
             repository,
             language,
         );
 
-        if (!fineTuningType) {
+        if (
+            !verifyFineTuning ||
+            !Array.isArray(verifyFineTuning.suggestionsEmbedded) ||
+            verifyFineTuning.suggestionsEmbedded.length === 0
+        ) {
             return [];
         }
 
         try {
-            if (fineTuningType === FineTuningType.REPOSITORY) {
-                suggestions =
-                    (await this.getSuggestionsToRepositoryAnalysis(
-                        organizationId,
-                        repository,
-                        language,
-                    )) ?? [];
-            } else {
-                suggestions =
-                    (await this.getSuggestionsToGlobalAnalysis(
-                        organizationId,
-                        language,
-                    )) ?? [];
-            }
-
-            if (!suggestions?.length) {
-                return [];
-            }
-
-            embeddedSuggestions.push(...suggestions);
-
-            const mainClusterizedSuggestions =
-                await this.clusterizeSuggestions(embeddedSuggestions);
+            const mainClusterizedSuggestions = await this.clusterizeSuggestions(
+                verifyFineTuning?.suggestionsEmbedded,
+            );
 
             return mainClusterizedSuggestions;
         } catch (error) {
@@ -315,14 +297,16 @@ export class KodyFineTuningService {
         ];
 
         return {
-            suggestionsToEmbed: suggestionsToNormalize.map((suggestion) => ({
-                ...suggestion,
-                suggestionContent: this.normalizeText(
-                    suggestion?.suggestionContent,
-                ),
-                label: this.normalizeText(suggestion?.label),
-                severity: this.normalizeText(suggestion?.severity),
-            })),
+            suggestionsToEmbed: suggestionsToNormalize
+                .filter((suggestion) => suggestion?.improvedCode)
+                .map((suggestion) => ({
+                    ...suggestion,
+                    suggestionContent: this.normalizeText(
+                        suggestion?.suggestionContent,
+                    ),
+                    label: this.normalizeText(suggestion?.label),
+                    severity: this.normalizeText(suggestion?.severity),
+                })),
             pullRequests,
         };
     }
@@ -446,27 +430,27 @@ export class KodyFineTuningService {
                     );
                 }
 
-                await Promise.all(
-                    pullRequestNumbers?.map(async (pullRequestNumber) => {
-                        await this.pullRequestsService.updateSyncedSuggestionsFlag(
-                            pullRequestNumber,
-                            repository.id,
-                            organizationId,
-                            true,
-                        );
-                    }),
+                await this.pullRequestsService.updateSyncedSuggestionsFlag(
+                    pullRequestNumbers,
+                    repository.id,
+                    organizationId,
+                    true,
                 );
             }
 
             if (embeddedSuggestions?.length > 0) {
-                await Promise.all(
-                    embeddedSuggestions?.map(async (suggestion) => {
-                        await this.codeReviewFeedbackService.updateSyncedSuggestionsFlag(
-                            organizationId,
-                            true,
-                            suggestion?.suggestionId,
-                        );
-                    }),
+                let suggestionIds: string[] = [
+                    ...new Set(
+                        embeddedSuggestions?.map(
+                            (suggestion) => suggestion?.suggestionId,
+                        ),
+                    ),
+                ];
+
+                await this.codeReviewFeedbackService.updateSyncedSuggestionsFlag(
+                    organizationId,
+                    suggestionIds,
+                    true,
                 );
 
                 return embeddedSuggestions;
@@ -566,26 +550,35 @@ export class KodyFineTuningService {
         organizationId: string,
         repository: { id: string; full_name: string },
         language: string,
-    ): Promise<FineTuningType | null> {
-        const suggestionEmbedded = await this.suggestionEmbeddedService.find({
-            organization: { uuid: organizationId },
-            repositoryId: repository.id,
-            repositoryFullName: repository.full_name,
-            language: language?.toLowerCase(),
-        });
+    ): Promise<{
+        fineTuningType: FineTuningType;
+        suggestionsEmbedded?: Partial<CodeSuggestion>[];
+    } | null> {
+        const suggestionsEmbedded =
+            (await this.getSuggestionsToRepositoryAnalysis(
+                organizationId,
+                repository,
+                language,
+            )) ?? [];
 
-        if (suggestionEmbedded?.length >= 50) {
-            return FineTuningType.REPOSITORY;
+        if (suggestionsEmbedded?.length >= 50) {
+            return {
+                fineTuningType: FineTuningType.REPOSITORY,
+                suggestionsEmbedded: suggestionsEmbedded,
+            };
         }
 
         const globalSuggestionEmbedded =
-            await this.suggestionEmbeddedService.find({
-                organization: { uuid: organizationId },
-                language: language?.toLowerCase(),
-            });
+            (await this.getSuggestionsToGlobalAnalysis(
+                organizationId,
+                language,
+            )) ?? [];
 
         if (globalSuggestionEmbedded?.length >= 50) {
-            return FineTuningType.GLOBAL;
+            return {
+                fineTuningType: FineTuningType.GLOBAL,
+                suggestionsEmbedded: globalSuggestionEmbedded,
+            };
         }
 
         return null;

@@ -10,6 +10,7 @@ import {
     IWebhookGithubPullRequestEvent,
     IWebhookGithubPullRequestCommentEvent,
 } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-github.type';
+import { extractRepoFullName } from '.';
 
 export class GithubMappedPlatform implements IMappedPlatform {
     mapUsers(params: {
@@ -74,6 +75,10 @@ export class GithubMappedPlatform implements IMappedPlatform {
             id: repository?.id.toString(),
             name: repository?.name,
             language: repository?.language,
+            fullName:
+                extractRepoFullName(params?.payload?.pull_request) ??
+                repository?.name ??
+                '',
         };
     }
 

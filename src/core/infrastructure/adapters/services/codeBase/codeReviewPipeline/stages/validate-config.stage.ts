@@ -26,14 +26,12 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
     protected async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
-        // VER SE ESSE METODO PRECISA MEXER POR CAUSA DO OPEN CORE
         const config: CodeReviewConfig =
             await this.codeBaseConfigService.getConfig(
                 context.organizationAndTeamData,
                 { name: context.repository.name, id: context.repository.id },
             );
 
-        // Verifica se o PR deve ser processado
         const shouldProcess = this.shouldProcessPR(
             context.pullRequest.title,
             context.pullRequest.base.ref,
@@ -41,7 +39,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             context.origin || '',
         );
 
-        // ANTES USAVA SKIP E AGORA?
         if (!shouldProcess) {
             const errorMessage = `PR #${context.pullRequest.number} skipped due to config rules.`;
             this.logger.warn({
@@ -62,7 +59,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             });
         }
 
-        // Atualiza o contexto imutavelmente usando o Immer
         return this.updateContext(context, (draft) => {
             draft.codeReviewConfig = config;
         });

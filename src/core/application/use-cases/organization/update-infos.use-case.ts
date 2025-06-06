@@ -6,6 +6,7 @@ import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { Inject } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { UpdateProfileUseCase } from '../profile/update.use-case';
+import posthogClient from '@/shared/utils/posthog';
 
 export class UpdateInfoOrganizationAndPhoneUseCase implements IUseCase {
     constructor(
@@ -25,7 +26,7 @@ export class UpdateInfoOrganizationAndPhoneUseCase implements IUseCase {
             const organizationId = this.request.user.organization.uuid;
             const userId = this.request.user.uuid;
 
-            await this.organizationService.update(
+            const organization = await this.organizationService.update(
                 { uuid: organizationId },
                 { name: payload.name },
             );
@@ -36,6 +37,8 @@ export class UpdateInfoOrganizationAndPhoneUseCase implements IUseCase {
                     phone: payload?.phone,
                 });
             }
+
+            posthogClient.organizationIdentify(organization);
 
             return true;
         } catch (error) {

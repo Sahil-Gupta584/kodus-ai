@@ -9,8 +9,11 @@ import { KodyFineTuningService } from '@/ee/kodyFineTuning/kodyFineTuning.servic
 import { CodeSuggestion } from '@/config/types/general/codeReview.type';
 import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/context/code-review-pipeline.context';
 import { BaseKodyFineTuningContextPreparation } from '@/core/infrastructure/adapters/services/kodyFineTuning/base-fine-tuning.service';
-import { ISuggestionService, SUGGESTION_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/SuggestionService.contract';
-import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.enum';
+import {
+    ISuggestionService,
+    SUGGESTION_SERVICE_TOKEN,
+} from '@/core/domain/codeBase/contracts/SuggestionService.contract';
+import { IClusterizedSuggestion } from '../domain/interfaces/kodyFineTuning.interface';
 
 /**
  * Enterprise implementation of fine tuning service
@@ -50,6 +53,7 @@ export class KodyFineTuningContextPreparationServiceEE extends BaseKodyFineTunin
         },
         suggestionsToAnalyze: CodeSuggestion[],
         isFineTuningEnabled: boolean,
+        mainClusterizedSuggestions: IClusterizedSuggestion[],
     ): Promise<{
         keepedSuggestions: Partial<CodeSuggestion>[];
         discardedSuggestions: Partial<CodeSuggestion>[];
@@ -68,15 +72,11 @@ export class KodyFineTuningContextPreparationServiceEE extends BaseKodyFineTunin
             };
         }
 
-        const mainClusterizedSuggestions = await this.kodyFineTuningService.startAnalysis(
-            organizationId,
-            repository,
-            prNumber,
-            suggestionsToAnalyze[0]?.language,
-        );
-
         // Verifica se há clusterizedSuggestions
-        if (!mainClusterizedSuggestions || mainClusterizedSuggestions.length === 0) {
+        if (
+            !mainClusterizedSuggestions ||
+            mainClusterizedSuggestions.length === 0
+        ) {
             return {
                 keepedSuggestions: suggestionsToAnalyze,
                 discardedSuggestions: [],
@@ -97,8 +97,20 @@ export class KodyFineTuningContextPreparationServiceEE extends BaseKodyFineTunin
             );
 
             return {
-                keepedSuggestions: result.keepedSuggestions,
-                discardedSuggestions: result.discardedSuggestions,
+                keepedSuggestions: result?.keepedSuggestions?.map(
+                    (suggestion) => {
+                        const { suggestionEmbed, ...rest } = suggestion as any;
+
+                        return rest;
+                    },
+                ),
+                discardedSuggestions: result?.discardedSuggestions?.map(
+                    (suggestion) => {
+                        const { suggestionEmbed, ...rest } = suggestion as any;
+
+                        return rest;
+                    },
+                ),
             };
         } catch (error) {
             this.logger.error({

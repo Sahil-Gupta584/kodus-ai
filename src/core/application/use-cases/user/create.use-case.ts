@@ -10,6 +10,7 @@ import { CreateTeamUseCase } from '../team/create.use-case';
 import { STATUS } from '@/config/types/database/status.type';
 import { UserRole } from '@/core/domain/user/enums/userRole.enum';
 import { DuplicateRecordException } from '@/shared/infrastructure/filters/duplicate-record.exception';
+import posthogClient from '@/shared/utils/posthog';
 
 @Injectable()
 export class CreateUserUseCase implements IUseCase {
@@ -49,6 +50,8 @@ export class CreateUserUseCase implements IUseCase {
             teamName: `${payload.name} - team`,
             organizationId: user.organization.uuid,
         });
+
+        posthogClient.userIdentify(user);
 
         return {
             email: user.email,

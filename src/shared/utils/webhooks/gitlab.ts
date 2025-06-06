@@ -10,6 +10,7 @@ import {
     IWebhookGitlabMergeRequestEvent,
     IWebhookGitlabCommentEvent,
 } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-gitlab.type';
+import { extractRepoFullName } from '.';
 
 export class GitlabMappedPlatform implements IMappedPlatform {
     mapUsers(params: {
@@ -74,11 +75,17 @@ export class GitlabMappedPlatform implements IMappedPlatform {
     }
 
     mapRepository(params: {
-        payload: IWebhookGitlabMergeRequestEvent;
+        payload: IWebhookGitlabMergeRequestEvent | IWebhookGitlabCommentEvent;
     }): IMappedRepository {
         if (!params?.payload?.repository) {
             return null;
         }
+
+        const { payload } = params;
+
+        let mergeRequest = this.isGitlabCommentEvent(payload)
+            ? payload.merge_request
+            : payload.object_attributes;
 
         const project = params?.payload?.project;
 
@@ -87,6 +94,7 @@ export class GitlabMappedPlatform implements IMappedPlatform {
             id: project?.id?.toString(),
             name: project?.name,
             language: null,
+            fullName: extractRepoFullName(mergeRequest) ?? project?.name ?? '',
         };
     }
 

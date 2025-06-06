@@ -9,6 +9,7 @@ import {
     USER_SERVICE_TOKEN,
 } from '@/core/domain/user/contracts/user.service.contract';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
+import posthogClient from '@/shared/utils/posthog';
 
 export class UpdateUserUseCase implements IUseCase {
     constructor(
@@ -33,6 +34,9 @@ export class UpdateUserUseCase implements IUseCase {
         }
 
         const user = await this.usersService.update({ uuid }, data);
+
+        posthogClient.userIdentify(user);
+
         return user.toObject();
     }
 }
