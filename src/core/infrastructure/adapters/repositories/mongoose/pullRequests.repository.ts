@@ -249,10 +249,20 @@ export class PullRequestsRepository implements IPullRequestsRepository {
                     $addFields: {
                         files: {
                             $filter: {
-                                input: '$files',
+                                input: { $ifNull: ['$files', []] },
                                 as: 'file',
                                 cond: {
-                                    $gt: [{ $size: '$$file.suggestions' }, 0],
+                                    $gt: [
+                                        {
+                                            $size: {
+                                                $ifNull: [
+                                                    '$$file.suggestions',
+                                                    [],
+                                                ],
+                                            },
+                                        },
+                                        0,
+                                    ],
                                 },
                             },
                         },
