@@ -16,8 +16,9 @@ import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/ko
  */
 @Injectable()
 export abstract class BaseKodyFineTuningContextPreparation
-    implements IKodyFineTuningContextPreparationService {
-    constructor(protected readonly logger: PinoLoggerService) { }
+    implements IKodyFineTuningContextPreparationService
+{
+    constructor(protected readonly logger: PinoLoggerService) {}
 
     /**
      * Prepares the context for Kody fine tuning analysis
@@ -25,8 +26,8 @@ export abstract class BaseKodyFineTuningContextPreparation
      * @param prNumber Pull Request number
      * @param repository Repository information
      * @param suggestionsToAnalyze Suggestions to be analyzed
-     * @param clusterizedSuggestions Clusterized suggestions
      * @param isFineTuningEnabled Whether fine tuning is enabled
+     * @param clusterizedSuggestions Clusterized suggestions
      * @returns Array of analyzed suggestions
      */
     async prepareKodyFineTuningContext(
@@ -38,6 +39,7 @@ export abstract class BaseKodyFineTuningContextPreparation
         },
         suggestionsToAnalyze: CodeSuggestion[],
         isFineTuningEnabled: boolean,
+        clusterizedSuggestions: IClusterizedSuggestion[],
     ): Promise<{
         keepedSuggestions: Partial<CodeSuggestion>[];
         discardedSuggestions: Partial<CodeSuggestion>[];
@@ -50,6 +52,7 @@ export abstract class BaseKodyFineTuningContextPreparation
                     repository,
                     suggestionsToAnalyze,
                     isFineTuningEnabled,
+                    clusterizedSuggestions,
                 );
 
             return {
@@ -84,8 +87,8 @@ export abstract class BaseKodyFineTuningContextPreparation
      * @param prNumber Pull Request number
      * @param repository Repository information
      * @param suggestionsToAnalyze Suggestions to be analyzed
-     * @param clusterizedSuggestions Clusterized suggestions
      * @param isFineTuningEnabled Whether fine tuning is enabled
+     * @param clusterizedSuggestions Clusterized suggestions
      * @returns Prepared suggestions
      */
     protected abstract prepareKodyFineTuningContextInternal(
@@ -97,6 +100,7 @@ export abstract class BaseKodyFineTuningContextPreparation
         },
         suggestionsToAnalyze: CodeSuggestion[],
         isFineTuningEnabled: boolean,
+        clusterizedSuggestions: IClusterizedSuggestion[],
     ): Promise<{
         keepedSuggestions: Partial<CodeSuggestion>[];
         discardedSuggestions: Partial<CodeSuggestion>[];

@@ -7,6 +7,7 @@ import {
     IMappedUsers,
     MappedAction,
 } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-common.type';
+import { extractRepoFullName } from '.';
 
 export class BitbucketMappedPlatform implements IMappedPlatform {
     mapUsers(params: {
@@ -75,6 +76,10 @@ export class BitbucketMappedPlatform implements IMappedPlatform {
             id: repository?.uuid,
             name: repository?.name,
             language: null,
+            fullName:
+                extractRepoFullName(params.payload?.pullrequest) ??
+                repository?.name ??
+                '',
         };
     }
 

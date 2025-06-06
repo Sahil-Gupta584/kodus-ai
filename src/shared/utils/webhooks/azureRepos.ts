@@ -7,6 +7,7 @@ import {
     IMappedUsers,
     MappedAction,
 } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-common.type';
+import { extractRepoFullName } from '.';
 
 /**
  * Adapter for Azure Repos webhook payloads (pull request & comment events)
@@ -14,9 +15,12 @@ import {
  */
 export class AzureReposMappedPlatform implements IMappedPlatform {
     mapUsers(params: { payload: AzureReposWebhookPayload }): IMappedUsers {
-        const pullRequest = params?.payload?.resource?.pullRequest || params?.payload?.resource;
+        const pullRequest =
+            params?.payload?.resource?.pullRequest || params?.payload?.resource;
 
-        if (!pullRequest || !pullRequest.createdBy) { return null };
+        if (!pullRequest || !pullRequest.createdBy) {
+            return null;
+        }
 
         return {
             user: {
@@ -30,11 +34,15 @@ export class AzureReposMappedPlatform implements IMappedPlatform {
         };
     }
 
-    mapPullRequest(params: { payload: AzureReposWebhookPayload }): IMappedPullRequest {
+    mapPullRequest(params: {
+        payload: AzureReposWebhookPayload;
+    }): IMappedPullRequest {
         const resource = params?.payload?.resource;
         const pullRequest = resource?.pullRequest || resource;
 
-        if (!pullRequest || !pullRequest.pullRequestId) { return null };
+        if (!pullRequest || !pullRequest.pullRequestId) {
+            return null;
+        }
 
         return {
             ...pullRequest,
@@ -59,8 +67,12 @@ export class AzureReposMappedPlatform implements IMappedPlatform {
         };
     }
 
-    mapRepository(params: { payload: AzureReposWebhookPayload }): IMappedRepository {
+    mapRepository(params: {
+        payload: AzureReposWebhookPayload;
+    }): IMappedRepository {
         const resource = params?.payload?.resource;
+        const pullRequest = resource?.pullRequest || resource;
+
         const repo = resource?.pullRequest?.repository || resource?.repository;
 
         if (!repo) {
@@ -72,6 +84,7 @@ export class AzureReposMappedPlatform implements IMappedPlatform {
             id: repo.id ? String(repo.id) : '',
             name: repo.name ?? '',
             language: null,
+            fullName: extractRepoFullName(pullRequest) ?? repo?.name ?? '',
         };
     }
 
