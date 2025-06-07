@@ -30,6 +30,7 @@ import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { KodyLearningStatus } from '@/core/domain/parameters/types/configValue.type';
 import { ParametersEntity } from '@/core/domain/parameters/entities/parameters.entity';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { SendRulesNotificationUseCase } from './send-rules-notification.use-case';
 
 @Injectable()
 export class GenerateKodyRulesUseCase {
@@ -50,6 +51,8 @@ export class GenerateKodyRulesUseCase {
         private readonly createOrUpdateKodyRulesUseCase: CreateOrUpdateKodyRulesUseCase,
 
         private readonly findRulesInOrganizationByRuleFilterKodyRulesUseCase: FindRulesInOrganizationByRuleFilterKodyRulesUseCase,
+
+        private readonly sendRulesNotificationUseCase: SendRulesNotificationUseCase,
 
         private readonly logger: PinoLoggerService,
     ) {}
@@ -124,6 +127,8 @@ export class GenerateKodyRulesUseCase {
             );
 
             const allRules = [];
+            const createdRules = []; // Para rastrear regras criadas para notificação
+            
             for (const repository of filteredRepositories) {
                 const pullRequests =
                     await this.codeManagementService.getPullRequestsByRepository(
@@ -246,6 +251,13 @@ export class GenerateKodyRulesUseCase {
                         organizationId,
                     );
 
+                    // Adicionar regra aos dados de notificação
+                    createdRules.push({
+                        title: rule.title,
+                        rule: rule.rule,
+                        severity: rule.severity,
+                    });
+
                     this.logger.log({
                         message: 'Rule generated and saved successfully',
                         context: GenerateKodyRulesUseCase.name,
@@ -289,6 +301,33 @@ export class GenerateKodyRulesUseCase {
                 context: GenerateKodyRulesUseCase.name,
                 metadata: { body, organizationAndTeamData },
             });
+
+            // Enviar notificação por email se regras foram criadas
+            if (createdRules.length > 0) {
+                this.logger.log({
+                    message: 'Sending email notification for new Kody rules',
+                    context: GenerateKodyRulesUseCase.name,
+                    metadata: {
+                        organizationId,
+                        rulesCount: createdRules.length,
+                    },
+                });
+
+                // Executar notificação de forma assíncrona para não bloquear o fluxo principal
+                this.sendRulesNotificationUseCase
+                    .execute(organizationId, createdRules)
+                    .catch((error) => {
+                        this.logger.error({
+                            message: 'Error sending email notification for Kody rules',
+                            context: GenerateKodyRulesUseCase.name,
+                            error,
+                            metadata: {
+                                organizationId,
+                                rulesCount: createdRules.length,
+                            },
+                        });
+                    });
+            }
 
             return allRules.flat();
         } catch (error) {

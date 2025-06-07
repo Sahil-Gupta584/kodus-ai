@@ -21,6 +21,9 @@ import { KodyRulesValidationModule } from '@/ee/kodyRules/kody-rules-validation.
 import { KodyRulesService } from '@/ee/kodyRules/service/kodyRules.service';
 import { KodyRulesRepository } from '@/ee/kodyRules/repository/kodyRules.repository';
 import { KodyRulesValidationService } from '@/ee/kodyRules/service/kody-rules-validation.service';
+import { SendRulesNotificationUseCase } from '@/core/application/use-cases/kodyRules/send-rules-notification.use-case';
+import { UsersModule } from './user.module';
+import { OrganizationModule } from './organization.module';
 
 @Module({
     imports: [
@@ -35,6 +38,8 @@ import { KodyRulesValidationService } from '@/ee/kodyRules/service/kody-rules-va
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => IntegrationModule),
         forwardRef(() => ParametersModule),
+        forwardRef(() => UsersModule),
+        forwardRef(() => OrganizationModule),
         KodyRulesValidationModule,
     ],
     providers: [
@@ -57,6 +62,7 @@ import { KodyRulesValidationService } from '@/ee/kodyRules/service/kody-rules-va
         FindRulesInOrganizationByRuleFilterKodyRulesUseCase,
         ChangeStatusKodyRulesUseCase,
         CreateOrUpdateKodyRulesUseCase,
+        SendRulesNotificationUseCase,
         KodyRulesValidationService,
     ],
 })
