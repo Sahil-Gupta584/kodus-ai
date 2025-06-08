@@ -24,6 +24,7 @@ import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { UserRole } from '@/core/domain/user/enums/userRole.enum';
 import { sendInvite } from '@/shared/utils/email/sendMail';
 import { TeamMemberRole } from '@/core/domain/teamMembers/enums/teamMemberRole.enum';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 @Injectable()
 export class TeamMemberService implements ITeamMemberService {
@@ -38,6 +39,8 @@ export class TeamMemberService implements ITeamMemberService {
 
         @Inject(USER_SERVICE_TOKEN)
         private readonly usersService: IUsersService,
+
+        private readonly logger: PinoLoggerService,
     ) {}
 
     findManyById(ids: string[]): Promise<TeamMemberEntity[]> {
@@ -174,7 +177,15 @@ export class TeamMemberService implements ITeamMemberService {
 
             return { members: communicationUsersFormatted };
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Error in findTeamMembersFormated',
+                error: error instanceof Error ? error : new Error(String(error)),
+                context: 'TeamMemberService.findTeamMembersFormated',
+                metadata: {
+                    organizationId: organizationAndTeamData.organizationId,
+                    teamId: organizationAndTeamData.teamId,
+                },
+            });
             return { members: [] };
         }
     }
@@ -424,7 +435,7 @@ export class TeamMemberService implements ITeamMemberService {
                 return;
             }
 
-            await sendInvite(user, admin?.email, inviteLink);
+            await sendInvite(user, admin?.email, inviteLink, this.logger);
         }
     }
 
