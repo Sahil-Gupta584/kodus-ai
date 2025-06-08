@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as path from 'path';
-import { FunctionAnalysis } from './ast/contracts/CodeGraph';
 import { SyntaxNode } from 'tree-sitter';
+import { FunctionAnalysis } from './ast/types/types';
 
 // Basic interfaces needed
 interface DiffHunk {

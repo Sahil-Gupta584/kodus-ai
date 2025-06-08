@@ -1,6 +1,5 @@
 // test/unit/core/infrastructure/adapters/services/codeBase/code-analyzer.spec.ts
 
-
 import Parser = require('tree-sitter');
 import * as TypeScript from 'tree-sitter-typescript/typescript';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
@@ -9,7 +8,7 @@ import {
     normalizeAST,
     normalizeSignature,
 } from '@/shared/utils/codeBase/ast-helpers';
-import { CodeAnalyzerService } from '@/ee/codeBase/ast/services/code-analyzer.service';
+import { CodeAnalyzerService } from '@/ee/kodyAST/code-analyzer.service';
 import { FunctionResult } from '@/ee/codeBase/diffAnalyzer.service';
 import { FunctionAnalysis } from '@/ee/codeBase/ast/contracts/CodeGraph';
 

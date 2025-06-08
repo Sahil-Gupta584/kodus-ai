@@ -24,6 +24,7 @@ import {
     ReviewComment,
 } from '@/config/types/general/codeReview.type';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
+import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 
 @Injectable()
 export class CodeManagementService implements ICodeManagementService {
@@ -710,7 +711,7 @@ export class CodeManagementService implements ICodeManagementService {
         return codeManagementService.mergePullRequest(params);
     }
 
-    async cloneRepository(
+    async getCloneParams(
         params: {
             repository: Pick<
                 Repository,
@@ -719,7 +720,7 @@ export class CodeManagementService implements ICodeManagementService {
             organizationAndTeamData: OrganizationAndTeamData;
         },
         type?: PlatformType,
-    ): Promise<string> {
+    ): Promise<GitCloneParams> {
         if (!type) {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
@@ -729,7 +730,7 @@ export class CodeManagementService implements ICodeManagementService {
         const codeManagementService =
             this.platformIntegrationFactory.getCodeManagementService(type);
 
-        return codeManagementService.cloneRepository(params);
+        return codeManagementService.getCloneParams(params);
     }
 
     async approvePullRequest(

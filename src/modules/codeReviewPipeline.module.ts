@@ -18,7 +18,7 @@ import { ParametersModule } from './parameters.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
 import { AutomationModule } from './automation.module';
 import { PullRequestsModule } from './pullRequests.module';
-import { AstModule } from './ast.module';
+import { KodyASTModule } from '../ee/kodyAST/kodyAST.module';
 import { KodyRulesModule } from './kodyRules.module';
 import { SuggestionEmbeddedModule } from './suggestionEmbedded.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
@@ -38,13 +38,13 @@ import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeC
         forwardRef(() => PlatformIntegrationModule),
         forwardRef(() => AutomationModule),
         forwardRef(() => PullRequestsModule),
-        forwardRef(() => AstModule),
         forwardRef(() => KodyRulesModule),
         forwardRef(() => SuggestionEmbeddedModule),
         forwardRef(() => OrganizationParametersModule),
         forwardRef(() => FileReviewModule),
         forwardRef(() => KodyFineTuningContextModule),
         forwardRef(() => KodyASTAnalyzeContextModule),
+        KodyASTModule.register(),
     ],
     providers: [
         PipelineExecutor,
@@ -78,4 +78,4 @@ import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeC
         CodeReviewPipelineStrategyEE,
     ],
 })
-export class CodeReviewPipelineModule { }
+export class CodeReviewPipelineModule {}

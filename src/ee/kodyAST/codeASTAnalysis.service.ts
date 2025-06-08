@@ -8,40 +8,68 @@ import {
     CodeSuggestion,
 } from '@/config/types/general/codeReview.type';
 import { IASTAnalysisService } from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
-import {
-    CodeAnalyzerService,
-    FunctionsAffectResult,
-    FunctionSimilarity,
-} from './ast/services/code-analyzer.service';
-import { CodeKnowledgeGraphService } from './ast/services/code-knowledge-graph.service';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { prompt_detectBreakingChanges } from '@/shared/utils/langchainCommon/prompts/detectBreakingChanges';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { LLMResponseProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/transforms/llmResponseProcessor.transform';
-import { ChangeResult, DiffAnalyzerService } from './diffAnalyzer.service';
+import {
+    ChangeResult,
+    DiffAnalyzerService,
+} from '../codeBase/diffAnalyzer.service';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import {
+    CodeAnalyzerService,
+    FunctionsAffectResult,
+    FunctionSimilarity,
+} from './code-analyzer.service';
+import { ClientGrpc } from '@nestjs/microservices';
+import { lastValueFrom, reduce, map } from 'rxjs';
+import * as CircuitBreaker from 'opossum';
+import {
+    AST_ANALYZER_SERVICE_NAME,
+    ASTAnalyzerServiceClient,
+    GetGraphsResponse,
+    GetGraphsResponseData as SerializedGraphs,
+    ProtoAuthMode,
+    ProtoPlatformType,
+    RepositoryData,
+} from '@kodus/kodus-proto/v2';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
+import { concatUint8Arrays } from '@/shared/utils/buffer/arrays';
+import { ASTDeserializerService } from './ast-deserializer.service';
 
 @Injectable()
-export class CodeAstAnalysisService implements IASTAnalysisService {
+export class CodeAstAnalysisService
+    implements IASTAnalysisService, OnModuleInit
+{
     private readonly llmResponseProcessor: LLMResponseProcessor;
+    private astMicroservice: ASTAnalyzerServiceClient;
 
     constructor(
         private readonly codeAnalyzerService: CodeAnalyzerService,
-        private readonly codeKnowledgeGraphService: CodeKnowledgeGraphService,
         private readonly diffAnalyzerService: DiffAnalyzerService,
         private readonly codeManagementService: CodeManagementService,
         private readonly logger: PinoLoggerService,
+        private readonly astDeserializerService: ASTDeserializerService,
+
+        @Inject('AST_MICROSERVICE')
+        private readonly astMicroserviceClient: ClientGrpc,
         @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
+    }
+
+    onModuleInit() {
+        this.astMicroservice = this.astMicroserviceClient.getService(
+            AST_ANALYZER_SERVICE_NAME,
+        );
     }
 
     async analyzeASTWithAI(
@@ -103,7 +131,7 @@ export class CodeAstAnalysisService implements IASTAnalysisService {
         organizationAndTeamData: any,
     ): Promise<CodeAnalysisAST> {
         try {
-            const headDir = await this.cloneRepository(
+            const headDirParams = await this.getCloneParams(
                 {
                     id: repository.id,
                     name: repository.name,
@@ -111,17 +139,21 @@ export class CodeAstAnalysisService implements IASTAnalysisService {
                     fullName:
                         repository.full_name ||
                         `${repository.owner}/${repository.name}`,
-                    platform: platformType as 'github' | 'gitlab' | 'bitbucket',
+                    platform: platformType as
+                        | 'github'
+                        | 'gitlab'
+                        | 'bitbucket'
+                        | 'azure-devops',
                     language: repository.language || 'unknown',
                 },
                 organizationAndTeamData,
             );
 
-            if (!headDir) {
+            if (!headDirParams) {
                 return null;
             }
 
-            const baseDir = await this.cloneRepository(
+            const baseDirParams = await this.getCloneParams(
                 {
                     id: repository.id,
                     name: repository.name,
@@ -129,42 +161,65 @@ export class CodeAstAnalysisService implements IASTAnalysisService {
                     fullName:
                         repository.full_name ||
                         `${repository.owner}/${repository.name}`,
-                    platform: platformType as 'github' | 'gitlab' | 'bitbucket',
+                    platform: platformType as
+                        | 'github'
+                        | 'gitlab'
+                        | 'bitbucket'
+                        | 'azure-devops',
                     language: repository.language || 'unknown',
                 },
                 organizationAndTeamData,
             );
 
-            if (!baseDir) {
+            if (!baseDirParams) {
                 return null;
             }
 
-            const headCodeGraph =
-                await this.codeKnowledgeGraphService.buildGraphProgressively(
-                    headDir,
-                );
+            let result: CodeAnalysisAST;
+            const breaker = new CircuitBreaker(
+                async () => {
+                    const init = this.astMicroservice.initializeRepository({
+                        baseRepo: baseDirParams,
+                        headRepo: headDirParams,
+                    });
 
-            const baseGraph =
-                await this.codeKnowledgeGraphService.buildGraphProgressively(
-                    baseDir,
-                );
+                    await lastValueFrom(init);
 
-            const headCodeGraphEnriched =
-                await this.codeAnalyzerService.enrichGraph(headCodeGraph);
+                    const buildEnrichedGraphRes =
+                        this.astMicroservice.getGraphs({
+                            baseRepo: baseDirParams,
+                            headRepo: headDirParams,
+                        });
 
-            const codeAnalysisAST: CodeAnalysisAST = {
-                headCodeGraph: {
-                    codeGraphFunctions: headCodeGraph?.functions,
-                    cloneDir: headDir,
+                    result = await lastValueFrom(
+                        buildEnrichedGraphRes.pipe(
+                            reduce((acc, chunk) => {
+                                return {
+                                    ...acc,
+                                    data: concatUint8Arrays(
+                                        acc.data,
+                                        chunk.data,
+                                    ),
+                                };
+                            }),
+                            map((data) => {
+                                const jsonData = new TextDecoder().decode(
+                                    data.data,
+                                );
+                                return this.parseGraphResponse(jsonData);
+                            }),
+                        ),
+                    );
                 },
-                baseCodeGraph: {
-                    codeGraphFunctions: baseGraph?.functions,
-                    cloneDir: baseDir,
+                {
+                    timeout: 900000, // 15 minutes
+                    errorThresholdPercentage: 50, // 50% of failures
+                    resetTimeout: 30000, // 30 seconds
                 },
-                headCodeGraphEnriched,
-            };
+            );
+            await breaker.fire();
 
-            return codeAnalysisAST;
+            return result;
         } catch (error) {
             this.logger.error({
                 message: `Error during AST Clone and Generate graph for PR#${pullRequest.number}`,
@@ -179,14 +234,79 @@ export class CodeAstAnalysisService implements IASTAnalysisService {
         }
     }
 
-    private async cloneRepository(
+    private parseGraphResponse(graph: string) {
+        if (!graph) {
+            return null;
+        }
+
+        const parsedGraph = JSON.parse(graph) as SerializedGraphs;
+        if (!parsedGraph) {
+            throw new Error('Error parsing graph data');
+        }
+
+        const deserialized: CodeAnalysisAST = {
+            baseCodeGraph: {
+                codeGraphFunctions: undefined,
+                cloneDir: '',
+            },
+            headCodeGraph: {
+                codeGraphFunctions: undefined,
+                cloneDir: '',
+            },
+            headCodeGraphEnriched: {
+                nodes: [],
+                relationships: [],
+            },
+        };
+
+        if (parsedGraph.baseGraph) {
+            deserialized.baseCodeGraph.codeGraphFunctions = this.objectToMap(
+                parsedGraph?.baseGraph?.functions,
+            );
+        }
+
+        if (parsedGraph.headGraph) {
+            deserialized.headCodeGraph.codeGraphFunctions = this.objectToMap(
+                parsedGraph?.headGraph?.functions,
+            );
+        }
+
+        if (parsedGraph.enrichHeadGraph) {
+            deserialized.headCodeGraphEnriched =
+                this.astDeserializerService.deserializeEnrichedGraph(
+                    parsedGraph.enrichHeadGraph,
+                );
+        }
+
+        return deserialized;
+    }
+
+    private objectToMap<T>(obj: Record<string, T>): Map<string, T> {
+        const map = new Map<string, T>();
+        if (obj && typeof obj === 'object') {
+            Object.entries(obj).forEach(([key, value]) => {
+                map.set(key, value);
+            });
+        }
+        return map;
+    }
+
+    private async getCloneParams(
         repository: Repository,
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<string> {
-        return await this.codeManagementService.cloneRepository({
+    ): Promise<RepositoryData> {
+        const params = await this.codeManagementService.getCloneParams({
             repository,
             organizationAndTeamData,
         });
+        return {
+            ...params,
+            auth: {
+                ...params.auth,
+                type: ProtoAuthMode[params.auth.type],
+            },
+            provider: ProtoPlatformType[params.provider],
+        };
     }
 
     async analyzeCodeWithGraph(

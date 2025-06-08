@@ -1,6 +1,6 @@
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { ILogService } from '@/core/domain/log/contracts/log.service.contracts';
-import { CodeAnalyzerService } from '@/ee/codeBase/ast/services/code-analyzer.service';
+import { CodeAnalyzerService } from '@/ee/kodyAST/code-analyzer.service';
 
 describe('CodeAnalyzerService - generateFunctionWithLines', () => {
     let codeAnalyzerService: CodeAnalyzerService;
@@ -20,11 +20,11 @@ describe('CodeAnalyzerService - generateFunctionWithLines', () => {
         };
 
         logger = new PinoLoggerService(mockLogService);
-        jest.spyOn(logger, 'log').mockImplementation(() => { });
-        jest.spyOn(logger, 'error').mockImplementation(() => { });
-        jest.spyOn(logger, 'warn').mockImplementation(() => { });
-        jest.spyOn(logger, 'debug').mockImplementation(() => { });
-        jest.spyOn(logger, 'verbose').mockImplementation(() => { });
+        jest.spyOn(logger, 'log').mockImplementation(() => {});
+        jest.spyOn(logger, 'error').mockImplementation(() => {});
+        jest.spyOn(logger, 'warn').mockImplementation(() => {});
+        jest.spyOn(logger, 'debug').mockImplementation(() => {});
+        jest.spyOn(logger, 'verbose').mockImplementation(() => {});
 
         codeAnalyzerService = new CodeAnalyzerService(logger);
     });

@@ -52,7 +52,7 @@ import { CodebaseModule } from './codeBase.module';
 import { ConversationModule } from './conversation.module';
 import { SegmentModule } from './segment.module';
 import { KodyRulesModule } from './kodyRules.module';
-import { AstModule } from './ast.module';
+import { KodyASTModule } from '../ee/kodyAST/kodyAST.module';
 import { BitbucketModule } from './bitbucket.module';
 import { SuggestionEmbeddedModule } from './suggestionEmbedded.module';
 import { TeamArtifactsModule } from './teamArtifacts.module';
@@ -116,7 +116,7 @@ import { RuleLikeModule } from './ruleLike.module';
         ConversationModule,
         SegmentModule,
         KodyRulesModule,
-        AstModule,
+        KodyASTModule.register(),
         BitbucketModule,
         SuggestionEmbeddedModule,
         TeamArtifactsModule,
@@ -134,4 +134,4 @@ import { RuleLikeModule } from './ruleLike.module';
         },
     ],
 })
-export class AppModule { }
+export class AppModule {}

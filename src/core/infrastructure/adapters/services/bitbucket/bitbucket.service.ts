@@ -57,16 +57,13 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { Response as BitbucketResponse } from 'bitbucket/src/request/types';
 import { CreateAuthIntegrationStatus } from '@/shared/domain/enums/create-auth-integration-status.enum';
-import {
-    IRepositoryManager,
-    REPOSITORY_MANAGER_TOKEN,
-} from '@/core/domain/repository/contracts/repository-manager.contract';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import {
     KODY_CODE_REVIEW_COMPLETED_MARKER,
     KODY_CRITICAL_ISSUE_COMMENT_MARKER,
     KODY_START_COMMAND_MARKER,
 } from '@/shared/utils/codeManagement/codeCommentMarkers';
+import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 import {
     MODEL_STRATEGIES,
     LLMModelProvider,
@@ -106,9 +103,6 @@ export class BitbucketService
 
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parameterService: IParametersService,
-
-        @Inject(REPOSITORY_MANAGER_TOKEN)
-        private readonly repositoryManager: IRepositoryManager,
 
         @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
@@ -344,13 +338,13 @@ export class BitbucketService
         }
     }
 
-    async cloneRepository(params: {
+    async getCloneParams(params: {
         repository: Pick<
             Repository,
             'id' | 'defaultBranch' | 'fullName' | 'name'
         >;
         organizationAndTeamData: OrganizationAndTeamData;
-    }): Promise<string> {
+    }): Promise<GitCloneParams> {
         try {
             const bitbucketAuthDetail = await this.getAuthDetails(
                 params.organizationAndTeamData,
@@ -362,7 +356,7 @@ export class BitbucketService
             // Construct the full Bitbucket URL
             const fullBitbucketUrl = `https://bitbucket.org/${params?.repository?.fullName}`;
 
-            const repoPath = await this.repositoryManager.gitCloneWithAuth({
+            return {
                 organizationId: params?.organizationAndTeamData?.organizationId,
                 repositoryId: params?.repository?.id,
                 repositoryName: params?.repository?.name,
@@ -373,9 +367,7 @@ export class BitbucketService
                     type: bitbucketAuthDetail.authMode,
                     token: decrypt(bitbucketAuthDetail.appPassword),
                 },
-            });
-
-            return repoPath;
+            };
         } catch (error) {
             this.logger.error({
                 message: `Failed to clone repository ${params?.repository?.fullName} from Bitbucket`,
@@ -383,7 +375,7 @@ export class BitbucketService
                 error: error.message,
                 metadata: params,
             });
-            return '';
+            return null;
         }
     }
 

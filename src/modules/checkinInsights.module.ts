@@ -7,6 +7,7 @@ import { IntegrationConfigModule } from './integrationConfig.module';
 import { TeamsModule } from './team.module';
 import { MetricsModule } from './metrics.module';
 import { ParametersModule } from './parameters.module';
+import { LLMProviderModule } from './llmProvider.module';
 
 @Module({
     imports: [
@@ -14,7 +15,7 @@ import { ParametersModule } from './parameters.module';
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => TeamsModule),
         forwardRef(() => MetricsModule),
-        forwardRef(() => ParametersModule)
+        forwardRef(() => ParametersModule),
     ],
     providers: [
         PromptService,
@@ -25,4 +26,4 @@ import { ParametersModule } from './parameters.module';
     ],
     exports: [CHECKIN_INSIGHTS_SERVICE_TOKEN],
 })
-export class CheckinInsightsModule { }
+export class CheckinInsightsModule {}
