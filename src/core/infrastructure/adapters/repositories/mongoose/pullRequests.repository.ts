@@ -325,6 +325,120 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         }
     }
 
+    async findByOrganizationAndRepositoryWithStatusAndSyncedWithIssuesFlag(
+        organizationId: string,
+        repository: Pick<Repository, 'id' | 'fullName'>,
+        status?: PullRequestState,
+        syncedWithIssues?: boolean,
+        batchSize: number = 50,
+    ): Promise<PullRequestsEntity[]> {
+        try {
+            if (!organizationId || !repository?.id) {
+                throw new Error('Missing organizationId or repositoryId');
+            }
+
+            const matchStage: Record<string, any> = {
+                organizationId,
+                'repository.id': repository.id.toString(),
+            };
+
+            if (syncedWithIssues !== undefined) {
+                matchStage.syncedWithIssues = {
+                    $ne: !syncedWithIssues,
+                };
+            }
+
+            if (status) {
+                matchStage.status = status;
+            }
+
+            /* ---------- regex para validar UUID no $expr/$regexMatch ---------- */
+            const UUID_REGEX =
+                '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-' +
+                '[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
+
+            const pipeline = [
+                { $match: matchStage },
+                {
+                    $addFields: {
+                        files: {
+                            $filter: {
+                                input: '$files',
+                                as: 'file',
+                                cond: {
+                                    $gt: [{ $size: '$$file.suggestions' }, 0],
+                                },
+                            },
+                        },
+                    },
+                },
+                { $match: { $expr: { $gt: [{ $size: '$files' }, 0] } } },
+                {
+                    $addFields: {
+                        files: {
+                            $map: {
+                                input: '$files',
+                                as: 'f',
+                                in: {
+                                    id: '$$f.id',
+                                    sha: '$$f.sha',
+                                    path: '$$f.path',
+                                    filename: '$$f.filename',
+                                    status: '$$f.status',
+
+                                    suggestions: {
+                                        $filter: {
+                                            input: '$$f.suggestions',
+                                            as: 's',
+                                            cond: {
+                                                $and: [
+                                                    { $ne: ['$$s.id', null] },
+                                                    { $ne: ['$$s.id', ''] },
+                                                    {
+                                                        $regexMatch: {
+                                                            input: '$$s.id',
+                                                            regex: UUID_REGEX,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                {
+                    $project: {
+                        '_id': 1,
+                        'uuid': 1,
+                        'number': 1,
+                        'organizationId': 1,
+                        'syncedEmbeddedSuggestions': 1,
+                        'repository.id': 1,
+                        'repository.fullName': 1,
+                        'files': 1,
+                    },
+                },
+            ];
+
+            const cursor = this.pullRequestsModel
+                .aggregate(pipeline)
+                .allowDiskUse(true)
+                .cursor({ batchSize });
+
+            const result: PullRequestsEntity[] = [];
+            for await (const pr of cursor) {
+                result.push(mapSimpleModelToEntity(pr, PullRequestsEntity));
+            }
+
+            return result;
+        } catch (error) {
+            throw error;
+        }
+    }
+
     //#endregion
 
     //#region Add

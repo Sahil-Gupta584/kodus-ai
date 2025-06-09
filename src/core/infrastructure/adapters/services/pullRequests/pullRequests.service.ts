@@ -123,6 +123,20 @@ export class PullRequestsService implements IPullRequestsService {
         );
     }
 
+    async findByOrganizationAndRepositoryWithStatusAndSyncedWithIssuesFlag(
+        organizationId: string,
+        repository: Pick<Repository, 'id' | 'fullName'>,
+        status?: PullRequestState,
+        syncedEmbeddedSuggestions?: boolean,
+    ): Promise<IPullRequests[]> {
+        return this.pullRequestsRepository.findByOrganizationAndRepositoryWithStatusAndSyncedWithIssuesFlag(
+            organizationId,
+            repository,
+            status,
+            syncedEmbeddedSuggestions,
+        );
+    }
+
     //#endregion
 
     //#region Add

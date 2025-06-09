@@ -56,6 +56,12 @@ export interface IPullRequestsRepository {
         status?: PullRequestState,
         syncedEmbeddedSuggestions?: boolean,
     ): Promise<IPullRequests[]>;
+    findByOrganizationAndRepositoryWithStatusAndSyncedWithIssuesFlag(
+        organizationId: string,
+        repository: Pick<Repository, 'id' | 'fullName'>,
+        status?: PullRequestState,
+        syncedEmbeddedSuggestions?: boolean,
+    ): Promise<IPullRequests[]>;
 
     addFileToPullRequest(
         pullRequestNumber: number,
