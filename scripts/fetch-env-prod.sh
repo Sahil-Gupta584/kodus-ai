@@ -133,6 +133,8 @@ KEYS=(
     "/prod/kodus-orchestrator/GLOBAL_KODUS_SERVICE_BILLING"
 
     "/prod/kodus-orchestrator/API_POSTHOG_KEY"
+
+    "/prod/kodus-orchestrator/SERVICE_AST_URL"
 )
 
 # Lista de todas as chaves que você precisa
