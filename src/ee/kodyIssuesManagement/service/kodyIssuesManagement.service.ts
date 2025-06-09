@@ -49,6 +49,15 @@ export class KodyIssuesManagementService
                 params.prNumber,
             );
 
+            if (allSuggestions.length === 0) {
+                this.logger.log({
+                    message: `No suggestions found for PR#${params.prNumber}`,
+                    context: KodyIssuesManagementService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
             // 2. Agrupar por arquivo
             const suggestionsByFile =
                 this.groupSuggestionsByFile(allSuggestions);

@@ -3,6 +3,7 @@ import { IIssue } from '../interfaces/issues.interface';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { IssueStatus } from '@/config/types/general/issues.type';
+import { IContributingSuggestion } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 
 
 export class IssuesEntity implements Entity<IIssue> {
@@ -14,7 +15,7 @@ export class IssuesEntity implements Entity<IIssue> {
     public label: LabelType;
     public severity: SeverityLevel;
     public representativeSuggestion: any;
-    public contributingSuggestionIds: string[];
+    public contributingSuggestions: IContributingSuggestion[];
     public status: IssueStatus;
     public repositoryId: string;
     public organizationId: string;
@@ -30,7 +31,7 @@ export class IssuesEntity implements Entity<IIssue> {
         this.label = issue.label;
         this.severity = issue.severity;
         this.representativeSuggestion = issue.representativeSuggestion;
-        this.contributingSuggestionIds = issue.contributingSuggestionIds;
+        this.contributingSuggestions = issue.contributingSuggestions;
         this.status = issue.status;
         this.repositoryId = issue.repositoryId;
         this.organizationId = issue.organizationId;
@@ -52,7 +53,7 @@ export class IssuesEntity implements Entity<IIssue> {
             label: this.label,
             severity: this.severity,
             representativeSuggestion: this.representativeSuggestion,
-            contributingSuggestionIds: this.contributingSuggestionIds,
+            contributingSuggestions: this.contributingSuggestions,
             status: this.status,
             repositoryId: this.repositoryId,
             organizationId: this.organizationId,
@@ -71,7 +72,7 @@ export class IssuesEntity implements Entity<IIssue> {
             label: this.label,
             severity: this.severity,
             representativeSuggestion: this.representativeSuggestion,
-            contributingSuggestionIds: this.contributingSuggestionIds,
+            contributingSuggestions: this.contributingSuggestions,
             status: this.status,
             repositoryId: this.repositoryId,
             organizationId: this.organizationId,
