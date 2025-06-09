@@ -128,7 +128,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             groupingMode: GroupingModeSuggestions.FULL,
             limitationType: LimitationType.PR,
             maxSuggestions: 9,
-            severityLevelFilter: SeverityLevel.MEDIUM,
+            severityLevelFilter: SeverityLevel.HIGH,
         };
     }
 
