@@ -87,4 +87,10 @@ export interface IPullRequestsRepository {
         organizationId: string,
         synced: boolean,
     ): Promise<void>;
+    updateSyncedWithIssuesFlag(
+        pullRequestNumbers: number[],
+        repositoryId: string,
+        organizationId: string,
+        synced: boolean,
+    ): Promise<void>;
 }

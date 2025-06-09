@@ -191,6 +191,20 @@ export class PullRequestsService implements IPullRequestsService {
             synced,
         );
     }
+
+    async updateSyncedWithIssuesFlag(
+        pullRequestNumbers: number[],
+        repositoryId: string,
+        organizationId: string,
+        synced: boolean,
+    ): Promise<void> {
+        return this.pullRequestsRepository.updateSyncedWithIssuesFlag(
+            pullRequestNumbers,
+            repositoryId,
+            organizationId,
+            synced,
+        );
+    }
     //#endregion
 
     //#region Save Full PR Structure

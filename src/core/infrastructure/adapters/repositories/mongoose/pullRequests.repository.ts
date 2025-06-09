@@ -540,5 +540,34 @@ export class PullRequestsRepository implements IPullRequestsRepository {
             throw error;
         }
     }
+
+    async updateSyncedWithIssuesFlag(
+        pullRequestNumbers: number[],
+        repositoryId: string,
+        organizationId: string,
+        synced: boolean,
+    ): Promise<void> {
+        try {
+            const validNumbers = pullRequestNumbers.filter(
+                (n) => typeof n === 'number',
+            );
+
+            if (!validNumbers?.length) {
+                return null;
+            }
+
+            const filter = {
+                'number': { $in: validNumbers },
+                'repository.id': repositoryId,
+                'organizationId': organizationId,
+            };
+
+            const update = { $set: { syncedWithIssues: synced } };
+
+            await this.pullRequestsModel.updateMany(filter, update);
+        } catch (error) {
+            throw error;
+        }
+    }
     //#endregion
 }
