@@ -213,8 +213,12 @@ export class KodyIssuesManagementService
                                 representativeSuggestion?.severity || 'medium',
                             representativeSuggestion:
                                 newIssue.representativeSuggestion,
-                            contributingSuggestionIds:
-                                newIssue.contributingSuggestionIds,
+                            contributingSuggestions: [
+                                {
+                                    id: newIssue.id,
+                                    prNumber: newIssue.representativeSuggestion?.prNumber,
+                                },
+                            ],
                             status: IssueStatus.OPEN,
                             repositoryId,
                             organizationId,
@@ -271,8 +275,8 @@ export class KodyIssuesManagementService
                         description: issue.description,
                         representativeSuggestion:
                             issue.representativeSuggestion,
-                        contributingSuggestionIds:
-                            issue.contributingSuggestionIds,
+                        contributingSuggestions:
+                            issue.contributingSuggestions,
                     })),
                 };
 
