@@ -16,17 +16,10 @@ import { prompt_detectBreakingChanges } from '@/shared/utils/langchainCommon/pro
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { LLMResponseProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/transforms/llmResponseProcessor.transform';
-import {
-    ChangeResult,
-    DiffAnalyzerService,
-} from '../codeBase/diffAnalyzer.service';
+import { ChangeResult, DiffAnalyzerService } from './diffAnalyzer.service';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import {
-    CodeAnalyzerService,
-    FunctionsAffectResult,
-    FunctionSimilarity,
-} from './code-analyzer.service';
+import { CodeAnalyzerService } from './code-analyzer.service';
 import { ClientGrpc } from '@nestjs/microservices';
 import { lastValueFrom, reduce, map } from 'rxjs';
 import * as CircuitBreaker from 'opossum';
@@ -42,7 +35,11 @@ import {
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { concatUint8Arrays } from '@/shared/utils/buffer/arrays';
-import { ASTDeserializerService } from './ast-deserializer.service';
+import {
+    ASTDeserializer,
+    FunctionsAffectResult,
+    FunctionSimilarity,
+} from '@kodus/kodus-proto/common/ast';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -56,7 +53,6 @@ export class CodeAstAnalysisService
         private readonly diffAnalyzerService: DiffAnalyzerService,
         private readonly codeManagementService: CodeManagementService,
         private readonly logger: PinoLoggerService,
-        private readonly astDeserializerService: ASTDeserializerService,
 
         @Inject('AST_MICROSERVICE')
         private readonly astMicroserviceClient: ClientGrpc,
@@ -206,10 +202,18 @@ export class CodeAstAnalysisService
                                 const jsonData = new TextDecoder().decode(
                                     data.data,
                                 );
+                                console.log(jsonData);
                                 return this.parseGraphResponse(jsonData);
                             }),
                         ),
                     );
+
+                    const end = this.astMicroservice.deleteRepository({
+                        baseRepo: baseDirParams,
+                        headRepo: headDirParams,
+                    });
+
+                    await lastValueFrom(end);
                 },
                 {
                     timeout: 900000, // 15 minutes
@@ -260,20 +264,26 @@ export class CodeAstAnalysisService
         };
 
         if (parsedGraph.baseGraph) {
-            deserialized.baseCodeGraph.codeGraphFunctions = this.objectToMap(
-                parsedGraph?.baseGraph?.functions,
+            const baseGraph = ASTDeserializer.deserializeCodeGraph(
+                parsedGraph.baseGraph.graph,
             );
+
+            deserialized.baseCodeGraph.codeGraphFunctions = baseGraph.functions;
+            deserialized.baseCodeGraph.cloneDir = parsedGraph?.baseGraph?.dir;
         }
 
         if (parsedGraph.headGraph) {
-            deserialized.headCodeGraph.codeGraphFunctions = this.objectToMap(
-                parsedGraph?.headGraph?.functions,
+            const headGraph = ASTDeserializer.deserializeCodeGraph(
+                parsedGraph.headGraph.graph,
             );
+
+            deserialized.headCodeGraph.codeGraphFunctions = headGraph.functions;
+            deserialized.headCodeGraph.cloneDir = parsedGraph?.headGraph?.dir;
         }
 
         if (parsedGraph.enrichHeadGraph) {
             deserialized.headCodeGraphEnriched =
-                this.astDeserializerService.deserializeEnrichedGraph(
+                ASTDeserializer.deserializeEnrichedGraph(
                     parsedGraph.enrichHeadGraph,
                 );
         }

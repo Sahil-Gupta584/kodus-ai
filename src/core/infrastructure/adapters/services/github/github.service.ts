@@ -88,7 +88,6 @@ import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
-import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 import {
     LLMModelProvider,
     MODEL_STRATEGIES,
@@ -96,6 +95,7 @@ import {
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
 import { ConfigService } from '@nestjs/config';
+import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 
 interface GitHubAuthResponse {
     token: string;
@@ -766,15 +766,20 @@ export class GithubService
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<PullRequestAuthor[]> {
         try {
-            const githubAuthDetail = await this.getGithubAuthDetails(params.organizationAndTeamData);
-            const allRepositories = await this.findOneByOrganizationAndTeamDataAndConfigKey(
-                params?.organizationAndTeamData,
-                IntegrationConfigKey.REPOSITORIES,
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                params.organizationAndTeamData,
             );
+            const allRepositories =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params?.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
 
             if (!githubAuthDetail || !allRepositories) return [];
 
-            const octokit = await this.instanceOctokit(params?.organizationAndTeamData);
+            const octokit = await this.instanceOctokit(
+                params?.organizationAndTeamData,
+            );
             const since = new Date();
             since.setDate(since.getDate() - 60);
 
@@ -808,14 +813,14 @@ export class GithubService
                             }
                         }
                     }
-
                 } catch (error) {
                     this.logger.error({
                         message: 'Error in getPullRequestAuthors',
                         context: GithubService.name,
                         error: error,
                         metadata: {
-                            organizationAndTeamData: params?.organizationAndTeamData,
+                            organizationAndTeamData:
+                                params?.organizationAndTeamData,
                         },
                     });
                 }
@@ -823,9 +828,9 @@ export class GithubService
 
             await Promise.all(repoPromises);
 
-            return Array.from(authorsData.values())
-                .sort((a, b) => a.name.localeCompare(b.name));
-
+            return Array.from(authorsData.values()).sort((a, b) =>
+                a.name.localeCompare(b.name),
+            );
         } catch (err) {
             this.logger.error({
                 message: 'Error in getPullRequestAuthors',

@@ -1,7 +1,7 @@
+import { FunctionAnalysis } from '@kodus/kodus-proto/common/ast';
 import { Injectable } from '@nestjs/common';
 import * as path from 'path';
 import { SyntaxNode } from 'tree-sitter';
-import { FunctionAnalysis } from './ast/types/types';
 
 // Basic interfaces needed
 interface DiffHunk {

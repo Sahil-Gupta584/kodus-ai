@@ -2162,10 +2162,10 @@
   dependencies:
     buffer "^6.0.3"
 
-"@kodus/kodus-proto@^2.0.3":
-  version "2.0.3"
-  resolved "https://registry.yarnpkg.com/@kodus/kodus-proto/-/kodus-proto-2.0.3.tgz#a3c1eaf0ef81893263158793bf92c80980585ff9"
-  integrity sha512-xDvep+I6nynsAu8GnFwcjAefRcfHjffYgOSFmpzzI8GJDQFCO/ceNx9+Ix+QdDMGM2pzf9xOxBs1RjtscgOeBg==
+"@kodus/kodus-proto@^2.0.21":
+  version "2.0.21"
+  resolved "https://registry.yarnpkg.com/@kodus/kodus-proto/-/kodus-proto-2.0.21.tgz#9e3083abee1a83d36bdde348f77da75a8dc6673e"
+  integrity sha512-kryxh22nda+DM4srAETXQRC07LL0GSlXCfcckL+21HiwYg+CkusbZFG9jb7/oYkPou+0OoClYqn6PqVXvJiO6Q==
 
 "@kwsites/file-exists@^1.1.1":
   version "1.1.1"
@@ -10290,10 +10290,10 @@ tree-kill@1.2.2, tree-kill@^1.2.2:
   resolved "https://registry.yarnpkg.com/tree-kill/-/tree-kill-1.2.2.tgz#4ca09a9092c88b73a7cdc5e8a01b507b0790a0cc"
   integrity sha512-L0Orpi8qGpRG//Nd+H90vFB+3iHnue1zSSGmNOOCh1GLJ7rUKVwV2HvijphGQS2UmhUZewS9VgvxYIdgr+fG1A==
 
-tree-sitter@^0.22.4:
-  version "0.22.4"
-  resolved "https://registry.yarnpkg.com/tree-sitter/-/tree-sitter-0.22.4.tgz#7d29547f663ff6f49ee8d1ac444e6fa169c72b77"
-  integrity sha512-usbHZP9/oxNsUY65MQUsduGRqDHQOou1cagUSwjhoSYAmSahjQDAVsh9s+SlZkn8X8+O1FULRGwHu7AFP3kjzg==
+tree-sitter@^0.25:
+  version "0.25.0"
+  resolved "https://registry.yarnpkg.com/tree-sitter/-/tree-sitter-0.25.0.tgz#d9d94ba00b501df49826c10c0f74037b890788eb"
+  integrity sha512-PGZZzFW63eElZJDe/b/R/LbsjDDYJa5UEjLZJB59RQsMX+fo0j54fqBPn1MGKav/QNa0JR0zBiVaikYDWCj5KQ==
   dependencies:
     node-addon-api "^8.3.0"
     node-gyp-build "^4.8.4"

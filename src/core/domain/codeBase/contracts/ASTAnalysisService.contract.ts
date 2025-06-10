@@ -6,11 +6,11 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
+import { ChangeResult } from '@/ee/kodyAST/diffAnalyzer.service';
 import {
     FunctionsAffectResult,
     FunctionSimilarity,
-} from '@/ee/kodyAST/code-analyzer.service';
-import { ChangeResult } from '@/ee/codeBase/diffAnalyzer.service';
+} from '@kodus/kodus-proto/common/ast';
 
 export const AST_ANALYSIS_SERVICE_TOKEN = Symbol('ASTAnalysisService');
 

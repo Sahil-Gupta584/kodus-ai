@@ -6,107 +6,31 @@ import { prompt_checkSimilarFunctions_system } from '@/shared/utils/langchainCom
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { SyntaxNode } from 'tree-sitter';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { ChangeResult, FunctionResult } from '../codeBase/diffAnalyzer.service';
+import { ChangeResult, FunctionResult } from './diffAnalyzer.service';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
-import { CodeGraph, FunctionAnalysis } from '../codeBase/ast/types/types';
-
-export enum NodeType {
-    CLASS = 'CLASS',
-    METHOD = 'METHOD',
-    FUNCTION = 'FUNCTION',
-    INTERFACE = 'INTERFACE',
-}
+import {
+    CodeGraph,
+    ComplexityAnalysis,
+    EnrichGraph,
+    EnrichGraphEdge,
+    EnrichGraphNode,
+    FunctionAnalysis,
+    FunctionsAffect,
+    FunctionsAffectResult,
+    FunctionSimilarity,
+    ImpactedNode,
+    ImpactResult,
+    NodeType,
+    RelationshipType,
+    ScopeAnalysis,
+} from '@kodus/kodus-proto/common/ast';
 
 interface FunctionData {
     className?: string;
     name?: string;
     calls?: { function: string; file: string }[];
     file: string;
-}
-
-interface EnrichGraphNode {
-    id: string;
-    type: NodeType;
-    file: string;
-    filePath: string;
-}
-
-export enum RelationshipType {
-    CALLS = 'CALLS',
-    CALLS_IMPLEMENTATION = 'CALLS_IMPLEMENTATION',
-    HAS_METHOD = 'HAS_METHOD',
-    IMPORTS = 'IMPORTS',
-    IMPLEMENTS = 'IMPLEMENTS',
-    IMPLEMENTED_BY = 'IMPLEMENTED_BY',
-    EXTENDS = 'EXTENDS',
-}
-
-interface ImpactedNode {
-    id: string;
-    type: string;
-    severity: string;
-    level: number;
-    filePath: string;
-    calledBy?: string[];
-    importedBy?: string[];
-}
-
-interface EnrichGraphEdge {
-    from: string;
-    to: string;
-    type: RelationshipType;
-    fromPath: string;
-    toPath: string;
-}
-
-export interface EnrichGraph {
-    nodes: EnrichGraphNode[];
-    relationships: EnrichGraphEdge[];
-}
-
-export interface ScopeAnalysis {
-    variables: string[];
-    functions: string[];
-    dependencies: string[];
-}
-
-export interface ComplexityAnalysis {
-    cyclomaticComplexity: number;
-    cognitiveComplexity: number;
-    details: {
-        conditionals: number;
-        loops: number;
-        switches: number;
-        catches: number;
-        logicalOperators: number;
-        recursion: boolean;
-    };
-}
-
-export interface ImpactResult {
-    function: string;
-    impact: {
-        summary: any;
-        groupedByLevel: Record<string, ImpactedNode[]>;
-    };
-}
-
-export interface FunctionsAffect {
-    functionName: string;
-    filePath: string;
-    functionBody: string;
-}
-
-export interface FunctionsAffectResult {
-    oldFunction: string;
-    newFunction: string;
-    functionsAffect: FunctionsAffect[];
-}
-
-export interface FunctionSimilarity {
-    functionName: string;
-    similarFunctions: [];
 }
 
 @Injectable()
@@ -308,7 +232,7 @@ export class CodeAnalyzerService {
      * Determines the next node to visit based on traversal direction and allowed relationships.
      */
     private getNextNode(
-        edge: { from: string; to: string; type: RelationshipType },
+        edge: EnrichGraphEdge,
         currentNode: string,
         direction: 'both' | 'forward' | 'backward',
         visited: Set<string>,
@@ -455,11 +379,11 @@ export class CodeAnalyzerService {
             const functionsAffect: FunctionsAffect[] = affectedMethods.map(
                 (node) => {
                     const analysis = this.findFunctionAnalysisById(
-                        node.id,
+                        node.id.toString(),
                         newFunctionAnalyses,
                     );
                     return {
-                        functionName: node.id,
+                        functionName: node.id.toString(),
                         filePath: analysis?.file || '',
                         functionBody: this.generateFunctionWithLines(
                             analysis?.fullText,
@@ -617,7 +541,7 @@ export class CodeAnalyzerService {
         impactReport: ImpactedNode[],
         maxLevel: number,
     ): boolean {
-        const node = impactReport.find((n) => n.id === nodeId);
+        const node = impactReport.find((n) => n.id.toString() === nodeId);
         return node ? node.level > maxLevel : false;
     }
 
@@ -689,14 +613,7 @@ export class CodeAnalyzerService {
                 const normalizedKey = this.normalizePath(key);
                 normalizedTypes.set(normalizedKey, type);
 
-                this.addNode(
-                    type.name,
-                    type.type === 'interface'
-                        ? NodeType.INTERFACE
-                        : NodeType.CLASS,
-                    type.file.split('/').pop() || '',
-                    type.file,
-                );
+                this.addNode(type);
 
                 if (type.type === 'class') {
                     type.implements?.forEach((iface: string) => {
@@ -840,12 +757,7 @@ export class CodeAnalyzerService {
                 const methodId = `${className}.${functionName}`;
 
                 if (!this.addedNodes[methodId]) {
-                    this.addNode(
-                        methodId,
-                        NodeType.METHOD,
-                        filePath.split('/').pop() || '',
-                        filePath,
-                    );
+                    this.addNode(func);
                 }
 
                 // Relacionar método com a classe
@@ -983,22 +895,17 @@ export class CodeAnalyzerService {
         this.normalizedPathCache.clear();
     }
 
-    private addNode(
-        id: string,
-        type: EnrichGraphNode['type'],
-        file: string,
-        filePath: string,
-    ) {
-        if (!id || id === 'undefined') {
+    private addNode(node: EnrichGraphNode) {
+        if (!node.id || node.id === -1) {
             console.warn(
-                `⚠️ Tentativa de adicionar nó com ID inválido: ${filePath}`,
+                `⚠️ Tentativa de adicionar nó com ID inválido: ${node.filePath}`,
             );
             return;
         }
-        if (!this.addedNodes[id]) {
+        if (!this.addedNodes[node.id]) {
             // ✅ Agora correto!
-            this.nodes.push({ id, type, file, filePath });
-            this.addedNodes[id] = true; // ✅ Marca que já foi adicionado
+            this.nodes.push(node);
+            this.addedNodes[node.id] = true; // ✅ Marca que já foi adicionado
         }
     }
 
@@ -1140,7 +1047,9 @@ export class CodeAnalyzerService {
         return impactedNodes
             .filter((nodeId) => {
                 // 🔎 Localiza o nó no grafo
-                const node = graph.nodes.find((n) => n.id === nodeId);
+                const node = graph.nodes.find(
+                    (n) => n.id.toString() === nodeId,
+                );
 
                 if (!node) {
                     return false;
@@ -1165,7 +1074,8 @@ export class CodeAnalyzerService {
                 );
 
                 return {
-                    id: nodeId,
+                    id: parseInt(nodeId),
+                    name: node?.name || '',
                     type: node?.type,
                     severity: this.determineSeverity(graph, nodeId),
                     level: Number(
@@ -1192,13 +1102,13 @@ export class CodeAnalyzerService {
         // 2) Filtra nós cujo ID esteja em callersIds e cujo tipo seja 'Method' ou 'Function'
         const callerNodes = graph.nodes.filter(
             (node) =>
-                callersIds.includes(node.id) &&
+                callersIds.includes(node.id.toString()) &&
                 (node.type === NodeType.METHOD ||
                     node.type === NodeType.FUNCTION),
         );
 
         // 3) Retorna apenas o campo 'id' de cada nó
-        return callerNodes.map((node) => node.id);
+        return callerNodes.map((node) => node.id.toString());
     }
 
     private async createChainWithFallback(context: {
