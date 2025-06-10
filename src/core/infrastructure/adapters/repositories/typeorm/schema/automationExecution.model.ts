@@ -18,6 +18,12 @@ export class AutomationExecutionModel extends CoreModel {
     @Column({ type: 'jsonb', nullable: true })
     dataExecution: any;
 
+    @Column({ nullable: true })
+    pullRequestNumber?: number;
+
+    @Column({ nullable: true })
+    repositoryId?: string;
+
     @ManyToOne(
         () => TeamAutomationModel,
         (teamAutomation) => teamAutomation.executions,

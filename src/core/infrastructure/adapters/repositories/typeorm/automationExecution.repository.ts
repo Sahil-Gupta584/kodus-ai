@@ -172,21 +172,15 @@ export class AutomationExecutionRepository
                     'automation_execution',
                 );
 
-            // Apply the JSONB filter on dataExecution
-            if (dataExecutionFilter) {
-                queryBuilder.andWhere(
-                    'automation_execution.dataExecution @> :dataExecutionFilter',
-                    {
-                        dataExecutionFilter:
-                            JSON.stringify(dataExecutionFilter),
-                    },
-                );
-            }
+            let resultOnlyByAdditionalFilters: AutomationExecutionModel | null =
+                null;
 
-            // Apply additional filters if provided
+            let resultByDataExecutionAndAdditionalFilters: AutomationExecutionModel | null =
+                null;
+
+            // Primeiro tentamos buscar com os filtros adicionais - número do PR foi movido para uma coluna nova, e repositoryId foi adicionado
             if (additionalFilters) {
                 Object.keys(additionalFilters).forEach((key) => {
-                    // Extract the UUID if the value is an object
                     const value =
                         typeof additionalFilters[key] === 'object' &&
                         additionalFilters[key]?.uuid
@@ -198,12 +192,56 @@ export class AutomationExecutionRepository
                         { [key]: value },
                     );
                 });
+
+                resultOnlyByAdditionalFilters = await queryBuilder
+                    .orderBy('automation_execution.createdAt', 'DESC')
+                    .getOne();
+
+                // Se não encontrar com os filtros adicionais, tentamos como era feito anteriormente
+                if (!resultOnlyByAdditionalFilters) {
+                    const queryBuilder =
+                        this.automationExecutionRepository.createQueryBuilder(
+                            'automation_execution',
+                        );
+
+                    if (dataExecutionFilter) {
+                        queryBuilder.andWhere(
+                            'automation_execution.dataExecution @> :dataExecutionFilter',
+                            {
+                                dataExecutionFilter:
+                                    JSON.stringify(dataExecutionFilter),
+                            },
+                        );
+                    }
+
+                    if (additionalFilters) {
+                        delete additionalFilters.pullRequestNumber;
+                        delete additionalFilters.repositoryId;
+
+                        Object.keys(additionalFilters).forEach((key) => {
+                            const value =
+                                typeof additionalFilters[key] === 'object' &&
+                                additionalFilters[key]?.uuid
+                                    ? additionalFilters[key].uuid
+                                    : additionalFilters[key];
+
+                            queryBuilder.andWhere(
+                                `automation_execution.${key} = :${key}`,
+                                { [key]: value },
+                            );
+                        });
+                    }
+
+                    resultByDataExecutionAndAdditionalFilters =
+                        await queryBuilder
+                            .orderBy('automation_execution.createdAt', 'DESC')
+                            .getOne();
+                }
             }
 
-            // Order by the most recent records
-            const result = await queryBuilder
-                .orderBy('automation_execution.createdAt', 'DESC')
-                .getOne();
+            const result =
+                resultOnlyByAdditionalFilters ||
+                resultByDataExecutionAndAdditionalFilters;
 
             return mapSimpleModelToEntity(result, AutomationExecutionEntity);
         } catch (error) {

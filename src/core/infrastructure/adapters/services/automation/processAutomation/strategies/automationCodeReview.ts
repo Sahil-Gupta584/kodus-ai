@@ -144,6 +144,7 @@ export class AutomationCodeReviewService
                             commentId: result.commentId,
                             noteId: result.noteId,
                             threadId: result.threadId,
+                            repositoryId: repository?.id,
                         },
                         teamAutomationId,
                         'System',
@@ -201,6 +202,8 @@ export class AutomationCodeReviewService
             dataExecution: data,
             teamAutomation: { uuid: teamAutomationId },
             origin,
+            pullRequestNumber: data?.pullRequestNumber,
+            repositoryId: data?.repositoryId,
         };
 
         this.automationExecutionService.register(automationExecution);
