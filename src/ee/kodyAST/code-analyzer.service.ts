@@ -6,7 +6,10 @@ import { prompt_checkSimilarFunctions_system } from '@/shared/utils/langchainCom
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { SyntaxNode } from 'tree-sitter';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { ChangeResult, FunctionResult } from '../codeBase/diffAnalyzer.service';
+import {
+    ChangeResult,
+    FunctionResult,
+} from '../codeBase/types/diff-analyzer.types';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { CodeGraph, FunctionAnalysis } from '../codeBase/ast/types/types';
