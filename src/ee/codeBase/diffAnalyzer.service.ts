@@ -1,44 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import * as path from 'path';
-import { SyntaxNode } from 'tree-sitter';
 import { FunctionAnalysis } from './ast/types/types';
-
-// Basic interfaces needed
-interface DiffHunk {
-    oldStart: number; // Starting line in the old version
-    oldCount: number; // Number of lines in the old version
-    newStart: number; // Starting line in the new version
-    newCount: number; // Number of lines in the new version
-    content: string; // Hunk content with +/− markers
-}
-
-interface DiffInfo {
-    filePath: string; // File path
-    hunks: DiffHunk[]; // Diff hunks
-}
-
-export interface ChangeResult {
-    added: FunctionResult[];
-    modified: FunctionResult[];
-    deleted: FunctionResult[];
-}
-
-export interface FunctionResult {
-    name: string;
-    fullName: string;
-    functionHash: string;
-    signatureHash: string;
-    node: SyntaxNode;
-    fullText: string;
-    lines: number;
-}
-
-// Local interface to represent a function with its lines
-export interface ExtendedFunctionInfo extends Omit<FunctionAnalysis, 'name'> {
-    name: string;
-    startLine: number;
-    endLine: number;
-}
+import {
+    ChangeResult,
+    DiffHunk,
+    ExtendedFunctionInfo,
+} from './types/diff-analyzer.types';
 
 @Injectable()
 export class DiffAnalyzerService {

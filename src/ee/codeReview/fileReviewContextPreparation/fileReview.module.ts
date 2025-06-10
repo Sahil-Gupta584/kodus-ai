@@ -4,14 +4,9 @@ import { FILE_REVIEW_CONTEXT_PREPARATION_TOKEN } from '@/shared/interfaces/file-
 import { FILE_REVIEW_CONTEXT_PREPARATION_PROVIDER } from '@/core/infrastructure/providers/file-analyzer.provider.ee';
 import { CodebaseModule } from '@/modules/codeBase.module';
 import { LogModule } from '@/modules/log.module';
-import { KodyASTModule } from '@/ee/kodyAST/kodyAST.module';
 
 @Module({
-    imports: [
-        forwardRef(() => CodebaseModule),
-        LogModule,
-        KodyASTModule.register(),
-    ],
+    imports: [forwardRef(() => CodebaseModule), LogModule],
     providers: [
         FileReviewContextPreparation, // Core implementation
         FILE_REVIEW_CONTEXT_PREPARATION_PROVIDER,

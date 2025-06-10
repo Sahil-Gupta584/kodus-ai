@@ -16,6 +16,7 @@ import { LLMProviderModule } from './llmProvider.module';
         forwardRef(() => TeamsModule),
         forwardRef(() => MetricsModule),
         forwardRef(() => ParametersModule),
+        forwardRef(() => LLMProviderModule),
     ],
     providers: [
         PromptService,

@@ -17,7 +17,6 @@ import {
 import { TeamsModule } from './team.module';
 import { CodeReviewHandlerService } from '@/core/infrastructure/adapters/services/codeBase/codeReviewHandlerService.service';
 import { KodyRulesModule } from './kodyRules.module';
-import { KodyASTModule } from '../ee/kodyAST/kodyAST.module';
 import { PullRequestsModule } from './pullRequests.module';
 import { SUGGESTION_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/SuggestionService.contract';
 import { SuggestionEmbeddedModule } from './suggestionEmbedded.module';
@@ -66,7 +65,6 @@ import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeB
         forwardRef(() => KodyFineTuningContextModule),
         forwardRef(() => KodyASTAnalyzeContextModule),
         forwardRef(() => GlobalParametersModule),
-        KodyASTModule.register(),
         LogModule,
     ],
     providers: [
@@ -94,7 +92,6 @@ import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeB
             provide: SUGGESTION_SERVICE_TOKEN,
             useClass: SuggestionService,
         },
-        DiffAnalyzerService,
         PromptService,
         CodeAnalysisOrchestrator,
         CodeReviewHandlerService,
@@ -116,7 +113,6 @@ import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeB
 
         CodeReviewHandlerService,
         CommentAnalysisService,
-        DiffAnalyzerService,
     ],
     controllers: [CodeBaseController],
 })

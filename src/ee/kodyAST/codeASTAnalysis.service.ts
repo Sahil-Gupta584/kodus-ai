@@ -16,10 +16,6 @@ import { prompt_detectBreakingChanges } from '@/shared/utils/langchainCommon/pro
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { LLMResponseProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/transforms/llmResponseProcessor.transform';
-import {
-    ChangeResult,
-    DiffAnalyzerService,
-} from '../codeBase/diffAnalyzer.service';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import {
@@ -33,7 +29,6 @@ import * as CircuitBreaker from 'opossum';
 import {
     AST_ANALYZER_SERVICE_NAME,
     ASTAnalyzerServiceClient,
-    GetGraphsResponse,
     GetGraphsResponseData as SerializedGraphs,
     ProtoAuthMode,
     ProtoPlatformType,
@@ -43,6 +38,8 @@ import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmP
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { concatUint8Arrays } from '@/shared/utils/buffer/arrays';
 import { ASTDeserializerService } from './ast-deserializer.service';
+import { DiffAnalyzerService } from '../codeBase/diffAnalyzer.service';
+import { ChangeResult } from '../codeBase/types/diff-analyzer.types';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -261,13 +258,13 @@ export class CodeAstAnalysisService
 
         if (parsedGraph.baseGraph) {
             deserialized.baseCodeGraph.codeGraphFunctions = this.objectToMap(
-                parsedGraph?.baseGraph?.functions,
+                parsedGraph?.baseGraph?.graph?.functions,
             );
         }
 
         if (parsedGraph.headGraph) {
             deserialized.headCodeGraph.codeGraphFunctions = this.objectToMap(
-                parsedGraph?.headGraph?.functions,
+                parsedGraph?.headGraph?.graph?.functions,
             );
         }
 
