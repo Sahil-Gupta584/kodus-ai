@@ -4,14 +4,6 @@ import * as jiraTransforms from '@/shared/utils/transforms/jira';
 import * as jsonTransforms from '@/shared/utils/transforms/json';
 import * as numberTransforms from '@/shared/utils/transforms/numbers';
 
-export const mockGetOpenAI = (invokeMockImplementation) => {
-    const openAIMock = {
-        invoke: jest.fn().mockImplementation(invokeMockImplementation),
-    };
-    jest.spyOn(documentModule, 'getOpenAI').mockReturnValue(openAIMock);
-    return openAIMock;
-};
-
 export const mockConvertToMarkdown = (markdownContent) => {
     jest.spyOn(jiraTransforms, 'convertToMarkdown').mockReturnValue(
         markdownContent,
