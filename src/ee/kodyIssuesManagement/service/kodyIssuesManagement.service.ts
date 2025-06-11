@@ -69,6 +69,7 @@ export class KodyIssuesManagementService
                 await this.mergeSuggestionsIntoIssues(
                     params.organizationId,
                     params.repositoryId,
+                    params.prNumber,
                     filePath,
                     suggestionsByFile[filePath],
                 );
@@ -95,6 +96,7 @@ export class KodyIssuesManagementService
     async mergeSuggestionsIntoIssues(
         organizationId: string,
         repositoryId: string,
+        prNumber: number,
         filePath: string,
         newSuggestions: any[],
     ): Promise<any> {
@@ -112,6 +114,7 @@ export class KodyIssuesManagementService
                 await this.createNewIssues(
                     organizationId,
                     repositoryId,
+                    prNumber,
                     newSuggestions,
                 );
                 return;
@@ -148,6 +151,7 @@ export class KodyIssuesManagementService
             await this.processMergeResult(
                 organizationId,
                 repositoryId,
+                prNumber,
                 mergeResult,
                 newSuggestions,
             );
@@ -165,6 +169,7 @@ export class KodyIssuesManagementService
     async createNewIssues(
         organizationId: string,
         repositoryId: string,
+        prNumber: number,
         unmatchedSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
         try {
@@ -216,7 +221,7 @@ export class KodyIssuesManagementService
                             contributingSuggestions: [
                                 {
                                     id: newIssue.id,
-                                    prNumber: newIssue.representativeSuggestion?.prNumber,
+                                    prNumber: prNumber,
                                 },
                             ],
                             status: IssueStatus.OPEN,
@@ -385,6 +390,7 @@ export class KodyIssuesManagementService
     private async processMergeResult(
         organizationId: string,
         repositoryId: string,
+        prNumber: number,
         mergeResult: any,
         newSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
@@ -423,6 +429,7 @@ export class KodyIssuesManagementService
             await this.createNewIssues(
                 organizationId,
                 repositoryId,
+                prNumber,
                 unmatchedSuggestions,
             );
         }
