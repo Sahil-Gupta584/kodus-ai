@@ -79,7 +79,9 @@ export class CreatePRCodeReviewUseCase implements IUseCase {
             status: AutomationStatus.ERROR,
             dataExecution: {},
             teamAutomation: { uuid: codeReviewAutomationId },
-            origin: ""
+            origin: "",
+            pullRequestNumber: null,
+            repositoryId: null
         }
 
         await this.automationExecutionService.register(startedCodeReview)
@@ -93,7 +95,9 @@ export class CreatePRCodeReviewUseCase implements IUseCase {
                 ...payload,
             },
             teamAutomation: { uuid: codeReviewAutomationId },
-            origin: ""
+            origin: "",
+            pullRequestNumber: payload?.pull_number,
+            repositoryId: payload?.id,
         }
 
         await this.automationExecutionService.register(startedCodeReview)

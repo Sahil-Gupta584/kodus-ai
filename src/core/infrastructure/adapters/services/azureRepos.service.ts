@@ -49,8 +49,6 @@ import {
     FileChange,
 } from '@/config/types/general/codeReview.type';
 import { Repository } from '@/config/types/general/codeReview.type';
-import { IRepositoryManager } from '@/core/domain/repository/contracts/repository-manager.contract';
-import { REPOSITORY_MANAGER_TOKEN } from '@/core/domain/repository/contracts/repository-manager.contract';
 import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { generateWebhookToken } from '@/shared/utils/webhooks/webhookTokenCrypto';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
@@ -67,6 +65,7 @@ import {
     TranslationsCategory,
 } from '@/shared/utils/translations/translations';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
+import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 import { KODY_CRITICAL_ISSUE_COMMENT_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 import { AzurePRStatus } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
 import { ConfigService } from '@nestjs/config';
@@ -101,9 +100,6 @@ export class AzureReposService
         private readonly authIntegrationService: IAuthIntegrationService,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parameterService: IParametersService,
-
-        @Inject(REPOSITORY_MANAGER_TOKEN)
-        private readonly repositoryManager: IRepositoryManager,
 
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
@@ -1366,13 +1362,13 @@ export class AzureReposService
         }
     }
 
-    async cloneRepository(params: {
+    async getCloneParams(params: {
         repository: Pick<
             Repository,
             'id' | 'defaultBranch' | 'fullName' | 'name'
         >;
         organizationAndTeamData: OrganizationAndTeamData;
-    }): Promise<string> {
+    }): Promise<GitCloneParams> {
         try {
             const azureAuthDetail = await this.getAuthDetails(
                 params.organizationAndTeamData,
@@ -1394,7 +1390,7 @@ export class AzureReposService
                 throw new BadRequestException('Repository not found');
             }
 
-            const repoPath = await this.repositoryManager.gitCloneWithAuth({
+            return {
                 organizationId: params?.organizationAndTeamData?.organizationId,
                 repositoryId: params?.repository?.id,
                 repositoryName: params?.repository?.name,
@@ -1405,17 +1401,15 @@ export class AzureReposService
                     type: azureAuthDetail.authMode,
                     token: decrypt(azureAuthDetail.token),
                 },
-            });
-
-            return repoPath;
+            };
         } catch (error) {
             this.logger.error({
                 message: `Failed to clone repository ${params?.repository?.fullName} from Azure Repos`,
-                context: this.cloneRepository.name,
+                context: this.getCloneParams.name,
                 error: error,
                 metadata: { params },
             });
-            return '';
+            return null;
         }
     }
 

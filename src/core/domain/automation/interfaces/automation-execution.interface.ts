@@ -8,6 +8,8 @@ export interface IAutomationExecution {
     status: AutomationStatus;
     errorMessage?: string;
     dataExecution?: any;
+    pullRequestNumber?: number;
+    repositoryId?: string;
     teamAutomation?: Partial<ITeamAutomation>;
     origin: string;
 }

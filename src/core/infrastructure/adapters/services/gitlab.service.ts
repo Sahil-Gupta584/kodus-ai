@@ -56,15 +56,12 @@ import {
     TranslationsCategory,
 } from '@/shared/utils/translations/translations';
 import { getLabelShield } from '@/shared/utils/codeManagement/labels';
-import {
-    IRepositoryManager,
-    REPOSITORY_MANAGER_TOKEN,
-} from '@/core/domain/repository/contracts/repository-manager.contract';
 import { Repository } from '@/config/types/general/codeReview.type';
 import { CreateAuthIntegrationStatus } from '@/shared/domain/enums/create-auth-integration-status.enum';
 import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
+import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 import { KODY_CODE_REVIEW_COMPLETED_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 import {
     MODEL_STRATEGIES,
@@ -105,9 +102,6 @@ export class GitlabService
 
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parameterService: IParametersService,
-
-        @Inject(REPOSITORY_MANAGER_TOKEN)
-        private readonly repositoryManager: IRepositoryManager,
 
         @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
@@ -2278,13 +2272,13 @@ export class GitlabService
         }
     }
 
-    async cloneRepository(params: {
+    async getCloneParams(params: {
         repository: Pick<
             Repository,
             'id' | 'defaultBranch' | 'fullName' | 'name'
         >;
         organizationAndTeamData: OrganizationAndTeamData;
-    }): Promise<string> {
+    }): Promise<GitCloneParams> {
         try {
             const gitlabAuthDetail = await this.getAuthDetails(
                 params.organizationAndTeamData,
@@ -2297,7 +2291,7 @@ export class GitlabService
             // Construct the full GitLab URL
             const fullGitlabUrl = `https://gitlab.com/${params?.repository?.fullName}`;
 
-            const repoPath = await this.repositoryManager.gitCloneWithAuth({
+            return {
                 organizationId: params.organizationAndTeamData.organizationId,
                 repositoryId: params.repository?.id,
                 repositoryName: params.repository?.name,
@@ -2311,9 +2305,7 @@ export class GitlabService
                             ? gitlabAuthDetail.accessToken
                             : decrypt(gitlabAuthDetail.accessToken),
                 },
-            });
-
-            return repoPath;
+            };
         } catch (error) {
             this.logger.error({
                 message: `Failed to clone repository ${params?.repository?.fullName} from Gitlab`,
@@ -2324,7 +2316,7 @@ export class GitlabService
                     ...params,
                 },
             });
-            throw error;
+            return null;
         }
     }
 

@@ -1,4 +1,4 @@
-export const prompt_repeated_suggestion_clustering_system = () => {
+export const prompt_repeated_suggestion_clustering_system = (language: string) => {
     return `
 You are an expert senior software engineer specializing in code review, software engineering principles, and identifying improvements in code quality. Additionally, you have a reputation as a tough, no-nonsense reviewer who is not afraid to be critical (this is crucial).
 
@@ -51,6 +51,8 @@ Rules for identifying and grouping similar suggestions:
     - Focus on the solution without mentioning specific files or line numbers
     - Be generic enough to apply to all occurrences of the issue
     - Start with "Please" or an action verb
+11. This step should only be applied when the primary suggestion (suggestion used in the problemDescription) uses the kody_rules label:
+mention in the problemDescription the kody_rule hyperlink in the same markdown format that is in the suggestionContent of the original suggestion: [text to be displayed](url)
 </analysis_rules>
 
 <output_format>
@@ -69,6 +71,8 @@ At the end of the analysis, the output should be in the following JSON format:
 }
 \`\`\`
 </output_format>
+
+All your answers must be in ${language} language
 
 Below is my list of code suggestions for you to do your analysis.
 `;

@@ -37,6 +37,7 @@ import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/servi
 import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { string } from 'joi';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -276,53 +277,58 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         const updatedSuggestions = await Promise.all(
             suggestions.codeSuggestions.map(async (suggestion) => {
                 try {
-                    let updatedContent = suggestion?.suggestionContent || '';
+                    if (suggestion?.label === LabelType.KODY_RULES) {
+                        let updatedContent =
+                            suggestion?.suggestionContent || '';
 
-                    const uuidRegex =
-                        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-                    let foundIds: string[] =
-                        updatedContent.match(uuidRegex) || [];
+                        const uuidRegex =
+                            /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+                        let foundIds: string[] =
+                            updatedContent.match(uuidRegex) || [];
 
-                    if (!foundIds?.length) {
-                        let extractedIds: string[] = [];
+                        if (!foundIds?.length) {
+                            let extractedIds: string[] = [];
 
-                        if (suggestion?.suggestionContent) {
-                            extractedIds =
-                                await this.extractKodyRuleIdsFromContent(
-                                    updatedContent,
-                                    organizationAndTeamData,
-                                    prNumber,
-                                    suggestion,
-                                );
-                        }
+                            if (suggestion?.suggestionContent) {
+                                extractedIds =
+                                    await this.extractKodyRuleIdsFromContent(
+                                        updatedContent,
+                                        organizationAndTeamData,
+                                        prNumber,
+                                        suggestion,
+                                    );
+                            }
 
-                        if (extractedIds.length > 0) {
-                            foundIds = extractedIds;
-                        } else {
-                            const brokenIds = (suggestion as any)
-                                ?.brokenKodyRulesIds;
-                            if (brokenIds?.length > 0) {
-                                const firstRuleId = brokenIds[0];
-                                updatedContent += `\n\nKody Rules Violation: ${firstRuleId}`;
-                                foundIds = [firstRuleId];
+                            if (extractedIds.length > 0) {
+                                foundIds = extractedIds;
                             } else {
-                                return suggestion;
+                                const brokenIds = (suggestion as any)
+                                    ?.brokenKodyRulesIds;
+                                if (brokenIds?.length > 0) {
+                                    const firstRuleId = brokenIds[0];
+                                    updatedContent += `\n\nKody Rules Violation: ${firstRuleId}`;
+                                    foundIds = [firstRuleId];
+                                } else {
+                                    return suggestion;
+                                }
                             }
                         }
+
+                        const updatedContentWithLinks =
+                            await this.buildKodyRuleLinkAndRepalceIds(
+                                foundIds,
+                                updatedContent,
+                                organizationAndTeamData,
+                                prNumber,
+                            );
+
+                        return {
+                            ...suggestion,
+                            suggestionContent: updatedContentWithLinks,
+                        };
                     }
 
-                    const updatedContentWithLinks =
-                        await this.buildKodyRuleLinkAndRepalceIds(
-                            foundIds,
-                            updatedContent,
-                            organizationAndTeamData,
-                            prNumber,
-                        );
-
-                    return {
-                        ...suggestion,
-                        suggestionContent: updatedContentWithLinks,
-                    };
+                    return suggestion;
                 } catch (error) {
                     this.logger.error({
                         message:

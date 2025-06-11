@@ -1,31 +1,79 @@
-import { Controller, Post, Body, StreamableFile, Res } from '@nestjs/common';
-import { AnalyzeDependenciesUseCase } from '@/core/application/use-cases/codeBase/analyze-dependencies.use-case';
+import {
+    AST_ANALYSIS_SERVICE_TOKEN,
+    IASTAnalysisService,
+} from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
+import {
+    Controller,
+    Post,
+    Body,
+    StreamableFile,
+    Res,
+    Inject,
+} from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
 import { Response } from 'express';
 import { writeFileSync, createReadStream, unlink } from 'fs';
 import { join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { AnalyzeCodeChangesUseCase } from '@/core/application/use-cases/codeBase/analyze-code.use-case';
 
+function replacer(key: any, value: any) {
+    if (value instanceof Map) {
+        return [...value.entries()];
+    }
+    return value;
+}
 @Controller('code-base')
 export class CodeBaseController {
     constructor(
-        private readonly analyzeDependenciesUseCase: AnalyzeDependenciesUseCase,
-        private readonly analyzeCodeChangesUseCase: AnalyzeCodeChangesUseCase,
-    ) { }
+        @Inject(AST_ANALYSIS_SERVICE_TOKEN)
+        private readonly codeASTAnalysisService: IASTAnalysisService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: { organization: { uuid: string } };
+        },
+    ) {}
 
     @Post('analyze-dependencies')
     async analyzeDependencies(
-        @Body() body: { entryFile: string; baseDir: string },
+        @Body()
+        body: {
+            id: string;
+            name: string;
+            full_name: string;
+            number: string;
+            head: {
+                ref: string;
+            };
+            base: {
+                ref: string;
+            };
+            platform: string;
+            teamId: string;
+        },
         @Res({ passthrough: true }) res: Response,
     ): Promise<StreamableFile> {
-        // Executa o processo de análise de dependências
-        const result = await this.analyzeDependenciesUseCase.execute(
-            body.entryFile,
-            body.baseDir,
+        const { id, name, full_name, number, head, base, platform, teamId } =
+            body;
+        const result = await this.codeASTAnalysisService.cloneAndGenerate(
+            {
+                id,
+                name,
+                full_name,
+            },
+            {
+                number,
+                head,
+                base,
+            },
+            platform,
+            {
+                organizationId: this.request.user?.organization.uuid,
+                teamId,
+            },
         );
-
         // Converte o resultado para JSON
-        const jsonString = JSON.stringify(result);
+        const jsonString = JSON.stringify(result, replacer);
 
         // Gera um caminho de arquivo temporário
         const tempFilePath = join(__dirname, `temp-${uuidv4()}.json`);
@@ -50,19 +98,5 @@ export class CodeBaseController {
         });
 
         return new StreamableFile(fileStream);
-    }
-
-    @Post('analyze-code-changes')
-    async analyzeCodeChanges(
-        @Body()
-        body: {
-            codeChunk: string;
-            fileName: string;
-        },
-    ) {
-        return await this.analyzeCodeChangesUseCase.execute(
-            body.codeChunk,
-            body.fileName,
-        );
     }
 }

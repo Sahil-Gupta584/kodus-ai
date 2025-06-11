@@ -5,9 +5,12 @@ import {
     ReviewModeResponse,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { ChangeResult } from '@/ee/codeBase/types/diff-analyzer.types';
 
-import { FunctionsAffectResult, FunctionSimilarity } from '@/ee/codeBase/ast/services/code-analyzer.service';
-import { ChangeResult } from '@/ee/codeBase/diffAnalyzer.service';
+import {
+    FunctionsAffectResult,
+    FunctionSimilarity,
+} from '@/ee/kodyAST/code-analyzer.service';
 
 export const AST_ANALYSIS_SERVICE_TOKEN = Symbol('ASTAnalysisService');
 

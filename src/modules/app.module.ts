@@ -52,7 +52,6 @@ import { CodebaseModule } from './codeBase.module';
 import { ConversationModule } from './conversation.module';
 import { SegmentModule } from './segment.module';
 import { KodyRulesModule } from './kodyRules.module';
-import { AstModule } from './ast.module';
 import { BitbucketModule } from './bitbucket.module';
 import { SuggestionEmbeddedModule } from './suggestionEmbedded.module';
 import { TeamArtifactsModule } from './teamArtifacts.module';
@@ -63,6 +62,7 @@ import { GlobalParametersModule } from './global-parameters.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { RuleLikeModule } from './ruleLike.module';
 import { IssuesModule } from './issues.module';
+import { KodyASTModule } from '@/ee/kodyAST/kodyAST.module';
 
 @Module({
     imports: [
@@ -72,6 +72,7 @@ import { IssuesModule } from './issues.module';
         LoggerModule.forRoot(),
         ToolsModule.forRoot(),
         SentryModule.forRoot(),
+        KodyASTModule,
         PlatformIntegrationModule,
         LogModule,
         CronModule,
@@ -117,7 +118,6 @@ import { IssuesModule } from './issues.module';
         ConversationModule,
         SegmentModule,
         KodyRulesModule,
-        AstModule,
         BitbucketModule,
         SuggestionEmbeddedModule,
         TeamArtifactsModule,
@@ -136,4 +136,4 @@ import { IssuesModule } from './issues.module';
         },
     ],
 })
-export class AppModule { }
+export class AppModule {}

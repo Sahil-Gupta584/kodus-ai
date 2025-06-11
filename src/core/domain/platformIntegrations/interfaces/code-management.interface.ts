@@ -16,7 +16,11 @@ import { IntegrationConfigEntity } from '../../integrationConfigs/entities/integ
 import { Workflow } from '../types/codeManagement/workflow.type';
 import { CodeManagementConnectionStatus } from '@/shared/utils/decorators/validate-code-management-integration.decorator';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { Repository, ReviewComment } from '@/config/types/general/codeReview.type';
+import {
+    Repository,
+    ReviewComment,
+} from '@/config/types/general/codeReview.type';
+import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 
 export interface ICodeManagementService
     extends ICommonPlatformIntegrationService {
@@ -57,7 +61,7 @@ export interface ICodeManagementService
     countReactions(params: any): Promise<any[]>;
     getLanguageRepository(params: any): Promise<any | null>;
     getRepositoryAllFiles(params: any): Promise<any>;
-    cloneRepository(params: any): Promise<string>;
+    getCloneParams(params: any): Promise<GitCloneParams>;
     mergePullRequest(params: any): Promise<any>;
     approvePullRequest(params: any): Promise<any>;
     requestChangesPullRequest(params: any): Promise<any>;
@@ -82,10 +86,10 @@ export interface ICodeManagementService
 
     markReviewCommentAsResolved(params: any): Promise<any | null>;
     getPullRequestReviewComments(params: {
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: Partial<Repository>,
-        prNumber: number,
-    }): Promise<PullRequestReviewComment[] | null>
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<PullRequestReviewComment[] | null>;
     getPullRequestsByRepository(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: {
@@ -95,34 +99,33 @@ export interface ICodeManagementService
     }): Promise<any[]>;
 
     getPullRequestReviewThreads(params: {
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: Partial<Repository>,
-        prNumber: number,
-    }): Promise<PullRequestReviewComment[] | null>
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<PullRequestReviewComment[] | null>;
 
     getListOfValidReviews(params: {
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: Partial<Repository>,
-        prNumber: number,
-    }): Promise<any[] | null>
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<any[] | null>;
 
     getPullRequestsWithChangesRequested(params: {
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: Partial<Repository>,
-    }): Promise<PullRequestsWithChangesRequested[] | null>
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+    }): Promise<PullRequestsWithChangesRequested[] | null>;
 
     getPullRequestAuthors(params: {
         organizationAndTeamData: OrganizationAndTeamData,
     }): Promise<PullRequestAuthor[]>
 
     checkIfPullRequestShouldBeApproved(params: {
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
         repository: { id: string; name: string };
     }): Promise<any | null>;
 
     deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void>;
-
 }
