@@ -32,28 +32,25 @@ export class ProcessPrClosedUseCase implements IUseCase {
             params?.repository?.id || params.payload?.repository?.id;
         const repositoryName =
             params?.repository?.name || params.payload?.repository?.name;
-        const gitOrganizationId =
-            params?.organizationId || params.payload?.organization?.id;
         const organizationId =
             this.request?.user?.organization?.uuid ||
             'aaeb9004-2069-4858-8504-ec3c8c3a34f6';
 
         try {
-            let changedFiles = params.files || [];
+            const pr = await this.pullRequestService.findByNumberAndRepository(
+                prNumber,
+                repositoryName,
+                { organizationId: organizationId },
+            );
 
-            if (changedFiles?.length === 0) {
-                const pr =
-                    await this.pullRequestService.findByNumberAndRepository(
-                        prNumber,
-                        repositoryName,
-                        { organizationId: organizationId },
-                    );
+            if (!pr) {
+                return;
+            }
 
-                if (!pr) {
-                    return;
-                }
+            const prFiles = pr.files;
 
-                changedFiles = pr.files;
+            if (prFiles.length === 0) {
+                return;
             }
 
             await this.kodyIssuesManagementService.processClosedPr({
@@ -61,7 +58,7 @@ export class ProcessPrClosedUseCase implements IUseCase {
                 organizationId: organizationId,
                 repositoryId: repositoryId,
                 repositoryName: repositoryName,
-                files: changedFiles,
+                prFiles: prFiles,
             });
         } catch (error) {
             this.logger.error({
@@ -71,7 +68,6 @@ export class ProcessPrClosedUseCase implements IUseCase {
                 metadata: {
                     prNumber,
                     repositoryId,
-                    gitOrganizationId,
                     organizationId,
                 },
                 error,
