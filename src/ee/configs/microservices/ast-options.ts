@@ -1,4 +1,4 @@
-import { credentials } from '@grpc/grpc-js';
+import { ChannelCredentials, credentials } from '@grpc/grpc-js';
 import * as fs from 'fs';
 import { ClientProviderOptions, Transport } from '@nestjs/microservices';
 import { resolve } from 'path';
@@ -6,7 +6,7 @@ import { cwd } from 'process';
 
 const rootCa = fs.readFileSync(resolve(cwd(), './certs/ca_cert.pem'));
 
-function buildGrpcCredentials() {
+function buildGrpcCredentials(): ChannelCredentials {
     const caPath = resolve(process.cwd(), 'certs/ca_cert.pem');
     if (fs.existsSync(caPath)) {
         const rootCa = fs.readFileSync(caPath);
