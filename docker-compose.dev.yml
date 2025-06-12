@@ -20,6 +20,9 @@ services:
         networks:
             - kodus-backend-services
             - shared-network
+        secrets:
+            - source: ast_root_ca
+              target: certs/ca_cert.pem
 
     db_postgres:
         build:
@@ -63,3 +66,7 @@ networks:
         external: true
     shared-network:
         external: true
+
+secrets:
+  ast_root_ca:
+    file: ./certs/ca_cert.pem

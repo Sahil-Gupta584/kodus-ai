@@ -95,7 +95,6 @@ export class PinoLoggerService implements LoggerService {
         return this.baseLogger.child({
             serviceName,
             context,
-            ...this.getTraceContext(),
         });
     }
 
