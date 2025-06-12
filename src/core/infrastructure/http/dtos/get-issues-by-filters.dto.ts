@@ -1,0 +1,46 @@
+import { IsOptional, IsString, IsNumber } from 'class-validator';
+import { SeverityLevel } from '@sentry/node';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { IssueStatus } from '@/config/types/general/issues.type';
+
+export class GetIssuesByFiltersDto {
+    @IsOptional()
+    @IsString()
+    title?: string;
+
+    @IsOptional()
+    severity?: SeverityLevel;
+
+    @IsOptional()
+    category?: LabelType;
+
+    @IsOptional()
+    status?: IssueStatus;
+
+    @IsOptional()
+    @IsString()
+    organizationId?: string;
+
+    @IsOptional()
+    @IsString()
+    repository?: {
+        id: string;
+        name: string;
+    };
+
+    @IsOptional()
+    @IsNumber()
+    prNumber?: number;
+
+    @IsOptional()
+    @IsString()
+    filePath?: string;
+
+    @IsOptional()
+    @IsString()
+    beforeAt?: string;
+
+    @IsOptional()
+    @IsString()
+    afterAt?: string;
+}
