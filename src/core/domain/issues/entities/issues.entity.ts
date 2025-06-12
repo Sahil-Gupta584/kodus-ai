@@ -17,7 +17,7 @@ export class IssuesEntity implements Entity<IIssue> {
     public representativeSuggestion: any;
     public contributingSuggestions: IContributingSuggestion[];
     public status: IssueStatus;
-    public repositoryId: string;
+    public repository: { id: string, name: string };
     public organizationId: string;
     public createdAt: string;
     public updatedAt: string;
@@ -33,7 +33,7 @@ export class IssuesEntity implements Entity<IIssue> {
         this.representativeSuggestion = issue.representativeSuggestion;
         this.contributingSuggestions = issue.contributingSuggestions;
         this.status = issue.status;
-        this.repositoryId = issue.repositoryId;
+        this.repository = issue.repository;
         this.organizationId = issue.organizationId;
         this.createdAt = issue.createdAt;
         this.updatedAt = issue.updatedAt;
@@ -55,7 +55,7 @@ export class IssuesEntity implements Entity<IIssue> {
             representativeSuggestion: this.representativeSuggestion,
             contributingSuggestions: this.contributingSuggestions,
             status: this.status,
-            repositoryId: this.repositoryId,
+            repository: this.repository,
             organizationId: this.organizationId,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
@@ -74,7 +74,7 @@ export class IssuesEntity implements Entity<IIssue> {
             representativeSuggestion: this.representativeSuggestion,
             contributingSuggestions: this.contributingSuggestions,
             status: this.status,
-            repositoryId: this.repositoryId,
+            repository: this.repository,
             organizationId: this.organizationId,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,

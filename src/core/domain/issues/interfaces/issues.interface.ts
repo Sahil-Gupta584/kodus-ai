@@ -14,7 +14,7 @@ export interface IIssue {
     severity: SeverityLevel;
     representativeSuggestion: ISuggestion;
     contributingSuggestions: IContributingSuggestion[];
-    repositoryId: string;
+    repository: { id: string; name: string };
     organizationId: string;
     status: IssueStatus;
     createdAt: string;

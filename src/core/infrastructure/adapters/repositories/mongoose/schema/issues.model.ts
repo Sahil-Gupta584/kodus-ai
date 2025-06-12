@@ -46,8 +46,14 @@ export class IssuesModel extends CoreDocument {
     @Prop({ type: String, required: true })
     public status: IssueStatus;
 
-    @Prop({ type: String, required: true })
-    public repositoryId: string;
+    @Prop({
+        type: {
+            id: { type: String, required: true },
+            name: { type: String, required: true }
+        },
+        required: true
+    })
+    public repository: { id: string, name: string };
 
     @Prop({ type: String, required: true })
     public organizationId: string;
