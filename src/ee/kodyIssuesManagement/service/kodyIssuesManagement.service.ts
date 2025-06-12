@@ -34,7 +34,7 @@ export class KodyIssuesManagementService
         organizationId: string;
         repositoryId: string;
         repositoryName: string;
-        files: any[];
+        prFiles: any[];
     }): Promise<void> {
         try {
             this.logger.log({
@@ -44,10 +44,8 @@ export class KodyIssuesManagementService
             });
 
             // 1. Buscar suggestions não implementadas do PR
-            const allSuggestions = await this.getAllSuggestionsFromPr(
-                params.organizationId,
-                params.prNumber,
-            );
+            const allSuggestions =
+                await this.filterValidSuggestionsFromPrByStatus(params.prFiles);
 
             if (allSuggestions.length === 0) {
                 this.logger.log({
@@ -79,7 +77,7 @@ export class KodyIssuesManagementService
             await this.resolveExistingIssues(
                 params.organizationId,
                 params.repositoryId,
-                params.files,
+                params.prFiles,
                 changedFiles,
             );
         } catch (error) {
@@ -218,12 +216,13 @@ export class KodyIssuesManagementService
                                 representativeSuggestion?.severity || 'medium',
                             representativeSuggestion:
                                 newIssue.representativeSuggestion,
-                            contributingSuggestions: [
-                                {
-                                    id: newIssue.id,
-                                    prNumber: prNumber,
-                                },
-                            ],
+                            contributingSuggestions:
+                                newIssue.contributingSuggestionIds.map(
+                                    (suggestionId) => ({
+                                        id: suggestionId,
+                                        prNumber: prNumber,
+                                    }),
+                                ),
                             status: IssueStatus.OPEN,
                             repositoryId,
                             organizationId,
@@ -280,8 +279,7 @@ export class KodyIssuesManagementService
                         description: issue.description,
                         representativeSuggestion:
                             issue.representativeSuggestion,
-                        contributingSuggestions:
-                            issue.contributingSuggestions,
+                        contributingSuggestions: issue.contributingSuggestions,
                     })),
                 };
 
@@ -332,27 +330,16 @@ export class KodyIssuesManagementService
         );
     }
 
-    private async getAllSuggestionsFromPr(
-        organizationId: string,
-        prNumber: number,
+    private async filterValidSuggestionsFromPrByStatus(
+        prFiles: any[],
     ): Promise<any[]> {
-        // Buscar PR com todas as suggestions
-        const pr = await this.pullRequestsService.findOne({
-            organizationId,
-            number: prNumber,
-        });
-
-        if (!pr?.files) {
-            return [];
-        }
-
         const discardedStatuses = [
             PriorityStatus.DISCARDED_BY_SAFEGUARD,
             PriorityStatus.DISCARDED_BY_KODY_FINE_TUNING,
             PriorityStatus.DISCARDED_BY_CODE_DIFF,
         ];
 
-        return pr.files.reduce((acc: any[], file) => {
+        return prFiles.reduce((acc: any[], file) => {
             const validSuggestions = (file.suggestions || [])
                 .filter((suggestion) => {
                     // Deve ser não implementada
