@@ -13,6 +13,7 @@ export interface IKodyIssuesManagementService {
     mergeSuggestionsIntoIssues(
         organizationId: string,
         repositoryId: string,
+        repositoryName: string,
         prNumber: number,
         filePath: string,
         newSuggestions: any[],
@@ -21,6 +22,7 @@ export interface IKodyIssuesManagementService {
     createNewIssues(
         organizationId: string,
         repositoryId: string,
+        repositoryName: string,
         prNumber: number,
         unmatchedSuggestions: any[],
     ): Promise<void>;

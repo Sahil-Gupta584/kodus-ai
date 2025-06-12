@@ -67,6 +67,7 @@ export class KodyIssuesManagementService
                 await this.mergeSuggestionsIntoIssues(
                     params.organizationId,
                     params.repositoryId,
+                    params.repositoryName,
                     params.prNumber,
                     filePath,
                     suggestionsByFile[filePath],
@@ -94,6 +95,7 @@ export class KodyIssuesManagementService
     async mergeSuggestionsIntoIssues(
         organizationId: string,
         repositoryId: string,
+        repositoryName: string,
         prNumber: number,
         filePath: string,
         newSuggestions: any[],
@@ -112,6 +114,7 @@ export class KodyIssuesManagementService
                 await this.createNewIssues(
                     organizationId,
                     repositoryId,
+                    repositoryName,
                     prNumber,
                     newSuggestions,
                 );
@@ -149,6 +152,7 @@ export class KodyIssuesManagementService
             await this.processMergeResult(
                 organizationId,
                 repositoryId,
+                repositoryName,
                 prNumber,
                 mergeResult,
                 newSuggestions,
@@ -167,6 +171,7 @@ export class KodyIssuesManagementService
     async createNewIssues(
         organizationId: string,
         repositoryId: string,
+        repositoryName: string,
         prNumber: number,
         unmatchedSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
@@ -224,7 +229,10 @@ export class KodyIssuesManagementService
                                     }),
                                 ),
                             status: IssueStatus.OPEN,
-                            repositoryId,
+                            repository: {
+                                id: repositoryId,
+                                name: repositoryName,
+                            },
                             organizationId,
                             createdAt: new Date().toISOString(),
                             updatedAt: new Date().toISOString(),
@@ -377,6 +385,7 @@ export class KodyIssuesManagementService
     private async processMergeResult(
         organizationId: string,
         repositoryId: string,
+        repositoryName: string,
         prNumber: number,
         mergeResult: any,
         newSuggestions: Partial<CodeSuggestion>[],
@@ -416,6 +425,7 @@ export class KodyIssuesManagementService
             await this.createNewIssues(
                 organizationId,
                 repositoryId,
+                repositoryName,
                 prNumber,
                 unmatchedSuggestions,
             );

@@ -5,6 +5,7 @@ import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { IIssuesService } from '@/core/domain/issues/contracts/issues.service.contract';
 import { mapSimpleModelsToEntities } from '@/shared/infrastructure/repositories/mappers';
+import { IssueStatus } from '@/config/types/general/issues.type';
 
 @Injectable()
 export class IssuesService implements IIssuesService {
@@ -22,6 +23,19 @@ export class IssuesService implements IIssuesService {
     }
 
     //#region Find
+    async findByFileAndStatus(
+        organizationId: string,
+        repositoryId: string,
+        filePath: string,
+        status?: IssueStatus,
+    ): Promise<IssuesEntity[] | null> {
+        return this.issuesRepository.findByFileAndStatus(
+            organizationId,
+            repositoryId,
+            filePath,
+            status,
+        );
+    }
     async findById(uuid: string): Promise<IssuesEntity | null> {
         return this.issuesRepository.findById(uuid);
     }

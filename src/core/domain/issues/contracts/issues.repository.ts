@@ -1,3 +1,4 @@
+import { IssueStatus } from '@/config/types/general/issues.type';
 import { IssuesEntity } from '../entities/issues.entity';
 import { IIssue } from '../interfaces/issues.interface';
 
@@ -10,6 +11,13 @@ export interface IIssuesRepository {
 
     findById(uuid: string): Promise<IssuesEntity | null>;
     findOne(filter?: Partial<IIssue>): Promise<IssuesEntity | null>;
+
+    findByFileAndStatus(
+        organizationId: string,
+        repositoryId: string,
+        filePath: string,
+        status?: IssueStatus,
+    ): Promise<IssuesEntity[] | null>;
 
     find(filter?: Partial<IIssue>, options?: {
         limit?: number;

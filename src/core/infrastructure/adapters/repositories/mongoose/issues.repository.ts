@@ -53,6 +53,28 @@ export class IssuesRepository implements IIssuesRepository {
         }
     }
 
+    async findByFileAndStatus(
+        organizationId: string,
+        repositoryId: string,
+        filePath: string,
+        status?: IssueStatus,
+    ): Promise<IssuesEntity[] | null> {
+        try {
+            const issues = await this.issuesModel.find({
+                'organizationId': organizationId,
+                'repository.id': repositoryId,
+                'filePath': filePath,
+                'status': status ? status : { $ne: IssueStatus.OPEN },
+            });
+
+            return issues
+                ? mapSimpleModelsToEntities(issues, IssuesEntity)
+                : null;
+        } catch (error) {
+            throw error;
+        }
+    }
+
     async find(
         filter?: Partial<IIssue>,
         options?: {
@@ -86,28 +108,6 @@ export class IssuesRepository implements IIssuesRepository {
     async count(filter?: Partial<IIssue>): Promise<number> {
         try {
             return await this.issuesModel.countDocuments(filter).exec();
-        } catch (error) {
-            throw error;
-        }
-    }
-
-    async findByFileAndStatus(
-        organizationId: string,
-        repositoryId: string,
-        filePath: string,
-        status?: IssueStatus,
-    ): Promise<IssuesEntity[] | null> {
-        try {
-            const issues = await this.issuesModel.find({
-                organizationId: organizationId,
-                repositoryId: repositoryId,
-                filePath: filePath,
-                status: status ? status : { $ne: IssueStatus.OPEN },
-            });
-
-            return issues
-                ? mapSimpleModelsToEntities(issues, IssuesEntity)
-                : null;
         } catch (error) {
             throw error;
         }
