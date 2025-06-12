@@ -11,9 +11,9 @@ ENV API_CLOUD_MODE=${API_CLOUD_MODE}
 WORKDIR /usr/src/app
 
 # Instalar certificados raiz e git no estágio final
-RUN apt-get update && \
-    apt-get install -y ca-certificates git && \
-    rm -rf /var/lib/apt/lists/* && \
+RUN apt-get update &&
+    apt-get install -y ca-certificates git &&
+    rm -rf /var/lib/apt/lists/* &&
     yarn global add clinic
 
 # Aumentar heap para evitar out of memory ao instalar libs em projetos grandes
@@ -43,13 +43,13 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN yarn build
 
 # Instalar pgvector
-RUN apt-get update && apt-get install -y git build-essential postgresql-client postgresql-server-dev-all \
-    && cd /tmp \
-    && rm -rf pgvector || true \
-    && git clone --branch v0.5.1 https://github.com/pgvector/pgvector.git \
-    && cd pgvector \
-    && make \
-    && make install
+RUN apt-get update && apt-get install -y git build-essential postgresql-client postgresql-server-dev-all &&
+    cd /tmp &&
+    rm -rf pgvector || true &&
+    git clone --branch v0.5.1 https://github.com/pgvector/pgvector.git &&
+    cd pgvector &&
+    make &&
+    make install
 
 # -------------------------------------------------------------
 # 3) Estágio final de desenvolvimento
@@ -63,8 +63,8 @@ WORKDIR /usr/src/app
 EXPOSE 3001
 
 # Instalar certificados raiz e git no estágio final
-RUN apt-get update && \
-    apt-get install -y ca-certificates git && \
+RUN apt-get update &&
+    apt-get install -y ca-certificates git &&
     rm -rf /var/lib/apt/lists/*
 
 # Se no ambiente de desenvolvimento você quiser ter todas as dependências,
@@ -74,6 +74,7 @@ RUN yarn install --frozen-lockfile
 
 # Agora copiamos apenas os artefatos finais do build
 COPY --from=build-code /usr/src/app/dist ./dist
+RUN mkdir -p /usr/src/app/certs
 
 # Comando de inicialização em modo desenvolvimento
 CMD ["yarn", "start:dev"]
