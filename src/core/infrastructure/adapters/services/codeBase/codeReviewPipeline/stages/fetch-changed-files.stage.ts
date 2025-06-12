@@ -42,6 +42,8 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
                 {
                     status: AutomationStatus.SUCCESS,
                     teamAutomation: { uuid: context.teamAutomationId },
+                    pullRequestNumber: context.pullRequest.number,
+                    repositoryId: context?.repository?.id,
                 },
             );
 
