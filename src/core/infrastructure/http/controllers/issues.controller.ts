@@ -1,40 +1,35 @@
-import { GetIssuesByOrganizationUseCase } from '@/core/application/use-cases/issues/get-issues-by-organization.use-case';
+import { GetIssuesByFiltersUseCase } from '@/core/application/use-cases/issues/get-issues-by-filters.use-case';
 import { UpdateIssueStatusUseCase } from '@/core/application/use-cases/issues/update-issues-status.use-case';
 import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { GetIssuesByFiltersDto } from '../dtos/get-issues-by-filters.dto';
+import { PaginationDto } from '../dtos/pagination.dto';
 
 @Controller('issues')
 export class IssuesController {
     constructor(
-        private readonly getIssuesByOrganizationUseCase: GetIssuesByOrganizationUseCase,
+        private readonly getIssuesByFiltersUseCase: GetIssuesByFiltersUseCase,
         private readonly updateIssueStatusUseCase: UpdateIssueStatusUseCase,
     ) {}
 
-    @Get()
+    @Get('issues')
     async getIssues(
-        @Query('organizationId') organizationId: string,
-        @Query('repositoryId') repositoryId?: string,
-        @Query('status') status?: 'open' | 'resolved' | 'dismissed',
-        @Query('severity') severity?: 'low' | 'medium' | 'high' | 'critical',
-    ): Promise<IssuesEntity[]> {
-        return await this.getIssuesByOrganizationUseCase.execute({
-            organizationId,
-            repositoryId,
-            status,
-            severity,
-        });
+        @Query() query: GetIssuesByFiltersDto,
+        @Query() options: PaginationDto,
+    ) {
+        return this.getIssuesByFiltersUseCase.execute(query, options);
     }
 
-    @Get(':id')
-    async getIssueById(@Param('id') id: string): Promise<IssuesEntity | null> {
-        return await this.getIssuesByOrganizationUseCase.getById(id);
-    }
+    // @Get(':id')
+    // async getIssueById(@Param('id') id: string): Promise<IssuesEntity | null> {
+    //     return await this.\\.getById(id);
+    // }
 
-    @Patch(':id/status')
-    async updateStatus(
-        @Param('id') id: string,
-        @Body() body: { status: 'open' | 'resolved' | 'dismissed' },
-    ): Promise<IssuesEntity | null> {
-        return await this.updateIssueStatusUseCase.execute(id, body.status);
-    }
+    // @Patch(':id/status')
+    // async updateStatus(
+    //     @Param('id') id: string,
+    //     @Body() body: { status: 'open' | 'resolved' | 'dismissed' },
+    // ): Promise<IssuesEntity | null> {
+    //     return await this.updateIssueStatusUseCase.execute(id, body.status);
+    // }
 }
