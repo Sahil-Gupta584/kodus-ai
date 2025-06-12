@@ -4,7 +4,7 @@ import { IIssuesRepository } from '@/core/domain/issues/contracts/issues.reposit
 import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { IIssuesService } from '@/core/domain/issues/contracts/issues.service.contract';
-import { IssueStatus } from '@/config/types/general/issues.type';
+import { mapSimpleModelsToEntities } from '@/shared/infrastructure/repositories/mappers';
 
 @Injectable()
 export class IssuesService implements IIssuesService {
@@ -21,6 +21,7 @@ export class IssuesService implements IIssuesService {
         return this.issuesRepository.create(issue);
     }
 
+    //#region Find
     async findById(uuid: string): Promise<IssuesEntity | null> {
         return this.issuesRepository.findById(uuid);
     }
@@ -29,29 +30,18 @@ export class IssuesService implements IIssuesService {
         return this.issuesRepository.findOne(filter);
     }
 
-    async find(filter?: Partial<IIssue>): Promise<IssuesEntity[]> {
-        return this.issuesRepository.find(filter);
+    async find(filter?: any, options?: {
+        limit?: number;
+        skip?: number;
+        sort?: any;
+    }): Promise<IssuesEntity[]> {
+        return await this.issuesRepository.find(filter, options);
     }
 
-    async findByFileAndStatus(
-        organizationId: string,
-        repositoryId: string,
-        filePath: string,
-        status?: IssueStatus,
-    ): Promise<IssuesEntity[] | null> {
-        return this.issuesRepository.findByFileAndStatus(
-            organizationId,
-            repositoryId,
-            filePath,
-            status,
-        );
+    async count(filter?: any): Promise<number> {
+        return await this.issuesRepository.count(filter);
     }
-
-    async findBySuggestionId(
-        suggestionId: string,
-    ): Promise<IssuesEntity | null> {
-        return this.issuesRepository.findBySuggestionId(suggestionId);
-    }
+    //#endregion
 
     async update(
         issue: IssuesEntity,
