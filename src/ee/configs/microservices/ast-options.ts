@@ -4,19 +4,16 @@ import { ClientProviderOptions, Transport } from '@nestjs/microservices';
 import { resolve } from 'path';
 import { cwd } from 'process';
 
-const rootCa = fs.readFileSync(resolve(cwd(), './certs/ca_cert.pem'));
-
 function buildGrpcCredentials(): ChannelCredentials {
-    const caPath = resolve(process.cwd(), 'certs/ca_cert.pem');
+    const caPath = resolve(cwd(), 'certs/ca_cert.pem');
     if (fs.existsSync(caPath)) {
         const rootCa = fs.readFileSync(caPath);
         return credentials.createSsl(rootCa);
     }
-
     return credentials.createInsecure();
 }
 
-export const AST_MICROSERVICE_OPTIONS = {
+export const AST_MICROSERVICE_OPTIONS: ClientProviderOptions = {
     name: 'AST_MICROSERVICE',
     transport: Transport.GRPC,
     options: {
@@ -31,4 +28,4 @@ export const AST_MICROSERVICE_OPTIONS = {
         },
         credentials: buildGrpcCredentials(),
     },
-} as ClientProviderOptions;
+};
