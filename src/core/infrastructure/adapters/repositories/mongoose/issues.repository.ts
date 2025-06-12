@@ -53,10 +53,39 @@ export class IssuesRepository implements IIssuesRepository {
         }
     }
 
-    async find(filter?: Partial<IIssue>): Promise<IssuesEntity[]> {
+    async find(
+        filter?: Partial<IIssue>,
+        options?: {
+            limit?: number;
+            skip?: number;
+            sort?: any;
+        },
+    ): Promise<IssuesEntity[]> {
         try {
-            const docs = await this.issuesModel.find(filter).exec();
+            let query = this.issuesModel.find(filter);
+
+            if (options?.sort) {
+                query = query.sort(options.sort);
+            }
+
+            if (options?.skip) {
+                query = query.skip(options.skip);
+            }
+
+            if (options?.limit) {
+                query = query.limit(options.limit);
+            }
+
+            const docs = await query.exec();
             return mapSimpleModelsToEntities(docs, IssuesEntity);
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    async count(filter?: Partial<IIssue>): Promise<number> {
+        try {
+            return await this.issuesModel.countDocuments(filter).exec();
         } catch (error) {
             throw error;
         }
@@ -69,13 +98,12 @@ export class IssuesRepository implements IIssuesRepository {
         status?: IssueStatus,
     ): Promise<IssuesEntity[] | null> {
         try {
-            const issues = await this.issuesModel
-                .find({
-                    'organizationId': organizationId,
-                    'repositoryId': repositoryId,
-                    'filePath': filePath,
-                    'status': status ? status : { $ne: IssueStatus.OPEN },
-                });
+            const issues = await this.issuesModel.find({
+                organizationId: organizationId,
+                repositoryId: repositoryId,
+                filePath: filePath,
+                status: status ? status : { $ne: IssueStatus.OPEN },
+            });
 
             return issues
                 ? mapSimpleModelsToEntities(issues, IssuesEntity)

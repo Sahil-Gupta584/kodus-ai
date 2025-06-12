@@ -1,4 +1,3 @@
-import { IssueStatus } from '@/config/types/general/issues.type';
 import { IssuesEntity } from '../entities/issues.entity';
 import { IIssue } from '../interfaces/issues.interface';
 
@@ -11,16 +10,14 @@ export interface IIssuesRepository {
 
     findById(uuid: string): Promise<IssuesEntity | null>;
     findOne(filter?: Partial<IIssue>): Promise<IssuesEntity | null>;
-    find(filter?: Partial<IIssue>): Promise<IssuesEntity[]>;
 
-    findByFileAndStatus(
-        organizationId: string,
-        repositoryId: string,
-        filePath: string,
-        status?: IssueStatus,
-    ): Promise<IssuesEntity[] | null>;
+    find(filter?: Partial<IIssue>, options?: {
+        limit?: number;
+        skip?: number;
+        sort?: any;
+    }): Promise<IssuesEntity[]>;
 
-    findBySuggestionId(suggestionId: string): Promise<IssuesEntity | null>;
+    count(filter?: Partial<IIssue>): Promise<number>;
 
     update(
         issue: IssuesEntity,
