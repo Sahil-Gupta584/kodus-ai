@@ -61,3 +61,4 @@ dev.env
 
 environment.ts
 src/ee/configs/environment/environment.ts
+certs
