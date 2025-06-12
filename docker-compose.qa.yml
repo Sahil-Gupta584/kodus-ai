@@ -4,6 +4,7 @@ services:
     container_name: ${CONTAINER_NAME}
     volumes:
       - log_volume:/app/logs
+      - ./certs:/usr/src/app/certs:ro
     logging:
       driver: json-file
       options:
@@ -19,9 +20,6 @@ services:
     networks:
       - shared-network
     restart: unless-stopped
-    secrets:
-      - source: ast_root_ca
-        target: certs/ca_cert.pem
 
 volumes:
   log_volume:
@@ -29,7 +27,3 @@ volumes:
 networks:
   shared-network:
     external: true
-
-secrets:
-  ast_root_ca:
-    file: ./certs/ca_cert.pem
