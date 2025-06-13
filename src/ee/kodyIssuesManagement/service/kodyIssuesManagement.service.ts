@@ -32,6 +32,7 @@ export class KodyIssuesManagementService
     async processClosedPr(params: {
         prNumber: number;
         organizationId: string;
+        teamId: string;
         repositoryId: string;
         repositoryName: string;
         prFiles: any[];
@@ -66,6 +67,7 @@ export class KodyIssuesManagementService
             for (const filePath of changedFiles) {
                 await this.mergeSuggestionsIntoIssues(
                     params.organizationId,
+                    params.teamId,
                     params.repositoryId,
                     params.repositoryName,
                     params.prNumber,
@@ -94,6 +96,7 @@ export class KodyIssuesManagementService
 
     async mergeSuggestionsIntoIssues(
         organizationId: string,
+        teamId: string,
         repositoryId: string,
         repositoryName: string,
         prNumber: number,
@@ -113,6 +116,7 @@ export class KodyIssuesManagementService
                 // Se não há issues existentes, todas as suggestions são novas
                 await this.createNewIssues(
                     organizationId,
+                    teamId,
                     repositoryId,
                     repositoryName,
                     prNumber,
@@ -151,6 +155,7 @@ export class KodyIssuesManagementService
             // 4. Processar resultado do merge
             await this.processMergeResult(
                 organizationId,
+                teamId,
                 repositoryId,
                 repositoryName,
                 prNumber,
@@ -170,6 +175,7 @@ export class KodyIssuesManagementService
 
     async createNewIssues(
         organizationId: string,
+        teamId: string,
         repositoryId: string,
         repositoryName: string,
         prNumber: number,
@@ -200,6 +206,7 @@ export class KodyIssuesManagementService
                 const llmResult =
                     await this.kodyIssuesAnalysisService.createNewIssues(
                         organizationId,
+                        teamId,
                         promptData,
                     );
 
@@ -211,6 +218,11 @@ export class KodyIssuesManagementService
                                 newIssue.representativeSuggestion.id,
                             );
 
+                        const representativeSuggestionWithPrNumber = {
+                            ...representativeSuggestion,
+                            prNumber: prNumber,
+                        };
+
                         await this.issuesService.create({
                             title: newIssue.title,
                             description: newIssue.description,
@@ -220,9 +232,9 @@ export class KodyIssuesManagementService
                             severity:
                                 representativeSuggestion?.severity || 'medium',
                             representativeSuggestion:
-                                newIssue.representativeSuggestion,
+                                representativeSuggestionWithPrNumber,
                             contributingSuggestions:
-                                newIssue.contributingSuggestionIds.map(
+                                newIssue?.contributingSuggestionIds?.map(
                                     (suggestionId) => ({
                                         id: suggestionId,
                                         prNumber: prNumber,
@@ -394,6 +406,7 @@ export class KodyIssuesManagementService
 
     private async processMergeResult(
         organizationId: string,
+        teamId: string,
         repositoryId: string,
         repositoryName: string,
         prNumber: number,
@@ -434,6 +447,7 @@ export class KodyIssuesManagementService
         if (unmatchedSuggestions.length > 0) {
             await this.createNewIssues(
                 organizationId,
+                teamId,
                 repositoryId,
                 repositoryName,
                 prNumber,
