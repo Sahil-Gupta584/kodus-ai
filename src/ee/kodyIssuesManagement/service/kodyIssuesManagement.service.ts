@@ -294,7 +294,10 @@ export class KodyIssuesManagementService
                         description: issue.description,
                         representativeSuggestion:
                             issue.representativeSuggestion,
-                        contributingSuggestions: issue.contributingSuggestions,
+                        contributingSuggestionIds:
+                            issue.contributingSuggestions?.map(
+                                (suggestion) => suggestion.id,
+                            ),
                     })),
                 };
 
