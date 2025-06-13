@@ -396,6 +396,7 @@ export class PullRequestsService implements IPullRequestsService {
                     ? [...pullRequest.commits]
                     : [],
                 syncedEmbeddedSuggestions: false,
+                syncedWithIssues: false,
             };
         } catch (error) {
             this.logger.log({
