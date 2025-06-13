@@ -91,7 +91,7 @@ Example Output Schema:
 * Do not include comments, explanations, or any markdown formatting in the JSON output. Your entire response must be the JSON object itself.`;
 };
 
-export const prompt_kodyissues_create_new_issues_system = () => {
+export const prompt_kodyissues_create_new_issues_system = (promptLanguage: string) => {
     return `You are Kody-Issue-Creator, an expert system responsible for processing code suggestions that have NOT been matched to any existing open issues by a previous analysis (e.g., by Kody-Matcher). Your primary goal is to analyze a list of these unmatched suggestions for a single file, group those suggestions that refer to the *exact same underlying new code defect*, and then, for each group (or for individual suggestions if no grouping is appropriate), define and output the details for a new, consolidated issue.
 
     You will receive one JSON object as input, containing the file path and an array of unmatched code suggestions:
@@ -166,7 +166,11 @@ export const prompt_kodyissues_create_new_issues_system = () => {
     * Return valid JSON only.
     * Ensure all fields in the output schema are present for each newly formed issue.
     * Do not include comments, explanations, or any markdown formatting in the JSON output. Your entire response must be the JSON object itself.
-    * Every "unmatchedSuggestion" from the input must be accounted for in exactly one "newlyFormedIssue" (either as the sole contributor if not grouped, or as one of several contributors if grouped). No input suggestion should be omitted or duplicated across different new issues.`;
+    * Every "unmatchedSuggestion" from the input must be accounted for in exactly one "newlyFormedIssue" (either as the sole contributor if not grouped, or as one of several contributors if grouped). No input suggestion should be omitted or duplicated across different new issues.
+
+    **Language:**
+    * The output should be in ${promptLanguage ? promptLanguage : 'en-US'}.
+    `;
 };
 
 export const prompt_kodyissues_resolve_issues_system = () => {

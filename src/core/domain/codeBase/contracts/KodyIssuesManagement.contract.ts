@@ -12,6 +12,7 @@ export interface IKodyIssuesManagementService {
 
     mergeSuggestionsIntoIssues(
         organizationId: string,
+        teamId: string,
         repositoryId: string,
         repositoryName: string,
         prNumber: number,
@@ -21,6 +22,7 @@ export interface IKodyIssuesManagementService {
 
     createNewIssues(
         organizationId: string,
+        teamId: string,
         repositoryId: string,
         repositoryName: string,
         prNumber: number,
