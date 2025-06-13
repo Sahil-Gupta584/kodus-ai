@@ -16,7 +16,7 @@ export class GetIssuesByFiltersDto extends PaginationDto {
     category?: LabelType;
 
     @IsOptional()
-    status?: IssueStatus;
+    status?: IssueStatus = IssueStatus.OPEN;
 
     @IsOptional()
     @IsString()
