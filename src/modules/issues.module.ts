@@ -15,6 +15,8 @@ import { IssuesController } from "@/core/infrastructure/http/controllers/issues.
 import { UpdateIssueStatusUseCase } from "@/core/application/use-cases/issues/update-issues-status.use-case";
 import { ProcessPrClosedUseCase } from "@/core/application/use-cases/issues/process-pr-closed.use-case";
 import { GetIssuesByFiltersUseCase } from "@/core/application/use-cases/issues/get-issues-by-filters.use-case";
+import { IntegrationConfigModule } from "./integrationConfig.module";
+import { ParametersModule } from "./parameters.module";
 
 const UseCases = [
     GetIssuesByFiltersUseCase,
@@ -31,6 +33,8 @@ const UseCases = [
             },
         ]),
         forwardRef(() => PullRequestsModule),
+        forwardRef(() => IntegrationConfigModule),
+        forwardRef(() => ParametersModule),
     ],
     providers: [
         ...UseCases,
