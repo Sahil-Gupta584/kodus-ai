@@ -38,7 +38,8 @@ export class IssuesModel extends CoreDocument {
             id: { type: String, required: true },
             prNumber: { type: Number, required: true }
         }],
-        required: true
+        required: true,
+        _id: false
     })
     public contributingSuggestions: IContributingSuggestion[];
 
@@ -51,7 +52,8 @@ export class IssuesModel extends CoreDocument {
             id: { type: String, required: true },
             name: { type: String, required: true }
         },
-        required: true
+        required: true,
+        _id: false
     })
     public repository: { id: string, name: string };
 
