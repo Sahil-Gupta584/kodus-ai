@@ -94,7 +94,7 @@ export interface IPullRequestsRepository {
         synced: boolean,
     ): Promise<void>;
     updateSyncedWithIssuesFlag(
-        pullRequestNumbers: number[],
+        prNumber: number,
         repositoryId: string,
         organizationId: string,
         synced: boolean,

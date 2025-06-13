@@ -238,6 +238,13 @@ export class KodyIssuesManagementService
                             updatedAt: new Date().toISOString(),
                         });
                     }
+
+                    await this.pullRequestsService.updateSyncedWithIssuesFlag(
+                        prNumber,
+                        repositoryId,
+                        organizationId,
+                        true,
+                    );
                 }
             }
         } catch (error) {

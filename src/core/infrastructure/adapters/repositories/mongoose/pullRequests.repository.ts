@@ -666,22 +666,18 @@ export class PullRequestsRepository implements IPullRequestsRepository {
     }
 
     async updateSyncedWithIssuesFlag(
-        pullRequestNumbers: number[],
+        prNumber: number,
         repositoryId: string,
         organizationId: string,
         synced: boolean,
     ): Promise<void> {
         try {
-            const validNumbers = pullRequestNumbers.filter(
-                (n) => typeof n === 'number',
-            );
-
-            if (!validNumbers?.length) {
+            if (!prNumber) {
                 return null;
             }
 
             const filter = {
-                'number': { $in: validNumbers },
+                'number': prNumber,
                 'repository.id': repositoryId,
                 'organizationId': organizationId,
             };

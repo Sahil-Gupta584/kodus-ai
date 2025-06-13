@@ -207,13 +207,13 @@ export class PullRequestsService implements IPullRequestsService {
     }
 
     async updateSyncedWithIssuesFlag(
-        pullRequestNumbers: number[],
+        prNumber: number,
         repositoryId: string,
         organizationId: string,
         synced: boolean,
     ): Promise<void> {
         return this.pullRequestsRepository.updateSyncedWithIssuesFlag(
-            pullRequestNumbers,
+            prNumber,
             repositoryId,
             organizationId,
             synced,
