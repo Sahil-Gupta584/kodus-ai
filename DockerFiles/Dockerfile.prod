@@ -52,6 +52,7 @@ COPY --from=build /usr/src/app/dist ./dist
 COPY ecosystem.config.js ./
 COPY default-kodus-config.yml ./default-kodus-config.yml
 
+RUN mkdir -p /usr/src/app/certs
 RUN yarn global add pm2
 RUN pm2 install pm2-logrotate
 RUN pm2 set pm2-logrotate:max_size 30M

@@ -13,16 +13,11 @@ import * as bodyParser from 'body-parser';
 import { HttpServerConfiguration } from './config/types/http/http-server.type';
 import { AppModule } from './modules/app.module';
 import { PinoLoggerService } from './core/infrastructure/adapters/services/logger/pino.service';
-// import { setupOpenTelemetry } from './config/log/otel';
+import { setupSentryAndOpenTelemetry } from './config/log/otel';
 
 async function bootstrap() {
-    console.log('Exit listeners:', process.listeners('exit').length);
-
-    // Inicializa OpenTelemetry primeiro
-    // const otelInitialized = setupOpenTelemetry();
-
-    // Depois inicializa Sentry
-    import('./config/log/sentry');
+    // Inicializa Sentry e OpenTelemetry antes de tudo
+    setupSentryAndOpenTelemetry();
 
     const app = await NestFactory.create<NestExpressApplication>(AppModule, {
         snapshot: true,

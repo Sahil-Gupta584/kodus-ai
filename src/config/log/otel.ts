@@ -1,17 +1,45 @@
+import * as Sentry from '@sentry/node';
 import {
     SentryPropagator,
+    SentrySampler,
+    SentrySpanProcessor,
 } from '@sentry/opentelemetry';
-
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { registerInstrumentations } from '@opentelemetry/instrumentation';
 import { PinoInstrumentation } from '@opentelemetry/instrumentation-pino';
 import { NestInstrumentation } from '@opentelemetry/instrumentation-nestjs-core';
-import { trace } from '@opentelemetry/api';
+import { nodeProfilingIntegration } from '@sentry/profiling-node';
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
+import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express';
 import { SentryContextManager } from '@sentry/nestjs';
 
-export function setupOpenTelemetry() {
-    const provider = new NodeTracerProvider();
+export function setupSentryAndOpenTelemetry() {
+    const environment = process.env.API_NODE_ENV || 'development';
+    const dsn = process.env.API_SENTRY_DNS;
+    const serviceName = 'kodus-orchestrator';
 
+    if (!dsn) {
+        console.log('API_SENTRY_DNS não definido. Sentry desabilitado.');
+        return;
+    }
+
+    console.log('Configurando Sentry com DSN:', dsn);
+
+    Sentry.init({
+        dsn: dsn,
+        environment: environment,
+        release: `kodus-orchestrator@${
+            process.env.SENTRY_RELEASE || environment
+        }`,
+        integrations: [nodeProfilingIntegration()],
+        tracesSampleRate: 1.0,
+        profilesSampleRate: 1.0,
+    });
+
+    const provider = new NodeTracerProvider({
+        sampler: new SentrySampler(Sentry.getClient()),
+        spanProcessors: [new SentrySpanProcessor()],
+    });
 
     provider.register({
         propagator: new SentryPropagator(),
@@ -20,18 +48,19 @@ export function setupOpenTelemetry() {
 
     registerInstrumentations({
         instrumentations: [
+            new HttpInstrumentation(),
+            new ExpressInstrumentation(),
+            new NestInstrumentation(),
             new PinoInstrumentation({
-                logKeys: {
-                    traceId: 'traceId',
-                    spanId: 'spanId',
-                    traceFlags: 'traceFlags',
+                logHook: (span, record) => {
+                    const spanContext = span.spanContext();
+                    record['resource.service.name'] = serviceName;
+                    record['traceId'] = spanContext.traceId;
+                    record['spanId'] = spanContext.spanId;
                 },
             }),
-            new NestInstrumentation(),
         ],
     });
 
-    trace.setGlobalTracerProvider(provider);
-
-    console.log('OpenTelemetry SDK inicializado com SentrySpanProcessor');
+    console.log('Sentry e OpenTelemetry configurados com sucesso');
 }

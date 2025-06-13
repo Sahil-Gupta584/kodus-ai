@@ -2,7 +2,6 @@ import { GithubModule } from '@/modules/github.module';
 import { JiraModule } from '@/modules/jira.module';
 import { SlackModule } from '@/modules/slack.module';
 import { UsersModule } from '@/modules/user.module';
-import { SentryModule } from '@sentry/nestjs/setup';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from './database.module';
 import { OrganizationModule } from './organization.module';
@@ -71,7 +70,6 @@ import { KodyASTModule } from '@/ee/kodyAST/kodyAST.module';
         ScheduleModule.forRoot(),
         LoggerModule.forRoot(),
         ToolsModule.forRoot(),
-        SentryModule.forRoot(),
         KodyASTModule,
         PlatformIntegrationModule,
         LogModule,

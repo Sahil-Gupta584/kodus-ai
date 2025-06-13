@@ -13,10 +13,8 @@ WORKDIR /usr/src/app
 # Instalar certificados raiz e git no estágio final
 RUN apt-get update && \
     apt-get install -y ca-certificates git && \
-    rm -rf /var/lib/apt/lists/* && \
-    yarn global add clinic
+    rm -rf /var/lib/apt/lists/*
 
-# Aumentar heap para evitar out of memory ao instalar libs em projetos grandes
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # Copiamos somente os arquivos de dependências
@@ -74,6 +72,7 @@ RUN yarn install --frozen-lockfile
 
 # Agora copiamos apenas os artefatos finais do build
 COPY --from=build-code /usr/src/app/dist ./dist
+RUN mkdir -p /usr/src/app/certs
 
 # Comando de inicialização em modo desenvolvimento
 CMD ["yarn", "start:dev"]
