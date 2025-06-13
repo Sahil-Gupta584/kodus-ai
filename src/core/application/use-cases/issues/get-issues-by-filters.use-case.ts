@@ -17,7 +17,6 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
 
     async execute(
         filters: GetIssuesByFiltersDto,
-        options: PaginationDto,
     ): Promise<{
         data: IssuesEntity[];
         pagination: {
@@ -28,7 +27,7 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
         };
     }> {
         const filter = this.buildFilter(filters);
-        const paginationOptions = this.buildPaginationOptions(options);
+        const paginationOptions = this.buildPaginationOptions(filters);
 
         const [data, total] = await Promise.all([
             this.issuesService.find(filter, paginationOptions),
@@ -38,10 +37,10 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
         return {
             data,
             pagination: {
-                page: options.page || 1,
-                limit: options.limit || 100,
+                page: filters.page || 1,
+                limit: filters.limit || 100,
                 total,
-                totalPages: Math.ceil(total / (options.limit || 100)),
+                totalPages: Math.ceil(total / (filters.limit || 100)),
             },
         };
     }
@@ -66,9 +65,9 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
             }
         });
 
-        if (filters.repository.name) {
+        if (filters.repositoryName) {
             filter['repository.name'] = {
-                $regex: filters.repository.name,
+                $regex: filters.repositoryName,
                 $options: 'i',
             };
         }

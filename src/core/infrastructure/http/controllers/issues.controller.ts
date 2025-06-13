@@ -12,12 +12,11 @@ export class IssuesController {
         private readonly updateIssueStatusUseCase: UpdateIssueStatusUseCase,
     ) {}
 
-    @Get('issues')
+    @Get()
     async getIssues(
         @Query() query: GetIssuesByFiltersDto,
-        @Query() options: PaginationDto,
     ) {
-        return this.getIssuesByFiltersUseCase.execute(query, options);
+        return this.getIssuesByFiltersUseCase.execute(query);
     }
 
     // @Get(':id')
