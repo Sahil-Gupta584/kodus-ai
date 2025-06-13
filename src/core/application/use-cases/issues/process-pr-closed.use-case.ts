@@ -7,10 +7,6 @@ import {
     IPullRequestsService,
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@/core/domain/pullRequests/contracts/pullRequests.service.contracts';
-import {
-    ITeamService,
-    TEAM_SERVICE_TOKEN,
-} from '@/core/domain/team/contracts/team.service.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
@@ -28,9 +24,6 @@ export class ProcessPrClosedUseCase implements IUseCase {
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
         private readonly pullRequestService: IPullRequestsService,
 
-        @Inject(TEAM_SERVICE_TOKEN)
-        private readonly teamService: ITeamService,
-
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
 
@@ -45,7 +38,8 @@ export class ProcessPrClosedUseCase implements IUseCase {
     async execute(params: any): Promise<void> {
         const prNumber = params?.number || params.payload?.pull_request?.number;
         const repositoryId =
-            params?.repository?.id || params.payload?.repository?.id;
+            params?.repository?.id?.toString() ||
+            params.payload?.repository?.id?.toString();
         const repositoryName =
             params?.repository?.name || params.payload?.repository?.name;
         const organizationId =

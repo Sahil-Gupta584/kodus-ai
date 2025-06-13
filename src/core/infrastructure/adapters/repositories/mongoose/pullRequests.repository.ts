@@ -684,7 +684,7 @@ export class PullRequestsRepository implements IPullRequestsRepository {
 
             const update = { $set: { syncedWithIssues: synced } };
 
-            await this.pullRequestsModel.updateMany(filter, update);
+            await this.pullRequestsModel.updateOne(filter, update);
         } catch (error) {
             throw error;
         }
