@@ -1,3 +1,5 @@
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+
 export const KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN = Symbol(
     'KodyIssuesManagementService',
 );
@@ -21,8 +23,7 @@ export interface IKodyIssuesManagementService {
     ): Promise<any>;
 
     createNewIssues(
-        organizationId: string,
-        teamId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         repositoryId: string,
         repositoryName: string,
         prNumber: number,
@@ -30,8 +31,9 @@ export interface IKodyIssuesManagementService {
     ): Promise<void>;
 
     resolveExistingIssues(
-        organizationId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         repositoryId: string,
+        prNumber: number,
         files: any[],
         changedFiles: string[],
     ): Promise<void>;

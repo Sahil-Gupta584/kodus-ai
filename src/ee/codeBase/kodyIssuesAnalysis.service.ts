@@ -13,7 +13,11 @@ import {
     prompt_kodyissues_resolve_issues_system,
 } from '@/shared/utils/langchainCommon/prompts/kodyIssuesManagement';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
-import { IParametersService, PARAMETERS_SERVICE_TOKEN } from '@/core/domain/parameters/contracts/parameters.service.contract';
+import {
+    IParametersService,
+    PARAMETERS_SERVICE_TOKEN,
+} from '@/core/domain/parameters/contracts/parameters.service.contract';
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
 export const KODY_ISSUES_ANALYSIS_SERVICE_TOKEN = Symbol(
     'KodyIssuesAnalysisService',
@@ -35,36 +39,43 @@ export class KodyIssuesAnalysisService {
     ) {}
 
     async mergeSuggestionsIntoIssues(
-        organizationId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
         promptData: any,
     ): Promise<any> {
         try {
             const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
 
             const chain = await this.createAnalysisChainWithFallback(
+                organizationAndTeamData,
+                prNumber,
                 provider,
                 prompt_kodyissues_merge_suggestions_into_issues_system,
                 (input: any) => JSON.stringify(input, null, 2),
                 'mergeSuggestionsIntoIssues',
+                LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET,
             );
 
             const result = await chain.invoke(promptData);
 
-            return this.processLLMResponse(result, organizationId);
+            return this.processLLMResponse(
+                result,
+                organizationAndTeamData.organizationId,
+            );
         } catch (error) {
             this.logger.error({
                 message: 'Error in mergeSuggestionsIntoIssues',
                 context: KodyIssuesAnalysisService.name,
                 error,
-                metadata: { organizationId },
+                metadata: { organizationAndTeamData, prNumber },
             });
             throw error;
         }
     }
 
     async createNewIssues(
-        organizationId: string,
-        teamId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
         promptData: any,
     ): Promise<any> {
         try {
@@ -74,72 +85,88 @@ export class KodyIssuesAnalysisService {
                 await this.parametersService.findByKey(
                     ParametersKey.LANGUAGE_CONFIG,
                     {
-                        organizationId: organizationId,
-                        teamId: teamId,
+                        organizationId: organizationAndTeamData.organizationId,
+                        teamId: organizationAndTeamData.teamId,
                     },
                 )
             )?.configValue as string;
 
             const chain = await this.createAnalysisChainWithFallback(
+                organizationAndTeamData,
+                prNumber,
                 provider,
-                () => prompt_kodyissues_create_new_issues_system(language || 'en-US'),
+                () =>
+                    prompt_kodyissues_create_new_issues_system(
+                        language || 'en-US',
+                    ),
                 (input: any) => JSON.stringify(input, null, 2),
                 'createNewIssues',
+                LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET,
             );
 
             const result = await chain.invoke(promptData);
 
-            return this.processLLMResponse(result, organizationId);
+            return this.processLLMResponse(
+                result,
+                organizationAndTeamData.organizationId,
+            );
         } catch (error) {
             this.logger.error({
                 message: 'Error in createNewIssues',
                 context: KodyIssuesAnalysisService.name,
                 error,
-                metadata: { organizationId },
+                metadata: { organizationAndTeamData },
             });
             throw error;
         }
     }
 
     async resolveExistingIssues(
-        organizationId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
         promptData: any,
     ): Promise<any> {
         try {
             const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
 
             const chain = await this.createAnalysisChainWithFallback(
+                organizationAndTeamData,
+                prNumber,
                 provider,
                 prompt_kodyissues_resolve_issues_system,
                 (input: any) => JSON.stringify(input, null, 2),
                 'resolveExistingIssues',
+                LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET,
             );
 
             const result = await chain.invoke(promptData);
 
-            return this.processLLMResponse(result, organizationId);
+            return this.processLLMResponse(
+                result,
+                organizationAndTeamData.organizationId,
+            );
         } catch (error) {
             this.logger.error({
                 message: 'Error in resolveExistingIssues',
                 context: KodyIssuesAnalysisService.name,
                 error,
-                metadata: { organizationId },
+                metadata: { organizationAndTeamData, prNumber },
             });
             throw error;
         }
     }
 
     private async createAnalysisChainWithFallback(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
         provider: LLMModelProvider,
         systemPromptFn: SystemPromptFn,
         userPromptFn: UserPromptFn,
         runName?: string,
         fallbackProvider?: LLMModelProvider,
     ) {
-        let fallbackProviderToExecute = fallbackProvider;
-
         if (!fallbackProvider) {
-            fallbackProviderToExecute =
+            fallbackProvider =
                 provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
                     ? LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET
                     : LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
@@ -147,13 +174,19 @@ export class KodyIssuesAnalysisService {
 
         try {
             const mainChain = await this.createProviderChain(
+                organizationAndTeamData,
+                prNumber,
                 provider,
+                fallbackProvider,
                 systemPromptFn,
                 userPromptFn,
                 'primary',
             );
             const fallbackChain = await this.createProviderChain(
-                fallbackProviderToExecute,
+                organizationAndTeamData,
+                prNumber,
+                provider,
+                fallbackProvider,
                 systemPromptFn,
                 userPromptFn,
                 'fallback',
@@ -167,8 +200,10 @@ export class KodyIssuesAnalysisService {
                     tags: this.buildTags(provider, 'primary'),
                     runName,
                     metadata: {
+                        organizationAndTeamData: organizationAndTeamData,
+                        prNumber: prNumber,
                         provider: provider,
-                        fallbackProvider: fallbackProviderToExecute,
+                        fallbackProvider: fallbackProvider,
                     },
                 });
         } catch (error) {
@@ -178,7 +213,7 @@ export class KodyIssuesAnalysisService {
                 context: KodyIssuesAnalysisService.name,
                 metadata: {
                     provider,
-                    fallbackProvider: fallbackProviderToExecute,
+                    fallbackProvider: fallbackProvider,
                 },
             });
             throw error;
@@ -186,7 +221,10 @@ export class KodyIssuesAnalysisService {
     }
 
     private async createProviderChain(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
         provider: LLMModelProvider,
+        fallbackProvider: LLMModelProvider,
         systemPromptFn: SystemPromptFn,
         userPromptFn: UserPromptFn,
         tier: 'primary' | 'fallback',
@@ -218,7 +256,15 @@ export class KodyIssuesAnalysisService {
                 },
                 llm,
                 new StringOutputParser(),
-            ]).withConfig({ tags });
+            ]).withConfig({
+                tags: this.buildTags(provider, 'primary'),
+                metadata: {
+                    organizationAndTeamData: organizationAndTeamData,
+                    pullRequestId: prNumber,
+                    provider: provider,
+                    fallbackProvider: fallbackProvider,
+                },
+            });
 
             return chain;
         } catch (error) {
