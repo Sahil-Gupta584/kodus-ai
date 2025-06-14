@@ -6,12 +6,19 @@ import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { IIssuesService } from '@/core/domain/issues/contracts/issues.service.contract';
 import { mapSimpleModelsToEntities } from '@/shared/infrastructure/repositories/mappers';
 import { IssueStatus } from '@/config/types/general/issues.type';
+import {
+    CODE_REVIEW_FEEDBACK_SERVICE_TOKEN,
+    ICodeReviewFeedbackService,
+} from '@/core/domain/codeReviewFeedback/contracts/codeReviewFeedback.service.contract';
 
 @Injectable()
 export class IssuesService implements IIssuesService {
     constructor(
         @Inject(ISSUES_REPOSITORY_TOKEN)
         private readonly issuesRepository: IIssuesRepository,
+
+        @Inject(CODE_REVIEW_FEEDBACK_SERVICE_TOKEN)
+        private readonly codeReviewFeedbackService: ICodeReviewFeedbackService,
     ) {}
 
     getNativeCollection() {
@@ -36,19 +43,47 @@ export class IssuesService implements IIssuesService {
             status,
         );
     }
-    async findById(uuid: string): Promise<IssuesEntity | null> {
-        return this.issuesRepository.findById(uuid);
+    async findById(uuid: string): Promise<any | null> {
+        const issue = await this.issuesRepository.findById(uuid);
+
+        if (!issue) {
+            return null;
+        }
+
+        const codeReviewFeedback =
+            await this.codeReviewFeedbackService.getByOrganizationId(
+                issue.organizationId,
+            );
+
+        if (!codeReviewFeedback) {
+            return issue;
+        }
+
+        const issueFeedbacks = codeReviewFeedback.filter(
+            (feedback) =>
+                feedback?.suggestionId === issue.representativeSuggestion.id,
+        );
+
+        const issueWithFeedback = {
+            ...issue,
+            reactions: issueFeedbacks.map((feedback) => feedback.reactions),
+        };
+
+        return issueWithFeedback;
     }
 
     async findOne(filter?: Partial<IIssue>): Promise<IssuesEntity | null> {
         return this.issuesRepository.findOne(filter);
     }
 
-    async find(filter?: any, options?: {
-        limit?: number;
-        skip?: number;
-        sort?: any;
-    }): Promise<IssuesEntity[]> {
+    async find(
+        filter?: any,
+        options?: {
+            limit?: number;
+            skip?: number;
+            sort?: any;
+        },
+    ): Promise<IssuesEntity[]> {
         return await this.issuesRepository.find(filter, options);
     }
 

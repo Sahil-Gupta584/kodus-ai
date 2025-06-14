@@ -19,6 +19,8 @@ import { IntegrationConfigModule } from "./integrationConfig.module";
 import { ParametersModule } from "./parameters.module";
 import { GetTotalIssuesUseCase } from "@/core/application/use-cases/issues/get-total-issues.use-case";
 import { BuildFilterUseCase } from "@/core/application/use-cases/issues/build-filter.use-case";
+import { CodeReviewFeedbackModule } from "./codeReviewFeedback.module";
+import { GetIssueByIdUseCase } from "@/core/application/use-cases/issues/get-issue-by-id.use-case";
 
 const UseCases = [
     GetIssuesByFiltersUseCase,
@@ -26,6 +28,7 @@ const UseCases = [
     ProcessPrClosedUseCase,
     GetTotalIssuesUseCase,
     BuildFilterUseCase,
+    GetIssueByIdUseCase,
 ] as const;
 
 @Module({
@@ -39,6 +42,7 @@ const UseCases = [
         forwardRef(() => PullRequestsModule),
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => ParametersModule),
+        forwardRef(() => CodeReviewFeedbackModule),
     ],
     providers: [
         ...UseCases,

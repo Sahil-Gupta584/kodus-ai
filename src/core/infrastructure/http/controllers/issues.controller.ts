@@ -5,12 +5,14 @@ import { Body, Controller, Get, HttpCode, Param, Patch, Query } from '@nestjs/co
 import { GetIssuesByFiltersDto } from '../dtos/get-issues-by-filters.dto';
 import { PaginationDto } from '../dtos/pagination.dto';
 import { GetTotalIssuesUseCase } from '@/core/application/use-cases/issues/get-total-issues.use-case';
+import { GetIssueByIdUseCase } from '@/core/application/use-cases/issues/get-issue-by-id.use-case';
 
 @Controller('issues')
 export class IssuesController {
     constructor(
         private readonly getIssuesByFiltersUseCase: GetIssuesByFiltersUseCase,
         private readonly getTotalIssuesUseCase: GetTotalIssuesUseCase,
+        private readonly getIssueByIdUseCase: GetIssueByIdUseCase,
         private readonly updateIssueStatusUseCase: UpdateIssueStatusUseCase,
     ) {}
 
@@ -26,6 +28,11 @@ export class IssuesController {
         @Query() query: GetIssuesByFiltersDto,
     ) {
         return await this.getTotalIssuesUseCase.execute(query);
+    }
+
+    @Get(':id')
+    async getIssueById(@Param('id') id: string) {
+        return await this.getIssueByIdUseCase.execute(id);
     }
 
 
