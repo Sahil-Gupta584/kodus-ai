@@ -17,11 +17,15 @@ import { ProcessPrClosedUseCase } from "@/core/application/use-cases/issues/proc
 import { GetIssuesByFiltersUseCase } from "@/core/application/use-cases/issues/get-issues-by-filters.use-case";
 import { IntegrationConfigModule } from "./integrationConfig.module";
 import { ParametersModule } from "./parameters.module";
+import { GetTotalIssuesUseCase } from "@/core/application/use-cases/issues/get-total-issues.use-case";
+import { BuildFilterUseCase } from "@/core/application/use-cases/issues/build-filter.use-case";
 
 const UseCases = [
     GetIssuesByFiltersUseCase,
     UpdateIssueStatusUseCase,
     ProcessPrClosedUseCase,
+    GetTotalIssuesUseCase,
+    BuildFilterUseCase,
 ] as const;
 
 @Module({
