@@ -1,3 +1,4 @@
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
 import {
     IIntegrationConfigService,
@@ -8,6 +9,7 @@ import {
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@/core/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { contextToGenerateIssues } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
@@ -36,28 +38,16 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
     ) {}
 
     async execute(params: any): Promise<void> {
-        const prNumber = params?.number || params.payload?.pull_request?.number;
-        const repositoryId =
-            params?.repository?.id?.toString() ||
-            params.payload?.repository?.id?.toString();
-        const repositoryName =
-            params?.repository?.name || params.payload?.repository?.name;
-        const organizationId =
-            this.request?.user?.organization?.uuid ||
-            'aaeb9004-2069-4858-8504-ec3c8c3a34f6'; //REMOVER
-        const platformType =
-            params?.platformType || params.payload?.platformType;
-
-        const teamId = await this.getTeamIdUsingRepositoryId(
-            repositoryId,
-            platformType,
-        );
+        const prData = await this.fillProperties(params);
 
         try {
             const pr = await this.pullRequestService.findByNumberAndRepository(
-                prNumber,
-                repositoryName,
-                { organizationId: organizationId },
+                prData.context.prNumber,
+                prData.context.repository.name,
+                {
+                    organizationId:
+                        prData.context.organizationAndTeamData.organizationId,
+                },
             );
 
             if (!pr) {
@@ -71,26 +61,68 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
             }
 
             await this.kodyIssuesManagementService.processClosedPr({
-                prNumber: prNumber,
-                organizationId: organizationId,
-                teamId: teamId,
-                repositoryId: repositoryId,
-                repositoryName: repositoryName,
+                organizationAndTeamData: prData.context.organizationAndTeamData,
+                prNumber: prData.context.prNumber,
+                repository: prData.context.repository,
                 prFiles: prFiles,
             });
         } catch (error) {
             this.logger.error({
                 context: GenerateIssuesFromPrClosedUseCase.name,
                 serviceName: GenerateIssuesFromPrClosedUseCase.name,
-                message: `Error processing closed pull request #${prNumber}: ${error.message}`,
+                message: `Error processing closed pull request #${prData.context.prNumber}: ${error.message}`,
                 metadata: {
-                    prNumber,
-                    repositoryId,
-                    organizationId,
+                    prNumber: prData.context.prNumber,
+                    repositoryId: prData.context.repository.id,
+                    organizationId:
+                        prData.context.organizationAndTeamData.organizationId,
                 },
                 error,
             });
         }
+    }
+
+    private async fillProperties(params: any): Promise<{
+        context: contextToGenerateIssues;
+    }> {
+        const prNumber =
+            Number(params?.number) ||
+            Number(params.payload?.pull_request?.number);
+        const repositoryId =
+            params?.repository?.id?.toString() ||
+            params.payload?.repository?.id?.toString();
+        const repositoryName =
+            params?.repository?.name || params.payload?.repository?.name;
+        const repositoryFullName =
+            params?.repository?.full_name ||
+            params.payload?.repository?.full_name;
+        const organizationId =
+            this.request?.user?.organization?.uuid ||
+            'aaeb9004-2069-4858-8504-ec3c8c3a34f6'; //REMOVER
+        const platformType =
+            params?.platformType || params.payload?.platformType;
+
+        const teamId = await this.getTeamIdUsingRepositoryId(
+            repositoryId,
+            platformType,
+        );
+
+        const organizationAndTeamData: OrganizationAndTeamData = {
+            organizationId: organizationId,
+            teamId: teamId,
+        };
+
+        return {
+            context: {
+                prNumber: prNumber,
+                repository: {
+                    id: repositoryId,
+                    name: repositoryName,
+                    full_name: repositoryFullName,
+                },
+                organizationAndTeamData,
+            },
+        };
     }
 
     private async getTeamIdUsingRepositoryId(
