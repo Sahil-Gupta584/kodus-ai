@@ -1,6 +1,6 @@
 import { IssueStatus } from '@/config/types/general/issues.type';
 import { ISuggestion } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
-import { IContributingSuggestion } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import { IContributingSuggestion, IRepositoryToIssues } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import { CoreDocument } from '@/shared/infrastructure/repositories/model/mongodb';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
@@ -37,7 +37,7 @@ export class IssuesModel extends CoreDocument {
     public contributingSuggestions: IContributingSuggestion[];
 
     @Prop({ type: Object, required: true })
-    public repository: { id: string; name: string };
+    public repository: IRepositoryToIssues;
 
     @Prop({ type: String, required: true })
     public status: IssueStatus;

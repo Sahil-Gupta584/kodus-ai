@@ -1,6 +1,6 @@
 import { IssueStatus } from '@/config/types/general/issues.type';
 import { ISuggestion } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
-import { IContributingSuggestion } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import { IContributingSuggestion, IRepositoryToIssues } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
@@ -14,7 +14,7 @@ export interface IIssue {
     severity: SeverityLevel;
     representativeSuggestion: ISuggestion;
     contributingSuggestions: IContributingSuggestion[];
-    repository: { id: string; name: string };
+    repository: IRepositoryToIssues;
     organizationId: string;
     status: IssueStatus;
     prNumbers?: string[];
