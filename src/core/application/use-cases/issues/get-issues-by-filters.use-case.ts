@@ -19,7 +19,7 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
     ) {}
 
     async execute(filters: GetIssuesByFiltersDto): Promise<{
-        data: IssuesEntity[];
+        issues: IssuesEntity[];
         pagination: {
             page: number;
             limit: number;
@@ -36,7 +36,7 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
         ]);
 
         return {
-            data,
+            issues: data,
             pagination: {
                 page: filters.page || 1,
                 limit: filters.limit || 100,
