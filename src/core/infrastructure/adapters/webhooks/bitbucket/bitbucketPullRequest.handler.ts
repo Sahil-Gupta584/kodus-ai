@@ -20,7 +20,7 @@ import {
 import { CodeManagementService } from '../../services/platformIntegration/codeManagement.service';
 import { IWebhookBitbucketPullRequestEvent } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-bitbucket.type';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
-import { ProcessPrClosedUseCase } from '@/core/application/use-cases/issues/process-pr-closed.use-case';
+import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
 
 /**
  * Handler for Bitbucket webhook events.
@@ -39,7 +39,7 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
         private readonly runCodeReviewAutomationUseCase: RunCodeReviewAutomationUseCase,
         private readonly chatWithKodyFromGitUseCase: ChatWithKodyFromGitUseCase,
         private readonly codeManagement: CodeManagementService,
-        private readonly processPrClosedUseCase: ProcessPrClosedUseCase,
+        private readonly generateIssuesFromPrClosedUseCase: GenerateIssuesFromPrClosedUseCase,
     ) {}
 
     /**
@@ -115,7 +115,7 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                     await this.savePullRequestUseCase.execute(params);
 
                 if (pullRequest && pullRequest.status === 'closed') {
-                    await this.processPrClosedUseCase.execute(pullRequest);
+                    await this.generateIssuesFromPrClosedUseCase.execute(pullRequest);
                 }
             }
         } catch (error) {

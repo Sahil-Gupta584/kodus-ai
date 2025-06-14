@@ -16,7 +16,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
 @Injectable()
-export class ProcessPrClosedUseCase implements IUseCase {
+export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
     constructor(
         @Inject(KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN)
         private readonly kodyIssuesManagementService: KodyIssuesManagementService,
@@ -44,7 +44,7 @@ export class ProcessPrClosedUseCase implements IUseCase {
             params?.repository?.name || params.payload?.repository?.name;
         const organizationId =
             this.request?.user?.organization?.uuid ||
-            'aaeb9004-2069-4858-8504-ec3c8c3a34f6';
+            'aaeb9004-2069-4858-8504-ec3c8c3a34f6'; //REMOVER
         const platformType =
             params?.platformType || params.payload?.platformType;
 
@@ -64,7 +64,7 @@ export class ProcessPrClosedUseCase implements IUseCase {
                 return;
             }
 
-            const prFiles = pr.files;
+            const prFiles = pr.files.slice(0, 3); //REMOVER
 
             if (prFiles.length === 0) {
                 return;
@@ -80,8 +80,8 @@ export class ProcessPrClosedUseCase implements IUseCase {
             });
         } catch (error) {
             this.logger.error({
-                context: ProcessPrClosedUseCase.name,
-                serviceName: ProcessPrClosedUseCase.name,
+                context: GenerateIssuesFromPrClosedUseCase.name,
+                serviceName: GenerateIssuesFromPrClosedUseCase.name,
                 message: `Error processing closed pull request #${prNumber}: ${error.message}`,
                 metadata: {
                     prNumber,

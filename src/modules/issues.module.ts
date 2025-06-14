@@ -13,7 +13,6 @@ import { KodyIssuesManagementService } from "@/ee/kodyIssuesManagement/service/k
 import { KODY_ISSUES_ANALYSIS_SERVICE_TOKEN } from "@/ee/codeBase/kodyIssuesAnalysis.service";
 import { IssuesController } from "@/core/infrastructure/http/controllers/issues.controller";
 import { UpdateIssueStatusUseCase } from "@/core/application/use-cases/issues/update-issues-status.use-case";
-import { ProcessPrClosedUseCase } from "@/core/application/use-cases/issues/process-pr-closed.use-case";
 import { GetIssuesByFiltersUseCase } from "@/core/application/use-cases/issues/get-issues-by-filters.use-case";
 import { IntegrationConfigModule } from "./integrationConfig.module";
 import { ParametersModule } from "./parameters.module";
@@ -21,11 +20,12 @@ import { GetTotalIssuesUseCase } from "@/core/application/use-cases/issues/get-t
 import { BuildFilterUseCase } from "@/core/application/use-cases/issues/build-filter.use-case";
 import { CodeReviewFeedbackModule } from "./codeReviewFeedback.module";
 import { GetIssueByIdUseCase } from "@/core/application/use-cases/issues/get-issue-by-id.use-case";
+import { GenerateIssuesFromPrClosedUseCase } from "@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case";
 
 const UseCases = [
     GetIssuesByFiltersUseCase,
     UpdateIssueStatusUseCase,
-    ProcessPrClosedUseCase,
+    GenerateIssuesFromPrClosedUseCase,
     GetTotalIssuesUseCase,
     BuildFilterUseCase,
     GetIssueByIdUseCase,
