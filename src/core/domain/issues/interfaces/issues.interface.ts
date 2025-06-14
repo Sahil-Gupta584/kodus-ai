@@ -17,7 +17,10 @@ export interface IIssue {
     repository: IRepositoryToIssues;
     organizationId: string;
     status: IssueStatus;
-    prNumbers?: string[];
+    prLinks?: {
+        number: string;
+        url: string;
+    }[];
     reactions?: {
         thumbsUp: number;
         thumbsDown: number;

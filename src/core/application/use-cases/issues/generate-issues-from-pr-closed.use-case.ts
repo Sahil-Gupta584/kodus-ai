@@ -119,6 +119,7 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
                     id: repositoryId,
                     name: repositoryName,
                     full_name: repositoryFullName,
+                    platform: platformType,
                 },
                 organizationAndTeamData,
             },

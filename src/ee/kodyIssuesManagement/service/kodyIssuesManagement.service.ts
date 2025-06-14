@@ -222,6 +222,7 @@ export class KodyIssuesManagementService
                                 id: context.repository.id,
                                 name: context.repository.name,
                                 full_name: context.repository.full_name,
+                                platform: context.repository.platform,
                             },
                             organizationId:
                                 context.organizationAndTeamData.organizationId,

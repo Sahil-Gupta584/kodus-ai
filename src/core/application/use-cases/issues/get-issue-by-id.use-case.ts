@@ -4,10 +4,13 @@ import {
 } from '@/core/domain/issues/contracts/issues.service.contract';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { Inject, Injectable } from '@nestjs/common';
-import { BuildFilterUseCase } from './build-filter.use-case';
 import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
-import { CODE_REVIEW_FEEDBACK_SERVICE_TOKEN, ICodeReviewFeedbackService } from '@/core/domain/codeReviewFeedback/contracts/codeReviewFeedback.service.contract';
+import {
+    CODE_REVIEW_FEEDBACK_SERVICE_TOKEN,
+    ICodeReviewFeedbackService,
+} from '@/core/domain/codeReviewFeedback/contracts/codeReviewFeedback.service.contract';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
+import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 
 @Injectable()
 export class GetIssueByIdUseCase implements IUseCase {
@@ -17,8 +20,6 @@ export class GetIssueByIdUseCase implements IUseCase {
 
         @Inject(CODE_REVIEW_FEEDBACK_SERVICE_TOKEN)
         private readonly codeReviewFeedbackService: ICodeReviewFeedbackService,
-
-        private readonly buildFilterUseCase: BuildFilterUseCase,
     ) {}
 
     async execute(id: string): Promise<IIssue | null> {
@@ -42,18 +43,23 @@ export class GetIssueByIdUseCase implements IUseCase {
                 feedback?.suggestionId === issue.representativeSuggestion.id,
         );
 
-        const prNumbers = await this.selectAllPrNumbers(issue);
+        const prLinks = await this.selectAllPrNumbers(issue);
 
         const issueWithFeedback = {
             ...issue.toObject(),
             reactions: issueFeedbacks.map((feedback) => feedback.reactions),
-            prNumbers,
+            prLinks,
         };
 
         return issueWithFeedback;
     }
 
-    private async selectAllPrNumbers(issue: IssuesEntity): Promise<string[]> {
+    private async selectAllPrNumbers(issue: IssuesEntity): Promise<
+        {
+            number: string;
+            url: string;
+        }[]
+    > {
         const prNumbers = new Set<string>();
 
         if (issue.representativeSuggestion?.prNumber) {
@@ -68,10 +74,41 @@ export class GetIssueByIdUseCase implements IUseCase {
             });
         }
 
-        const orderedPrNumbers = new Set(
-            Array.from(prNumbers).sort((a, b) => parseInt(a) - parseInt(b)),
+        const dataToBuildUrl = {
+            platform: issue.repository.platform,
+            repositoryName: issue.repository.name,
+            repositoryFullName: issue.repository.full_name,
+        };
+
+        const orderedPrNumbers = Array.from(prNumbers).sort(
+            (a, b) => parseInt(a) - parseInt(b),
         );
 
-        return Array.from(orderedPrNumbers);
+        return orderedPrNumbers.map((prNumber) => ({
+            number: prNumber,
+            url: this.buildUrl(dataToBuildUrl, prNumber),
+        }));
+    }
+
+    private buildUrl(
+        data: {
+            platform: PlatformType;
+            repositoryName: string;
+            repositoryFullName: string;
+        },
+        prNumber: string,
+    ): string {
+        switch (data.platform) {
+            case PlatformType.GITHUB:
+                return `https://github.com/${data.repositoryFullName}/pull/${prNumber}`;
+            case PlatformType.GITLAB:
+                return `https://gitlab.com/${data.repositoryFullName}/-/merge_requests/${prNumber}`;
+            case PlatformType.AZURE_REPOS:
+                return `https://dev.azure.com/${data.repositoryFullName}/_git/${data.repositoryName}/pullrequest/${prNumber}`;
+            case PlatformType.BITBUCKET:
+                return `https://bitbucket.org/${data.repositoryFullName}/pull-requests/${prNumber}`;
+            default:
+                throw new Error(`Plataforma não suportada: ${data.platform}`);
+        }
     }
 }
