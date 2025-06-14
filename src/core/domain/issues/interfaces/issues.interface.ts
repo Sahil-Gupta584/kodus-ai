@@ -17,11 +17,12 @@ export interface IIssue {
     repository: { id: string; name: string };
     organizationId: string;
     status: IssueStatus;
-    createdAt: string;
-    updatedAt: string;
     prNumbers?: string[];
     reactions?: {
         thumbsUp: number;
         thumbsDown: number;
     }[];
+    age?: string;
+    createdAt: string;
+    updatedAt: string;
 }
