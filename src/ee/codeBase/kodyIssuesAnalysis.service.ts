@@ -18,6 +18,7 @@ import {
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { contextToGenerateIssues } from '../kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 
 export const KODY_ISSUES_ANALYSIS_SERVICE_TOKEN = Symbol(
     'KodyIssuesAnalysisService',
@@ -122,16 +123,18 @@ export class KodyIssuesAnalysisService {
     }
 
     async resolveExistingIssues(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
+        context: Pick<
+            contextToGenerateIssues,
+            'organizationAndTeamData' | 'repository' | 'prNumber'
+        >,
         promptData: any,
     ): Promise<any> {
         try {
             const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
 
             const chain = await this.createAnalysisChainWithFallback(
-                organizationAndTeamData,
-                prNumber,
+                context.organizationAndTeamData,
+                context.prNumber,
                 provider,
                 prompt_kodyissues_resolve_issues_system,
                 (input: any) => JSON.stringify(input, null, 2),
@@ -143,14 +146,17 @@ export class KodyIssuesAnalysisService {
 
             return this.processLLMResponse(
                 result,
-                organizationAndTeamData.organizationId,
+                context.organizationAndTeamData.organizationId,
             );
         } catch (error) {
             this.logger.error({
                 message: 'Error in resolveExistingIssues',
                 context: KodyIssuesAnalysisService.name,
                 error,
-                metadata: { organizationAndTeamData, prNumber },
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.prNumber,
+                },
             });
             throw error;
         }

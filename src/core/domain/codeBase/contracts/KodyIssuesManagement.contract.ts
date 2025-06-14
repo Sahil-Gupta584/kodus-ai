@@ -1,39 +1,34 @@
-import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { contextToGenerateIssues } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 
 export const KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN = Symbol(
     'KodyIssuesManagementService',
 );
 
 export interface IKodyIssuesManagementService {
-    processClosedPr(params: {
-        prNumber: number;
-        organizationId: string;
-        repositoryId: string;
-        repositoryName: string;
-    }): Promise<void>;
+    processClosedPr(params: contextToGenerateIssues): Promise<void>;
 
     mergeSuggestionsIntoIssues(
-        organizationId: string,
-        teamId: string,
-        repositoryId: string,
-        repositoryName: string,
-        prNumber: number,
+        context: Pick<
+            contextToGenerateIssues,
+            'organizationAndTeamData' | 'repository' | 'prNumber'
+        >,
         filePath: string,
         newSuggestions: any[],
     ): Promise<any>;
 
     createNewIssues(
-        organizationAndTeamData: OrganizationAndTeamData,
-        repositoryId: string,
-        repositoryName: string,
-        prNumber: number,
+        context: Pick<
+            contextToGenerateIssues,
+            'organizationAndTeamData' | 'repository' | 'prNumber'
+        >,
         unmatchedSuggestions: any[],
     ): Promise<void>;
 
     resolveExistingIssues(
-        organizationAndTeamData: OrganizationAndTeamData,
-        repositoryId: string,
-        prNumber: number,
+        context: Pick<
+            contextToGenerateIssues,
+            'organizationAndTeamData' | 'repository' | 'prNumber'
+        >,
         files: any[],
         changedFiles: string[],
     ): Promise<void>;

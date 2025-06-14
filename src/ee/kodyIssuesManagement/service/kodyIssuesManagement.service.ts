@@ -11,7 +11,7 @@ import { KODY_ISSUES_ANALYSIS_SERVICE_TOKEN } from '@/ee/codeBase/kodyIssuesAnal
 import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.enum';
 import { IssueStatus } from '@/config/types/general/issues.type';
 import { CodeSuggestion } from '@/config/types/general/codeReview.type';
-import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { contextToGenerateIssues } from '../domain/kodyIssuesManagement.interface';
 
 @Injectable()
 export class KodyIssuesManagementService
@@ -30,20 +30,8 @@ export class KodyIssuesManagementService
         private readonly kodyIssuesAnalysisService: KodyIssuesAnalysisService,
     ) {}
 
-    async processClosedPr(params: {
-        prNumber: number;
-        organizationId: string;
-        teamId: string;
-        repositoryId: string;
-        repositoryName: string;
-        prFiles: any[];
-    }): Promise<void> {
+    async processClosedPr(params: contextToGenerateIssues): Promise<void> {
         try {
-            const organizationAndTeamData: OrganizationAndTeamData = {
-                organizationId: params.organizationId,
-                teamId: params.teamId,
-            };
-
             this.logger.log({
                 message: `Starting issue processing for closed PR#${params.prNumber}`,
                 context: KodyIssuesManagementService.name,
@@ -72,11 +60,7 @@ export class KodyIssuesManagementService
 
             for (const filePath of changedFiles) {
                 await this.mergeSuggestionsIntoIssues(
-                    params.organizationId,
-                    params.teamId,
-                    params.repositoryId,
-                    params.repositoryName,
-                    params.prNumber,
+                    params,
                     filePath,
                     suggestionsByFile[filePath],
                 );
@@ -84,9 +68,7 @@ export class KodyIssuesManagementService
 
             // 4. Resolver issues que podem ter sido corrigidas
             await this.resolveExistingIssues(
-                organizationAndTeamData,
-                params.repositoryId,
-                params.prNumber,
+                params,
                 params.prFiles,
                 changedFiles,
             );
@@ -102,37 +84,24 @@ export class KodyIssuesManagementService
     }
 
     async mergeSuggestionsIntoIssues(
-        organizationId: string,
-        teamId: string,
-        repositoryId: string,
-        repositoryName: string,
-        prNumber: number,
+        context: contextToGenerateIssues,
         filePath: string,
         newSuggestions: any[],
     ): Promise<any> {
-        try {
-            const organizationAndTeamData: OrganizationAndTeamData = {
-                organizationId,
-                teamId,
-            };
+        const { organizationAndTeamData, repository, prNumber } = context;
 
+        try {
             // 1. Buscar issues abertas para o arquivo
             const existingIssues = await this.issuesService.findByFileAndStatus(
-                organizationId,
-                repositoryId,
+                organizationAndTeamData.organizationId,
+                repository.id,
                 filePath,
                 IssueStatus.OPEN,
             );
 
             if (!existingIssues || existingIssues?.length === 0) {
                 // Se não há issues existentes, todas as suggestions são novas
-                await this.createNewIssues(
-                    organizationAndTeamData,
-                    repositoryId,
-                    repositoryName,
-                    prNumber,
-                    newSuggestions,
-                );
+                await this.createNewIssues(context, newSuggestions);
                 return;
             }
 
@@ -165,30 +134,28 @@ export class KodyIssuesManagementService
                 );
 
             // 4. Processar resultado do merge
-            await this.processMergeResult(
-                organizationAndTeamData,
-                repositoryId,
-                repositoryName,
-                prNumber,
-                mergeResult,
-                newSuggestions,
-            );
+            await this.processMergeResult(context, mergeResult, newSuggestions);
         } catch (error) {
             this.logger.error({
                 message: `Error merging suggestions into issues for file ${filePath}`,
                 context: KodyIssuesManagementService.name,
                 error,
-                metadata: { organizationId, repositoryId, filePath },
+                metadata: {
+                    organizationId:
+                        context.organizationAndTeamData.organizationId,
+                    repositoryId: context.repository.id,
+                    filePath,
+                },
             });
             throw error;
         }
     }
 
     async createNewIssues(
-        organizationAndTeamData: OrganizationAndTeamData,
-        repositoryId: string,
-        repositoryName: string,
-        prNumber: number,
+        context: Pick<
+            contextToGenerateIssues,
+            'organizationAndTeamData' | 'repository' | 'prNumber'
+        >,
         unmatchedSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
         try {
@@ -215,8 +182,8 @@ export class KodyIssuesManagementService
 
                 const llmResult =
                     await this.kodyIssuesAnalysisService.createNewIssues(
-                        organizationAndTeamData,
-                        prNumber,
+                        context.organizationAndTeamData,
+                        context.prNumber,
                         promptData,
                     );
 
@@ -230,7 +197,7 @@ export class KodyIssuesManagementService
 
                         const representativeSuggestionWithPrNumber = {
                             ...representativeSuggestion,
-                            prNumber: prNumber,
+                            prNumber: context.prNumber,
                         };
 
                         await this.issuesService.create({
@@ -247,16 +214,17 @@ export class KodyIssuesManagementService
                                 newIssue?.contributingSuggestionIds?.map(
                                     (suggestionId) => ({
                                         id: suggestionId,
-                                        prNumber: prNumber,
+                                        prNumber: context.prNumber,
                                     }),
                                 ),
                             status: IssueStatus.OPEN,
                             repository: {
-                                id: repositoryId,
-                                name: repositoryName,
+                                id: context.repository.id,
+                                name: context.repository.name,
+                                full_name: context.repository.full_name,
                             },
                             organizationId:
-                                organizationAndTeamData.organizationId,
+                                context.organizationAndTeamData.organizationId,
                             createdAt: new Date().toISOString(),
                             updatedAt: new Date().toISOString(),
                         });
@@ -268,16 +236,21 @@ export class KodyIssuesManagementService
                 message: 'Error creating new issues',
                 context: KodyIssuesManagementService.name,
                 error,
-                metadata: { organizationAndTeamData, prNumber, repositoryId },
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.prNumber,
+                    repositoryId: context.repository.id,
+                },
             });
             throw error;
         }
     }
 
     async resolveExistingIssues(
-        organizationAndTeamData: OrganizationAndTeamData,
-        repositoryId: string,
-        prNumber: number,
+        context: Pick<
+            contextToGenerateIssues,
+            'organizationAndTeamData' | 'repository' | 'prNumber'
+        >,
         files: any[],
         changedFiles: string[],
     ): Promise<void> {
@@ -288,8 +261,8 @@ export class KodyIssuesManagementService
 
                 // Buscar issues abertas para o arquivo
                 const openIssues = await this.issuesService.findByFileAndStatus(
-                    organizationAndTeamData.organizationId,
-                    repositoryId,
+                    context.organizationAndTeamData.organizationId,
+                    context.repository.id,
                     filePath,
                     IssueStatus.OPEN,
                 );
@@ -320,8 +293,7 @@ export class KodyIssuesManagementService
 
                 const llmResult =
                     await this.kodyIssuesAnalysisService.resolveExistingIssues(
-                        organizationAndTeamData,
-                        prNumber,
+                        context,
                         promptData,
                     );
 
@@ -341,7 +313,11 @@ export class KodyIssuesManagementService
                 message: 'Error resolving existing issues',
                 context: KodyIssuesManagementService.name,
                 error,
-                metadata: { organizationAndTeamData, repositoryId, prNumber },
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    repositoryId: context.repository.id,
+                    prNumber: context.prNumber,
+                },
             });
             throw error;
         }
@@ -411,10 +387,10 @@ export class KodyIssuesManagementService
     }
 
     private async processMergeResult(
-        organizationAndTeamData: OrganizationAndTeamData,
-        repositoryId: string,
-        repositoryName: string,
-        prNumber: number,
+        context: Pick<
+            contextToGenerateIssues,
+            'organizationAndTeamData' | 'repository' | 'prNumber'
+        >,
         mergeResult: any,
         newSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
@@ -450,19 +426,13 @@ export class KodyIssuesManagementService
 
         // Criar novas issues para suggestions não matcheadas
         if (unmatchedSuggestions.length > 0) {
-            await this.createNewIssues(
-                organizationAndTeamData,
-                repositoryId,
-                repositoryName,
-                prNumber,
-                unmatchedSuggestions,
-            );
+            await this.createNewIssues(context, unmatchedSuggestions);
         }
 
         await this.pullRequestsService.updateSyncedWithIssuesFlag(
-            prNumber,
-            repositoryId,
-            organizationAndTeamData.organizationId,
+            context.prNumber,
+            context.repository.id,
+            context.organizationAndTeamData.organizationId,
             true,
         );
     }
