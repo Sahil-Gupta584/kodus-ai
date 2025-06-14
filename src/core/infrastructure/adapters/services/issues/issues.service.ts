@@ -4,7 +4,6 @@ import { IIssuesRepository } from '@/core/domain/issues/contracts/issues.reposit
 import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { IIssuesService } from '@/core/domain/issues/contracts/issues.service.contract';
-import { mapSimpleModelsToEntities } from '@/shared/infrastructure/repositories/mappers';
 import { IssueStatus } from '@/config/types/general/issues.type';
 import {
     CODE_REVIEW_FEEDBACK_SERVICE_TOKEN,
@@ -64,9 +63,12 @@ export class IssuesService implements IIssuesService {
                 feedback?.suggestionId === issue.representativeSuggestion.id,
         );
 
+        const prNumbers = await this.selectAllPrNumbers(issue);
+
         const issueWithFeedback = {
-            ...issue,
+            ...issue.toObject(),
             reactions: issueFeedbacks.map((feedback) => feedback.reactions),
+            prNumbers,
         };
 
         return issueWithFeedback;
@@ -111,5 +113,27 @@ export class IssuesService implements IIssuesService {
         suggestionIds: string[],
     ): Promise<IssuesEntity | null> {
         return this.issuesRepository.addSuggestionIds(uuid, suggestionIds);
+    }
+
+    private async selectAllPrNumbers(issue: IssuesEntity): Promise<string[]> {
+        const prNumbers = new Set<string>();
+
+        if (issue.representativeSuggestion?.prNumber) {
+            prNumbers.add(issue.representativeSuggestion.prNumber.toString());
+        }
+
+        if (issue.contributingSuggestions?.length) {
+            issue.contributingSuggestions.forEach((suggestion) => {
+                if (suggestion.prNumber) {
+                    prNumbers.add(suggestion.prNumber.toString());
+                }
+            });
+        }
+
+        const orderedPrNumbers = new Set(
+            Array.from(prNumbers).sort((a, b) => parseInt(a) - parseInt(b)),
+        );
+
+        return Array.from(orderedPrNumbers);
     }
 }
