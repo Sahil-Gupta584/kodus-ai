@@ -33,29 +33,14 @@ export class IssuesModel extends CoreDocument {
     @Prop({ type: Object, required: true })
     public representativeSuggestion: ISuggestion;
 
-    @Prop({
-        type: [{
-            id: { type: String, required: true },
-            prNumber: { type: Number, required: true }
-        }],
-        required: true,
-        _id: false
-    })
+    @Prop({ type: Object, required: true })
     public contributingSuggestions: IContributingSuggestion[];
 
+    @Prop({ type: Object, required: true })
+    public repository: { id: string; name: string };
 
     @Prop({ type: String, required: true })
     public status: IssueStatus;
-
-    @Prop({
-        type: {
-            id: { type: String, required: true },
-            name: { type: String, required: true }
-        },
-        required: true,
-        _id: false
-    })
-    public repository: { id: string, name: string };
 
     @Prop({ type: String, required: true })
     public organizationId: string;
