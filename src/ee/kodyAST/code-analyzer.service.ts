@@ -6,25 +6,28 @@ import { prompt_checkSimilarFunctions_system } from '@/shared/utils/langchainCom
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { SyntaxNode } from 'tree-sitter';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { ChangeResult, FunctionResult } from './diffAnalyzer.service';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import {
-    CodeGraph,
+    FunctionResult,
+    ChangeResult,
     ComplexityAnalysis,
-    EnrichGraph,
-    EnrichGraphEdge,
-    EnrichGraphNode,
-    FunctionAnalysis,
     FunctionsAffect,
     FunctionsAffectResult,
     FunctionSimilarity,
-    ImpactedNode,
     ImpactResult,
-    NodeType,
-    RelationshipType,
+    ImpactedNode,
     ScopeAnalysis,
-} from '@kodus/kodus-proto/common/ast';
+} from '../codeBase/types/diff-analyzer.types';
+import {
+    EnrichedGraphNode,
+    EnrichedGraphEdge,
+    FunctionAnalysis,
+    EnrichedGraph,
+    RelationshipType,
+    CodeGraph,
+    NodeType,
+} from '@kodus/kodus-proto/v2';
 
 interface FunctionData {
     className?: string;
@@ -42,8 +45,8 @@ export class CodeAnalyzerService {
     >();
     private addedNodes: Record<string, boolean> = {};
     private relationshipKeys: Record<string, boolean> = {};
-    private nodes: EnrichGraphNode[] = [];
-    private relationships = new Map<string, EnrichGraphEdge>();
+    private nodes: EnrichedGraphNode[] = [];
+    private relationships = new Map<string, EnrichedGraphEdge>();
 
     constructor(
         private readonly logger: PinoLoggerService,
@@ -183,7 +186,7 @@ export class CodeAnalyzerService {
      * @returns Um array de nós impactados.
      */
     dfs(
-        graph: EnrichGraph,
+        graph: EnrichedGraph,
         startNodeId: string,
         direction: 'both' | 'forward' | 'backward' = 'both',
         allowedTypes: RelationshipType[] = Array.from(
@@ -199,7 +202,7 @@ export class CodeAnalyzerService {
      * Recursive DFS helper function.
      */
     private dfsHelper(
-        graph: EnrichGraph,
+        graph: EnrichedGraph,
         currentNode: string,
         visited: Set<string>,
         direction: 'both' | 'forward' | 'backward',
@@ -232,29 +235,29 @@ export class CodeAnalyzerService {
      * Determines the next node to visit based on traversal direction and allowed relationships.
      */
     private getNextNode(
-        edge: EnrichGraphEdge,
+        edge: EnrichedGraphEdge,
         currentNode: string,
         direction: 'both' | 'forward' | 'backward',
         visited: Set<string>,
         allowedTypes: RelationshipType[],
     ): string | null {
-        const isForward =
-            direction !== 'backward' &&
-            edge.from === currentNode &&
-            !visited.has(edge.to);
-        const isBackward =
-            direction !== 'forward' &&
-            edge.to === currentNode &&
-            !visited.has(edge.from);
+        // const isForward =
+        //     direction !== 'backward' &&
+        //     edge.from === currentNode &&
+        //     !visited.has(edge.to);
+        // const isBackward =
+        //     direction !== 'forward' &&
+        //     edge.to === currentNode &&
+        //     !visited.has(edge.from);
 
-        if ((isForward || isBackward) && allowedTypes.includes(edge.type)) {
-            return isForward ? edge.to : edge.from;
-        }
+        // if ((isForward || isBackward) && allowedTypes.includes(edge.type)) {
+        //     return isForward ? edge.to : edge.from;
+        // }
 
         return null;
     }
 
-    enrichGraph(data: CodeGraph): EnrichGraph {
+    enrichGraph(data: CodeGraph): EnrichedGraph {
         this.clearNormalizedPathCache();
         this.clearExtractPathCache();
 
@@ -442,7 +445,7 @@ export class CodeAnalyzerService {
     }
 
     computeImpactAnalysis(
-        graph: EnrichGraph,
+        graph: EnrichedGraph,
         changeResults: ChangeResult[],
         depth: number = Infinity,
         direction: 'both' | 'forward' | 'backward' = 'backward',
@@ -502,9 +505,9 @@ export class CodeAnalyzerService {
 
         impactReport
             .filter(
-                (impact) =>
-                    impact.type === NodeType.METHOD ||
-                    impact.type === NodeType.FUNCTION,
+                (impact) => true,
+                // impact.type === NodeType.NODE_TYPE_METHOD ||
+                // impact.type === NodeType.NODE_TYPE_FUNCTION,
             )
             ?.forEach((node) => {
                 if (node.level > depth) {
@@ -566,7 +569,7 @@ export class CodeAnalyzerService {
                 this.addRelationship(
                     className,
                     importedClassName,
-                    RelationshipType.IMPORTS,
+                    RelationshipType.RELATIONSHIP_TYPE_IMPORTS,
                     normalizedFrom,
                     normalizedFrom,
                 );
@@ -580,7 +583,7 @@ export class CodeAnalyzerService {
                 this.addRelationship(
                     className,
                     importedClassName,
-                    RelationshipType.IMPORTS,
+                    RelationshipType.RELATIONSHIP_TYPE_IMPORTS,
                     normalizedFrom,
                     normalizedFrom,
                 );
@@ -623,7 +626,7 @@ export class CodeAnalyzerService {
                             this.addRelationship(
                                 type.name,
                                 identifier,
-                                RelationshipType.IMPLEMENTS,
+                                RelationshipType.RELATIONSHIP_TYPE_IMPLEMENTS,
                                 type.file,
                                 iface,
                             );
@@ -637,7 +640,7 @@ export class CodeAnalyzerService {
                             this.addRelationship(
                                 type.name,
                                 identifier,
-                                RelationshipType.EXTENDS,
+                                RelationshipType.RELATIONSHIP_TYPE_EXTENDS,
                                 type.file,
                                 baseClass,
                             );
@@ -651,7 +654,7 @@ export class CodeAnalyzerService {
                             this.addRelationship(
                                 identifier,
                                 type.name,
-                                RelationshipType.IMPLEMENTED_BY,
+                                RelationshipType.RELATIONSHIP_TYPE_IMPLEMENTED_BY,
                                 type.file,
                                 cls,
                             );
@@ -701,7 +704,7 @@ export class CodeAnalyzerService {
                     this.addRelationship(
                         methodId,
                         calledId,
-                        RelationshipType.CALLS,
+                        RelationshipType.RELATIONSHIP_TYPE_CALLS,
                         filePath,
                         calledFilePath,
                     );
@@ -717,7 +720,7 @@ export class CodeAnalyzerService {
                     this.addRelationship(
                         methodId,
                         implMethod.id,
-                        RelationshipType.CALLS_IMPLEMENTATION,
+                        RelationshipType.RELATIONSHIP_TYPE_CALLS_IMPLEMENTATION,
                         filePath,
                         implMethod.filePath,
                     );
@@ -765,7 +768,7 @@ export class CodeAnalyzerService {
                     this.addRelationship(
                         className,
                         methodId,
-                        RelationshipType.HAS_METHOD,
+                        RelationshipType.RELATIONSHIP_TYPE_HAS_METHOD,
                         filePath,
                         filePath,
                     );
@@ -868,7 +871,7 @@ export class CodeAnalyzerService {
                             this.addRelationship(
                                 type.name,
                                 identifier,
-                                RelationshipType.EXTENDS,
+                                RelationshipType.RELATIONSHIP_TYPE_EXTENDS,
                                 type.file,
                                 identifier,
                             );
@@ -895,7 +898,7 @@ export class CodeAnalyzerService {
         this.normalizedPathCache.clear();
     }
 
-    private addNode(node: EnrichGraphNode) {
+    private addNode(node: EnrichedGraphNode) {
         if (!node.id || node.id === -1) {
             console.warn(
                 `⚠️ Tentativa de adicionar nó com ID inválido: ${node.filePath}`,
@@ -922,7 +925,7 @@ export class CodeAnalyzerService {
 
         const key = `${from}:${to}:${type}`;
         if (!this.relationshipKeys[key]) {
-            this.relationships.set(key, { from, to, type, fromPath, toPath });
+            // this.relationships.set(key, { from, to, type, fromPath, toPath });
             this.relationshipKeys[key] = true;
         }
     }
@@ -947,7 +950,7 @@ export class CodeAnalyzerService {
     }
 
     private groupByPropagation(
-        graph: EnrichGraph,
+        graph: EnrichedGraph,
         startNode: string,
         impactedNodes: string[],
     ): Record<number, string[]> {
@@ -966,9 +969,9 @@ export class CodeAnalyzerService {
             levels[level].push(node);
 
             for (const edge of graph.relationships) {
-                if (edge.to === node && impactedNodes.includes(edge.from)) {
-                    queue.push({ node: edge.from, level: level + 1 });
-                }
+                // if (edge.to === node && impactedNodes.includes(edge.from)) {
+                //     queue.push({ node: edge.from, level: level + 1 });
+                // }
             }
         }
 
@@ -1037,7 +1040,7 @@ export class CodeAnalyzerService {
      * **Gera um relatório completo de impacto**
      */
     traceImpactPropagation(
-        graph: EnrichGraph,
+        graph: EnrichedGraph,
         startNode: string,
         impactedNodes: string[],
         allowedTypes: RelationshipType[],
@@ -1057,10 +1060,7 @@ export class CodeAnalyzerService {
 
                 // 🔥 Aqui focamos apenas em métodos/funções.
                 // Se o node.type não for 'Method' ou 'Function', a gente ignora.
-                return (
-                    node.type === NodeType.METHOD ||
-                    node.type === NodeType.FUNCTION
-                );
+                return node.type === NodeType.NODE_TYPE_FUNCTION;
             })
             .map((nodeId) => {
                 const node = graph.nodes.find((n: any) => n.id === nodeId);
@@ -1068,7 +1068,8 @@ export class CodeAnalyzerService {
                 // 🔥 Buscar imports relevantes
                 const importRelationships = graph.relationships.filter(
                     (rel: any) =>
-                        rel.type === RelationshipType.IMPORTS &&
+                        rel.type ===
+                            RelationshipType.RELATIONSHIP_TYPE_IMPORTS &&
                         rel.to === nodeId &&
                         allowedTypes.includes(rel.type),
                 );
@@ -1090,21 +1091,24 @@ export class CodeAnalyzerService {
             });
     }
 
-    private getCalledByMethods(graph: EnrichGraph, methodId: string): string[] {
+    private getCalledByMethods(
+        graph: EnrichedGraph,
+        methodId: string,
+    ): string[] {
         // 1) Filtra relacionamentos do tipo CALLS onde 'to' seja o 'methodId'
         const callersIds = graph.relationships
             .filter(
-                (rel) =>
-                    rel.type === RelationshipType.CALLS && rel.to === methodId,
+                (rel) => rel.type === RelationshipType.RELATIONSHIP_TYPE_CALLS,
+                // rel.to === methodId,
             )
             .map((rel) => rel.from);
 
         // 2) Filtra nós cujo ID esteja em callersIds e cujo tipo seja 'Method' ou 'Function'
         const callerNodes = graph.nodes.filter(
             (node) =>
-                callersIds.includes(node.id.toString()) &&
-                (node.type === NodeType.METHOD ||
-                    node.type === NodeType.FUNCTION),
+                // callersIds.includes(node.id.toString()) &&
+                // node.type === NodeType.NODE_TYPE_METHOD ||
+                node.type === NodeType.NODE_TYPE_FUNCTION,
         );
 
         // 3) Retorna apenas o campo 'id' de cada nó

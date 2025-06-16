@@ -4,14 +4,13 @@ import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.
 import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { ImplementationStatus } from '@/core/domain/pullRequests/enums/implementationStatus.enum';
-import {
-    EnrichGraph,
-    FunctionAnalysis,
-    FunctionsAffectResult,
-    FunctionSimilarity,
-} from '@kodus/kodus-proto/common/ast';
 import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
+import { EnrichedGraph, FunctionAnalysis } from '@kodus/kodus-proto/v2';
+import {
+    FunctionsAffectResult,
+    FunctionSimilarity,
+} from '@/ee/codeBase/types/diff-analyzer.types';
 
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
@@ -66,7 +65,7 @@ export type CodeGraphContext = {
 export type CodeAnalysisAST = {
     headCodeGraph: CodeGraphContext;
     baseCodeGraph: CodeGraphContext;
-    headCodeGraphEnriched?: EnrichGraph;
+    headCodeGraphEnriched?: EnrichedGraph;
 };
 
 export type AnalysisContext = {

@@ -5,12 +5,11 @@ import {
     ReviewModeResponse,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-
-import { ChangeResult } from '@/ee/kodyAST/diffAnalyzer.service';
 import {
+    ChangeResult,
     FunctionsAffectResult,
     FunctionSimilarity,
-} from '@kodus/kodus-proto/common/ast';
+} from '@/ee/codeBase/types/diff-analyzer.types';
 
 export const AST_ANALYSIS_SERVICE_TOKEN = Symbol('ASTAnalysisService');
 

@@ -52,7 +52,6 @@ import { CodebaseModule } from './codeBase.module';
 import { ConversationModule } from './conversation.module';
 import { SegmentModule } from './segment.module';
 import { KodyRulesModule } from './kodyRules.module';
-import { KodyASTModule } from '../ee/kodyAST/kodyAST.module';
 import { BitbucketModule } from './bitbucket.module';
 import { SuggestionEmbeddedModule } from './suggestionEmbedded.module';
 import { TeamArtifactsModule } from './teamArtifacts.module';
@@ -62,6 +61,7 @@ import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeC
 import { GlobalParametersModule } from './global-parameters.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { RuleLikeModule } from './ruleLike.module';
+import { KodyASTModule } from '@/ee/kodyAST/kodyAST.module';
 
 @Module({
     imports: [
@@ -71,6 +71,7 @@ import { RuleLikeModule } from './ruleLike.module';
         LoggerModule.forRoot(),
         ToolsModule.forRoot(),
         SentryModule.forRoot(),
+        KodyASTModule,
         PlatformIntegrationModule,
         LogModule,
         CronModule,
@@ -116,7 +117,6 @@ import { RuleLikeModule } from './ruleLike.module';
         ConversationModule,
         SegmentModule,
         KodyRulesModule,
-        KodyASTModule.register(),
         BitbucketModule,
         SuggestionEmbeddedModule,
         TeamArtifactsModule,

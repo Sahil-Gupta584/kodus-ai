@@ -16,30 +16,32 @@ import { prompt_detectBreakingChanges } from '@/shared/utils/langchainCommon/pro
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { LLMResponseProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/transforms/llmResponseProcessor.transform';
-import { ChangeResult, DiffAnalyzerService } from './diffAnalyzer.service';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { CodeAnalyzerService } from './code-analyzer.service';
 import { ClientGrpc } from '@nestjs/microservices';
 import { lastValueFrom, reduce, map } from 'rxjs';
 import * as CircuitBreaker from 'opossum';
-import {
-    AST_ANALYZER_SERVICE_NAME,
-    ASTAnalyzerServiceClient,
-    GetGraphsResponse,
-    GetGraphsResponseData as SerializedGraphs,
-    ProtoAuthMode,
-    ProtoPlatformType,
-    RepositoryData,
-} from '@kodus/kodus-proto/v2';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { concatUint8Arrays } from '@/shared/utils/buffer/arrays';
+import { DiffAnalyzerService } from './diffAnalyzer.service';
 import {
     ASTDeserializer,
+    SerializedGetGraphsResponseData,
+} from '@kodus/kodus-proto/serialization/ast';
+import {
+    ASTAnalyzerServiceClient,
+    AST_ANALYZER_SERVICE_NAME,
+    RepositoryData,
+    ProtoAuthMode,
+    ProtoPlatformType,
+} from '@kodus/kodus-proto/v2';
+import {
+    ChangeResult,
     FunctionsAffectResult,
     FunctionSimilarity,
-} from '@kodus/kodus-proto/common/ast';
+} from '../codeBase/types/diff-analyzer.types';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -238,67 +240,32 @@ export class CodeAstAnalysisService
         }
     }
 
-    private parseGraphResponse(graph: string) {
+    private parseGraphResponse(graph: string): CodeAnalysisAST | null {
         if (!graph) {
             return null;
         }
 
-        const parsedGraph = JSON.parse(graph) as SerializedGraphs;
+        const parsedGraph = JSON.parse(
+            graph,
+        ) as SerializedGetGraphsResponseData;
         if (!parsedGraph) {
             throw new Error('Error parsing graph data');
         }
 
-        const deserialized: CodeAnalysisAST = {
+        const deserialized =
+            ASTDeserializer.deserializeGetGraphsResponseData(parsedGraph);
+
+        return {
             baseCodeGraph: {
-                codeGraphFunctions: undefined,
-                cloneDir: '',
+                codeGraphFunctions: deserialized.baseGraph.graph.functions,
+                cloneDir: deserialized.baseGraph.dir,
             },
             headCodeGraph: {
-                codeGraphFunctions: undefined,
-                cloneDir: '',
+                codeGraphFunctions: deserialized.headGraph.graph.functions,
+                cloneDir: deserialized.headGraph.dir,
             },
-            headCodeGraphEnriched: {
-                nodes: [],
-                relationships: [],
-            },
+            headCodeGraphEnriched: deserialized.enrichHeadGraph,
         };
-
-        if (parsedGraph.baseGraph) {
-            const baseGraph = ASTDeserializer.deserializeCodeGraph(
-                parsedGraph.baseGraph.graph,
-            );
-
-            deserialized.baseCodeGraph.codeGraphFunctions = baseGraph.functions;
-            deserialized.baseCodeGraph.cloneDir = parsedGraph?.baseGraph?.dir;
-        }
-
-        if (parsedGraph.headGraph) {
-            const headGraph = ASTDeserializer.deserializeCodeGraph(
-                parsedGraph.headGraph.graph,
-            );
-
-            deserialized.headCodeGraph.codeGraphFunctions = headGraph.functions;
-            deserialized.headCodeGraph.cloneDir = parsedGraph?.headGraph?.dir;
-        }
-
-        if (parsedGraph.enrichHeadGraph) {
-            deserialized.headCodeGraphEnriched =
-                ASTDeserializer.deserializeEnrichedGraph(
-                    parsedGraph.enrichHeadGraph,
-                );
-        }
-
-        return deserialized;
-    }
-
-    private objectToMap<T>(obj: Record<string, T>): Map<string, T> {
-        const map = new Map<string, T>();
-        if (obj && typeof obj === 'object') {
-            Object.entries(obj).forEach(([key, value]) => {
-                map.set(key, value);
-            });
-        }
-        return map;
     }
 
     private async getCloneParams(

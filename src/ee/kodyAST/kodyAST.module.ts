@@ -1,72 +1,46 @@
-import { forwardRef, Module } from '@nestjs/common';
-import { CodebaseModule } from '../../modules/codeBase.module';
-import { PlatformIntegrationModule } from '../../modules/platformIntegration.module';
-import { LogModule } from '../../modules/log.module';
-import { IntegrationConfigModule } from '../../modules/integrationConfig.module';
+import { Global, Module } from '@nestjs/common';
 import { CodeAnalyzerService } from '@/ee/kodyAST/code-analyzer.service';
-import { LLMProviderModule } from '../../modules/llmProvider.module';
-import { ClientsModule } from '@nestjs/microservices';
-import { AST_MICROSERVICE_OPTIONS } from '@/ee/configs/microservices/ast-options';
 import { AST_ANALYSIS_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
 import { CodeAstAnalysisService } from '@/ee/kodyAST/codeASTAnalysis.service';
-import { environment } from '@/ee/configs/environment';
-import { DiffAnalyzerService } from '@/ee/kodyAST/diffAnalyzer.service';
+import { LLMProviderModule } from '@/modules/llmProvider.module';
+import { LogModule } from '@/modules/log.module';
+import { PlatformIntegrationModule } from '@/modules/platformIntegration.module';
+import { ClientsModule } from '@nestjs/microservices';
+import { AST_MICROSERVICE_OPTIONS } from '../configs/microservices/ast-options';
+import { environment } from '../configs/environment';
+import { DiffAnalyzerService } from './diffAnalyzer.service';
 
-@Module({})
-export class KodyASTModule {
-    static register() {
-        const imports = [
-            forwardRef(() => CodebaseModule),
-            forwardRef(() => PlatformIntegrationModule),
-            forwardRef(() => IntegrationConfigModule),
-            forwardRef(() => LLMProviderModule),
-            LogModule,
-        ];
-        const exports = [CodeAnalyzerService, AST_ANALYSIS_SERVICE_TOKEN];
+const staticImports = [LLMProviderModule, LogModule, PlatformIntegrationModule];
+const dynamicImports =
+    environment.API_CLOUD_MODE && process.env.API_ENABLE_CODE_REVIEW_AST
+        ? [ClientsModule.register([AST_MICROSERVICE_OPTIONS])]
+        : [];
 
-        if (
-            environment.API_CLOUD_MODE &&
-            process.env.API_ENABLE_CODE_REVIEW_AST
-        ) {
-            return {
-                module: KodyASTModule,
-                imports: [
-                    ...imports,
-                    ClientsModule.register([AST_MICROSERVICE_OPTIONS]),
-                ],
-                providers: [
-                    CodeAnalyzerService,
-                    {
-                        provide: AST_ANALYSIS_SERVICE_TOKEN,
-                        useClass: CodeAstAnalysisService,
-                    },
-                    DiffAnalyzerService,
-                ],
-                exports,
-            };
-        }
+const providers = [];
+const moduleExports = [
+    CodeAnalyzerService,
+    DiffAnalyzerService,
+    AST_ANALYSIS_SERVICE_TOKEN,
+];
 
-        // keep imports and exports consistent to avoid
-        // inconsistencies when switching between cloud
-        // and self-hosted modes, specially during development
-        return {
-            module: KodyASTModule,
-            imports,
-            providers: [
-                {
-                    provide: AST_ANALYSIS_SERVICE_TOKEN,
-                    useValue: null,
-                },
-                {
-                    provide: CodeAnalyzerService,
-                    useValue: null,
-                },
-                {
-                    provide: DiffAnalyzerService,
-                    useValue: null,
-                },
-            ],
-            exports,
-        };
-    }
+if (environment.API_CLOUD_MODE && process.env.API_ENABLE_CODE_REVIEW_AST) {
+    providers.push(CodeAnalyzerService, DiffAnalyzerService, {
+        provide: AST_ANALYSIS_SERVICE_TOKEN,
+        useClass: CodeAstAnalysisService,
+    });
+} else {
+    // Self-hosted mode, provide null services
+    providers.push(
+        { provide: CodeAnalyzerService, useValue: null },
+        { provide: DiffAnalyzerService, useValue: null },
+        { provide: AST_ANALYSIS_SERVICE_TOKEN, useValue: null },
+    );
 }
+
+@Global()
+@Module({
+    imports: [...staticImports, ...dynamicImports],
+    providers,
+    exports: moduleExports,
+})
+export class KodyASTModule {}
