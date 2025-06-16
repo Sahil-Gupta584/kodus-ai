@@ -614,6 +614,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 await this.findLastTeamAutomationCodeReviewExecution(
                     organizationAndTeamData.teamId,
                     pullRequest.number,
+                    repository.id,
                     platformType,
                 );
 
@@ -628,6 +629,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
     private async findLastTeamAutomationCodeReviewExecution(
         teamAutomationId: string,
         pullRequestNumber: number,
+        repositoryId: string,
         platformType: string,
     ) {
         const lastTeamAutomationCodeReviewExecution: AutomationExecutionEntity =
@@ -636,6 +638,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 {
                     status: AutomationStatus.SUCCESS,
                     teamAutomation: { uuid: teamAutomationId },
+                    pullRequestNumber: pullRequestNumber,
+                    repositoryId: repositoryId,
                 },
             );
 

@@ -694,6 +694,11 @@ export class GithubService
                     }
                 }
             } else {
+                // Create a map for quick repository lookup by name
+                const repositoryMap = new Map(
+                    allRepositories.map(repo => [repo.name, repo.id])
+                );
+
                 // Fetch all pull requests across all repositories
                 const promises = allRepositories.map(async (repo) => {
                     return await this.getAllPrMessages(
@@ -720,10 +725,12 @@ export class GithubService
                             );
                         })
                         .map(async (pr) => {
+                            const repositoryId = repositoryMap.get(pr.repository);
+
                             const pullRequestData: any = {
                                 id: pr.id,
                                 repository: pr.repository,
-                                repositoryId: pr.repository,
+                                repositoryId: repositoryId,
                                 pull_number: pr.number,
                                 author_id: pr.user.id,
                                 author_name: pr.user.login,

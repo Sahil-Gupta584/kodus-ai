@@ -10,6 +10,8 @@ export class AutomationExecutionEntity implements IAutomationExecution {
     private _status: AutomationStatus;
     private _errorMessage?: string;
     private _dataExecution?: any;
+    private _pullRequestNumber?: number;
+    private _repositoryId?: string;
     private _teamAutomation?: Partial<ITeamAutomation>;
     private _origin?: string;
 
@@ -24,6 +26,8 @@ export class AutomationExecutionEntity implements IAutomationExecution {
         this._status = automationExecution.status;
         this._errorMessage = automationExecution.errorMessage;
         this._dataExecution = automationExecution.dataExecution;
+        this._pullRequestNumber = automationExecution?.pullRequestNumber;
+        this._repositoryId = automationExecution?.repositoryId;
         this._teamAutomation = automationExecution.teamAutomation;
         this._origin = automationExecution.origin;
     }
@@ -58,6 +62,14 @@ export class AutomationExecutionEntity implements IAutomationExecution {
 
     public get dataExecution(): any {
         return this._dataExecution;
+    }
+
+    public get pullRequestNumber(): number {
+        return this._pullRequestNumber;
+    }
+
+    public get repositoryId(): string {
+        return this._repositoryId;
     }
 
     public get teamAutomation(): Partial<IAutomation> {
