@@ -4,6 +4,7 @@ import {
     IIntegrationConfigService,
     INTEGRATION_CONFIG_SERVICE_TOKEN,
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
+import { stripCurlyBracesFromUUIDs } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-bitbucket.type';
 import {
     IPullRequestsService,
     PULL_REQUESTS_SERVICE_TOKEN,
@@ -14,6 +15,7 @@ import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/k
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
+import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
@@ -38,9 +40,21 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
     ) {}
 
     async execute(params: any): Promise<void> {
-        const prData = await this.fillProperties(params);
+        const normalizedPayload = await this.normalizePayload(params);
+
+        if (!normalizedPayload) {
+            return;
+        }
+
+        const prData = await this.fillProperties(normalizedPayload);
 
         try {
+            if (params?.platformType === PlatformType.AZURE_REPOS) {
+                if (normalizedPayload?.pullRequest?.status !== 'completed') {
+                    return;
+                }
+            }
+
             const pr = await this.pullRequestService.findByNumberAndRepository(
                 prData.context.prNumber,
                 prData.context.repository.name,
@@ -82,20 +96,55 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
         }
     }
 
+    private async normalizePayload(params: any): Promise<any> {
+        const { payload, platformType } = params;
+
+        const sanitizedPayload =
+            platformType === PlatformType.BITBUCKET
+                ? stripCurlyBracesFromUUIDs(payload)
+                : payload;
+
+        const mappedPlatform = getMappedPlatform(platformType);
+
+        if (!mappedPlatform) {
+            return;
+        }
+
+        let pullRequest = mappedPlatform.mapPullRequest({
+            payload: sanitizedPayload,
+        });
+
+        if (
+            !pullRequest &&
+            !pullRequest?.number &&
+            !pullRequest?.repository &&
+            !pullRequest?.user
+        ) {
+            return;
+        }
+
+        const repository = mappedPlatform.mapRepository({
+            payload: sanitizedPayload,
+        });
+
+        if (!repository && !repository?.id && !repository?.name) {
+            return;
+        }
+
+        return {
+            pullRequest,
+            repository,
+            platformType,
+        };
+    }
+
     private async fillProperties(params: any): Promise<{
         context: contextToGenerateIssues;
     }> {
-        const prNumber =
-            Number(params?.number) ||
-            Number(params.payload?.pull_request?.number);
-        const repositoryId =
-            params?.repository?.id?.toString() ||
-            params.payload?.repository?.id?.toString();
-        const repositoryName =
-            params?.repository?.name || params.payload?.repository?.name;
-        const repositoryFullName =
-            params?.repository?.full_name ||
-            params.payload?.repository?.full_name;
+        const prNumber = Number(params?.pullRequest?.number);
+        const repositoryId = params?.repository?.id?.toString();
+        const repositoryName = params?.repository?.name;
+        const repositoryFullName = params?.repository?.fullName;
         const organizationId =
             this.request?.user?.organization?.uuid ||
             'aaeb9004-2069-4858-8504-ec3c8c3a34f6'; //REMOVER
@@ -137,7 +186,7 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
                 platformType,
             );
 
-        if (repositories.length === 0) {
+        if (repositories?.length === 0) {
             throw new Error('Repository not found');
         }
 
