@@ -57,4 +57,5 @@ export interface IIssueDetails {
         thumbsUp: number;
         thumbsDown: number;
     };
+    gitOrganizationName: string;
 }
