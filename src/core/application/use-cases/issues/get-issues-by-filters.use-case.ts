@@ -9,6 +9,7 @@ import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { Inject, Injectable } from '@nestjs/common';
 import { BuildFilterUseCase } from './build-filter.use-case';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 @Injectable()
 export class GetIssuesByFiltersUseCase implements IUseCase {
@@ -17,6 +18,8 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
         private readonly issuesService: IIssuesService,
 
         private readonly buildFilterUseCase: BuildFilterUseCase,
+
+        private readonly logger: PinoLoggerService,
     ) {}
 
     async execute(filters: GetIssuesByFiltersDto): Promise<{
@@ -28,30 +31,60 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
             totalPages: number;
         };
     }> {
-        const filter = await this.buildFilterUseCase.execute(filters);
-        const paginationOptions = this.buildPaginationOptions(filters);
+        try {
+            const filter = await this.buildFilterUseCase.execute(filters);
+            const paginationOptions = this.buildPaginationOptions(filters);
 
-        const [data, total] = await Promise.all([
-            this.issuesService.find(filter, paginationOptions),
-            this.issuesService.count(filter),
-        ]);
+            const [data, total] = await Promise.all([
+                this.issuesService.find(filter, paginationOptions),
+                this.issuesService.count(filter),
+            ]);
 
-        const issues = await Promise.all(
-            data.map(async (issue) => {
-                const age = await this.ageCalculation(issue);
-                return { ...issue.toObject(), age };
-            }),
-        );
+            if (!data || data?.length === 0) {
+                return {
+                    issues: [],
+                    pagination: {
+                        page: filters.page || 1,
+                        limit: filters.limit || 100,
+                        total: 0,
+                        totalPages: 0,
+                    },
+                };
+            }
 
-        return {
-            issues,
-            pagination: {
-                page: filters.page || 1,
-                limit: filters.limit || 100,
-                total,
-                totalPages: Math.ceil(total / (filters.limit || 100)),
-            },
-        };
+            const issues = await Promise.all(
+                data?.map(async (issue) => {
+                    const age = await this.ageCalculation(issue);
+                    return { ...issue.toObject(), age };
+                }),
+            );
+
+            return {
+                issues,
+                pagination: {
+                    page: filters.page || 1,
+                    limit: filters.limit || 100,
+                    total,
+                    totalPages: Math.ceil(total / (filters.limit || 100)),
+                },
+            };
+        } catch (error) {
+            this.logger.error({
+                context: GetIssuesByFiltersUseCase.name,
+                message: 'Error getting issues by filters',
+                error,
+            });
+
+            return {
+                issues: [],
+                pagination: {
+                    page: filters.page || 1,
+                    limit: filters.limit || 100,
+                    total: 0,
+                    totalPages: 0,
+                },
+            };
+        }
     }
 
     private buildPaginationOptions(options: PaginationDto) {
