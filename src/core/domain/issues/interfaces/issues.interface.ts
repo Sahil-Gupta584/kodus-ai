@@ -50,6 +50,9 @@ export interface IIssueDetails {
         url: string;
     };
     currentCode: string;
+    language: string;
+    startLine: number;
+    endLine: number;
     reactions: {
         thumbsUp: number;
         thumbsDown: number;

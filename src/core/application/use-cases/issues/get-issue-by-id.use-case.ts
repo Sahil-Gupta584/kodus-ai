@@ -68,6 +68,9 @@ export class GetIssueByIdUseCase implements IUseCase {
                 url: this.buildRepositoryUrl(dataToBuildUrls),
             },
             currentCode: issue.representativeSuggestion.existingCode,
+            language: issue.language,
+            startLine: issue.representativeSuggestion.startLine,
+            endLine: issue.representativeSuggestion.endLine,
             reactions,
         };
     }
