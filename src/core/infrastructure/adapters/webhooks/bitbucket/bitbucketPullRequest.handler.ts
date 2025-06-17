@@ -115,7 +115,7 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                     await this.savePullRequestUseCase.execute(params);
 
                 if (pullRequest && pullRequest.status === 'closed') {
-                    await this.generateIssuesFromPrClosedUseCase.execute(pullRequest);
+                    await this.generateIssuesFromPrClosedUseCase.execute(params);
                 }
             }
         } catch (error) {
