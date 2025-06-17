@@ -10,7 +10,6 @@ import {
     ICodeReviewFeedbackService,
 } from '@/core/domain/codeReviewFeedback/contracts/codeReviewFeedback.service.contract';
 import {
-    IIssue,
     IIssueDetails,
 } from '@/core/domain/issues/interfaces/issues.interface';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
@@ -71,6 +70,19 @@ export class GetIssueByIdUseCase implements IUseCase {
             currentCode: issue.representativeSuggestion.existingCode,
             reactions,
         };
+    }
+
+    //#region Auxiliary functions
+    private async ageCalculation(issue: IssuesEntity): Promise<string> {
+        const now = new Date();
+        const createdAt = new Date(issue.createdAt);
+
+        const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        const daysText = diffDays === 1 ? 'day' : 'days';
+
+        return `${diffDays} ${daysText} ago`;
     }
 
     private async calculateTotalReactions(
@@ -148,7 +160,9 @@ export class GetIssueByIdUseCase implements IUseCase {
             url: this.buildPullRequestUrl(dataToBuildUrls, prNumber),
         }));
     }
+    //#endregion
 
+    //#region Build URLs
     private buildFileUrl(
         data: {
             platform: PlatformType;
@@ -158,7 +172,6 @@ export class GetIssueByIdUseCase implements IUseCase {
         filePath: string,
         branch: string = 'main',
     ): string {
-        // Remove barra inicial se existir
         const cleanFilePath = filePath.startsWith('/')
             ? filePath.substring(1)
             : filePath;
@@ -176,8 +189,6 @@ export class GetIssueByIdUseCase implements IUseCase {
                 throw new Error(`Plataforma não suportada: ${data.platform}`);
         }
     }
-
-    // ... existing code ...
 
     private buildPullRequestUrl(
         data: {
@@ -218,16 +229,5 @@ export class GetIssueByIdUseCase implements IUseCase {
                 throw new Error(`Plataforma não suportada: ${data.platform}`);
         }
     }
-
-    private async ageCalculation(issue: IssuesEntity): Promise<string> {
-        const now = new Date();
-        const createdAt = new Date(issue.createdAt);
-
-        const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        const daysText = diffDays === 1 ? 'day' : 'days';
-
-        return `${diffDays} ${daysText} ago`;
-    }
+    //#endregion
 }
