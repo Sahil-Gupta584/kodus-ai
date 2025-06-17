@@ -29,3 +29,29 @@ export interface IIssue {
     createdAt: string;
     updatedAt: string;
 }
+
+export interface IIssueDetails {
+    title: string;
+    description: string;
+    age: string;
+    label: LabelType;
+    severity: SeverityLevel;
+    status: IssueStatus;
+    fileLink: {
+        label: string;
+        url: string;
+    };
+    prLinks: {
+        label: string;
+        url: string;
+    }[];
+    repositoryLink: {
+        label: string;
+        url: string;
+    };
+    currentCode: string;
+    reactions: {
+        thumbsUp: number;
+        thumbsDown: number;
+    };
+}
