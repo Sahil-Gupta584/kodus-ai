@@ -24,7 +24,7 @@ export interface IIssue {
     reactions?: {
         thumbsUp: number;
         thumbsDown: number;
-    }[];
+    };
     age?: string;
     createdAt: string;
     updatedAt: string;
