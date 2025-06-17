@@ -38,20 +38,63 @@ export class GetIssueByIdUseCase implements IUseCase {
             return issue;
         }
 
-        const issueFeedbacks = codeReviewFeedback.filter(
-            (feedback) =>
-                feedback?.suggestionId === issue.representativeSuggestion.id,
+        const reactions = await this.calculateTotalReactions(
+            issue,
+            codeReviewFeedback,
         );
-
         const prLinks = await this.selectAllPrNumbers(issue);
 
         const issueWithFeedback = {
             ...issue.toObject(),
-            reactions: issueFeedbacks.map((feedback) => feedback.reactions),
+            reactions,
             prLinks,
         };
 
         return issueWithFeedback;
+    }
+
+    private async calculateTotalReactions(
+        issue: IssuesEntity,
+        codeReviewFeedback: any[],
+    ): Promise<{ thumbsUp: number; thumbsDown: number }> {
+        const suggestionIds = new Set<string>();
+
+        if (issue.representativeSuggestion?.id) {
+            suggestionIds.add(issue.representativeSuggestion.id);
+        }
+
+        if (issue.contributingSuggestions?.length) {
+            issue.contributingSuggestions.forEach((suggestion) => {
+                if (suggestion.id) {
+                    suggestionIds.add(suggestion.id);
+                }
+            });
+        }
+
+        const allRelevantFeedbacks = codeReviewFeedback.filter(
+            (feedback) =>
+                feedback?.suggestionId &&
+                suggestionIds.has(feedback.suggestionId),
+        );
+
+        let totalThumbsUp = 0;
+        let totalThumbsDown = 0;
+
+        allRelevantFeedbacks.forEach((feedback) => {
+            if (feedback.reactions) {
+                if (typeof feedback.reactions.thumbsUp === 'number') {
+                    totalThumbsUp += feedback.reactions.thumbsUp;
+                }
+                if (typeof feedback.reactions.thumbsDown === 'number') {
+                    totalThumbsDown += feedback.reactions.thumbsDown;
+                }
+            }
+        });
+
+        return {
+            thumbsUp: totalThumbsUp,
+            thumbsDown: totalThumbsDown,
+        };
     }
 
     private async selectAllPrNumbers(issue: IssuesEntity): Promise<
