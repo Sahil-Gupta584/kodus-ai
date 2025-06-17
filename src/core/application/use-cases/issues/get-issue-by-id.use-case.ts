@@ -69,9 +69,10 @@ export class GetIssueByIdUseCase implements IUseCase {
             },
             currentCode: issue.representativeSuggestion.existingCode,
             language: issue.language,
-            startLine: issue.representativeSuggestion.startLine,
-            endLine: issue.representativeSuggestion.endLine,
+            startLine: issue.representativeSuggestion.relevantLinesStart,
+            endLine: issue.representativeSuggestion.relevantLinesEnd,
             reactions,
+            gitOrganizationName: issue.repository.full_name.split('/')[0],
         };
     }
 
