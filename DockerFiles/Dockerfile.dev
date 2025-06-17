@@ -12,7 +12,7 @@ WORKDIR /usr/src/app
 
 # Instalar certificados raiz e git no estágio final
 RUN apt-get update && \
-    apt-get install -y ca-certificates git && \
+    apt-get install -y ca-certificates git make g++ python3 && \
     rm -rf /var/lib/apt/lists/*
 
 ENV NODE_OPTIONS="--max-old-space-size=4096"
@@ -62,7 +62,7 @@ EXPOSE 3001
 
 # Instalar certificados raiz e git no estágio final
 RUN apt-get update && \
-    apt-get install -y ca-certificates git && \
+    apt-get install -y ca-certificates git python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
 
 # Se no ambiente de desenvolvimento você quiser ter todas as dependências,

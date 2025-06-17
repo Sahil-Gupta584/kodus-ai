@@ -129,49 +129,13 @@ export class CodeAstAnalysisService
         organizationAndTeamData: any,
     ): Promise<CodeAnalysisAST> {
         try {
-            const headDirParams = await this.getCloneParams(
-                {
-                    id: repository.id,
-                    name: repository.name,
-                    defaultBranch: pullRequest.head.ref,
-                    fullName:
-                        repository.full_name ||
-                        `${repository.owner}/${repository.name}`,
-                    platform: platformType as
-                        | 'github'
-                        | 'gitlab'
-                        | 'bitbucket'
-                        | 'azure-devops',
-                    language: repository.language || 'unknown',
-                },
-                organizationAndTeamData,
-            );
-
-            if (!headDirParams) {
-                return null;
-            }
-
-            const baseDirParams = await this.getCloneParams(
-                {
-                    id: repository.id,
-                    name: repository.name,
-                    defaultBranch: pullRequest.base.ref,
-                    fullName:
-                        repository.full_name ||
-                        `${repository.owner}/${repository.name}`,
-                    platform: platformType as
-                        | 'github'
-                        | 'gitlab'
-                        | 'bitbucket'
-                        | 'azure-devops',
-                    language: repository.language || 'unknown',
-                },
-                organizationAndTeamData,
-            );
-
-            if (!baseDirParams) {
-                return null;
-            }
+            const { headRepo: headDirParams, baseRepo: baseDirParams } =
+                await this.getRepoParams(
+                    repository,
+                    pullRequest,
+                    organizationAndTeamData,
+                    platformType,
+                );
 
             let result: CodeAnalysisAST;
             const breaker = new CircuitBreaker(
@@ -204,7 +168,6 @@ export class CodeAstAnalysisService
                                 const jsonData = new TextDecoder().decode(
                                     data.data,
                                 );
-                                console.log(jsonData);
                                 return this.parseGraphResponse(jsonData);
                             }),
                         ),
@@ -481,5 +444,107 @@ export class CodeAstAnalysisService
         };
 
         return baseContext;
+    }
+
+    async getRelatedContentFromDiff(
+        repository: any,
+        pullRequest: any,
+        platformType: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        diff: string,
+        filePath: string,
+    ): Promise<string> {
+        const { headRepo, baseRepo } = await this.getRepoParams(
+            repository,
+            pullRequest,
+            organizationAndTeamData,
+            platformType,
+        );
+
+        const call = this.astMicroservice.getContentFromDiff({
+            baseRepo,
+            headRepo,
+            diff,
+            filePath,
+        });
+
+        const relatedContent = await lastValueFrom(
+            call.pipe(
+                reduce((acc, chunk) => {
+                    return {
+                        ...acc,
+                        data: concatUint8Arrays(acc.data, chunk.data),
+                    };
+                }),
+                map((data) => {
+                    const str = new TextDecoder().decode(data.data);
+                    return str;
+                }),
+            ),
+        );
+
+        return relatedContent;
+    }
+
+    private async getRepoParams(
+        repository: any,
+        pullRequest: any,
+        organizationAndTeamData: OrganizationAndTeamData,
+        platformType: string,
+    ): Promise<{
+        headRepo: RepositoryData | null;
+        baseRepo: RepositoryData | null;
+    } | null> {
+        const headDirParams = await this.getCloneParams(
+            {
+                id: repository.id,
+                name: repository.name,
+                defaultBranch: pullRequest.head.ref,
+                fullName:
+                    repository.full_name ||
+                    `${repository.owner}/${repository.name}`,
+                platform: platformType as
+                    | 'github'
+                    | 'gitlab'
+                    | 'bitbucket'
+                    | 'azure-devops',
+                language: repository.language || 'unknown',
+            },
+            organizationAndTeamData,
+        );
+
+        if (!headDirParams) {
+            return null;
+        }
+
+        const baseDirParams = await this.getCloneParams(
+            {
+                id: repository.id,
+                name: repository.name,
+                defaultBranch: pullRequest.base.ref,
+                fullName:
+                    repository.full_name ||
+                    `${repository.owner}/${repository.name}`,
+                platform: platformType as
+                    | 'github'
+                    | 'gitlab'
+                    | 'bitbucket'
+                    | 'azure-devops',
+                language: repository.language || 'unknown',
+            },
+            organizationAndTeamData,
+        );
+
+        if (!baseDirParams) {
+            return {
+                headRepo: headDirParams,
+                baseRepo: null,
+            };
+        }
+
+        return {
+            headRepo: headDirParams,
+            baseRepo: baseDirParams,
+        };
     }
 }

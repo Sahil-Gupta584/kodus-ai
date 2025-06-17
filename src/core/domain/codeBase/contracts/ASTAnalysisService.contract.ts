@@ -40,4 +40,12 @@ export interface IASTAnalysisService {
         pullRequest: any,
         codeAnalysisAST: CodeAnalysisAST,
     ): Promise<ChangeResult>;
+    getRelatedContentFromDiff(
+        repository: any,
+        pullRequest: any,
+        platformType: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        diff: string,
+        filePath: string,
+    ): Promise<string>;
 }
