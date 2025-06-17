@@ -10,14 +10,16 @@ import {
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@/core/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { contextToGenerateIssues } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import {
+    contextToGenerateIssues,
+    IRepositoryToIssues,
+} from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { Inject, Injectable } from '@nestjs/common';
-import { REQUEST } from '@nestjs/core';
 
 @Injectable()
 export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
@@ -30,11 +32,6 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
 
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
-
-        @Inject(REQUEST)
-        private readonly request: Request & {
-            user: { organization: { uuid: string } };
-        },
 
         private readonly logger: PinoLoggerService,
     ) {}
@@ -68,7 +65,7 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
                 return;
             }
 
-            const prFiles = pr.files.slice(0, 3); //REMOVER
+            const prFiles = pr.files;
 
             if (prFiles.length === 0) {
                 return;
@@ -145,21 +142,13 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
         const repositoryId = params?.repository?.id?.toString();
         const repositoryName = params?.repository?.name;
         const repositoryFullName = params?.repository?.fullName;
-        const organizationId =
-            this.request?.user?.organization?.uuid ||
-            'aaeb9004-2069-4858-8504-ec3c8c3a34f6'; //REMOVER
-        const platformType =
-            params?.platformType || params.payload?.platformType;
+        const platformType = params?.platformType;
 
-        const teamId = await this.getTeamIdUsingRepositoryId(
-            repositoryId,
+        const organizationAndTeamData = await this.getOrganizationAndTeamData(
+            prNumber,
+            params?.repository,
             platformType,
         );
-
-        const organizationAndTeamData: OrganizationAndTeamData = {
-            organizationId: organizationId,
-            teamId: teamId,
-        };
 
         return {
             context: {
@@ -175,21 +164,38 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
         };
     }
 
-    private async getTeamIdUsingRepositoryId(
-        repositoryId: string,
+    private async getOrganizationAndTeamData(
+        prNumber: number,
+        repository: IRepositoryToIssues,
         platformType: PlatformType,
-    ): Promise<string> {
-        const repositories =
+    ): Promise<OrganizationAndTeamData | null> {
+        const configs =
             await this.integrationConfigService.findIntegrationConfigWithTeams(
                 IntegrationConfigKey.REPOSITORIES,
-                repositoryId,
+                repository.id,
                 platformType,
             );
 
-        if (repositories?.length === 0) {
-            throw new Error('Repository not found');
+        if (!configs || !configs.length) {
+            this.logger.warn({
+                message: `No repository configuration found for repository ${repository?.name}`,
+                context: GenerateIssuesFromPrClosedUseCase.name,
+                metadata: {
+                    repositoryName: repository?.name,
+                    prNumber: prNumber,
+                },
+            });
+
+            return null;
         }
 
-        return repositories[0].team.uuid;
+        const organizationAndTeamData: OrganizationAndTeamData[] = configs.map(
+            (config) => ({
+                organizationId: config.team.organization.uuid,
+                teamId: config.team.uuid,
+            }),
+        );
+
+        return organizationAndTeamData?.[0] || null;
     }
 }
