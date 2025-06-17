@@ -9,7 +9,10 @@ import {
     CODE_REVIEW_FEEDBACK_SERVICE_TOKEN,
     ICodeReviewFeedbackService,
 } from '@/core/domain/codeReviewFeedback/contracts/codeReviewFeedback.service.contract';
-import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
+import {
+    IIssue,
+    IIssueDetails,
+} from '@/core/domain/issues/interfaces/issues.interface';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 
 @Injectable()
@@ -22,7 +25,7 @@ export class GetIssueByIdUseCase implements IUseCase {
         private readonly codeReviewFeedbackService: ICodeReviewFeedbackService,
     ) {}
 
-    async execute(id: string): Promise<IIssue | null> {
+    async execute(id: string): Promise<IIssueDetails | null> {
         const issue = await this.issuesService.findById(id);
 
         if (!issue) {
@@ -34,23 +37,40 @@ export class GetIssueByIdUseCase implements IUseCase {
                 issue.organizationId,
             );
 
-        if (!codeReviewFeedback) {
-            return issue;
-        }
-
         const reactions = await this.calculateTotalReactions(
             issue,
             codeReviewFeedback,
         );
-        const prLinks = await this.selectAllPrNumbers(issue);
+        const prUrls = await this.selectAllPrNumbers(issue);
 
-        const issueWithFeedback = {
-            ...issue.toObject(),
-            reactions,
-            prLinks,
+        const dataToBuildUrls = {
+            platform: issue.repository.platform,
+            repositoryName: issue.repository.name,
+            repositoryFullName: issue.repository.full_name,
         };
 
-        return issueWithFeedback;
+        return {
+            title: issue.title,
+            description: issue.description,
+            age: await this.ageCalculation(issue),
+            label: issue.label,
+            severity: issue.severity,
+            status: issue.status,
+            fileLink: {
+                label: issue.filePath,
+                url: this.buildFileUrl(dataToBuildUrls, issue.filePath),
+            },
+            prLinks: prUrls.map((pr) => ({
+                label: pr.number,
+                url: pr.url,
+            })),
+            repositoryLink: {
+                label: issue.repository.name,
+                url: this.buildRepositoryUrl(dataToBuildUrls),
+            },
+            currentCode: issue.representativeSuggestion.existingCode,
+            reactions,
+        };
     }
 
     private async calculateTotalReactions(
@@ -127,9 +147,37 @@ export class GetIssueByIdUseCase implements IUseCase {
             number: prNumber,
             url: this.buildPullRequestUrl(dataToBuildUrls, prNumber),
         }));
-
-
     }
+
+    private buildFileUrl(
+        data: {
+            platform: PlatformType;
+            repositoryName: string;
+            repositoryFullName: string;
+        },
+        filePath: string,
+        branch: string = 'main',
+    ): string {
+        // Remove barra inicial se existir
+        const cleanFilePath = filePath.startsWith('/')
+            ? filePath.substring(1)
+            : filePath;
+
+        switch (data.platform) {
+            case PlatformType.GITHUB:
+                return `https://github.com/${data.repositoryFullName}/blob/${branch}/${cleanFilePath}`;
+            case PlatformType.GITLAB:
+                return `https://gitlab.com/${data.repositoryFullName}/-/blob/${branch}/${cleanFilePath}`;
+            case PlatformType.AZURE_REPOS:
+                return `https://dev.azure.com/${data.repositoryFullName}/_git/${data.repositoryName}?path=/${cleanFilePath}`;
+            case PlatformType.BITBUCKET:
+                return `https://bitbucket.org/${data.repositoryFullName}/src/${branch}/${cleanFilePath}`;
+            default:
+                throw new Error(`Plataforma não suportada: ${data.platform}`);
+        }
+    }
+
+    // ... existing code ...
 
     private buildPullRequestUrl(
         data: {
@@ -153,12 +201,10 @@ export class GetIssueByIdUseCase implements IUseCase {
         }
     }
 
-    private buildRepositoryUrl(
-        data: {
-            platform: PlatformType;
-            repositoryFullName: string;
-        },
-    ): string {
+    private buildRepositoryUrl(data: {
+        platform: PlatformType;
+        repositoryFullName: string;
+    }): string {
         switch (data.platform) {
             case PlatformType.GITHUB:
                 return `https://github.com/${data.repositoryFullName}`;
@@ -171,5 +217,17 @@ export class GetIssueByIdUseCase implements IUseCase {
             default:
                 throw new Error(`Plataforma não suportada: ${data.platform}`);
         }
+    }
+
+    private async ageCalculation(issue: IssuesEntity): Promise<string> {
+        const now = new Date();
+        const createdAt = new Date(issue.createdAt);
+
+        const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        const daysText = diffDays === 1 ? 'day' : 'days';
+
+        return `${diffDays} ${daysText} ago`;
     }
 }
