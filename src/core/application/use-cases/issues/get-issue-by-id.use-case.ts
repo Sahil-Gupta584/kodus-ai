@@ -59,10 +59,6 @@ export class GetIssueByIdUseCase implements IUseCase {
     ): Promise<{ thumbsUp: number; thumbsDown: number }> {
         const suggestionIds = new Set<string>();
 
-        if (issue.representativeSuggestion?.id) {
-            suggestionIds.add(issue.representativeSuggestion.id);
-        }
-
         if (issue.contributingSuggestions?.length) {
             issue.contributingSuggestions.forEach((suggestion) => {
                 if (suggestion.id) {
@@ -104,10 +100,6 @@ export class GetIssueByIdUseCase implements IUseCase {
         }[]
     > {
         const prNumbers = new Set<string>();
-
-        if (issue.representativeSuggestion?.prNumber) {
-            prNumbers.add(issue.representativeSuggestion.prNumber.toString());
-        }
 
         if (issue.contributingSuggestions?.length) {
             issue.contributingSuggestions.forEach((suggestion) => {
