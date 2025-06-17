@@ -1,6 +1,8 @@
 import { IssueStatus } from '@/config/types/general/issues.type';
 import { IssuesEntity } from '../entities/issues.entity';
 import { IIssue } from '../interfaces/issues.interface';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
 
 export const ISSUES_REPOSITORY_TOKEN = Symbol('IssuesRepository');
 
@@ -32,9 +34,19 @@ export interface IIssuesRepository {
         updateData: Partial<IIssue>,
     ): Promise<IssuesEntity | null>;
 
+    updateLabel(
+        uuid: string,
+        label: LabelType,
+    ): Promise<IssuesEntity | null>;
+
+    updateSeverity(
+        uuid: string,
+        severity: SeverityLevel,
+    ): Promise<IssuesEntity | null>;
+
     updateStatus(
         uuid: string,
-        status: 'open' | 'resolved' | 'dismissed',
+        status: IssueStatus,
     ): Promise<IssuesEntity | null>;
 
     addSuggestionIds(

@@ -5,6 +5,8 @@ import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { IIssuesService } from '@/core/domain/issues/contracts/issues.service.contract';
 import { IssueStatus } from '@/config/types/general/issues.type';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
 
 @Injectable()
 export class IssuesService implements IIssuesService {
@@ -60,6 +62,7 @@ export class IssuesService implements IIssuesService {
     }
     //#endregion
 
+    //#region Update
     async update(
         issue: IssuesEntity,
         updateData: Partial<IIssue>,
@@ -67,12 +70,26 @@ export class IssuesService implements IIssuesService {
         return this.issuesRepository.update(issue, updateData);
     }
 
+    async updateLabel(
+        uuid: string,
+        label: LabelType,
+    ): Promise<IssuesEntity | null> {
+        return this.issuesRepository.updateLabel(uuid, label);
+    }
+
+    async updateSeverity(
+        uuid: string,
+        severity: SeverityLevel,
+    ): Promise<IssuesEntity | null> {
+        return this.issuesRepository.updateSeverity(uuid, severity);
+    }
     async updateStatus(
         uuid: string,
-        status: 'open' | 'resolved' | 'dismissed',
+        status: IssueStatus,
     ): Promise<IssuesEntity | null> {
         return this.issuesRepository.updateStatus(uuid, status);
     }
+    //#endregion
 
     async addSuggestionIds(
         uuid: string,

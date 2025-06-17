@@ -10,6 +10,8 @@ import { IIssuesRepository } from '@/core/domain/issues/contracts/issues.reposit
 import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { IssueStatus } from '@/config/types/general/issues.type';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
 @Injectable()
 export class IssuesRepository implements IIssuesRepository {
@@ -129,6 +131,7 @@ export class IssuesRepository implements IIssuesRepository {
         }
     }
 
+    //#region Update
     async update(
         issue: IssuesEntity,
         updateData: Omit<Partial<IIssue>, 'uuid' | 'id'>,
@@ -145,16 +148,17 @@ export class IssuesRepository implements IIssuesRepository {
         }
     }
 
-    async updateStatus(
+    async updateLabel(
         uuid: string,
-        status: 'open' | 'resolved' | 'dismissed',
+        label: LabelType,
     ): Promise<IssuesEntity | null> {
         try {
             const doc = await this.issuesModel.findByIdAndUpdate(
                 uuid,
                 {
                     $set: {
-                        'representativeSuggestion.implementationStatus': status,
+                        'label': label,
+                        'representativeSuggestion.label': label,
                     },
                 },
                 { new: true },
@@ -164,6 +168,44 @@ export class IssuesRepository implements IIssuesRepository {
             throw error;
         }
     }
+
+    async updateSeverity(
+        uuid: string,
+        severity: SeverityLevel,
+    ): Promise<IssuesEntity | null> {
+        try {
+            const doc = await this.issuesModel.findByIdAndUpdate(
+                uuid,
+                {
+                    $set: {
+                        'severity': severity,
+                        'representativeSuggestion.severity': severity,
+                    },
+                },
+                { new: true },
+            );
+            return doc ? mapSimpleModelToEntity(doc, IssuesEntity) : null;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    async updateStatus(
+        uuid: string,
+        status: IssueStatus,
+    ): Promise<IssuesEntity | null> {
+        try {
+            const doc = await this.issuesModel.findByIdAndUpdate(
+                uuid,
+                { $set: { status: status } },
+                { new: true },
+            );
+            return doc ? mapSimpleModelToEntity(doc, IssuesEntity) : null;
+        } catch (error) {
+            throw error;
+        }
+    }
+    //#endregion
 
     async addSuggestionIds(
         uuid: string,

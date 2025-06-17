@@ -12,7 +12,7 @@ import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from "@/core/domain/codeBase/con
 import { KodyIssuesManagementService } from "@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service";
 import { KODY_ISSUES_ANALYSIS_SERVICE_TOKEN } from "@/ee/codeBase/kodyIssuesAnalysis.service";
 import { IssuesController } from "@/core/infrastructure/http/controllers/issues.controller";
-import { UpdateIssueStatusUseCase } from "@/core/application/use-cases/issues/update-issues-status.use-case";
+import { UpdateIssuePropertyUseCase } from "@/core/application/use-cases/issues/update-issue-property.use-case";
 import { GetIssuesByFiltersUseCase } from "@/core/application/use-cases/issues/get-issues-by-filters.use-case";
 import { IntegrationConfigModule } from "./integrationConfig.module";
 import { ParametersModule } from "./parameters.module";
@@ -24,7 +24,7 @@ import { GenerateIssuesFromPrClosedUseCase } from "@/core/application/use-cases/
 
 const UseCases = [
     GetIssuesByFiltersUseCase,
-    UpdateIssueStatusUseCase,
+    UpdateIssuePropertyUseCase,
     GenerateIssuesFromPrClosedUseCase,
     GetTotalIssuesUseCase,
     BuildFilterUseCase,
