@@ -109,11 +109,15 @@ export class GetIssueByIdUseCase implements IUseCase {
             });
         }
 
-        const dataToBuildUrl = {
+        const dataToBuildUrls = {
             platform: issue.repository.platform,
             repositoryName: issue.repository.name,
             repositoryFullName: issue.repository.full_name,
         };
+
+        const repositoryUrl = this.buildRepositoryUrl(dataToBuildUrls);
+
+        issue.repository.url = repositoryUrl;
 
         const orderedPrNumbers = Array.from(prNumbers).sort(
             (a, b) => parseInt(a) - parseInt(b),
@@ -121,11 +125,13 @@ export class GetIssueByIdUseCase implements IUseCase {
 
         return orderedPrNumbers.map((prNumber) => ({
             number: prNumber,
-            url: this.buildUrl(dataToBuildUrl, prNumber),
+            url: this.buildPullRequestUrl(dataToBuildUrls, prNumber),
         }));
+
+
     }
 
-    private buildUrl(
+    private buildPullRequestUrl(
         data: {
             platform: PlatformType;
             repositoryName: string;
@@ -142,6 +148,26 @@ export class GetIssueByIdUseCase implements IUseCase {
                 return `https://dev.azure.com/${data.repositoryFullName}/_git/${data.repositoryName}/pullrequest/${prNumber}`;
             case PlatformType.BITBUCKET:
                 return `https://bitbucket.org/${data.repositoryFullName}/pull-requests/${prNumber}`;
+            default:
+                throw new Error(`Plataforma não suportada: ${data.platform}`);
+        }
+    }
+
+    private buildRepositoryUrl(
+        data: {
+            platform: PlatformType;
+            repositoryFullName: string;
+        },
+    ): string {
+        switch (data.platform) {
+            case PlatformType.GITHUB:
+                return `https://github.com/${data.repositoryFullName}`;
+            case PlatformType.GITLAB:
+                return `https://gitlab.com/${data.repositoryFullName}`;
+            case PlatformType.AZURE_REPOS:
+                return `https://dev.azure.com/${data.repositoryFullName}`;
+            case PlatformType.BITBUCKET:
+                return `https://bitbucket.org/${data.repositoryFullName}`;
             default:
                 throw new Error(`Plataforma não suportada: ${data.platform}`);
         }

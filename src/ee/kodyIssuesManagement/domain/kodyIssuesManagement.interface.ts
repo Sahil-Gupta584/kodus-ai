@@ -11,6 +11,7 @@ export interface IRepositoryToIssues {
     name: string;
     full_name: string;
     platform: PlatformType;
+    url?: string;
 }
 
 export type contextToGenerateIssues = {
