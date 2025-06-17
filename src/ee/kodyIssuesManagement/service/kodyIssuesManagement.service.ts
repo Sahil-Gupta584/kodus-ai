@@ -79,7 +79,7 @@ export class KodyIssuesManagementService
                 error,
                 metadata: params,
             });
-            throw error;
+            return;
         }
     }
 
@@ -147,7 +147,7 @@ export class KodyIssuesManagementService
                     filePath,
                 },
             });
-            throw error;
+            return;
         }
     }
 
@@ -243,7 +243,8 @@ export class KodyIssuesManagementService
                     repositoryId: context.repository.id,
                 },
             });
-            throw error;
+
+            return;
         }
     }
 
@@ -320,20 +321,21 @@ export class KodyIssuesManagementService
                     prNumber: context.prNumber,
                 },
             });
-            throw error;
+
+            return;
         }
     }
 
     private extractCodeFromPatch(patch: string): string {
         if (!patch) return '';
 
-        // Extrai linhas que não começam com - (removidas)
         return patch
             .split('\n')
             .filter((line) => !line.startsWith('-') && !line.startsWith('@@'))
             .map((line) => (line.startsWith('+') ? line.substring(1) : line))
             .join('\n');
     }
+
     private findSuggestionById(
         unmatchedSuggestions: any[],
         suggestionId: string,
@@ -355,12 +357,10 @@ export class KodyIssuesManagementService
         return prFiles.reduce((acc: any[], file) => {
             const validSuggestions = (file.suggestions || [])
                 .filter((suggestion) => {
-                    // Deve ser não implementada
                     const isNotImplemented =
                         suggestion.implementationStatus ===
                         ImplementationStatus.NOT_IMPLEMENTED;
 
-                    // Não deve estar descartada pelos status específicos
                     const isNotDiscarded = !discardedStatuses.includes(
                         suggestion.priorityStatus,
                     );
@@ -409,7 +409,6 @@ export class KodyIssuesManagementService
             if (!suggestion) continue;
 
             if (match.existingIssueId) {
-                // Adicionar suggestion à issue existente
                 const existingIssue = await this.issuesService.findById(
                     match.existingIssueId,
                 );
@@ -420,12 +419,10 @@ export class KodyIssuesManagementService
                     );
                 }
             } else {
-                // Suggestion não tem match, vai para novas issues
                 unmatchedSuggestions.push(suggestion);
             }
         }
 
-        // Criar novas issues para suggestions não matcheadas
         if (unmatchedSuggestions.length > 0) {
             await this.createNewIssues(context, unmatchedSuggestions);
         }
