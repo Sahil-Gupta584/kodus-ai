@@ -253,6 +253,7 @@ Return a single JSON object with a key ""issueVerificationResults"". The value o
 {
   "issueVerificationResults": [
     {
+      "issueId": "string",
       "issueTitle": "string",
       "contributingSuggestionIds": ["string"],
       "isIssuePresentInCode": false,
