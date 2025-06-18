@@ -2,13 +2,13 @@ import {
     IIssuesService,
     ISSUES_SERVICE_TOKEN,
 } from '@/core/domain/issues/contracts/issues.service.contract';
-import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 import { GetIssuesByFiltersDto } from '@/core/infrastructure/http/dtos/get-issues-by-filters.dto';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { Inject, Injectable } from '@nestjs/common';
 import { BuildFilterUseCase } from './build-filter.use-case';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
 
 @Injectable()
 export class GetIssuesByFiltersUseCase implements IUseCase {
@@ -19,6 +19,8 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
         private readonly buildFilterUseCase: BuildFilterUseCase,
 
         private readonly logger: PinoLoggerService,
+
+        private readonly kodyIssuesManagementService: KodyIssuesManagementService,
     ) {}
 
     async execute(filters: GetIssuesByFiltersDto): Promise<IIssue[]> {
@@ -33,7 +35,7 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
 
             const issuesWithAge = await Promise.all(
                 issues?.map(async (issue) => {
-                    const age = await this.ageCalculation(issue);
+                    const age = await this.kodyIssuesManagementService.ageCalculation(issue);
                     return { ...issue.toObject(), age };
                 }),
             );
@@ -48,17 +50,5 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
 
             return [];
         }
-    }
-
-    private async ageCalculation(issue: IssuesEntity): Promise<string> {
-        const now = new Date();
-        const createdAt = new Date(issue.createdAt);
-
-        const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        const daysText = diffDays === 1 ? 'day' : 'days';
-
-        return `${diffDays} ${daysText} ago`;
     }
 }

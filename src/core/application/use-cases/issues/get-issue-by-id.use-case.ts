@@ -11,6 +11,7 @@ import {
 } from '@/core/domain/codeReviewFeedback/contracts/codeReviewFeedback.service.contract';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { IIssueDetails } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
 
 @Injectable()
 export class GetIssueByIdUseCase implements IUseCase {
@@ -20,6 +21,8 @@ export class GetIssueByIdUseCase implements IUseCase {
 
         @Inject(CODE_REVIEW_FEEDBACK_SERVICE_TOKEN)
         private readonly codeReviewFeedbackService: ICodeReviewFeedbackService,
+
+        private readonly kodyIssuesManagementService: KodyIssuesManagementService,
     ) {}
 
     async execute(id: string): Promise<IIssueDetails | null> {
@@ -49,7 +52,7 @@ export class GetIssueByIdUseCase implements IUseCase {
         return {
             title: issue.title,
             description: issue.description,
-            age: await this.ageCalculation(issue),
+            age: await this.kodyIssuesManagementService.ageCalculation(issue),
             label: issue.label,
             severity: issue.severity,
             status: issue.status,
@@ -75,18 +78,6 @@ export class GetIssueByIdUseCase implements IUseCase {
     }
 
     //#region Auxiliary functions
-    private async ageCalculation(issue: IssuesEntity): Promise<string> {
-        const now = new Date();
-        const createdAt = new Date(issue.createdAt);
-
-        const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        const daysText = diffDays === 1 ? 'day' : 'days';
-
-        return `${diffDays} ${daysText} ago`;
-    }
-
     private async calculateTotalReactions(
         issue: IssuesEntity,
         codeReviewFeedback: any[],

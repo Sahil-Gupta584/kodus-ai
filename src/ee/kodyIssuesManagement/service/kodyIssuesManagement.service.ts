@@ -16,6 +16,7 @@ import {
     IPullRequestManagerService,
     PULL_REQUEST_MANAGER_SERVICE_TOKEN,
 } from '@/core/domain/codeBase/contracts/PullRequestManagerService.contract';
+import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 
 @Injectable()
 export class KodyIssuesManagementService
@@ -444,4 +445,18 @@ export class KodyIssuesManagementService
 
         return files;
     }
+
+    //#region Auxiliary Functions
+    async ageCalculation(issue: IssuesEntity): Promise<string> {
+        const now = new Date();
+        const createdAt = new Date(issue.createdAt);
+
+        const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        const daysText = diffDays === 1 ? 'day' : 'days';
+
+        return `${diffDays} ${daysText} ago`;
+    }
+    //#endregion
 }
