@@ -12,6 +12,10 @@ import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.
 import { IssueStatus } from '@/config/types/general/issues.type';
 import { CodeSuggestion } from '@/config/types/general/codeReview.type';
 import { contextToGenerateIssues } from '../domain/kodyIssuesManagement.interface';
+import {
+    IPullRequestManagerService,
+    PULL_REQUEST_MANAGER_SERVICE_TOKEN,
+} from '@/core/domain/codeBase/contracts/PullRequestManagerService.contract';
 
 @Injectable()
 export class KodyIssuesManagementService
@@ -28,12 +32,15 @@ export class KodyIssuesManagementService
 
         @Inject(KODY_ISSUES_ANALYSIS_SERVICE_TOKEN)
         private readonly kodyIssuesAnalysisService: KodyIssuesAnalysisService,
+
+        @Inject(PULL_REQUEST_MANAGER_SERVICE_TOKEN)
+        private pullRequestHandlerService: IPullRequestManagerService,
     ) {}
 
     async processClosedPr(params: contextToGenerateIssues): Promise<void> {
         try {
             this.logger.log({
-                message: `Starting issue processing for closed PR#${params.prNumber}`,
+                message: `Starting issue processing for closed PR#${params.pullRequest.number}`,
                 context: KodyIssuesManagementService.name,
                 metadata: params,
             });
@@ -44,7 +51,7 @@ export class KodyIssuesManagementService
 
             if (allSuggestions.length === 0) {
                 this.logger.log({
-                    message: `No suggestions found for PR#${params.prNumber}`,
+                    message: `No suggestions found for PR#${params.pullRequest.number}`,
                     context: KodyIssuesManagementService.name,
                     metadata: params,
                 });
@@ -72,9 +79,16 @@ export class KodyIssuesManagementService
                 params.prFiles,
                 changedFiles,
             );
+
+            await this.pullRequestsService.updateSyncedWithIssuesFlag(
+                params.pullRequest.number,
+                params.repository.id,
+                params.organizationAndTeamData.organizationId,
+                true,
+            );
         } catch (error) {
             this.logger.error({
-                message: `Error processing closed PR#${params.prNumber}`,
+                message: `Error processing closed PR#${params.pullRequest.number}`,
                 context: KodyIssuesManagementService.name,
                 error,
                 metadata: params,
@@ -88,7 +102,7 @@ export class KodyIssuesManagementService
         filePath: string,
         newSuggestions: any[],
     ): Promise<any> {
-        const { organizationAndTeamData, repository, prNumber } = context;
+        const { organizationAndTeamData, repository, pullRequest } = context;
 
         try {
             // 1. Buscar issues abertas para o arquivo
@@ -129,7 +143,7 @@ export class KodyIssuesManagementService
             const mergeResult =
                 await this.kodyIssuesAnalysisService.mergeSuggestionsIntoIssues(
                     organizationAndTeamData,
-                    prNumber,
+                    pullRequest,
                     promptData,
                 );
 
@@ -154,7 +168,7 @@ export class KodyIssuesManagementService
     async createNewIssues(
         context: Pick<
             contextToGenerateIssues,
-            'organizationAndTeamData' | 'repository' | 'prNumber'
+            'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         unmatchedSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
@@ -183,7 +197,7 @@ export class KodyIssuesManagementService
                 const llmResult =
                     await this.kodyIssuesAnalysisService.createNewIssues(
                         context.organizationAndTeamData,
-                        context.prNumber,
+                        context.pullRequest.number,
                         promptData,
                     );
 
@@ -197,7 +211,7 @@ export class KodyIssuesManagementService
 
                         const representativeSuggestionWithPrNumber = {
                             ...representativeSuggestion,
-                            prNumber: context.prNumber,
+                            prNumber: context.pullRequest.number,
                         };
 
                         await this.issuesService.create({
@@ -214,7 +228,7 @@ export class KodyIssuesManagementService
                                 newIssue?.contributingSuggestionIds?.map(
                                     (suggestionId) => ({
                                         id: suggestionId,
-                                        prNumber: context.prNumber,
+                                        prNumber: context.pullRequest.number,
                                     }),
                                 ),
                             status: IssueStatus.OPEN,
@@ -239,7 +253,7 @@ export class KodyIssuesManagementService
                 error,
                 metadata: {
                     organizationAndTeamData: context.organizationAndTeamData,
-                    prNumber: context.prNumber,
+                    prNumber: context.pullRequest.number,
                     repositoryId: context.repository.id,
                 },
             });
@@ -251,13 +265,19 @@ export class KodyIssuesManagementService
     async resolveExistingIssues(
         context: Pick<
             contextToGenerateIssues,
-            'organizationAndTeamData' | 'repository' | 'prNumber'
+            'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         files: any[],
         changedFiles: string[],
     ): Promise<void> {
         try {
             for (const filePath of changedFiles) {
+                const prChangedFiles = await this.getChangedFiles(context);
+
+                const currentCode = prChangedFiles.find(
+                    (f) => f.filename === filePath,
+                )?.fileContent;
+
                 const fileData = files.find((f) => f.path === filePath);
                 if (!fileData) continue;
 
@@ -269,12 +289,7 @@ export class KodyIssuesManagementService
                     IssueStatus.OPEN,
                 );
 
-                if (!openIssues.length) continue;
-
-                // Construir conteúdo do arquivo (usando patch como aproximação)
-                const currentCode =
-                    this.extractCodeFromPatch(fileData.patch) ||
-                    'Content not available';
+                if (!openIssues?.length) continue;
 
                 const promptData = {
                     filePath,
@@ -318,22 +333,12 @@ export class KodyIssuesManagementService
                 metadata: {
                     organizationAndTeamData: context.organizationAndTeamData,
                     repositoryId: context.repository.id,
-                    prNumber: context.prNumber,
+                    prNumber: context.pullRequest.number,
                 },
             });
 
             return;
         }
-    }
-
-    private extractCodeFromPatch(patch: string): string {
-        if (!patch) return '';
-
-        return patch
-            .split('\n')
-            .filter((line) => !line.startsWith('-') && !line.startsWith('@@'))
-            .map((line) => (line.startsWith('+') ? line.substring(1) : line))
-            .join('\n');
     }
 
     private findSuggestionById(
@@ -390,7 +395,7 @@ export class KodyIssuesManagementService
     private async processMergeResult(
         context: Pick<
             contextToGenerateIssues,
-            'organizationAndTeamData' | 'repository' | 'prNumber'
+            'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         mergeResult: any,
         newSuggestions: Partial<CodeSuggestion>[],
@@ -426,12 +431,17 @@ export class KodyIssuesManagementService
         if (unmatchedSuggestions.length > 0) {
             await this.createNewIssues(context, unmatchedSuggestions);
         }
+    }
 
-        await this.pullRequestsService.updateSyncedWithIssuesFlag(
-            context.prNumber,
-            context.repository.id,
-            context.organizationAndTeamData.organizationId,
-            true,
+    private async getChangedFiles(context: contextToGenerateIssues) {
+        const files = await this.pullRequestHandlerService.getChangedFiles(
+            context.organizationAndTeamData,
+            context.repository,
+            context.pullRequest,
+            [],
+            null,
         );
+
+        return files;
     }
 }
