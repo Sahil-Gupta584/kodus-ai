@@ -11,6 +11,7 @@ export interface IIssueDetails {
     label: LabelType;
     severity: SeverityLevel;
     status: IssueStatus;
+    contributingSuggestions: IContributingSuggestion[];
     fileLink: {
         label: string;
         url: string;

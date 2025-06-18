@@ -1,4 +1,3 @@
-import { BuildFilterUseCase } from './build-filter.use-case';
 import { GenerateIssuesFromPrClosedUseCase } from './generate-issues-from-pr-closed.use-case';
 import { GetIssueByIdUseCase } from './get-issue-by-id.use-case';
 import { GetIssuesByFiltersUseCase } from './get-issues-by-filters.use-case';
@@ -8,7 +7,6 @@ import { UpdateIssuePropertyUseCase } from './update-issue-property.use-case';
 export const UseCases = [
     GenerateIssuesFromPrClosedUseCase,
     GetIssuesByFiltersUseCase,
-    BuildFilterUseCase,
     GetTotalIssuesUseCase,
     GetIssueByIdUseCase,
     UpdateIssuePropertyUseCase,

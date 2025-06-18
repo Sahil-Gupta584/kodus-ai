@@ -12,6 +12,7 @@ import {
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { IIssueDetails } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
+import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
 
 @Injectable()
 export class GetIssueByIdUseCase implements IUseCase {
@@ -22,6 +23,7 @@ export class GetIssueByIdUseCase implements IUseCase {
         @Inject(CODE_REVIEW_FEEDBACK_SERVICE_TOKEN)
         private readonly codeReviewFeedbackService: ICodeReviewFeedbackService,
 
+        @Inject(KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN)
         private readonly kodyIssuesManagementService: KodyIssuesManagementService,
     ) {}
 
@@ -49,13 +51,19 @@ export class GetIssueByIdUseCase implements IUseCase {
             repositoryFullName: issue.repository.full_name,
         };
 
+        const { status, filteredContributingSuggestions } =
+            await this.kodyIssuesManagementService.determineIssueStatusAndFilterSuggestions(
+                issue,
+            );
+
         return {
             title: issue.title,
             description: issue.description,
             age: await this.kodyIssuesManagementService.ageCalculation(issue),
             label: issue.label,
             severity: issue.severity,
-            status: issue.status,
+            status: status,
+            contributingSuggestions: filteredContributingSuggestions,
             fileLink: {
                 label: issue.filePath,
                 url: this.buildFileUrl(dataToBuildUrls, issue.filePath),

@@ -5,10 +5,10 @@ import {
 import { GetIssuesByFiltersDto } from '@/core/infrastructure/http/dtos/get-issues-by-filters.dto';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { Inject, Injectable } from '@nestjs/common';
-import { BuildFilterUseCase } from './build-filter.use-case';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
+import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
 
 @Injectable()
 export class GetIssuesByFiltersUseCase implements IUseCase {
@@ -16,16 +16,16 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
         @Inject(ISSUES_SERVICE_TOKEN)
         private readonly issuesService: IIssuesService,
 
-        private readonly buildFilterUseCase: BuildFilterUseCase,
-
         private readonly logger: PinoLoggerService,
 
+        @Inject(KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN)
         private readonly kodyIssuesManagementService: KodyIssuesManagementService,
     ) {}
 
     async execute(filters: GetIssuesByFiltersDto): Promise<IIssue[]> {
         try {
-            const filter = await this.buildFilterUseCase.execute(filters);
+            const filter =
+                await this.kodyIssuesManagementService.buildFilter(filters);
 
             const issues = await this.issuesService.find(filter);
 
@@ -35,8 +35,21 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
 
             const issuesWithAge = await Promise.all(
                 issues?.map(async (issue) => {
-                    const age = await this.kodyIssuesManagementService.ageCalculation(issue);
-                    return { ...issue.toObject(), age };
+                    const age =
+                        await this.kodyIssuesManagementService.ageCalculation(
+                            issue,
+                        );
+                    const { status, filteredContributingSuggestions } =
+                        await this.kodyIssuesManagementService.determineIssueStatusAndFilterSuggestions(
+                            issue,
+                        );
+                    return {
+                        ...issue.toObject(),
+                        age,
+                        status,
+                        contributingSuggestions:
+                            filteredContributingSuggestions,
+                    };
                 }),
             );
 

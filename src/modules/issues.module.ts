@@ -17,7 +17,6 @@ import { GetIssuesByFiltersUseCase } from "@/core/application/use-cases/issues/g
 import { IntegrationConfigModule } from "./integrationConfig.module";
 import { ParametersModule } from "./parameters.module";
 import { GetTotalIssuesUseCase } from "@/core/application/use-cases/issues/get-total-issues.use-case";
-import { BuildFilterUseCase } from "@/core/application/use-cases/issues/build-filter.use-case";
 import { CodeReviewFeedbackModule } from "./codeReviewFeedback.module";
 import { GetIssueByIdUseCase } from "@/core/application/use-cases/issues/get-issue-by-id.use-case";
 import { GenerateIssuesFromPrClosedUseCase } from "@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case";
@@ -28,7 +27,6 @@ const UseCases = [
     UpdateIssuePropertyUseCase,
     GenerateIssuesFromPrClosedUseCase,
     GetTotalIssuesUseCase,
-    BuildFilterUseCase,
     GetIssueByIdUseCase,
 ] as const;
 

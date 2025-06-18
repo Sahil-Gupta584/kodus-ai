@@ -11,12 +11,16 @@ import { KODY_ISSUES_ANALYSIS_SERVICE_TOKEN } from '@/ee/codeBase/kodyIssuesAnal
 import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.enum';
 import { IssueStatus } from '@/config/types/general/issues.type';
 import { CodeSuggestion } from '@/config/types/general/codeReview.type';
-import { contextToGenerateIssues } from '../domain/kodyIssuesManagement.interface';
+import {
+    contextToGenerateIssues,
+    IContributingSuggestion,
+} from '../domain/kodyIssuesManagement.interface';
 import {
     IPullRequestManagerService,
     PULL_REQUEST_MANAGER_SERVICE_TOKEN,
 } from '@/core/domain/codeBase/contracts/PullRequestManagerService.contract';
 import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
+import { GetIssuesByFiltersDto } from '@/core/infrastructure/http/dtos/get-issues-by-filters.dto';
 
 @Injectable()
 export class KodyIssuesManagementService
@@ -457,6 +461,110 @@ export class KodyIssuesManagementService
         const daysText = diffDays === 1 ? 'day' : 'days';
 
         return `${diffDays} ${daysText} ago`;
+    }
+
+    async buildFilter(filters: GetIssuesByFiltersDto): Promise<any> {
+        const filter: any = {};
+
+        if (filters.title) {
+            filter['title'] = { $regex: filters.title, $options: 'i' };
+        }
+
+        const exactMatchFields = [
+            'severity',
+            'category',
+            'organizationId',
+            'filePath',
+        ];
+        exactMatchFields.forEach((field) => {
+            if (filters[field]) {
+                filter[field] = filters[field];
+            }
+        });
+
+        if (filters.repositoryName) {
+            filter['repository.name'] = {
+                $regex: filters.repositoryName,
+                $options: 'i',
+            };
+        }
+
+        if (filters.beforeAt || filters.afterAt) {
+            filter['createdAt'] = {};
+
+            if (filters.beforeAt) {
+                filter['createdAt'].$lt = new Date(filters.beforeAt);
+            }
+
+            if (filters.afterAt) {
+                filter['createdAt'].$gt = new Date(filters.afterAt);
+            }
+        }
+
+        return filter;
+    }
+
+    public async determineIssueStatusAndFilterSuggestions(
+        issue: IssuesEntity,
+    ): Promise<{
+        status: IssueStatus;
+        filteredContributingSuggestions: IContributingSuggestion[];
+    }> {
+        if (!issue.contributingSuggestions?.length) {
+            return {
+                status: IssueStatus.OPEN,
+                filteredContributingSuggestions: [],
+            };
+        }
+
+        const suggestions = issue.contributingSuggestions;
+
+        const hasOpenSuggestions = suggestions.some(
+            (suggestion) => suggestion.status === IssueStatus.OPEN,
+        );
+
+        if (hasOpenSuggestions) {
+            return {
+                status: IssueStatus.OPEN,
+                filteredContributingSuggestions:
+                    this.filterOpenSuggestions(suggestions),
+            };
+        }
+
+        const allDismissed = suggestions.every(
+            (suggestion) => suggestion.status === IssueStatus.DISMISSED,
+        );
+
+        const allResolved = suggestions.every(
+            (suggestion) => suggestion.status === IssueStatus.RESOLVED,
+        );
+
+        if (allDismissed) {
+            return {
+                status: IssueStatus.DISMISSED,
+                filteredContributingSuggestions: suggestions,
+            };
+        }
+
+        if (allResolved) {
+            return {
+                status: IssueStatus.RESOLVED,
+                filteredContributingSuggestions: suggestions,
+            };
+        }
+
+        return {
+            status: IssueStatus.OPEN,
+            filteredContributingSuggestions: suggestions,
+        };
+    }
+
+    private filterOpenSuggestions(
+        suggestions: IContributingSuggestion[],
+    ): IContributingSuggestion[] {
+        return suggestions.filter(
+            (suggestion) => suggestion.status === IssueStatus.OPEN,
+        );
     }
     //#endregion
 }
