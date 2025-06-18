@@ -10,7 +10,10 @@ import {
     ICodeReviewFeedbackService,
 } from '@/core/domain/codeReviewFeedback/contracts/codeReviewFeedback.service.contract';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
-import { IIssueDetails } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import {
+    IContributingSuggestion,
+    IIssueDetails,
+} from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
 import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
 
@@ -56,6 +59,12 @@ export class GetIssueByIdUseCase implements IUseCase {
                 issue,
             );
 
+        const enrichedContributingSuggestions =
+            await this.enrichContributingSuggestions(
+                filteredContributingSuggestions,
+                issue,
+            );
+
         return {
             id: issue.uuid,
             title: issue.title,
@@ -64,7 +73,7 @@ export class GetIssueByIdUseCase implements IUseCase {
             label: issue.label,
             severity: issue.severity,
             status: status,
-            contributingSuggestions: filteredContributingSuggestions,
+            contributingSuggestions: enrichedContributingSuggestions,
             fileLink: {
                 label: issue.filePath,
                 url: this.buildFileUrl(dataToBuildUrls, issue.filePath),
@@ -161,6 +170,42 @@ export class GetIssueByIdUseCase implements IUseCase {
             number: prNumber,
             url: this.buildPullRequestUrl(dataToBuildUrls, prNumber),
         }));
+    }
+
+    private async enrichContributingSuggestions(
+        filteredContributingSuggestions: IContributingSuggestion[],
+        issue: IssuesEntity,
+    ): Promise<IContributingSuggestion[]> {
+        const enrichedContributingSuggestions = await Promise.all(
+            filteredContributingSuggestions.map(
+                async (contributingSuggestion) => {
+                    try {
+                        const suggestionsFromPR =
+                            await this.kodyIssuesManagementService.getSuggestionByPR(
+                                issue.organizationId,
+                                contributingSuggestion.prNumber,
+                            );
+                        const fullSuggestion = suggestionsFromPR.find(
+                            (suggestion) =>
+                                suggestion.id === contributingSuggestion.id,
+                        );
+
+                        if (fullSuggestion) {
+                            return {
+                                ...contributingSuggestion,
+                                existingCode: fullSuggestion.existingCode,
+                                improvedCode: fullSuggestion.improvedCode,
+                            };
+                        }
+                        return contributingSuggestion;
+                    } catch (error) {
+                        return contributingSuggestion;
+                    }
+                },
+            ),
+        );
+
+        return enrichedContributingSuggestions;
     }
     //#endregion
 

@@ -21,6 +21,8 @@ import {
 } from '@/core/domain/codeBase/contracts/PullRequestManagerService.contract';
 import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 import { GetIssuesByFiltersDto } from '@/core/infrastructure/http/dtos/get-issues-by-filters.dto';
+import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
+import { ISuggestion } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 
 @Injectable()
 export class KodyIssuesManagementService
@@ -451,7 +453,7 @@ export class KodyIssuesManagementService
     }
 
     //#region Auxiliary Functions
-    async ageCalculation(issue: IssuesEntity): Promise<string> {
+    public async ageCalculation(issue: IssuesEntity): Promise<string> {
         const now = new Date();
         const createdAt = new Date(issue.createdAt);
 
@@ -463,7 +465,7 @@ export class KodyIssuesManagementService
         return `${diffDays} ${daysText} ago`;
     }
 
-    async buildFilter(filters: GetIssuesByFiltersDto): Promise<any> {
+    public async buildFilter(filters: GetIssuesByFiltersDto): Promise<any> {
         const filter: any = {};
 
         if (filters.title) {
@@ -565,6 +567,19 @@ export class KodyIssuesManagementService
         return suggestions.filter(
             (suggestion) => suggestion.status === IssueStatus.OPEN,
         );
+    }
+
+    public async getSuggestionByPR(
+        organizationId: string,
+        prNumber: number,
+    ): Promise<ISuggestion[]> {
+        const suggestions = await this.pullRequestsService.findSuggestionsByPR(
+            organizationId,
+            prNumber,
+            DeliveryStatus.SENT,
+        );
+
+        return suggestions;
     }
     //#endregion
 }

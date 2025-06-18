@@ -40,6 +40,8 @@ export interface IContributingSuggestion {
     id: string;
     prNumber: number;
     status: IssueStatus;
+    existingCode?: string;
+    improvedCode?: string;
 }
 
 export interface IRepositoryToIssues {
