@@ -78,27 +78,10 @@ export class IssuesRepository implements IIssuesRepository {
     }
 
     async find(
-        filter?: Partial<IIssue>,
-        options?: {
-            limit?: number;
-            skip?: number;
-            sort?: any;
-        },
+        filter?: Partial<IIssue>
     ): Promise<IssuesEntity[]> {
         try {
             let query = this.issuesModel.find(filter);
-
-            if (options?.sort) {
-                query = query.sort(options.sort);
-            }
-
-            if (options?.skip) {
-                query = query.skip(options.skip);
-            }
-
-            if (options?.limit) {
-                query = query.limit(options.limit);
-            }
 
             const docs = await query.exec();
             return mapSimpleModelsToEntities(docs, IssuesEntity);

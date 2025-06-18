@@ -2,9 +2,8 @@ import { IsOptional, IsString, IsNumber } from 'class-validator';
 import { SeverityLevel } from '@sentry/node';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { IssueStatus } from '@/config/types/general/issues.type';
-import { PaginationDto } from './pagination.dto';
 
-export class GetIssuesByFiltersDto extends PaginationDto {
+export class GetIssuesByFiltersDto {
     @IsOptional()
     @IsString()
     title?: string;

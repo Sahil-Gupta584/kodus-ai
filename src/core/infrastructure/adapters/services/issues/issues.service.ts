@@ -48,13 +48,8 @@ export class IssuesService implements IIssuesService {
 
     async find(
         filter?: any,
-        options?: {
-            limit?: number;
-            skip?: number;
-            sort?: any;
-        },
     ): Promise<IssuesEntity[]> {
-        return await this.issuesRepository.find(filter, options);
+        return await this.issuesRepository.find(filter);
     }
 
     async count(filter?: any): Promise<number> {

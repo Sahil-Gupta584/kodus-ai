@@ -21,11 +21,7 @@ export interface IIssuesRepository {
         status?: IssueStatus,
     ): Promise<IssuesEntity[] | null>;
 
-    find(filter?: Partial<IIssue>, options?: {
-        limit?: number;
-        skip?: number;
-        sort?: any;
-    }): Promise<IssuesEntity[]>;
+    find(filter?: Partial<IIssue>): Promise<IssuesEntity[]>;
 
     count(filter?: Partial<IIssue>): Promise<number>;
 
