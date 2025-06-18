@@ -5,6 +5,7 @@ import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
 export interface IIssueDetails {
+    id: string;
     title: string;
     description: string;
     age: string;

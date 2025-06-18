@@ -57,6 +57,7 @@ export class GetIssueByIdUseCase implements IUseCase {
             );
 
         return {
+            id: issue.uuid,
             title: issue.title,
             description: issue.description,
             age: await this.kodyIssuesManagementService.ageCalculation(issue),

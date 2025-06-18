@@ -33,7 +33,7 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
                 return [];
             }
 
-            const issuesWithAge = await Promise.all(
+            const issuesWithAdditionalData = await Promise.all(
                 issues?.map(async (issue) => {
                     const age =
                         await this.kodyIssuesManagementService.ageCalculation(
@@ -53,7 +53,13 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
                 }),
             );
 
-            return issuesWithAge;
+            if (!issuesWithAdditionalData) {
+                return [];
+            }
+
+            return issuesWithAdditionalData.filter(
+                (issue) => issue.status === filters.status,
+            );
         } catch (error) {
             this.logger.error({
                 context: GetIssuesByFiltersUseCase.name,
