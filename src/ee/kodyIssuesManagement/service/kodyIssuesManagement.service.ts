@@ -230,9 +230,9 @@ export class KodyIssuesManagementService
                                     (suggestionId) => ({
                                         id: suggestionId,
                                         prNumber: context.pullRequest.number,
+                                        status: IssueStatus.OPEN,
                                     }),
                                 ),
-                            status: IssueStatus.OPEN,
                             repository: {
                                 id: context.repository.id,
                                 name: context.repository.name,

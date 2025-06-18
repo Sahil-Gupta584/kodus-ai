@@ -37,6 +37,7 @@ export interface IIssueDetails {
 export interface IContributingSuggestion {
     id: string;
     prNumber: number;
+    status: IssueStatus;
 }
 
 export interface IRepositoryToIssues {

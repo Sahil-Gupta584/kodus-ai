@@ -40,9 +40,6 @@ export class IssuesModel extends CoreDocument {
     public repository: IRepositoryToIssues;
 
     @Prop({ type: String, required: true })
-    public status: IssueStatus;
-
-    @Prop({ type: String, required: true })
     public organizationId: string;
 }
 

@@ -1,4 +1,3 @@
-import { IssueStatus } from '@/config/types/general/issues.type';
 import { ISuggestion } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { IContributingSuggestion, IRepositoryToIssues } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
@@ -16,7 +15,6 @@ export interface IIssue {
     contributingSuggestions: IContributingSuggestion[];
     repository: IRepositoryToIssues;
     organizationId: string;
-    status: IssueStatus;
     age?: string;
     createdAt: string;
     updatedAt: string;
