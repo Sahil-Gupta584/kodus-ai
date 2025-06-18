@@ -1060,7 +1060,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             if (parsedResponse.codeSuggestions) {
                 for (const suggestion of parsedResponse.codeSuggestions) {
                     const normalizedSuggestion: CodeSuggestion = {
-                        id: suggestion.id,
+                        id: !suggestion?.id || !uuidValidate(suggestion?.id) ? uuidv4() : suggestion.id,
                         relevantFile: suggestion.relevantFile || '',
                         language: suggestion.language,
                         suggestionContent: suggestion.suggestionContent || '',
