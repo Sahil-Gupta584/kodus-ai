@@ -38,6 +38,29 @@ import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { string } from 'joi';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+
+// Interface for extended context used in Kody Rules analysis
+interface KodyRulesExtendedContext {
+    // Properties from base context (prepareAnalysisContext)
+    pullRequest: any;
+    patchWithLinesStr: string;
+    maxSuggestionsParams?: number;
+    language?: string;
+    filePath: string;
+    languageResultPrompt?: string;
+    reviewOptions?: ReviewOptions;
+    fileContent?: string;
+    limitationType?: string;
+    severityLevelFilter?: SeverityLevel;
+    organizationAndTeamData: OrganizationAndTeamData;
+    kodyRules: Array<Partial<IKodyRule>>;
+    
+    // Extended properties added during analysis
+    standardSuggestions?: AIAnalysisResult;
+    updatedSuggestions?: AIAnalysisResult;
+    filteredKodyRules?: Array<Partial<IKodyRule>>;
+}
 
 // Interface for token tracking
 interface TokenUsage {
@@ -872,7 +895,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         response: string,
         fileContext: FileChangeContext,
         provider: LLMModelProvider,
-        extendedContext: any,
+        extendedContext: KodyRulesExtendedContext,
     ): AIAnalysisResult | null {
         try {
             if (!response) {
@@ -979,7 +1002,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         response: string,
         fileContext: FileChangeContext,
         provider: LLMModelProvider,
-        extendedContext: any,
+        extendedContext: KodyRulesExtendedContext,
     ): AIAnalysisResult | null {
         // Tipo específico para a resposta do UPDATE
         interface KodyRulesUpdateResponse {
@@ -1023,6 +1046,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     message: 'Failed to parse UPDATE response',
                     context: KodyRulesAnalysisService.name,
                     metadata: {
+                        organizationAndTeamData,
                         originalResponse: response,
                         cleanResponse,
                         prNumber,
@@ -1088,7 +1112,12 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 message: `Error processing UPDATE response for PR#${prNumber}`,
                 context: KodyRulesAnalysisService.name,
                 error,
-                metadata: { organizationAndTeamData, prNumber, response },
+                metadata: { 
+                    organizationAndTeamData, 
+                    prNumber, 
+                    response,
+                    filename: fileContext?.file?.filename,
+                },
             });
             return null;
         }
