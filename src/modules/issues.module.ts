@@ -21,6 +21,7 @@ import { BuildFilterUseCase } from "@/core/application/use-cases/issues/build-fi
 import { CodeReviewFeedbackModule } from "./codeReviewFeedback.module";
 import { GetIssueByIdUseCase } from "@/core/application/use-cases/issues/get-issue-by-id.use-case";
 import { GenerateIssuesFromPrClosedUseCase } from "@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case";
+import { CodebaseModule } from "./codeBase.module";
 
 const UseCases = [
     GetIssuesByFiltersUseCase,
@@ -43,6 +44,7 @@ const UseCases = [
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => ParametersModule),
         forwardRef(() => CodeReviewFeedbackModule),
+        forwardRef(() => CodebaseModule),
     ],
     providers: [
         ...UseCases,
