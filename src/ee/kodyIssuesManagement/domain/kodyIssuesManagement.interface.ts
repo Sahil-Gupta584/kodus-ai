@@ -1,6 +1,38 @@
+import { IssueStatus } from '@/config/types/general/issues.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { PullRequests } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+
+export interface IIssueDetails {
+    title: string;
+    description: string;
+    age: string;
+    label: LabelType;
+    severity: SeverityLevel;
+    status: IssueStatus;
+    fileLink: {
+        label: string;
+        url: string;
+    };
+    prLinks: {
+        label: string;
+        url: string;
+    }[];
+    repositoryLink: {
+        label: string;
+        url: string;
+    };
+    currentCode: string;
+    language: string;
+    startLine: number;
+    endLine: number;
+    reactions: {
+        thumbsUp: number;
+        thumbsDown: number;
+    };
+    gitOrganizationName: string;
+}
 
 export interface IContributingSuggestion {
     id: string;

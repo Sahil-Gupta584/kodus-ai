@@ -9,10 +9,8 @@ import {
     CODE_REVIEW_FEEDBACK_SERVICE_TOKEN,
     ICodeReviewFeedbackService,
 } from '@/core/domain/codeReviewFeedback/contracts/codeReviewFeedback.service.contract';
-import {
-    IIssueDetails,
-} from '@/core/domain/issues/interfaces/issues.interface';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
+import { IIssueDetails } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 
 @Injectable()
 export class GetIssueByIdUseCase implements IUseCase {
