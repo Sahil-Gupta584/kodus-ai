@@ -16,7 +16,7 @@ export const getGemini = async (params?: {
     const genAI = new GoogleGenerativeAI(process.env.API_GOOGLE_AI_API_KEY);
 
     const llm = genAI.getGenerativeModel({
-        model: params.model || MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06].modelName,
+        model: params.model || MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO].modelName,
     });
 
     return llm.startChat({

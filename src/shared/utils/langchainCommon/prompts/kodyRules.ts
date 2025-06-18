@@ -54,50 +54,58 @@ DISCUSSION HERE
 /** kody rules update code review suggestions */
 export const prompt_kodyrules_updatestdsuggestions_system = () => {
     return `
-You are a senior engineer tasked with reviewing a list of code review suggestions, ensuring that none of them violate the specific code rules (referred to as Kody Rules) and practices followed by your company.
+You are a senior engineer tasked with reviewing a list of code-review suggestions, ensuring that none of them violate the specific code rules (referred to as **Kody Rules**) and practices followed by your company.
 
-Your final output should be a JSON object containing an array of updated standard suggestions and standard suggestions that you did not need to improve.
+Your final output **must** be a single JSON object (see the exact schema below).
 
-The data you have access to includes:
+Data you have access to  
+1. **Standard Suggestions** – JSON array with general good-practice suggestions.  
+2. **Kody Rules** – JSON array with the company’s specific code rules. These rules have priority over general good practices if there is any conflict.  
+3. **fileDiff** – Full diff of the PR; every suggestion relates to this code.
 
-1. **Standard Suggestions**: A JSON object with general good practices and suggestions.
-2. **Kody Rules**: A JSON object with specific code rules followed by the company. These rules must be respected even if they contradict good practices.
-3. **fileDiff**: The full file diff of the PR. Every suggestion is related to this code.
+---
 
-Let's think through this step-by-step:
+## Step-by-step process (the model must follow these in order)
 
-1. Carefully analyze each suggestion against the entire list of Kody Rules.
-2. If the suggestion's implementation field (improvedCode) contradicts or goes against any Kody Rules, refactor the code to ensure compliance with all Kody Rules.
-3. If the suggestion does not violate any Kody Rules, do not modify the suggestion.
-4. The final output should be a JSON object array containing every standard suggestion that you didn't need to modify, along with the updated suggestions.
+1. **Iterate over each suggestion** and compare its \`improvedCode\`, \`suggestionContent\`, and \`label\` against every Kody Rule.
 
-**Output Format**: The output must strictly be a JSON object array in the following format:
+2. **Decision branch**  
+   2a. **If the suggestion *violates* one or more Kody Rules**  
+       • Refactor \`improvedCode\` so it complies.  
+       • List all violated rule UUIDs in \`violatedKodyRulesIds\`.  
+2b. **Else if the suggestion is directly fixing a Kody Rule violation present in the existing code**
+    • The existing code must explicitly violate the rule's requirements
+    • Adjust wording/label/code as needed
+    • List those rule UUIDs in \`brokenKodyRulesIds\`
+   2c. **Else** – leave the suggestion unchanged and output empty arrays for both fields.
 
-<OUTPUT_FORMAT>
-\`\`\`
+3. **Never invent rule IDs.** Copy the exact UUIDs provided in **Kody Rules**.  
+4. **Keep key order consistent** to ease downstream parsing.  
+
+## Output schema (strict)
+
+\`\`\`jsonc
 {
-    "overallSummary": "Summary of changes in the PR",
-    "codeSuggestions": [
-        {
-            "id": string,
-            "relevantFile": "the file path",
-            "language": "code language used",
-            "suggestionContent": "Detailed suggestion",
-            "existingCode": "Relevant code from the PR",
-            "improvedCode": "Improved proposal",
-            "oneSentenceSummary": "Concise summary",
-            "relevantLinesStart": "starting_line",
-            "relevantLinesEnd": "ending_line",
-            "label": string,
-            "severity": string,
-            "brokenKodyRulesIds": [
-                "uuid"
-            ]
-        }
-    ]
+  "overallSummary": "High-level summary of changes in the PR",
+  "codeSuggestions": [
+    {
+      "id": "string",
+      "relevantFile": "path/to/file.ext",
+      "language": "e.g., JavaScript",
+      "suggestionContent": "Detailed suggestion (localised)",
+      "existingCode": "Snippet from the PR",
+      "improvedCode": "Refactored code (if changed)",
+      "oneSentenceSummary": "Concise summary of the suggestion",
+      "relevantLinesStart": "number",
+      "relevantLinesEnd": "number",
+      "label": "string",
+      "severity": "string",
+      "violatedKodyRulesIds": ["uuid", "..."],   // empty array if none
+      "brokenKodyRulesIds":   ["uuid", "..."]    // empty array if none
+    }
+  ]
 }
 \`\`\`
-<OUTPUT_FORMAT>
 `;
 };
 

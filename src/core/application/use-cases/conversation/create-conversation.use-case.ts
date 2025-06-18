@@ -117,7 +117,7 @@ export class CreateConversationUseCase implements IUseCase {
         while (retryCount < maxRetries) {
             try {
                 let llm = this.llmProviderService.getLLMProvider({
-                    model: LLMModelProvider.VERTEX_GEMINI_2_5_FLASH_PREVIEW_04_17,
+                    model: LLMModelProvider.VERTEX_GEMINI_2_5_FLASH,
                     temperature: 0,
                     jsonMode: true,
                 });
