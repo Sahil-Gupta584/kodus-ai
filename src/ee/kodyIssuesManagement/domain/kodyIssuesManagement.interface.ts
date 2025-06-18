@@ -1,4 +1,5 @@
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { PullRequests } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 
 export interface IContributingSuggestion {
@@ -17,6 +18,6 @@ export interface IRepositoryToIssues {
 export type contextToGenerateIssues = {
     organizationAndTeamData: OrganizationAndTeamData;
     repository: IRepositoryToIssues;
-    prNumber: number;
+    pullRequest: any;
     prFiles?: any[];
 };

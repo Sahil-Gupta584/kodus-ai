@@ -41,7 +41,7 @@ export class KodyIssuesAnalysisService {
 
     async mergeSuggestionsIntoIssues(
         organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
+        pullRequest: any,
         promptData: any,
     ): Promise<any> {
         try {
@@ -49,7 +49,7 @@ export class KodyIssuesAnalysisService {
 
             const chain = await this.createAnalysisChainWithFallback(
                 organizationAndTeamData,
-                prNumber,
+                pullRequest.number,
                 provider,
                 prompt_kodyissues_merge_suggestions_into_issues_system,
                 (input: any) => JSON.stringify(input, null, 2),
@@ -68,7 +68,10 @@ export class KodyIssuesAnalysisService {
                 message: 'Error in mergeSuggestionsIntoIssues',
                 context: KodyIssuesAnalysisService.name,
                 error,
-                metadata: { organizationAndTeamData, prNumber },
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber: pullRequest.number,
+                },
             });
             throw error;
         }
@@ -125,7 +128,7 @@ export class KodyIssuesAnalysisService {
     async resolveExistingIssues(
         context: Pick<
             contextToGenerateIssues,
-            'organizationAndTeamData' | 'repository' | 'prNumber'
+            'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         promptData: any,
     ): Promise<any> {
@@ -134,7 +137,7 @@ export class KodyIssuesAnalysisService {
 
             const chain = await this.createAnalysisChainWithFallback(
                 context.organizationAndTeamData,
-                context.prNumber,
+                context.pullRequest.number,
                 provider,
                 prompt_kodyissues_resolve_issues_system,
                 (input: any) => JSON.stringify(input, null, 2),
@@ -155,7 +158,7 @@ export class KodyIssuesAnalysisService {
                 error,
                 metadata: {
                     organizationAndTeamData: context.organizationAndTeamData,
-                    prNumber: context.prNumber,
+                    prNumber: context.pullRequest.number,
                 },
             });
             throw error;

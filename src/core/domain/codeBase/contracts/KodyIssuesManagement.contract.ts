@@ -10,7 +10,7 @@ export interface IKodyIssuesManagementService {
     mergeSuggestionsIntoIssues(
         context: Pick<
             contextToGenerateIssues,
-            'organizationAndTeamData' | 'repository' | 'prNumber'
+            'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         filePath: string,
         newSuggestions: any[],
@@ -19,7 +19,7 @@ export interface IKodyIssuesManagementService {
     createNewIssues(
         context: Pick<
             contextToGenerateIssues,
-            'organizationAndTeamData' | 'repository' | 'prNumber'
+            'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         unmatchedSuggestions: any[],
     ): Promise<void>;
@@ -27,7 +27,7 @@ export interface IKodyIssuesManagementService {
     resolveExistingIssues(
         context: Pick<
             contextToGenerateIssues,
-            'organizationAndTeamData' | 'repository' | 'prNumber'
+            'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         files: any[],
         changedFiles: string[],

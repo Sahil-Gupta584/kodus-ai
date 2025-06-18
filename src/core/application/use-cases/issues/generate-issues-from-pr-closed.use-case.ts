@@ -53,7 +53,7 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
             }
 
             const pr = await this.pullRequestService.findByNumberAndRepository(
-                prData.context.prNumber,
+                prData.context.pullRequest.number,
                 prData.context.repository.name,
                 {
                     organizationId:
@@ -73,7 +73,7 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
 
             await this.kodyIssuesManagementService.processClosedPr({
                 organizationAndTeamData: prData.context.organizationAndTeamData,
-                prNumber: prData.context.prNumber,
+                pullRequest: prData.context.pullRequest,
                 repository: prData.context.repository,
                 prFiles: prFiles,
             });
@@ -81,9 +81,9 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
             this.logger.error({
                 context: GenerateIssuesFromPrClosedUseCase.name,
                 serviceName: GenerateIssuesFromPrClosedUseCase.name,
-                message: `Error processing closed pull request #${prData.context.prNumber}: ${error.message}`,
+                message: `Error processing closed pull request #${prData.context.pullRequest.number}: ${error.message}`,
                 metadata: {
-                    prNumber: prData.context.prNumber,
+                    pullRequest: prData.context.pullRequest,
                     repositoryId: prData.context.repository.id,
                     organizationId:
                         prData.context.organizationAndTeamData.organizationId,
@@ -138,21 +138,21 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
     private async fillProperties(params: any): Promise<{
         context: contextToGenerateIssues;
     }> {
-        const prNumber = Number(params?.pullRequest?.number);
+        const pullRequest = params?.pullRequest;
         const repositoryId = params?.repository?.id?.toString();
         const repositoryName = params?.repository?.name;
         const repositoryFullName = params?.repository?.fullName;
         const platformType = params?.platformType;
 
         const organizationAndTeamData = await this.getOrganizationAndTeamData(
-            prNumber,
+            Number(pullRequest.number),
             params?.repository,
             platformType,
         );
 
         return {
             context: {
-                prNumber: prNumber,
+                pullRequest,
                 repository: {
                     id: repositoryId,
                     name: repositoryName,
