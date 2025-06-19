@@ -55,7 +55,7 @@ export class GetIssueByIdUseCase implements IUseCase {
         };
 
         const enrichedContributingSuggestions =
-            await this.enrichContributingSuggestions(
+            await this.kodyIssuesManagementService.enrichContributingSuggestions(
                 issue.contributingSuggestions,
                 issue,
             );
@@ -81,10 +81,7 @@ export class GetIssueByIdUseCase implements IUseCase {
                 label: issue.repository.name,
                 url: this.buildRepositoryUrl(dataToBuildUrls),
             },
-            currentCode: issue.representativeSuggestion.existingCode,
             language: issue.language,
-            startLine: issue.representativeSuggestion.relevantLinesStart,
-            endLine: issue.representativeSuggestion.relevantLinesEnd,
             reactions,
             gitOrganizationName: issue.repository.full_name.split('/')[0],
         };
@@ -167,41 +164,6 @@ export class GetIssueByIdUseCase implements IUseCase {
         }));
     }
 
-    private async enrichContributingSuggestions(
-        filteredContributingSuggestions: IContributingSuggestion[],
-        issue: IssuesEntity,
-    ): Promise<IContributingSuggestion[]> {
-        const enrichedContributingSuggestions = await Promise.all(
-            filteredContributingSuggestions.map(
-                async (contributingSuggestion) => {
-                    try {
-                        const suggestionsFromPR =
-                            await this.kodyIssuesManagementService.getSuggestionByPR(
-                                issue.organizationId,
-                                contributingSuggestion.prNumber,
-                            );
-                        const fullSuggestion = suggestionsFromPR.find(
-                            (suggestion) =>
-                                suggestion.id === contributingSuggestion.id,
-                        );
-
-                        if (fullSuggestion) {
-                            return {
-                                ...contributingSuggestion,
-                                existingCode: fullSuggestion.existingCode,
-                                improvedCode: fullSuggestion.improvedCode,
-                            };
-                        }
-                        return contributingSuggestion;
-                    } catch (error) {
-                        return contributingSuggestion;
-                    }
-                },
-            ),
-        );
-
-        return enrichedContributingSuggestions;
-    }
     //#endregion
 
     //#region Build URLs

@@ -25,10 +25,7 @@ export interface IIssueDetails {
         label: string;
         url: string;
     };
-    currentCode: string;
     language: string;
-    startLine: number;
-    endLine: number;
     reactions: {
         thumbsUp: number;
         thumbsDown: number;
@@ -42,6 +39,8 @@ export interface IContributingSuggestion {
     prAuthor?: string;
     existingCode?: string;
     improvedCode?: string;
+    startLine?: number;
+    endLine?: number;
 }
 
 export interface IRepositoryToIssues {
