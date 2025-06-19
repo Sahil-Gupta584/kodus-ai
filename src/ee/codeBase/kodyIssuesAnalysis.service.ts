@@ -8,11 +8,9 @@ import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmP
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { Inject } from '@nestjs/common';
 import {
-    prompt_kodyissues_create_new_issues_system,
     prompt_kodyissues_merge_suggestions_into_issues_system,
     prompt_kodyissues_resolve_issues_system,
 } from '@/shared/utils/langchainCommon/prompts/kodyIssuesManagement';
-import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
@@ -72,54 +70,6 @@ export class KodyIssuesAnalysisService {
                     organizationAndTeamData,
                     prNumber: pullRequest.number,
                 },
-            });
-            throw error;
-        }
-    }
-
-    async createNewIssues(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        promptData: any,
-    ): Promise<any> {
-        try {
-            const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
-
-            const language = (
-                await this.parametersService.findByKey(
-                    ParametersKey.LANGUAGE_CONFIG,
-                    {
-                        organizationId: organizationAndTeamData.organizationId,
-                        teamId: organizationAndTeamData.teamId,
-                    },
-                )
-            )?.configValue as string;
-
-            const chain = await this.createAnalysisChainWithFallback(
-                organizationAndTeamData,
-                prNumber,
-                provider,
-                () =>
-                    prompt_kodyissues_create_new_issues_system(
-                        language || 'en-US',
-                    ),
-                (input: any) => JSON.stringify(input, null, 2),
-                'createNewIssues',
-                LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET,
-            );
-
-            const result = await chain.invoke(promptData);
-
-            return this.processLLMResponse(
-                result,
-                organizationAndTeamData.organizationId,
-            );
-        } catch (error) {
-            this.logger.error({
-                message: 'Error in createNewIssues',
-                context: KodyIssuesAnalysisService.name,
-                error,
-                metadata: { organizationAndTeamData },
             });
             throw error;
         }

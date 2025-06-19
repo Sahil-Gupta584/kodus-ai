@@ -23,6 +23,8 @@ import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
 import { GetIssuesByFiltersDto } from '@/core/infrastructure/http/dtos/get-issues-by-filters.dto';
 import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
 import { ISuggestion } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
 @Injectable()
 export class KodyIssuesManagementService
@@ -131,7 +133,8 @@ export class KodyIssuesManagementService
                 filePath,
                 existingIssues: existingIssues.map((issue) => ({
                     issueId: issue.uuid,
-                    representativeSuggestion: issue.representativeSuggestion,
+                    representativeSuggestion:
+                        issue.contributingSuggestions[0].id,
                 })),
                 newSuggestions: newSuggestions.map((suggestion) => ({
                     id: suggestion.id,
@@ -180,78 +183,31 @@ export class KodyIssuesManagementService
         unmatchedSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
         try {
-            const suggestionsByFile =
-                this.groupSuggestionsByFile(unmatchedSuggestions);
-
-            for (const [filePath, suggestions] of Object.entries(
-                suggestionsByFile,
-            )) {
-                const promptData = {
-                    filePath,
-                    unmatchedSuggestions: (
-                        suggestions as Partial<CodeSuggestion>[]
-                    ).map((suggestion: Partial<CodeSuggestion>) => ({
-                        id: suggestion.id,
-                        language: suggestion.language,
-                        relevantFile: suggestion.relevantFile,
-                        suggestionContent: suggestion.suggestionContent,
-                        existingCode: suggestion.existingCode,
-                        improvedCode: suggestion.improvedCode,
-                        oneSentenceSummary: suggestion.oneSentenceSummary,
-                    })),
-                };
-
-                const llmResult =
-                    await this.kodyIssuesAnalysisService.createNewIssues(
-                        context.organizationAndTeamData,
-                        context.pullRequest.number,
-                        promptData,
-                    );
-
-                if (llmResult?.newlyFormedIssues) {
-                    for (const newIssue of llmResult.newlyFormedIssues) {
-                        const representativeSuggestion =
-                            this.findSuggestionById(
-                                unmatchedSuggestions,
-                                newIssue.representativeSuggestion.id,
-                            );
-
-                        const representativeSuggestionWithPrNumber = {
-                            ...representativeSuggestion,
+            for (const suggestion of unmatchedSuggestions) {
+                await this.issuesService.create({
+                    title: suggestion.oneSentenceSummary,
+                    description: suggestion.suggestionContent,
+                    filePath: suggestion.relevantFile,
+                    language: suggestion.language,
+                    label: suggestion?.label as LabelType,
+                    severity: suggestion?.severity as SeverityLevel,
+                    contributingSuggestions: [
+                        {
+                            id: suggestion.id,
                             prNumber: context.pullRequest.number,
-                        };
-
-                        await this.issuesService.create({
-                            title: newIssue.title,
-                            description: newIssue.description,
-                            filePath: newIssue.filePath,
-                            language: newIssue.language,
-                            label: representativeSuggestion?.label || 'unknown',
-                            severity:
-                                representativeSuggestion?.severity || 'medium',
-                            representativeSuggestion:
-                                representativeSuggestionWithPrNumber,
-                            contributingSuggestions:
-                                newIssue?.contributingSuggestionIds?.map(
-                                    (suggestionId) => ({
-                                        id: suggestionId,
-                                        prNumber: context.pullRequest.number,
-                                        status: IssueStatus.OPEN,
-                                    }),
-                                ),
-                            repository: {
-                                id: context.repository.id,
-                                name: context.repository.name,
-                                full_name: context.repository.full_name,
-                                platform: context.repository.platform,
-                            },
-                            organizationId:
-                                context.organizationAndTeamData.organizationId,
-                            createdAt: new Date().toISOString(),
-                            updatedAt: new Date().toISOString(),
-                        });
-                    }
-                }
+                        },
+                    ],
+                    repository: {
+                        id: context.repository.id,
+                        name: context.repository.name,
+                        full_name: context.repository.full_name,
+                        platform: context.repository.platform,
+                    },
+                    organizationId:
+                        context.organizationAndTeamData.organizationId,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                });
             }
         } catch (error) {
             this.logger.error({
@@ -306,8 +262,6 @@ export class KodyIssuesManagementService
                         issueId: issue.uuid,
                         title: issue.title,
                         description: issue.description,
-                        representativeSuggestion:
-                            issue.representativeSuggestion,
                         contributingSuggestionIds:
                             issue.contributingSuggestions?.map(
                                 (suggestion) => suggestion.id,
@@ -346,15 +300,6 @@ export class KodyIssuesManagementService
 
             return;
         }
-    }
-
-    private findSuggestionById(
-        unmatchedSuggestions: any[],
-        suggestionId: string,
-    ) {
-        return unmatchedSuggestions.find(
-            (suggestion) => suggestion.id === suggestionId,
-        );
     }
 
     private async filterValidSuggestionsFromPrByStatus(
@@ -517,6 +462,45 @@ export class KodyIssuesManagementService
         );
 
         return suggestions;
+    }
+
+    public async enrichContributingSuggestions(
+        filteredContributingSuggestions: IContributingSuggestion[],
+        issue: IssuesEntity,
+    ): Promise<IContributingSuggestion[]> {
+        const enrichedContributingSuggestions = await Promise.all(
+            filteredContributingSuggestions.map(
+                async (contributingSuggestion) => {
+                    try {
+                        const suggestionsFromPR =
+                            await this.getSuggestionByPR(
+                                issue.organizationId,
+                                contributingSuggestion.prNumber,
+                            );
+                        const fullSuggestion = suggestionsFromPR.find(
+                            (suggestion) =>
+                                suggestion.id === contributingSuggestion.id,
+                        );
+
+                        if (fullSuggestion) {
+                            return {
+                                ...contributingSuggestion,
+                                existingCode: fullSuggestion.existingCode,
+                                improvedCode: fullSuggestion.improvedCode,
+                                startLine: fullSuggestion.relevantLinesStart,
+                                endLine: fullSuggestion.relevantLinesEnd,
+                                //prAuthor: fullSuggestion.user.username,
+                            };
+                        }
+                        return contributingSuggestion;
+                    } catch (error) {
+                        return contributingSuggestion;
+                    }
+                },
+            ),
+        );
+
+        return enrichedContributingSuggestions;
     }
     //#endregion
 }
