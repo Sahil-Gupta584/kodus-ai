@@ -506,69 +506,6 @@ export class KodyIssuesManagementService
         return filter;
     }
 
-    public async determineIssueStatusAndFilterSuggestions(
-        issue: IssuesEntity,
-    ): Promise<{
-        status: IssueStatus;
-        filteredContributingSuggestions: IContributingSuggestion[];
-    }> {
-        if (!issue.contributingSuggestions?.length) {
-            return {
-                status: IssueStatus.OPEN,
-                filteredContributingSuggestions: [],
-            };
-        }
-
-        const suggestions = issue.contributingSuggestions;
-
-        const hasOpenSuggestions = suggestions.some(
-            (suggestion) => suggestion.status === IssueStatus.OPEN,
-        );
-
-        if (hasOpenSuggestions) {
-            return {
-                status: IssueStatus.OPEN,
-                filteredContributingSuggestions:
-                    this.filterOpenSuggestions(suggestions),
-            };
-        }
-
-        const allDismissed = suggestions.every(
-            (suggestion) => suggestion.status === IssueStatus.DISMISSED,
-        );
-
-        const allResolved = suggestions.every(
-            (suggestion) => suggestion.status === IssueStatus.RESOLVED,
-        );
-
-        if (allDismissed) {
-            return {
-                status: IssueStatus.DISMISSED,
-                filteredContributingSuggestions: suggestions,
-            };
-        }
-
-        if (allResolved) {
-            return {
-                status: IssueStatus.RESOLVED,
-                filteredContributingSuggestions: suggestions,
-            };
-        }
-
-        return {
-            status: IssueStatus.OPEN,
-            filteredContributingSuggestions: suggestions,
-        };
-    }
-
-    private filterOpenSuggestions(
-        suggestions: IContributingSuggestion[],
-    ): IContributingSuggestion[] {
-        return suggestions.filter(
-            (suggestion) => suggestion.status === IssueStatus.OPEN,
-        );
-    }
-
     public async getSuggestionByPR(
         organizationId: string,
         prNumber: number,

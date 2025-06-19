@@ -54,14 +54,9 @@ export class GetIssueByIdUseCase implements IUseCase {
             repositoryFullName: issue.repository.full_name,
         };
 
-        const { status, filteredContributingSuggestions } =
-            await this.kodyIssuesManagementService.determineIssueStatusAndFilterSuggestions(
-                issue,
-            );
-
         const enrichedContributingSuggestions =
             await this.enrichContributingSuggestions(
-                filteredContributingSuggestions,
+                issue.contributingSuggestions,
                 issue,
             );
 
@@ -72,7 +67,7 @@ export class GetIssueByIdUseCase implements IUseCase {
             age: await this.kodyIssuesManagementService.ageCalculation(issue),
             label: issue.label,
             severity: issue.severity,
-            status: status,
+            status: issue.status,
             contributingSuggestions: enrichedContributingSuggestions,
             fileLink: {
                 label: issue.filePath,

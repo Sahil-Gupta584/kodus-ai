@@ -39,7 +39,7 @@ export interface IIssueDetails {
 export interface IContributingSuggestion {
     id: string;
     prNumber: number;
-    status: IssueStatus;
+    prAuthor?: string;
     existingCode?: string;
     improvedCode?: string;
 }

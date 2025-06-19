@@ -31,6 +31,7 @@ export class IssuesEntity implements Entity<IIssue> {
         this.severity = issue.severity;
         this.representativeSuggestion = issue.representativeSuggestion;
         this.contributingSuggestions = issue.contributingSuggestions;
+        this.status = issue.status;
         this.repository = issue.repository;
         this.organizationId = issue.organizationId;
         this.createdAt = issue.createdAt;
@@ -52,6 +53,7 @@ export class IssuesEntity implements Entity<IIssue> {
             severity: this.severity,
             representativeSuggestion: this.representativeSuggestion,
             contributingSuggestions: this.contributingSuggestions,
+            status: this.status,
             repository: this.repository,
             organizationId: this.organizationId,
             createdAt: this.createdAt,
@@ -70,6 +72,7 @@ export class IssuesEntity implements Entity<IIssue> {
             severity: this.severity,
             representativeSuggestion: this.representativeSuggestion,
             contributingSuggestions: this.contributingSuggestions,
+            status: this.status,
             repository: this.repository,
             organizationId: this.organizationId,
             createdAt: this.createdAt,

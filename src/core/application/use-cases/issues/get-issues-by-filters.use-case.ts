@@ -39,16 +39,9 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
                         await this.kodyIssuesManagementService.ageCalculation(
                             issue,
                         );
-                    const { status, filteredContributingSuggestions } =
-                        await this.kodyIssuesManagementService.determineIssueStatusAndFilterSuggestions(
-                            issue,
-                        );
                     return {
                         ...issue.toObject(),
                         age,
-                        status,
-                        contributingSuggestions:
-                            filteredContributingSuggestions,
                     };
                 }),
             );

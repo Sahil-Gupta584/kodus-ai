@@ -30,6 +30,9 @@ export class IssuesModel extends CoreDocument {
     @Prop({ type: String, required: true })
     public severity: SeverityLevel;
 
+    @Prop({ type: String, required: true })
+    public status: IssueStatus;
+
     @Prop({ type: Object, required: true })
     public representativeSuggestion: ISuggestion;
 
