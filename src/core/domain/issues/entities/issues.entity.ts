@@ -13,7 +13,6 @@ export class IssuesEntity implements Entity<IIssue> {
     public language: string;
     public label: LabelType;
     public severity: SeverityLevel;
-    public representativeSuggestion: any;
     public contributingSuggestions: IContributingSuggestion[];
     public status: IssueStatus;
     public repository: IRepositoryToIssues;
@@ -29,7 +28,6 @@ export class IssuesEntity implements Entity<IIssue> {
         this.language = issue.language;
         this.label = issue.label;
         this.severity = issue.severity;
-        this.representativeSuggestion = issue.representativeSuggestion;
         this.contributingSuggestions = issue.contributingSuggestions;
         this.status = issue.status;
         this.repository = issue.repository;
@@ -51,7 +49,6 @@ export class IssuesEntity implements Entity<IIssue> {
             language: this.language,
             label: this.label,
             severity: this.severity,
-            representativeSuggestion: this.representativeSuggestion,
             contributingSuggestions: this.contributingSuggestions,
             status: this.status,
             repository: this.repository,
@@ -70,7 +67,6 @@ export class IssuesEntity implements Entity<IIssue> {
             language: this.language,
             label: this.label,
             severity: this.severity,
-            representativeSuggestion: this.representativeSuggestion,
             contributingSuggestions: this.contributingSuggestions,
             status: this.status,
             repository: this.repository,
