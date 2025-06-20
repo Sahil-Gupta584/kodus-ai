@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { PullRequestHandlerService } from '@/core/infrastructure/adapters/services/codeBase/pullRequestManager.service';
+import { CacheService } from '@/shared/utils/cache/cache.service';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import * as globalPathsJsonFile from '@/shared/utils/codeBase/ignorePaths/generated/paths.json';
 
@@ -17,6 +18,15 @@ describe('pullRequestManager', () => {
 
     const mockLogger = {};
 
+    const mockCacheService = {
+        addToCache: jest.fn(),
+        getFromCache: jest.fn(),
+        removeFromCache: jest.fn(),
+        clearCache: jest.fn(),
+        cacheExists: jest.fn(),
+        getMultipleFromCache: jest.fn(),
+    };
+
     beforeEach(async () => {
         const module: TestingModule = await Test.createTestingModule({
             providers: [
@@ -28,6 +38,10 @@ describe('pullRequestManager', () => {
                 {
                     provide: PinoLoggerService,
                     useValue: mockLogger,
+                },
+                {
+                    provide: CacheService,
+                    useValue: mockCacheService,
                 },
             ],
         }).compile();
@@ -91,6 +105,7 @@ describe('pullRequestManager', () => {
     const MOCK_FILE_CONTENT_DATA = MOCK_FILE_CHANGE_DATA.map((file) => ({
         data: {
             content: btoa(file.fileContent),
+            encoding: 'base64',
         },
     }));
 

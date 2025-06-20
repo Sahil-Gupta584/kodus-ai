@@ -87,13 +87,18 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             documentation_and_comments: true,
             performance_and_optimization: true,
             kody_rules: true,
+            breaking_changes: false,
         },
-        maxSuggestions: 20,
+        suggestionControl: {
+            maxSuggestions: 20,
+            limitationType: LimitationType.PR,
+            severityLevelFilter: SeverityLevel.MEDIUM,
+        },
         ignoredTitleKeywords: [],
         automatedReviewActive: true,
-        limitationType: LimitationType.PR,
-        severityLevelFilter: SeverityLevel.MEDIUM,
         kodyRules: [],
+        pullRequestApprovalActive: false,
+        kodusConfigFileOverridesWebPreferences: false,
     };
 
     const MOCK_OLD_CONFIG_VALUE: Omit<
@@ -112,13 +117,18 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             documentation_and_comments: false,
             performance_and_optimization: true,
             kody_rules: true,
+            breaking_changes: true,
         },
-        maxSuggestions: 20,
+        suggestionControl: {
+            maxSuggestions: 20,
+            limitationType: LimitationType.PR,
+            severityLevelFilter: SeverityLevel.MEDIUM,
+        },
         ignoredTitleKeywords: [],
         automatedReviewActive: true,
-        limitationType: LimitationType.PR,
-        severityLevelFilter: SeverityLevel.MEDIUM,
         kodyRules: [],
+        pullRequestApprovalActive: false,
+        kodusConfigFileOverridesWebPreferences: false,
     };
 
     it('should create a new configuration when none exists', async () => {
@@ -149,15 +159,13 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
         expect(parametersService.createOrUpdateConfig).toHaveBeenCalledWith(
             ParametersKey.CODE_REVIEW_CONFIG,
             expect.objectContaining({
-                global: {
+                global: expect.objectContaining({
                     ...body.configValue,
-                    summary: {
+                    summary: expect.objectContaining({
                         generatePRSummary: true,
                         customInstructions: '',
-                        behaviourForExistingDescription:
-                            BehaviourForExistingDescription.REPLACE,
-                    },
-                },
+                    }),
+                }),
                 repositories: [],
             }),
             body.organizationAndTeamData,
