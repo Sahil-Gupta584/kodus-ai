@@ -8,6 +8,7 @@ import {
     IPullRequestsService,
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@/core/domain/pullRequests/contracts/pullRequests.service.contracts';
+import { IPullRequests } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
@@ -33,7 +34,7 @@ export class SavePullRequestUseCase {
         payload: any;
         platformType: PlatformType;
         event: string;
-    }): Promise<void> {
+    }): Promise<IPullRequests | null> {
         const { payload, platformType, event } = params;
 
         if (this.isValidPullRequestAction({ payload, platformType })) {
@@ -128,7 +129,7 @@ export class SavePullRequestUseCase {
                     );
 
                 try {
-                    await this.pullRequestsService.aggregateAndSaveDataStructure(
+                    const result = await this.pullRequestsService.aggregateAndSaveDataStructure(
                         pullRequestWithUserData,
                         repository,
                         changedFiles,
@@ -138,6 +139,8 @@ export class SavePullRequestUseCase {
                         organizationAndTeamData?.[0]?.organizationId,
                         pullRequestCommits,
                     );
+
+                    return result;
                 } catch (error) {
                     this.logger.error({
                         message: `Failed to aggregate and save pull request data for PR#${pullRequestWithUserData?.number}`,

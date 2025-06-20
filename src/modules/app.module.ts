@@ -60,6 +60,7 @@ import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeC
 import { GlobalParametersModule } from './global-parameters.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { RuleLikeModule } from './ruleLike.module';
+import { IssuesModule } from './issues.module';
 import { KodyASTModule } from '@/ee/kodyAST/kodyAST.module';
 
 @Module({
@@ -124,6 +125,7 @@ import { KodyASTModule } from '@/ee/kodyAST/kodyAST.module';
         GlobalParametersModule,
         LicenseModule,
         RuleLikeModule,
+        IssuesModule,
     ],
     providers: [
         {

@@ -56,6 +56,12 @@ export interface IPullRequestsRepository {
         status?: PullRequestState,
         syncedEmbeddedSuggestions?: boolean,
     ): Promise<IPullRequests[]>;
+    findByOrganizationAndRepositoryWithStatusAndSyncedWithIssuesFlag(
+        organizationId: string,
+        repository: Pick<Repository, 'id' | 'fullName'>,
+        status?: PullRequestState,
+        syncedEmbeddedSuggestions?: boolean,
+    ): Promise<IPullRequests[]>;
 
     addFileToPullRequest(
         pullRequestNumber: number,
@@ -83,6 +89,12 @@ export interface IPullRequestsRepository {
     ): Promise<PullRequestsEntity | null>;
     updateSyncedSuggestionsFlag(
         pullRequestNumbers: number[],
+        repositoryId: string,
+        organizationId: string,
+        synced: boolean,
+    ): Promise<void>;
+    updateSyncedWithIssuesFlag(
+        prNumber: number,
         repositoryId: string,
         organizationId: string,
         synced: boolean,

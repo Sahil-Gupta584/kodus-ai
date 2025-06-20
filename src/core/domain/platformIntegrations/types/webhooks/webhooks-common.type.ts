@@ -34,6 +34,7 @@ export interface IMappedPullRequest {
             defaultBranch: string;
         };
     };
+    status?: string;
 }
 
 export interface IMappedRepository {

@@ -138,6 +138,9 @@ export class PullRequestsModel extends CoreDocument {
 
     @Prop({ type: Boolean, required: false })
     public syncedEmbeddedSuggestions: boolean;
+
+    @Prop({ type: Boolean, required: false })
+    public syncedWithIssues: boolean;
 }
 
 export const PullRequestsSchema =

@@ -1,0 +1,101 @@
+[
+    {
+        "title": "Syntax Error: Extra semicolon in `BadRequest` statement",
+        "description": "An extra semicolon at the end of a `return BadRequest(\"Invalid ID\");` statement (identified around line 73) causes a syntax error, which will prevent the code from compiling. The superfluous semicolon needs to be removed.",
+        "filePath": "AcademiaApp.API/Controllers/AcompanhamentoNutricionalController.cs",
+        "language": "csharp",
+        "representativeSuggestion": {
+            "id": "b99ebf99-74d6-4224-bdd1-58d6d5a04011",
+            "language": "csharp",
+            "relevantFile": "AcademiaApp.API/Controllers/AcompanhamentoNutricionalController.cs",
+            "suggestionContent": "Há um ponto e vírgula extra ao final da instrução `return BadRequest(...)` na linha 73. Isso é um erro de sintaxe que impedirá a compilação.",
+            "existingCode": "                    return BadRequest(\"Invalid ID\");;",
+            "improvedCode": "                    return BadRequest(\"Invalid ID\");",
+            "oneSentenceSummary": "Corrigir erro de sintaxe removendo o ponto e vírgula duplicado."
+        },
+        "contributingSuggestionIds": ["b99ebf99-74d6-4224-bdd1-58d6d5a04011"]
+    },
+    {
+        "title": "Security Risk: Exposure of Raw Exception Details in API Responses",
+        "description": "The API exposes raw exception messages (e.g., `ex.Message`) directly to the client in `BadRequest` responses in multiple locations (such as those identified near lines 84 and 101). This practice can leak sensitive information about the application's internal structure or logic, posing a security risk. Error responses should use generic, user-friendly messages in Português do Brasil (pt-BR), and detailed exception information should be logged securely on the server for debugging purposes.",
+        "filePath": "AcademiaApp.API/Controllers/AcompanhamentoNutricionalController.cs",
+        "language": "csharp",
+        "representativeSuggestion": {
+            "id": "8df70ab5-aa0e-4257-9444-e2c41dc2f154",
+            "language": "csharp",
+            "relevantFile": "AcademiaApp.API/Controllers/AcompanhamentoNutricionalController.cs",
+            "suggestionContent": "Expor `ex.Message` (linha 84) diretamente ao cliente em respostas de erro pode vazar informações sensíveis sobre a infraestrutura ou lógica interna da aplicação. É mais seguro retornar uma mensagem de erro genérica em Português do Brasil (pt-BR) e registrar os detalhes da exceção no servidor para depuração.",
+            "existingCode": "                return BadRequest(ex.Message);",
+            "improvedCode": "                // Consider logging ex.ToString() or ex.StackTrace for full details on the server.\n                return BadRequest(\"Ocorreu um erro ao processar sua solicitação. Por favor, tente novamente mais tarde.\");",
+            "oneSentenceSummary": "Evitar expor detalhes de exceções ao cliente por motivos de segurança; usar mensagens genéricas em pt-BR e registrar o erro no servidor."
+        },
+        "contributingSuggestionIds": [
+            "8df70ab5-aa0e-4257-9444-e2c41dc2f154",
+            "5ceee1b8-b23b-466f-ab49-872b9ff20b1e"
+        ]
+    },
+    {
+        "title": "Syntax Error and Localization: Missing semicolon and non-standard error message in `BadRequest`",
+        "description": "A `return BadRequest(...)` statement (identified around line 63) is missing its terminating semicolon, which will cause a compilation error. Additionally, the current error message is in English and should be translated to Português do Brasil (pt-BR) to ensure consistency and adhere to project standards for user-facing messages.",
+        "filePath": "AcademiaApp.API/Controllers/AcompanhamentoNutricionalController.cs",
+        "language": "csharp",
+        "representativeSuggestion": {
+            "id": "878ad3ea-061a-42d9-8c96-814a26f6a154",
+            "language": "csharp",
+            "relevantFile": "AcademiaApp.API/Controllers/AcompanhamentoNutricionalController.cs",
+            "suggestionContent": "A instrução `return BadRequest(...)` na linha 63 está sem o ponto e vírgula finalizador. Isso causará um erro de compilação. Adicionalmente, a mensagem de erro deve estar em Português do Brasil (pt-BR) conforme as Kody Rules.",
+            "existingCode": "                return BadRequest(\"An error occurred while trying to create the record. Please try again later.\")",
+            "improvedCode": "                return BadRequest(\"Ocorreu um erro ao tentar criar o registro. Por favor, tente novamente mais tarde.\");",
+            "oneSentenceSummary": "Corrigir erro de sintaxe adicionando o ponto e vírgula ausente e traduzir a mensagem de erro para pt-BR."
+        },
+        "contributingSuggestionIds": ["878ad3ea-061a-42d9-8c96-814a26f6a154"]
+    },
+    {
+        "title": "Missing XML Documentation for `GetByAlunoId` Method",
+        "description": "The public API method `GetByAlunoId` (identified around line 37) lacks XML documentation. Adding XML comments is crucial for improving the API's clarity, discoverability, and maintainability by describing its purpose, parameters (e.g., `alunoId`), and the nature of its return value.",
+        "filePath": "AcademiaApp.API/Controllers/AcompanhamentoNutricionalController.cs",
+        "language": "csharp",
+        "representativeSuggestion": {
+            "id": "b1b46522-757f-4ced-8b8f-656bdd2b821f",
+            "language": "csharp",
+            "relevantFile": "AcademiaApp.API/Controllers/AcompanhamentoNutricionalController.cs",
+            "suggestionContent": "O método público `GetByAlunoId` (linha 37) não possui documentação XML. Adicionar comentários XML melhora a compreensibilidade e manutenibilidade da API, descrevendo o propósito do endpoint, seus parâmetros e o que ele retorna.",
+            "existingCode": "        public async Task<ActionResult<IEnumerable<AcompanhamentoNutricional>>> GetByAlunoId(int alunoId)",
+            "improvedCode": "        /// <summary>\n        /// Retrieves all nutritional tracking records for a specific student.\n        /// </summary>\n        /// <param name=\"alunoId\">The ID of the student for whom the tracking records will be retrieved.</param>\n        /// <returns>A collection of AcompanhamentoNutricional objects. Returns an empty list if no tracking records are found for the student.</returns>\n        public async Task<ActionResult<IEnumerable<AcompanhamentoNutricional>>> GetByAlunoId(int alunoId)",
+            "oneSentenceSummary": "Adicionar documentação XML ao método `GetByAlunoId` para clareza da API."
+        },
+        "contributingSuggestionIds": ["b1b46522-757f-4ced-8b8f-656bdd2b821f"]
+    },
+    {
+        "title": "Missing XML Documentation for `Create` Method",
+        "description": "The public API method `Create` (identified around line 54) is missing XML documentation. It's important to document this endpoint to describe its functionality, the expected structure of the request body (`acompanhamento`), and the characteristics of the response upon successful resource creation.",
+        "filePath": "AcademiaApp.API/Controllers/AcompanhamentoNutricionalController.cs",
+        "language": "csharp",
+        "representativeSuggestion": {
+            "id": "15eca0ec-bef9-4532-ba16-bdb03e14f2a2",
+            "language": "csharp",
+            "relevantFile": "AcademiaApp.API/Controllers/AcompanhamentoNutricionalController.cs",
+            "suggestionContent": "O método público `Create` (linha 54) carece de documentação XML. É importante documentar o que o endpoint faz, o formato esperado do corpo da requisição (`acompanhamento`) e o tipo de resposta em caso de sucesso.",
+            "existingCode": "        public async Task<ActionResult<AcompanhamentoNutricional>> Create(AcompanhamentoNutricional acompanhamento)",
+            "improvedCode": "        /// <summary>\n        /// Creates a new nutritional tracking record.\n        /// </summary>\n        /// <param name=\"acompanhamento\">The data for the nutritional tracking record to be created.</param>\n        /// <returns>Returns the newly created nutritional tracking record with a 201 Created status and a Location header for the new resource.</returns>\n        public async Task<ActionResult<AcompanhamentoNutricional>> Create(AcompanhamentoNutricional acompanhamento)",
+            "oneSentenceSummary": "Adicionar documentação XML ao método `Create` para descrever sua funcionalidade e contrato."
+        },
+        "contributingSuggestionIds": ["15eca0ec-bef9-4532-ba16-bdb03e14f2a2"]
+    },
+    {
+        "title": "Missing XML Documentation for `Update` Method",
+        "description": "The public API method `Update` (identified around line 68) does not have XML documentation. Documenting this endpoint is necessary to detail its behavior, including its parameters (`id` from the route and `acompanhamento` from the request body), and the possible HTTP status codes it might return (e.g., NoContent, BadRequest, NotFound).",
+        "filePath": "AcademiaApp.API/Controllers/AcompanhamentoNutricionalController.cs",
+        "language": "csharp",
+        "representativeSuggestion": {
+            "id": "4464f19f-9898-4d1f-b82a-ce9df5804989",
+            "language": "csharp",
+            "relevantFile": "AcademiaApp.API/Controllers/AcompanhamentoNutricionalController.cs",
+            "suggestionContent": "O método público `Update` (linha 68) não possui documentação XML. Documentar este endpoint deve cobrir os parâmetros `id` (da rota) e `acompanhamento` (do corpo), e os possíveis códigos de status de resposta (e.g., NoContent, BadRequest, NotFound).",
+            "existingCode": "        public async Task<IActionResult> Update(int id, AcompanhamentoNutricional acompanhamento)",
+            "improvedCode": "        /// <summary>\n        /// Updates an existing nutritional tracking record based on the provided ID.\n        /// </summary>\n        /// <param name=\"id\">The ID of the nutritional tracking record to be updated. Must match `acompanhamento.Id` in the request body.</param>\n        /// <param name=\"acompanhamento\">The updated data for the nutritional tracking record.</param>\n        /// <returns>Returns NoContent (204) if the update is successful, BadRequest (400) if the route ID does not match the body ID, or NotFound (404) if the record is not found.</returns>\n        public async Task<IActionResult> Update(int id, AcompanhamentoNutricional acompanhamento)",
+            "oneSentenceSummary": "Adicionar documentação XML ao método `Update` para detalhar seu comportamento e parâmetros."
+        },
+        "contributingSuggestionIds": ["4464f19f-9898-4d1f-b82a-ce9df5804989"]
+    }
+]
