@@ -10,6 +10,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
     timestamps: true,
     autoIndex: true,
 })
+
 export class IssuesModel extends CoreDocument {
     @Prop({ type: String, required: true })
     public title: string;
@@ -43,3 +44,42 @@ export class IssuesModel extends CoreDocument {
 }
 
 export const IssuesSchema = SchemaFactory.createForClass(IssuesModel);
+
+// 1. Main - organization + status open
+IssuesSchema.index(
+    { organizationId: 1, createdAt: -1 },
+    {
+        partialFilterExpression: { status: 'open' },
+        name: 'organization_open'
+    }
+);
+
+// 2. By repository
+IssuesSchema.index(
+    { organizationId: 1, 'repository.name': 1, createdAt: -1 },
+    {
+        partialFilterExpression: { status: 'open' },
+        name: 'organization_repository_open'
+    }
+);
+
+// 3. Severity high or critical
+IssuesSchema.index(
+    { organizationId: 1, severity: 1, createdAt: -1 },
+    {
+        partialFilterExpression: {
+            status: 'open',
+            severity: { $in: ['critical', 'high'] }
+        },
+        name: 'organization_severity_high_critical_open'
+    }
+);
+
+// 4. By label + severity
+IssuesSchema.index(
+    { organizationId: 1, label: 1, severity: 1, createdAt: -1 },
+    {
+        partialFilterExpression: { status: 'open' },
+        name: 'organization_label_severity_open'
+    }
+);
