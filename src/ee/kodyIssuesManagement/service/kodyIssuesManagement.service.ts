@@ -68,7 +68,6 @@ export class KodyIssuesManagementService
                     context: KodyIssuesManagementService.name,
                     metadata: params,
                 });
-                return;
             }
 
             // 2. Agrupar por arquivo
@@ -90,7 +89,6 @@ export class KodyIssuesManagementService
             await this.resolveExistingIssues(
                 params,
                 params.prFiles,
-                changedFiles,
             );
 
             await this.pullRequestsService.updateSyncedWithIssuesFlag(
@@ -268,31 +266,30 @@ export class KodyIssuesManagementService
             'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         files: any[],
-        changedFiles: string[],
     ): Promise<void> {
         try {
-            for (const filePath of changedFiles) {
+            for (const file of files) {
                 const prChangedFiles = await this.getChangedFiles(context);
 
                 const currentCode = prChangedFiles.find(
-                    (f) => f.filename === filePath,
+                    (f) => f.filename === file.path,
                 )?.fileContent;
 
-                const fileData = files.find((f) => f.path === filePath);
+                const fileData = files.find((f) => f.path === file.path);
                 if (!fileData) continue;
 
                 // Buscar issues abertas para o arquivo
                 const openIssues = await this.issuesService.findByFileAndStatus(
                     context.organizationAndTeamData.organizationId,
                     context.repository.id,
-                    filePath,
+                    file.path,
                     IssueStatus.OPEN,
                 );
 
                 if (!openIssues?.length) continue;
 
                 const promptData = {
-                    filePath,
+                    filePath: file.path,
                     language: fileData.suggestions?.[0]?.language || 'unknown',
                     currentCode,
                     issues: openIssues.map((issue) => ({

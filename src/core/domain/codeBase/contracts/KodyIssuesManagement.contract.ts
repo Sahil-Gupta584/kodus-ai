@@ -31,6 +31,5 @@ export interface IKodyIssuesManagementService {
             'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         files: any[],
-        changedFiles: string[],
     ): Promise<void>;
 }
