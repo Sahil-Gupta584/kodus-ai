@@ -29,14 +29,17 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
         try {
             const cacheKey = `issues_${filters.organizationId}`;
 
-            let allIssues = await this.cacheService.getFromCache<IIssue[]>(cacheKey);
+            let allIssues =
+                await this.cacheService.getFromCache<IIssue[]>(cacheKey);
 
             if (!allIssues) {
-                const organizationFilter = await this.kodyIssuesManagementService.buildFilter({
-                    organizationId: filters.organizationId,
-                });
+                const organizationFilter =
+                    await this.kodyIssuesManagementService.buildFilter({
+                        organizationId: filters.organizationId,
+                    });
 
-                const issues = await this.issuesService.find(organizationFilter);
+                const issues =
+                    await this.issuesService.find(organizationFilter);
 
                 if (!issues || issues?.length === 0) {
                     return [];
@@ -72,7 +75,8 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
 
             if (filters.repositoryName) {
                 filteredIssues = filteredIssues.filter(
-                    (issue) => issue.repository?.name === filters.repositoryName,
+                    (issue) =>
+                        issue.repository?.name === filters.repositoryName,
                 );
             }
 
@@ -89,27 +93,39 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
             }
 
             if (filters.filePath) {
-                filteredIssues = filteredIssues.filter(
-                    (issue) => issue.filePath?.includes(filters.filePath),
+                filteredIssues = filteredIssues.filter((issue) =>
+                    issue.filePath?.includes(filters.filePath),
                 );
             }
 
             if (filters.title) {
-                filteredIssues = filteredIssues.filter(
-                    (issue) => issue.title?.toLowerCase().includes(filters.title.toLowerCase()),
+                filteredIssues = filteredIssues.filter((issue) =>
+                    issue.title
+                        ?.toLowerCase()
+                        .includes(filters.title.toLowerCase()),
+                );
+            }
+
+            if (filters.prAuthor) {
+                filteredIssues = filteredIssues.filter((issue) =>
+                    issue.contributingSuggestions?.some(
+                        (suggestion) =>
+                            suggestion.prAuthor.name.toLowerCase() ===
+                            filters.prAuthor.toLowerCase(),
+                    ),
                 );
             }
 
             if (filters.prNumber) {
-                filteredIssues = filteredIssues.filter(
-                    (issue) => issue.contributingSuggestions?.some(
-                        (suggestion) => suggestion.prNumber === filters.prNumber,
+                filteredIssues = filteredIssues.filter((issue) =>
+                    issue.contributingSuggestions?.some(
+                        (suggestion) =>
+                            suggestion.prNumber === filters.prNumber,
                     ),
                 );
             }
 
             return filteredIssues;
-
         } catch (error) {
             this.logger.error({
                 context: GetIssuesByFiltersUseCase.name,

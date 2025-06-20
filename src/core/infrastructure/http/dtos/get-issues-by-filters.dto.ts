@@ -35,6 +35,10 @@ export class GetIssuesByFiltersDto {
 
     @IsOptional()
     @IsString()
+    prAuthor?: string;
+
+    @IsOptional()
+    @IsString()
     beforeAt?: string;
 
     @IsOptional()
