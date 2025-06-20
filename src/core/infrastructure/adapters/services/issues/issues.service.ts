@@ -7,6 +7,7 @@ import { IIssuesService } from '@/core/domain/issues/contracts/issues.service.co
 import { IssueStatus } from '@/config/types/general/issues.type';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { GetIssuesByFiltersDto } from '@/core/infrastructure/http/dtos/get-issues-by-filters.dto';
 
 @Injectable()
 export class IssuesService implements IIssuesService {
@@ -46,13 +47,11 @@ export class IssuesService implements IIssuesService {
         return this.issuesRepository.findOne(filter);
     }
 
-    async find(
-        filter?: any,
-    ): Promise<IssuesEntity[]> {
+    async find(filter?: GetIssuesByFiltersDto): Promise<IssuesEntity[]> {
         return await this.issuesRepository.find(filter);
     }
 
-    async count(filter?: any): Promise<number> {
+    async count(filter?: GetIssuesByFiltersDto): Promise<number> {
         return await this.issuesRepository.count(filter);
     }
     //#endregion

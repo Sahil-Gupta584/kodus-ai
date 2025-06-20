@@ -1,3 +1,4 @@
+import { CodeSuggestion } from '@/config/types/general/codeReview.type';
 import { contextToGenerateIssues } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 
 export const KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN = Symbol(
@@ -13,7 +14,7 @@ export interface IKodyIssuesManagementService {
             'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         filePath: string,
-        newSuggestions: any[],
+        newSuggestions: Partial<CodeSuggestion>[],
     ): Promise<any>;
 
     createNewIssues(
@@ -21,7 +22,7 @@ export interface IKodyIssuesManagementService {
             contextToGenerateIssues,
             'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
-        unmatchedSuggestions: any[],
+        unmatchedSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void>;
 
     resolveExistingIssues(

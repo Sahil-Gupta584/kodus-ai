@@ -199,7 +199,7 @@ export class GetIssueByIdUseCase implements IUseCase {
             case PlatformType.BITBUCKET:
                 return `https://bitbucket.org/${data.repositoryFullName}/src/${branch}/${cleanFilePath}`;
             default:
-                throw new Error(`Plataforma não suportada: ${data.platform}`);
+                throw new Error(`Platform not supported: ${data.platform}`);
         }
     }
 
@@ -221,7 +221,7 @@ export class GetIssueByIdUseCase implements IUseCase {
             case PlatformType.BITBUCKET:
                 return `https://bitbucket.org/${data.repositoryFullName}/pull-requests/${prNumber}`;
             default:
-                throw new Error(`Plataforma não suportada: ${data.platform}`);
+                throw new Error(`Platform not supported: ${data.platform}`);
         }
     }
 
@@ -239,7 +239,7 @@ export class GetIssueByIdUseCase implements IUseCase {
             case PlatformType.BITBUCKET:
                 return `https://bitbucket.org/${data.repositoryFullName}`;
             default:
-                throw new Error(`Plataforma não suportada: ${data.platform}`);
+                throw new Error(`Platform not supported: ${data.platform}`);
         }
     }
     //#endregion

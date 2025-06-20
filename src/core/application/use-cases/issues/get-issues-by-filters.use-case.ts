@@ -131,6 +131,10 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
                 context: GetIssuesByFiltersUseCase.name,
                 message: 'Error getting issues by filters',
                 error,
+                metadata: {
+                    organizationId: filters.organizationId,
+                    filters,
+                },
             });
 
             return [];

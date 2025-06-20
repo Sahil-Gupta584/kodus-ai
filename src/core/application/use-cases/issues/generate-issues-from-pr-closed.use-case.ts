@@ -5,6 +5,7 @@ import {
     INTEGRATION_CONFIG_SERVICE_TOKEN,
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { stripCurlyBracesFromUUIDs } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-bitbucket.type';
+import { IMappedPullRequest, IMappedRepository } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-common.type';
 import {
     IPullRequestsService,
     PULL_REQUESTS_SERVICE_TOKEN,
@@ -88,7 +89,7 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
                 serviceName: GenerateIssuesFromPrClosedUseCase.name,
                 message: `Error processing closed pull request #${prData.context.pullRequest.number}: ${error.message}`,
                 metadata: {
-                    pullRequest: prData.context.pullRequest,
+                    prNumber: prData.context.pullRequest.number,
                     repositoryId: prData.context.repository.id,
                     organizationId:
                         prData.context.organizationAndTeamData.organizationId,
@@ -98,7 +99,11 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
         }
     }
 
-    private async normalizePayload(params: any): Promise<any> {
+    private async normalizePayload(params: any): Promise<{
+        pullRequest: IMappedPullRequest;
+        repository: IMappedRepository;
+        platformType: PlatformType;
+    } | null> {
         const { payload, platformType } = params;
 
         const sanitizedPayload =
@@ -186,8 +191,9 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
                 message: `No repository configuration found for repository ${repository?.name}`,
                 context: GenerateIssuesFromPrClosedUseCase.name,
                 metadata: {
-                    repositoryName: repository?.name,
                     prNumber: prNumber,
+                    repositoryId: repository?.id,
+                    repositoryName: repository?.name,
                 },
             });
 
