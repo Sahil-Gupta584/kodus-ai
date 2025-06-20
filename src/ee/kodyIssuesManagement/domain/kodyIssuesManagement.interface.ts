@@ -36,7 +36,10 @@ export interface IIssueDetails {
 export interface IContributingSuggestion {
     id: string;
     prNumber: number;
-    prAuthor?: string;
+    prAuthor: {
+        id: string;
+        name: string;
+    };
     suggestionContent?: string;
     oneSentenceSummary?: string;
     relevantFile?: string;

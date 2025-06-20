@@ -205,6 +205,13 @@ export class KodyIssuesManagementService
         unmatchedSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
         try {
+            const pullRequest =
+                await this.pullRequestsService.findByNumberAndRepository(
+                    context.pullRequest.number,
+                    context.repository.name,
+                    context.organizationAndTeamData,
+                );
+
             for (const suggestion of unmatchedSuggestions) {
                 await this.issuesService.create({
                     title: suggestion.oneSentenceSummary,
@@ -217,6 +224,10 @@ export class KodyIssuesManagementService
                         {
                             id: suggestion.id,
                             prNumber: context.pullRequest.number,
+                            prAuthor: {
+                                id: pullRequest?.user?.id || '',
+                                name: pullRequest?.user?.name || '',
+                            },
                         },
                     ],
                     repository: {
@@ -227,6 +238,7 @@ export class KodyIssuesManagementService
                     },
                     organizationId:
                         context.organizationAndTeamData.organizationId,
+                    status: IssueStatus.OPEN,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
                 });
