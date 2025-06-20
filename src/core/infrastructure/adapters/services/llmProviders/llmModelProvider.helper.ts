@@ -97,13 +97,11 @@ const getChatGemini = (
     } | null,
 ) => {
     const defaultOptions = {
-        model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW]
-            .modelName,
+        model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO].modelName,
         temperature: 0,
         topP: 1,
         maxTokens:
-            MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW]
-                .defaultMaxTokens,
+            MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO].defaultMaxTokens,
         verbose: false,
         streaming: false,
         callbacks: [],
@@ -137,11 +135,11 @@ const getChatVertexAI = (
     } | null,
 ): any => {
     const defaultOptions = {
-        model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06]
+        model: MODEL_STRATEGIES[LLMModelProvider.VERTEX_GEMINI_2_5_PRO]
             .modelName,
         temperature: 0,
         maxTokens:
-            MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06]
+            MODEL_STRATEGIES[LLMModelProvider.VERTEX_GEMINI_2_5_PRO]
                 .defaultMaxTokens,
         verbose: false,
         streaming: false,
@@ -230,16 +228,13 @@ export enum LLMModelProvider {
 
     // Google AI Models
     GEMINI_2_0_FLASH = 'google:gemini-2.0-flash',
-    GEMINI_2_5_PRO_PREVIEW = 'google:gemini-2.5-pro-preview-03-25',
-    GEMINI_2_5_PRO_PREVIEW_05_06 = 'google:gemini-2.5-pro-preview-05-06',
-    GEMINI_2_5_FLASH_PREVIEW_04_17 = 'google:gemini-2.5-flash-preview-04-17',
-    GEMINI_2_5_FLASH_PREVIEW_05_20 = 'google:gemini-2.5-flash-preview-05-20',
+    GEMINI_2_5_PRO = 'google:gemini-2.5-pro',
+    GEMINI_2_5_FLASH = 'google:gemini-2.5-flash',
 
     // Vertex AI Models (prefixed with 'vertex-' to differentiate)
     VERTEX_GEMINI_2_0_FLASH = 'vertex:gemini-2.0-flash',
-    VERTEX_GEMINI_2_5_PRO_PREVIEW = 'vertex:gemini-2.5-pro-preview-03-25',
-    VERTEX_GEMINI_2_5_PRO_PREVIEW_05_06 = 'vertex:gemini-2.5-pro-preview-05-06',
-    VERTEX_GEMINI_2_5_FLASH_PREVIEW_04_17 = 'vertex:gemini-2.5-flash-preview-04-17',
+    VERTEX_GEMINI_2_5_PRO = 'vertex:gemini-2.5-pro',
+    VERTEX_GEMINI_2_5_FLASH = 'vertex:gemini-2.5-flash',
     VERTEX_CLAUDE_3_5_SONNET = 'vertex:claude-3-5-sonnet-v2@20241022',
 
     // Deepseek Models
@@ -297,28 +292,16 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
         modelName: 'gemini-2.0-flash',
         defaultMaxTokens: 8000,
     },
-    [LLMModelProvider.GEMINI_2_5_PRO_PREVIEW]: {
+    [LLMModelProvider.GEMINI_2_5_PRO]: {
         provider: 'google',
         factory: getChatGemini,
-        modelName: 'gemini-2.5-pro-preview-03-25',
+        modelName: 'gemini-2.5-pro',
         defaultMaxTokens: 60000,
     },
-    [LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06]: {
+    [LLMModelProvider.GEMINI_2_5_FLASH]: {
         provider: 'google',
         factory: getChatGemini,
-        modelName: 'gemini-2.5-pro-preview-05-06',
-        defaultMaxTokens: 60000,
-    },
-    [LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_04_17]: {
-        provider: 'google',
-        factory: getChatGemini,
-        modelName: 'gemini-2.5-flash-preview-04-17',
-        defaultMaxTokens: 60000,
-    },
-    [LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_05_20]: {
-        provider: 'google',
-        factory: getChatGemini,
-        modelName: 'gemini-2.5-flash-preview-05-20',
+        modelName: 'gemini-2.5-flash',
         defaultMaxTokens: 60000,
     },
 
@@ -329,24 +312,19 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
         modelName: 'gemini-2.0-flash',
         defaultMaxTokens: 8000,
     },
-    [LLMModelProvider.VERTEX_GEMINI_2_5_PRO_PREVIEW]: {
+    [LLMModelProvider.VERTEX_GEMINI_2_5_PRO]: {
         provider: 'vertex',
         factory: getChatVertexAI,
-        modelName: 'gemini-2.5-pro-preview-03-25',
+        modelName: 'gemini-2.5-pro',
         defaultMaxTokens: 60000,
     },
-    [LLMModelProvider.VERTEX_GEMINI_2_5_PRO_PREVIEW_05_06]: {
+    [LLMModelProvider.VERTEX_GEMINI_2_5_FLASH]: {
         provider: 'vertex',
         factory: getChatVertexAI,
-        modelName: 'gemini-2.5-pro-preview-05-06',
+        modelName: 'gemini-2.5-flash',
         defaultMaxTokens: 60000,
     },
-    [LLMModelProvider.VERTEX_GEMINI_2_5_FLASH_PREVIEW_04_17]: {
-        provider: 'vertex',
-        factory: getChatVertexAI,
-        modelName: 'gemini-2.5-flash-preview-04-17',
-        defaultMaxTokens: 60000,
-    },
+
     [LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET]: {
         provider: 'vertex',
         factory: getChatVertexAI,
