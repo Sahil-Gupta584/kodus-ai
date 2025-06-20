@@ -2,21 +2,31 @@ import {
     BehaviourForExistingDescription,
     CodeReviewConfig,
     LimitationType,
+    ReviewModeConfig,
+    GroupingModeSuggestions,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { INTEGRATION_CONFIG_SERVICE_TOKEN } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { KodyRulesEntity } from '@/core/domain/kodyRules/entities/kodyRules.entity';
 import { PARAMETERS_SERVICE_TOKEN } from '@/core/domain/parameters/contracts/parameters.service.contract';
+import { ORGANIZATION_PARAMETERS_SERVICE_TOKEN } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
 import { ParametersEntity } from '@/core/domain/parameters/entities/parameters.entity';
-import CodeBaseConfigService from '@/core/infrastructure/adapters/services/codeBase/codeBaseConfig.service';
+import CodeBaseConfigService from '@/ee/codeBase/codeBaseConfig.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
+import { KodyRulesValidationService } from '@/ee/kodyRules/service/kody-rules-validation.service';
 import { INTEGRATION_SERVICE_TOKEN } from '@/core/domain/integrations/contracts/integration.service.contracts';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import * as globalPathsJsonFile from '@/shared/utils/codeBase/ignorePaths/generated/paths.json';
+
+// Mock the crypto module to avoid requiring API_CRYPTO_KEY
+jest.mock('@/shared/utils/crypto', () => ({
+    encrypt: jest.fn(),
+    decrypt: jest.fn(),
+}));
 
 // Mock the function decorator
 jest.mock(
@@ -42,11 +52,25 @@ describe('codeBaseConfig', () => {
         findByOrganizationId: jest.fn(),
     };
 
+    const mockOrganizationParametersService = {
+        findByKey: jest.fn(),
+    };
+
+    const mockKodyRulesValidationService = {
+        validate: jest.fn(),
+        filterKodyRules: jest.fn().mockReturnValue([]),
+    };
+
     const mockCodeManagmentService = {
         getDefaultBranch: jest.fn(),
     };
 
-    const mockLogger = {};
+    const mockLogger = {
+        error: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        debug: jest.fn(),
+    };
 
     beforeEach(async () => {
         const module: TestingModule = await Test.createTestingModule({
@@ -67,6 +91,14 @@ describe('codeBaseConfig', () => {
                 {
                     provide: KODY_RULES_SERVICE_TOKEN,
                     useValue: mockKodyRulesService,
+                },
+                {
+                    provide: ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
+                    useValue: mockOrganizationParametersService,
+                },
+                {
+                    provide: KodyRulesValidationService,
+                    useValue: mockKodyRulesValidationService,
                 },
                 {
                     provide: CodeManagementService,
@@ -121,6 +153,7 @@ describe('codeBaseConfig', () => {
                 potential_issues: true,
                 refactoring: true,
                 security: true,
+                breaking_changes: false,
             },
             summary: {
                 behaviourForExistingDescription:
@@ -131,6 +164,17 @@ describe('codeBaseConfig', () => {
             kodyRules: [],
             pullRequestApprovalActive: false,
             kodusConfigFileOverridesWebPreferences: false,
+            isRequestChangesActive: false,
+            kodyFineTuningConfig: {
+                enabled: true,
+            },
+            reviewModeConfig: ReviewModeConfig.LIGHT_MODE_FULL,
+            suggestionControl: {
+                groupingMode: GroupingModeSuggestions.FULL,
+                limitationType: LimitationType.PR,
+                maxSuggestions: 9,
+                severityLevelFilter: SeverityLevel.MEDIUM,
+            },
         },
         repositories: [],
     };

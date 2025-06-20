@@ -51,6 +51,7 @@ COPY package.json yarn.lock ./
 COPY --from=build /usr/src/app/dist ./dist
 COPY ecosystem.config.js ./
 COPY default-kodus-config.yml ./default-kodus-config.yml
+COPY tsconfig.json ./
 
 RUN mkdir -p /usr/src/app/certs
 RUN yarn global add pm2
