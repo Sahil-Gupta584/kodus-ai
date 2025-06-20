@@ -43,7 +43,7 @@ export class KodyIssuesAnalysisService {
         promptData: any,
     ): Promise<any> {
         try {
-            const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
+            const provider = LLMModelProvider.GEMINI_2_5_PRO;
 
             const chain = await this.createAnalysisChainWithFallback(
                 organizationAndTeamData,
@@ -83,7 +83,7 @@ export class KodyIssuesAnalysisService {
         promptData: any,
     ): Promise<any> {
         try {
-            const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
+            const provider = LLMModelProvider.GEMINI_2_5_PRO;
 
             const chain = await this.createAnalysisChainWithFallback(
                 context.organizationAndTeamData,
@@ -126,9 +126,9 @@ export class KodyIssuesAnalysisService {
     ) {
         if (!fallbackProvider) {
             fallbackProvider =
-                provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
+                provider === LLMModelProvider.GEMINI_2_5_PRO
                     ? LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET
-                    : LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
+                    : LLMModelProvider.GEMINI_2_5_PRO;
         }
 
         try {
