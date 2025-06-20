@@ -37,6 +37,10 @@ export interface IContributingSuggestion {
     id: string;
     prNumber: number;
     prAuthor?: string;
+    suggestionContent?: string;
+    oneSentenceSummary?: string;
+    relevantFile?: string;
+    language?: string;
     existingCode?: string;
     improvedCode?: string;
     startLine?: number;
@@ -57,3 +61,13 @@ export type contextToGenerateIssues = {
     pullRequest: any;
     prFiles?: any[];
 };
+
+export interface IRepresentativeSuggestion {
+    id: string;
+    language: string;
+    relevantFile: string;
+    suggestionContent: string;
+    existingCode: string;
+    improvedCode: string;
+    oneSentenceSummary: string;
+}

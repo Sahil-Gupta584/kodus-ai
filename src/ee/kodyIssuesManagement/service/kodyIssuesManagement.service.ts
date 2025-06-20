@@ -14,6 +14,7 @@ import { CodeSuggestion } from '@/config/types/general/codeReview.type';
 import {
     contextToGenerateIssues,
     IContributingSuggestion,
+    IRepresentativeSuggestion,
 } from '../domain/kodyIssuesManagement.interface';
 import {
     IPullRequestManagerService,
@@ -131,11 +132,32 @@ export class KodyIssuesManagementService
             // 2. Preparar dados para o prompt (com array de issues)
             const promptData = {
                 filePath,
-                existingIssues: existingIssues.map((issue) => ({
-                    issueId: issue.uuid,
-                    representativeSuggestion:
-                        issue.contributingSuggestions[0].id,
-                })),
+                existingIssues: await Promise.all(
+                    existingIssues.map(async (issue) => {
+                        const enrichedSuggestions =
+                            await this.enrichContributingSuggestions(
+                                [issue.contributingSuggestions[0]],
+                                organizationAndTeamData.organizationId,
+                            );
+
+                        const representativeSuggestion: IRepresentativeSuggestion[] =
+                            enrichedSuggestions.map((suggestion) => ({
+                                id: suggestion.id,
+                                language: suggestion.language,
+                                relevantFile: suggestion.relevantFile,
+                                suggestionContent: suggestion.suggestionContent,
+                                existingCode: suggestion.existingCode,
+                                improvedCode: suggestion.improvedCode,
+                                oneSentenceSummary:
+                                    suggestion.oneSentenceSummary,
+                            }));
+
+                        return {
+                            issueId: issue.uuid,
+                            representativeSuggestion,
+                        };
+                    }),
+                ),
                 newSuggestions: newSuggestions.map((suggestion) => ({
                     id: suggestion.id,
                     language: suggestion.language,
@@ -465,39 +487,43 @@ export class KodyIssuesManagementService
     }
 
     public async enrichContributingSuggestions(
-        filteredContributingSuggestions: IContributingSuggestion[],
-        issue: IssuesEntity,
+        contributingSuggestions: IContributingSuggestion[],
+        organizationId: string,
     ): Promise<IContributingSuggestion[]> {
         const enrichedContributingSuggestions = await Promise.all(
-            filteredContributingSuggestions.map(
-                async (contributingSuggestion) => {
-                    try {
-                        const suggestionsFromPR =
-                            await this.getSuggestionByPR(
-                                issue.organizationId,
-                                contributingSuggestion.prNumber,
-                            );
-                        const fullSuggestion = suggestionsFromPR.find(
-                            (suggestion) =>
-                                suggestion.id === contributingSuggestion.id,
-                        );
+            contributingSuggestions.map(async (contributingSuggestion) => {
+                try {
+                    const suggestionsFromPR = await this.getSuggestionByPR(
+                        organizationId,
+                        contributingSuggestion.prNumber,
+                    );
+                    const fullSuggestion = suggestionsFromPR.find(
+                        (suggestion) =>
+                            suggestion.id === contributingSuggestion.id,
+                    );
 
-                        if (fullSuggestion) {
-                            return {
-                                ...contributingSuggestion,
-                                existingCode: fullSuggestion.existingCode,
-                                improvedCode: fullSuggestion.improvedCode,
-                                startLine: fullSuggestion.relevantLinesStart,
-                                endLine: fullSuggestion.relevantLinesEnd,
-                                //prAuthor: fullSuggestion.user.username,
-                            };
-                        }
-                        return contributingSuggestion;
-                    } catch (error) {
-                        return contributingSuggestion;
+                    if (fullSuggestion) {
+                        return {
+                            ...contributingSuggestion,
+                            existingCode: fullSuggestion.existingCode,
+                            improvedCode: fullSuggestion.improvedCode,
+                            startLine: fullSuggestion.relevantLinesStart,
+                            endLine: fullSuggestion.relevantLinesEnd,
+                            oneSentenceSummary:
+                                fullSuggestion.oneSentenceSummary,
+                            suggestionContent: fullSuggestion.suggestionContent,
+                            language: fullSuggestion.language,
+                            label: fullSuggestion.label,
+                            severity: fullSuggestion.severity,
+                            relevantFile: fullSuggestion.relevantFile,
+                            //prAuthor: fullSuggestion.user.username,
+                        };
                     }
-                },
-            ),
+                    return contributingSuggestion;
+                } catch (error) {
+                    return contributingSuggestion;
+                }
+            }),
         );
 
         return enrichedContributingSuggestions;

@@ -57,7 +57,7 @@ export class GetIssueByIdUseCase implements IUseCase {
         const enrichedContributingSuggestions =
             await this.kodyIssuesManagementService.enrichContributingSuggestions(
                 issue.contributingSuggestions,
-                issue,
+                issue.organizationId,
             );
 
         return {
@@ -68,7 +68,16 @@ export class GetIssueByIdUseCase implements IUseCase {
             label: issue.label,
             severity: issue.severity,
             status: issue.status,
-            contributingSuggestions: enrichedContributingSuggestions,
+            contributingSuggestions: enrichedContributingSuggestions.map(
+                (suggestion) => ({
+                    id: suggestion.id,
+                    prNumber: suggestion.prNumber,
+                    prAuthor: suggestion.prAuthor,
+                    language: suggestion.language,
+                    existingCode: suggestion.existingCode,
+                    improvedCode: suggestion.improvedCode,
+                }),
+            ),
             fileLink: {
                 label: issue.filePath,
                 url: this.buildFileUrl(dataToBuildUrls, issue.filePath),
