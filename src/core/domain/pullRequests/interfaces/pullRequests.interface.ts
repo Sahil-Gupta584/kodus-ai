@@ -32,6 +32,7 @@ export interface IPullRequests {
     organizationId?: string;
     commits: ICommit[];
     syncedEmbeddedSuggestions?: boolean;
+    syncedWithIssues?: boolean;
 }
 
 export interface ICommit {

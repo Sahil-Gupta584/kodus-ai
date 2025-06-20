@@ -123,6 +123,20 @@ export class PullRequestsService implements IPullRequestsService {
         );
     }
 
+    async findByOrganizationAndRepositoryWithStatusAndSyncedWithIssuesFlag(
+        organizationId: string,
+        repository: Pick<Repository, 'id' | 'fullName'>,
+        status?: PullRequestState,
+        syncedEmbeddedSuggestions?: boolean,
+    ): Promise<IPullRequests[]> {
+        return this.pullRequestsRepository.findByOrganizationAndRepositoryWithStatusAndSyncedWithIssuesFlag(
+            organizationId,
+            repository,
+            status,
+            syncedEmbeddedSuggestions,
+        );
+    }
+
     //#endregion
 
     //#region Add
@@ -186,6 +200,20 @@ export class PullRequestsService implements IPullRequestsService {
     ): Promise<void> {
         return this.pullRequestsRepository.updateSyncedSuggestionsFlag(
             pullRequestNumbers,
+            repositoryId,
+            organizationId,
+            synced,
+        );
+    }
+
+    async updateSyncedWithIssuesFlag(
+        prNumber: number,
+        repositoryId: string,
+        organizationId: string,
+        synced: boolean,
+    ): Promise<void> {
+        return this.pullRequestsRepository.updateSyncedWithIssuesFlag(
+            prNumber,
             repositoryId,
             organizationId,
             synced,
@@ -368,6 +396,7 @@ export class PullRequestsService implements IPullRequestsService {
                     ? [...pullRequest.commits]
                     : [],
                 syncedEmbeddedSuggestions: false,
+                syncedWithIssues: false,
             };
         } catch (error) {
             this.logger.log({

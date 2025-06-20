@@ -10,6 +10,7 @@ import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.us
 import { ChatWithKodyFromGitUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/chatWithKodyFromGit.use-case';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
+import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
 
 /**
  * Handler for GitHub webhook events.
@@ -23,6 +24,7 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
         private readonly runCodeReviewAutomationUseCase: RunCodeReviewAutomationUseCase,
         private readonly chatWithKodyFromGitUseCase: ChatWithKodyFromGitUseCase,
         private readonly codeManagement: CodeManagementService,
+        private readonly generateIssuesFromPrClosedUseCase: GenerateIssuesFromPrClosedUseCase,
     ) {}
 
     public canHandle(params: IWebhookEventParams): boolean {
@@ -106,6 +108,10 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
 
             // Execute code review automation if necessary
             this.runCodeReviewAutomationUseCase.execute(params);
+
+            if (payload?.action === 'closed') {
+                await this.generateIssuesFromPrClosedUseCase.execute(params);
+            }
             return;
         } catch (error) {
             this.logger.error({

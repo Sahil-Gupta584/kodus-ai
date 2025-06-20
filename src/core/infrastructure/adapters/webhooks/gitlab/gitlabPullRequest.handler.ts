@@ -9,6 +9,7 @@ import { SavePullRequestUseCase } from '@/core/application/use-cases/pullRequest
 import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.use-case';
 import { ChatWithKodyFromGitUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/chatWithKodyFromGit.use-case';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
+import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
 
 /**
  * Handler for GitLab webhook events.
@@ -21,6 +22,7 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
         private readonly savePullRequestUseCase: SavePullRequestUseCase,
         private readonly runCodeReviewAutomationUseCase: RunCodeReviewAutomationUseCase,
         private readonly chatWithKodyFromGitUseCase: ChatWithKodyFromGitUseCase,
+        private readonly generateIssuesFromPrClosedUseCase: GenerateIssuesFromPrClosedUseCase,
     ) {}
 
     /**
@@ -79,6 +81,13 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
 
                 // Intentionally not awaiting this, as per original logic
                 this.runCodeReviewAutomationUseCase.execute(params);
+
+                if (
+                    payload?.object_attributes?.action === 'merge'
+                ) {
+                    await this.generateIssuesFromPrClosedUseCase.execute(params);
+                }
+
                 return;
             } else if (
                 payload?.object_attributes?.action === 'close' ||
@@ -87,6 +96,13 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
             ) {
                 // For closed or merged MRs, just save the state without triggering automation
                 await this.savePullRequestUseCase.execute(params);
+
+                if (
+                    payload?.object_attributes?.action === 'merge'
+                ) {
+                    await this.generateIssuesFromPrClosedUseCase.execute(params);
+                }
+
                 return;
             }
         } catch (error) {
