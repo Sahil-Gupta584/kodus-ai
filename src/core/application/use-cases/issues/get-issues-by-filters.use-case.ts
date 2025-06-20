@@ -9,6 +9,7 @@ import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
 import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
+import { CacheService } from '@/shared/utils/cache/cache.service';
 
 @Injectable()
 export class GetIssuesByFiltersUseCase implements IUseCase {
@@ -20,39 +21,95 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
 
         @Inject(KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN)
         private readonly kodyIssuesManagementService: KodyIssuesManagementService,
+
+        private readonly cacheService: CacheService,
     ) {}
 
     async execute(filters: GetIssuesByFiltersDto): Promise<IIssue[]> {
         try {
-            const filter =
-                await this.kodyIssuesManagementService.buildFilter(filters);
+            const cacheKey = `issues_${filters.organizationId}`;
 
-            const issues = await this.issuesService.find(filter);
+            let allIssues = await this.cacheService.getFromCache<IIssue[]>(cacheKey);
 
-            if (!issues || issues?.length === 0) {
+            if (!allIssues) {
+                const organizationFilter = await this.kodyIssuesManagementService.buildFilter({
+                    organizationId: filters.organizationId,
+                });
+
+                const issues = await this.issuesService.find(organizationFilter);
+
+                if (!issues || issues?.length === 0) {
+                    return [];
+                }
+
+                allIssues = await Promise.all(
+                    issues?.map(async (issue) => {
+                        const age =
+                            await this.kodyIssuesManagementService.ageCalculation(
+                                issue,
+                            );
+                        return {
+                            ...issue.toObject(),
+                            age,
+                        };
+                    }),
+                );
+
+                await this.cacheService.addToCache(cacheKey, allIssues, 900000); //15 minutos
+            }
+
+            if (!allIssues || allIssues.length === 0) {
                 return [];
             }
 
-            const issuesWithAdditionalData = await Promise.all(
-                issues?.map(async (issue) => {
-                    const age =
-                        await this.kodyIssuesManagementService.ageCalculation(
-                            issue,
-                        );
-                    return {
-                        ...issue.toObject(),
-                        age,
-                    };
-                }),
-            );
+            let filteredIssues = allIssues;
 
-            if (!issuesWithAdditionalData) {
-                return [];
+            if (filters.status) {
+                filteredIssues = filteredIssues.filter(
+                    (issue) => issue.status === filters.status,
+                );
             }
 
-            return issuesWithAdditionalData.filter(
-                (issue) => issue.status === filters.status,
-            );
+            if (filters.repositoryName) {
+                filteredIssues = filteredIssues.filter(
+                    (issue) => issue.repository?.name === filters.repositoryName,
+                );
+            }
+
+            if (filters.severity) {
+                filteredIssues = filteredIssues.filter(
+                    (issue) => issue.severity === filters.severity,
+                );
+            }
+
+            if (filters.category) {
+                filteredIssues = filteredIssues.filter(
+                    (issue) => issue.label === filters.category,
+                );
+            }
+
+            if (filters.filePath) {
+                filteredIssues = filteredIssues.filter(
+                    (issue) => issue.filePath?.includes(filters.filePath),
+                );
+            }
+
+            if (filters.title) {
+                filteredIssues = filteredIssues.filter(
+                    (issue) => issue.title?.toLowerCase().includes(filters.title.toLowerCase()),
+                );
+            }
+
+            if (filters.prNumber) {
+                filteredIssues = filteredIssues.filter(
+                    (issue) => issue.contributingSuggestions?.some(
+                        (suggestion) => suggestion.prNumber === filters.prNumber,
+                    ),
+                );
+            }
+
+            return filteredIssues;
+
         } catch (error) {
             this.logger.error({
                 context: GetIssuesByFiltersUseCase.name,

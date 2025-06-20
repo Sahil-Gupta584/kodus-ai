@@ -21,6 +21,7 @@ import { CodeReviewFeedbackModule } from "./codeReviewFeedback.module";
 import { GetIssueByIdUseCase } from "@/core/application/use-cases/issues/get-issue-by-id.use-case";
 import { GenerateIssuesFromPrClosedUseCase } from "@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case";
 import { CodebaseModule } from "./codeBase.module";
+import { GlobalCacheModule } from "./cache.module";
 
 const UseCases = [
     GetIssuesByFiltersUseCase,
@@ -43,6 +44,7 @@ const UseCases = [
         forwardRef(() => ParametersModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
+        GlobalCacheModule,
     ],
     providers: [
         ...UseCases,

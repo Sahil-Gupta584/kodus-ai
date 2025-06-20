@@ -77,6 +77,11 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
                 repository: prData.context.repository,
                 prFiles: prFiles,
             });
+
+            await this.kodyIssuesManagementService.clearIssuesCache(
+                prData.context.organizationAndTeamData.organizationId,
+            );
+
         } catch (error) {
             this.logger.error({
                 context: GenerateIssuesFromPrClosedUseCase.name,

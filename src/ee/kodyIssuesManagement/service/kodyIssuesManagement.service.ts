@@ -26,6 +26,7 @@ import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.
 import { ISuggestion } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import { CacheService } from '@/shared/utils/cache/cache.service';
 
 @Injectable()
 export class KodyIssuesManagementService
@@ -45,6 +46,8 @@ export class KodyIssuesManagementService
 
         @Inject(PULL_REQUEST_MANAGER_SERVICE_TOKEN)
         private pullRequestHandlerService: IPullRequestManagerService,
+
+        private readonly cacheService: CacheService,
     ) {}
 
     async processClosedPr(params: contextToGenerateIssues): Promise<void> {
@@ -539,6 +542,31 @@ export class KodyIssuesManagementService
         );
 
         return enrichedContributingSuggestions;
+    }
+
+    public async clearIssuesCache(organizationId: string): Promise<void> {
+        try {
+            const cacheKey = `issues_${organizationId}`;
+            await this.cacheService.removeFromCache(cacheKey);
+
+            this.logger.log({
+                context: KodyIssuesManagementService.name,
+                message: `Cache cleared for organization ${organizationId}`,
+                metadata: {
+                    organizationId,
+                    cacheKey,
+                },
+            });
+        } catch (error) {
+            this.logger.error({
+                context: KodyIssuesManagementService.name,
+                message: `Error clearing cache for organization ${organizationId}`,
+                error,
+                metadata: {
+                    organizationId,
+                },
+            });
+        }
     }
     //#endregion
 }

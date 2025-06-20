@@ -1,5 +1,5 @@
 import { IsOptional, IsString, IsNumber } from 'class-validator';
-import { SeverityLevel } from '@sentry/node';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { IssueStatus } from '@/config/types/general/issues.type';
 

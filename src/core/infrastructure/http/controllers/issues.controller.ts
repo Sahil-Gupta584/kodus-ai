@@ -1,13 +1,6 @@
 import { GetIssuesByFiltersUseCase } from '@/core/application/use-cases/issues/get-issues-by-filters.use-case';
 import { IssuesEntity } from '@/core/domain/issues/entities/issues.entity';
-import {
-    Body,
-    Controller,
-    Get,
-    Param,
-    Patch,
-    Query,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
 import { GetIssuesByFiltersDto } from '../dtos/get-issues-by-filters.dto';
 import { GetTotalIssuesUseCase } from '@/core/application/use-cases/issues/get-total-issues.use-case';
 import { GetIssueByIdUseCase } from '@/core/application/use-cases/issues/get-issue-by-id.use-case';
