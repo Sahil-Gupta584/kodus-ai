@@ -204,7 +204,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         reviewModeResponse: ReviewModeResponse,
         context: AnalysisContext,
     ): Promise<AIAnalysisResult> {
-        const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
+        const provider = LLMModelProvider.GEMINI_2_5_PRO;
 
         // Reset token tracking for new analysis
         this.tokenTracker.reset();
@@ -408,7 +408,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
     ) {
         const fallbackProvider =
             provider === LLMModelProvider.OPENAI_GPT_4O
-                ? LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
+                ? LLMModelProvider.GEMINI_2_5_PRO
                 : LLMModelProvider.OPENAI_GPT_4O;
         try {
             // Main chain
@@ -449,7 +449,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
     ) {
         const provider =
             parameters.llmProvider ||
-            LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
+            LLMModelProvider.GEMINI_2_5_PRO;
 
         // Reset token tracking for new suggestions
         this.tokenTracker.reset();
@@ -677,7 +677,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 }
             });
 
-            const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
+            const provider = LLMModelProvider.GEMINI_2_5_PRO;
             const baseContext = {
                 organizationAndTeamData,
                 file: {

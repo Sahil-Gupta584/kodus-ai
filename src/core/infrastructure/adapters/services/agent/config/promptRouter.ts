@@ -293,7 +293,7 @@ export class PromptRouter {
 
         const gemini = await getGemini({
             model: MODEL_STRATEGIES[
-                LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_04_17
+                LLMModelProvider.GEMINI_2_5_FLASH
             ].modelName,
             temperature: 0,
         });
@@ -309,7 +309,7 @@ export class PromptRouter {
                 response,
                 'FormatterMessage',
                 MODEL_STRATEGIES[
-                    LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_04_17
+                    LLMModelProvider.GEMINI_2_5_FLASH
                 ].modelName,
             );
         } catch (error) {

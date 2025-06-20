@@ -74,7 +74,7 @@ export class CommentAnalysisService {
                     payload: {
                         comments: filteredComments,
                     },
-                    provider: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                    provider: LLMModelProvider.GEMINI_2_5_PRO,
                     fallbackProvider: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     systemPromptFn: prompt_CommentCategorizerSystem,
                     userPromptFn: prompt_CommentCategorizerUser,
@@ -157,7 +157,7 @@ export class CommentAnalysisService {
                     comments: filteredComments,
                     rules: filteredLibraryKodyRules,
                 },
-                provider: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                provider: LLMModelProvider.GEMINI_2_5_PRO,
                 fallbackProvider: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                 systemPromptFn: prompt_KodyRulesGeneratorSystem,
                 userPromptFn: prompt_KodyRulesGeneratorUser,
@@ -186,7 +186,7 @@ export class CommentAnalysisService {
                             existingRules,
                             newRules: genereatedWithUuids,
                         },
-                        provider: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                        provider: LLMModelProvider.GEMINI_2_5_PRO,
                         fallbackProvider: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                         systemPromptFn:
                             prompt_KodyRulesGeneratorDuplicateFilterSystem,
@@ -218,7 +218,7 @@ export class CommentAnalysisService {
                     payload: {
                         rules: deduplicatedRules,
                     },
-                    provider: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                    provider: LLMModelProvider.GEMINI_2_5_PRO,
                     fallbackProvider: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     systemPromptFn:
                         prompt_KodyRulesGeneratorQualityFilterSystem,
@@ -310,7 +310,7 @@ export class CommentAnalysisService {
             const filteredCommentsIds =
                 await this.promptRunnerService.runPrompt({
                     payload: params,
-                    provider: LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                    provider: LLMModelProvider.GEMINI_2_5_PRO,
                     fallbackProvider: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     systemPromptFn: prompt_CommentIrrelevanceFilterSystem,
                     userPromptFn: prompt_CommentIrrelevanceFilterUser,

@@ -38,6 +38,29 @@ import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { string } from 'joi';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+
+// Interface for extended context used in Kody Rules analysis
+interface KodyRulesExtendedContext {
+    // Properties from base context (prepareAnalysisContext)
+    pullRequest: any;
+    patchWithLinesStr: string;
+    maxSuggestionsParams?: number;
+    language?: string;
+    filePath: string;
+    languageResultPrompt?: string;
+    reviewOptions?: ReviewOptions;
+    fileContent?: string;
+    limitationType?: string;
+    severityLevelFilter?: SeverityLevel;
+    organizationAndTeamData: OrganizationAndTeamData;
+    kodyRules: Array<Partial<IKodyRule>>;
+    
+    // Extended properties added during analysis
+    standardSuggestions?: AIAnalysisResult;
+    updatedSuggestions?: AIAnalysisResult;
+    filteredKodyRules?: Array<Partial<IKodyRule>>;
+}
 
 // Interface for token tracking
 interface TokenUsage {
@@ -360,12 +383,12 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
     ): Promise<string[]> {
         try {
             const extractionChain = await this.createAnalysisChainWithFallback(
-                LLMModelProvider.GEMINI_2_5_FLASH_PREVIEW_05_20,
+                LLMModelProvider.GEMINI_2_5_FLASH,
                 { suggestionContent: updatedContent },
                 prompt_kodyrules_extract_id_system,
                 prompt_kodyrules_extract_id_user,
                 'extractKodyRuleIdsFromContent',
-                LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06,
+                LLMModelProvider.GEMINI_2_5_PRO,
             );
 
             const extractionResult = await extractionChain.invoke({
@@ -412,7 +435,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             !!suggestions?.codeSuggestions &&
             suggestions?.codeSuggestions?.length > 0;
 
-        const provider = LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
+        const provider = LLMModelProvider.GEMINI_2_5_PRO;
         // Reset token tracking for new analysis
         this.tokenTracker.reset();
 
@@ -502,7 +525,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 classifiedRulesResult,
             );
 
-            const updatedSuggestions = this.processLLMResponse(
+            const updatedSuggestions = this.processUpdatedSuggestions(
                 organizationAndTeamData,
                 prNumber,
                 updateStandardSuggestionsResult,
@@ -675,9 +698,9 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
 
         if (!fallbackProvider) {
             fallbackProviderToExecute =
-                provider === LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06
+                provider === LLMModelProvider.GEMINI_2_5_PRO
                     ? LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET
-                    : LLMModelProvider.GEMINI_2_5_PRO_PREVIEW_05_06;
+                    : LLMModelProvider.GEMINI_2_5_FLASH;
         }
 
         try {
@@ -872,7 +895,7 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         response: string,
         fileContext: FileChangeContext,
         provider: LLMModelProvider,
-        extendedContext: any,
+        extendedContext: KodyRulesExtendedContext,
     ): AIAnalysisResult | null {
         try {
             if (!response) {
@@ -963,6 +986,137 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                     organizationAndTeamData,
                     prNumber,
                     response,
+                },
+            });
+            return null;
+        }
+    }
+
+    /**
+     * Specifically processes updatedSuggestions with differentiated logic
+     * for violated vs broken kody rules
+     */
+    private processUpdatedSuggestions(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        response: string,
+        fileContext: FileChangeContext,
+        provider: LLMModelProvider,
+        extendedContext: KodyRulesExtendedContext,
+    ): AIAnalysisResult | null {
+        // Tipo específico para a resposta do UPDATE
+        interface KodyRulesUpdateResponse {
+            overallSummary?: string;
+            codeSuggestions?: Array<{
+                id?: string;
+                relevantFile?: string;
+                language?: string;
+                suggestionContent?: string;
+                existingCode?: string;
+                improvedCode?: string;
+                oneSentenceSummary?: string;
+                relevantLinesStart?: number | string;
+                relevantLinesEnd?: number | string;
+                label?: string;
+                severity?: string;
+                violatedKodyRulesIds?: string[];
+                brokenKodyRulesIds?: string[];
+            }>;
+        }
+
+        try {
+            if (!response) {
+                return null;
+            }
+
+            let cleanResponse = response;
+            if (response?.startsWith('```')) {
+                cleanResponse = response
+                    .replace(/^```json\n/, '')
+                    .replace(/\n```(\n)?$/, '')
+                    .trim();
+            }
+
+            const parsedResponse = tryParseJSONObject(
+                cleanResponse,
+            ) as KodyRulesUpdateResponse | null;
+
+            if (!parsedResponse) {
+                this.logger.error({
+                    message: 'Failed to parse UPDATE response',
+                    context: KodyRulesAnalysisService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        originalResponse: response,
+                        cleanResponse,
+                        prNumber,
+                    },
+                });
+                return null;
+            }
+
+            const processedSuggestions: CodeSuggestion[] = [];
+
+            if (parsedResponse.codeSuggestions) {
+                for (const suggestion of parsedResponse.codeSuggestions) {
+                    const normalizedSuggestion: CodeSuggestion = {
+                        id: !suggestion?.id || !uuidValidate(suggestion?.id) ? uuidv4() : suggestion.id,
+                        relevantFile: suggestion.relevantFile || '',
+                        language: suggestion.language,
+                        suggestionContent: suggestion.suggestionContent || '',
+                        existingCode: suggestion.existingCode,
+                        improvedCode: suggestion.improvedCode,
+                        oneSentenceSummary: suggestion.oneSentenceSummary,
+                        relevantLinesStart:
+                            Number(suggestion.relevantLinesStart) || undefined,
+                        relevantLinesEnd:
+                            Number(suggestion.relevantLinesEnd) || undefined,
+                        label: suggestion.label,
+                        severity: suggestion.severity,
+                    };
+
+                    // "Has violated" means a standard suggestion violates a kody rule, so we silently fix it.
+                    const hasViolated =
+                        suggestion.violatedKodyRulesIds?.length &&
+                        suggestion.violatedKodyRulesIds.length > 0;
+
+                    // "Has broken" means that a standard suggestion could potentially be a kody rule, so we merge it
+                    const hasBroken =
+                        suggestion.brokenKodyRulesIds?.length &&
+                        suggestion.brokenKodyRulesIds.length > 0;
+
+                    if (hasBroken) {
+                        processedSuggestions.push({
+                            ...normalizedSuggestion,
+                            label: 'kody_rules',
+                            brokenKodyRulesIds: suggestion.brokenKodyRulesIds,
+                        });
+                    } else if (hasViolated) {
+                        processedSuggestions.push({
+                            ...normalizedSuggestion,
+                            label: suggestion.label,
+                            // violatedKodyRulesIds is just for internal use, so we don't save it
+                        });
+                    } else {
+                        processedSuggestions.push(normalizedSuggestion);
+                    }
+                }
+            }
+
+            return {
+                codeSuggestions: processedSuggestions,
+                overallSummary: parsedResponse.overallSummary || '',
+            };
+        } catch (error) {
+            this.logger.error({
+                message: `Error processing UPDATE response for PR#${prNumber}`,
+                context: KodyRulesAnalysisService.name,
+                error,
+                metadata: { 
+                    organizationAndTeamData, 
+                    prNumber, 
+                    response,
+                    filename: fileContext?.file?.filename,
                 },
             });
             return null;

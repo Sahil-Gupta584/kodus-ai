@@ -10,11 +10,15 @@ import { CodeManagementService } from '@/core/infrastructure/adapters/services/p
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { Test, TestingModule } from '@nestjs/testing';
+import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
+import { PARAMETERS_SERVICE_TOKEN } from '@/core/domain/parameters/contracts/parameters.service.contract';
 
 describe('commentManager', () => {
     let commentManagerService: CommentManagerService;
     const mockCodeManagementService = {};
     const mockLoggerService = {};
+    const mockLLMProviderService = {};
+    const mockParametersService = {};
 
     beforeEach(async () => {
         const module: TestingModule = await Test.createTestingModule({
@@ -27,6 +31,14 @@ describe('commentManager', () => {
                 {
                     provide: PinoLoggerService,
                     useValue: mockLoggerService,
+                },
+                {
+                    provide: LLM_PROVIDER_SERVICE_TOKEN,
+                    useValue: mockLLMProviderService,
+                },
+                {
+                    provide: PARAMETERS_SERVICE_TOKEN,
+                    useValue: mockParametersService,
                 },
             ],
         }).compile();
@@ -196,7 +208,11 @@ describe('commentManager', () => {
         ignoredTitleKeywords: ['WIP'],
         ignorePaths: ['we/ignore/this/path/*', 'we/ignore/this/other/path/*'],
         languageResultPrompt: LanguageValue.ENGLISH,
-        maxSuggestions: 5,
+        suggestionControl: {
+            maxSuggestions: 5,
+            limitationType: LimitationType.FILE,
+            severityLevelFilter: SeverityLevel.CRITICAL,
+        },
         reviewOptions: {
             code_style: true,
             documentation_and_comments: true,
@@ -207,6 +223,7 @@ describe('commentManager', () => {
             potential_issues: true,
             refactoring: true,
             security: true,
+            breaking_changes: false,
         },
         summary: {
             behaviourForExistingDescription:
@@ -215,8 +232,8 @@ describe('commentManager', () => {
             generatePRSummary: true,
         },
         kodyRules: [],
-        limitationType: LimitationType.FILE,
-        severityLevelFilter: SeverityLevel.CRITICAL,
+        pullRequestApprovalActive: false,
+        kodusConfigFileOverridesWebPreferences: false,
     };
 
     it('should format the finish message properly in multiple languages with varying encodings and writing styles', async () => {
@@ -264,10 +281,11 @@ Las siguientes opciones de revisión están habilitadas o deshabilitadas:
 | **Potential Issues** | ✅ |
 | **Refactoring** | ✅ |
 | **Security** | ✅ |
+| **Breaking Changes** | ❌ |
 
 </details>
 
-**[Acceda a sus configuraciones aquí.](https://app.kodus.io/automations/AutomationCodeReview/global/general)**
+**[Acceda a sus configuraciones aquí.](https://app.kodus.io/settings/code-review/global/general)**
 
 </details>
 </details>
@@ -312,10 +330,11 @@ Las siguientes opciones de revisión están habilitadas o deshabilitadas:
 | **Potential Issues** | ✅ |
 | **Refactoring** | ✅ |
 | **Security** | ✅ |
+| **Breaking Changes** | ❌ |
 
 </details>
 
-**[Acceda a sus configuraciones aquí.](https://app.kodus.io/automations/AutomationCodeReview/global/general)**
+**[Acceda a sus configuraciones aquí.](https://app.kodus.io/settings/code-review/global/general)**
 
 </details>
 </details>
@@ -366,10 +385,11 @@ Las siguientes opciones de revisión están habilitadas o deshabilitadas:
 | **Potential Issues** | ✅ |
 | **Refactoring** | ✅ |
 | **Security** | ✅ |
+| **Breaking Changes** | ❌ |
 
 </details>
 
-**[ここで設定にアクセスします。](https://app.kodus.io/automations/AutomationCodeReview/global/general)**
+**[ここで設定にアクセスします。](https://app.kodus.io/settings/code-review/global/general)**
 
 </details>
 </details>
@@ -414,10 +434,11 @@ Las siguientes opciones de revisión están habilitadas o deshabilitadas:
 | **Potential Issues** | ✅ |
 | **Refactoring** | ✅ |
 | **Security** | ✅ |
+| **Breaking Changes** | ❌ |
 
 </details>
 
-**[ここで設定にアクセスします。](https://app.kodus.io/automations/AutomationCodeReview/global/general)**
+**[ここで設定にアクセスします。](https://app.kodus.io/settings/code-review/global/general)**
 
 </details>
 </details>
@@ -468,10 +489,11 @@ Las siguientes opciones de revisión están habilitadas o deshabilitadas:
 | **Potential Issues** | ✅ |
 | **Refactoring** | ✅ |
 | **Security** | ✅ |
+| **Breaking Changes** | ❌ |
 
 </details>
 
-**[الوصول إلى إعدادات التكوين الخاصة بك هنا.](https://app.kodus.io/automations/AutomationCodeReview/global/general)**
+**[الوصول إلى إعدادات التكوين الخاصة بك هنا.](https://app.kodus.io/settings/code-review/global/general)**
 
 </details>
 </details>
@@ -516,10 +538,11 @@ Las siguientes opciones de revisión están habilitadas o deshabilitadas:
 | **Potential Issues** | ✅ |
 | **Refactoring** | ✅ |
 | **Security** | ✅ |
+| **Breaking Changes** | ❌ |
 
 </details>
 
-**[الوصول إلى إعدادات التكوين الخاصة بك هنا.](https://app.kodus.io/automations/AutomationCodeReview/global/general)**
+**[الوصول إلى إعدادات التكوين الخاصة بك هنا.](https://app.kodus.io/settings/code-review/global/general)**
 
 </details>
 </details>
@@ -533,8 +556,10 @@ Las siguientes opciones de revisión están habilitadas o deshabilitadas:
             const formattedMessageWithComments =
                 // @ts-ignore
                 await commentManagerService.generatePullRequestFinishSummaryMarkdown(
-                    [1, 2, 3] as any,
-                    testCase.codeReviewConfig,
+                    {} as any, // organizationAndTeamData
+                    1, // prNumber
+                    [1, 2, 3] as any, // commentResults
+                    testCase.codeReviewConfig, // codeReviewConfig
                 );
             expect(formattedMessageWithComments).toEqual(
                 testCase.expectedWithComments,
@@ -543,8 +568,10 @@ Las siguientes opciones de revisión están habilitadas o deshabilitadas:
             const formattedMessageWithoutComments =
                 // @ts-ignore
                 await commentManagerService.generatePullRequestFinishSummaryMarkdown(
-                    [],
-                    testCase.codeReviewConfig,
+                    {} as any, // organizationAndTeamData
+                    1, // prNumber
+                    [], // commentResults
+                    testCase.codeReviewConfig, // codeReviewConfig
                 );
             expect(formattedMessageWithoutComments).toEqual(
                 testCase.expectedWithoutComments,
