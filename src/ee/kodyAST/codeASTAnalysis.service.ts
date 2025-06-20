@@ -42,6 +42,8 @@ import {
     FunctionsAffectResult,
     FunctionSimilarity,
 } from '../codeBase/types/diff-analyzer.types';
+import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
+import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -231,6 +233,32 @@ export class CodeAstAnalysisService
         };
     }
 
+    private static readonly AuthModeMap: Record<AuthMode, ProtoAuthMode> = {
+        [AuthMode.OAUTH]: ProtoAuthMode.PROTO_AUTH_MODE_OAUTH,
+        [AuthMode.TOKEN]: ProtoAuthMode.PROTO_AUTH_MODE_TOKEN,
+    };
+
+    private static readonly PlatformTypeMap: Record<
+        PlatformType,
+        ProtoPlatformType
+    > = {
+        [PlatformType.GITHUB]: ProtoPlatformType.PROTO_PLATFORM_TYPE_GITHUB,
+        [PlatformType.GITLAB]: ProtoPlatformType.PROTO_PLATFORM_TYPE_GITLAB,
+        [PlatformType.BITBUCKET]:
+            ProtoPlatformType.PROTO_PLATFORM_TYPE_BITBUCKET,
+        [PlatformType.AZURE_REPOS]:
+            ProtoPlatformType.PROTO_PLATFORM_TYPE_AZURE_REPOS,
+        [PlatformType.AZURE_BOARDS]:
+            ProtoPlatformType.PROTO_PLATFORM_TYPE_AZURE_BOARDS,
+        [PlatformType.KODUS_WEB]:
+            ProtoPlatformType.PROTO_PLATFORM_TYPE_KODUS_WEB,
+        [PlatformType.JIRA]: ProtoPlatformType.PROTO_PLATFORM_TYPE_JIRA,
+        [PlatformType.SLACK]: ProtoPlatformType.PROTO_PLATFORM_TYPE_SLACK,
+        [PlatformType.NOTION]: ProtoPlatformType.PROTO_PLATFORM_TYPE_NOTION,
+        [PlatformType.MSTEAMS]: ProtoPlatformType.PROTO_PLATFORM_TYPE_MSTEAMS,
+        [PlatformType.DISCORD]: ProtoPlatformType.PROTO_PLATFORM_TYPE_DISCORD,
+    };
+
     private async getCloneParams(
         repository: Repository,
         organizationAndTeamData: OrganizationAndTeamData,
@@ -243,9 +271,9 @@ export class CodeAstAnalysisService
             ...params,
             auth: {
                 ...params.auth,
-                type: ProtoAuthMode[params.auth.type],
+                type: CodeAstAnalysisService.AuthModeMap[params.auth.type],
             },
-            provider: ProtoPlatformType[params.provider],
+            provider: CodeAstAnalysisService.PlatformTypeMap[params.provider],
         };
     }
 
