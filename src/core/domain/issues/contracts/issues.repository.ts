@@ -20,7 +20,7 @@ export interface IIssuesRepository {
         status?: IssueStatus,
     ): Promise<IssuesEntity[] | null>;
     find(organizationId: string): Promise<IssuesEntity[]>;
-    findWithFilters(filter?: Partial<IIssue>): Promise<IssuesEntity[]>;
+    findByFilters(filter?: Partial<IIssue>): Promise<IssuesEntity[]>;
 
     count(filter?: Partial<IIssue>): Promise<number>;
 

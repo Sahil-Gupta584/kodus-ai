@@ -77,7 +77,7 @@ export class IssuesRepository implements IIssuesRepository {
         }
     }
 
-    async findWithFilters(filter?: Partial<IIssue>): Promise<IssuesEntity[]> {
+    async findByFilters(filter?: Partial<IIssue>): Promise<IssuesEntity[]> {
         try {
             let query = this.issuesModel.find(filter);
 

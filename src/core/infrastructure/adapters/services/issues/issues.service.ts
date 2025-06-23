@@ -51,8 +51,8 @@ export class IssuesService implements IIssuesService {
         return await this.issuesRepository.find(organizationId);
     }
 
-    async findWithFilters(filter?: GetIssuesByFiltersDto): Promise<IssuesEntity[]> {
-        return await this.issuesRepository.findWithFilters(filter);
+    async findByFilters(filter?: GetIssuesByFiltersDto): Promise<IssuesEntity[]> {
+        return await this.issuesRepository.findByFilters(filter);
     }
 
     async count(filter?: GetIssuesByFiltersDto): Promise<number> {
