@@ -22,12 +22,14 @@ import { GetIssueByIdUseCase } from "@/core/application/use-cases/issues/get-iss
 import { GenerateIssuesFromPrClosedUseCase } from "@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case";
 import { CodebaseModule } from "./codeBase.module";
 import { GlobalCacheModule } from "./cache.module";
+import { GetIssuesUseCase } from "@/core/application/use-cases/issues/get-issues.use-case";
 
 const UseCases = [
     GetIssuesByFiltersUseCase,
     UpdateIssuePropertyUseCase,
     GenerateIssuesFromPrClosedUseCase,
     GetTotalIssuesUseCase,
+    GetIssuesUseCase,
     GetIssueByIdUseCase,
 ] as const;
 
