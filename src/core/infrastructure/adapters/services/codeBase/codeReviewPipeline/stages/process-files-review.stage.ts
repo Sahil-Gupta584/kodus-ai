@@ -976,7 +976,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
                     // We can only validate the implementation of suggestions that were sent
                     if (sentSuggestions.length > 0) {
-                        this.suggestionService.validateImplementedSuggestions(
+                        await this.suggestionService.validateImplementedSuggestions(
                             context?.organizationAndTeamData,
                             file?.patch,
                             sentSuggestions,
