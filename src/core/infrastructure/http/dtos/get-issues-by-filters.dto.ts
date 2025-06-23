@@ -15,7 +15,7 @@ export class GetIssuesByFiltersDto {
     category?: LabelType;
 
     @IsOptional()
-    status?: IssueStatus = IssueStatus.OPEN;
+    status?: IssueStatus;
 
     @IsOptional()
     @IsString()

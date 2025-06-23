@@ -39,7 +39,7 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
                     });
 
                 const issues =
-                    await this.issuesService.find(organizationFilter);
+                    await this.issuesService.findWithFilters(organizationFilter);
 
                 if (!issues || issues?.length === 0) {
                     return [];

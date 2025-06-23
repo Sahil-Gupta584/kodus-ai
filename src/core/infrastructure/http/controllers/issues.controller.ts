@@ -15,8 +15,8 @@ export class IssuesController {
         private readonly updateIssuePropertyUseCase: UpdateIssuePropertyUseCase,
     ) {}
 
-    @Get()
-    async getIssues(@Query() query: GetIssuesByFiltersDto) {
+    @Get('filters')
+    async getIssuesByFilters(@Query() query: GetIssuesByFiltersDto) {
         return this.getIssuesByFiltersUseCase.execute(query);
     }
 

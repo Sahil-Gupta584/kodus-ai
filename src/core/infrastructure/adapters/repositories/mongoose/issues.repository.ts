@@ -77,13 +77,35 @@ export class IssuesRepository implements IIssuesRepository {
         }
     }
 
-    async find(
-        filter?: Partial<IIssue>
-    ): Promise<IssuesEntity[]> {
+    async findWithFilters(filter?: Partial<IIssue>): Promise<IssuesEntity[]> {
         try {
             let query = this.issuesModel.find(filter);
 
             const docs = await query.exec();
+            return mapSimpleModelsToEntities(docs, IssuesEntity);
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    async find(organizationId: string): Promise<IssuesEntity[]> {
+        try {
+            const docs = await this.issuesModel
+                .find({
+                    organizationId: organizationId,
+                })
+                .select({
+                    'uuid': 1,
+                    'title': 1,
+                    'filePath': 1,
+                    'label': 1,
+                    'severity': 1,
+                    'status': 1,
+                    'repository.name': 1,
+                    'createdAt': 1,
+                    '_id': 1,
+                })
+                .exec();
             return mapSimpleModelsToEntities(docs, IssuesEntity);
         } catch (error) {
             throw error;
