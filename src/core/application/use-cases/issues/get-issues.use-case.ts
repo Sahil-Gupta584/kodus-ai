@@ -33,26 +33,13 @@ export class GetIssuesUseCase implements IUseCase {
                 await this.cacheService.getFromCache<IIssue[]>(cacheKey);
 
             if (!allIssues) {
-                const issues = await this.issuesService.find(
+                allIssues = await this.issuesService.find(
                     filters.organizationId,
                 );
 
-                if (!issues || issues?.length === 0) {
+                if (!allIssues || allIssues?.length === 0) {
                     return [];
                 }
-
-                allIssues = await Promise.all(
-                    issues?.map(async (issue) => {
-                        const age =
-                            await this.kodyIssuesManagementService.ageCalculation(
-                                issue,
-                            );
-                        return {
-                            ...issue.toObject(),
-                            age,
-                        };
-                    }),
-                );
 
                 await this.cacheService.addToCache(cacheKey, allIssues, 900000); //15 minutos
             }
