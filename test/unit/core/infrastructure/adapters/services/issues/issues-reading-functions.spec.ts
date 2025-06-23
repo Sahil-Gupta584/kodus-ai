@@ -29,6 +29,7 @@ describe('IssuesService', () => {
         updateSeverity: jest.fn(),
         updateStatus: jest.fn(),
         addSuggestionIds: jest.fn(),
+        findByFilters: jest.fn(),
     };
 
     beforeEach(async () => {
@@ -56,8 +57,8 @@ describe('IssuesService', () => {
         expect(service).toBeDefined();
     });
 
-    //#region find
-    describe('find', () => {
+    //#region find and findByFilters
+    describe('find and findByFilters', () => {
         const mockIssuesArray = [
             new IssuesEntity({
                 uuid: uuidv4(),
@@ -139,298 +140,302 @@ describe('IssuesService', () => {
             }),
         ];
 
-        describe('simulating GetIssuesByFiltersUseCase behavior', () => {
-            it('should find issues by organization filter (as used in use case)', async () => {
-                // Arrange - Simula o filtro que o use case cria
-                const organizationFilter = {
-                    organizationId: 'org-123',
-                };
-
+        describe('find - organization-based search', () => {
+            it('should find issues by organization id', async () => {
+                // Arrange
+                const organizationId = 'org-123';
                 mockRepository.find.mockResolvedValue(mockIssuesArray);
 
                 // Act
-                const result = await service.find(organizationFilter);
+                const result = await service.find(organizationId);
 
                 // Assert
                 expect(mockRepository.find).toHaveBeenCalledTimes(1);
-                expect(mockRepository.find).toHaveBeenCalledWith(
-                    organizationFilter,
-                );
+                expect(mockRepository.find).toHaveBeenCalledWith(organizationId);
                 expect(result).toEqual(mockIssuesArray);
                 expect(result).toHaveLength(2);
                 expect(result[0]).toBeInstanceOf(IssuesEntity);
                 expect(result[1]).toBeInstanceOf(IssuesEntity);
             });
 
-            it('should find issues with multiple filters (as used in use case)', async () => {
-                // Arrange - Simula filtros complexos do use case
-                const complexFilter = {
-                    organizationId: 'org-123',
-                    status: IssueStatus.OPEN,
-                    severity: SeverityLevel.CRITICAL,
-                    repositoryName: 'auth-service',
-                };
-
-                const filteredResults = [mockIssuesArray[0]]; // Só o primeiro que é crítico
-                mockRepository.find.mockResolvedValue(filteredResults);
-
-                // Act
-                const result = await service.find(complexFilter);
-
-                // Assert
-                expect(mockRepository.find).toHaveBeenCalledWith(complexFilter);
-                expect(result).toEqual(filteredResults);
-                expect(result).toHaveLength(1);
-                expect(result[0].severity).toBe(SeverityLevel.CRITICAL);
-            });
-
-            it('should return empty array when no issues found (as used in use case)', async () => {
+            it('should return empty array when no issues found for organization', async () => {
                 // Arrange
-                const filter = { organizationId: 'org-nonexistent' };
+                const organizationId = 'org-nonexistent';
                 mockRepository.find.mockResolvedValue([]);
 
                 // Act
-                const result = await service.find(filter);
+                const result = await service.find(organizationId);
 
                 // Assert
-                expect(mockRepository.find).toHaveBeenCalledWith(filter);
+                expect(mockRepository.find).toHaveBeenCalledWith(organizationId);
                 expect(result).toEqual([]);
                 expect(result).toHaveLength(0);
             });
-        });
 
-        describe('direct method testing', () => {
-            it('should find issues without filters', async () => {
+            it('should throw error when repository fails for organization search', async () => {
                 // Arrange
-                mockRepository.find.mockResolvedValue(mockIssuesArray);
-
-                // Act
-                const result = await service.find();
-
-                // Assert
-                expect(mockRepository.find).toHaveBeenCalledTimes(1);
-                expect(mockRepository.find).toHaveBeenCalledWith(undefined);
-                expect(result).toEqual(mockIssuesArray);
-            });
-
-            it('should find issues by severity filter', async () => {
-                // Arrange
-                const severityFilter = {
-                    severity: SeverityLevel.CRITICAL,
-                };
-                const criticalIssues = [mockIssuesArray[0]];
-
-                mockRepository.find.mockResolvedValue(criticalIssues);
-
-                // Act
-                const result = await service.find(severityFilter);
-
-                // Assert
-                expect(mockRepository.find).toHaveBeenCalledWith(
-                    severityFilter,
-                );
-                expect(result).toEqual(criticalIssues);
-                expect(
-                    result.every(
-                        (issue) => issue.severity === SeverityLevel.CRITICAL,
-                    ),
-                ).toBe(true);
-            });
-
-            it('should find issues by label/category filter', async () => {
-                // Arrange
-                const categoryFilter = {
-                    category: LabelType.SECURITY,
-                };
-                const securityIssues = [mockIssuesArray[0]];
-
-                mockRepository.find.mockResolvedValue(securityIssues);
-
-                // Act
-                const result = await service.find(categoryFilter);
-
-                // Assert
-                expect(mockRepository.find).toHaveBeenCalledWith(
-                    categoryFilter,
-                );
-                expect(result).toEqual(securityIssues);
-                expect(
-                    result.every((issue) => issue.label === LabelType.SECURITY),
-                ).toBe(true);
-            });
-
-            it('should find issues by repository name filter', async () => {
-                // Arrange
-                const repositoryFilter = {
-                    repositoryName: 'auth-service',
-                };
-                const authServiceIssues = [mockIssuesArray[0]];
-
-                mockRepository.find.mockResolvedValue(authServiceIssues);
-
-                // Act
-                const result = await service.find(repositoryFilter);
-
-                // Assert
-                expect(mockRepository.find).toHaveBeenCalledWith(
-                    repositoryFilter,
-                );
-                expect(result).toEqual(authServiceIssues);
-            });
-
-            it('should find issues by PR number filter', async () => {
-                // Arrange
-                const prNumberFilter = {
-                    prNumber: 101,
-                };
-                const prIssues = [mockIssuesArray[0]];
-
-                mockRepository.find.mockResolvedValue(prIssues);
-
-                // Act
-                const result = await service.find(prNumberFilter);
-
-                // Assert
-                expect(mockRepository.find).toHaveBeenCalledWith(
-                    prNumberFilter,
-                );
-                expect(result).toEqual(prIssues);
-            });
-
-            it('should find issues by PR author filter', async () => {
-                // Arrange
-                const prAuthorFilter = {
-                    prAuthor: 'John Doe',
-                };
-                const authorIssues = [mockIssuesArray[0]];
-
-                mockRepository.find.mockResolvedValue(authorIssues);
-
-                // Act
-                const result = await service.find(prAuthorFilter);
-
-                // Assert
-                expect(mockRepository.find).toHaveBeenCalledWith(
-                    prAuthorFilter,
-                );
-                expect(result).toEqual(authorIssues);
-            });
-
-            it('should find issues by file path filter', async () => {
-                // Arrange
-                const filePathFilter = {
-                    filePath: 'src/auth/login.ts',
-                };
-                const fileIssues = [mockIssuesArray[0]];
-
-                mockRepository.find.mockResolvedValue(fileIssues);
-
-                // Act
-                const result = await service.find(filePathFilter);
-
-                // Assert
-                expect(mockRepository.find).toHaveBeenCalledWith(
-                    filePathFilter,
-                );
-                expect(result).toEqual(fileIssues);
-            });
-
-            it('should find issues by title filter', async () => {
-                // Arrange
-                const titleFilter = {
-                    title: 'Security Issue',
-                };
-                const titleIssues = [mockIssuesArray[0]];
-
-                mockRepository.find.mockResolvedValue(titleIssues);
-
-                // Act
-                const result = await service.find(titleFilter);
-
-                // Assert
-                expect(mockRepository.find).toHaveBeenCalledWith(titleFilter);
-                expect(result).toEqual(titleIssues);
-            });
-        });
-
-        describe('error handling', () => {
-            it('should throw error when repository fails', async () => {
-                // Arrange
-                const filter = { organizationId: 'org-123' };
+                const organizationId = 'org-123';
                 const errorMessage = 'Database connection failed';
                 mockRepository.find.mockRejectedValue(new Error(errorMessage));
 
                 // Act & Assert
-                await expect(service.find(filter)).rejects.toThrow(
-                    errorMessage,
-                );
-                expect(mockRepository.find).toHaveBeenCalledWith(filter);
-            });
-
-            it('should handle network timeout errors', async () => {
-                // Arrange
-                const filter = { organizationId: 'org-123' };
-                const timeoutError = new Error('Request timeout');
-                mockRepository.find.mockRejectedValue(timeoutError);
-
-                // Act & Assert
-                await expect(service.find(filter)).rejects.toThrow(
-                    'Request timeout',
-                );
-                expect(mockRepository.find).toHaveBeenCalledTimes(1);
+                await expect(service.find(organizationId)).rejects.toThrow(errorMessage);
+                expect(mockRepository.find).toHaveBeenCalledWith(organizationId);
             });
         });
 
-        describe('edge cases', () => {
-            it('should handle null filter gracefully', async () => {
-                // Arrange
-                mockRepository.find.mockResolvedValue(mockIssuesArray);
+        describe('findByFilters - complex filter-based search', () => {
+            describe('simulating GetIssuesByFiltersUseCase behavior', () => {
+                it('should find issues with single filter (as used in use case)', async () => {
+                    // Arrange - Simula o filtro que o use case cria
+                    const organizationFilter = {
+                        organizationId: 'org-123',
+                    };
 
-                // Act
-                const result = await service.find(null);
+                    mockRepository.findByFilters.mockResolvedValue(mockIssuesArray);
 
-                // Assert
-                expect(mockRepository.find).toHaveBeenCalledWith(null);
-                expect(result).toEqual(mockIssuesArray);
+                    // Act
+                    const result = await service.findByFilters(organizationFilter);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledTimes(1);
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(organizationFilter);
+                    expect(result).toEqual(mockIssuesArray);
+                    expect(result).toHaveLength(2);
+                    expect(result[0]).toBeInstanceOf(IssuesEntity);
+                    expect(result[1]).toBeInstanceOf(IssuesEntity);
+                });
+
+                it('should find issues with multiple filters (as used in use case)', async () => {
+                    // Arrange - Simula filtros complexos do use case
+                    const complexFilter = {
+                        organizationId: 'org-123',
+                        status: IssueStatus.OPEN,
+                        severity: SeverityLevel.CRITICAL,
+                        repositoryName: 'auth-service',
+                    };
+
+                    const filteredResults = [mockIssuesArray[0]]; // Só o primeiro que é crítico
+                    mockRepository.findByFilters.mockResolvedValue(filteredResults);
+
+                    // Act
+                    const result = await service.findByFilters(complexFilter);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(complexFilter);
+                    expect(result).toEqual(filteredResults);
+                    expect(result).toHaveLength(1);
+                    expect(result[0].severity).toBe(SeverityLevel.CRITICAL);
+                });
+
+                it('should return empty array when no issues found (as used in use case)', async () => {
+                    // Arrange
+                    const filter = { organizationId: 'org-nonexistent' };
+                    mockRepository.findByFilters.mockResolvedValue([]);
+
+                    // Act
+                    const result = await service.findByFilters(filter);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(filter);
+                    expect(result).toEqual([]);
+                    expect(result).toHaveLength(0);
+                });
             });
 
-            it('should handle empty filter object', async () => {
-                // Arrange
-                const emptyFilter = {};
-                mockRepository.find.mockResolvedValue(mockIssuesArray);
+            describe('direct method testing', () => {
+                it('should find issues without filters', async () => {
+                    // Arrange
+                    mockRepository.findByFilters.mockResolvedValue(mockIssuesArray);
 
-                // Act
-                const result = await service.find(emptyFilter);
+                    // Act
+                    const result = await service.findByFilters();
 
-                // Assert
-                expect(mockRepository.find).toHaveBeenCalledWith(emptyFilter);
-                expect(result).toEqual(mockIssuesArray);
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledTimes(1);
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(undefined);
+                    expect(result).toEqual(mockIssuesArray);
+                });
+
+                it('should find issues by severity filter', async () => {
+                    // Arrange
+                    const severityFilter = {
+                        severity: SeverityLevel.CRITICAL,
+                    };
+                    const criticalIssues = [mockIssuesArray[0]];
+
+                    mockRepository.findByFilters.mockResolvedValue(criticalIssues);
+
+                    // Act
+                    const result = await service.findByFilters(severityFilter);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(severityFilter);
+                    expect(result).toEqual(criticalIssues);
+                    expect(
+                        result.every((issue) => issue.severity === SeverityLevel.CRITICAL),
+                    ).toBe(true);
+                });
+
+                it('should find issues by label/category filter', async () => {
+                    // Arrange
+                    const categoryFilter = {
+                        category: LabelType.SECURITY,
+                    };
+                    const securityIssues = [mockIssuesArray[0]];
+
+                    mockRepository.findByFilters.mockResolvedValue(securityIssues);
+
+                    // Act
+                    const result = await service.findByFilters(categoryFilter);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(categoryFilter);
+                    expect(result).toEqual(securityIssues);
+                    expect(
+                        result.every((issue) => issue.label === LabelType.SECURITY),
+                    ).toBe(true);
+                });
+
+                it('should find issues by repository name filter', async () => {
+                    // Arrange
+                    const repositoryFilter = {
+                        repositoryName: 'auth-service',
+                    };
+                    const authServiceIssues = [mockIssuesArray[0]];
+
+                    mockRepository.findByFilters.mockResolvedValue(authServiceIssues);
+
+                    // Act
+                    const result = await service.findByFilters(repositoryFilter);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(repositoryFilter);
+                    expect(result).toEqual(authServiceIssues);
+                });
+
+                it('should find issues by PR number filter', async () => {
+                    // Arrange
+                    const prNumberFilter = {
+                        prNumber: 101,
+                    };
+                    const prIssues = [mockIssuesArray[0]];
+
+                    mockRepository.findByFilters.mockResolvedValue(prIssues);
+
+                    // Act
+                    const result = await service.findByFilters(prNumberFilter);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(prNumberFilter);
+                    expect(result).toEqual(prIssues);
+                });
+
+                it('should find issues by PR author filter', async () => {
+                    // Arrange
+                    const prAuthorFilter = {
+                        prAuthor: 'John Doe',
+                    };
+                    const authorIssues = [mockIssuesArray[0]];
+
+                    mockRepository.findByFilters.mockResolvedValue(authorIssues);
+
+                    // Act
+                    const result = await service.findByFilters(prAuthorFilter);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(prAuthorFilter);
+                    expect(result).toEqual(authorIssues);
+                });
+
+                it('should find issues by file path filter', async () => {
+                    // Arrange
+                    const filePathFilter = {
+                        filePath: 'src/auth/login.ts',
+                    };
+                    const fileIssues = [mockIssuesArray[0]];
+
+                    mockRepository.findByFilters.mockResolvedValue(fileIssues);
+
+                    // Act
+                    const result = await service.findByFilters(filePathFilter);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(filePathFilter);
+                    expect(result).toEqual(fileIssues);
+                });
+
+                it('should find issues by title filter', async () => {
+                    // Arrange
+                    const titleFilter = {
+                        title: 'Security Issue',
+                    };
+                    const titleIssues = [mockIssuesArray[0]];
+
+                    mockRepository.findByFilters.mockResolvedValue(titleIssues);
+
+                    // Act
+                    const result = await service.findByFilters(titleFilter);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(titleFilter);
+                    expect(result).toEqual(titleIssues);
+                });
             });
 
-            it('should delegate complex filters correctly', async () => {
-                // Arrange
-                const complexFilter = {
-                    organizationId: 'org-123',
-                    status: IssueStatus.OPEN,
-                    severity: SeverityLevel.HIGH,
-                    category: LabelType.SECURITY,
-                    repositoryName: 'auth-service',
-                    prNumber: 101,
-                    prAuthor: 'John Doe',
-                    filePath: 'src/auth',
-                    title: 'security',
-                    beforeAt: '2024-01-01',
-                    afterAt: '2024-01-02',
-                };
+            describe('error handling', () => {
+                it('should throw error when repository fails', async () => {
+                    // Arrange
+                    const filter = { organizationId: 'org-123' };
+                    const errorMessage = 'Database connection failed';
+                    mockRepository.findByFilters.mockRejectedValue(new Error(errorMessage));
 
-                mockRepository.find.mockResolvedValue([mockIssuesArray[0]]);
+                    // Act & Assert
+                    await expect(service.findByFilters(filter)).rejects.toThrow(errorMessage);
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(filter);
+                });
 
-                // Act
-                const result = await service.find(complexFilter);
+                it('should handle network timeout errors', async () => {
+                    // Arrange
+                    const filter = { organizationId: 'org-123' };
+                    const timeoutError = new Error('Request timeout');
+                    mockRepository.findByFilters.mockRejectedValue(timeoutError);
 
-                // Assert
-                expect(mockRepository.find).toHaveBeenCalledWith(
-                    expect.objectContaining({
+                    // Act & Assert
+                    await expect(service.findByFilters(filter)).rejects.toThrow('Request timeout');
+                    expect(mockRepository.findByFilters).toHaveBeenCalledTimes(1);
+                });
+            });
+
+            describe('edge cases', () => {
+                it('should handle null filter gracefully', async () => {
+                    // Arrange
+                    mockRepository.findByFilters.mockResolvedValue(mockIssuesArray);
+
+                    // Act
+                    const result = await service.findByFilters(null);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(null);
+                    expect(result).toEqual(mockIssuesArray);
+                });
+
+                it('should handle empty filter object', async () => {
+                    // Arrange
+                    const emptyFilter = {};
+                    mockRepository.findByFilters.mockResolvedValue(mockIssuesArray);
+
+                    // Act
+                    const result = await service.findByFilters(emptyFilter);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(emptyFilter);
+                    expect(result).toEqual(mockIssuesArray);
+                });
+
+                it('should delegate complex filters correctly', async () => {
+                    // Arrange
+                    const complexFilter = {
                         organizationId: 'org-123',
                         status: IssueStatus.OPEN,
                         severity: SeverityLevel.HIGH,
@@ -442,9 +447,31 @@ describe('IssuesService', () => {
                         title: 'security',
                         beforeAt: '2024-01-01',
                         afterAt: '2024-01-02',
-                    }),
-                );
-                expect(result).toHaveLength(1);
+                    };
+
+                    mockRepository.findByFilters.mockResolvedValue([mockIssuesArray[0]]);
+
+                    // Act
+                    const result = await service.findByFilters(complexFilter);
+
+                    // Assert
+                    expect(mockRepository.findByFilters).toHaveBeenCalledWith(
+                        expect.objectContaining({
+                            organizationId: 'org-123',
+                            status: IssueStatus.OPEN,
+                            severity: SeverityLevel.HIGH,
+                            category: LabelType.SECURITY,
+                            repositoryName: 'auth-service',
+                            prNumber: 101,
+                            prAuthor: 'John Doe',
+                            filePath: 'src/auth',
+                            title: 'security',
+                            beforeAt: '2024-01-01',
+                            afterAt: '2024-01-02',
+                        }),
+                    );
+                    expect(result).toHaveLength(1);
+                });
             });
         });
     });
