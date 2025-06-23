@@ -190,7 +190,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
         describe('when issues are resolved (isIssuePresentInCode: false)', () => {
             it('should update issue status to RESOLVED when LLM indicates issue is not present in code', async () => {
                 // Arrange
-                const changedFiles = ['src/controllers/UserController.cs'];
                 const mockChangedFilesData = [
                     {
                         filename: 'src/controllers/UserController.cs',
@@ -240,10 +239,19 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
                 await service.resolveExistingIssues(
                     mockContext,
                     mockContext.prFiles,
-                    changedFiles,
                 );
 
                 // Assert
+                expect(
+                    mockPullRequestHandlerService.getChangedFiles,
+                ).toHaveBeenCalledWith(
+                    mockContext.organizationAndTeamData,
+                    mockContext.repository,
+                    mockContext.pullRequest,
+                    [],
+                    null,
+                );
+
                 expect(
                     mockIssuesService.findByFileAndStatus,
                 ).toHaveBeenCalledWith(
@@ -291,7 +299,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
 
             it('should update only resolved issues and leave unresolved ones open', async () => {
                 // Arrange
-                const changedFiles = ['src/controllers/UserController.cs'];
                 const mockChangedFilesData = [
                     {
                         filename: 'src/controllers/UserController.cs',
@@ -340,7 +347,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
                 await service.resolveExistingIssues(
                     mockContext,
                     mockContext.prFiles,
-                    changedFiles,
                 );
 
                 // Assert
@@ -360,7 +366,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
         describe('when no issues are resolved (isIssuePresentInCode: true)', () => {
             it('should not update any issue status when all issues are still present in code', async () => {
                 // Arrange
-                const changedFiles = ['src/controllers/UserController.cs'];
                 const mockChangedFilesData = [
                     {
                         filename: 'src/controllers/UserController.cs',
@@ -406,7 +411,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
                 await service.resolveExistingIssues(
                     mockContext,
                     mockContext.prFiles,
-                    changedFiles,
                 );
 
                 // Assert
@@ -421,7 +425,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
         describe('when no open issues exist for file', () => {
             it('should not call LLM when no open issues are found for the file', async () => {
                 // Arrange
-                const changedFiles = ['src/controllers/UserController.cs'];
                 const mockChangedFilesData = [
                     {
                         filename: 'src/controllers/UserController.cs',
@@ -439,10 +442,19 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
                 await service.resolveExistingIssues(
                     mockContext,
                     mockContext.prFiles,
-                    changedFiles,
                 );
 
                 // Assert
+                expect(
+                    mockPullRequestHandlerService.getChangedFiles,
+                ).toHaveBeenCalledWith(
+                    mockContext.organizationAndTeamData,
+                    mockContext.repository,
+                    mockContext.pullRequest,
+                    [],
+                    null,
+                );
+
                 expect(
                     mockIssuesService.findByFileAndStatus,
                 ).toHaveBeenCalledWith(
@@ -459,7 +471,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
 
             it('should not call LLM when findByFileAndStatus returns null', async () => {
                 // Arrange
-                const changedFiles = ['src/controllers/UserController.cs'];
                 const mockChangedFilesData = [
                     {
                         filename: 'src/controllers/UserController.cs',
@@ -477,7 +488,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
                 await service.resolveExistingIssues(
                     mockContext,
                     mockContext.prFiles,
-                    changedFiles,
                 );
 
                 // Assert
@@ -488,16 +498,12 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
             });
         });
 
-        describe('when no files are changed', () => {
-            it('should not process anything when changedFiles array is empty', async () => {
-                // Arrange
-                const changedFiles: string[] = [];
-
-                // Act
+        describe('when no files are provided', () => {
+            it('should not process anything when files array is empty', async () => {
+                // Arrange & Act
                 await service.resolveExistingIssues(
                     mockContext,
-                    mockContext.prFiles,
-                    changedFiles,
+                    [], // Array vazio de arquivos
                 );
 
                 // Assert
@@ -517,10 +523,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
         describe('multiple files processing', () => {
             it('should process multiple files and resolve issues in each', async () => {
                 // Arrange
-                const changedFiles = [
-                    'src/controllers/UserController.cs',
-                    'src/services/UserService.cs',
-                ];
                 const mockChangedFilesData = [
                     {
                         filename: 'src/controllers/UserController.cs',
@@ -603,7 +605,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
                 await service.resolveExistingIssues(
                     contextWithMultipleFiles,
                     contextWithMultipleFiles.prFiles,
-                    changedFiles,
                 );
 
                 // Assert
@@ -628,7 +629,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
         describe('error handling', () => {
             it('should log error and continue when LLM service fails', async () => {
                 // Arrange
-                const changedFiles = ['src/controllers/UserController.cs'];
                 const mockChangedFilesData = [
                     {
                         filename: 'src/controllers/UserController.cs',
@@ -653,7 +653,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
                 await service.resolveExistingIssues(
                     mockContext,
                     mockContext.prFiles,
-                    changedFiles,
                 );
 
                 // Assert
@@ -673,7 +672,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
 
             it('should log error and continue when issues service fails', async () => {
                 // Arrange
-                const changedFiles = ['src/controllers/UserController.cs'];
                 const mockChangedFilesData = [
                     {
                         filename: 'src/controllers/UserController.cs',
@@ -695,7 +693,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
                 await service.resolveExistingIssues(
                     mockContext,
                     mockContext.prFiles,
-                    changedFiles,
                 );
 
                 // Assert
@@ -714,7 +711,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
 
             it('should handle missing file data gracefully', async () => {
                 // Arrange
-                const changedFiles = ['src/controllers/UserController.cs'];
                 const mockChangedFilesData = [
                     {
                         filename: 'src/controllers/UserController.cs',
@@ -733,19 +729,36 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
                 mockPullRequestHandlerService.getChangedFiles.mockResolvedValue(
                     mockChangedFilesData as any,
                 );
-                mockIssuesService.findByFileAndStatus.mockResolvedValue(
-                    mockOpenIssues,
-                );
+                // O mock deve retornar array vazio para o arquivo que não existe
+                mockIssuesService.findByFileAndStatus.mockResolvedValue([]);
 
                 // Act
                 await service.resolveExistingIssues(
                     mockContext,
                     mockPrFilesWithoutMatchingFile,
-                    changedFiles,
                 );
 
                 // Assert
-                // Deve continuar processando sem chamar o LLM (porque não encontrou dados do arquivo)
+                expect(
+                    mockPullRequestHandlerService.getChangedFiles,
+                ).toHaveBeenCalledWith(
+                    mockContext.organizationAndTeamData,
+                    mockContext.repository,
+                    mockContext.pullRequest,
+                    [],
+                    null,
+                );
+
+                expect(
+                    mockIssuesService.findByFileAndStatus,
+                ).toHaveBeenCalledWith(
+                    'org-123',
+                    'repo-789',
+                    'src/different/file.cs', // Deve buscar pelo arquivo correto
+                    IssueStatus.OPEN,
+                );
+
+                // Deve continuar processando sem chamar o LLM (porque não há issues abertas para o arquivo)
                 expect(
                     mockKodyIssuesAnalysisService.resolveExistingIssues,
                 ).not.toHaveBeenCalled();
@@ -756,7 +769,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
         describe('edge cases', () => {
             it('should handle LLM response without issueVerificationResults', async () => {
                 // Arrange
-                const changedFiles = ['src/controllers/UserController.cs'];
                 const mockChangedFilesData = [
                     {
                         filename: 'src/controllers/UserController.cs',
@@ -781,7 +793,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
                 await service.resolveExistingIssues(
                     mockContext,
                     mockContext.prFiles,
-                    changedFiles,
                 );
 
                 // Assert
@@ -793,7 +804,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
 
             it('should handle LLM response with null issueVerificationResults', async () => {
                 // Arrange
-                const changedFiles = ['src/controllers/UserController.cs'];
                 const mockChangedFilesData = [
                     {
                         filename: 'src/controllers/UserController.cs',
@@ -820,7 +830,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
                 await service.resolveExistingIssues(
                     mockContext,
                     mockContext.prFiles,
-                    changedFiles,
                 );
 
                 // Assert
@@ -829,7 +838,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
 
             it('should build correct prompt data with issue details', async () => {
                 // Arrange
-                const changedFiles = ['src/controllers/UserController.cs'];
                 const mockChangedFilesData = [
                     {
                         filename: 'src/controllers/UserController.cs',
@@ -855,7 +863,6 @@ describe('KodyIssuesManagementService - resolveExistingIssues', () => {
                 await service.resolveExistingIssues(
                     mockContext,
                     mockContext.prFiles,
-                    changedFiles,
                 );
 
                 // Assert
