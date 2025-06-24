@@ -763,18 +763,17 @@ export class SuggestionService implements ISuggestionService {
                 suggestions,
             );
 
-            let suggestionsWithStatus: Partial<CodeSuggestion>[] = [];
+            const limitedSuggestions: Partial<CodeSuggestion>[] =
+                prLimit === 0
+                    ? sortedSuggestions
+                    : sortedSuggestions.slice(0, prLimit);
 
-            if (prLimit === 0) {
-                suggestionsWithStatus = sortedSuggestions;
-            } else {
-                suggestionsWithStatus = sortedSuggestions
-                    .slice(0, prLimit)
-                    .map((suggestion) => ({
-                        ...suggestion,
-                        priorityStatus: PriorityStatus.PRIORITIZED,
-                    }));
-            }
+            const suggestionsWithStatus = limitedSuggestions.map(
+                (suggestion) => ({
+                    ...suggestion,
+                    priorityStatus: PriorityStatus.PRIORITIZED,
+                }),
+            );
 
             this.logger.log({
                 message: `Suggestions prioritized by PR#${prNumber}`,
