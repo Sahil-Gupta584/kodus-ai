@@ -663,6 +663,10 @@ export class SuggestionService implements ISuggestionService {
                 },
             });
 
+            if (limitPerFile === 0) {
+                limitPerFile = suggestions?.length || 0;
+            }
+
             const fileGroups = new Map<string, any[]>();
             suggestions.forEach((suggestion) => {
                 const file = suggestion.relevantFile;
@@ -759,12 +763,18 @@ export class SuggestionService implements ISuggestionService {
                 suggestions,
             );
 
-            const suggestionsWithStatus = sortedSuggestions
-                .slice(0, prLimit)
-                .map((suggestion) => ({
-                    ...suggestion,
-                    priorityStatus: PriorityStatus.PRIORITIZED,
-                }));
+            let suggestionsWithStatus: Partial<CodeSuggestion>[] = [];
+
+            if (prLimit === 0) {
+                suggestionsWithStatus = sortedSuggestions;
+            } else {
+                suggestionsWithStatus = sortedSuggestions
+                    .slice(0, prLimit)
+                    .map((suggestion) => ({
+                        ...suggestion,
+                        priorityStatus: PriorityStatus.PRIORITIZED,
+                    }));
+            }
 
             this.logger.log({
                 message: `Suggestions prioritized by PR#${prNumber}`,
@@ -912,7 +922,6 @@ export class SuggestionService implements ISuggestionService {
         severityLevels: Partial<CodeSuggestion>[],
     ): Partial<CodeSuggestion>[] {
         try {
-
             if (!suggestions?.length) {
                 return [];
             }
@@ -957,7 +966,7 @@ export class SuggestionService implements ISuggestionService {
             });
 
             // Em caso de erro, retorna as sugestões com severidade padrão
-            return suggestions.map(suggestion => {
+            return suggestions.map((suggestion) => {
                 const defaultSeverity = suggestion?.severity || 'medium';
 
                 this.logger.warn({
@@ -973,7 +982,7 @@ export class SuggestionService implements ISuggestionService {
 
                 return {
                     ...suggestion,
-                    severity: defaultSeverity
+                    severity: defaultSeverity,
                 };
             });
         }
@@ -993,12 +1002,13 @@ export class SuggestionService implements ISuggestionService {
                 return [];
             }
 
-            const result = await this.aiAnalysisService.severityAnalysisAssignment(
-                organizationAndTeamData,
-                prNumber,
-                LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
-                codeSuggestions,
-            );
+            const result =
+                await this.aiAnalysisService.severityAnalysisAssignment(
+                    organizationAndTeamData,
+                    prNumber,
+                    LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
+                    codeSuggestions,
+                );
 
             const suggestionsWithSeverity = this.mergeSuggestionsWithSeverity(
                 organizationAndTeamData,
