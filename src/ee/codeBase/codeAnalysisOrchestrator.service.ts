@@ -30,7 +30,7 @@ export class CodeAnalysisOrchestrator {
         private readonly codeASTAnalysisService: IASTAnalysisService,
 
         private readonly logger: PinoLoggerService,
-    ) { }
+    ) {}
 
     async executeStandardAnalysis(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -234,6 +234,9 @@ export class CodeAnalysisOrchestrator {
                     prNumber,
                     hasRules,
                     isEnabled,
+                    rulesCount:
+                        context.codeReviewConfig?.kodyRules?.length || 0,
+                    reviewOptions: context.codeReviewConfig?.reviewOptions,
                 },
             });
         }

@@ -78,6 +78,11 @@ class SuggestionControlConfigDto {
     @IsOptional()
     @IsEnum(SeverityLevel)
     severityLevelFilter?: SeverityLevel;
+
+    // ✨ NOVA CONFIGURAÇÃO SIMPLIFICADA para controle de filtros nas Kody Rules
+    @IsOptional()
+    @IsBoolean()
+    applyFiltersToKodyRules?: boolean;
 }
 
 class PathInstructionDto {

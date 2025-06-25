@@ -25,6 +25,8 @@ suggestionControl:
     limitationType: 'pr'
     maxSuggestions: 9
     severityLevelFilter: 'medium'
+    # ✨ CONFIGURAÇÃO SIMPLIFICADA - Controle de filtros para Kody Rules
+    applyFiltersToKodyRules: false
 ignoredTitleKeywords: []
 automatedReviewActive: true
 pullRequestApprovalActive: false

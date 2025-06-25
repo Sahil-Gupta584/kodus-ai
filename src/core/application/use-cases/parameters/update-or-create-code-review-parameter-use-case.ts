@@ -129,6 +129,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             limitationType: LimitationType.PR,
             maxSuggestions: 9,
             severityLevelFilter: SeverityLevel.HIGH,
+            applyFiltersToKodyRules: false,
         };
     }
 
@@ -164,16 +165,25 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         configValue: CodeReviewConfigWithoutLLMProvider,
         filteredRepositoryInfo: IFilteredCodeRepository[],
     ) {
+        const defaultSuggestionControl = this.getDefaultSuggestionControlConfig();
+        
         const updatedConfigValue = {
             global: {
                 ...configValue,
                 summary: !configValue.summary
                     ? this.getDefaultPRSummaryConfig()
-                    : configValue.summary,
+                    : {
+                        ...this.getDefaultPRSummaryConfig(),
+                        ...configValue.summary,
+                    },
                 suggestionControl: !configValue.suggestionControl
-                    ? this.getDefaultSuggestionControlConfig()
-                    : configValue.suggestionControl,
-                isCommitMode: false, // By default, commit mode is disabled
+                    ? defaultSuggestionControl
+                    : {
+                        ...defaultSuggestionControl,
+                        ...configValue.suggestionControl,
+                        applyFiltersToKodyRules: configValue.suggestionControl.applyFiltersToKodyRules ?? false,
+                    },
+                isCommitMode: configValue?.isCommitMode ?? false,
             },
             repositories: filteredRepositoryInfo,
         };
@@ -200,6 +210,9 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         if (!codeReviewConfigs.global.suggestionControl) {
             codeReviewConfigs.global.suggestionControl =
                 this.getDefaultSuggestionControlConfig();
+        } else {
+            const sc = codeReviewConfigs.global.suggestionControl;
+            sc.applyFiltersToKodyRules = sc.applyFiltersToKodyRules ?? false;
         }
 
         this.mergeRepositories(codeReviewConfigs, filteredRepositoryInfo);
@@ -227,6 +240,8 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         codeReviewConfigs: ICodeReviewParameter,
         newGlobalInfo: CodeReviewConfigWithoutLLMProvider,
     ) {
+        const defaultSuggestionControl = this.getDefaultSuggestionControlConfig();
+        
         const updatedCodeReviewConfigValue = {
             global: {
                 ...codeReviewConfigs.global,
@@ -236,10 +251,15 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                     ...newGlobalInfo?.summary,
                 },
                 suggestionControl: {
+                    ...defaultSuggestionControl,
                     ...codeReviewConfigs.global.suggestionControl,
                     ...newGlobalInfo?.suggestionControl,
+                    applyFiltersToKodyRules: 
+                        newGlobalInfo?.suggestionControl?.applyFiltersToKodyRules ?? 
+                        codeReviewConfigs.global.suggestionControl?.applyFiltersToKodyRules ?? 
+                        false,
                 },
-                isCommitMode: newGlobalInfo?.isCommitMode ?? codeReviewConfigs.global.isCommitMode, // Keep the existing value or use the new one if provided
+                isCommitMode: newGlobalInfo?.isCommitMode ?? codeReviewConfigs.global.isCommitMode ?? false,
             },
             repositories: codeReviewConfigs.repositories,
         };
