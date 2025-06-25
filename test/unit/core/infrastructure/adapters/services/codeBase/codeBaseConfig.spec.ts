@@ -174,6 +174,7 @@ describe('codeBaseConfig', () => {
                 limitationType: LimitationType.PR,
                 maxSuggestions: 9,
                 severityLevelFilter: SeverityLevel.MEDIUM,
+                applyFiltersToKodyRules: false,
             },
         },
         repositories: [],
