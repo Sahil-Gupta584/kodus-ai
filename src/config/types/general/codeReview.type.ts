@@ -253,6 +253,7 @@ export interface SuggestionControlConfig {
     limitationType?: LimitationType;
     maxSuggestions: number;
     severityLevelFilter?: SeverityLevel;
+    applyFiltersToKodyRules?: boolean; // Default: false - Aplica TODOS os filtros (severidade + quantidade) nas Kody Rules
 }
 
 export type ImplementedSuggestionsToAnalyze = {
