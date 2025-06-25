@@ -28,7 +28,10 @@ import {
     prompt_kodyrules_updatestdsuggestions_system,
     prompt_kodyrules_updatestdsuggestions_user,
 } from '@/shared/utils/langchainCommon/prompts/kodyRules';
-import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
+import {
+    IKodyRule,
+    KodyRulesScope,
+} from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisService.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
@@ -36,7 +39,6 @@ import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmP
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
-import { string } from 'joi';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
@@ -55,7 +57,7 @@ interface KodyRulesExtendedContext {
     severityLevelFilter?: SeverityLevel;
     organizationAndTeamData: OrganizationAndTeamData;
     kodyRules: Array<Partial<IKodyRule>>;
-    
+
     // Extended properties added during analysis
     standardSuggestions?: AIAnalysisResult;
     updatedSuggestions?: AIAnalysisResult;
@@ -656,12 +658,16 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         const kodyRulesFiltered = getKodyRulesForFile(
             fileContext.file.filename,
             context?.codeReviewConfig?.kodyRules || [],
-        )?.map((rule) => ({
-            uuid: rule?.uuid,
-            rule: rule?.rule,
-            severity: rule?.severity,
-            examples: rule?.examples ?? [],
-        }));
+        )
+            ?.filter(
+                (rule) => !rule.scope || rule.scope === KodyRulesScope.FILE,
+            )
+            ?.map((rule) => ({
+                uuid: rule?.uuid,
+                rule: rule?.rule,
+                severity: rule?.severity,
+                examples: rule?.examples ?? [],
+            }));
 
         const baseContext = {
             pullRequest: context?.pullRequest,
@@ -1060,7 +1066,10 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             if (parsedResponse.codeSuggestions) {
                 for (const suggestion of parsedResponse.codeSuggestions) {
                     const normalizedSuggestion: CodeSuggestion = {
-                        id: !suggestion?.id || !uuidValidate(suggestion?.id) ? uuidv4() : suggestion.id,
+                        id:
+                            !suggestion?.id || !uuidValidate(suggestion?.id)
+                                ? uuidv4()
+                                : suggestion.id,
                         relevantFile: suggestion.relevantFile || '',
                         language: suggestion.language,
                         suggestionContent: suggestion.suggestionContent || '',
@@ -1112,9 +1121,9 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 message: `Error processing UPDATE response for PR#${prNumber}`,
                 context: KodyRulesAnalysisService.name,
                 error,
-                metadata: { 
-                    organizationAndTeamData, 
-                    prNumber, 
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
                     response,
                     filename: fileContext?.file?.filename,
                 },
