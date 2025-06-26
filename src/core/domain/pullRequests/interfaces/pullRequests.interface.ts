@@ -6,6 +6,8 @@ import { DeliveryStatus } from '../enums/deliveryStatus.enum';
 import { ImplementationStatus } from '../enums/implementationStatus.enum';
 import { PriorityStatus } from '../enums/priorityStatus.enum';
 import { FeedbackType } from '@/ee/kodyFineTuning/domain/enums/feedbackType.enum';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
 export interface IPullRequests {
     uuid?: string;
@@ -155,6 +157,8 @@ export interface ISuggestionByPR {
     language: string;
     suggestionContent: string;
     oneSentenceSummary: string;
+    label: LabelType;
+    severity: SeverityLevel;
     rankScore?: number;
     brokenKodyRulesIds?: string[];
     priorityStatus: PriorityStatus;
