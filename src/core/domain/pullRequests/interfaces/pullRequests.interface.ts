@@ -33,6 +33,7 @@ export interface IPullRequests {
     commits: ICommit[];
     syncedEmbeddedSuggestions?: boolean;
     syncedWithIssues?: boolean;
+    suggestionsByPR?: ISuggestionByPR[];
 }
 
 export interface ICommit {
@@ -146,4 +147,22 @@ export interface IPullRequestUser {
     name?: string;
     email?: string;
     username: string;
+}
+
+export interface ISuggestionByPR {
+    id: string;
+    relevantFile: string;
+    language: string;
+    suggestionContent: string;
+    oneSentenceSummary: string;
+    rankScore?: number;
+    brokenKodyRulesIds?: string[];
+    priorityStatus: PriorityStatus;
+    deliveryStatus: DeliveryStatus;
+    comment?: {
+        id: number;
+        pullRequestReviewId: number;
+    };
+    createdAt: string;
+    updatedAt: string;
 }
