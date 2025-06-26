@@ -7,6 +7,7 @@ import {
     ReviewModeResponse,
     FileChange,
     ReviewOptions,
+    SuggestionControlConfig,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { RunnableSequence } from '@langchain/core/runnables';
@@ -682,14 +683,27 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             fileContent: fileContext?.file?.fileContent,
             limitationType:
                 context?.codeReviewConfig?.suggestionControl?.limitationType,
-            severityLevelFilter:
-                context?.codeReviewConfig?.suggestionControl
-                    ?.severityLevelFilter,
+            // ✨ MODIFICAÇÃO: só passa severityLevelFilter se deve aplicar filtros
+            severityLevelFilter: this.shouldPassSeverityFilter(context?.codeReviewConfig?.suggestionControl)
+                ? context?.codeReviewConfig?.suggestionControl?.severityLevelFilter
+                : undefined,
             organizationAndTeamData: context?.organizationAndTeamData,
             kodyRules: kodyRulesFiltered,
         };
 
         return baseContext;
+    }
+
+    /**
+     * ✨ SIMPLIFICADO: Determina se deve passar severityLevelFilter para análise de Kody Rules
+     */
+    private shouldPassSeverityFilter(suggestionControl?: SuggestionControlConfig): boolean {
+        if (!suggestionControl) {
+            return false;
+        }
+
+        // Retorna true apenas se filtros estão explicitamente habilitados para Kody Rules
+        return suggestionControl.applyFiltersToKodyRules === true;
     }
 
     private async createAnalysisChainWithFallback(

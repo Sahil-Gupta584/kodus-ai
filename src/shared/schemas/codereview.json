@@ -164,6 +164,11 @@
                     ],
                     "default": "medium",
                     "description": "Filter for the severity level of suggestions."
+                },
+                "applyFiltersToKodyRules": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to apply all filters (severity and quantity) to Kody Rules. When false, Kody Rules ignore all filters."
                 }
             },
             "required": [

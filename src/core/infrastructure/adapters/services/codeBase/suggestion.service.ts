@@ -348,9 +348,43 @@ export class SuggestionService implements ISuggestionService {
     }
 
     /**
-     * Prioritizes suggestions based on PR-specific logic
+     * Determina se deve aplicar filtros às Kody Rules
      */
-    public async prioritizeSuggestions(
+    private shouldApplyFiltersToKodyRules(
+        suggestionControl: SuggestionControlConfig,
+    ): boolean {
+        return suggestionControl.applyFiltersToKodyRules === true;
+    }
+
+    private async applyFiltersToSuggestions(
+        organizationAndTeamData: OrganizationAndTeamData,
+        suggestionControl: SuggestionControlConfig,
+        prNumber: number,
+        suggestions: any[],
+        shouldApplyFilters: boolean,
+    ): Promise<{
+        prioritizedSuggestions: any[];
+        discardedSuggestionsBySeverityOrQuantity: any[];
+    }> {
+        if (!shouldApplyFilters) {
+            return {
+                prioritizedSuggestions: suggestions.map((s) => ({
+                    ...s,
+                    priorityStatus: PriorityStatus.PRIORITIZED,
+                })),
+                discardedSuggestionsBySeverityOrQuantity: [],
+            };
+        }
+
+        return this.prioritizeSuggestionsLegacy(
+            organizationAndTeamData,
+            suggestionControl,
+            prNumber,
+            suggestions,
+        );
+    }
+
+    private async prioritizeSuggestionsLegacy(
         organizationAndTeamData: OrganizationAndTeamData,
         suggestionControl: SuggestionControlConfig,
         prNumber: number,
@@ -419,6 +453,181 @@ export class SuggestionService implements ISuggestionService {
                 ...discardedBySeverity,
                 ...discardedByQuantity,
             ],
+        };
+    }
+
+    public async prioritizeSuggestions(
+        organizationAndTeamData: OrganizationAndTeamData,
+        suggestionControl: SuggestionControlConfig,
+        prNumber: number,
+        suggestions: any[],
+    ): Promise<{
+        prioritizedSuggestions: any[];
+        discardedSuggestionsBySeverityOrQuantity: any[];
+    }> {
+        try {
+
+            const hasKodyRules = suggestions.some((s) => {
+                const normalizedLabel = this.normalizeLabel(s.label);
+                return normalizedLabel === 'kody_rules';
+            });
+
+            if (hasKodyRules) {
+                this.logger.log({
+                    message: `✅ Kody Rules detected for PR#${prNumber} - using enhanced control logic`,
+                    context: SuggestionService.name,
+                    metadata: {
+                        totalSuggestions: suggestions.length,
+                        detectedLabels: suggestions.map((s) => ({
+                            original: s.label,
+                            normalized: this.normalizeLabel(s.label),
+                        })),
+                        applyFiltersToKodyRules:
+                            suggestionControl.applyFiltersToKodyRules,
+                        organizationAndTeamData,
+                        prNumber,
+                    },
+                });
+
+                return this.prioritizeSuggestionsWithKodyRulesControl(
+                    organizationAndTeamData,
+                    suggestionControl,
+                    prNumber,
+                    suggestions,
+                );
+            }
+
+            return this.prioritizeSuggestionsLegacy(
+                organizationAndTeamData,
+                suggestionControl,
+                prNumber,
+                suggestions,
+            );
+        } catch (error) {
+            this.logger.error({
+                message: `Error in prioritizeSuggestions for PR#${prNumber}`,
+                error,
+                context: SuggestionService.name,
+                metadata: { organizationAndTeamData, prNumber },
+            });
+
+            // Fallback para lógica original
+            return this.prioritizeSuggestionsLegacy(
+                organizationAndTeamData,
+                suggestionControl,
+                prNumber,
+                suggestions,
+            );
+        }
+    }
+
+    private async prioritizeSuggestionsWithKodyRulesControl(
+        organizationAndTeamData: OrganizationAndTeamData,
+        suggestionControl: SuggestionControlConfig,
+        prNumber: number,
+        suggestions: any[],
+    ): Promise<{
+        prioritizedSuggestions: any[];
+        discardedSuggestionsBySeverityOrQuantity: any[];
+    }> {
+        const shouldApplyFiltersToKodyRules =
+            this.shouldApplyFiltersToKodyRules(suggestionControl);
+
+        // Se deve aplicar filtros às Kody Rules, processa TODAS as sugestões juntas
+        if (shouldApplyFiltersToKodyRules) {
+            this.logger.log({
+                message: `Applying ALL filters to ALL suggestions (including Kody Rules) for PR#${prNumber}`,
+                context: SuggestionService.name,
+                metadata: {
+                    totalSuggestions: suggestions.length,
+                    applyFiltersToKodyRules: true,
+                    organizationAndTeamData,
+                    prNumber,
+                },
+            });
+
+            return this.prioritizeSuggestionsLegacy(
+                organizationAndTeamData,
+                suggestionControl,
+                prNumber,
+                suggestions,
+            );
+        }
+
+        // Se NÃO deve aplicar filtros às Kody Rules, separa e processa diferenciadamente
+        const kodyRulesSuggestions = suggestions.filter((s) => {
+            const normalizedLabel = this.normalizeLabel(s.label);
+            return normalizedLabel === 'kody_rules';
+        });
+        const normalSuggestions = suggestions.filter((s) => {
+            const normalizedLabel = this.normalizeLabel(s.label);
+            return normalizedLabel !== 'kody_rules';
+        });
+
+        this.logger.log({
+            message: `Separating suggestions for PR#${prNumber} - Kody Rules exempt from filters`,
+            context: SuggestionService.name,
+            metadata: {
+                totalSuggestions: suggestions.length,
+                kodyRulesCount: kodyRulesSuggestions.length,
+                normalSuggestionsCount: normalSuggestions.length,
+                kodyRulesLabels: kodyRulesSuggestions.map((s) => ({
+                    original: s.label,
+                    normalized: this.normalizeLabel(s.label),
+                })),
+                applyFiltersToKodyRules: false,
+                organizationAndTeamData,
+                prNumber,
+            },
+        });
+
+        let allPrioritized: any[] = [];
+        let allDiscarded: any[] = [];
+
+        // Processa sugestões normais com filtros
+        if (normalSuggestions.length > 0) {
+            const normalResult = await this.prioritizeSuggestionsLegacy(
+                organizationAndTeamData,
+                suggestionControl,
+                prNumber,
+                normalSuggestions,
+            );
+            allPrioritized.push(...normalResult.prioritizedSuggestions);
+            allDiscarded.push(
+                ...normalResult.discardedSuggestionsBySeverityOrQuantity,
+            );
+        }
+
+        // Processa Kody Rules SEM filtros - todas passam
+        if (kodyRulesSuggestions.length > 0) {
+            const kodyRulesPrioritized = kodyRulesSuggestions.map((s) => ({
+                ...s,
+                priorityStatus: PriorityStatus.PRIORITIZED,
+                deliveryStatus: DeliveryStatus.NOT_SENT,
+            }));
+            allPrioritized.push(...kodyRulesPrioritized);
+        }
+
+        this.logger.log({
+            message: `Suggestions processed with Kody Rules control for PR#${prNumber}`,
+            context: SuggestionService.name,
+            metadata: {
+                totalPrioritized: allPrioritized.length,
+                totalDiscarded: allDiscarded.length,
+                kodyRulesPrioritized: allPrioritized.filter(
+                    (s) => this.normalizeLabel(s.label) === 'kody_rules',
+                ).length,
+                kodyRulesDiscarded: allDiscarded.filter(
+                    (s) => this.normalizeLabel(s.label) === 'kody_rules',
+                ).length,
+                organizationAndTeamData,
+                prNumber,
+            },
+        });
+
+        return {
+            prioritizedSuggestions: allPrioritized,
+            discardedSuggestionsBySeverityOrQuantity: allDiscarded,
         };
     }
 
