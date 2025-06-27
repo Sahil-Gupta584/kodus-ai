@@ -101,6 +101,10 @@ export class GetIssueByIdUseCase implements IUseCase {
         issue: IssuesEntity,
         codeReviewFeedback: any[],
     ): Promise<{ thumbsUp: number; thumbsDown: number }> {
+        if (!codeReviewFeedback?.length) {
+            return { thumbsUp: 0, thumbsDown: 0 };
+        }
+
         const suggestionIds = new Set<string>();
 
         if (issue.contributingSuggestions?.length) {
@@ -111,7 +115,7 @@ export class GetIssueByIdUseCase implements IUseCase {
             });
         }
 
-        const allRelevantFeedbacks = codeReviewFeedback.filter(
+        const allRelevantFeedbacks = codeReviewFeedback?.filter(
             (feedback) =>
                 feedback?.suggestionId &&
                 suggestionIds.has(feedback.suggestionId),
