@@ -11,6 +11,7 @@ import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { createHash } from 'crypto';
 import { CacheService } from '@/shared/utils/cache/cache.service';
+import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
 
 @Injectable()
 export class AzureReposPullRequestHandler implements IWebhookEventHandler {
@@ -20,6 +21,7 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
         private readonly runCodeReviewAutomationUseCase: RunCodeReviewAutomationUseCase,
         private readonly chatWithKodyFromGitUseCase: ChatWithKodyFromGitUseCase,
         private readonly cacheService: CacheService,
+        private readonly generateIssuesFromPrClosedUseCase: GenerateIssuesFromPrClosedUseCase,
     ) {}
 
     /**
@@ -102,6 +104,7 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                 case 'git.pullrequest.updated':
                     await this.savePullRequestUseCase.execute(params);
                     this.runCodeReviewAutomationUseCase.execute(params);
+                    await this.generateIssuesFromPrClosedUseCase.execute(params);
                     break;
                 case 'git.pullrequest.merge.attempted':
                     await this.savePullRequestUseCase.execute(params);

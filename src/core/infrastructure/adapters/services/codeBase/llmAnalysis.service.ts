@@ -1018,7 +1018,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
     ) {
         try {
             let llm = this.llmProviderService.getLLMProvider({
-                model: MODEL_STRATEGIES[provider].modelName,
+                model: provider,
                 temperature: 0,
                 callbacks: [this.tokenTracker],
             });

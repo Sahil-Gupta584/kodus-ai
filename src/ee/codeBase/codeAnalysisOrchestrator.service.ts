@@ -234,6 +234,9 @@ export class CodeAnalysisOrchestrator {
                     prNumber,
                     hasRules,
                     isEnabled,
+                    rulesCount:
+                        context.codeReviewConfig?.kodyRules?.length || 0,
+                    reviewOptions: context.codeReviewConfig?.reviewOptions,
                 },
             });
         }

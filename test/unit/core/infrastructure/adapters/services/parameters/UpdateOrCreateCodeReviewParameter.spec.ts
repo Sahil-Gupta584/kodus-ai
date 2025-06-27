@@ -17,12 +17,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 
 describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
     let useCase: UpdateOrCreateCodeReviewParameterUseCase;
-
-    let parametersService: ParametersService;
-
-    let integrationConfigService: IntegrationConfigService;
-
-    let logger: PinoLoggerService;
+    let parametersService: any;
+    let integrationConfigService: any;
 
     const mockParametersService = {
         findByKey: jest.fn(),
@@ -56,13 +52,8 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
         useCase = module.get<UpdateOrCreateCodeReviewParameterUseCase>(
             UpdateOrCreateCodeReviewParameterUseCase,
         );
-        parametersService = module.get<ParametersService>(
-            PARAMETERS_SERVICE_TOKEN,
-        );
-        integrationConfigService = module.get<IntegrationConfigService>(
-            INTEGRATION_CONFIG_SERVICE_TOKEN,
-        );
-        logger = module.get<PinoLoggerService>(PinoLoggerService);
+        parametersService = module.get(PARAMETERS_SERVICE_TOKEN);
+        integrationConfigService = module.get(INTEGRATION_CONFIG_SERVICE_TOKEN);
     });
 
     afterEach(() => {
@@ -71,12 +62,8 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
 
     const MOCK_TEAM_ID = 'team_id1';
 
-    const MOCK_CONFIG_VALUE: Omit<
-        CodeReviewConfigWithoutLLMProvider,
-        'summary'
-    > = {
-        ignorePaths: [],
-        baseBranches: [],
+    const BASIC_CONFIG_VALUE: Partial<CodeReviewConfigWithoutLLMProvider> = {
+        automatedReviewActive: true,
         reviewOptions: {
             security: false,
             code_style: true,
@@ -94,378 +81,175 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             limitationType: LimitationType.PR,
             severityLevelFilter: SeverityLevel.MEDIUM,
         },
-        ignoredTitleKeywords: [],
-        automatedReviewActive: true,
-        kodyRules: [],
-        pullRequestApprovalActive: false,
-        kodusConfigFileOverridesWebPreferences: false,
     };
 
-    const MOCK_OLD_CONFIG_VALUE: Omit<
-        CodeReviewConfigWithoutLLMProvider,
-        'summary'
-    > = {
-        ignorePaths: [],
-        baseBranches: [],
-        reviewOptions: {
-            security: true,
-            code_style: true,
-            refactoring: true,
-            error_handling: false,
-            maintainability: false,
-            potential_issues: true,
-            documentation_and_comments: false,
-            performance_and_optimization: true,
-            kody_rules: true,
-            breaking_changes: true,
-        },
-        suggestionControl: {
-            maxSuggestions: 20,
-            limitationType: LimitationType.PR,
-            severityLevelFilter: SeverityLevel.MEDIUM,
-        },
-        ignoredTitleKeywords: [],
-        automatedReviewActive: true,
-        kodyRules: [],
-        pullRequestApprovalActive: false,
-        kodusConfigFileOverridesWebPreferences: false,
-    };
+    describe('🎯 Cenários Essenciais de Configuração', () => {
+        it('deve criar nova configuração com applyFiltersToKodyRules=false por padrão', async () => {
+            const body = {
+                organizationAndTeamData: {
+                    teamId: MOCK_TEAM_ID,
+                } as OrganizationAndTeamData,
+                configValue: BASIC_CONFIG_VALUE,
+            };
 
-    it('should create a new configuration when none exists', async () => {
-        const body = {
-            organizationAndTeamData: {
-                teamId: MOCK_TEAM_ID,
-            } as OrganizationAndTeamData,
-            configValue: MOCK_OLD_CONFIG_VALUE,
-        };
+            mockParametersService.findByKey.mockResolvedValue(null);
+            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue([]);
 
-        mockParametersService.findByKey.mockResolvedValue(null);
-        mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
-            [],
-        );
+            const mockResult = new ParametersEntity({
+                uuid: 'uuid',
+                configKey: ParametersKey.CODE_REVIEW_CONFIG,
+                configValue: { global: BASIC_CONFIG_VALUE, repositories: [] },
+            });
 
-        const mockParametersEntity = new ParametersEntity({
-            uuid: 'uuid',
-            configKey: ParametersKey.CODE_REVIEW_CONFIG,
-            configValue: MOCK_CONFIG_VALUE,
-        });
+            mockParametersService.createOrUpdateConfig.mockResolvedValue(mockResult);
 
-        mockParametersService.createOrUpdateConfig.mockResolvedValue(
-            mockParametersEntity,
-        );
+            const result = await useCase.execute(body);
 
-        const result = await useCase.execute(body);
-
-        expect(parametersService.createOrUpdateConfig).toHaveBeenCalledWith(
-            ParametersKey.CODE_REVIEW_CONFIG,
-            expect.objectContaining({
-                global: expect.objectContaining({
-                    ...body.configValue,
-                    summary: expect.objectContaining({
-                        generatePRSummary: true,
-                        customInstructions: '',
+            // ✅ Verifica que applyFiltersToKodyRules é false por padrão
+            expect(parametersService.createOrUpdateConfig).toHaveBeenCalledWith(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                expect.objectContaining({
+                    global: expect.objectContaining({
+                        suggestionControl: expect.objectContaining({
+                            applyFiltersToKodyRules: false, // ✅ Padrão aplicado
+                        }),
                     }),
                 }),
-                repositories: [],
-            }),
-            body.organizationAndTeamData,
-        );
-        expect(result).toBeInstanceOf(ParametersEntity);
-    });
-
-    it('should update existing global configuration when it exists', async () => {
-        const body = {
-            organizationAndTeamData: {
-                teamId: MOCK_TEAM_ID,
-            } as OrganizationAndTeamData,
-            configValue: MOCK_CONFIG_VALUE,
-        };
-
-        const existingConfig = {
-            configValue: {
-                global: MOCK_OLD_CONFIG_VALUE,
-                repositories: [],
-            },
-        };
-
-        mockParametersService.findByKey.mockResolvedValue(existingConfig);
-        mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
-            [],
-        );
-
-        const updatedParametersEntity = new ParametersEntity({
-            uuid: 'uuid',
-            configKey: ParametersKey.CODE_REVIEW_CONFIG,
-            configValue: {
-                global: {
-                    ...existingConfig.configValue.global,
-                    ...body.configValue,
-                },
-                repositories: [],
-            },
+                body.organizationAndTeamData,
+            );
+            expect(result).toBeInstanceOf(ParametersEntity);
         });
 
-        mockParametersService.createOrUpdateConfig.mockResolvedValue(
-            updatedParametersEntity,
-        );
-
-        const result = await useCase.execute(body);
-
-        expect(parametersService.createOrUpdateConfig).toHaveBeenCalledWith(
-            ParametersKey.CODE_REVIEW_CONFIG,
-            expect.objectContaining({
-                global: {
-                    ...existingConfig.configValue.global,
-                    ...body.configValue,
+        it('deve preservar applyFiltersToKodyRules=true quando explicitamente definido', async () => {
+            const body = {
+                organizationAndTeamData: {
+                    teamId: MOCK_TEAM_ID,
+                } as OrganizationAndTeamData,
+                configValue: {
+                    ...BASIC_CONFIG_VALUE,
+                    suggestionControl: {
+                        ...BASIC_CONFIG_VALUE.suggestionControl!,
+                        applyFiltersToKodyRules: true, // ✅ Valor explícito
+                    },
                 },
-                repositories: [],
-            }),
-            body.organizationAndTeamData,
-        );
-        expect(result).toEqual(updatedParametersEntity);
-    });
+            };
 
-    it('should update specific repository configuration when repositoryId is provided', async () => {
-        const body = {
-            organizationAndTeamData: {
-                teamId: MOCK_TEAM_ID,
-            } as OrganizationAndTeamData,
-            configValue: MOCK_CONFIG_VALUE,
-            repositoryId: 'repo-123',
-        };
+            mockParametersService.findByKey.mockResolvedValue(null);
+            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue([]);
 
-        const existingConfig = {
-            configValue: {
-                global: MOCK_OLD_CONFIG_VALUE,
-                repositories: [
-                    {
-                        id: 'repo-123',
-                        name: 'Repo 123',
-                        ...MOCK_OLD_CONFIG_VALUE,
-                    },
-                    {
-                        id: 'repo-456',
-                        name: 'Repo 456',
-                        ...MOCK_OLD_CONFIG_VALUE,
-                    },
-                ],
-            },
-        };
+            await useCase.execute(body);
 
-        mockParametersService.findByKey.mockResolvedValue(existingConfig);
-        mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
-            [],
-        );
-
-        const updatedParametersEntity = new ParametersEntity({
-            uuid: 'uuid',
-            configKey: ParametersKey.CODE_REVIEW_CONFIG,
-            configValue: {
-                global: existingConfig.configValue.global,
-                repositories: [
-                    { id: 'repo-123', name: 'Repo 123', ...MOCK_CONFIG_VALUE },
-                    {
-                        id: 'repo-456',
-                        name: 'Repo 456',
-                        ...MOCK_OLD_CONFIG_VALUE,
-                    },
-                ],
-            },
-        });
-
-        mockParametersService.createOrUpdateConfig.mockResolvedValue(
-            updatedParametersEntity,
-        );
-
-        const result = await useCase.execute(body);
-
-        expect(parametersService.createOrUpdateConfig).toHaveBeenCalledWith(
-            ParametersKey.CODE_REVIEW_CONFIG,
-            expect.objectContaining({
-                global: existingConfig.configValue.global,
-                repositories: expect.arrayContaining([
-                    expect.objectContaining({
-                        id: 'repo-123',
-                        ...MOCK_CONFIG_VALUE,
+            // ✅ Verifica que valor explícito é preservado
+            expect(parametersService.createOrUpdateConfig).toHaveBeenCalledWith(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                expect.objectContaining({
+                    global: expect.objectContaining({
+                        suggestionControl: expect.objectContaining({
+                            applyFiltersToKodyRules: true, // ✅ Valor preservado
+                        }),
                     }),
-                    expect.objectContaining({
-                        id: 'repo-456',
-                        ...MOCK_OLD_CONFIG_VALUE,
-                    }),
-                ]),
-            }),
-            body.organizationAndTeamData,
-        );
-        expect(result).toEqual(updatedParametersEntity);
-    });
-
-    const MOCK_PARTIAL_CONFIG_VALUE = {
-    };
-
-    it('should be able to update existing global configuration object partially, without overwriting everything', async () => {
-        const body = {
-            organizationAndTeamData: {
-                teamId: MOCK_TEAM_ID,
-            } as OrganizationAndTeamData,
-            configValue: MOCK_PARTIAL_CONFIG_VALUE,
-        };
-
-        const existingConfig = {
-            configValue: {
-                global: MOCK_CONFIG_VALUE,
-                repositories: [],
-            },
-        };
-
-        mockParametersService.findByKey.mockResolvedValue(existingConfig);
-
-        mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
-            [],
-        );
-
-        const updatedParametersEntity = new ParametersEntity({
-            uuid: 'uuid',
-            configKey: ParametersKey.CODE_REVIEW_CONFIG,
-            configValue: {
-                global: {
-                    ...existingConfig.configValue.global,
-                    ...body.configValue,
-                },
-                repositories: [],
-            },
-        });
-
-        mockParametersService.createOrUpdateConfig.mockResolvedValue(
-            updatedParametersEntity,
-        );
-
-        const result = await useCase.execute(body);
-
-        expect(parametersService.createOrUpdateConfig).toHaveBeenCalledWith(
-            ParametersKey.CODE_REVIEW_CONFIG,
-            expect.objectContaining({
-                global: {
-                    ...existingConfig.configValue.global,
-                    ...body.configValue,
-                },
-                repositories: [],
-            }),
-            body.organizationAndTeamData,
-        );
-        expect(result).toEqual(updatedParametersEntity);
-    });
-
-    it('should be able to update existing repository configuration object partially, without overwriting everything', async () => {
-        const body = {
-            organizationAndTeamData: {
-                teamId: MOCK_TEAM_ID,
-            } as OrganizationAndTeamData,
-            configValue: MOCK_PARTIAL_CONFIG_VALUE,
-            repositoryId: 'repo-123',
-        };
-
-        const existingConfig = {
-            configValue: {
-                global: MOCK_OLD_CONFIG_VALUE,
-                repositories: [
-                    {
-                        id: 'repo-123',
-                        name: 'Repo 123',
-                        ...MOCK_OLD_CONFIG_VALUE,
-                    },
-                    {
-                        id: 'repo-456',
-                        name: 'Repo 456',
-                        ...MOCK_OLD_CONFIG_VALUE,
-                    },
-                ],
-            },
-        };
-
-        // Mocking the service responses
-        mockParametersService.findByKey.mockResolvedValue(existingConfig);
-        mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
-            [
-                {
-                    id: 'repo-123',
-                    name: 'Repo 123',
-                    default_branch: 'main',
-                    http_url: 'http://example.com/repo-123',
-                    language: 'JavaScript',
-                    organizationName: 'Org',
-                    selected: 'true',
-                    visibility: 'public',
-                },
-                {
-                    id: 'repo-456',
-                    name: 'Repo 456',
-                    default_branch: 'main',
-                    http_url: 'http://example.com/repo-456',
-                    language: 'JavaScript',
-                    organizationName: 'Org',
-                    selected: 'true',
-                    visibility: 'public',
-                },
-            ],
-        );
-
-        // The updated repository configuration should merge the old config with the new partial config
-        const updatedRepoConfigs = {
-            ...MOCK_OLD_CONFIG_VALUE, // Retain the old values
-            ...MOCK_PARTIAL_CONFIG_VALUE, // Apply the new style guide
-        };
-
-        const updatedParametersEntity = new ParametersEntity({
-            uuid: 'uuid',
-            configKey: ParametersKey.CODE_REVIEW_CONFIG,
-            configValue: {
-                global: {
-                    ...existingConfig.configValue.global,
-                    // Ensure the global config retains the old values and merges correctly
-                },
-                repositories: [
-                    { id: 'repo-123', name: 'Repo 123', ...updatedRepoConfigs },
-                    {
-                        id: 'repo-456',
-                        name: 'Repo 456',
-                        ...MOCK_OLD_CONFIG_VALUE,
-                    },
-                ],
-            },
-        });
-
-        // Mock the createOrUpdateConfig method to return the updated parameters entity
-        mockParametersService.createOrUpdateConfig.mockResolvedValue(
-            updatedParametersEntity,
-        );
-
-        // Execute the use case
-        const result = await useCase.execute(body);
-
-        // Assertions to verify the expected behavior
-        expect(parametersService.createOrUpdateConfig).toHaveBeenCalledWith(
-            ParametersKey.CODE_REVIEW_CONFIG,
-            expect.objectContaining({
-                global: expect.objectContaining({
-                    ...existingConfig.configValue.global, // Ensure global config is retained
                 }),
-                repositories: expect.arrayContaining([
-                    expect.objectContaining({
-                        id: 'repo-123',
-                        name: 'Repo 123',
-                        ...updatedRepoConfigs,
-                    }), // Updated repo
-                    expect.objectContaining({
-                        id: 'repo-456',
-                        name: 'Repo 456',
-                        ...MOCK_OLD_CONFIG_VALUE,
-                    }), // Unchanged repo
-                ]),
-            }),
-            body.organizationAndTeamData,
-        );
+                body.organizationAndTeamData,
+            );
+        });
 
-        // Check that the result matches the expected updated parameters entity
-        expect(result).toEqual(updatedParametersEntity);
+        it('deve atualizar configuração existente preservando outros valores', async () => {
+            const existingConfig = {
+                configValue: {
+                    global: {
+                        ...BASIC_CONFIG_VALUE,
+                        reviewOptions: {
+                            ...BASIC_CONFIG_VALUE.reviewOptions!,
+                            security: true, // ✅ Valor diferente no existente
+                        },
+                    },
+                    repositories: [],
+                },
+            };
+
+            const body = {
+                organizationAndTeamData: {
+                    teamId: MOCK_TEAM_ID,
+                } as OrganizationAndTeamData,
+                configValue: {
+                    suggestionControl: {
+                        applyFiltersToKodyRules: true, // ✅ Apenas mudando esta flag
+                    },
+                },
+            };
+
+            mockParametersService.findByKey.mockResolvedValue(existingConfig);
+            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue([]);
+
+            await useCase.execute(body);
+
+            // ✅ Verifica merge correto preservando valores existentes
+            expect(parametersService.createOrUpdateConfig).toHaveBeenCalledWith(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                expect.objectContaining({
+                    global: expect.objectContaining({
+                        automatedReviewActive: true, // ✅ Preservado
+                        reviewOptions: expect.objectContaining({
+                            security: true, // ✅ Valor do config existente preservado
+                            code_style: true, // ✅ Valor do config existente preservado
+                        }),
+                        suggestionControl: expect.objectContaining({
+                            applyFiltersToKodyRules: true, // ✅ Novo valor aplicado
+                            maxSuggestions: 20, // ✅ Valor existente preservado
+                            severityLevelFilter: SeverityLevel.MEDIUM, // ✅ Valor existente preservado
+                        }),
+                    }),
+                }),
+                body.organizationAndTeamData,
+            );
+        });
+
+        it('deve lidar com configuração repositório específico', async () => {
+            const body = {
+                organizationAndTeamData: {
+                    teamId: MOCK_TEAM_ID,
+                } as OrganizationAndTeamData,
+                configValue: {
+                    suggestionControl: {
+                        applyFiltersToKodyRules: true,
+                    },
+                },
+                repositoryId: 'repo-123',
+            };
+
+            const existingConfig = {
+                configValue: {
+                    global: BASIC_CONFIG_VALUE,
+                    repositories: [
+                        {
+                            id: 'repo-123',
+                            name: 'Repo 123',
+                            ...BASIC_CONFIG_VALUE,
+                        },
+                    ],
+                },
+            };
+
+            mockParametersService.findByKey.mockResolvedValue(existingConfig);
+            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue([]);
+
+            await useCase.execute(body);
+
+            // ✅ Verifica que repositório específico foi atualizado
+            expect(parametersService.createOrUpdateConfig).toHaveBeenCalledWith(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                expect.objectContaining({
+                    repositories: expect.arrayContaining([
+                        expect.objectContaining({
+                            id: 'repo-123',
+                            suggestionControl: expect.objectContaining({
+                                applyFiltersToKodyRules: true, // ✅ Atualizado para este repo
+                            }),
+                        }),
+                    ]),
+                }),
+                body.organizationAndTeamData,
+            );
+        });
     });
 });

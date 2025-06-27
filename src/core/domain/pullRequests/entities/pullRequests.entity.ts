@@ -40,6 +40,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
     private readonly _organizationId: string;
     private readonly _commits: Array<ICommit>;
     private readonly _syncedEmbeddedSuggestions: boolean;
+    private readonly _syncedWithIssues: boolean;
 
     constructor(pullRequest: IPullRequests) {
         this._uuid = pullRequest.uuid;
@@ -66,6 +67,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
         this._organizationId = pullRequest.organizationId;
         this._commits = Array.isArray(pullRequest.commits) ? [...pullRequest.commits] : [];
         this._syncedEmbeddedSuggestions = pullRequest.syncedEmbeddedSuggestions;
+        this._syncedWithIssues = pullRequest.syncedWithIssues;
     }
 
     toJson(): IPullRequests {
@@ -94,6 +96,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
             organizationId: this._organizationId,
             commits: this._commits,
             syncedEmbeddedSuggestions: this._syncedEmbeddedSuggestions,
+            syncedWithIssues: this._syncedWithIssues,
         };
     }
 
@@ -123,6 +126,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
             organizationId: this._organizationId,
             commits: this._commits,
             syncedEmbeddedSuggestions: this._syncedEmbeddedSuggestions,
+            syncedWithIssues: this._syncedWithIssues,
         };
     }
 
@@ -226,4 +230,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
         return this._syncedEmbeddedSuggestions;
     }
 
+    get syncedWithIssues(): boolean {
+        return this._syncedWithIssues;
+    }
 }
