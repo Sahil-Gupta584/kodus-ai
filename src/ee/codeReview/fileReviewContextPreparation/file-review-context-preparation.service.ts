@@ -110,34 +110,32 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
         let fileContext: AnalysisContext = baseContext.fileContext;
 
         // Check if we should execute the AST analysis
-        const shouldRunAST =
-            reviewMode === ReviewModeResponse.HEAVY_MODE &&
-            !!context?.codeAnalysisAST?.baseCodeGraph?.cloneDir &&
-            !!context?.codeAnalysisAST?.headCodeGraph?.cloneDir &&
-            !!context?.codeAnalysisAST?.headCodeGraphEnriched &&
-            (context.codeAnalysisAST.headCodeGraphEnriched.nodes.length > 0 ||
-                context.codeAnalysisAST.headCodeGraphEnriched.relationships
-                    .length > 0);
+        const shouldRunAST = reviewMode === ReviewModeResponse.HEAVY_MODE;
 
         if (shouldRunAST) {
             try {
-                const functionsAffected =
-                    await this.astService.analyzeCodeWithGraph(
+                await this.astService.awaitTask(
+                    context.tasks.astAnalysis.taskId,
+                );
+
+                const { taskId } =
+                    await this.astService.initializeImpactAnalysis(
+                        context.repository,
+                        context.pullRequest,
+                        context.platformType,
+                        context.organizationAndTeamData,
                         patchWithLinesStr,
                         file.filename,
-                        baseContext.fileContext.organizationAndTeamData,
-                        baseContext.fileContext.pullRequest,
-                        baseContext.fileContext.codeAnalysisAST,
                     );
 
-                // Generate the impact analysis
-                const impactAnalysis =
-                    await this.astService.generateImpactAnalysis(
-                        baseContext.fileContext.codeAnalysisAST,
-                        functionsAffected,
-                        baseContext.fileContext.organizationAndTeamData,
-                        baseContext.fileContext.pullRequest,
-                    );
+                await this.astService.awaitTask(taskId);
+
+                const impactAnalysis = await this.astService.getImpactAnalysis(
+                    context.repository,
+                    context.pullRequest,
+                    context.platformType,
+                    context.organizationAndTeamData,
+                );
 
                 // Creates a new context by combining the fileContext with the AST analysis
                 fileContext = {

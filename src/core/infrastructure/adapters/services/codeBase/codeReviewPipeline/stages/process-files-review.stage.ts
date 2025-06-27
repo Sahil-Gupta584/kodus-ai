@@ -1031,8 +1031,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             action: context.action,
             platformType: context.platformType,
             codeReviewConfig: context.codeReviewConfig,
-            codeAnalysisAST: context.codeAnalysisAST,
             clusterizedSuggestions: context.clusterizedSuggestions,
+            tasks: context.tasks,
         };
     }
 

@@ -50,12 +50,13 @@ export class CodeBaseController {
             };
             platform: string;
             teamId: string;
+            filePaths?: string[];
         },
         @Res({ passthrough: true }) res: Response,
     ): Promise<StreamableFile> {
         const { id, name, full_name, number, head, base, platform, teamId } =
             body;
-        const result = await this.codeASTAnalysisService.cloneAndGenerate(
+        const task = await this.codeASTAnalysisService.initializeASTAnalysis(
             {
                 id,
                 name,
@@ -71,7 +72,13 @@ export class CodeBaseController {
                 organizationId: this.request.user?.organization.uuid,
                 teamId,
             },
+            body.filePaths || [],
         );
+
+        await this.codeASTAnalysisService.awaitTask(task.taskId);
+
+        const result = task;
+
         // Converte o resultado para JSON
         const jsonString = JSON.stringify(result, replacer);
 

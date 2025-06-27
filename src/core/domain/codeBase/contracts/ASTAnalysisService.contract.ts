@@ -1,45 +1,45 @@
 import {
     AIAnalysisResult,
     AnalysisContext,
-    CodeAnalysisAST,
     ReviewModeResponse,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import {
-    ChangeResult,
-    FunctionsAffectResult,
-    FunctionSimilarity,
-} from '@/ee/codeBase/types/diff-analyzer.types';
+    GetImpactAnalysisResponse,
+    InitializeImpactAnalysisResponse,
+    InitializeRepositoryResponse,
+} from '@kodus/kodus-proto/ast';
+import { GetTaskInfoResponse } from '@kodus/kodus-proto/task';
 
 export const AST_ANALYSIS_SERVICE_TOKEN = Symbol('ASTAnalysisService');
 
 export interface IASTAnalysisService {
+    awaitTask(taskId: string): Promise<GetTaskInfoResponse>;
     analyzeASTWithAI(
         context: AnalysisContext,
         reviewModeResponse: ReviewModeResponse,
     ): Promise<AIAnalysisResult>;
-    cloneAndGenerate(
+    initializeASTAnalysis(
         repository: any,
         pullRequest: any,
         platformType: string,
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<CodeAnalysisAST>;
-    generateImpactAnalysis(
-        codeAnalysis: CodeAnalysisAST,
-        functionsAffected: ChangeResult,
+        filePaths?: string[],
+    ): Promise<InitializeRepositoryResponse>;
+    initializeImpactAnalysis(
+        repository: any,
         pullRequest: any,
+        platformType: string,
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<{
-        functionsAffectResult: FunctionsAffectResult[];
-        functionSimilarity: FunctionSimilarity[];
-    }>;
-    analyzeCodeWithGraph(
         codeChunk: string,
         fileName: string,
-        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<InitializeImpactAnalysisResponse>;
+    getImpactAnalysis(
+        repository: any,
         pullRequest: any,
-        codeAnalysisAST: CodeAnalysisAST,
-    ): Promise<ChangeResult>;
+        platformType: string,
+        organizationAndTeamData: any,
+    ): Promise<GetImpactAnalysisResponse>;
     getRelatedContentFromDiff(
         repository: any,
         pullRequest: any,

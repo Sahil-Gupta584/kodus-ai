@@ -13,16 +13,16 @@ function buildGrpcCredentials(): ChannelCredentials {
     return credentials.createInsecure();
 }
 
-export const AST_MICROSERVICE_OPTIONS: ClientProviderOptions = {
-    name: 'AST_MICROSERVICE',
+export const TASK_MICROSERVICE_OPTIONS: ClientProviderOptions = {
+    name: 'TASK_MICROSERVICE',
     transport: Transport.GRPC,
     options: {
-        package: 'kodus.ast.v3',
+        package: 'kodus.task.v1',
         protoPath: resolve(
             cwd(),
-            'node_modules/@kodus/kodus-proto/kodus/ast/v3/analyzer.proto',
+            'node_modules/@kodus/kodus-proto/kodus/task/v1/manager.proto',
         ),
-        url: process.env.SERVICE_AST_URL ?? null,
+        url: process.env.SERVICE_TASK_URL ?? null,
         loader: {
             includeDirs: [resolve(cwd(), 'node_modules/@kodus/kodus-proto')],
         },

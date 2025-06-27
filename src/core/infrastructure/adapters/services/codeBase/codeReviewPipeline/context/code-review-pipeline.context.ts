@@ -1,6 +1,5 @@
 import {
     AnalysisContext,
-    CodeAnalysisAST,
     CodeReviewConfig,
     CodeSuggestion,
     CommentResult,
@@ -12,6 +11,7 @@ import { AutomationExecutionEntity } from '@/core/domain/automation/entities/aut
 import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { PipelineContext } from '../../../pipeline/interfaces/pipeline-context.interface';
+import { TaskStatus } from '@kodus/kodus-proto/task';
 
 export interface CodeReviewPipelineContext extends PipelineContext {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -52,8 +52,6 @@ export interface CodeReviewPipelineContext extends PipelineContext {
 
     clusterizedSuggestions?: IClusterizedSuggestion[];
 
-    codeAnalysisAST?: CodeAnalysisAST;
-
     preparedFileContexts: AnalysisContext[];
     fileAnalysisResults?: Array<{
         validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
@@ -68,4 +66,15 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     lastAnalyzedCommit?: any;
 
     lineComments?: CommentResult[];
+
+    tasks?: {
+        astAnalysis?: {
+            taskId: string;
+            status?: TaskStatus;
+        };
+        impactAnalysis?: {
+            taskId: string;
+            status?: TaskStatus;
+        };
+    };
 }

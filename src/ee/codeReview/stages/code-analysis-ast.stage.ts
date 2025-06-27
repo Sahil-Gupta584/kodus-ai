@@ -30,8 +30,8 @@ export class CodeAnalysisASTStage extends BasePipelineStage<CodeReviewPipelineCo
             return context;
         }
 
-        const codeAnalysisAST =
-            await this.codeASTAnalysisService.cloneAndGenerate(
+        const { taskId } =
+            await this.codeASTAnalysisService.initializeASTAnalysis(
                 context.repository,
                 context.pullRequest,
                 context.platformType,
@@ -39,7 +39,7 @@ export class CodeAnalysisASTStage extends BasePipelineStage<CodeReviewPipelineCo
             );
 
         return this.updateContext(context, (draft) => {
-            draft.codeAnalysisAST = codeAnalysisAST;
+            draft.tasks.astAnalysis.taskId = taskId;
         });
     }
 }

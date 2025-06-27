@@ -6,11 +6,8 @@ import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { ImplementationStatus } from '@/core/domain/pullRequests/enums/implementationStatus.enum';
 import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
-import { EnrichedGraph, FunctionAnalysis } from '@kodus/kodus-proto/v2';
-import {
-    FunctionsAffectResult,
-    FunctionSimilarity,
-} from '@/ee/codeBase/types/diff-analyzer.types';
+import { GetImpactAnalysisResponse } from '@kodus/kodus-proto/ast';
+import { TaskStatus } from '@kodus/kodus-proto/task';
 
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
@@ -57,17 +54,6 @@ export type Repository = {
     defaultBranch: string;
 };
 
-export type CodeGraphContext = {
-    codeGraphFunctions: Map<string, FunctionAnalysis>;
-    cloneDir: string;
-};
-
-export type CodeAnalysisAST = {
-    headCodeGraph: CodeGraphContext;
-    baseCodeGraph: CodeGraphContext;
-    headCodeGraphEnriched?: EnrichedGraph;
-};
-
 export type AnalysisContext = {
     pullRequest?: any;
     repository?: Partial<Repository>;
@@ -76,15 +62,21 @@ export type AnalysisContext = {
     platformType: string;
     action?: string;
     baseDir?: string;
-    codeAnalysisAST?: CodeAnalysisAST;
-    impactASTAnalysis?: {
-        functionsAffectResult: FunctionsAffectResult[];
-        functionSimilarity: FunctionSimilarity[];
-    };
+    impactASTAnalysis?: GetImpactAnalysisResponse;
     reviewModeResponse?: ReviewModeResponse;
     kodyFineTuningConfig?: KodyFineTuningConfig;
     fileChangeContext?: FileChangeContext;
     clusterizedSuggestions?: IClusterizedSuggestion[];
+    tasks?: {
+        astAnalysis?: {
+            taskId: string;
+            status?: TaskStatus;
+        };
+        impactAnalysis?: {
+            taskId: string;
+            status?: TaskStatus;
+        };
+    };
 };
 
 export type ASTAnalysisResult = {

@@ -1,5 +1,4 @@
 import { Global, Module } from '@nestjs/common';
-import { CodeAnalyzerService } from '@/ee/kodyAST/code-analyzer.service';
 import { AST_ANALYSIS_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
 import { CodeAstAnalysisService } from '@/ee/kodyAST/codeASTAnalysis.service';
 import { LLMProviderModule } from '@/modules/llmProvider.module';
@@ -8,33 +7,28 @@ import { PlatformIntegrationModule } from '@/modules/platformIntegration.module'
 import { ClientsModule } from '@nestjs/microservices';
 import { AST_MICROSERVICE_OPTIONS } from '../configs/microservices/ast-options';
 import { environment } from '../configs/environment';
-import { DiffAnalyzerService } from './diffAnalyzer.service';
+import { TASK_MICROSERVICE_OPTIONS } from '../configs/microservices/task-options';
 
 const staticImports = [LLMProviderModule, LogModule, PlatformIntegrationModule];
 const dynamicImports =
     environment.API_CLOUD_MODE && process.env.API_ENABLE_CODE_REVIEW_AST
-        ? [ClientsModule.register([AST_MICROSERVICE_OPTIONS])]
+        ? [
+              ClientsModule.register([AST_MICROSERVICE_OPTIONS]),
+              ClientsModule.register([TASK_MICROSERVICE_OPTIONS]),
+          ]
         : [];
 
 const providers = [];
-const moduleExports = [
-    CodeAnalyzerService,
-    DiffAnalyzerService,
-    AST_ANALYSIS_SERVICE_TOKEN,
-];
+const moduleExports = [AST_ANALYSIS_SERVICE_TOKEN];
 
 if (environment.API_CLOUD_MODE && process.env.API_ENABLE_CODE_REVIEW_AST) {
-    providers.push(CodeAnalyzerService, DiffAnalyzerService, {
+    providers.push({
         provide: AST_ANALYSIS_SERVICE_TOKEN,
         useClass: CodeAstAnalysisService,
     });
 } else {
     // Self-hosted mode, provide null services
-    providers.push(
-        { provide: CodeAnalyzerService, useValue: null },
-        { provide: DiffAnalyzerService, useValue: null },
-        { provide: AST_ANALYSIS_SERVICE_TOKEN, useValue: null },
-    );
+    providers.push({ provide: AST_ANALYSIS_SERVICE_TOKEN, useValue: null });
 }
 
 @Global()
