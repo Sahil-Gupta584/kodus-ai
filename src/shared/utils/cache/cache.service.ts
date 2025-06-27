@@ -85,7 +85,7 @@ export class CacheService {
         try {
             const value = await this.cacheManager.get(key);
 
-            return value !== null;
+            return !!value;
         } catch (error) {
             this.logger.error({
                 message:
