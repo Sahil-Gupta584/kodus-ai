@@ -2377,10 +2377,10 @@
   dependencies:
     buffer "^6.0.3"
 
-"@kodus/kodus-proto@^2.1.2":
-  version "2.1.2"
-  resolved "https://registry.yarnpkg.com/@kodus/kodus-proto/-/kodus-proto-2.1.2.tgz#b4335cfa653821559b62c86b350f8dcf2a629c7f"
-  integrity sha512-RA5qEcBugkFt63nPTFzw/AWqotAEEF0OsN+xlRTbIX0/+N8I6UnnPX8wOb7/+8MhhNkoXyv6Wyu7/tp/LtrhMA==
+"@kodus/kodus-proto@^3.0.0":
+  version "3.0.0"
+  resolved "https://registry.yarnpkg.com/@kodus/kodus-proto/-/kodus-proto-3.0.0.tgz#aecdea796c243aacda94d640a238c1fbc5c508e0"
+  integrity sha512-PQmPlhKIJ2CayO0L0vOt8DsQfxoQq+++OXkaODYN93yaqouNTJ7scLq+vUYAj0lPn15j3dmQmtg9q15gkEFrQg==
 
 "@kwsites/file-exists@^1.1.1":
   version "1.1.1"
