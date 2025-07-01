@@ -33,6 +33,7 @@ import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -175,6 +176,32 @@ export class KodyRulesPrLevelAnalysisService
             (rule) => rule.scope === KodyRulesScope.PULL_REQUEST,
         );
 
+        const minimalSeverityLevel =
+            context.codeReviewConfig.suggestionControl.severityLevelFilter;
+
+        // Depois filtra por severidade mínima
+        const filteredKodyRules = this.filterRulesByMinimumSeverity(
+            kodyRulesPrLevel,
+            minimalSeverityLevel,
+        );
+
+        // Se não há regras após os filtros, retorna resultado vazio
+        if (!filteredKodyRules.length) {
+            this.logger.log({
+                message: `No PR-level rules found after severity filtering for PR#${prNumber}`,
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    totalRulesBeforeFilter: kodyRulesPrLevel.length,
+                    minimalSeverityLevel,
+                },
+            });
+            return {
+                codeSuggestions: [],
+            };
+        }
+
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
         this.tokenTracker.reset();
 
@@ -243,6 +270,42 @@ export class KodyRulesPrLevelAnalysisService
             });
             throw error;
         }
+    }
+
+    private filterRulesByMinimumSeverity(
+        rules: Array<Partial<IKodyRule>>,
+        minimalSeverityLevel?: SeverityLevel,
+    ): Array<Partial<IKodyRule>> {
+        // Se não há nível mínimo definido ou é LOW, retorna todas as regras
+        if (
+            !minimalSeverityLevel ||
+            minimalSeverityLevel === SeverityLevel.LOW
+        ) {
+            return rules;
+        }
+
+        // Define a hierarquia de severidade (do menor para o maior)
+        const severityHierarchy = {
+            [SeverityLevel.LOW]: 1,
+            [SeverityLevel.MEDIUM]: 2,
+            [SeverityLevel.HIGH]: 3,
+            [SeverityLevel.CRITICAL]: 4,
+        };
+
+        const minimalLevel = severityHierarchy[minimalSeverityLevel];
+
+        return rules.filter((rule) => {
+            if (!rule.severity) {
+                // Se a regra não tem severidade definida, inclui por padrão
+                return true;
+            }
+
+            const ruleSeverity = rule.severity.toUpperCase() as SeverityLevel;
+            const ruleLevel = severityHierarchy[ruleSeverity];
+
+            // Inclui apenas regras com severidade >= ao nível mínimo
+            return ruleLevel >= minimalLevel;
+        });
     }
 
     private async createClassifierChain(
