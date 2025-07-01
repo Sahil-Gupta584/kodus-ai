@@ -18,4 +18,5 @@ export interface IIssue {
     status?: IssueStatus;
     createdAt: string;
     updatedAt: string;
+    prNumbers?: string[];
 }
