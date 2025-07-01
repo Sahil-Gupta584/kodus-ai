@@ -146,57 +146,12 @@ type SystemPromptFn = () => string;
 type UserPromptFn = (input: any) => string;
 
 @Injectable()
-export class KodyRulesAnalysisService implements IAIAnalysisService {
+export class KodyRulesAnalysisService implements KodyRulesAnalysisService {
     private readonly anthropic: Anthropic;
     private readonly tokenTracker: TokenTrackingHandler;
 
     @Inject(KODY_RULES_SERVICE_TOKEN)
     private readonly kodyRulesService: KodyRulesService;
-    /**
-     * Process the LLM response about violation decisions
-     * @param organizationAndTeamData Organization and team data
-     * @param prNumber Pull request number
-     * @param response String containing the LLM response
-     * @returns Map with the violation ID and if it should be removed or not, or null in case of error
-     */
-    private processViolationDecisions(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        response: string,
-    ): Map<string, boolean> | null {
-        try {
-            const cleanResponse = response.replace(/```json\n|```/g, '');
-            const parsedResponse = tryParseJSONObject(cleanResponse);
-
-            if (!parsedResponse?.decisions) {
-                this.logger.error({
-                    message: 'Failed to parse violation decisions response',
-                    context: KodyRulesAnalysisService.name,
-                    metadata: {
-                        originalResponse: response,
-                        cleanResponse,
-                        prNumber,
-                    },
-                });
-                return null;
-            }
-
-            return new Map(
-                parsedResponse?.decisions?.map((decision) => [
-                    decision.id,
-                    decision.shouldRemove,
-                ]),
-            );
-        } catch (error) {
-            this.logger.error({
-                message: 'Error processing violation decisions',
-                context: KodyRulesAnalysisService.name,
-                error,
-                metadata: { organizationAndTeamData, prNumber, response },
-            });
-            return null;
-        }
-    }
 
     constructor(
         private readonly logger: PinoLoggerService,
