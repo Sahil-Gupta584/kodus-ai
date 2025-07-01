@@ -162,47 +162,14 @@ export class KodyRulesPrLevelAnalysisService
         context: AnalysisContext,
         suggestions?: AIAnalysisResult,
     ): Promise<AIAnalysisResult> {
-        // Para PR Level, vamos trabalhar com todos os arquivos alterados
-        // O fileContext será ignorado e usaremos context.changedFiles
         const changedFiles = (context as any).changedFiles as FileChange[];
 
-        if (!changedFiles || changedFiles.length === 0) {
-            this.logger.log({
-                message: `No changed files found for PR#${prNumber}`,
-                context: KodyRulesPrLevelAnalysisService.name,
-                metadata: {
-                    organizationAndTeamData,
-                    prNumber,
-                },
-            });
-            return {
-                codeSuggestions: [],
-                overallSummary: '',
-            };
-        }
-
         const kodyRules = context.codeReviewConfig.kodyRules;
-        const language = context.codeReviewConfig.languageResultPrompt || 'pt-BR';
+        const language = context.codeReviewConfig.languageResultPrompt || 'en-US';
 
         const kodyRulesPrLevel = kodyRules.filter(
             (rule) => rule.scope === KodyRulesScope.PULL_REQUEST,
         );
-
-        if (!kodyRulesPrLevel?.length) {
-            this.logger.log({
-                message: `No PR-level Kody Rules found for PR#${prNumber}`,
-                context: KodyRulesPrLevelAnalysisService.name,
-                metadata: {
-                    organizationAndTeamData,
-                    prNumber,
-                    totalRules: kodyRules?.length || 0,
-                },
-            });
-            return {
-                codeSuggestions: [],
-                overallSummary: '',
-            };
-        }
 
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
         this.tokenTracker.reset();
