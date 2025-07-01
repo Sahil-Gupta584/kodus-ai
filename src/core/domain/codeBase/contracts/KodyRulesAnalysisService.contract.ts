@@ -1,4 +1,4 @@
-import { FileChangeContext, ReviewModeResponse, AnalysisContext, AIAnalysisResult } from "@/config/types/general/codeReview.type";
+import { FileChangeContext, ReviewModeResponse, AnalysisContext, AIAnalysisResult, AIAnalysisResultPrLevel } from "@/config/types/general/codeReview.type";
 import { OrganizationAndTeamData } from "@/config/types/general/organizationAndTeamData";
 import { IKodyRule } from "../../kodyRules/interfaces/kodyRules.interface";
 
@@ -10,9 +10,9 @@ export interface KodyRulesAnalysisService {
         reviewModeResponse: ReviewModeResponse,
         context: AnalysisContext,
         suggestions?: AIAnalysisResult,
-    ): Promise<AIAnalysisResult>;
+    ): Promise<AIAnalysisResult | AIAnalysisResultPrLevel>;
     addSeverityToSuggestions(
-        suggestions: AIAnalysisResult,
+        suggestions: AIAnalysisResult | AIAnalysisResultPrLevel,
         kodyRules: Array<Partial<IKodyRule>>,
-    ): AIAnalysisResult
+    ): AIAnalysisResult | AIAnalysisResultPrLevel;
 }

@@ -153,20 +153,17 @@ export interface IPullRequestUser {
 
 export interface ISuggestionByPR {
     id: string;
-    relevantFile: string;
-    language: string;
     suggestionContent: string;
     oneSentenceSummary: string;
     label: LabelType;
-    severity: SeverityLevel;
-    rankScore?: number;
+    severity?: SeverityLevel;
     brokenKodyRulesIds?: string[];
-    priorityStatus: PriorityStatus;
+    priorityStatus?: PriorityStatus;
     deliveryStatus: DeliveryStatus;
     comment?: {
         id: number;
         pullRequestReviewId: number;
     };
-    createdAt: string;
-    updatedAt: string;
+    createdAt?: string;
+    updatedAt?: string;
 }

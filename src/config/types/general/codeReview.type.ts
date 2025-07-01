@@ -13,6 +13,7 @@ import {
 } from '@/ee/kodyAST/code-analyzer.service';
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { FunctionAnalysis } from '@/ee/codeBase/ast/types/types';
+import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
@@ -112,6 +113,11 @@ export type AIAnalysisResult = {
         safeguard?: string;
     };
 };
+
+export type AIAnalysisResultPrLevel = {
+    codeSuggestions: ISuggestionByPR[];
+};
+
 
 export type CodeSuggestion = {
     id?: string;

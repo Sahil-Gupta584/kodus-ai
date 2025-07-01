@@ -12,6 +12,7 @@ import { AutomationExecutionEntity } from '@/core/domain/automation/entities/aut
 import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { PipelineContext } from '../../../pipeline/interfaces/pipeline-context.interface';
+import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 
 export interface CodeReviewPipelineContext extends PipelineContext {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -66,6 +67,8 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     discardedSuggestions: Partial<CodeSuggestion>[];
     overallComments: { filepath: string; summary: string }[];
     lastAnalyzedCommit?: any;
+
+    validSuggestionsByPR?: ISuggestionByPR[];
 
     lineComments?: CommentResult[];
 }
