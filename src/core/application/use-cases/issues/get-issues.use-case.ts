@@ -46,6 +46,22 @@ export class GetIssuesUseCase implements IUseCase {
                     return [];
                 }
 
+                for (const issue of allIssues) {
+                    const prNumbers = this.selectAllPrNumbers(issue);
+
+                    issue.prNumbers = prNumbers.map(
+                        (prNumber) => prNumber.number,
+                    );
+
+                    delete issue.contributingSuggestions;
+                }
+
+                allIssues.sort(
+                    (a, b) =>
+                        new Date(b.createdAt).getTime() -
+                        new Date(a.createdAt).getTime(),
+                );
+
                 await this.cacheService.addToCache(cacheKey, allIssues, 900000); //15 minutos
             }
 
@@ -67,5 +83,27 @@ export class GetIssuesUseCase implements IUseCase {
 
             return [];
         }
+    }
+
+    private selectAllPrNumbers(issue: IIssue): {
+        number: string;
+    }[] {
+        const prNumbers = new Set<string>();
+
+        if (issue.contributingSuggestions?.length) {
+            issue.contributingSuggestions.forEach((suggestion) => {
+                if (suggestion.prNumber) {
+                    prNumbers.add(suggestion.prNumber.toString());
+                }
+            });
+        }
+
+        const orderedPrNumbers = Array.from(prNumbers).sort(
+            (a, b) => parseInt(a) - parseInt(b),
+        );
+
+        return orderedPrNumbers.map((prNumber) => ({
+            number: prNumber,
+        }));
     }
 }
