@@ -46,6 +46,12 @@ export class GetIssuesUseCase implements IUseCase {
                     return [];
                 }
 
+                allIssues.sort(
+                    (a, b) =>
+                        new Date(b.createdAt).getTime() -
+                        new Date(a.createdAt).getTime(),
+                );
+
                 await this.cacheService.addToCache(cacheKey, allIssues, 900000); //15 minutos
             }
 
