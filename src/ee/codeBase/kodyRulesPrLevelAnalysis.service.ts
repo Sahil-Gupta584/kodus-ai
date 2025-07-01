@@ -9,6 +9,7 @@ import {
     AIAnalysisResult,
     FileChange,
     CodeSuggestion,
+    AIAnalysisResultPrLevel,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import {
@@ -30,6 +31,8 @@ import {
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -161,11 +164,12 @@ export class KodyRulesPrLevelAnalysisService
         reviewModeResponse: ReviewModeResponse,
         context: AnalysisContext,
         suggestions?: AIAnalysisResult,
-    ): Promise<AIAnalysisResult> {
+    ): Promise<AIAnalysisResultPrLevel> {
         const changedFiles = (context as any).changedFiles as FileChange[];
 
         const kodyRules = context.codeReviewConfig.kodyRules;
-        const language = context.codeReviewConfig.languageResultPrompt || 'en-US';
+        const language =
+            context.codeReviewConfig.languageResultPrompt || 'en-US';
 
         const kodyRulesPrLevel = kodyRules.filter(
             (rule) => rule.scope === KodyRulesScope.PULL_REQUEST,
@@ -179,7 +183,7 @@ export class KodyRulesPrLevelAnalysisService
             const classifierPayload: KodyRulesPrLevelPayload = {
                 pr_title: context.pullRequest.title,
                 pr_description: context.pullRequest.body || '',
-                files: changedFiles,
+                files: changedFiles, //files precisa ser removido o filecontent
                 rules: kodyRulesPrLevel,
                 language,
             };
@@ -190,7 +194,8 @@ export class KodyRulesPrLevelAnalysisService
                 classifierPayload,
             );
 
-            const classifierResult = await classifierChain.invoke(classifierPayload);
+            const classifierResult =
+                await classifierChain.invoke(classifierPayload);
 
             // Step 3: Process classifier response
             const violatedRules = this.processClassifierResponse(
@@ -211,7 +216,6 @@ export class KodyRulesPrLevelAnalysisService
                 });
                 return {
                     codeSuggestions: [],
-                    overallSummary: '',
                 };
             }
 
@@ -226,11 +230,7 @@ export class KodyRulesPrLevelAnalysisService
             );
 
             // Step 5: Process and return final suggestions
-            return this.addSeverityToSuggestions(
-                suggestions,
-                kodyRulesPrLevel,
-            );
-
+            return this.addSeverityToSuggestions(suggestions, kodyRulesPrLevel);
         } catch (error) {
             this.logger.error({
                 message: `Error during PR-level Kody Rules analysis for PR#${prNumber}`,
@@ -263,17 +263,19 @@ export class KodyRulesPrLevelAnalysisService
                 payload,
             );
 
-            return mainChain.withFallbacks({
-                fallbacks: [fallbackChain],
-            }).withConfig({
-                tags: this.buildTags(provider, 'primary'),
-                runName: 'prLevelClassifier',
-                metadata: {
-                    organizationId: payload.pr_title,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
-                },
-            });
+            return mainChain
+                .withFallbacks({
+                    fallbacks: [fallbackChain],
+                })
+                .withConfig({
+                    tags: this.buildTags(provider, 'primary'),
+                    runName: 'prLevelClassifier',
+                    metadata: {
+                        organizationId: payload.pr_title,
+                        provider: provider,
+                        fallbackProvider: fallbackProvider,
+                    },
+                });
         } catch (error) {
             this.logger.error({
                 message: 'Error creating classifier chain with fallback',
@@ -306,20 +308,23 @@ export class KodyRulesPrLevelAnalysisService
                 payload,
             );
 
-            return mainChain.withFallbacks({
-                fallbacks: [fallbackChain],
-            }).withConfig({
-                tags: this.buildTags(provider, 'primary'),
-                runName: 'prLevelGenerateSuggestions',
-                metadata: {
-                    ruleId: payload.rule?.uuid,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
-                },
-            });
+            return mainChain
+                .withFallbacks({
+                    fallbacks: [fallbackChain],
+                })
+                .withConfig({
+                    tags: this.buildTags(provider, 'primary'),
+                    runName: 'prLevelGenerateSuggestions',
+                    metadata: {
+                        ruleId: payload.rule?.uuid,
+                        provider: provider,
+                        fallbackProvider: fallbackProvider,
+                    },
+                });
         } catch (error) {
             this.logger.error({
-                message: 'Error creating generate suggestions chain with fallback',
+                message:
+                    'Error creating generate suggestions chain with fallback',
                 error,
                 context: KodyRulesPrLevelAnalysisService.name,
                 metadata: {
@@ -352,9 +357,13 @@ export class KodyRulesPrLevelAnalysisService
                     let systemPrompt: string;
 
                     if (chainType === 'classifier') {
-                        systemPrompt = prompt_kodyrules_prlevel_classifier_system(payload);
+                        systemPrompt =
+                            prompt_kodyrules_prlevel_classifier_system(payload);
                     } else {
-                        systemPrompt = prompt_kodyrules_prlevel_generate_suggestions_system(payload);
+                        systemPrompt =
+                            prompt_kodyrules_prlevel_generate_suggestions_system(
+                                payload,
+                            );
                     }
 
                     return [
@@ -412,11 +421,13 @@ export class KodyRulesPrLevelAnalysisService
                     .trim();
             }
 
-            const parsedResponse: ClassifierRuleResult[] = tryParseJSONObject(cleanResponse);
+            const parsedResponse: ClassifierRuleResult[] =
+                tryParseJSONObject(cleanResponse);
 
             if (!parsedResponse?.length) {
                 this.logger.warn({
-                    message: 'Failed to parse classifier response OR no violations found',
+                    message:
+                        'Failed to parse classifier response OR no violations found',
                     context: KodyRulesPrLevelAnalysisService.name,
                     metadata: {
                         originalResponse: response,
@@ -430,7 +441,9 @@ export class KodyRulesPrLevelAnalysisService
             const violatedRules: ExtendedKodyRule[] = [];
 
             for (const ruleResult of parsedResponse) {
-                const rule = kodyRulesPrLevel.find(r => r.uuid === ruleResult.ruleId);
+                const rule = kodyRulesPrLevel.find(
+                    (r) => r.uuid === ruleResult.ruleId,
+                );
                 if (rule) {
                     violatedRules.push({
                         ...rule,
@@ -444,12 +457,11 @@ export class KodyRulesPrLevelAnalysisService
                 context: KodyRulesPrLevelAnalysisService.name,
                 metadata: {
                     totalViolatedRules: violatedRules.length,
-                    ruleIds: violatedRules.map(r => r.uuid),
+                    ruleIds: violatedRules.map((r) => r.uuid),
                 },
             });
 
             return violatedRules;
-
         } catch (error) {
             this.logger.error({
                 message: 'Error processing classifier response',
@@ -470,8 +482,8 @@ export class KodyRulesPrLevelAnalysisService
         language: string,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
-    ): Promise<AIAnalysisResult> {
-        const allSuggestions: CodeSuggestion[] = [];
+    ): Promise<AIAnalysisResultPrLevel> {
+        const allSuggestions: ISuggestionByPR[] = [];
 
         // Process each violated rule
         for (const rule of violatedRules) {
@@ -492,25 +504,27 @@ export class KodyRulesPrLevelAnalysisService
                 };
 
                 // Create and invoke generate suggestions chain
-                const generateSuggestionsChain = await this.createGenerateSuggestionsChain(
-                    provider,
-                    payload,
-                );
+                const generateSuggestionsChain =
+                    await this.createGenerateSuggestionsChain(
+                        provider,
+                        payload,
+                    );
 
-                const suggestionsResult = await generateSuggestionsChain.invoke(payload);
+                const suggestionsResult =
+                    await generateSuggestionsChain.invoke(payload);
 
                 // Process the suggestion response
-                const processedSuggestion = this.processGenerateSuggestionsResponse(
-                    suggestionsResult,
-                    rule,
-                    organizationAndTeamData,
-                    prNumber,
-                );
+                const processedSuggestion =
+                    this.processGenerateSuggestionsResponse(
+                        suggestionsResult,
+                        rule,
+                        organizationAndTeamData,
+                        prNumber,
+                    );
 
                 if (processedSuggestion) {
                     allSuggestions.push(processedSuggestion);
                 }
-
             } catch (error) {
                 this.logger.error({
                     message: `Error generating suggestions for rule ${rule.uuid}`,
@@ -529,11 +543,13 @@ export class KodyRulesPrLevelAnalysisService
 
         return {
             codeSuggestions: allSuggestions,
-            overallSummary: `Foram identificadas ${allSuggestions.length} violações de regras a nível de PR que precisam ser corrigidas.`,
         };
     }
 
-    private mapFilesForRule(rule: ExtendedKodyRule, allFiles: FileChange[]): FileChange[] {
+    private mapFilesForRule(
+        rule: ExtendedKodyRule,
+        allFiles: FileChange[],
+    ): FileChange[] {
         if (!rule.violations?.length) {
             return allFiles;
         }
@@ -545,12 +561,12 @@ export class KodyRulesPrLevelAnalysisService
             if (violation.primaryFileId) {
                 relatedFileIds.add(violation.primaryFileId);
             }
-            violation.relatedFileIds?.forEach(id => relatedFileIds.add(id));
+            violation.relatedFileIds?.forEach((id) => relatedFileIds.add(id));
         }
 
         // Map file IDs to actual files
-        const relatedFiles = allFiles.filter(file =>
-            relatedFileIds.has(file.sha) || null
+        const relatedFiles = allFiles.filter(
+            (file) => relatedFileIds.has(file.sha) || null,
         );
 
         // If no specific files found, return all files (fallback)
@@ -562,7 +578,7 @@ export class KodyRulesPrLevelAnalysisService
         rule: ExtendedKodyRule,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
-    ): CodeSuggestion | null {
+    ): ISuggestionByPR | null {
         try {
             if (!response) {
                 return null;
@@ -576,7 +592,8 @@ export class KodyRulesPrLevelAnalysisService
                     .trim();
             }
 
-            const parsedResponse: GenerateSuggestionsResponse = tryParseJSONObject(cleanResponse);
+            const parsedResponse: GenerateSuggestionsResponse =
+                tryParseJSONObject(cleanResponse);
 
             if (!parsedResponse) {
                 this.logger.error({
@@ -586,24 +603,23 @@ export class KodyRulesPrLevelAnalysisService
                         originalResponse: response,
                         cleanResponse,
                         ruleId: rule.uuid,
+                        organizationAndTeamData,
+                        prNumber,
                     },
                 });
                 return null;
             }
 
             // Create the code suggestion
-            const suggestion: CodeSuggestion = {
+            const suggestion: ISuggestionByPR = {
                 id: uuidv4(),
-                relevantFile: '', // PR-level suggestions don't have a specific file
-                language: 'General',
                 suggestionContent: parsedResponse.suggestionContent,
-                existingCode: '',
-                improvedCode: '',
                 oneSentenceSummary: parsedResponse.oneSentenceSummary,
-                relevantLinesStart: undefined,
-                relevantLinesEnd: undefined,
                 label: LabelType.KODY_RULES,
-                brokenKodyRulesIds: parsedResponse.brokenKodyRulesIds || [rule.uuid!],
+                brokenKodyRulesIds: parsedResponse.brokenKodyRulesIds || [
+                    rule.uuid!,
+                ],
+                deliveryStatus: DeliveryStatus.NOT_SENT,
             };
 
             this.logger.log({
@@ -616,7 +632,6 @@ export class KodyRulesPrLevelAnalysisService
             });
 
             return suggestion;
-
         } catch (error) {
             this.logger.error({
                 message: 'Error processing generate suggestions response',
@@ -625,6 +640,8 @@ export class KodyRulesPrLevelAnalysisService
                 metadata: {
                     response,
                     ruleId: rule.uuid,
+                    organizationAndTeamData,
+                    prNumber,
                 },
             });
             return null;
@@ -632,15 +649,17 @@ export class KodyRulesPrLevelAnalysisService
     }
 
     addSeverityToSuggestions(
-        suggestions: AIAnalysisResult,
+        suggestions: AIAnalysisResultPrLevel,
         kodyRules: Array<Partial<IKodyRule>>,
-    ): AIAnalysisResult {
+    ): AIAnalysisResultPrLevel {
         if (!suggestions?.codeSuggestions?.length || !kodyRules?.length) {
             return suggestions;
         }
 
         const updatedSuggestions = suggestions.codeSuggestions.map(
-            (suggestion: CodeSuggestion & { brokenKodyRulesIds: string[] }) => {
+            (
+                suggestion: ISuggestionByPR & { brokenKodyRulesIds: string[] },
+            ) => {
                 if (!suggestion.brokenKodyRulesIds?.length) {
                     return suggestion;
                 }
@@ -666,8 +685,8 @@ export class KodyRulesPrLevelAnalysisService
         );
 
         return {
-            ...suggestions,
             codeSuggestions: updatedSuggestions,
+            ...suggestions,
         };
     }
 
