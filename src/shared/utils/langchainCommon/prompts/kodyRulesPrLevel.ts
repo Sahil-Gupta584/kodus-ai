@@ -1,5 +1,4 @@
 import { FileChange } from '@/config/types/general/codeReview.type';
-import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 
 export type KodyRulesPrLevelPayload = {
     pr_title: string;
@@ -72,8 +71,8 @@ Return a JSON array containing only rules that have violations:
     "ruleId": "rule-id-here",
     "violations": [
       {
-        "primaryFileId": "file-id-or-null",
-        "relatedFileIds": ["file-id-1", "file-id-2"],
+        "primaryFileId": "file-sha-or-null",
+        "relatedFileIds": ["file-sha-1", "file-sha-2"],
         "reason": "Clear explanation of the violation"
       }
     ]
@@ -229,8 +228,8 @@ Based on your analysis, generate this JSON response:
   "suggestionContent": "Concise explanation of the violation and specific steps to fix it. Include exact code examples ONLY when you have the actual code context. For cases without specific code context, provide clear guidance without inventing details. Avoid repeating information already clear from the context.",
   "oneSentenceSummary": "Concise summary of what needs to be done",
   "brokenKodyRulesIds": ["rule-id"],
-  "primaryFileId": "primary-file-id-or-null",
-  "relatedFilesIds": ["related-file-id-1", "related-file-id-2"]
+  "primaryFileId": "primary-file-sha-or-null",
+  "relatedFilesIds": ["related-file-sha-1", "related-file-sha-2"]
 }
 \`\`\`
 
