@@ -35,7 +35,7 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
 
         // Verificar se há regras de nível de PR configuradas
         const prLevelRules = context?.codeReviewConfig?.kodyRules?.filter(
-            rule => rule.scope === KodyRulesScope.PULL_REQUEST
+            (rule) => rule.scope === KodyRulesScope.PULL_REQUEST,
         );
 
         if (!prLevelRules?.length) {
@@ -43,7 +43,8 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                 message: `No PR-level Kody Rules configured for PR#${context.pullRequest.number}`,
                 context: this.stageName,
                 metadata: {
-                    totalRules: context?.codeReviewConfig?.kodyRules?.length || 0,
+                    totalRules:
+                        context?.codeReviewConfig?.kodyRules?.length || 0,
                     organizationAndTeamData: context.organizationAndTeamData,
                 },
             });
@@ -77,28 +78,24 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                     message: `PR-level analysis completed for PR#${context.pullRequest.number}`,
                     context: this.stageName,
                     metadata: {
-                        suggestionsCount: kodyRulesPrLevelAnalysis.codeSuggestions.length,
-                        organizationAndTeamData: context.organizationAndTeamData,
+                        suggestionsCount:
+                            kodyRulesPrLevelAnalysis.codeSuggestions.length,
+                        organizationAndTeamData:
+                            context.organizationAndTeamData,
                     },
                 });
 
-                console.log(kodyRulesPrLevelAnalysis.codeSuggestions);
-
-                // Adicionar as sugestões de nível de PR ao contexto
-                /*if (!context.codeSuggestions) {
-                    context.codeSuggestions = [];
-                }
-                context.codeSuggestions.push(...kodyRulesPrLevelAnalysis.codeSuggestions);*/
+                context.validSuggestionsByPR = kodyRulesPrLevelAnalysis.codeSuggestions;
             } else {
                 this.logger.log({
                     message: `No PR-level violations found for PR#${context.pullRequest.number}`,
                     context: this.stageName,
                     metadata: {
-                        organizationAndTeamData: context.organizationAndTeamData,
+                        organizationAndTeamData:
+                            context.organizationAndTeamData,
                     },
                 });
             }
-
         } catch (error) {
             this.logger.error({
                 message: `Error during PR-level Kody Rules analysis for PR#${context.pullRequest.number}`,
