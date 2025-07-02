@@ -26,7 +26,6 @@ import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import {
     KodyRulesPrLevelPayload,
     prompt_kodyrules_prlevel_classifier_system,
-    prompt_kodyrules_prlevel_generate_suggestions_system,
 } from '@/shared/utils/langchainCommon/prompts/kodyRulesPrLevel';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
@@ -52,23 +51,27 @@ interface ClassifierViolation {
     reason: string;
 }
 
+// Interface for violations with suggestions already generated
+interface ViolationWithSuggestion {
+    primaryFileId: string | null;
+    relatedFileIds: string[];
+    suggestionContent: string;
+    oneSentenceSummary: string;
+}
+
 interface ClassifierRuleResult {
     ruleId: string;
     violations: ClassifierViolation[];
 }
 
-// Interface for generate suggestions response
-interface GenerateSuggestionsResponse {
-    suggestionContent: string;
-    oneSentenceSummary: string;
-    brokenKodyRulesIds: string[];
-    primaryFileId: string | null;
-    relatedFilesIds: string[];
-}
-
 // Extended rule interface for processing
 interface ExtendedKodyRule extends Partial<IKodyRule> {
     violations?: ClassifierViolation[];
+}
+
+// Extended rule interface for rules with suggestions already generated
+interface ExtendedKodyRuleWithSuggestions extends Partial<IKodyRule> {
+    violations?: ViolationWithSuggestion[];
 }
 
 // Handler for token tracking
@@ -246,18 +249,22 @@ export class KodyRulesPrLevelAnalysisService
                 };
             }
 
-            // Step 4: Generate suggestions for each violated rule
-            const suggestions = await this.generateSuggestionsForViolatedRules(
-                violatedRules,
-                changedFiles,
-                provider,
-                language,
-                organizationAndTeamData,
-                prNumber,
+            // Step 4: Map violated rules to suggestions
+            const suggestions = this.mapViolatedRulesToSuggestions(
+                violatedRules as unknown as ExtendedKodyRuleWithSuggestions[],
             );
 
             // Step 5: Process and return final suggestions
-            return this.addSeverityToSuggestions(suggestions, kodyRulesPrLevel);
+            const suggestionsWithSeverity = this.addSeverityToSuggestions(
+                { codeSuggestions: suggestions },
+                kodyRulesPrLevel,
+            );
+
+            return this.replaceKodyRuleIdsWithLinks(
+                suggestionsWithSeverity,
+                organizationAndTeamData,
+                prNumber,
+            );
         } catch (error) {
             this.logger.error({
                 message: `Error during PR-level Kody Rules analysis for PR#${prNumber}`,
@@ -300,8 +307,24 @@ export class KodyRulesPrLevelAnalysisService
                 return true;
             }
 
-            const ruleSeverity = rule.severity.toUpperCase() as SeverityLevel;
+            // Corrige: normaliza para lowercase para coincidir com o enum
+            const ruleSeverity = rule.severity.toLowerCase() as SeverityLevel;
             const ruleLevel = severityHierarchy[ruleSeverity];
+
+            // Se não conseguir mapear a severidade, inclui por segurança
+            if (ruleLevel === undefined) {
+                this.logger.warn({
+                    message:
+                        'Severidade de regra não reconhecida, incluindo por padrão',
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    metadata: {
+                        ruleId: rule.uuid,
+                        ruleSeverity: rule.severity,
+                        normalizedSeverity: ruleSeverity,
+                    },
+                });
+                return true;
+            }
 
             // Inclui apenas regras com severidade >= ao nível mínimo
             return ruleLevel >= minimalLevel;
@@ -315,14 +338,9 @@ export class KodyRulesPrLevelAnalysisService
         const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
 
         try {
-            const mainChain = await this.createProviderChain(
-                provider,
-                'classifier',
-                payload,
-            );
+            const mainChain = await this.createProviderChain(provider, payload);
             const fallbackChain = await this.createProviderChain(
                 fallbackProvider,
-                'classifier',
                 payload,
             );
 
@@ -353,55 +371,8 @@ export class KodyRulesPrLevelAnalysisService
         }
     }
 
-    private async createGenerateSuggestionsChain(
-        provider: LLMModelProvider,
-        payload: KodyRulesPrLevelPayload,
-    ) {
-        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
-
-        try {
-            const mainChain = await this.createProviderChain(
-                provider,
-                'generateSuggestions',
-                payload,
-            );
-            const fallbackChain = await this.createProviderChain(
-                fallbackProvider,
-                'generateSuggestions',
-                payload,
-            );
-
-            return mainChain
-                .withFallbacks({
-                    fallbacks: [fallbackChain],
-                })
-                .withConfig({
-                    tags: this.buildTags(provider, 'primary'),
-                    runName: 'prLevelGenerateSuggestions',
-                    metadata: {
-                        ruleId: payload.rule?.uuid,
-                        provider: provider,
-                        fallbackProvider: fallbackProvider,
-                    },
-                });
-        } catch (error) {
-            this.logger.error({
-                message:
-                    'Error creating generate suggestions chain with fallback',
-                error,
-                context: KodyRulesPrLevelAnalysisService.name,
-                metadata: {
-                    provider,
-                    fallbackProvider,
-                },
-            });
-            throw error;
-        }
-    }
-
     private async createProviderChain(
         provider: LLMModelProvider,
-        chainType: 'classifier' | 'generateSuggestions',
         payload: KodyRulesPrLevelPayload,
     ) {
         try {
@@ -417,17 +388,8 @@ export class KodyRulesPrLevelAnalysisService
             // Create the chain using the correct provider
             const chain = RunnableSequence.from([
                 async (input: any) => {
-                    let systemPrompt: string;
-
-                    if (chainType === 'classifier') {
-                        systemPrompt =
-                            prompt_kodyrules_prlevel_classifier_system(payload);
-                    } else {
-                        systemPrompt =
-                            prompt_kodyrules_prlevel_generate_suggestions_system(
-                                payload,
-                            );
-                    }
+                    const systemPrompt =
+                        prompt_kodyrules_prlevel_classifier_system(payload);
 
                     return [
                         {
@@ -460,7 +422,7 @@ export class KodyRulesPrLevelAnalysisService
                 message: 'Error creating provider chain',
                 error,
                 context: KodyRulesPrLevelAnalysisService.name,
-                metadata: { provider, chainType },
+                metadata: { provider },
             });
             throw error;
         }
@@ -538,218 +500,94 @@ export class KodyRulesPrLevelAnalysisService
         }
     }
 
-    private async generateSuggestionsForViolatedRules(
-        violatedRules: ExtendedKodyRule[],
-        files: FileChange[],
-        provider: LLMModelProvider,
-        language: string,
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-    ): Promise<AIAnalysisResultPrLevel> {
+    private mapViolatedRulesToSuggestions(
+        violatedRules: ExtendedKodyRuleWithSuggestions[],
+    ): ISuggestionByPR[] {
         const allSuggestions: ISuggestionByPR[] = [];
 
-        // Process each violated rule
         for (const rule of violatedRules) {
-            try {
-                // Map file data for the files involved in this rule's violations
-                const relatedFiles = this.mapFilesForRule(rule, files);
-
-                // Create payload for generate suggestions
-                const payload: KodyRulesPrLevelPayload = {
-                    pr_title: '', // Not needed for generate suggestions
-                    pr_description: '',
-                    files: relatedFiles,
-                    rule: {
-                        ...rule,
-                        violations: rule.violations, // Include violations in the rule
-                    },
-                    language,
-                };
-
-                // Create and invoke generate suggestions chain
-                const generateSuggestionsChain =
-                    await this.createGenerateSuggestionsChain(
-                        provider,
-                        payload,
-                    );
-
-                const suggestionsResult =
-                    await generateSuggestionsChain.invoke(payload);
-
-                // Process the suggestion response
-                const processedSuggestion =
-                    this.processGenerateSuggestionsResponse(
-                        suggestionsResult,
-                        rule,
-                        organizationAndTeamData,
-                        prNumber,
-                    );
-
-                if (processedSuggestion) {
-                    allSuggestions.push(processedSuggestion);
-                }
-            } catch (error) {
-                this.logger.error({
-                    message: `Error generating suggestions for rule ${rule.uuid}`,
-                    context: KodyRulesPrLevelAnalysisService.name,
-                    error,
-                    metadata: {
-                        ruleId: rule.uuid,
-                        organizationAndTeamData,
-                        prNumber,
-                    },
-                });
-                // Continue with other rules even if one fails
+            if (!rule.violations?.length) {
                 continue;
             }
+
+            for (const violation of rule.violations) {
+                const suggestion: ISuggestionByPR = {
+                    id: uuidv4(),
+                    suggestionContent: violation.suggestionContent,
+                    oneSentenceSummary: violation.oneSentenceSummary,
+                    label: LabelType.KODY_RULES,
+                    brokenKodyRulesIds: [rule.uuid!],
+                    deliveryStatus: DeliveryStatus.NOT_SENT,
+                };
+
+                allSuggestions.push(suggestion);
+            }
         }
 
-        return {
-            codeSuggestions: allSuggestions,
-        };
-    }
-
-    private mapFilesForRule(
-        rule: ExtendedKodyRule,
-        allFiles: FileChange[],
-    ): FileChange[] {
-        if (!rule.violations?.length) {
-            return allFiles;
-        }
-
-        // Get all file IDs mentioned in violations
-        const relatedFileIds = new Set<string>();
-
-        for (const violation of rule.violations) {
-            if (violation.primaryFileId) {
-                relatedFileIds.add(violation.primaryFileId);
-            }
-            violation.relatedFileIds?.forEach((id) => relatedFileIds.add(id));
-        }
-
-        // Map file IDs to actual files
-        const relatedFiles = allFiles.filter(
-            (file) => relatedFileIds.has(file.sha) || null,
-        );
-
-        // If no specific files found, return all files (fallback)
-        return relatedFiles.length > 0 ? relatedFiles : allFiles;
-    }
-
-    private processGenerateSuggestionsResponse(
-        response: string,
-        rule: ExtendedKodyRule,
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-    ): ISuggestionByPR | null {
-        try {
-            if (!response) {
-                return null;
-            }
-
-            let cleanResponse = response;
-            if (response?.startsWith('```')) {
-                cleanResponse = response
-                    .replace(/^```json\n/, '')
-                    .replace(/\n```(\n)?$/, '')
-                    .trim();
-            }
-
-            const parsedResponse: GenerateSuggestionsResponse =
-                tryParseJSONObject(cleanResponse);
-
-            if (!parsedResponse) {
-                this.logger.error({
-                    message: 'Failed to parse generate suggestions response',
-                    context: KodyRulesPrLevelAnalysisService.name,
-                    metadata: {
-                        originalResponse: response,
-                        cleanResponse,
-                        ruleId: rule.uuid,
-                        organizationAndTeamData,
-                        prNumber,
-                    },
-                });
-                return null;
-            }
-
-            // Create the code suggestion
-            const suggestion: ISuggestionByPR = {
-                id: uuidv4(),
-                suggestionContent: parsedResponse.suggestionContent,
-                oneSentenceSummary: parsedResponse.oneSentenceSummary,
-                label: LabelType.KODY_RULES,
-                brokenKodyRulesIds: parsedResponse.brokenKodyRulesIds || [
-                    rule.uuid!,
-                ],
-                deliveryStatus: DeliveryStatus.NOT_SENT,
-            };
-
-            this.logger.log({
-                message: 'Successfully processed generate suggestions response',
-                context: KodyRulesPrLevelAnalysisService.name,
-                metadata: {
-                    ruleId: rule.uuid,
-                    suggestionId: suggestion.id,
-                },
-            });
-
-            return suggestion;
-        } catch (error) {
-            this.logger.error({
-                message: 'Error processing generate suggestions response',
-                context: KodyRulesPrLevelAnalysisService.name,
-                error,
-                metadata: {
-                    response,
-                    ruleId: rule.uuid,
-                    organizationAndTeamData,
-                    prNumber,
-                },
-            });
-            return null;
-        }
+        return allSuggestions;
     }
 
     addSeverityToSuggestions(
         suggestions: AIAnalysisResultPrLevel,
         kodyRules: Array<Partial<IKodyRule>>,
     ): AIAnalysisResultPrLevel {
+        // DEBUG: Log inicial
+        console.log('=== DEBUG addSeverityToSuggestions ===');
+        console.log('suggestions.codeSuggestions.length:', suggestions?.codeSuggestions?.length);
+        console.log('kodyRules.length:', kodyRules?.length);
+        console.log('primeira suggestion:', JSON.stringify(suggestions?.codeSuggestions?.[0], null, 2));
+        console.log('primeira kodyRule:', JSON.stringify(kodyRules?.[0], null, 2));
+
         if (!suggestions?.codeSuggestions?.length || !kodyRules?.length) {
             return suggestions;
         }
 
         const updatedSuggestions = suggestions.codeSuggestions.map(
-            (
-                suggestion: ISuggestionByPR & { brokenKodyRulesIds: string[] },
-            ) => {
+            (suggestion: ISuggestionByPR & { brokenKodyRulesIds: string[] }) => {
                 if (!suggestion.brokenKodyRulesIds?.length) {
                     return suggestion;
                 }
 
-                // For each broken rule, find the severity in kodyRules
+                // DEBUG: Log para cada suggestion
+                console.log('\n--- Processando suggestion ---');
+                console.log('suggestion.id:', suggestion.id);
+                console.log('brokenKodyRulesIds:', suggestion.brokenKodyRulesIds);
+
                 const severities = suggestion.brokenKodyRulesIds
                     .map((ruleId) => {
+                        console.log('🔍 Procurando ruleId:', `"${ruleId}"`);
+                        console.log('UUIDs disponíveis:', kodyRules.map(kr => `"${kr.uuid}"`));
+
                         const rule = kodyRules.find((kr) => kr.uuid === ruleId);
+
+                        console.log('Regra encontrada:', rule ? { uuid: rule.uuid, severity: rule.severity } : 'null');
+                        console.log('Severity retornada:', rule?.severity);
+
                         return rule?.severity;
                     })
                     .filter(Boolean);
 
-                // If there are severities, use the first one
+                console.log('Severities depois do filter:', severities);
+
                 if (severities && severities.length > 0) {
+                    console.log('✅ Adicionando severity:', severities[0]?.toLowerCase());
                     return {
                         ...suggestion,
-                        severity: severities[0]?.toLowerCase(),
+                        severity: severities[0]?.toLowerCase() as SeverityLevel,
                     };
                 }
 
+                console.log('❌ Nenhuma severity encontrada');
                 return suggestion;
             },
         );
 
+        console.log('\n=== RESULTADO FINAL ===');
+        console.log('primeira suggestion processada:', JSON.stringify(updatedSuggestions[0], null, 2));
+        console.log('=======================\n');
+
         return {
             codeSuggestions: updatedSuggestions,
-            ...suggestions,
         };
     }
 
@@ -760,14 +598,143 @@ export class KodyRulesPrLevelAnalysisService
         return [`model:${provider}`, `tier:${tier}`, 'kodyRules', 'prLevel'];
     }
 
-    private async logTokenUsage(metadata: any) {
-        // Log token usage para análise e monitoramento
-        this.logger.log({
-            message: 'Token usage',
-            context: KodyRulesPrLevelAnalysisService.name,
-            metadata: {
-                ...metadata,
-            },
-        });
+    private async replaceKodyRuleIdsWithLinks(
+        suggestions: AIAnalysisResultPrLevel,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+    ): Promise<AIAnalysisResultPrLevel> {
+        if (!suggestions?.codeSuggestions?.length) {
+            return suggestions;
+        }
+
+        const updatedSuggestions = await Promise.all(
+            suggestions.codeSuggestions.map(async (suggestion) => {
+                try {
+                    if (suggestion?.label === LabelType.KODY_RULES) {
+                        let updatedContent =
+                            suggestion?.suggestionContent || '';
+
+                        const uuidRegex =
+                            /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+                        let foundIds: string[] =
+                            updatedContent.match(uuidRegex) || [];
+
+                        const updatedContentWithLinks =
+                            await this.buildKodyRuleLinkAndRepalceIds(
+                                foundIds,
+                                updatedContent,
+                                organizationAndTeamData,
+                                prNumber,
+                            );
+
+                        return {
+                            ...suggestion,
+                            suggestionContent: updatedContentWithLinks,
+                        };
+                    }
+
+                    return suggestion;
+                } catch (error) {
+                    this.logger.error({
+                        message:
+                            'Error processing suggestion for Kody Rule links',
+                        context: KodyRulesPrLevelAnalysisService.name,
+                        error,
+                        metadata: {
+                            suggestionId: suggestion.id,
+                            organizationAndTeamData,
+                            prNumber,
+                        },
+                    });
+                    return suggestion;
+                }
+            }),
+        );
+
+        return {
+            ...suggestions,
+            codeSuggestions: updatedSuggestions,
+        };
+    }
+
+    private async buildKodyRuleLinkAndRepalceIds(
+        foundIds: string[],
+        updatedContent: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+    ): Promise<string> {
+        // Processar todos os IDs encontrados
+        for (const ruleId of foundIds) {
+            try {
+                const rule = await this.kodyRulesService.findById(ruleId);
+
+                if (!rule) {
+                    continue;
+                }
+
+                const baseUrl = process.env.API_USER_INVITE_BASE_URL || '';
+                let ruleLink: string;
+
+                if (rule.repositoryId === 'global') {
+                    ruleLink = `${baseUrl}/settings/code-review/global/kody-rules/${ruleId}`;
+                } else {
+                    ruleLink = `${baseUrl}/settings/code-review/${rule.repositoryId}/kody-rules/${ruleId}`;
+                }
+
+                const escapeMarkdownSyntax = (text: string): string =>
+                    text.replace(/([\[\]\\`*_{}()#+\-.!])/g, '\\$1');
+                const markdownLink = `[${escapeMarkdownSyntax(rule.title)}](${ruleLink})`;
+
+                // Verificar se o ID está entre crases simples `id`
+                const singleBacktickPattern = new RegExp(
+                    `\`${this.escapeRegex(ruleId)}\``,
+                    'g',
+                );
+                if (singleBacktickPattern.test(updatedContent)) {
+                    updatedContent = updatedContent.replace(
+                        singleBacktickPattern,
+                        markdownLink,
+                    );
+                    continue;
+                }
+
+                // Verificar se o ID está entre blocos de código ```id```
+                const tripleBacktickPattern = new RegExp(
+                    `\`\`\`${this.escapeRegex(ruleId)}\`\`\``,
+                    'g',
+                );
+                if (tripleBacktickPattern.test(updatedContent)) {
+                    updatedContent = updatedContent.replace(
+                        tripleBacktickPattern,
+                        markdownLink,
+                    );
+                    continue;
+                }
+
+                const idPattern = new RegExp(this.escapeRegex(ruleId), 'g');
+                updatedContent = updatedContent.replace(
+                    idPattern,
+                    markdownLink,
+                );
+            } catch (error) {
+                this.logger.error({
+                    message: 'Error fetching Kody Rule details',
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    error: error,
+                    metadata: {
+                        ruleId,
+                        organizationAndTeamData,
+                        prNumber,
+                    },
+                });
+                continue;
+            }
+        }
+
+        return updatedContent;
+    }
+
+    private escapeRegex(string: string): string {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 }
