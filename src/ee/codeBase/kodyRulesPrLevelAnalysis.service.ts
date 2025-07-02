@@ -33,6 +33,7 @@ import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking.service';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -141,8 +142,6 @@ export const KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN = Symbol(
     'KodyRulesPrLevelAnalysisService',
 );
 
-type SystemPromptFn = (payload: KodyRulesPrLevelPayload) => string;
-
 @Injectable()
 export class KodyRulesPrLevelAnalysisService
     implements KodyRulesAnalysisService
@@ -157,6 +156,8 @@ export class KodyRulesPrLevelAnalysisService
         private readonly llmProviderService: LLMProviderService,
 
         private readonly logger: PinoLoggerService,
+
+        private readonly tokenChunkingService: TokenChunkingService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
     }
@@ -209,11 +210,36 @@ export class KodyRulesPrLevelAnalysisService
         this.tokenTracker.reset();
 
         try {
-            // Step 1: Prepare classifier payload
+            // 🆕 Step 1: Verificar se precisa chunking
+            const shouldUseChunking = this.shouldUseTokenChunking(changedFiles, kodyRulesPrLevel);
+
+            if (shouldUseChunking) {
+                this.logger.log({
+                    message: `Using token chunking for large PR#${prNumber}`,
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    metadata: {
+                        totalFiles: changedFiles.length,
+                        totalRules: kodyRulesPrLevel.length,
+                        provider,
+                    },
+                });
+
+                return await this.processWithTokenChunking(
+                    organizationAndTeamData,
+                    prNumber,
+                    context,
+                    changedFiles,
+                    kodyRulesPrLevel,
+                    language,
+                    provider
+                );
+            }
+
+            // Step 1: Prepare classifier payload (modo normal)
             const classifierPayload: KodyRulesPrLevelPayload = {
                 pr_title: context.pullRequest.title,
                 pr_description: context.pullRequest.body || '',
-                files: changedFiles, //files precisa ser removido o filecontent
+                files: this.prepareFilesForPayload(changedFiles), // 🆕 Remove fileContent
                 rules: kodyRulesPrLevel,
                 language,
             };
@@ -709,5 +735,240 @@ export class KodyRulesPrLevelAnalysisService
 
     private escapeRegex(string: string): string {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    /**
+     * Verifica se deve usar token chunking baseado no tamanho dos dados
+     */
+    private shouldUseTokenChunking(
+        changedFiles: FileChange[],
+        kodyRules: Array<Partial<IKodyRule>>
+    ): boolean {
+        // Critérios para usar chunking:
+        // 1. Mais de 20 arquivos
+        // 2. Ou mais de 10 regras
+        // 3. Ou arquivos muito grandes (mais de 1000 linhas combinadas)
+
+        const totalFiles = changedFiles.length;
+        const totalRules = kodyRules.length;
+        const totalLines = changedFiles.reduce((sum, file) => {
+            const additions = file.additions || 0;
+            const deletions = file.deletions || 0;
+            return sum + additions + deletions;
+        }, 0);
+
+        return totalFiles > 10 || totalRules > 10 || totalLines > 1000;
+    }
+
+    /**
+     * Remove fileContent dos arquivos para reduzir tokens
+     */
+    private prepareFilesForPayload(changedFiles: FileChange[]): FileChange[] {
+        return changedFiles.map(file => ({
+            ...file,
+            fileContent: undefined
+        }));
+    }
+
+    /**
+     * Processa PR grande usando token chunking
+     */
+    private async processWithTokenChunking(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        context: AnalysisContext,
+        changedFiles: FileChange[],
+        kodyRulesPrLevel: Array<Partial<IKodyRule>>,
+        language: string,
+        provider: LLMModelProvider
+    ): Promise<AIAnalysisResultPrLevel> {
+
+        // 1. Preparar dados para chunking
+        const preparedFiles = this.prepareFilesForPayload(changedFiles);
+
+        // 2. Dividir arquivos em chunks
+        const chunkingResult = this.tokenChunkingService.chunkDataByTokens({
+            model: provider,
+            data: preparedFiles,
+            usagePercentage: 5, // Usar 70% da capacidade do modelo
+        });
+
+        this.logger.log({
+            message: `PR divided into ${chunkingResult.totalChunks} chunks`,
+            context: KodyRulesPrLevelAnalysisService.name,
+            metadata: {
+                prNumber,
+                totalFiles: preparedFiles.length,
+                totalChunks: chunkingResult.totalChunks,
+                tokenLimit: chunkingResult.tokenLimit,
+                tokensPerChunk: chunkingResult.tokensPerChunk,
+            },
+        });
+
+        // 3. Processar cada chunk
+        const allViolatedRules: ExtendedKodyRule[] = [];
+
+        for (let i = 0; i < chunkingResult.chunks.length; i++) {
+            const chunk = chunkingResult.chunks[i];
+            const tokens = chunkingResult.tokensPerChunk[i];
+
+            this.logger.log({
+                message: `Processing chunk ${i + 1}/${chunkingResult.totalChunks}`,
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: {
+                    chunkIndex: i,
+                    filesInChunk: chunk.length,
+                    estimatedTokens: tokens,
+                },
+            });
+
+            try {
+                // Processar chunk individual
+                const chunkViolatedRules = await this.processChunk(
+                    context,
+                    chunk,
+                    kodyRulesPrLevel,
+                    language,
+                    provider,
+                    i
+                );
+
+                if (chunkViolatedRules?.length) {
+                    allViolatedRules.push(...chunkViolatedRules);
+                }
+
+            } catch (error) {
+                this.logger.error({
+                    message: `Error processing chunk ${i + 1}`,
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    error,
+                    metadata: {
+                        chunkIndex: i,
+                        filesInChunk: chunk.length,
+                    },
+                });
+                // Continue com próximo chunk
+            }
+        }
+
+        // 4. Combinar resultados de todos os chunks
+        return this.combineChunkResults(
+            allViolatedRules,
+            kodyRulesPrLevel,
+            organizationAndTeamData,
+            prNumber
+        );
+    }
+
+    /**
+     * Processa um chunk individual
+     */
+    private async processChunk(
+        context: AnalysisContext,
+        filesChunk: FileChange[],
+        kodyRulesPrLevel: Array<Partial<IKodyRule>>,
+        language: string,
+        provider: LLMModelProvider,
+        chunkIndex: number
+    ): Promise<ExtendedKodyRule[] | null> {
+
+        // Preparar payload para este chunk
+        const classifierPayload: KodyRulesPrLevelPayload = {
+            pr_title: context.pullRequest.title,
+            pr_description: context.pullRequest.body || '',
+            files: filesChunk,
+            rules: kodyRulesPrLevel,
+            language,
+        };
+
+        // Criar e invocar chain para este chunk
+        const classifierChain = await this.createClassifierChain(
+            provider,
+            classifierPayload,
+        );
+
+        const classifierResult = await classifierChain.invoke(classifierPayload);
+
+        // Processar resposta deste chunk
+        return this.processClassifierResponse(
+            kodyRulesPrLevel,
+            classifierResult,
+            filesChunk, // Passar apenas arquivos deste chunk
+        );
+    }
+
+    /**
+     * Combina resultados de múltiplos chunks
+     */
+    private async combineChunkResults(
+        allViolatedRules: ExtendedKodyRule[],
+        kodyRulesPrLevel: Array<Partial<IKodyRule>>,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number
+    ): Promise<AIAnalysisResultPrLevel> {
+
+        if (!allViolatedRules?.length) {
+            this.logger.log({
+                message: `No violations found across all chunks for PR#${prNumber}`,
+                context: KodyRulesPrLevelAnalysisService.name,
+            });
+            return {
+                codeSuggestions: [],
+            };
+        }
+
+        // Deduplicate violated rules (mesmo rule pode ter violações em chunks diferentes)
+        const uniqueViolatedRules = this.deduplicateViolatedRules(allViolatedRules);
+
+        this.logger.log({
+            message: `Combined chunk results`,
+            context: KodyRulesPrLevelAnalysisService.name,
+            metadata: {
+                totalViolations: allViolatedRules.length,
+                uniqueViolatedRules: uniqueViolatedRules.length,
+            },
+        });
+
+        // Mapear para suggestions
+        const suggestions = this.mapViolatedRulesToSuggestions(
+            uniqueViolatedRules as unknown as ExtendedKodyRuleWithSuggestions[],
+        );
+
+        // Adicionar severidade
+        const suggestionsWithSeverity = this.addSeverityToSuggestions(
+            { codeSuggestions: suggestions },
+            kodyRulesPrLevel,
+        );
+
+        // Processar links
+        return this.replaceKodyRuleIdsWithLinks(
+            suggestionsWithSeverity,
+            organizationAndTeamData,
+            prNumber,
+        );
+    }
+
+    /**
+     * Remove duplicatas de regras violadas (merge violations do mesmo rule)
+     */
+    private deduplicateViolatedRules(violatedRules: ExtendedKodyRule[]): ExtendedKodyRule[] {
+        const ruleMap = new Map<string, ExtendedKodyRule>();
+
+        for (const rule of violatedRules) {
+            if (!rule.uuid) continue;
+
+            if (ruleMap.has(rule.uuid)) {
+                // Merge violations
+                const existingRule = ruleMap.get(rule.uuid)!;
+                existingRule.violations = [
+                    ...(existingRule.violations || []),
+                    ...(rule.violations || [])
+                ];
+            } else {
+                ruleMap.set(rule.uuid, rule);
+            }
+        }
+
+        return Array.from(ruleMap.values());
     }
 }
