@@ -268,9 +268,9 @@ export class KodyIssuesManagementService
         files: any[],
     ): Promise<void> {
         try {
-            for (const file of files) {
-                const prChangedFiles = await this.getChangedFiles(context);
+            const prChangedFiles = await this.getChangedFiles(context);
 
+            for (const file of files) {
                 const currentCode = prChangedFiles.find(
                     (f) => f.filename === file.path,
                 )?.fileContent;
