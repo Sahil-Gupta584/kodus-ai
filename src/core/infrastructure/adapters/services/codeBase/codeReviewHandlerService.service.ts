@@ -51,6 +51,7 @@ export class CodeReviewHandlerService {
                 discardedSuggestions: [],
                 overallComments: [],
                 lastAnalyzedCommit: null,
+                validSuggestionsByPR: [],
             };
 
             this.logger.log({

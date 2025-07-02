@@ -56,6 +56,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     codeAnalysisAST?: CodeAnalysisAST;
 
     preparedFileContexts: AnalysisContext[];
+
     fileAnalysisResults?: Array<{
         validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
@@ -71,4 +72,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     validSuggestionsByPR?: ISuggestionByPR[];
 
     lineComments?: CommentResult[];
+
+    // Resultados dos comentários de nível de PR
+    prLevelCommentResults?: Array<CommentResult>;
 }
