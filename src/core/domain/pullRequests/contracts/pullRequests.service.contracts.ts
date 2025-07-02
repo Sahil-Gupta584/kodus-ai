@@ -6,9 +6,10 @@ import {
     IPullRequests,
     IPullRequestUser,
     ISuggestion,
+    ISuggestionByPR,
 } from '../interfaces/pullRequests.interface';
 import { IPullRequestsRepository } from './pullRequests.repository';
-import { Repository } from '@/config/types/general/codeReview.type';
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
 export const PULL_REQUESTS_SERVICE_TOKEN = Symbol('PullRequestsService');
 
@@ -51,4 +52,11 @@ export interface IPullRequestsService extends IPullRequestsRepository {
         platformType: PlatformType,
         prNumber: number,
     ): Promise<Array<IPullRequestUser>>;
+
+    addPrLevelSuggestions(
+        pullRequestNumber: number,
+        repositoryName: string,
+        prLevelSuggestions: ISuggestionByPR[],
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<PullRequestsEntity | null>
 }
