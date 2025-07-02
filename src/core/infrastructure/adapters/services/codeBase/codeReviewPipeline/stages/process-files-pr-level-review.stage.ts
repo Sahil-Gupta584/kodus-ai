@@ -12,6 +12,11 @@ import {
     COMMENT_MANAGER_SERVICE_TOKEN,
     ICommentManagerService,
 } from '@/core/domain/codeBase/contracts/CommentManagerService.contract';
+import {
+    ISuggestionService,
+    SUGGESTION_SERVICE_TOKEN,
+} from '@/core/domain/codeBase/contracts/SuggestionService.contract';
+import { IPullRequestsService, PULL_REQUESTS_SERVICE_TOKEN } from '@/core/domain/pullRequests/contracts/pullRequests.service.contracts';
 
 @Injectable()
 export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -25,6 +30,12 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
 
         @Inject(COMMENT_MANAGER_SERVICE_TOKEN)
         private readonly commentManagerService: ICommentManagerService,
+
+        @Inject(SUGGESTION_SERVICE_TOKEN)
+        private readonly suggestionService: ISuggestionService,
+
+        @Inject(PULL_REQUESTS_SERVICE_TOKEN)
+        private readonly pullRequestsService: IPullRequestsService,
     ) {
         super();
     }
@@ -101,6 +112,31 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                     kodyRulesPrLevelAnalysis.codeSuggestions,
                     context.codeReviewConfig?.languageResultPrompt,
                 );
+
+                // Transformar commentResults em ISuggestionByPR e salvar no banco
+                if (commentResults && commentResults.length > 0) {
+                    const prLevelSuggestions = this.suggestionService.transformCommentResultsToPrLevelSuggestions(commentResults);
+
+                    if (prLevelSuggestions.length > 0) {
+                        await this.pullRequestsService.addPrLevelSuggestions(
+                            context.pullRequest.number,
+                            context.repository.name,
+                            prLevelSuggestions,
+                            context.organizationAndTeamData,
+                        );
+
+                        this.logger.log({
+                            message: `Saved ${prLevelSuggestions.length} PR level suggestions to database`,
+                            context: ProcessFilesPrLevelReviewStage.name,
+                            metadata: {
+                                prNumber: context.pullRequest.number,
+                                repositoryName: context.repository.name,
+                                suggestionsCount: prLevelSuggestions.length,
+                                organizationAndTeamData: context.organizationAndTeamData,
+                            },
+                        });
+                    }
+                }
 
                 return this.updateContext(context, (draft) => {
                     if (!draft.validSuggestionsByPR) {
