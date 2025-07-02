@@ -10,6 +10,7 @@ import {
     CommentResult,
 } from '@/config/types/general/codeReview.type';
 import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.enum';
+import { ISuggestionByPR } from '../../pullRequests/interfaces/pullRequests.interface';
 
 /**
  * Contract for the service that handles code suggestions lifecycle,
@@ -217,6 +218,13 @@ export interface ISuggestionService {
         sortedPrioritizedSuggestions: Partial<CodeSuggestion>[],
         commentResults: CommentResult[],
     ): Promise<Partial<CodeSuggestion>[]>;
+
+    /**
+     * Transforms comment results to PR level suggestions
+     */
+    transformCommentResultsToPrLevelSuggestions(
+        commentResults: CommentResult[],
+    ): ISuggestionByPR[];
 }
 
 export const SUGGESTION_SERVICE_TOKEN = 'SUGGESTION_SERVICE_TOKEN';
