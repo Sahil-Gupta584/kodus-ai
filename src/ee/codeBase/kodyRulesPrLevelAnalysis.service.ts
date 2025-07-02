@@ -45,8 +45,8 @@ interface TokenUsage {
     parentRunId?: string;
 }
 
-// Interface for classifier response
-interface ClassifierViolation {
+// Interface for analyzer response
+interface AnalyzerViolation {
     primaryFileId: string | null;
     relatedFileIds: string[];
     reason: string;
@@ -60,14 +60,14 @@ interface ViolationWithSuggestion {
     oneSentenceSummary: string;
 }
 
-interface ClassifierRuleResult {
+interface AnalyzerRuleResult {
     ruleId: string;
-    violations: ClassifierViolation[];
+    violations: AnalyzerViolation[];
 }
 
 // Extended rule interface for processing
 interface ExtendedKodyRule extends Partial<IKodyRule> {
-    violations?: ClassifierViolation[];
+    violations?: AnalyzerViolation[];
 }
 
 // Extended rule interface for rules with suggestions already generated
@@ -285,7 +285,7 @@ export class KodyRulesPrLevelAnalysisService
         });
     }
 
-    private async createClassifierChain(
+    private async createAnalyzerChain(
         provider: LLMModelProvider,
         payload: KodyRulesPrLevelPayload,
     ) {
@@ -313,7 +313,7 @@ export class KodyRulesPrLevelAnalysisService
                 });
         } catch (error) {
             this.logger.error({
-                message: 'Error creating classifier chain with fallback',
+                message: 'Error creating analyzer chain with fallback',
                 error,
                 context: KodyRulesPrLevelAnalysisService.name,
                 metadata: {
@@ -400,7 +400,7 @@ export class KodyRulesPrLevelAnalysisService
                     .trim();
             }
 
-            const parsedResponse: ClassifierRuleResult[] =
+            const parsedResponse: AnalyzerRuleResult[] =
                 tryParseJSONObject(cleanResponse);
 
             if (!parsedResponse?.length) {
@@ -777,7 +777,7 @@ export class KodyRulesPrLevelAnalysisService
         chunkIndex: number,
     ): Promise<ExtendedKodyRule[] | null> {
         // Preparar payload para este chunk
-        const classifierPayload: KodyRulesPrLevelPayload = {
+        const analyzerPayload: KodyRulesPrLevelPayload = {
             pr_title: context.pullRequest.title,
             pr_description: context.pullRequest.body || '',
             files: filesChunk,
@@ -786,18 +786,17 @@ export class KodyRulesPrLevelAnalysisService
         };
 
         // Criar e invocar chain para este chunk
-        const classifierChain = await this.createClassifierChain(
+        const analyzerChain = await this.createAnalyzerChain(
             provider,
-            classifierPayload,
+            analyzerPayload,
         );
 
-        const classifierResult =
-            await classifierChain.invoke(classifierPayload);
+        const analyzerResult = await analyzerChain.invoke(analyzerPayload);
 
         // Processar resposta deste chunk
         return this.processAnalyzerResponse(
             kodyRulesPrLevel,
-            classifierResult,
+            analyzerResult,
             filesChunk, // Passar apenas arquivos deste chunk
         );
     }
