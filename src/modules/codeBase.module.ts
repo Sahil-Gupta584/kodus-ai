@@ -45,6 +45,7 @@ import { GlobalParametersModule } from './global-parameters.module';
 import { LogModule } from './log.module';
 import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeBase.controller';
 import { KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN, KodyRulesPrLevelAnalysisService } from '@/ee/codeBase/kodyRulesPrLevelAnalysis.service';
+import { TokenChunkingModule } from './tokenChunking.module';
 
 @Module({
     imports: [
@@ -66,6 +67,7 @@ import { KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN, KodyRulesPrLevelAnalysisSer
         forwardRef(() => KodyFineTuningContextModule),
         forwardRef(() => KodyASTAnalyzeContextModule),
         forwardRef(() => GlobalParametersModule),
+        forwardRef(() => TokenChunkingModule),
         LogModule,
     ],
     providers: [
