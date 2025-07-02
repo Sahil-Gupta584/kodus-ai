@@ -531,13 +531,6 @@ export class KodyRulesPrLevelAnalysisService
         suggestions: AIAnalysisResultPrLevel,
         kodyRules: Array<Partial<IKodyRule>>,
     ): AIAnalysisResultPrLevel {
-        // DEBUG: Log inicial
-        console.log('=== DEBUG addSeverityToSuggestions ===');
-        console.log('suggestions.codeSuggestions.length:', suggestions?.codeSuggestions?.length);
-        console.log('kodyRules.length:', kodyRules?.length);
-        console.log('primeira suggestion:', JSON.stringify(suggestions?.codeSuggestions?.[0], null, 2));
-        console.log('primeira kodyRule:', JSON.stringify(kodyRules?.[0], null, 2));
-
         if (!suggestions?.codeSuggestions?.length || !kodyRules?.length) {
             return suggestions;
         }
@@ -548,43 +541,23 @@ export class KodyRulesPrLevelAnalysisService
                     return suggestion;
                 }
 
-                // DEBUG: Log para cada suggestion
-                console.log('\n--- Processando suggestion ---');
-                console.log('suggestion.id:', suggestion.id);
-                console.log('brokenKodyRulesIds:', suggestion.brokenKodyRulesIds);
-
                 const severities = suggestion.brokenKodyRulesIds
                     .map((ruleId) => {
-                        console.log('🔍 Procurando ruleId:', `"${ruleId}"`);
-                        console.log('UUIDs disponíveis:', kodyRules.map(kr => `"${kr.uuid}"`));
-
                         const rule = kodyRules.find((kr) => kr.uuid === ruleId);
-
-                        console.log('Regra encontrada:', rule ? { uuid: rule.uuid, severity: rule.severity } : 'null');
-                        console.log('Severity retornada:', rule?.severity);
-
                         return rule?.severity;
                     })
                     .filter(Boolean);
 
-                console.log('Severities depois do filter:', severities);
-
                 if (severities && severities.length > 0) {
-                    console.log('✅ Adicionando severity:', severities[0]?.toLowerCase());
                     return {
                         ...suggestion,
                         severity: severities[0]?.toLowerCase() as SeverityLevel,
                     };
                 }
 
-                console.log('❌ Nenhuma severity encontrada');
                 return suggestion;
             },
         );
-
-        console.log('\n=== RESULTADO FINAL ===');
-        console.log('primeira suggestion processada:', JSON.stringify(updatedSuggestions[0], null, 2));
-        console.log('=======================\n');
 
         return {
             codeSuggestions: updatedSuggestions,
