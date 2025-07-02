@@ -288,14 +288,23 @@ export class KodyRulesPrLevelAnalysisService
     private async createAnalyzerChain(
         provider: LLMModelProvider,
         payload: KodyRulesPrLevelPayload,
+        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData,
     ) {
         const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
 
         try {
-            const mainChain = await this.createProviderChain(provider, payload);
+            const mainChain = await this.createProviderChain(
+                provider,
+                payload,
+                prNumber,
+                organizationAndTeamData,
+            );
             const fallbackChain = await this.createProviderChain(
                 fallbackProvider,
                 payload,
+                prNumber,
+                organizationAndTeamData,
             );
 
             return mainChain
@@ -319,6 +328,8 @@ export class KodyRulesPrLevelAnalysisService
                 metadata: {
                     provider,
                     fallbackProvider,
+                    prNumber,
+                    organizationAndTeamData,
                 },
             });
             throw error;
@@ -328,6 +339,8 @@ export class KodyRulesPrLevelAnalysisService
     private async createProviderChain(
         provider: LLMModelProvider,
         payload: KodyRulesPrLevelPayload,
+        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData,
     ) {
         try {
             let llm = this.llmProviderService.getLLMProvider({
@@ -376,7 +389,7 @@ export class KodyRulesPrLevelAnalysisService
                 message: 'Error creating provider chain',
                 error,
                 context: KodyRulesPrLevelAnalysisService.name,
-                metadata: { provider },
+                metadata: { provider, prNumber, organizationAndTeamData },
             });
             throw error;
         }
@@ -386,6 +399,8 @@ export class KodyRulesPrLevelAnalysisService
         kodyRulesPrLevel: Array<Partial<IKodyRule>>,
         response: string,
         files: FileChange[],
+        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): ExtendedKodyRule[] | null {
         try {
             if (!response) {
@@ -411,6 +426,8 @@ export class KodyRulesPrLevelAnalysisService
                     metadata: {
                         originalResponse: response,
                         cleanResponse,
+                        prNumber,
+                        organizationAndTeamData,
                     },
                 });
                 return null;
@@ -436,7 +453,8 @@ export class KodyRulesPrLevelAnalysisService
                 context: KodyRulesPrLevelAnalysisService.name,
                 metadata: {
                     totalViolatedRules: violatedRules.length,
-                    ruleIds: violatedRules.map((r) => r.uuid),
+                    prNumber,
+                    organizationAndTeamData,
                 },
             });
 
@@ -447,7 +465,8 @@ export class KodyRulesPrLevelAnalysisService
                 context: KodyRulesPrLevelAnalysisService.name,
                 error,
                 metadata: {
-                    response,
+                    prNumber,
+                    organizationAndTeamData,
                 },
             });
             return null;
@@ -703,11 +722,12 @@ export class KodyRulesPrLevelAnalysisService
             message: `PR divided into ${chunkingResult.totalChunks} chunks`,
             context: KodyRulesPrLevelAnalysisService.name,
             metadata: {
-                prNumber,
                 totalFiles: preparedFiles.length,
                 totalChunks: chunkingResult.totalChunks,
                 tokenLimit: chunkingResult.tokenLimit,
                 tokensPerChunk: chunkingResult.tokensPerChunk,
+                prNumber,
+                organizationAndTeamData,
             },
         });
 
@@ -725,6 +745,8 @@ export class KodyRulesPrLevelAnalysisService
                     chunkIndex: i,
                     filesInChunk: chunk.length,
                     estimatedTokens: tokens,
+                    prNumber,
+                    organizationAndTeamData,
                 },
             });
 
@@ -737,6 +759,8 @@ export class KodyRulesPrLevelAnalysisService
                     language,
                     provider,
                     i,
+                    prNumber,
+                    organizationAndTeamData,
                 );
 
                 if (chunkViolatedRules?.length) {
@@ -750,6 +774,8 @@ export class KodyRulesPrLevelAnalysisService
                     metadata: {
                         chunkIndex: i,
                         filesInChunk: chunk.length,
+                        prNumber,
+                        organizationAndTeamData,
                     },
                 });
                 // Continue com próximo chunk
@@ -775,6 +801,8 @@ export class KodyRulesPrLevelAnalysisService
         language: string,
         provider: LLMModelProvider,
         chunkIndex: number,
+        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<ExtendedKodyRule[] | null> {
         // Preparar payload para este chunk
         const analyzerPayload: KodyRulesPrLevelPayload = {
@@ -789,6 +817,8 @@ export class KodyRulesPrLevelAnalysisService
         const analyzerChain = await this.createAnalyzerChain(
             provider,
             analyzerPayload,
+            prNumber,
+            organizationAndTeamData,
         );
 
         const analyzerResult = await analyzerChain.invoke(analyzerPayload);
@@ -797,7 +827,9 @@ export class KodyRulesPrLevelAnalysisService
         return this.processAnalyzerResponse(
             kodyRulesPrLevel,
             analyzerResult,
-            filesChunk, // Passar apenas arquivos deste chunk
+            filesChunk,
+            prNumber,
+            organizationAndTeamData,
         );
     }
 
@@ -830,6 +862,8 @@ export class KodyRulesPrLevelAnalysisService
             metadata: {
                 totalViolations: allViolatedRules.length,
                 uniqueViolatedRules: uniqueViolatedRules.length,
+                prNumber,
+                organizationAndTeamData,
             },
         });
 
