@@ -77,4 +77,14 @@ export interface ICommentManagerService {
     enrichParentSuggestionsWithRelated(
         suggestions: CodeSuggestion[],
     ): Promise<CodeSuggestion[]>;
+
+    createPrLevelReviewComments(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string; language: string },
+        prLevelSuggestions: any[],
+        language: string,
+    ): Promise<{
+        commentResults: Array<CommentResult>;
+    }>;
 }
