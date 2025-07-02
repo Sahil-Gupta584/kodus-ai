@@ -36,6 +36,7 @@ export interface IPullRequests {
     syncedEmbeddedSuggestions?: boolean;
     syncedWithIssues?: boolean;
     suggestionsByPR?: ISuggestionByPR[];
+    prLevelSuggestions?: ISuggestionByPR[];
 }
 
 export interface ICommit {

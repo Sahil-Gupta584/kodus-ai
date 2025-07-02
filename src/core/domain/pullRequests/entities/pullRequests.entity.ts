@@ -5,6 +5,7 @@ import {
     IPullRequests,
     IPullRequestUser,
     IRepository,
+    ISuggestionByPR,
 } from '../interfaces/pullRequests.interface';
 
 export class PullRequestsEntity implements Entity<IPullRequests> {
@@ -30,6 +31,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
     private readonly _openedAt: string;
     private readonly _closedAt: string;
     private readonly _files: Array<IFile>;
+    private readonly _prLevelSuggestions: Array<ISuggestionByPR>;
     private readonly _totalAdded: number;
     private readonly _totalDeleted: number;
     private readonly _totalChanges: number;
@@ -57,6 +59,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
         this._openedAt = pullRequest.openedAt;
         this._closedAt = pullRequest.closedAt;
         this._files = pullRequest.files;
+        this._prLevelSuggestions = pullRequest.prLevelSuggestions;
         this._totalAdded = pullRequest.totalAdded;
         this._totalDeleted = pullRequest.totalDeleted;
         this._totalChanges = pullRequest.totalChanges;
@@ -65,7 +68,9 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
         this._reviewers = pullRequest.reviewers;
         this._assignees = pullRequest.assignees;
         this._organizationId = pullRequest.organizationId;
-        this._commits = Array.isArray(pullRequest.commits) ? [...pullRequest.commits] : [];
+        this._commits = Array.isArray(pullRequest.commits)
+            ? [...pullRequest.commits]
+            : [];
         this._syncedEmbeddedSuggestions = pullRequest.syncedEmbeddedSuggestions;
         this._syncedWithIssues = pullRequest.syncedWithIssues;
     }
@@ -86,6 +91,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
             createdAt: this._createdAt,
             updatedAt: this._updatedAt,
             files: this._files,
+            prLevelSuggestions: this._prLevelSuggestions,
             totalAdded: this._totalAdded,
             totalDeleted: this._totalDeleted,
             totalChanges: this._totalChanges,
@@ -116,6 +122,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
             openedAt: this._openedAt,
             closedAt: this._closedAt,
             files: this._files,
+            prLevelSuggestions: this._prLevelSuggestions,
             totalAdded: this._totalAdded,
             totalDeleted: this._totalDeleted,
             totalChanges: this._totalChanges,
@@ -180,6 +187,10 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
 
     get files(): Array<IFile> {
         return [...this._files];
+    }
+
+    get prLevelSuggestions(): Array<ISuggestionByPR> {
+        return [...this._prLevelSuggestions];
     }
 
     get openedAt(): string {
