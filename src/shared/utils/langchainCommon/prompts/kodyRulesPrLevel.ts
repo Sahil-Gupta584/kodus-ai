@@ -9,7 +9,7 @@ export type KodyRulesPrLevelPayload = {
     language?: string;
 };
 
-export const prompt_kodyrules_prlevel_classifier_system = (
+export const prompt_kodyrules_prlevel_analyzer = (
     payload: KodyRulesPrLevelPayload,
 ) => {
     return `# Cross-File Rule Classification System

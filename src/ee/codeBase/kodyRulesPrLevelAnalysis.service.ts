@@ -25,7 +25,7 @@ import { RunnableSequence } from '@langchain/core/runnables';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import {
     KodyRulesPrLevelPayload,
-    prompt_kodyrules_prlevel_classifier_system,
+    prompt_kodyrules_prlevel_analyzer,
 } from '@/shared/utils/langchainCommon/prompts/kodyRulesPrLevel';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
@@ -304,7 +304,7 @@ export class KodyRulesPrLevelAnalysisService
                 })
                 .withConfig({
                     tags: this.buildTags(provider, 'primary'),
-                    runName: 'prLevelClassifier',
+                    runName: 'prLevelKodyRulesAnalyzer',
                     metadata: {
                         organizationId: payload.pr_title,
                         provider: provider,
@@ -343,7 +343,7 @@ export class KodyRulesPrLevelAnalysisService
             const chain = RunnableSequence.from([
                 async (input: any) => {
                     const systemPrompt =
-                        prompt_kodyrules_prlevel_classifier_system(payload);
+                        prompt_kodyrules_prlevel_analyzer(payload);
 
                     return [
                         {
@@ -382,7 +382,7 @@ export class KodyRulesPrLevelAnalysisService
         }
     }
 
-    private processClassifierResponse(
+    private processAnalyzerResponse(
         kodyRulesPrLevel: Array<Partial<IKodyRule>>,
         response: string,
         files: FileChange[],
@@ -406,7 +406,7 @@ export class KodyRulesPrLevelAnalysisService
             if (!parsedResponse?.length) {
                 this.logger.warn({
                     message:
-                        'Failed to parse classifier response OR no violations found',
+                        'Failed to parse analyzer response OR no violations found',
                     context: KodyRulesPrLevelAnalysisService.name,
                     metadata: {
                         originalResponse: response,
@@ -432,7 +432,7 @@ export class KodyRulesPrLevelAnalysisService
             }
 
             this.logger.log({
-                message: 'Successfully processed classifier response',
+                message: 'Successfully processed analyzer response',
                 context: KodyRulesPrLevelAnalysisService.name,
                 metadata: {
                     totalViolatedRules: violatedRules.length,
@@ -443,7 +443,7 @@ export class KodyRulesPrLevelAnalysisService
             return violatedRules;
         } catch (error) {
             this.logger.error({
-                message: 'Error processing classifier response',
+                message: 'Error processing analyzer response',
                 context: KodyRulesPrLevelAnalysisService.name,
                 error,
                 metadata: {
@@ -795,7 +795,7 @@ export class KodyRulesPrLevelAnalysisService
             await classifierChain.invoke(classifierPayload);
 
         // Processar resposta deste chunk
-        return this.processClassifierResponse(
+        return this.processAnalyzerResponse(
             kodyRulesPrLevel,
             classifierResult,
             filesChunk, // Passar apenas arquivos deste chunk
