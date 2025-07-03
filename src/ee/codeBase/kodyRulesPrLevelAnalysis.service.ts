@@ -9,7 +9,6 @@ import {
     AnalysisContext,
     AIAnalysisResult,
     FileChange,
-    CodeSuggestion,
     AIAnalysisResultPrLevel,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
@@ -37,6 +36,7 @@ import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking.service';
 
+//#region Interfaces
 // Interface for token tracking
 interface TokenUsage {
     input_tokens?: number;
@@ -76,7 +76,9 @@ interface ExtendedKodyRule extends Partial<IKodyRule> {
 interface ExtendedKodyRuleWithSuggestions extends Partial<IKodyRule> {
     violations?: ViolationWithSuggestion[];
 }
+//#endregion
 
+//#region Token Tracking Handler
 // Handler for token tracking
 class TokenTrackingHandler extends BaseCallbackHandler {
     name = 'TokenTrackingHandler';
@@ -139,6 +141,7 @@ class TokenTrackingHandler extends BaseCallbackHandler {
         this.tokenUsages = [];
     }
 }
+//#endregion
 
 export const KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN = Symbol(
     'KodyRulesPrLevelAnalysisService',
@@ -186,7 +189,7 @@ export class KodyRulesPrLevelAnalysisService
             context.codeReviewConfig.suggestionControl.severityLevelFilter;
 
         // Depois filtra por severidade mínima
-        const filteredKodyRules = this.filterRulesByMinimumSeverity(
+        const filteredKodyRules = await this.filterRulesByMinimumSeverity(
             kodyRulesPrLevel,
             minimalSeverityLevel,
         );
@@ -235,58 +238,7 @@ export class KodyRulesPrLevelAnalysisService
         }
     }
 
-    private filterRulesByMinimumSeverity(
-        rules: Array<Partial<IKodyRule>>,
-        minimalSeverityLevel?: SeverityLevel,
-    ): Array<Partial<IKodyRule>> {
-        // Se não há nível mínimo definido ou é LOW, retorna todas as regras
-        if (
-            !minimalSeverityLevel ||
-            minimalSeverityLevel === SeverityLevel.LOW
-        ) {
-            return rules;
-        }
-
-        // Define a hierarquia de severidade (do menor para o maior)
-        const severityHierarchy = {
-            [SeverityLevel.LOW]: 1,
-            [SeverityLevel.MEDIUM]: 2,
-            [SeverityLevel.HIGH]: 3,
-            [SeverityLevel.CRITICAL]: 4,
-        };
-
-        const minimalLevel = severityHierarchy[minimalSeverityLevel];
-
-        return rules.filter((rule) => {
-            if (!rule.severity) {
-                // Se a regra não tem severidade definida, inclui por padrão
-                return true;
-            }
-
-            // Corrige: normaliza para lowercase para coincidir com o enum
-            const ruleSeverity = rule.severity.toLowerCase() as SeverityLevel;
-            const ruleLevel = severityHierarchy[ruleSeverity];
-
-            // Se não conseguir mapear a severidade, inclui por segurança
-            if (ruleLevel === undefined) {
-                this.logger.warn({
-                    message:
-                        'Severidade de regra não reconhecida, incluindo por padrão',
-                    context: KodyRulesPrLevelAnalysisService.name,
-                    metadata: {
-                        ruleId: rule.uuid,
-                        ruleSeverity: rule.severity,
-                        normalizedSeverity: ruleSeverity,
-                    },
-                });
-                return true;
-            }
-
-            // Inclui apenas regras com severidade >= ao nível mínimo
-            return ruleLevel >= minimalLevel;
-        });
-    }
-
+    //#region Create and Process Analyzer Chain
     private async createAnalyzerChain(
         provider: LLMModelProvider,
         payload: KodyRulesPrLevelPayload,
@@ -474,80 +426,9 @@ export class KodyRulesPrLevelAnalysisService
             return null;
         }
     }
+    //#endregion
 
-    private mapViolatedRulesToSuggestions(
-        violatedRules: ExtendedKodyRuleWithSuggestions[],
-    ): ISuggestionByPR[] {
-        const allSuggestions: ISuggestionByPR[] = [];
-
-        for (const rule of violatedRules) {
-            if (!rule.violations?.length) {
-                continue;
-            }
-
-            for (const violation of rule.violations) {
-                const suggestion: ISuggestionByPR = {
-                    id: uuidv4(),
-                    suggestionContent: violation.suggestionContent,
-                    oneSentenceSummary: violation.oneSentenceSummary,
-                    label: LabelType.KODY_RULES,
-                    brokenKodyRulesIds: [rule.uuid!],
-                    deliveryStatus: DeliveryStatus.NOT_SENT,
-                };
-
-                allSuggestions.push(suggestion);
-            }
-        }
-
-        return allSuggestions;
-    }
-
-    addSeverityToSuggestions(
-        suggestions: AIAnalysisResultPrLevel,
-        kodyRules: Array<Partial<IKodyRule>>,
-    ): AIAnalysisResultPrLevel {
-        if (!suggestions?.codeSuggestions?.length || !kodyRules?.length) {
-            return suggestions;
-        }
-
-        const updatedSuggestions = suggestions.codeSuggestions.map(
-            (
-                suggestion: ISuggestionByPR & { brokenKodyRulesIds: string[] },
-            ) => {
-                if (!suggestion.brokenKodyRulesIds?.length) {
-                    return suggestion;
-                }
-
-                const severities = suggestion.brokenKodyRulesIds
-                    .map((ruleId) => {
-                        const rule = kodyRules.find((kr) => kr.uuid === ruleId);
-                        return rule?.severity;
-                    })
-                    .filter(Boolean);
-
-                if (severities && severities.length > 0) {
-                    return {
-                        ...suggestion,
-                        severity: severities[0]?.toLowerCase() as SeverityLevel,
-                    };
-                }
-
-                return suggestion;
-            },
-        );
-
-        return {
-            codeSuggestions: updatedSuggestions,
-        };
-    }
-
-    private buildTags(
-        provider: LLMModelProvider,
-        tier: 'primary' | 'fallback',
-    ) {
-        return [`model:${provider}`, `tier:${tier}`, 'kodyRules', 'prLevel'];
-    }
-
+    //#region Replace Kody Rule IDs with Links
     private async replaceKodyRuleIdsWithLinks(
         suggestions: AIAnalysisResultPrLevel,
         organizationAndTeamData: OrganizationAndTeamData,
@@ -687,10 +568,9 @@ export class KodyRulesPrLevelAnalysisService
     private escapeRegex(string: string): string {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
+    //#endregion
 
-    /**
-     * Remove fileContent dos arquivos para reduzir tokens
-     */
+    //#region Token Chunking
     private prepareFilesForPayload(changedFiles: FileChange[]): FileChange[] {
         return changedFiles.map((file) => ({
             ...file,
@@ -698,9 +578,6 @@ export class KodyRulesPrLevelAnalysisService
         }));
     }
 
-    /**
-     * Processa PR grande usando token chunking
-     */
     private async processWithTokenChunking(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
@@ -795,9 +672,6 @@ export class KodyRulesPrLevelAnalysisService
         );
     }
 
-    /**
-     * Processa um chunk individual
-     */
     private async processChunk(
         context: AnalysisContext,
         filesChunk: FileChange[],
@@ -837,9 +711,6 @@ export class KodyRulesPrLevelAnalysisService
         );
     }
 
-    /**
-     * Combina resultados de múltiplos chunks
-     */
     private async combineChunkResults(
         allViolatedRules: ExtendedKodyRule[],
         kodyRulesPrLevel: Array<Partial<IKodyRule>>,
@@ -859,7 +730,7 @@ export class KodyRulesPrLevelAnalysisService
 
         // Deduplicate violated rules (mesmo rule pode ter violações em chunks diferentes)
         const uniqueViolatedRules =
-            this.deduplicateViolatedRules(allViolatedRules);
+            await this.deduplicateViolatedRules(allViolatedRules);
 
         this.logger.log({
             message: `Combined chunk results`,
@@ -873,7 +744,7 @@ export class KodyRulesPrLevelAnalysisService
         });
 
         // Mapear para suggestions
-        const suggestions = this.mapViolatedRulesToSuggestions(
+        const suggestions = await this.mapViolatedRulesToSuggestions(
             uniqueViolatedRules as unknown as ExtendedKodyRuleWithSuggestions[],
         );
 
@@ -899,13 +770,12 @@ export class KodyRulesPrLevelAnalysisService
             prNumber,
         );
     }
+    //#endregion
 
-    /**
-     * Remove duplicatas de regras violadas (merge violations do mesmo rule)
-     */
-    private deduplicateViolatedRules(
+    //#region Grouping Violated Rules
+    private async deduplicateViolatedRules(
         violatedRules: ExtendedKodyRule[],
-    ): ExtendedKodyRule[] {
+    ): Promise<ExtendedKodyRule[]> {
         const ruleMap = new Map<string, ExtendedKodyRule>();
 
         for (const rule of violatedRules) {
@@ -926,9 +796,6 @@ export class KodyRulesPrLevelAnalysisService
         return Array.from(ruleMap.values());
     }
 
-    /**
-     * Agrupa suggestions duplicadas usando LLM para criar comentários mais coerentes
-     */
     private async groupDuplicateSuggestions(
         suggestions: ISuggestionByPR[],
         kodyRulesPrLevel: Array<Partial<IKodyRule>>,
@@ -1029,9 +896,6 @@ export class KodyRulesPrLevelAnalysisService
         return groupedSuggestions;
     }
 
-    /**
-     * Agrupa suggestions por rule ID
-     */
     private groupSuggestionsByRule(
         suggestions: ISuggestionByPR[],
     ): Record<string, ISuggestionByPR[]> {
@@ -1051,9 +915,6 @@ export class KodyRulesPrLevelAnalysisService
         return grouped;
     }
 
-    /**
-     * Processa o agrupamento de uma regra específica usando LLM
-     */
     private async processRuleGrouping(
         rule: Partial<IKodyRule>,
         duplicatedSuggestions: ISuggestionByPR[],
@@ -1103,9 +964,6 @@ export class KodyRulesPrLevelAnalysisService
         return groupedSuggestion;
     }
 
-    /**
-     * Cria chain para agrupamento com fallback
-     */
     private async createGroupingChain(
         provider: LLMModelProvider,
         payload: any,
@@ -1157,9 +1015,6 @@ export class KodyRulesPrLevelAnalysisService
         }
     }
 
-    /**
-     * Cria chain para um provider específico para agrupamento
-     */
     private async createGroupingProviderChain(
         provider: LLMModelProvider,
         payload: any,
@@ -1217,4 +1072,134 @@ export class KodyRulesPrLevelAnalysisService
             throw error;
         }
     }
+    //#endregion
+
+    //#region Severity Management
+    addSeverityToSuggestions(
+        suggestions: AIAnalysisResultPrLevel,
+        kodyRules: Array<Partial<IKodyRule>>,
+    ): AIAnalysisResultPrLevel {
+        if (!suggestions?.codeSuggestions?.length || !kodyRules?.length) {
+            return suggestions;
+        }
+
+        const updatedSuggestions = suggestions.codeSuggestions.map(
+            (
+                suggestion: ISuggestionByPR & { brokenKodyRulesIds: string[] },
+            ) => {
+                if (!suggestion.brokenKodyRulesIds?.length) {
+                    return suggestion;
+                }
+
+                const severities = suggestion.brokenKodyRulesIds
+                    .map((ruleId) => {
+                        const rule = kodyRules.find((kr) => kr.uuid === ruleId);
+                        return rule?.severity;
+                    })
+                    .filter(Boolean);
+
+                if (severities && severities.length > 0) {
+                    return {
+                        ...suggestion,
+                        severity: severities[0]?.toLowerCase() as SeverityLevel,
+                    };
+                }
+
+                return suggestion;
+            },
+        );
+
+        return {
+            codeSuggestions: updatedSuggestions,
+        };
+    }
+
+    private async filterRulesByMinimumSeverity(
+        rules: Array<Partial<IKodyRule>>,
+        minimalSeverityLevel?: SeverityLevel,
+    ): Promise<Array<Partial<IKodyRule>>> {
+        // Se não há nível mínimo definido ou é LOW, retorna todas as regras
+        if (
+            !minimalSeverityLevel ||
+            minimalSeverityLevel === SeverityLevel.LOW
+        ) {
+            return rules;
+        }
+
+        // Define a hierarquia de severidade (do menor para o maior)
+        const severityHierarchy = {
+            [SeverityLevel.LOW]: 1,
+            [SeverityLevel.MEDIUM]: 2,
+            [SeverityLevel.HIGH]: 3,
+            [SeverityLevel.CRITICAL]: 4,
+        };
+
+        const minimalLevel = severityHierarchy[minimalSeverityLevel];
+
+        return rules.filter((rule) => {
+            if (!rule.severity) {
+                // Se a regra não tem severidade definida, inclui por padrão
+                return true;
+            }
+
+            // Corrige: normaliza para lowercase para coincidir com o enum
+            const ruleSeverity = rule.severity.toLowerCase() as SeverityLevel;
+            const ruleLevel = severityHierarchy[ruleSeverity];
+
+            // Se não conseguir mapear a severidade, inclui por segurança
+            if (ruleLevel === undefined) {
+                this.logger.warn({
+                    message:
+                        'Severidade de regra não reconhecida, incluindo por padrão',
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    metadata: {
+                        ruleId: rule.uuid,
+                        ruleSeverity: rule.severity,
+                        normalizedSeverity: ruleSeverity,
+                    },
+                });
+                return true;
+            }
+
+            // Inclui apenas regras com severidade >= ao nível mínimo
+            return ruleLevel >= minimalLevel;
+        });
+    }
+    //#endregion
+
+    //#region Auxiliary Methods
+    private async mapViolatedRulesToSuggestions(
+        violatedRules: ExtendedKodyRuleWithSuggestions[],
+    ): Promise<ISuggestionByPR[]> {
+        const allSuggestions: ISuggestionByPR[] = [];
+
+        for (const rule of violatedRules) {
+            if (!rule.violations?.length) {
+                continue;
+            }
+
+            for (const violation of rule.violations) {
+                const suggestion: ISuggestionByPR = {
+                    id: uuidv4(),
+                    suggestionContent: violation.suggestionContent,
+                    oneSentenceSummary: violation.oneSentenceSummary,
+                    label: LabelType.KODY_RULES,
+                    brokenKodyRulesIds: [rule.uuid!],
+                    deliveryStatus: DeliveryStatus.NOT_SENT,
+                };
+
+                allSuggestions.push(suggestion);
+            }
+        }
+
+        return allSuggestions;
+    }
+
+    private buildTags(
+        provider: LLMModelProvider,
+        tier: 'primary' | 'fallback',
+    ) {
+        return [`model:${provider}`, `tier:${tier}`, 'kodyRules', 'prLevel'];
+    }
+    //#endregion
 }
