@@ -176,9 +176,7 @@ Consolidate multiple violations of the same rule into a single, well-structured 
 ## Violations to Consolidate:
 ${payload.violations?.map((v: any, i: number) => `
 ### Violation ${i + 1}
-**Primary File**: ${v.primaryFileId || 'N/A'}
-**Related Files**: ${v.relatedFileIds?.join(', ') || 'None'}
-**Reason**: ${v.reason}
+${v.reason}
 `).join('\n')}
 
 ## Output Instructions
@@ -186,15 +184,16 @@ ${payload.violations?.map((v: any, i: number) => `
 - Do NOT add extra formatting, headers, or explanations
 - Keep the same professional tone as the original violations
 - Ensure all file names and specific details are preserved
-- End with the standard rule violation reference format
+- Respond in the specified language (${payload.language || 'en-US'})
+- Maintain the existing "Kody Rule violation:" reference at the end if present
 
 ## Example Consolidation
-**Input**:
-- Violation 1: "ServiceA.cs missing tests"
-- Violation 2: "ServiceB.cs missing tests"
+**Input Violations**:
+1. "O arquivo de serviço AcompanhamentoNutricionalService.cs foi adicionado, mas o arquivo de teste correspondente não foi encontrado. Kody Rule violation: service-test-required"
+2. "O arquivo de serviço QuestionarioService.cs foi adicionado, mas o arquivo de teste correspondente não foi encontrado. Kody Rule violation: service-test-required"
 
-**Output**:
-"The service files ServiceA.cs and ServiceB.cs were added but their corresponding test files were not found in the Pull Request. Please add unit tests for all new service implementations to ensure code quality and maintainability. Kody Rule violation: [rule-reference]"
+**Expected Output**:
+"Os arquivos de serviço AcompanhamentoNutricionalService.cs e QuestionarioService.cs foram adicionados, mas os arquivos de teste correspondentes não foram encontrados no Pull Request. É necessário adicionar testes para as novas funcionalidades de serviço para garantir a qualidade e o funcionamento correto. Kody Rule violation: service-test-required"
 
 ---
 
