@@ -86,7 +86,6 @@ Return a JSON array containing only rules that have violations:
 ### Example 1: Route Documentation
 **Scenario**: Controller adds new route but documentation missing
 \`\`\`json
-// Example 1
 {
   "ruleId": "route-documentation",
   "violations": [
@@ -100,25 +99,7 @@ Return a JSON array containing only rules that have violations:
 }
 \`\`\`
 
-### Example 2: Naming Convention
-**Scenario**: Multiple use-case files with incorrect naming
-\`\`\`json
-[
-  {
-    "ruleId": "usecase-naming",
-    "violations": [
-      {
-        "primaryFileId": null,
-        "relatedFileIds": ["user-usecase", "product-usecase", "order-usecase"],
-         "oneSentenceSummary": "Add documentation for the new /api/users route in routes.json",
-      "suggestionContent": "The new route /api/users was added in the controller but routes.json was not updated. Please add an entry for this route in the routes.json file following the existing format. Kody Rule violation: usecase-naming"
-      }
-    ]
-  }
-]
-\`\`\`
-
-### Example 3: PR Level Rule
+### Example 2: PR Level Rule
 **Scenario**: PR missing description
 \`\`\`json
 [
