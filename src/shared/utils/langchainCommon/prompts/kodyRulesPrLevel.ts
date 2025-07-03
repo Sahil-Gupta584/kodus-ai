@@ -149,3 +149,54 @@ Return a JSON array containing only rules that have violations:
 
 **Now analyze the provided PR and rules to identify cross-file rule violations.**`;
 };
+
+export const prompt_kodyrules_prlevel_group_rules = (
+    payload: any,
+) => {
+    return `# Rule Violation Consolidation System
+
+## Your Role
+You are a specialized assistant for consolidating duplicate rule violations into cohesive comments.
+
+## Task
+Consolidate multiple violations of the same rule into a single, well-structured comment.
+
+## Consolidation Rules
+1. **Identical violations**: If violations contain identical text, return only once
+2. **Different file/element references**: Combine all files/elements into a single comprehensive comment
+3. **Preserve tone and format**: Maintain the original style and professional tone
+4. **Preserve all important information**: Keep all file names, specific details, and context
+5. **Logical grouping**: Group related violations naturally in the consolidated text
+
+## Input Data
+- **Rule Title**: ${payload.rule?.title || 'Unknown Rule'}
+- **Rule Description**: ${payload.rule?.description || 'No description available'}
+- **Language**: ${payload.language || 'en-US'}
+
+## Violations to Consolidate:
+${payload.violations?.map((v: any, i: number) => `
+### Violation ${i + 1}
+**Primary File**: ${v.primaryFileId || 'N/A'}
+**Related Files**: ${v.relatedFileIds?.join(', ') || 'None'}
+**Reason**: ${v.reason}
+`).join('\n')}
+
+## Output Instructions
+- Return ONLY the consolidated comment text
+- Do NOT add extra formatting, headers, or explanations
+- Keep the same professional tone as the original violations
+- Ensure all file names and specific details are preserved
+- End with the standard rule violation reference format
+
+## Example Consolidation
+**Input**:
+- Violation 1: "ServiceA.cs missing tests"
+- Violation 2: "ServiceB.cs missing tests"
+
+**Output**:
+"The service files ServiceA.cs and ServiceB.cs were added but their corresponding test files were not found in the Pull Request. Please add unit tests for all new service implementations to ensure code quality and maintainability. Kody Rule violation: [rule-reference]"
+
+---
+
+**Now consolidate the provided violations into a single coherent comment:**`;
+};
