@@ -1,4 +1,3 @@
-
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
 import { Inject, Injectable } from '@nestjs/common';
@@ -185,30 +184,36 @@ export class KodyRulesPrLevelAnalysisService
             (rule) => rule.scope === KodyRulesScope.PULL_REQUEST,
         );
 
-        const minimalSeverityLevel =
-            context.codeReviewConfig.suggestionControl.severityLevelFilter;
+        let filteredKodyRules: Array<Partial<IKodyRule>> = [];
 
-        // Depois filtra por severidade mínima
-        const filteredKodyRules = await this.filterRulesByMinimumSeverity(
-            kodyRulesPrLevel,
-            minimalSeverityLevel,
-        );
+        if (
+            context.codeReviewConfig.suggestionControl?.applyFiltersToKodyRules
+        ) {
+            const minimalSeverityLevel =
+                context.codeReviewConfig.suggestionControl.severityLevelFilter;
 
-        // Se não há regras após os filtros, retorna resultado vazio
-        if (!filteredKodyRules.length) {
-            this.logger.log({
-                message: `No PR-level rules found after severity filtering for PR#${prNumber}`,
-                context: KodyRulesPrLevelAnalysisService.name,
-                metadata: {
-                    organizationAndTeamData,
-                    prNumber,
-                    totalRulesBeforeFilter: kodyRulesPrLevel.length,
-                    minimalSeverityLevel,
-                },
-            });
-            return {
-                codeSuggestions: [],
-            };
+            filteredKodyRules = await this.filterRulesByMinimumSeverity(
+                kodyRulesPrLevel,
+                minimalSeverityLevel,
+            );
+
+            if (!filteredKodyRules.length) {
+                this.logger.log({
+                    message: `No PR-level rules found after severity filtering for PR#${prNumber}`,
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        prNumber,
+                        totalRulesBeforeFilter: kodyRulesPrLevel.length,
+                        minimalSeverityLevel,
+                    },
+                });
+                return {
+                    codeSuggestions: [],
+                };
+            }
+        } else {
+            filteredKodyRules = kodyRulesPrLevel;
         }
 
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
@@ -601,7 +606,6 @@ export class KodyRulesPrLevelAnalysisService
             message: `PR divided into ${chunkingResult.totalChunks} chunks`,
             context: KodyRulesPrLevelAnalysisService.name,
             metadata: {
-
                 totalFiles: preparedFiles.length,
                 totalChunks: chunkingResult.totalChunks,
                 tokenLimit: chunkingResult.tokenLimit,
@@ -876,7 +880,9 @@ export class KodyRulesPrLevelAnalysisService
         const nonDuplicatedSuggestions = suggestions.filter((suggestion) => {
             const ruleIds = suggestion.brokenKodyRulesIds || [];
             return !ruleIds.some((ruleId) =>
-                duplicatedGroups.some(([groupRuleId]) => groupRuleId === ruleId)
+                duplicatedGroups.some(
+                    ([groupRuleId]) => groupRuleId === ruleId,
+                ),
             );
         });
 
@@ -1034,7 +1040,8 @@ export class KodyRulesPrLevelAnalysisService
             // Criar chain para agrupamento
             const chain = RunnableSequence.from([
                 async (input: any) => {
-                    const systemPrompt = prompt_kodyrules_prlevel_group_rules(payload);
+                    const systemPrompt =
+                        prompt_kodyrules_prlevel_group_rules(payload);
 
                     return [
                         {
