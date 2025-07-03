@@ -48,15 +48,15 @@ interface TokenUsage {
 
 // Interface for analyzer response
 interface AnalyzerViolation {
-    primaryFileId: string | null;
+    violatedFileSha: string[] | null;
     relatedFileIds: string[];
     reason: string;
 }
 
 // Interface for violations with suggestions already generated
 interface ViolationWithSuggestion {
-    primaryFileId: string | null;
-    relatedFileIds: string[];
+    violatedFileSha: string[] | null;
+    relatedFileSha: string[];
     suggestionContent: string;
     oneSentenceSummary: string;
 }
@@ -152,7 +152,7 @@ export class KodyRulesPrLevelAnalysisService
 {
     private readonly tokenTracker: TokenTrackingHandler;
 
-    private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 60;
+    private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 5;
 
     constructor(
         @Inject(KODY_RULES_SERVICE_TOKEN)
@@ -356,13 +356,7 @@ export class KodyRulesPrLevelAnalysisService
         }
     }
 
-    private processAnalyzerResponse(
-        kodyRulesPrLevel: Array<Partial<IKodyRule>>,
-        response: string,
-        files: FileChange[],
-        prNumber: number,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ): ExtendedKodyRule[] | null {
+    private processLLMResponse(response: string): any {
         try {
             if (!response) {
                 return null;
@@ -379,14 +373,40 @@ export class KodyRulesPrLevelAnalysisService
             const parsedResponse: AnalyzerRuleResult[] =
                 tryParseJSONObject(cleanResponse);
 
+            return parsedResponse;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error processing LLM response',
+                error,
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: {
+                    response,
+                },
+            });
+            return null;
+        }
+    }
+
+    private processAnalyzerResponse(
+        kodyRulesPrLevel: Array<Partial<IKodyRule>>,
+        response: string,
+        files: FileChange[],
+        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): ExtendedKodyRule[] | null {
+        try {
+            if (!response) {
+                return null;
+            }
+
+            const parsedResponse = this.processLLMResponse(response);
+
             if (!parsedResponse?.length) {
                 this.logger.warn({
                     message:
                         'Failed to parse analyzer response OR no violations found',
                     context: KodyRulesPrLevelAnalysisService.name,
                     metadata: {
-                        originalResponse: response,
-                        cleanResponse,
                         prNumber,
                         organizationAndTeamData,
                     },
@@ -940,8 +960,8 @@ export class KodyRulesPrLevelAnalysisService
             },
             language: language,
             violations: duplicatedSuggestions.map((s) => ({
-                primaryFileId: null, // Não usado no agrupamento
-                relatedFileIds: [], // Não usado no agrupamento
+                violatedFileSha: s.files?.violatedFileSha || [],
+                relatedFileSha: s.files?.relatedFileSha || [],
                 reason: s.suggestionContent,
             })),
         };
@@ -955,18 +975,26 @@ export class KodyRulesPrLevelAnalysisService
         );
 
         // Executar agrupamento
-        const groupedContent = await groupingChain.invoke(groupingPayload);
+        const response = await groupingChain.invoke(groupingPayload);
+
+        const groupedContent = this.processLLMResponse(response);
 
         // Criar nova suggestion agrupada baseada na primeira suggestion
         const baseSuggestion = duplicatedSuggestions[0];
         const groupedSuggestion: ISuggestionByPR = {
             id: uuidv4(),
-            suggestionContent: groupedContent.trim(),
-            oneSentenceSummary: baseSuggestion.oneSentenceSummary,
+            suggestionContent:
+                groupedContent.violations[0].suggestionContent.trim(),
+            oneSentenceSummary:
+                groupedContent.violations[0].oneSentenceSummary.trim(),
             label: baseSuggestion.label,
             brokenKodyRulesIds: baseSuggestion.brokenKodyRulesIds,
             deliveryStatus: baseSuggestion.deliveryStatus,
             severity: baseSuggestion.severity,
+            files: {
+                violatedFileSha: groupedContent.violations[0]?.violatedFileSha,
+                relatedFileSha: groupedContent.violations[0]?.relatedFileSha,
+            },
         };
 
         return groupedSuggestion;
@@ -1033,7 +1061,7 @@ export class KodyRulesPrLevelAnalysisService
             let llm = this.llmProviderService.getLLMProvider({
                 model: provider,
                 temperature: 0,
-                jsonMode: false, // Agrupamento retorna texto, não JSON
+                jsonMode: true,
                 callbacks: [this.tokenTracker],
             });
 
@@ -1195,6 +1223,10 @@ export class KodyRulesPrLevelAnalysisService
                     label: LabelType.KODY_RULES,
                     brokenKodyRulesIds: [rule.uuid!],
                     deliveryStatus: DeliveryStatus.NOT_SENT,
+                    files: {
+                        violatedFileSha: violation?.violatedFileSha || [],
+                        relatedFileSha: violation?.relatedFileSha || [],
+                    },
                 };
 
                 allSuggestions.push(suggestion);

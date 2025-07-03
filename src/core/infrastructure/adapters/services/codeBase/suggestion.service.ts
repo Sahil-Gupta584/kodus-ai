@@ -1441,6 +1441,10 @@ export class SuggestionService implements ISuggestionService {
                             id: result.codeReviewFeedbackData.commentId,
                             pullRequestReviewId: result.codeReviewFeedbackData.pullRequestReviewId,
                         } : undefined,
+                        files: {
+                            violatedFileSha: suggestion.files?.violatedFileSha || [],
+                            relatedFileSha: suggestion.files?.relatedFileSha || [],
+                        },
                         createdAt: new Date().toISOString(),
                         updatedAt: new Date().toISOString(),
                     };

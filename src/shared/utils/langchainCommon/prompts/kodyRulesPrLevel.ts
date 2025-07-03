@@ -71,8 +71,8 @@ Return a JSON array containing only rules that have violations:
     "ruleId": "rule-id-here",
     "violations": [
       {
-        "primaryFileId": "file-sha-or-null",
-        "relatedFileIds": ["file-sha-1", "file-sha-2"],
+        "violatedFileSha": ["file-sha-1", "file-sha-2"], // The file/files that violated the rule
+        "relatedFileSha": ["file-sha-3", "file-sha-5"], // The file/files that are related to the violation
         "oneSentenceSummary": "Concise summary of what needs to be done",
         "suggestionContent": "Detailed explanation of the violation and specific steps to fix it. Always end with: Kody Rule violation: rule-id-here"
       }
@@ -90,8 +90,8 @@ Return a JSON array containing only rules that have violations:
   "ruleId": "route-documentation",
   "violations": [
     {
-      "primaryFileId": "user-controller",
-      "relatedFileIds": ["routes-json"],
+      "violatedFileSha": "user-controller",
+      "relatedFileSha": ["routes-json"],
       "oneSentenceSummary": "Add documentation for the new /api/users route in routes.json",
       "suggestionContent": "The new route /api/users was added in the controller but routes.json was not updated. Please add an entry for this route in the routes.json file following the existing format. Kody Rule violation: route-documentation"
     }
@@ -107,14 +107,30 @@ Return a JSON array containing only rules that have violations:
     "ruleId": "pr-description-required",
     "violations": [
       {
-        "primaryFileId": null,
-        "relatedFileIds": [],
+        "violatedFileSha": null,
+        "relatedFileSha": [],
         "oneSentenceSummary": "Add a description to the pull request",
         "suggestionContent": "Pull request description is empty but is required for all PRs. Kody Rule violation: pr-description-required"
       }
     ]
   }
 ]
+\`\`\`
+
+### Example 3: Business Logic Separation
+**Scenario**: Controller contains business logic that should be in service classes
+\`\`\`json
+{
+  "ruleId": "business-logic-separation",
+  "violations": [
+    {
+      "violatedFileSha": ["user-controller", "product-controller"],
+      "relatedFileSha": ["user-service", "product-service"],
+      "oneSentenceSummary": "Move business logic from UserController to UserService and ProductController to ProductService",
+      "suggestionContent": "The recoveryPassword method in UserController contains business logic (token generation, user update, sending email) that should be moved to UserService. Create or update UserService to handle this logic and have the controller call the service method instead. Kody Rule violation: business-logic-separation"
+    }
+  ]
+}
 \`\`\`
 
 ## Key Reminders
@@ -158,10 +174,25 @@ Consolidate multiple violations of the same rule into a single, well-structured 
 ${payload.violations?.map((v: any, i: number) => `
 ### Violation ${i + 1}
 ${v.reason}
+Violated File Sha: ${v.violatedFileSha}
+Related File Sha: ${v.relatedFileSha}
 `).join('\n')}
 
 ## Output Instructions
-- Return ONLY the consolidated comment text
+- Return ONLY the output JSON in the following format:
+\`\`\`json
+{
+  "ruleId": "rule-id-here",
+  "violations": [
+    {
+      "violatedFileSha": ["file-sha-1", "file-sha-2"], // The file/files that violated the rule
+      "relatedFileSha": ["file-sha-3", "file-sha-5"], // The file/files that are related to the violation
+      "oneSentenceSummary": "Concise summary of what needs to be done",
+      "suggestionContent": "Detailed explanation of the violation and specific steps to fix it. Always end with: Kody Rule violation: rule-id-here"
+    }
+  ]
+}
+\`\`\`
 - Do NOT add extra formatting, headers, or explanations
 - Keep the same professional tone as the original violations
 - Ensure all file names and specific details are preserved

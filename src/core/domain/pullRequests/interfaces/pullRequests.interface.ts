@@ -165,6 +165,10 @@ export interface ISuggestionByPR {
         id: number;
         pullRequestReviewId: number;
     };
+    files?: {
+        violatedFileSha?: string[];
+        relatedFileSha?: string[];
+    };
     createdAt?: string;
     updatedAt?: string;
 }
