@@ -1,3 +1,4 @@
+
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
 import { Inject, Injectable } from '@nestjs/common';
@@ -8,6 +9,7 @@ import {
     AnalysisContext,
     AIAnalysisResult,
     FileChange,
+    CodeSuggestion,
     AIAnalysisResultPrLevel,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
@@ -722,6 +724,7 @@ export class KodyRulesPrLevelAnalysisService
             message: `PR divided into ${chunkingResult.totalChunks} chunks`,
             context: KodyRulesPrLevelAnalysisService.name,
             metadata: {
+
                 totalFiles: preparedFiles.length,
                 totalChunks: chunkingResult.totalChunks,
                 tokenLimit: chunkingResult.tokenLimit,
@@ -788,6 +791,7 @@ export class KodyRulesPrLevelAnalysisService
             kodyRulesPrLevel,
             organizationAndTeamData,
             prNumber,
+            language,
         );
     }
 
@@ -841,36 +845,50 @@ export class KodyRulesPrLevelAnalysisService
         kodyRulesPrLevel: Array<Partial<IKodyRule>>,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
+        language: string,
     ): Promise<AIAnalysisResultPrLevel> {
         if (!allViolatedRules?.length) {
-            return { codeSuggestions: [] };
+            this.logger.log({
+                message: `No violations found across all chunks for PR#${prNumber}`,
+                context: KodyRulesPrLevelAnalysisService.name,
+            });
+            return {
+                codeSuggestions: [],
+            };
         }
 
-        // 1. Identificar violações duplicadas
-        const duplicatedRules = this.groupViolationsByRule(allViolatedRules);
+        // Deduplicate violated rules (mesmo rule pode ter violações em chunks diferentes)
+        const uniqueViolatedRules =
+            this.deduplicateViolatedRules(allViolatedRules);
 
-        // 2. Consolidar violações duplicadas com LLM
-        const consolidatedRules = await this.consolidateDuplicatedViolations(
-            duplicatedRules,
-            LLMModelProvider.GEMINI_2_5_PRO,
+        this.logger.log({
+            message: `Combined chunk results`,
+            context: KodyRulesPrLevelAnalysisService.name,
+            metadata: {
+                totalViolations: allViolatedRules.length,
+                uniqueViolatedRules: uniqueViolatedRules.length,
+                prNumber,
+                organizationAndTeamData,
+            },
+        });
+
+        // Mapear para suggestions
+        const suggestions = this.mapViolatedRulesToSuggestions(
+            uniqueViolatedRules as unknown as ExtendedKodyRuleWithSuggestions[],
+        );
+
+        // NOVO: Agrupar suggestions duplicadas usando LLM
+        const groupedSuggestions = await this.groupDuplicateSuggestions(
+            suggestions,
+            kodyRulesPrLevel,
+            language,
             organizationAndTeamData,
             prNumber,
         );
 
-        // 3. Criar lista final sem duplicatas
-        const finalViolatedRules = this.mergeSingleAndConsolidatedRules(
-            allViolatedRules,
-            consolidatedRules,
-        );
-
-        // 4. Continuar com o fluxo normal...
-        const suggestions = this.mapViolatedRulesToSuggestions(
-            finalViolatedRules as unknown as ExtendedKodyRuleWithSuggestions[],
-        );
-
         // Adicionar severidade
         const suggestionsWithSeverity = this.addSeverityToSuggestions(
-            { codeSuggestions: suggestions },
+            { codeSuggestions: groupedSuggestions },
             kodyRulesPrLevel,
         );
 
@@ -882,177 +900,321 @@ export class KodyRulesPrLevelAnalysisService
         );
     }
 
-
-
     /**
-     * Agrupa violações da mesma regra para consolidação inteligente
+     * Remove duplicatas de regras violadas (merge violations do mesmo rule)
      */
-    private groupViolationsByRule(
+    private deduplicateViolatedRules(
         violatedRules: ExtendedKodyRule[],
-    ): Map<string, ExtendedKodyRule[]> {
-        const groupedViolations = new Map<string, ExtendedKodyRule[]>();
+    ): ExtendedKodyRule[] {
+        const ruleMap = new Map<string, ExtendedKodyRule>();
 
         for (const rule of violatedRules) {
             if (!rule.uuid) continue;
 
-            if (!groupedViolations.has(rule.uuid)) {
-                groupedViolations.set(rule.uuid, []);
-            }
-
-            groupedViolations.get(rule.uuid)!.push(rule);
-        }
-
-        // Filtrar apenas regras que têm múltiplas violações
-        const duplicatedRules = new Map<string, ExtendedKodyRule[]>();
-        for (const [ruleId, violations] of groupedViolations) {
-            if (violations.length > 1) {
-                duplicatedRules.set(ruleId, violations);
+            if (ruleMap.has(rule.uuid)) {
+                // Merge violations
+                const existingRule = ruleMap.get(rule.uuid)!;
+                existingRule.violations = [
+                    ...(existingRule.violations || []),
+                    ...(rule.violations || []),
+                ];
+            } else {
+                ruleMap.set(rule.uuid, rule);
             }
         }
 
-        return duplicatedRules;
+        return Array.from(ruleMap.values());
     }
 
     /**
-     * Usa LLM para consolidar violações duplicadas da mesma regra
+     * Agrupa suggestions duplicadas usando LLM para criar comentários mais coerentes
      */
-    private async consolidateDuplicatedViolations(
-        duplicatedRules: Map<string, ExtendedKodyRule[]>,
-        provider: LLMModelProvider,
+    private async groupDuplicateSuggestions(
+        suggestions: ISuggestionByPR[],
+        kodyRulesPrLevel: Array<Partial<IKodyRule>>,
+        language: string,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
-    ): Promise<Map<string, ExtendedKodyRule>> {
-        const consolidatedRules = new Map<string, ExtendedKodyRule>();
+    ): Promise<ISuggestionByPR[]> {
+        if (!suggestions?.length) {
+            return suggestions;
+        }
 
-        for (const [ruleId, violations] of duplicatedRules) {
+        // 1. Identificar suggestions duplicadas (mesma regra)
+        const groupedByRule = this.groupSuggestionsByRule(suggestions);
+
+        // 2. Processar apenas grupos com mais de 1 suggestion
+        const duplicatedGroups = Object.entries(groupedByRule).filter(
+            ([_, groupSuggestions]) => groupSuggestions.length > 1,
+        );
+
+        if (!duplicatedGroups.length) {
+            this.logger.log({
+                message: 'No duplicate suggestions found, skipping grouping',
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: { totalSuggestions: suggestions.length, prNumber },
+            });
+            return suggestions;
+        }
+
+        this.logger.log({
+            message: `Found ${duplicatedGroups.length} rule(s) with duplicate suggestions`,
+            context: KodyRulesPrLevelAnalysisService.name,
+            metadata: {
+                duplicatedGroups: duplicatedGroups.length,
+                totalSuggestions: suggestions.length,
+                prNumber,
+            },
+        });
+
+        // 3. Processar cada grupo duplicado
+        const groupedSuggestions: ISuggestionByPR[] = [];
+
+        for (const [ruleId, duplicatedSuggestions] of duplicatedGroups) {
             try {
-                // Preparar payload para agrupamento
-                const groupingPayload = {
-                    rule: violations[0], // Regra base
-                    violations: violations.flatMap((v) => v.violations || []),
-                };
+                const rule = kodyRulesPrLevel.find((r) => r.uuid === ruleId);
 
-                // Criar chain para agrupamento
-                const groupingChain = await this.createGroupingChain(
-                    provider,
-                    groupingPayload,
+                if (!rule) {
+                    this.logger.warn({
+                        message: `Rule not found for grouping: ${ruleId}`,
+                        context: KodyRulesPrLevelAnalysisService.name,
+                    });
+                    // Se não encontrar a regra, mantém as suggestions originais
+                    groupedSuggestions.push(...duplicatedSuggestions);
+                    continue;
+                }
+
+                const groupedSuggestion = await this.processRuleGrouping(
+                    rule,
+                    duplicatedSuggestions,
+                    language,
                     organizationAndTeamData,
                     prNumber,
                 );
 
-                const consolidatedContent =
-                    await groupingChain.invoke(groupingPayload);
-
-                // Processar resposta e criar regra consolidada
-                const consolidatedRule = this.processGroupingResponse(
-                    violations[0],
-                    consolidatedContent,
-                    violations.flatMap((v) => v.violations || []),
-                    ruleId,
-                );
-
-                if (consolidatedRule) {
-                    consolidatedRules.set(ruleId, consolidatedRule);
-                }
+                groupedSuggestions.push(groupedSuggestion);
             } catch (error) {
                 this.logger.error({
-                    message: `Error consolidating violations for rule ${ruleId}`,
+                    message: `Error grouping suggestions for rule ${ruleId}`,
                     context: KodyRulesPrLevelAnalysisService.name,
                     error,
-                    metadata: { ruleId, violationsCount: violations.length },
+                    metadata: { ruleId, prNumber },
                 });
+                // Em caso de erro, mantém as suggestions originais
+                groupedSuggestions.push(...duplicatedSuggestions);
             }
         }
 
-        return consolidatedRules;
+        // 4. Adicionar suggestions que não tinham duplicatas
+        const nonDuplicatedSuggestions = suggestions.filter((suggestion) => {
+            const ruleIds = suggestion.brokenKodyRulesIds || [];
+            return !ruleIds.some((ruleId) =>
+                duplicatedGroups.some(([groupRuleId]) => groupRuleId === ruleId)
+            );
+        });
+
+        groupedSuggestions.push(...nonDuplicatedSuggestions);
+
+        this.logger.log({
+            message: `Grouping completed`,
+            context: KodyRulesPrLevelAnalysisService.name,
+            metadata: {
+                originalSuggestions: suggestions.length,
+                finalSuggestions: groupedSuggestions.length,
+                groupsProcessed: duplicatedGroups.length,
+                prNumber,
+            },
+        });
+
+        return groupedSuggestions;
     }
 
     /**
-     * Combina regras únicas com regras consolidadas, removendo duplicatas
+     * Agrupa suggestions por rule ID
      */
-    private mergeSingleAndConsolidatedRules(
-        allViolatedRules: ExtendedKodyRule[],
-        consolidatedRules: Map<string, ExtendedKodyRule>,
-    ): ExtendedKodyRule[] {
-        const finalRules: ExtendedKodyRule[] = [];
-        const processedRuleIds = new Set<string>();
+    private groupSuggestionsByRule(
+        suggestions: ISuggestionByPR[],
+    ): Record<string, ISuggestionByPR[]> {
+        const grouped: Record<string, ISuggestionByPR[]> = {};
 
-        // 1. Adicionar regras consolidadas
-        for (const [ruleId, consolidatedRule] of consolidatedRules) {
-            finalRules.push(consolidatedRule);
-            processedRuleIds.add(ruleId);
-        }
+        for (const suggestion of suggestions) {
+            const ruleIds = suggestion.brokenKodyRulesIds || [];
 
-        // 2. Adicionar regras únicas (que não foram consolidadas)
-        for (const rule of allViolatedRules) {
-            if (rule.uuid && !processedRuleIds.has(rule.uuid)) {
-                finalRules.push(rule);
-                processedRuleIds.add(rule.uuid);
+            for (const ruleId of ruleIds) {
+                if (!grouped[ruleId]) {
+                    grouped[ruleId] = [];
+                }
+                grouped[ruleId].push(suggestion);
             }
         }
 
-        return finalRules;
+        return grouped;
     }
 
     /**
-     * Cria chain para agrupar violações duplicadas
+     * Processa o agrupamento de uma regra específica usando LLM
+     */
+    private async processRuleGrouping(
+        rule: Partial<IKodyRule>,
+        duplicatedSuggestions: ISuggestionByPR[],
+        language: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+    ): Promise<ISuggestionByPR> {
+        const provider = LLMModelProvider.GEMINI_2_5_PRO;
+
+        // Preparar payload para o prompt de agrupamento
+        const groupingPayload = {
+            rule: {
+                title: rule.title,
+                description: rule.rule,
+            },
+            language: language,
+            violations: duplicatedSuggestions.map((s) => ({
+                primaryFileId: null, // Não usado no agrupamento
+                relatedFileIds: [], // Não usado no agrupamento
+                reason: s.suggestionContent,
+            })),
+        };
+
+        // Criar chain com fallback
+        const groupingChain = await this.createGroupingChain(
+            provider,
+            groupingPayload,
+            prNumber,
+            organizationAndTeamData,
+        );
+
+        // Executar agrupamento
+        const groupedContent = await groupingChain.invoke(groupingPayload);
+
+        // Criar nova suggestion agrupada baseada na primeira suggestion
+        const baseSuggestion = duplicatedSuggestions[0];
+        const groupedSuggestion: ISuggestionByPR = {
+            id: uuidv4(),
+            suggestionContent: groupedContent.trim(),
+            oneSentenceSummary: baseSuggestion.oneSentenceSummary,
+            label: baseSuggestion.label,
+            brokenKodyRulesIds: baseSuggestion.brokenKodyRulesIds,
+            deliveryStatus: baseSuggestion.deliveryStatus,
+            severity: baseSuggestion.severity,
+        };
+
+        return groupedSuggestion;
+    }
+
+    /**
+     * Cria chain para agrupamento com fallback
      */
     private async createGroupingChain(
         provider: LLMModelProvider,
         payload: any,
-        organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData,
     ) {
-        const llm = this.llmProviderService.getLLMProvider({
-            model: provider,
-            temperature: 0,
-            jsonMode: false, // Para agrupamento, retorno em texto
-            callbacks: [this.tokenTracker],
-        });
+        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
 
-        return RunnableSequence.from([
-            async (input: any) => {
-                const systemPrompt =
-                    prompt_kodyrules_prlevel_group_rules(input);
+        try {
+            const mainChain = await this.createGroupingProviderChain(
+                provider,
+                payload,
+                prNumber,
+                organizationAndTeamData,
+            );
+            const fallbackChain = await this.createGroupingProviderChain(
+                fallbackProvider,
+                payload,
+                prNumber,
+                organizationAndTeamData,
+            );
 
-                return [
-                    { role: 'system', content: systemPrompt },
-                    {
-                        role: 'user',
-                        content:
-                            'Please consolidate the violations into a single coherent comment.',
+            return mainChain
+                .withFallbacks({
+                    fallbacks: [fallbackChain],
+                })
+                .withConfig({
+                    tags: this.buildTags(provider, 'primary'),
+                    runName: 'prLevelKodyRulesGrouper',
+                    metadata: {
+                        organizationId: organizationAndTeamData.organizationId,
+                        provider: provider,
+                        fallbackProvider: fallbackProvider,
                     },
-                ];
-            },
-            llm,
-            new StringOutputParser(),
-        ]);
+                });
+        } catch (error) {
+            this.logger.error({
+                message: 'Error creating grouping chain with fallback',
+                error,
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: {
+                    provider,
+                    fallbackProvider,
+                    prNumber,
+                    organizationAndTeamData,
+                },
+            });
+            throw error;
+        }
     }
 
     /**
-     * Processa resposta do agrupamento
+     * Cria chain para um provider específico para agrupamento
      */
-    private processGroupingResponse(
-        baseRule: ExtendedKodyRule,
-        consolidatedContent: string,
-        allViolations: AnalyzerViolation[],
-        ruleId: string,
-    ): ExtendedKodyRule | null {
-        if (!consolidatedContent?.trim()) {
-            return null;
-        }
+    private async createGroupingProviderChain(
+        provider: LLMModelProvider,
+        payload: any,
+        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ) {
+        try {
+            let llm = this.llmProviderService.getLLMProvider({
+                model: provider,
+                temperature: 0,
+                jsonMode: false, // Agrupamento retorna texto, não JSON
+                callbacks: [this.tokenTracker],
+            });
 
-        return {
-            ...baseRule,
-            violations: [
-                {
-                    primaryFileId: null,
-                    relatedFileIds: allViolations.flatMap(
-                        (v) => v.relatedFileIds || [],
-                    ),
-                    reason: consolidatedContent.trim(),
+            const tags = this.buildTags(provider, 'primary');
+
+            // Criar chain para agrupamento
+            const chain = RunnableSequence.from([
+                async (input: any) => {
+                    const systemPrompt = prompt_kodyrules_prlevel_group_rules(payload);
+
+                    return [
+                        {
+                            role: 'system',
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: systemPrompt,
+                                },
+                            ],
+                        },
+                        {
+                            role: 'user',
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: 'Please consolidate the provided violations into a single coherent comment following the instructions.',
+                                },
+                            ],
+                        },
+                    ];
                 },
-            ],
-        };
+                llm,
+                new StringOutputParser(),
+            ]).withConfig({ tags });
+
+            return chain;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error creating grouping provider chain',
+                error,
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: { provider, prNumber, organizationAndTeamData },
+            });
+            throw error;
+        }
     }
 }
