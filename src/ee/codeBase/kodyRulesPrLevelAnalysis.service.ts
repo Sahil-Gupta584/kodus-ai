@@ -152,6 +152,8 @@ export class KodyRulesPrLevelAnalysisService
 {
     private readonly tokenTracker: TokenTrackingHandler;
 
+    private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 60;
+
     constructor(
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: KodyRulesService,
@@ -599,7 +601,7 @@ export class KodyRulesPrLevelAnalysisService
         const chunkingResult = this.tokenChunkingService.chunkDataByTokens({
             model: provider,
             data: preparedFiles,
-            usagePercentage: 5, // Usar 70% da capacidade do modelo
+            usagePercentage: this.DEFAULT_USAGE_LLM_MODEL_PERCENTAGE,
         });
 
         this.logger.log({
