@@ -1,6 +1,7 @@
 import {
     IKodyRulesExample,
     KodyRulesOrigin,
+    KodyRulesScope,
     KodyRulesStatus,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { Type } from 'class-transformer';
@@ -29,6 +30,10 @@ export class CreateKodyRuleDto {
     @IsNotEmpty()
     @IsString()
     title: string;
+
+    @IsOptional()
+    @IsString()
+    scope?: KodyRulesScope;
 
     @IsNotEmpty()
     @IsString()
