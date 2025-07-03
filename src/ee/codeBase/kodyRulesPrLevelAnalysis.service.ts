@@ -8,7 +8,6 @@ import {
     AnalysisContext,
     AIAnalysisResult,
     FileChange,
-    CodeSuggestion,
     AIAnalysisResultPrLevel,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
@@ -26,6 +25,7 @@ import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import {
     KodyRulesPrLevelPayload,
     prompt_kodyrules_prlevel_analyzer,
+    prompt_kodyrules_prlevel_group_rules,
 } from '@/shared/utils/langchainCommon/prompts/kodyRulesPrLevel';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
@@ -843,33 +843,29 @@ export class KodyRulesPrLevelAnalysisService
         prNumber: number,
     ): Promise<AIAnalysisResultPrLevel> {
         if (!allViolatedRules?.length) {
-            this.logger.log({
-                message: `No violations found across all chunks for PR#${prNumber}`,
-                context: KodyRulesPrLevelAnalysisService.name,
-            });
-            return {
-                codeSuggestions: [],
-            };
+            return { codeSuggestions: [] };
         }
 
-        // Deduplicate violated rules (mesmo rule pode ter violações em chunks diferentes)
-        const uniqueViolatedRules =
-            this.deduplicateViolatedRules(allViolatedRules);
+        // 1. Identificar violações duplicadas
+        const duplicatedRules = this.groupViolationsByRule(allViolatedRules);
 
-        this.logger.log({
-            message: `Combined chunk results`,
-            context: KodyRulesPrLevelAnalysisService.name,
-            metadata: {
-                totalViolations: allViolatedRules.length,
-                uniqueViolatedRules: uniqueViolatedRules.length,
-                prNumber,
-                organizationAndTeamData,
-            },
-        });
+        // 2. Consolidar violações duplicadas com LLM
+        const consolidatedRules = await this.consolidateDuplicatedViolations(
+            duplicatedRules,
+            LLMModelProvider.GEMINI_2_5_PRO,
+            organizationAndTeamData,
+            prNumber,
+        );
 
-        // Mapear para suggestions
+        // 3. Criar lista final sem duplicatas
+        const finalViolatedRules = this.mergeSingleAndConsolidatedRules(
+            allViolatedRules,
+            consolidatedRules,
+        );
+
+        // 4. Continuar com o fluxo normal...
         const suggestions = this.mapViolatedRulesToSuggestions(
-            uniqueViolatedRules as unknown as ExtendedKodyRuleWithSuggestions[],
+            finalViolatedRules as unknown as ExtendedKodyRuleWithSuggestions[],
         );
 
         // Adicionar severidade
@@ -886,29 +882,177 @@ export class KodyRulesPrLevelAnalysisService
         );
     }
 
+
+
     /**
-     * Remove duplicatas de regras violadas (merge violations do mesmo rule)
+     * Agrupa violações da mesma regra para consolidação inteligente
      */
-    private deduplicateViolatedRules(
+    private groupViolationsByRule(
         violatedRules: ExtendedKodyRule[],
-    ): ExtendedKodyRule[] {
-        const ruleMap = new Map<string, ExtendedKodyRule>();
+    ): Map<string, ExtendedKodyRule[]> {
+        const groupedViolations = new Map<string, ExtendedKodyRule[]>();
 
         for (const rule of violatedRules) {
             if (!rule.uuid) continue;
 
-            if (ruleMap.has(rule.uuid)) {
-                // Merge violations
-                const existingRule = ruleMap.get(rule.uuid)!;
-                existingRule.violations = [
-                    ...(existingRule.violations || []),
-                    ...(rule.violations || []),
-                ];
-            } else {
-                ruleMap.set(rule.uuid, rule);
+            if (!groupedViolations.has(rule.uuid)) {
+                groupedViolations.set(rule.uuid, []);
+            }
+
+            groupedViolations.get(rule.uuid)!.push(rule);
+        }
+
+        // Filtrar apenas regras que têm múltiplas violações
+        const duplicatedRules = new Map<string, ExtendedKodyRule[]>();
+        for (const [ruleId, violations] of groupedViolations) {
+            if (violations.length > 1) {
+                duplicatedRules.set(ruleId, violations);
             }
         }
 
-        return Array.from(ruleMap.values());
+        return duplicatedRules;
+    }
+
+    /**
+     * Usa LLM para consolidar violações duplicadas da mesma regra
+     */
+    private async consolidateDuplicatedViolations(
+        duplicatedRules: Map<string, ExtendedKodyRule[]>,
+        provider: LLMModelProvider,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+    ): Promise<Map<string, ExtendedKodyRule>> {
+        const consolidatedRules = new Map<string, ExtendedKodyRule>();
+
+        for (const [ruleId, violations] of duplicatedRules) {
+            try {
+                // Preparar payload para agrupamento
+                const groupingPayload = {
+                    rule: violations[0], // Regra base
+                    violations: violations.flatMap((v) => v.violations || []),
+                };
+
+                // Criar chain para agrupamento
+                const groupingChain = await this.createGroupingChain(
+                    provider,
+                    groupingPayload,
+                    organizationAndTeamData,
+                    prNumber,
+                );
+
+                const consolidatedContent =
+                    await groupingChain.invoke(groupingPayload);
+
+                // Processar resposta e criar regra consolidada
+                const consolidatedRule = this.processGroupingResponse(
+                    violations[0],
+                    consolidatedContent,
+                    violations.flatMap((v) => v.violations || []),
+                    ruleId,
+                );
+
+                if (consolidatedRule) {
+                    consolidatedRules.set(ruleId, consolidatedRule);
+                }
+            } catch (error) {
+                this.logger.error({
+                    message: `Error consolidating violations for rule ${ruleId}`,
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    error,
+                    metadata: { ruleId, violationsCount: violations.length },
+                });
+            }
+        }
+
+        return consolidatedRules;
+    }
+
+    /**
+     * Combina regras únicas com regras consolidadas, removendo duplicatas
+     */
+    private mergeSingleAndConsolidatedRules(
+        allViolatedRules: ExtendedKodyRule[],
+        consolidatedRules: Map<string, ExtendedKodyRule>,
+    ): ExtendedKodyRule[] {
+        const finalRules: ExtendedKodyRule[] = [];
+        const processedRuleIds = new Set<string>();
+
+        // 1. Adicionar regras consolidadas
+        for (const [ruleId, consolidatedRule] of consolidatedRules) {
+            finalRules.push(consolidatedRule);
+            processedRuleIds.add(ruleId);
+        }
+
+        // 2. Adicionar regras únicas (que não foram consolidadas)
+        for (const rule of allViolatedRules) {
+            if (rule.uuid && !processedRuleIds.has(rule.uuid)) {
+                finalRules.push(rule);
+                processedRuleIds.add(rule.uuid);
+            }
+        }
+
+        return finalRules;
+    }
+
+    /**
+     * Cria chain para agrupar violações duplicadas
+     */
+    private async createGroupingChain(
+        provider: LLMModelProvider,
+        payload: any,
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+    ) {
+        const llm = this.llmProviderService.getLLMProvider({
+            model: provider,
+            temperature: 0,
+            jsonMode: false, // Para agrupamento, retorno em texto
+            callbacks: [this.tokenTracker],
+        });
+
+        return RunnableSequence.from([
+            async (input: any) => {
+                const systemPrompt =
+                    prompt_kodyrules_prlevel_group_rules(input);
+
+                return [
+                    { role: 'system', content: systemPrompt },
+                    {
+                        role: 'user',
+                        content:
+                            'Please consolidate the violations into a single coherent comment.',
+                    },
+                ];
+            },
+            llm,
+            new StringOutputParser(),
+        ]);
+    }
+
+    /**
+     * Processa resposta do agrupamento
+     */
+    private processGroupingResponse(
+        baseRule: ExtendedKodyRule,
+        consolidatedContent: string,
+        allViolations: AnalyzerViolation[],
+        ruleId: string,
+    ): ExtendedKodyRule | null {
+        if (!consolidatedContent?.trim()) {
+            return null;
+        }
+
+        return {
+            ...baseRule,
+            violations: [
+                {
+                    primaryFileId: null,
+                    relatedFileIds: allViolations.flatMap(
+                        (v) => v.relatedFileIds || [],
+                    ),
+                    reason: consolidatedContent.trim(),
+                },
+            ],
+        };
     }
 }
