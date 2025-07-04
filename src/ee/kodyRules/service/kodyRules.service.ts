@@ -8,6 +8,7 @@ import {
     IKodyRule,
     IKodyRules,
     KodyRulesOrigin,
+    KodyRulesScope,
     KodyRulesStatus,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { Inject, Injectable } from '@nestjs/common';
@@ -118,6 +119,7 @@ export class KodyRulesService implements IKodyRulesService {
                 repositoryId: kodyRule?.repositoryId,
                 examples: kodyRule?.examples,
                 origin: kodyRule?.origin ?? KodyRulesOrigin.USER,
+                scope: kodyRule?.scope ?? KodyRulesScope.FILE,
                 createdAt: new Date(),
                 updatedAt: new Date(),
             };
@@ -148,6 +150,7 @@ export class KodyRulesService implements IKodyRulesService {
                 repositoryId: kodyRule?.repositoryId,
                 examples: kodyRule?.examples,
                 origin: kodyRule?.origin,
+                scope: kodyRule?.scope ?? KodyRulesScope.FILE,
                 createdAt: new Date(),
                 updatedAt: new Date(),
             };
