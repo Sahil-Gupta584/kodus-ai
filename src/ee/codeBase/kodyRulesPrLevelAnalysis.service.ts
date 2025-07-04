@@ -34,6 +34,7 @@ import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullReque
 import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking.service';
+import { TokenTrackingService, TokenTrackingSession } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
 
 //#region Interfaces
 // Interface for token tracking
@@ -150,7 +151,7 @@ export const KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN = Symbol(
 export class KodyRulesPrLevelAnalysisService
     implements KodyRulesAnalysisService
 {
-    private readonly tokenTracker: TokenTrackingHandler;
+    private readonly tokenTracker: TokenTrackingSession;
 
     private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 5;
 
@@ -165,7 +166,10 @@ export class KodyRulesPrLevelAnalysisService
 
         private readonly tokenChunkingService: TokenChunkingService,
     ) {
-        this.tokenTracker = new TokenTrackingHandler();
+        this.tokenTracker = new TokenTrackingSession(
+            uuidv4(),
+            new TokenTrackingService(),
+        );
     }
 
     async analyzeCodeWithAI(
@@ -308,7 +312,7 @@ export class KodyRulesPrLevelAnalysisService
                 model: provider,
                 temperature: 0,
                 jsonMode: true,
-                callbacks: [this.tokenTracker],
+                callbacks: [this.tokenTracker.createCallbackHandler()],
             });
 
             const tags = this.buildTags(provider, 'primary');
@@ -1062,7 +1066,7 @@ export class KodyRulesPrLevelAnalysisService
                 model: provider,
                 temperature: 0,
                 jsonMode: true,
-                callbacks: [this.tokenTracker],
+                callbacks: [this.tokenTracker.createCallbackHandler()],
             });
 
             const tags = this.buildTags(provider, 'primary');
