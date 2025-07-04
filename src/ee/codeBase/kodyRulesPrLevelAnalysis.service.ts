@@ -21,7 +21,6 @@ import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmP
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
-import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import {
     KodyRulesPrLevelPayload,
     prompt_kodyrules_prlevel_analyzer,
@@ -103,6 +102,13 @@ export class KodyRulesPrLevelAnalysisService
     private readonly tokenTracker: TokenTrackingSession;
 
     private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 5;
+
+    private readonly DEFAULT_BATCH_CONFIG: BatchProcessingConfig = {
+        maxConcurrentChunks: 10, // Process 10 chunks simultaneously by default
+        batchDelay: 2000, // Time delay between batches
+        retryAttempts: 3,
+        retryDelay: 1000, // Time delay between retry attempts
+    };
 
     constructor(
         @Inject(KODY_RULES_SERVICE_TOKEN)
@@ -550,14 +556,7 @@ export class KodyRulesPrLevelAnalysisService
     }
     //#endregion
 
-    //#region Token Chunking
-    private prepareFilesForPayload(changedFiles: FileChange[]): FileChange[] {
-        return changedFiles.map((file) => ({
-            ...file,
-            fileContent: undefined,
-        }));
-    }
-
+    //#region Token Chunking with Parallel Processing
     private async processWithTokenChunking(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
@@ -590,58 +589,45 @@ export class KodyRulesPrLevelAnalysisService
             },
         });
 
-        // 3. Processar cada chunk
-        const allViolatedRules: ExtendedKodyRule[] = [];
+        // 3. Determinar configuração de batch baseada no número de chunks
+        const batchConfig = this.determineBatchConfig(chunkingResult.totalChunks);
 
-        for (let i = 0; i < chunkingResult.chunks.length; i++) {
-            const chunk = chunkingResult.chunks[i];
-            const tokens = chunkingResult.tokensPerChunk[i];
+        this.logger.log({
+            message: `Batch configuration determined`,
+            context: KodyRulesPrLevelAnalysisService.name,
+            metadata: {
+                totalChunks: chunkingResult.totalChunks,
+                maxConcurrentChunks: batchConfig.maxConcurrentChunks,
+                batchDelay: batchConfig.batchDelay,
+                prNumber,
+            },
+        });
 
-            this.logger.log({
-                message: `Processing chunk ${i + 1}/${chunkingResult.totalChunks}`,
-                context: KodyRulesPrLevelAnalysisService.name,
-                metadata: {
-                    chunkIndex: i,
-                    filesInChunk: chunk.length,
-                    estimatedTokens: tokens,
-                    prNumber,
-                    organizationAndTeamData,
-                },
-            });
+        // 4. Processar chunks em batches paralelos
+        const startTime = Date.now();
+        const allViolatedRules = await this.processChunksInBatches(
+            chunkingResult.chunks,
+            context,
+            kodyRulesPrLevel,
+            language,
+            provider,
+            prNumber,
+            organizationAndTeamData,
+            batchConfig,
+        );
 
-            try {
-                // Processar chunk individual
-                const chunkViolatedRules = await this.processChunk(
-                    context,
-                    chunk,
-                    kodyRulesPrLevel,
-                    language,
-                    provider,
-                    i,
-                    prNumber,
-                    organizationAndTeamData,
-                );
+        this.logger.log({
+            message: `Parallel chunk processing completed`,
+            context: KodyRulesPrLevelAnalysisService.name,
+            metadata: {
+                totalChunks: chunkingResult.totalChunks,
+                violationsFound: allViolatedRules.length,
+                prNumber,
+                organizationAndTeamData,
+            },
+        });
 
-                if (chunkViolatedRules?.length) {
-                    allViolatedRules.push(...chunkViolatedRules);
-                }
-            } catch (error) {
-                this.logger.error({
-                    message: `Error processing chunk ${i + 1}`,
-                    context: KodyRulesPrLevelAnalysisService.name,
-                    error,
-                    metadata: {
-                        chunkIndex: i,
-                        filesInChunk: chunk.length,
-                        prNumber,
-                        organizationAndTeamData,
-                    },
-                });
-                // Continue com próximo chunk
-            }
-        }
-
-        // 4. Combinar resultados de todos os chunks
+        // 5. Combinar resultados de todos os chunks
         return this.combineChunkResults(
             allViolatedRules,
             kodyRulesPrLevel,
@@ -649,6 +635,225 @@ export class KodyRulesPrLevelAnalysisService
             prNumber,
             language,
         );
+    }
+
+    /**
+     * Determina a configuração de batch baseada no número total de chunks
+     */
+    private determineBatchConfig(totalChunks: number): BatchProcessingConfig {
+        const baseConfig = { ...this.DEFAULT_BATCH_CONFIG };
+
+        if (totalChunks <= 10) {
+            baseConfig.maxConcurrentChunks = totalChunks;
+            baseConfig.batchDelay = 0;
+        } else if (totalChunks <= 50) {
+            baseConfig.maxConcurrentChunks = 7;
+            baseConfig.batchDelay = 2000;
+        } else {
+            baseConfig.maxConcurrentChunks = 5;
+            baseConfig.batchDelay = 3000;
+        }
+
+        return baseConfig;
+    }
+
+    /**
+     * Processa chunks em batches paralelos
+     */
+    private async processChunksInBatches(
+        chunks: FileChange[][],
+        context: AnalysisContext,
+        kodyRulesPrLevel: Array<Partial<IKodyRule>>,
+        language: string,
+        provider: LLMModelProvider,
+        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData,
+        batchConfig: BatchProcessingConfig,
+    ): Promise<ExtendedKodyRule[]> {
+        const allViolatedRules: ExtendedKodyRule[] = [];
+        const totalChunks = chunks.length;
+        const { maxConcurrentChunks, batchDelay } = batchConfig;
+
+        // Processar chunks em batches
+        for (let i = 0; i < totalChunks; i += maxConcurrentChunks) {
+            const batchNumber = Math.floor(i / maxConcurrentChunks) + 1;
+            const totalBatches = Math.ceil(totalChunks / maxConcurrentChunks);
+            const batchChunks = chunks.slice(i, i + maxConcurrentChunks);
+
+            this.logger.log({
+                message: `Processing batch ${batchNumber}/${totalBatches}`,
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: {
+                    batchNumber,
+                    totalBatches,
+                    chunksInBatch: batchChunks.length,
+                    chunkIndexes: batchChunks.map((_, idx) => i + idx),
+                    prNumber,
+                },
+            });
+
+            // Processar batch atual em paralelo
+            const batchResults = await this.processBatchInParallel(
+                batchChunks,
+                i, // offset for chunk indexing
+                context,
+                kodyRulesPrLevel,
+                language,
+                provider,
+                prNumber,
+                organizationAndTeamData,
+                batchConfig,
+            );
+
+            // Consolidar resultados do batch
+            batchResults.forEach(({ result, error, chunkIndex }) => {
+                if (error) {
+                    this.logger.error({
+                        message: `Error in batch ${batchNumber}, chunk ${chunkIndex}`,
+                        context: KodyRulesPrLevelAnalysisService.name,
+                        error,
+                        metadata: { batchNumber, chunkIndex, prNumber },
+                    });
+                } else if (result?.length) {
+                    allViolatedRules.push(...result);
+                }
+            });
+
+            // Delay entre batches (exceto no último)
+            if (i + maxConcurrentChunks < totalChunks && batchDelay > 0) {
+                this.logger.log({
+                    message: `Waiting ${batchDelay}ms before next batch`,
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    metadata: { batchDelay, nextBatch: batchNumber + 1 },
+                });
+                await this.delay(batchDelay);
+            }
+        }
+
+        return allViolatedRules;
+    }
+
+    /**
+     * Processa um batch de chunks em paralelo
+     */
+    private async processBatchInParallel(
+        batchChunks: FileChange[][],
+        indexOffset: number,
+        context: AnalysisContext,
+        kodyRulesPrLevel: Array<Partial<IKodyRule>>,
+        language: string,
+        provider: LLMModelProvider,
+        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData,
+        batchConfig: BatchProcessingConfig,
+    ): Promise<ChunkProcessingResult[]> {
+        // Criar promises para processar chunks em paralelo
+        const chunkPromises = batchChunks.map(async (chunk, batchIndex) => {
+            const chunkIndex = indexOffset + batchIndex;
+
+            return this.processChunkWithRetry(
+                chunk,
+                chunkIndex,
+                context,
+                kodyRulesPrLevel,
+                language,
+                provider,
+                prNumber,
+                organizationAndTeamData,
+                batchConfig,
+            );
+        });
+
+        // Aguardar todos os chunks do batch
+        return Promise.all(chunkPromises);
+    }
+
+    /**
+     * Processa um chunk individual com retry logic
+     */
+    private async processChunkWithRetry(
+        chunk: FileChange[],
+        chunkIndex: number,
+        context: AnalysisContext,
+        kodyRulesPrLevel: Array<Partial<IKodyRule>>,
+        language: string,
+        provider: LLMModelProvider,
+        prNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData,
+        batchConfig: BatchProcessingConfig,
+    ): Promise<ChunkProcessingResult> {
+        const { retryAttempts, retryDelay } = batchConfig;
+
+        for (let attempt = 1; attempt <= retryAttempts; attempt++) {
+            try {
+                this.logger.log({
+                    message: `Processing chunk ${chunkIndex + 1} (attempt ${attempt})`,
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    metadata: {
+                        chunkIndex,
+                        attempt,
+                        filesInChunk: chunk.length,
+                        prNumber,
+                    },
+                });
+
+                const result = await this.processChunk(
+                    context,
+                    chunk,
+                    kodyRulesPrLevel,
+                    language,
+                    provider,
+                    chunkIndex,
+                    prNumber,
+                    organizationAndTeamData,
+                );
+
+                return {
+                    chunkIndex,
+                    result,
+                };
+            } catch (error) {
+                this.logger.warn({
+                    message: `Error processing chunk ${chunkIndex + 1}, attempt ${attempt}`,
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    error,
+                    metadata: { chunkIndex, attempt, prNumber },
+                });
+
+                // Se não é a última tentativa, aguardar antes de tentar novamente
+                if (attempt < retryAttempts) {
+                    await this.delay(retryDelay * attempt); // Exponential backoff
+                } else {
+                    // Última tentativa falhou
+                    return {
+                        chunkIndex,
+                        result: null,
+                        error: error as Error,
+                    };
+                }
+            }
+        }
+
+        // Nunca deve chegar aqui, mas TypeScript precisa
+        return {
+            chunkIndex,
+            result: null,
+            error: new Error('Unexpected error in retry logic'),
+        };
+    }
+
+    /**
+     * Utility para delay
+     */
+    private delay(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    private prepareFilesForPayload(changedFiles: FileChange[]): FileChange[] {
+        return changedFiles.map((file) => ({
+            ...file,
+            fileContent: undefined,
+        }));
     }
 
     private async processChunk(
@@ -749,7 +954,6 @@ export class KodyRulesPrLevelAnalysisService
             prNumber,
         );
     }
-    //#endregion
 
     //#region Grouping Violated Rules
     private async deduplicateViolatedRules(
