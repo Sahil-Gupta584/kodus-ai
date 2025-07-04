@@ -51,6 +51,16 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
             return context;
         }
 
+        const kodyRulesTurnedOn = context?.codeReviewConfig?.reviewOptions?.kody_rules;
+
+        if (!kodyRulesTurnedOn) {
+            this.logger.log({
+                message: `Kody Rules are not turned on for PR#${context.pullRequest.number}`,
+                context: this.stageName,
+            });
+            return context;
+        }
+
         // Verificar se há regras de nível de PR configuradas
         const prLevelRules = context?.codeReviewConfig?.kodyRules?.filter(
             (rule) => rule.scope === KodyRulesScope.PULL_REQUEST,
