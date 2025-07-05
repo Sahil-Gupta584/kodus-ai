@@ -604,7 +604,6 @@ export class KodyRulesPrLevelAnalysisService
         });
 
         // 4. Processar chunks em batches paralelos
-        const startTime = Date.now();
         const allViolatedRules = await this.processChunksInBatches(
             chunkingResult.chunks,
             context,
@@ -954,6 +953,7 @@ export class KodyRulesPrLevelAnalysisService
             prNumber,
         );
     }
+    //#endregion
 
     //#region Grouping Violated Rules
     private async deduplicateViolatedRules(
