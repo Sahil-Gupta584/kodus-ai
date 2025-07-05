@@ -9,6 +9,7 @@ import {
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
+import { ISuggestionByPR } from '../../pullRequests/interfaces/pullRequests.interface';
 
 export const COMMENT_MANAGER_SERVICE_TOKEN = Symbol('CommentManagerService');
 
@@ -77,4 +78,14 @@ export interface ICommentManagerService {
     enrichParentSuggestionsWithRelated(
         suggestions: CodeSuggestion[],
     ): Promise<CodeSuggestion[]>;
+
+    createPrLevelReviewComments(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string; language: string },
+        prLevelSuggestions: ISuggestionByPR[],
+        language: string,
+    ): Promise<{
+        commentResults: Array<CommentResult>;
+    }>;
 }

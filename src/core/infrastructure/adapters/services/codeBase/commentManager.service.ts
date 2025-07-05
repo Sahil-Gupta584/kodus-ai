@@ -42,6 +42,7 @@ import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
+import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
@@ -1080,5 +1081,142 @@ ${reviewOptionsMarkdown}
                   )
                   .trim()
             : markdown;
+    }
+
+    /**
+     * Cria comentários gerais no PR para sugestões de nível de PR
+     */
+    async createPrLevelReviewComments(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string; language: string },
+        prLevelSuggestions: ISuggestionByPR[],
+        language: string,
+    ): Promise<{ commentResults: Array<CommentResult>; }> {
+        try {
+            if (!prLevelSuggestions?.length) {
+                this.logger.log({
+                    message: `No PR-level suggestions to create comments for PR#${prNumber}`,
+                    context: CommentManagerService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        prNumber,
+                        repository,
+                    },
+                });
+                return { commentResults: [] };
+            }
+
+            this.logger.log({
+                message: `Creating PR-level comments for PR#${prNumber}`,
+                context: CommentManagerService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    repository,
+                    suggestionsCount: prLevelSuggestions.length,
+                },
+            });
+
+            const commentResults = [];
+
+            for (const suggestion of prLevelSuggestions) {
+                try {
+                    // Usar o método de formatação padronizado
+                    const commentBody = await this.codeManagementService.formatReviewCommentBody({
+                        suggestion,
+                        repository,
+                        includeHeader: true,  // PR-level sempre inclui header com badges
+                        includeFooter: false, // PR-level NÃO inclui footer de interação
+                        language,
+                        organizationAndTeamData,
+                    });
+
+                    // Criar comentário geral
+                    const createdComment = await this.codeManagementService.createIssueComment({
+                        organizationAndTeamData,
+                        repository: {
+                            name: repository.name,
+                            id: repository.id,
+                        },
+                        prNumber,
+                        body: commentBody,
+                    });
+
+                    if (createdComment?.id) {
+                        commentResults.push({
+                            comment: {
+                                suggestion,
+                                body: commentBody,
+                                type: 'pr_level',
+                            },
+                            deliveryStatus: 'sent',
+                            codeReviewFeedbackData: {
+                                commentId: createdComment.id,
+                                pullRequestReviewId: null, // PR-level comments não têm review ID
+                                suggestionId: suggestion.id,
+                            },
+                        });
+
+                        this.logger.log({
+                            message: `Created PR-level comment for suggestion ${suggestion.id}`,
+                            context: CommentManagerService.name,
+                            metadata: {
+                                suggestionId: suggestion.id,
+                                commentId: createdComment.id,
+                                category: suggestion.label,
+                                severity: suggestion.severity,
+                                pullRequestNumber: prNumber,
+                            },
+                        });
+                    } else {
+                        commentResults.push({
+                            comment: {
+                                suggestion,
+                                body: commentBody,
+                                type: 'pr_level',
+                            },
+                            deliveryStatus: 'failed',
+                        });
+                    }
+                } catch (error) {
+                    this.logger.error({
+                        message: `Error creating PR-level comment for suggestion ${suggestion.id}`,
+                        context: CommentManagerService.name,
+                        error,
+                        metadata: {
+                            suggestionId: suggestion.id,
+                            pullRequestNumber: prNumber,
+                            organizationId: organizationAndTeamData.organizationId,
+                            repository,
+                        },
+                    });
+
+                    commentResults.push({
+                        comment: {
+                            suggestion,
+                            type: 'pr_level',
+                        },
+                        deliveryStatus: 'failed',
+                    });
+                }
+            }
+
+            return { commentResults };
+        } catch (error) {
+            this.logger.error({
+                message: `Failed to create PR-level comments for PR#${prNumber}`,
+                context: CommentManagerService.name,
+                error,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    repository,
+                    suggestionsCount: prLevelSuggestions?.length,
+                },
+            });
+
+            return { commentResults: [] };
+        }
     }
 }

@@ -23,6 +23,7 @@ export interface IKodyRule {
     updatedAt?: Date;
     /** Comment generated at runtime – not persisted in the database */
     reason?: string | null;
+    scope?: KodyRulesScope;
 }
 
 export interface IKodyRulesExtendedContext {
@@ -45,4 +46,9 @@ export enum KodyRulesStatus {
     REJECTED = 'rejected',
     PENDING = 'pending',
     DELETED = 'deleted',
+}
+
+export enum KodyRulesScope {
+    PULL_REQUEST = 'pull-request',
+    FILE = 'file',
 }

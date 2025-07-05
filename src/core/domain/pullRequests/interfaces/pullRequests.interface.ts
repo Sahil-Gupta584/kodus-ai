@@ -6,6 +6,8 @@ import { DeliveryStatus } from '../enums/deliveryStatus.enum';
 import { ImplementationStatus } from '../enums/implementationStatus.enum';
 import { PriorityStatus } from '../enums/priorityStatus.enum';
 import { FeedbackType } from '@/ee/kodyFineTuning/domain/enums/feedbackType.enum';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
 export interface IPullRequests {
     uuid?: string;
@@ -33,6 +35,8 @@ export interface IPullRequests {
     commits: ICommit[];
     syncedEmbeddedSuggestions?: boolean;
     syncedWithIssues?: boolean;
+    suggestionsByPR?: ISuggestionByPR[];
+    prLevelSuggestions?: ISuggestionByPR[];
 }
 
 export interface ICommit {
@@ -146,4 +150,25 @@ export interface IPullRequestUser {
     name?: string;
     email?: string;
     username: string;
+}
+
+export interface ISuggestionByPR {
+    id: string;
+    suggestionContent: string;
+    oneSentenceSummary: string;
+    label: LabelType;
+    severity?: SeverityLevel;
+    brokenKodyRulesIds?: string[];
+    priorityStatus?: PriorityStatus;
+    deliveryStatus: DeliveryStatus;
+    comment?: {
+        id: number;
+        pullRequestReviewId: number;
+    };
+    files?: {
+        violatedFileSha?: string[];
+        relatedFileSha?: string[];
+    };
+    createdAt?: string;
+    updatedAt?: string;
 }

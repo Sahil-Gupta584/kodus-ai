@@ -12,6 +12,7 @@ import { AutomationExecutionEntity } from '@/core/domain/automation/entities/aut
 import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { PipelineContext } from '../../../pipeline/interfaces/pipeline-context.interface';
+import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 
 export interface CodeReviewPipelineContext extends PipelineContext {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -55,6 +56,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     codeAnalysisAST?: CodeAnalysisAST;
 
     preparedFileContexts: AnalysisContext[];
+
     fileAnalysisResults?: Array<{
         validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
@@ -67,5 +69,10 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     overallComments: { filepath: string; summary: string }[];
     lastAnalyzedCommit?: any;
 
+    validSuggestionsByPR?: ISuggestionByPR[];
+
     lineComments?: CommentResult[];
+
+    // Resultados dos comentários de nível de PR
+    prLevelCommentResults?: Array<CommentResult>;
 }
