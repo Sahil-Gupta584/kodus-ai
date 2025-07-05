@@ -26,20 +26,20 @@ You are a code review expert specialized in identifying cross-file rule violatio
 ## Input Structure
 
 ### PR Information
-- **Title**: ${payload.pr_title}
-- **Description**: ${payload.pr_description}
+- **Title**: ${payload?.pr_title}
+- **Description**: ${payload?.pr_description}
 
 ### Files in PR
 \`\`\`json
 {
-  "files": ${JSON.stringify(payload.files, null, 2)}
+  "files": ${JSON.stringify(payload?.files || [], null, 2)}
 }
 \`\`\`
 
 ### Available Rules
 \`\`\`json
 {
-  "rules": ${JSON.stringify(payload.rules, null, 2)}
+  "rules": ${JSON.stringify(payload?.rules || [], null, 2)}
 }
 \`\`\`
 
@@ -166,12 +166,12 @@ Consolidate multiple violations of the same rule into a single, well-structured 
 5. **Logical grouping**: Group related violations naturally in the consolidated text
 
 ## Input Data
-- **Rule Title**: ${payload.rule?.title || 'Unknown Rule'}
-- **Rule Description**: ${payload.rule?.description || 'No description available'}
-- **Language**: ${payload.language || 'en-US'}
+- **Rule Title**: ${payload?.rule?.title || 'Unknown Rule'}
+- **Rule Description**: ${payload?.rule?.description || 'No description available'}
+- **Language**: ${payload?.language || 'en-US'}
 
 ## Violations to Consolidate:
-${payload.violations?.map((v: any, i: number) => `
+${(payload?.violations || []).map((v: any, i: number) => `
 ### Violation ${i + 1}
 ${v.reason}
 Violated File Sha: ${v.violatedFileSha}
@@ -196,7 +196,7 @@ Related File Sha: ${v.relatedFileSha}
 - Do NOT add extra formatting, headers, or explanations
 - Keep the same professional tone as the original violations
 - Ensure all file names and specific details are preserved
-- Respond in the specified language (${payload.language || 'en-US'})
+- Respond in the specified language (${payload?.language || 'en-US'})
 - Maintain the existing "Kody Rule violation:" reference at the end if present
 
 ## Example Consolidation

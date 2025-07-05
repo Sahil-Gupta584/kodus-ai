@@ -42,6 +42,7 @@ import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import { IKodyRulesAnalysisService } from '@/core/domain/codeBase/contracts/KodyRulesAnalysisService.contract';
 
 // Interface for extended context used in Kody Rules analysis
 interface KodyRulesExtendedContext {
@@ -146,7 +147,7 @@ type SystemPromptFn = () => string;
 type UserPromptFn = (input: any) => string;
 
 @Injectable()
-export class KodyRulesAnalysisService implements KodyRulesAnalysisService {
+export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
     private readonly anthropic: Anthropic;
     private readonly tokenTracker: TokenTrackingHandler;
 

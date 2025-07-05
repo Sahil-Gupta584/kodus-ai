@@ -52,6 +52,10 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
             this.logger.log({
                 message: `Added ${context.validSuggestionsByPR.length} PR-level suggestions to aggregation`,
                 context: this.stageName,
+                metadata: {
+                    organizationId: context.organizationAndTeamData.organizationId,
+                    prNumber: context.pullRequest.number,
+                },
             });
         }
 

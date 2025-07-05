@@ -1,7 +1,7 @@
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
 import { Inject, Injectable } from '@nestjs/common';
-import { KodyRulesAnalysisService } from '@/core/domain/codeBase/contracts/KodyRulesAnalysisService.contract';
+import { IKodyRulesAnalysisService } from '@/core/domain/codeBase/contracts/KodyRulesAnalysisService.contract';
 import {
     FileChangeContext,
     ReviewModeResponse,
@@ -33,7 +33,10 @@ import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullReque
 import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking.service';
-import { TokenTrackingService, TokenTrackingSession } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
+import {
+    TokenTrackingService,
+    TokenTrackingSession,
+} from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
 
 //#region Interfaces
 // Interface for token tracking
@@ -97,7 +100,7 @@ export const KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN = Symbol(
 
 @Injectable()
 export class KodyRulesPrLevelAnalysisService
-    implements KodyRulesAnalysisService
+    implements IKodyRulesAnalysisService
 {
     private readonly tokenTracker: TokenTrackingSession;
 
@@ -186,7 +189,7 @@ export class KodyRulesPrLevelAnalysisService
                 prNumber,
                 context,
                 changedFiles,
-                kodyRulesPrLevel,
+                filteredKodyRules,
                 language,
                 provider,
             );
@@ -235,7 +238,8 @@ export class KodyRulesPrLevelAnalysisService
                     tags: this.buildTags(provider, 'primary'),
                     runName: 'prLevelKodyRulesAnalyzer',
                     metadata: {
-                        organizationId: payload.pr_title,
+                        organizationAndTeamData,
+                        prNumber,
                         provider: provider,
                         fallbackProvider: fallbackProvider,
                     },
@@ -590,7 +594,9 @@ export class KodyRulesPrLevelAnalysisService
         });
 
         // 3. Determinar configuração de batch baseada no número de chunks
-        const batchConfig = this.determineBatchConfig(chunkingResult.totalChunks);
+        const batchConfig = this.determineBatchConfig(
+            chunkingResult.totalChunks,
+        );
 
         this.logger.log({
             message: `Batch configuration determined`,
@@ -711,7 +717,12 @@ export class KodyRulesPrLevelAnalysisService
                         message: `Error in batch ${batchNumber}, chunk ${chunkIndex}`,
                         context: KodyRulesPrLevelAnalysisService.name,
                         error,
-                        metadata: { batchNumber, chunkIndex, prNumber },
+                        metadata: {
+                            batchNumber,
+                            chunkIndex,
+                            prNumber,
+                            organizationAndTeamData,
+                        },
                     });
                 } else if (result?.length) {
                     allViolatedRules.push(...result);
@@ -845,7 +856,7 @@ export class KodyRulesPrLevelAnalysisService
      * Utility para delay
      */
     private delay(ms: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, ms));
+        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     private prepareFilesForPayload(changedFiles: FileChange[]): FileChange[] {
@@ -1048,7 +1059,7 @@ export class KodyRulesPrLevelAnalysisService
                     message: `Error grouping suggestions for rule ${ruleId}`,
                     context: KodyRulesPrLevelAnalysisService.name,
                     error,
-                    metadata: { ruleId, prNumber },
+                    metadata: { ruleId, prNumber, organizationAndTeamData },
                 });
                 // Em caso de erro, mantém as suggestions originais
                 groupedSuggestions.push(...duplicatedSuggestions);

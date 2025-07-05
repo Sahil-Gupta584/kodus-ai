@@ -133,7 +133,6 @@ export class TokenChunkingService {
                 metadata: {
                     totalItems: result.totalItems,
                     totalChunks: result.totalChunks,
-                    averageTokensPerChunk: tokensPerChunk.reduce((a, b) => a + b, 0) / tokensPerChunk.length,
                     tokenLimit: result.tokenLimit,
                     modelUsed: result.modelUsed
                 }

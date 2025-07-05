@@ -468,7 +468,6 @@ export class SuggestionService implements ISuggestionService {
         discardedSuggestionsBySeverityOrQuantity: any[];
     }> {
         try {
-
             const hasKodyRules = suggestions.some((s) => {
                 const normalizedLabel = this.normalizeLabel(s.label);
                 return normalizedLabel === 'kody_rules';
@@ -1424,7 +1423,11 @@ export class SuggestionService implements ISuggestionService {
     ): ISuggestionByPR[] {
         try {
             return commentResults
-                .filter((result) => result?.comment?.type === 'pr_level')
+                .filter(
+                    (result) =>
+                        result?.comment?.type === 'pr_level' &&
+                        result?.comment?.suggestion,
+                )
                 .map((result) => {
                     const suggestion = result.comment.suggestion;
 
@@ -1437,13 +1440,19 @@ export class SuggestionService implements ISuggestionService {
                         brokenKodyRulesIds: suggestion.brokenKodyRulesIds || [],
                         priorityStatus: PriorityStatus.PRIORITIZED, // Default para PR level
                         deliveryStatus: result.deliveryStatus as DeliveryStatus,
-                        comment: result.codeReviewFeedbackData ? {
-                            id: result.codeReviewFeedbackData.commentId,
-                            pullRequestReviewId: result.codeReviewFeedbackData.pullRequestReviewId,
-                        } : undefined,
+                        comment: result.codeReviewFeedbackData
+                            ? {
+                                  id: result.codeReviewFeedbackData.commentId,
+                                  pullRequestReviewId:
+                                      result.codeReviewFeedbackData
+                                          .pullRequestReviewId,
+                              }
+                            : undefined,
                         files: {
-                            violatedFileSha: suggestion.files?.violatedFileSha || [],
-                            relatedFileSha: suggestion.files?.relatedFileSha || [],
+                            violatedFileSha:
+                                suggestion.files?.violatedFileSha || [],
+                            relatedFileSha:
+                                suggestion.files?.relatedFileSha || [],
                         },
                         createdAt: new Date().toISOString(),
                         updatedAt: new Date().toISOString(),
@@ -1451,10 +1460,11 @@ export class SuggestionService implements ISuggestionService {
                 });
         } catch (error) {
             this.logger.error({
-                message: 'Error transforming comment results to PR level suggestions',
+                message:
+                    'Error transforming comment results to PR level suggestions',
                 error,
                 context: SuggestionService.name,
-                metadata: { commentResultsCount: commentResults?.length }
+                metadata: { commentResultsCount: commentResults?.length },
             });
             return [];
         }

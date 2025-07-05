@@ -59,7 +59,9 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
         this._openedAt = pullRequest.openedAt;
         this._closedAt = pullRequest.closedAt;
         this._files = pullRequest.files;
-        this._prLevelSuggestions = pullRequest.prLevelSuggestions;
+        this._prLevelSuggestions = Array.isArray(pullRequest.prLevelSuggestions)
+            ? [...pullRequest.prLevelSuggestions]
+            : [];
         this._totalAdded = pullRequest.totalAdded;
         this._totalDeleted = pullRequest.totalDeleted;
         this._totalChanges = pullRequest.totalChanges;

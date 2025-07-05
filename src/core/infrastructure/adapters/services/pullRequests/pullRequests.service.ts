@@ -207,7 +207,7 @@ export class PullRequestsService implements IPullRequestsService {
             this.logger.error({
                 message: `Failed to add PR level suggestions to PR#${pullRequestNumber}`,
                 context: PullRequestsService.name,
-                error: error,
+                error,
                 metadata: {
                     pullRequestNumber,
                     repositoryName,

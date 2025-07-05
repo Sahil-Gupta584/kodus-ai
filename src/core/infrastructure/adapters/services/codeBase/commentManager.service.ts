@@ -42,6 +42,7 @@ import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
+import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
@@ -1089,7 +1090,7 @@ ${reviewOptionsMarkdown}
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         repository: { name: string; id: string; language: string },
-        prLevelSuggestions: any[],
+        prLevelSuggestions: ISuggestionByPR[],
         language: string,
     ): Promise<{ commentResults: Array<CommentResult>; }> {
         try {
@@ -1186,6 +1187,8 @@ ${reviewOptionsMarkdown}
                         metadata: {
                             suggestionId: suggestion.id,
                             pullRequestNumber: prNumber,
+                            organizationId: organizationAndTeamData.organizationId,
+                            repository,
                         },
                     });
 
@@ -1204,7 +1207,7 @@ ${reviewOptionsMarkdown}
             this.logger.error({
                 message: `Failed to create PR-level comments for PR#${prNumber}`,
                 context: CommentManagerService.name,
-                error: error.message,
+                error,
                 metadata: {
                     organizationAndTeamData,
                     prNumber,

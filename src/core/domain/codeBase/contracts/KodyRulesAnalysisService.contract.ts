@@ -2,7 +2,7 @@ import { FileChangeContext, ReviewModeResponse, AnalysisContext, AIAnalysisResul
 import { OrganizationAndTeamData } from "@/config/types/general/organizationAndTeamData";
 import { IKodyRule } from "../../kodyRules/interfaces/kodyRules.interface";
 
-export interface KodyRulesAnalysisService {
+export interface IKodyRulesAnalysisService {
     analyzeCodeWithAI(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
@@ -11,8 +11,4 @@ export interface KodyRulesAnalysisService {
         context: AnalysisContext,
         suggestions?: AIAnalysisResult,
     ): Promise<AIAnalysisResult | AIAnalysisResultPrLevel>;
-    addSeverityToSuggestions(
-        suggestions: AIAnalysisResult | AIAnalysisResultPrLevel,
-        kodyRules: Array<Partial<IKodyRule>>,
-    ): AIAnalysisResult | AIAnalysisResultPrLevel;
 }
