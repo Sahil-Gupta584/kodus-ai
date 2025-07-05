@@ -101,7 +101,7 @@ export class KodyRulesPrLevelAnalysisService
 {
     private readonly tokenTracker: TokenTrackingSession;
 
-    private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 5;
+    private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 70;
 
     private readonly DEFAULT_BATCH_CONFIG: BatchProcessingConfig = {
         maxConcurrentChunks: 10, // Process 10 chunks simultaneously by default

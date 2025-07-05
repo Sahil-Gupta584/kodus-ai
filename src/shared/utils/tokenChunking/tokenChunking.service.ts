@@ -160,22 +160,22 @@ export class TokenChunkingService {
     /**
      * Obtém o limite máximo de tokens para um modelo
      */
-    private getMaxTokensForModel(model?: LLMModelProvider | string, defaultMaxTokens: number = 64000): number {
+    private getMaxTokensForModel(model?: LLMModelProvider | string, inputMaxTokens: number = 64000): number {
         if (!model) {
-            return defaultMaxTokens;
+            return inputMaxTokens;
         }
 
         const strategy = MODEL_STRATEGIES[model as LLMModelProvider];
         if (!strategy) {
-            return defaultMaxTokens;
+            return inputMaxTokens;
         }
 
         // Se defaultMaxTokens é -1, significa sem limite específico, usa o padrão
-        if (strategy.defaultMaxTokens === -1) {
-            return defaultMaxTokens;
+        if (strategy.inputMaxTokens === -1) {
+            return inputMaxTokens;
         }
 
-        return strategy.defaultMaxTokens;
+        return strategy.inputMaxTokens;
     }
 
     /**
