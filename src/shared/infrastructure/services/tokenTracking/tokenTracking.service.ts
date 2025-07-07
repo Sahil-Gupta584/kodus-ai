@@ -123,9 +123,34 @@ export class TokenTrackingService {
      * Adiciona uso de tokens a uma sessão específica (thread-safe)
      */
     async addTokenUsage(sessionId: string, usage: TokenUsage): Promise<void> {
-        const session = this.activeSessions.get(sessionId);
-        if (session) {
-            session.push(usage);
+        try {
+            const session = this.activeSessions.get(sessionId);
+            if (session) {
+                // Criar uma cópia do usage para evitar mutação externa
+                const safeCopy = { ...usage };
+                session.push(safeCopy);
+            } else {
+                // Se a sessão não existir, logar warning mas não quebrar
+                this.logger?.warn({
+                    message: 'Attempted to add token usage to non-existent session',
+                    context: TokenTrackingService.name,
+                    metadata: {
+                        sessionId,
+                        usage,
+                    },
+                });
+            }
+        } catch (error) {
+            // Nunca deixar que erros de tracking quebrem o fluxo principal
+            this.logger?.error({
+                message: 'Error adding token usage to session',
+                context: TokenTrackingService.name,
+                error,
+                metadata: {
+                    sessionId,
+                    usage,
+                },
+            });
         }
     }
 
@@ -133,7 +158,19 @@ export class TokenTrackingService {
      * Obtém todos os usos de uma sessão
      */
     getSessionUsages(sessionId: string): TokenUsage[] {
-        return this.activeSessions.get(sessionId) || [];
+        try {
+            const session = this.activeSessions.get(sessionId);
+            // Retornar uma cópia para evitar mutação externa
+            return session ? [...session] : [];
+        } catch (error) {
+            this.logger?.error({
+                message: 'Error getting session usages',
+                context: TokenTrackingService.name,
+                error,
+                metadata: { sessionId },
+            });
+            return [];
+        }
     }
 
     /**
@@ -142,10 +179,29 @@ export class TokenTrackingService {
     aggregateSessionsUsage(sessionIds: string[]): TokenUsage[] {
         const allUsages: TokenUsage[] = [];
 
-        sessionIds.forEach(sessionId => {
-            const sessionUsages = this.getSessionUsages(sessionId);
-            allUsages.push(...sessionUsages);
-        });
+        try {
+            sessionIds.forEach(sessionId => {
+                try {
+                    const sessionUsages = this.getSessionUsages(sessionId);
+                    allUsages.push(...sessionUsages);
+                } catch (error) {
+                    this.logger?.warn({
+                        message: 'Error aggregating usage for session, skipping',
+                        context: TokenTrackingService.name,
+                        error,
+                        metadata: { sessionId },
+                    });
+                    // Continua com outras sessões
+                }
+            });
+        } catch (error) {
+            this.logger?.error({
+                message: 'Error aggregating sessions usage',
+                context: TokenTrackingService.name,
+                error,
+                metadata: { sessionIds },
+            });
+        }
 
         return allUsages;
     }
@@ -154,7 +210,16 @@ export class TokenTrackingService {
      * Limpa uma sessão da memória
      */
     clearSession(sessionId: string): void {
-        this.activeSessions.delete(sessionId);
+        try {
+            this.activeSessions.delete(sessionId);
+        } catch (error) {
+            this.logger?.error({
+                message: 'Error clearing session',
+                context: TokenTrackingService.name,
+                error,
+                metadata: { sessionId },
+            });
+        }
     }
 
     /**

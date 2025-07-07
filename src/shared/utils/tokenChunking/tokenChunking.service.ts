@@ -41,6 +41,44 @@ export class TokenChunkingService {
             defaultMaxTokens = 64000
         } = options;
 
+        // Validações de entrada
+        if (!data || !Array.isArray(data)) {
+            this.logger.error({
+                message: 'Invalid data provided for token chunking - not an array',
+                context: TokenChunkingService.name,
+                metadata: {
+                    dataType: typeof data,
+                    model: model || 'default',
+                }
+            });
+
+            return {
+                chunks: [],
+                totalItems: 0,
+                totalChunks: 0,
+                tokensPerChunk: [],
+                tokenLimit: 0,
+                modelUsed: model || 'default'
+            };
+        }
+
+        if (data.length === 0) {
+            this.logger.warn({
+                message: 'Empty data array provided for token chunking',
+                context: TokenChunkingService.name,
+                metadata: { model: model || 'default' }
+            });
+
+            return {
+                chunks: [],
+                totalItems: 0,
+                totalChunks: 0,
+                tokensPerChunk: [],
+                tokenLimit: 0,
+                modelUsed: model || 'default'
+            };
+        }
+
         try {
             // 1. Determinar limite de tokens
             const maxTokens = this.getMaxTokensForModel(model, defaultMaxTokens);
@@ -67,6 +105,17 @@ export class TokenChunkingService {
 
             for (let i = 0; i < data.length; i++) {
                 const item = data[i];
+
+                // Validar item
+                if (item === null || item === undefined) {
+                    this.logger.warn({
+                        message: 'Null or undefined item found, skipping',
+                        context: TokenChunkingService.name,
+                        metadata: { itemIndex: i, model: model || 'default' }
+                    });
+                    continue;
+                }
+
                 const itemTokens = this.countTokensForItem(item, model);
 
                 // Edge case: item único excede o limite
@@ -147,12 +196,21 @@ export class TokenChunkingService {
                 context: TokenChunkingService.name,
                 metadata: {
                     model,
-                    dataLength: data.length,
+                    dataLength: data?.length || 0,
                     usagePercentage,
                     defaultMaxTokens
                 }
             });
-            throw error;
+
+            // Retornar resultado vazio em caso de erro
+            return {
+                chunks: [],
+                totalItems: data?.length || 0,
+                totalChunks: 0,
+                tokensPerChunk: [],
+                tokenLimit: 0,
+                modelUsed: model || 'default'
+            };
         }
     }
 
@@ -225,10 +283,45 @@ export class TokenChunkingService {
         }
 
         if (typeof item === 'object' && item !== null) {
-            return JSON.stringify(item);
+            try {
+                // Tenta serialização normal primeiro
+                return JSON.stringify(item);
+            } catch (error) {
+                // Se falhar (ex: referências circulares), usa serialização segura
+                try {
+                    return JSON.stringify(item, this.getCircularReplacer());
+                } catch (fallbackError) {
+                    this.logger.warn({
+                        message: 'Failed to serialize object, using fallback string conversion',
+                        context: TokenChunkingService.name,
+                        metadata: {
+                            itemType: typeof item,
+                            error: fallbackError.message,
+                        }
+                    });
+                    // Último fallback: toString seguro
+                    return String(item);
+                }
+            }
         }
 
         return String(item);
+    }
+
+    /**
+     * Replacer function para lidar com referências circulares
+     */
+    private getCircularReplacer() {
+        const seen = new WeakSet();
+        return (key: string, value: any) => {
+            if (typeof value === "object" && value !== null) {
+                if (seen.has(value)) {
+                    return "[Circular]";
+                }
+                seen.add(value);
+            }
+            return value;
+        };
     }
 
     /**

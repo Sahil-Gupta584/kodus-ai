@@ -46,6 +46,36 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
     protected async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
+        // Validações fundamentais de segurança
+        if (!context?.organizationAndTeamData) {
+            this.logger.error({
+                message: 'Missing organizationAndTeamData in context',
+                context: this.stageName,
+            });
+            return context;
+        }
+
+        if (!context?.pullRequest?.number) {
+            this.logger.error({
+                message: 'Missing pullRequest data in context',
+                context: this.stageName,
+                metadata: { organizationAndTeamData: context.organizationAndTeamData },
+            });
+            return context;
+        }
+
+        if (!context?.repository?.name || !context?.repository?.id) {
+            this.logger.error({
+                message: 'Missing repository data in context',
+                context: this.stageName,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                },
+            });
+            return context;
+        }
+
         if (!context.changedFiles || context.changedFiles.length === 0) {
             this.logger.warn({
                 message: `No files to analyze for PR#${context.pullRequest.number}`,
@@ -99,7 +129,7 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                 context: this.stageName,
                 metadata: {
                     prLevelRulesCount: prLevelRules.length,
-                    totalFilesChanged: context.changedFiles.length,
+                    totalFilesChanged: context.changedFiles?.length || 0,
                     organizationAndTeamData: context.organizationAndTeamData,
                 },
             });
@@ -114,60 +144,120 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                     context,
                 );
 
+            // Validar resultado da análise
+            if (!kodyRulesPrLevelAnalysis) {
+                this.logger.warn({
+                    message: `Analysis returned null for PR#${context.pullRequest.number}`,
+                    context: this.stageName,
+                    metadata: {
+                        organizationAndTeamData: context.organizationAndTeamData,
+                    },
+                });
+                return context;
+            }
+
             // Criar comentários e armazenar o resultado no contexto
-            if (kodyRulesPrLevelAnalysis?.codeSuggestions?.length > 0) {
+            const codeSuggestions = kodyRulesPrLevelAnalysis?.codeSuggestions || [];
+
+            if (codeSuggestions.length > 0) {
                 this.logger.log({
                     message: `PR-level analysis completed for PR#${context.pullRequest.number}`,
                     context: this.stageName,
                     metadata: {
-                        suggestionsCount:
-                            kodyRulesPrLevelAnalysis.codeSuggestions.length,
+                        suggestionsCount: codeSuggestions.length,
                         organizationAndTeamData:
                             context.organizationAndTeamData,
                         prNumber: context.pullRequest.number,
                     },
                 });
 
-                // Criar comentários para cada sugestão de nível de PR usando o commentManagerService
-                const { commentResults } =
-                    (await this.commentManagerService.createPrLevelReviewComments(
+                let commentResults: any[] = [];
+
+                try {
+                    // Criar comentários para cada sugestão de nível de PR usando o commentManagerService
+                    const result = await this.commentManagerService.createPrLevelReviewComments(
                         context.organizationAndTeamData,
                         context.pullRequest.number,
                         {
                             name: context.repository.name,
                             id: context.repository.id,
-                            language: context.repository.language,
+                            language: context.repository.language || '',
                         },
-                        kodyRulesPrLevelAnalysis.codeSuggestions,
+                        codeSuggestions,
                         context.codeReviewConfig?.languageResultPrompt,
-                    )) || { commentResults: [] };
+                    );
+
+                    commentResults = result?.commentResults || [];
+                } catch (error) {
+                    this.logger.error({
+                        message: `Error creating PR level comments for PR#${context.pullRequest.number}`,
+                        context: this.stageName,
+                        error,
+                        metadata: {
+                            prNumber: context.pullRequest.number,
+                            organizationAndTeamData: context.organizationAndTeamData,
+                            suggestionsCount: codeSuggestions.length,
+                        },
+                    });
+                    // Continua sem comentários
+                    commentResults = [];
+                }
 
                 // Transformar commentResults em ISuggestionByPR e salvar no banco
                 if (commentResults && commentResults.length > 0) {
-                    const prLevelSuggestions =
-                        this.suggestionService.transformCommentResultsToPrLevelSuggestions(
-                            commentResults,
-                        );
+                    try {
+                        const prLevelSuggestions =
+                            this.suggestionService.transformCommentResultsToPrLevelSuggestions(
+                                commentResults,
+                            );
 
-                    if (prLevelSuggestions.length > 0) {
-                        await this.pullRequestsService.addPrLevelSuggestions(
-                            context.pullRequest.number,
-                            context.repository.name,
-                            prLevelSuggestions,
-                            context.organizationAndTeamData,
-                        );
+                        if (prLevelSuggestions?.length > 0) {
+                            try {
+                                await this.pullRequestsService.addPrLevelSuggestions(
+                                    context.pullRequest.number,
+                                    context.repository.name,
+                                    prLevelSuggestions,
+                                    context.organizationAndTeamData,
+                                );
 
-                        this.logger.log({
-                            message: `Saved ${prLevelSuggestions.length} PR level suggestions to database`,
-                            context: ProcessFilesPrLevelReviewStage.name,
+                                this.logger.log({
+                                    message: `Saved ${prLevelSuggestions.length} PR level suggestions to database`,
+                                    context: ProcessFilesPrLevelReviewStage.name,
+                                    metadata: {
+                                        prNumber: context.pullRequest.number,
+                                        repositoryName: context.repository.name,
+                                        suggestionsCount: prLevelSuggestions.length,
+                                        organizationAndTeamData:
+                                            context.organizationAndTeamData,
+                                    },
+                                });
+                            } catch (error) {
+                                this.logger.error({
+                                    message: `Error saving PR level suggestions to database`,
+                                    context: this.stageName,
+                                    error,
+                                    metadata: {
+                                        prNumber: context.pullRequest.number,
+                                        repositoryName: context.repository.name,
+                                        organizationAndTeamData:
+                                            context.organizationAndTeamData,
+                                    },
+                                });
+                                // Continua sem salvar no banco
+                            }
+                        }
+                    } catch (error) {
+                        this.logger.error({
+                            message: `Error transforming comment results to PR level suggestions`,
+                            context: this.stageName,
+                            error,
                             metadata: {
                                 prNumber: context.pullRequest.number,
-                                repositoryName: context.repository.name,
-                                suggestionsCount: prLevelSuggestions.length,
-                                organizationAndTeamData:
-                                    context.organizationAndTeamData,
+                                organizationAndTeamData: context.organizationAndTeamData,
+                                commentResultsCount: commentResults.length,
                             },
                         });
+                        // Continua sem transformar
                     }
                 }
 
@@ -175,9 +265,11 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                     if (!draft.validSuggestionsByPR) {
                         draft.validSuggestionsByPR = [];
                     }
-                    draft.validSuggestionsByPR.push(
-                        ...kodyRulesPrLevelAnalysis.codeSuggestions,
-                    );
+
+                    // Usar spread seguro
+                    if (codeSuggestions && Array.isArray(codeSuggestions)) {
+                        draft.validSuggestionsByPR.push(...codeSuggestions);
+                    }
 
                     // Armazenar os resultados dos comentários de nível de PR
                     if (!draft.prLevelCommentResults) {
@@ -207,7 +299,6 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                     organizationAndTeamData: context.organizationAndTeamData,
                 },
             });
-            // Não interromper o pipeline por erro na análise de PR level
         }
 
         return context;
