@@ -148,7 +148,10 @@ export class KodyRulesPrLevelAnalysisService
             return { codeSuggestions: [] };
         }
 
-        if (!context.codeReviewConfig.kodyRules || !Array.isArray(context.codeReviewConfig.kodyRules)) {
+        if (
+            !context.codeReviewConfig.kodyRules ||
+            !Array.isArray(context.codeReviewConfig.kodyRules)
+        ) {
             this.logger.warn({
                 message: 'No kodyRules found in config',
                 context: KodyRulesPrLevelAnalysisService.name,
@@ -159,7 +162,11 @@ export class KodyRulesPrLevelAnalysisService
 
         const changedFiles = (context as any).changedFiles as FileChange[];
 
-        if (!changedFiles || !Array.isArray(changedFiles) || changedFiles.length === 0) {
+        if (
+            !changedFiles ||
+            !Array.isArray(changedFiles) ||
+            changedFiles.length === 0
+        ) {
             this.logger.warn({
                 message: 'No changed files found in context',
                 context: KodyRulesPrLevelAnalysisService.name,
@@ -193,7 +200,8 @@ export class KodyRulesPrLevelAnalysisService
 
         // Verificação segura de suggestionControl
         const suggestionControl = context.codeReviewConfig?.suggestionControl;
-        const applyFiltersToKodyRules = suggestionControl?.applyFiltersToKodyRules;
+        const applyFiltersToKodyRules =
+            suggestionControl?.applyFiltersToKodyRules;
 
         if (applyFiltersToKodyRules) {
             const minimalSeverityLevel = suggestionControl?.severityLevelFilter;
@@ -419,7 +427,8 @@ export class KodyRulesPrLevelAnalysisService
 
             if (!parsedResponse) {
                 this.logger.warn({
-                    message: 'Failed to parse LLM response - continuing without violations',
+                    message:
+                        'Failed to parse LLM response - continuing without violations',
                     context: KodyRulesPrLevelAnalysisService.name,
                     metadata: {
                         prNumber,
@@ -452,7 +461,11 @@ export class KodyRulesPrLevelAnalysisService
                     this.logger.warn({
                         message: 'Rule result missing ruleId, skipping',
                         context: KodyRulesPrLevelAnalysisService.name,
-                        metadata: { ruleResult, prNumber },
+                        metadata: {
+                            ruleResult,
+                            prNumber,
+                            organizationAndTeamData,
+                        },
                     });
                     continue;
                 }
@@ -468,13 +481,16 @@ export class KodyRulesPrLevelAnalysisService
                         metadata: {
                             ruleId: ruleResult.ruleId,
                             prNumber,
-                            availableRuleIds: kodyRulesPrLevel.map(r => r.uuid).filter(Boolean),
+                            organizationAndTeamData,
                         },
                     });
                     continue;
                 }
 
-                if (!ruleResult.violations || !Array.isArray(ruleResult.violations)) {
+                if (
+                    !ruleResult.violations ||
+                    !Array.isArray(ruleResult.violations)
+                ) {
                     this.logger.warn({
                         message: 'Invalid violations format for rule, skipping',
                         context: KodyRulesPrLevelAnalysisService.name,
@@ -482,6 +498,7 @@ export class KodyRulesPrLevelAnalysisService
                             ruleId: ruleResult.ruleId,
                             violationsType: typeof ruleResult.violations,
                             prNumber,
+                            organizationAndTeamData,
                         },
                     });
                     continue;
@@ -910,6 +927,7 @@ export class KodyRulesPrLevelAnalysisService
                         attempt,
                         filesInChunk: chunk.length,
                         prNumber,
+                        organizationAndTeamData,
                     },
                 });
 
@@ -933,13 +951,21 @@ export class KodyRulesPrLevelAnalysisService
                     message: `Error processing chunk ${chunkIndex + 1}, attempt ${attempt}`,
                     context: KodyRulesPrLevelAnalysisService.name,
                     error,
-                    metadata: { chunkIndex, attempt, prNumber, organizationAndTeamData },
+                    metadata: {
+                        chunkIndex,
+                        attempt,
+                        prNumber,
+                        organizationAndTeamData,
+                    },
                 });
 
                 // Se não é a última tentativa, aguardar antes de tentar novamente
                 if (attempt < retryAttempts) {
                     // Usar delay linear limitado ao invés de exponencial para evitar timeouts muito longos
-                    const delayMs = Math.min(retryDelay * attempt, MAX_RETRY_DELAY);
+                    const delayMs = Math.min(
+                        retryDelay * attempt,
+                        MAX_RETRY_DELAY,
+                    );
                     this.logger.log({
                         message: `Waiting ${delayMs}ms before retry ${attempt + 1}`,
                         context: KodyRulesPrLevelAnalysisService.name,
@@ -1249,7 +1275,11 @@ export class KodyRulesPrLevelAnalysisService
             this.logger.error({
                 message: 'No duplicated suggestions provided for grouping',
                 context: KodyRulesPrLevelAnalysisService.name,
-                metadata: { ruleId: rule?.uuid, prNumber, organizationAndTeamData },
+                metadata: {
+                    ruleId: rule?.uuid,
+                    prNumber,
+                    organizationAndTeamData,
+                },
             });
             // Retornar uma suggestion padrão
             return {
@@ -1298,7 +1328,11 @@ export class KodyRulesPrLevelAnalysisService
                 this.logger.warn({
                     message: 'Invalid grouped content returned from LLM',
                     context: KodyRulesPrLevelAnalysisService.name,
-                    metadata: { ruleId: rule?.uuid, prNumber, organizationAndTeamData },
+                    metadata: {
+                        ruleId: rule?.uuid,
+                        prNumber,
+                        organizationAndTeamData,
+                    },
                 });
 
                 // Usar primeira suggestion como fallback
@@ -1311,7 +1345,10 @@ export class KodyRulesPrLevelAnalysisService
                     brokenKodyRulesIds: baseSuggestion.brokenKodyRulesIds || [],
                     deliveryStatus: baseSuggestion.deliveryStatus,
                     severity: baseSuggestion.severity,
-                    files: baseSuggestion.files || { violatedFileSha: [], relatedFileSha: [] },
+                    files: baseSuggestion.files || {
+                        violatedFileSha: [],
+                        relatedFileSha: [],
+                    },
                 };
             }
 
@@ -1321,8 +1358,14 @@ export class KodyRulesPrLevelAnalysisService
 
             const groupedSuggestion: ISuggestionByPR = {
                 id: uuidv4(),
-                suggestionContent: firstViolation.suggestionContent?.trim() || baseSuggestion.suggestionContent || '',
-                oneSentenceSummary: firstViolation.oneSentenceSummary?.trim() || baseSuggestion.oneSentenceSummary || '',
+                suggestionContent:
+                    firstViolation.suggestionContent?.trim() ||
+                    baseSuggestion.suggestionContent ||
+                    '',
+                oneSentenceSummary:
+                    firstViolation.oneSentenceSummary?.trim() ||
+                    baseSuggestion.oneSentenceSummary ||
+                    '',
                 label: baseSuggestion.label,
                 brokenKodyRulesIds: baseSuggestion.brokenKodyRulesIds || [],
                 deliveryStatus: baseSuggestion.deliveryStatus,
@@ -1339,7 +1382,11 @@ export class KodyRulesPrLevelAnalysisService
                 message: 'Error during rule grouping',
                 context: KodyRulesPrLevelAnalysisService.name,
                 error,
-                metadata: { ruleId: rule?.uuid, prNumber, organizationAndTeamData },
+                metadata: {
+                    ruleId: rule?.uuid,
+                    prNumber,
+                    organizationAndTeamData,
+                },
             });
 
             // Retornar primeira suggestion como fallback
@@ -1352,7 +1399,10 @@ export class KodyRulesPrLevelAnalysisService
                 brokenKodyRulesIds: baseSuggestion.brokenKodyRulesIds || [],
                 deliveryStatus: baseSuggestion.deliveryStatus,
                 severity: baseSuggestion.severity,
-                files: baseSuggestion.files || { violatedFileSha: [], relatedFileSha: [] },
+                files: baseSuggestion.files || {
+                    violatedFileSha: [],
+                    relatedFileSha: [],
+                },
             };
         }
     }
@@ -1497,7 +1547,8 @@ export class KodyRulesPrLevelAnalysisService
                     if (firstSeverity) {
                         return {
                             ...suggestion,
-                            severity: firstSeverity.toLowerCase() as SeverityLevel,
+                            severity:
+                                firstSeverity.toLowerCase() as SeverityLevel,
                         };
                     }
                 }
