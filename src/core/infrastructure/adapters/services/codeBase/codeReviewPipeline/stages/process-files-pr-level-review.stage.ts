@@ -8,18 +8,6 @@ import {
     KodyRulesPrLevelAnalysisService,
 } from '@/ee/codeBase/kodyRulesPrLevelAnalysis.service';
 import { ReviewModeResponse } from '@/config/types/general/codeReview.type';
-import {
-    COMMENT_MANAGER_SERVICE_TOKEN,
-    ICommentManagerService,
-} from '@/core/domain/codeBase/contracts/CommentManagerService.contract';
-import {
-    ISuggestionService,
-    SUGGESTION_SERVICE_TOKEN,
-} from '@/core/domain/codeBase/contracts/SuggestionService.contract';
-import {
-    IPullRequestsService,
-    PULL_REQUESTS_SERVICE_TOKEN,
-} from '@/core/domain/pullRequests/contracts/pullRequests.service.contracts';
 
 @Injectable()
 export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -30,15 +18,6 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
 
         @Inject(KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN)
         private readonly kodyRulesPrLevelAnalysisService: KodyRulesPrLevelAnalysisService,
-
-        @Inject(COMMENT_MANAGER_SERVICE_TOKEN)
-        private readonly commentManagerService: ICommentManagerService,
-
-        @Inject(SUGGESTION_SERVICE_TOKEN)
-        private readonly suggestionService: ISuggestionService,
-
-        @Inject(PULL_REQUESTS_SERVICE_TOKEN)
-        private readonly pullRequestsService: IPullRequestsService,
     ) {
         super();
     }
@@ -156,7 +135,7 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                 return context;
             }
 
-            // Criar comentários e armazenar o resultado no contexto
+            // Obter as sugestões geradas
             const codeSuggestions = kodyRulesPrLevelAnalysis?.codeSuggestions || [];
 
             if (codeSuggestions.length > 0) {
@@ -171,113 +150,15 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                     },
                 });
 
-                let commentResults: any[] = [];
-
-                try {
-                    // Criar comentários para cada sugestão de nível de PR usando o commentManagerService
-                    const result = await this.commentManagerService.createPrLevelReviewComments(
-                        context.organizationAndTeamData,
-                        context.pullRequest.number,
-                        {
-                            name: context.repository.name,
-                            id: context.repository.id,
-                            language: context.repository.language || '',
-                        },
-                        codeSuggestions,
-                        context.codeReviewConfig?.languageResultPrompt,
-                    );
-
-                    commentResults = result?.commentResults || [];
-                } catch (error) {
-                    this.logger.error({
-                        message: `Error creating PR level comments for PR#${context.pullRequest.number}`,
-                        context: this.stageName,
-                        error,
-                        metadata: {
-                            prNumber: context.pullRequest.number,
-                            organizationAndTeamData: context.organizationAndTeamData,
-                            suggestionsCount: codeSuggestions.length,
-                        },
-                    });
-                    // Continua sem comentários
-                    commentResults = [];
-                }
-
-                // Transformar commentResults em ISuggestionByPR e salvar no banco
-                if (commentResults && commentResults.length > 0) {
-                    try {
-                        const prLevelSuggestions =
-                            this.suggestionService.transformCommentResultsToPrLevelSuggestions(
-                                commentResults,
-                            );
-
-                        if (prLevelSuggestions?.length > 0) {
-                            try {
-                                await this.pullRequestsService.addPrLevelSuggestions(
-                                    context.pullRequest.number,
-                                    context.repository.name,
-                                    prLevelSuggestions,
-                                    context.organizationAndTeamData,
-                                );
-
-                                this.logger.log({
-                                    message: `Saved ${prLevelSuggestions.length} PR level suggestions to database`,
-                                    context: ProcessFilesPrLevelReviewStage.name,
-                                    metadata: {
-                                        prNumber: context.pullRequest.number,
-                                        repositoryName: context.repository.name,
-                                        suggestionsCount: prLevelSuggestions.length,
-                                        organizationAndTeamData:
-                                            context.organizationAndTeamData,
-                                    },
-                                });
-                            } catch (error) {
-                                this.logger.error({
-                                    message: `Error saving PR level suggestions to database`,
-                                    context: this.stageName,
-                                    error,
-                                    metadata: {
-                                        prNumber: context.pullRequest.number,
-                                        repositoryName: context.repository.name,
-                                        organizationAndTeamData:
-                                            context.organizationAndTeamData,
-                                    },
-                                });
-                                // Continua sem salvar no banco
-                            }
-                        }
-                    } catch (error) {
-                        this.logger.error({
-                            message: `Error transforming comment results to PR level suggestions`,
-                            context: this.stageName,
-                            error,
-                            metadata: {
-                                prNumber: context.pullRequest.number,
-                                organizationAndTeamData: context.organizationAndTeamData,
-                                commentResultsCount: commentResults.length,
-                            },
-                        });
-                        // Continua sem transformar
-                    }
-                }
-
+                // Adicionar as sugestões ao contexto para o próximo stage processar
                 return this.updateContext(context, (draft) => {
                     if (!draft.validSuggestionsByPR) {
                         draft.validSuggestionsByPR = [];
                     }
 
-                    // Usar spread seguro
+                    // Usar spread seguro para adicionar as sugestões
                     if (codeSuggestions && Array.isArray(codeSuggestions)) {
                         draft.validSuggestionsByPR.push(...codeSuggestions);
-                    }
-
-                    // Armazenar os resultados dos comentários de nível de PR
-                    if (!draft.prLevelCommentResults) {
-                        draft.prLevelCommentResults = [];
-                    }
-
-                    if (commentResults && commentResults?.length > 0) {
-                        draft.prLevelCommentResults.push(...commentResults);
                     }
                 });
             } else {
