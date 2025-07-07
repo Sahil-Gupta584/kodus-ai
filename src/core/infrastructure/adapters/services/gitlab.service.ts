@@ -2841,4 +2841,59 @@ export class GitlabService
             }
         }
     }
+
+    formatReviewCommentBody(params: {
+        suggestion: any;
+        repository: { name: string; language: string };
+        includeHeader?: boolean;
+        includeFooter?: boolean;
+        language?: string;
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<string> {
+        const { suggestion, repository, includeHeader = true, includeFooter = true, language } = params;
+
+        let commentBody = '';
+
+        // HEADER - Badges (formato similar ao GitHub)
+        if (includeHeader) {
+            const severityShield = suggestion?.severity
+                ? getSeverityLevelShield(suggestion.severity)
+                : '';
+
+            const badges = [
+                getCodeReviewBadge(),
+                suggestion?.label ? getLabelShield(suggestion.label) : '',
+                severityShield,
+            ].filter(Boolean).join(' ');
+
+            commentBody += `${badges}\n\n`;
+        }
+
+        // BODY - Conteúdo principal
+        if (suggestion?.improvedCode) {
+            const lang = repository?.language?.toLowerCase() || 'javascript';
+            commentBody += `\`\`\`${lang}\n${suggestion.improvedCode}\n\`\`\`\n\n`;
+        }
+
+        if (suggestion?.suggestionContent) {
+            commentBody += `${suggestion.suggestionContent}\n\n`;
+        }
+
+        if (suggestion?.clusteringInformation?.actionStatement) {
+            commentBody += `${suggestion.clusteringInformation.actionStatement}\n\n`;
+        }
+
+        // FOOTER - Interação/Feedback
+        if (includeFooter) {
+            const translations = getTranslationsForLanguageByCategory(
+                language as LanguageValue,
+                TranslationsCategory.ReviewComment,
+            );
+
+            commentBody += this.formatSub(translations.talkToKody) + '\n';
+            commentBody += this.formatSub(translations.feedback);
+        }
+
+        return Promise.resolve(commentBody.trim());
+    }
 }

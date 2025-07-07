@@ -32,6 +32,8 @@ import {
     ICommentManagerService,
 } from '@/core/domain/codeBase/contracts/CommentManagerService.contract';
 import { ImplementationStatus } from '@/core/domain/pullRequests/enums/implementationStatus.enum';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 
 @Injectable()
 export class SuggestionService implements ISuggestionService {
@@ -466,7 +468,6 @@ export class SuggestionService implements ISuggestionService {
         discardedSuggestionsBySeverityOrQuantity: any[];
     }> {
         try {
-
             const hasKodyRules = suggestions.some((s) => {
                 const normalizedLabel = this.normalizeLabel(s.label);
                 return normalizedLabel === 'kody_rules';
@@ -1411,6 +1412,61 @@ export class SuggestionService implements ISuggestionService {
                 },
             });
             return sortedPrioritizedSuggestions;
+        }
+    }
+
+    /**
+     * Transforma commentResults de suggestions de PR level em ISuggestionByPR[]
+     */
+    public transformCommentResultsToPrLevelSuggestions(
+        commentResults: any[],
+    ): ISuggestionByPR[] {
+        try {
+            return commentResults
+                .filter(
+                    (result) =>
+                        result?.comment?.type === 'pr_level' &&
+                        result?.comment?.suggestion,
+                )
+                .map((result) => {
+                    const suggestion = result.comment.suggestion;
+
+                    return {
+                        id: suggestion.id,
+                        suggestionContent: suggestion.suggestionContent,
+                        oneSentenceSummary: suggestion.oneSentenceSummary,
+                        label: suggestion.label as LabelType,
+                        severity: suggestion.severity as SeverityLevel,
+                        brokenKodyRulesIds: suggestion.brokenKodyRulesIds || [],
+                        priorityStatus: PriorityStatus.PRIORITIZED, // Default para PR level
+                        deliveryStatus: result.deliveryStatus as DeliveryStatus,
+                        comment: result.codeReviewFeedbackData
+                            ? {
+                                  id: result.codeReviewFeedbackData.commentId,
+                                  pullRequestReviewId:
+                                      result.codeReviewFeedbackData
+                                          .pullRequestReviewId,
+                              }
+                            : undefined,
+                        files: {
+                            violatedFileSha:
+                                suggestion.files?.violatedFileSha || [],
+                            relatedFileSha:
+                                suggestion.files?.relatedFileSha || [],
+                        },
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                    };
+                });
+        } catch (error) {
+            this.logger.error({
+                message:
+                    'Error transforming comment results to PR level suggestions',
+                error,
+                context: SuggestionService.name,
+                metadata: { commentResultsCount: commentResults?.length },
+            });
+            return [];
         }
     }
 }

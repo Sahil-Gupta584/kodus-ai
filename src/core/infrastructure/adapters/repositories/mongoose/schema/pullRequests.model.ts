@@ -4,6 +4,8 @@ import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.
 import { ICommit } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { CoreDocument } from '@/shared/infrastructure/repositories/model/mongodb';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
 @Schema({
     collection: 'pullRequests',
@@ -141,6 +143,24 @@ export class PullRequestsModel extends CoreDocument {
 
     @Prop({ type: Boolean, required: false })
     public syncedWithIssues: boolean;
+
+    @Prop({ type: Array, required: false })
+    public prLevelSuggestions: Array<{
+        id: string;
+        suggestionContent: string;
+        oneSentenceSummary: string;
+        label: LabelType;
+        severity?: SeverityLevel;
+        brokenKodyRulesIds?: string[];
+        priorityStatus?: PriorityStatus;
+        deliveryStatus: DeliveryStatus;
+        comment?: {
+            id: number;
+            pullRequestReviewId: number;
+        };
+        createdAt?: string;
+        updatedAt?: string;
+    }>;
 }
 
 export const PullRequestsSchema =

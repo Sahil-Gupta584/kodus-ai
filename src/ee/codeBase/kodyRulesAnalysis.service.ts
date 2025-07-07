@@ -29,7 +29,10 @@ import {
     prompt_kodyrules_updatestdsuggestions_system,
     prompt_kodyrules_updatestdsuggestions_user,
 } from '@/shared/utils/langchainCommon/prompts/kodyRules';
-import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
+import {
+    IKodyRule,
+    KodyRulesScope,
+} from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisService.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
@@ -37,9 +40,9 @@ import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmP
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
-import { string } from 'joi';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import { IKodyRulesAnalysisService } from '@/core/domain/codeBase/contracts/KodyRulesAnalysisService.contract';
 
 // Interface for extended context used in Kody Rules analysis
 interface KodyRulesExtendedContext {
@@ -56,7 +59,7 @@ interface KodyRulesExtendedContext {
     severityLevelFilter?: SeverityLevel;
     organizationAndTeamData: OrganizationAndTeamData;
     kodyRules: Array<Partial<IKodyRule>>;
-    
+
     // Extended properties added during analysis
     standardSuggestions?: AIAnalysisResult;
     updatedSuggestions?: AIAnalysisResult;
@@ -144,57 +147,12 @@ type SystemPromptFn = () => string;
 type UserPromptFn = (input: any) => string;
 
 @Injectable()
-export class KodyRulesAnalysisService implements IAIAnalysisService {
+export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
     private readonly anthropic: Anthropic;
     private readonly tokenTracker: TokenTrackingHandler;
 
     @Inject(KODY_RULES_SERVICE_TOKEN)
     private readonly kodyRulesService: KodyRulesService;
-    /**
-     * Process the LLM response about violation decisions
-     * @param organizationAndTeamData Organization and team data
-     * @param prNumber Pull request number
-     * @param response String containing the LLM response
-     * @returns Map with the violation ID and if it should be removed or not, or null in case of error
-     */
-    private processViolationDecisions(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        response: string,
-    ): Map<string, boolean> | null {
-        try {
-            const cleanResponse = response.replace(/```json\n|```/g, '');
-            const parsedResponse = tryParseJSONObject(cleanResponse);
-
-            if (!parsedResponse?.decisions) {
-                this.logger.error({
-                    message: 'Failed to parse violation decisions response',
-                    context: KodyRulesAnalysisService.name,
-                    metadata: {
-                        originalResponse: response,
-                        cleanResponse,
-                        prNumber,
-                    },
-                });
-                return null;
-            }
-
-            return new Map(
-                parsedResponse?.decisions?.map((decision) => [
-                    decision.id,
-                    decision.shouldRemove,
-                ]),
-            );
-        } catch (error) {
-            this.logger.error({
-                message: 'Error processing violation decisions',
-                context: KodyRulesAnalysisService.name,
-                error,
-                metadata: { organizationAndTeamData, prNumber, response },
-            });
-            return null;
-        }
-    }
 
     constructor(
         private readonly logger: PinoLoggerService,
@@ -657,12 +615,16 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
         const kodyRulesFiltered = getKodyRulesForFile(
             fileContext.file.filename,
             context?.codeReviewConfig?.kodyRules || [],
-        )?.map((rule) => ({
-            uuid: rule?.uuid,
-            rule: rule?.rule,
-            severity: rule?.severity,
-            examples: rule?.examples ?? [],
-        }));
+        )
+            ?.filter(
+                (rule) => !rule.scope || rule.scope === KodyRulesScope.FILE,
+            )
+            ?.map((rule) => ({
+                uuid: rule?.uuid,
+                rule: rule?.rule,
+                severity: rule?.severity,
+                examples: rule?.examples ?? [],
+            }));
 
         const baseContext = {
             pullRequest: context?.pullRequest,
@@ -1074,7 +1036,10 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             if (parsedResponse.codeSuggestions) {
                 for (const suggestion of parsedResponse.codeSuggestions) {
                     const normalizedSuggestion: CodeSuggestion = {
-                        id: !suggestion?.id || !uuidValidate(suggestion?.id) ? uuidv4() : suggestion.id,
+                        id:
+                            !suggestion?.id || !uuidValidate(suggestion?.id)
+                                ? uuidv4()
+                                : suggestion.id,
                         relevantFile: suggestion.relevantFile || '',
                         language: suggestion.language,
                         suggestionContent: suggestion.suggestionContent || '',
@@ -1126,9 +1091,9 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
                 message: `Error processing UPDATE response for PR#${prNumber}`,
                 context: KodyRulesAnalysisService.name,
                 error,
-                metadata: { 
-                    organizationAndTeamData, 
-                    prNumber, 
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
                     response,
                     filename: fileContext?.file?.filename,
                 },
@@ -1154,70 +1119,5 @@ export class KodyRulesAnalysisService implements IAIAnalysisService {
             },
         });
     }
-
-    createSeverityAnalysisChainWithFallback(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        provider: LLMModelProvider,
-        codeSuggestions: CodeSuggestion[],
-    ): Promise<any> {
-        throw new Error('Method not implemented.');
-    }
-
-    async extractSuggestionsFromCodeReviewSafeguard(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        safeGuardResponse: any,
-    ): Promise<any> {
-        throw new Error('Method not implemented.');
-    }
-
-    async filterSuggestionsSafeGuard(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        file: any,
-        codeDiff: string,
-        suggestions: any[],
-        languageResultPrompt: string,
-    ): Promise<any> {
-        throw new Error('Method not implemented.');
-    }
-
-    async generateCodeSuggestions(
-        organizationAndTeamData: OrganizationAndTeamData,
-        sessionId: string,
-        question: string,
-        parameters: any,
-    ) {
-        throw new Error('Method not implemented.');
-    }
-
-    validateImplementedSuggestions(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        provider: LLMModelProvider,
-        codePatch: any,
-        codeSuggestions: Partial<CodeSuggestion>[],
-    ): Promise<any> {
-        throw new Error('Method not implemented.');
-    }
-
-    selectReviewMode(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        provider: LLMModelProvider,
-        file: FileChange,
-        codeDiff: string,
-    ): Promise<ReviewModeResponse> {
-        throw new Error('Method not implemented.');
-    }
-
-    severityAnalysisAssignment(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        provider: LLMModelProvider,
-        codeSuggestions: CodeSuggestion[],
-    ): Promise<CodeSuggestion[]> {
-        throw new Error('Method not implemented.');
-    }
 }
+

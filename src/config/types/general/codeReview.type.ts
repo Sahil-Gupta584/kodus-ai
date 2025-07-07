@@ -8,6 +8,7 @@ import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/ko
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { GetImpactAnalysisResponse } from '@kodus/kodus-proto/ast';
 import { TaskStatus } from '@kodus/kodus-proto/task';
+import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
@@ -101,6 +102,10 @@ export type AIAnalysisResult = {
         generateSuggestions?: string;
         safeguard?: string;
     };
+};
+
+export type AIAnalysisResultPrLevel = {
+    codeSuggestions: ISuggestionByPR[];
 };
 
 export type CodeSuggestion = {

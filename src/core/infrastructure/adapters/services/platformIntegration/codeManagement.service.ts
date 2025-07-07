@@ -1008,4 +1008,29 @@ export class CodeManagementService implements ICodeManagementService {
 
         return codeManagementService.deleteWebhook(params);
     }
+
+    async formatReviewCommentBody(params: {
+        suggestion: any;
+        repository: { name: string; language: string };
+        includeHeader?: boolean;
+        includeFooter?: boolean;
+        language?: string;
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<string> {
+        const type = await this.getTypeIntegration(
+            params.organizationAndTeamData,
+        );
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.formatReviewCommentBody({
+            suggestion: params.suggestion,
+            repository: params.repository,
+            includeHeader: params.includeHeader ?? true,
+            includeFooter: params.includeFooter ?? true,
+            language: params.language,
+            organizationAndTeamData: params.organizationAndTeamData,
+        });
+    }
 }

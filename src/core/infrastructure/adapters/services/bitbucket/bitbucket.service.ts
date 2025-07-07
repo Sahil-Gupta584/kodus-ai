@@ -3801,4 +3801,47 @@ export class BitbucketService
             }
         }
     }
+
+    formatReviewCommentBody(params: {
+        suggestion: any;
+        repository: { name: string; language: string };
+        includeHeader?: boolean;
+        includeFooter?: boolean;
+        language?: string;
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<string> {
+        const { suggestion, repository, includeHeader = true, includeFooter = true } = params;
+
+        let commentBody = '';
+
+        // HEADER - Badges (formato Bitbucket)
+        if (includeHeader) {
+            const severityText = suggestion?.severity || '';
+            const labelText = suggestion?.label || '';
+
+            commentBody += `\`kody|code-review\` \`${labelText}\` \`severity-level|${severityText}\`\n\n`;
+        }
+
+        // BODY - Conteúdo principal
+        if (suggestion?.improvedCode) {
+            const lang = repository?.language?.toLowerCase() || 'javascript';
+            commentBody += `\`\`\`${lang}\n${suggestion.improvedCode}\n\`\`\`\n\n`;
+        }
+
+        if (suggestion?.suggestionContent) {
+            commentBody += `${suggestion.suggestionContent}\n\n`;
+        }
+
+        if (suggestion?.clusteringInformation?.actionStatement) {
+            commentBody += `${suggestion.clusteringInformation.actionStatement}\n\n`;
+        }
+
+        // FOOTER - Interação/Feedback (formato Bitbucket)
+        if (includeFooter) {
+            commentBody += 'Was this suggestion helpful? reply with 👍 or 👎 to help Kody learn from this interaction.\n\n';
+            commentBody += `\`\`\`\n👍\n\`\`\`\n\n\`\`\`\n👎\n\`\`\``;
+        }
+
+        return Promise.resolve(commentBody.trim());
+    }
 }

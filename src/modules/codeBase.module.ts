@@ -43,6 +43,8 @@ import {
 import { GlobalParametersModule } from './global-parameters.module';
 import { LogModule } from './log.module';
 import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeBase.controller';
+import { KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN, KodyRulesPrLevelAnalysisService } from '@/ee/codeBase/kodyRulesPrLevelAnalysis.service';
+import { TokenChunkingModule } from './tokenChunking.module';
 
 @Module({
     imports: [
@@ -64,6 +66,7 @@ import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeB
         forwardRef(() => KodyFineTuningContextModule),
         forwardRef(() => KodyASTAnalyzeContextModule),
         forwardRef(() => GlobalParametersModule),
+        forwardRef(() => TokenChunkingModule),
         LogModule,
     ],
     providers: [
@@ -88,6 +91,10 @@ import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeB
             useClass: KodyRulesAnalysisService,
         },
         {
+            provide: KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN,
+            useClass: KodyRulesPrLevelAnalysisService,
+        },
+        {
             provide: SUGGESTION_SERVICE_TOKEN,
             useClass: SuggestionService,
         },
@@ -101,10 +108,10 @@ import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeB
     exports: [
         PULL_REQUEST_MANAGER_SERVICE_TOKEN,
         LLM_ANALYSIS_SERVICE_TOKEN,
-
         COMMENT_MANAGER_SERVICE_TOKEN,
         CODE_BASE_CONFIG_SERVICE_TOKEN,
         KODY_RULES_ANALYSIS_SERVICE_TOKEN,
+        KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN,
         SUGGESTION_SERVICE_TOKEN,
         PromptService,
         CodeAnalysisOrchestrator,

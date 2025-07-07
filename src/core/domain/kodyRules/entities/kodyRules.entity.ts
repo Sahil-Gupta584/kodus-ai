@@ -1,5 +1,5 @@
 import { Entity } from '@/shared/domain/interfaces/entity';
-import { IKodyRule, IKodyRules } from '../interfaces/kodyRules.interface';
+import { IKodyRule, IKodyRules, KodyRulesScope } from '../interfaces/kodyRules.interface';
 
 export class KodyRulesEntity implements Entity<IKodyRules> {
     private readonly _uuid: string;
@@ -16,11 +16,18 @@ export class KodyRulesEntity implements Entity<IKodyRules> {
         this._updatedAt = kodyRules.updatedAt;
     }
 
+    private normalizeRules(rules: Partial<IKodyRule>[]): Partial<IKodyRule>[] {
+        return rules.map(rule => ({
+            ...rule,
+            scope: rule.scope ?? KodyRulesScope.FILE,
+        }));
+    }
+
     toJson(): IKodyRules {
         return {
             uuid: this._uuid,
             organizationId: this._organizationId,
-            rules: this._rules,
+            rules: this.normalizeRules(this._rules),
             createdAt: this._createdAt,
             updatedAt: this._updatedAt,
         };
@@ -30,7 +37,7 @@ export class KodyRulesEntity implements Entity<IKodyRules> {
         return {
             uuid: this._uuid,
             organizationId: this._organizationId,
-            rules: this._rules,
+            rules: this.normalizeRules(this._rules),
             createdAt: this._createdAt,
             updatedAt: this._updatedAt,
         };
@@ -49,7 +56,7 @@ export class KodyRulesEntity implements Entity<IKodyRules> {
     }
 
     get rules(): Partial<IKodyRule>[] {
-        return [...this._rules];
+        return this.normalizeRules([...this._rules]);
     }
 
     get createdAt(): Date {

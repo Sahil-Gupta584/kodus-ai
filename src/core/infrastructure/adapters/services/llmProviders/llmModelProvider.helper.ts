@@ -248,6 +248,7 @@ export interface ModelStrategy {
     readonly modelName: string;
     readonly defaultMaxTokens: number;
     readonly baseURL?: string;
+    readonly inputMaxTokens?: number;
 }
 
 export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
@@ -297,6 +298,7 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
         factory: getChatGemini,
         modelName: 'gemini-2.5-pro',
         defaultMaxTokens: 60000,
+        inputMaxTokens: 1000000,
     },
     [LLMModelProvider.GEMINI_2_5_FLASH]: {
         provider: 'google',
@@ -330,6 +332,7 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
         factory: getChatVertexAI,
         modelName: 'claude-3-5-sonnet-v2@20241022',
         defaultMaxTokens: 4000,
+        inputMaxTokens: 200000,
     },
 
     // Deepseek

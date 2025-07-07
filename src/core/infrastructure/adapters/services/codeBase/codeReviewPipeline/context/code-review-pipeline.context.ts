@@ -12,6 +12,7 @@ import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/ko
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { PipelineContext } from '../../../pipeline/interfaces/pipeline-context.interface';
 import { TaskStatus } from '@kodus/kodus-proto/task';
+import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 
 export interface CodeReviewPipelineContext extends PipelineContext {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -53,6 +54,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     clusterizedSuggestions?: IClusterizedSuggestion[];
 
     preparedFileContexts: AnalysisContext[];
+
     fileAnalysisResults?: Array<{
         validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
@@ -64,6 +66,8 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     discardedSuggestions: Partial<CodeSuggestion>[];
     overallComments: { filepath: string; summary: string }[];
     lastAnalyzedCommit?: any;
+
+    validSuggestionsByPR?: ISuggestionByPR[];
 
     lineComments?: CommentResult[];
 
@@ -77,4 +81,6 @@ export interface CodeReviewPipelineContext extends PipelineContext {
             status?: TaskStatus;
         };
     };
+    // Resultados dos comentários de nível de PR
+    prLevelCommentResults?: Array<CommentResult>;
 }

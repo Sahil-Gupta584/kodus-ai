@@ -128,4 +128,13 @@ export interface ICodeManagementService
     deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void>;
+
+    formatReviewCommentBody(params: {
+        suggestion: any;
+        repository: { name: string; language: string };
+        includeHeader?: boolean;
+        includeFooter?: boolean;
+        language?: string;
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<string>;
 }

@@ -13,6 +13,7 @@ import { UpdateCommentsAndGenerateSummaryStage } from '../stages/finish-comments
 import { RequestChangesOrApproveStage } from '../stages/finish-process-review.stage';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { BasePipelineStage } from '../../../pipeline/base-stage.abstract';
+import { ProcessFilesPrLevelReviewStage } from '../stages/process-files-pr-level-review.stage';
 
 @Injectable()
 export class CodeReviewPipelineStrategy
@@ -22,6 +23,7 @@ export class CodeReviewPipelineStrategy
         private readonly validateConfigStage: ValidateConfigStage,
         private readonly fetchChangedFilesStage: FetchChangedFilesStage,
         private readonly initialCommentStage: InitialCommentStage,
+        private readonly processFilesPrLevelReviewStage: ProcessFilesPrLevelReviewStage,
         private readonly processFilesReview: ProcessFilesReview,
         private readonly aggregateResultsStage: AggregateResultsStage,
         private readonly updateCommentsAndGenerateSummaryStage: UpdateCommentsAndGenerateSummaryStage,
@@ -33,6 +35,7 @@ export class CodeReviewPipelineStrategy
             this.validateConfigStage,
             this.fetchChangedFilesStage,
             this.initialCommentStage,
+            this.processFilesPrLevelReviewStage,
             this.processFilesReview,
             this.aggregateResultsStage,
             this.updateCommentsAndGenerateSummaryStage,

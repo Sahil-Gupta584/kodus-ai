@@ -43,6 +43,22 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
             }
         });
 
+        if (
+            context.validSuggestionsByPR &&
+            context.validSuggestionsByPR.length > 0
+        ) {
+            validSuggestions.push(...context.validSuggestionsByPR);
+
+            this.logger.log({
+                message: `Added ${context.validSuggestionsByPR.length} PR-level suggestions to aggregation`,
+                context: this.stageName,
+                metadata: {
+                    organizationId: context.organizationAndTeamData.organizationId,
+                    prNumber: context.pullRequest.number,
+                },
+            });
+        }
+
         this.logger.log({
             message: `Aggregated ${validSuggestions.length} valid suggestions, ${discardedSuggestions.length} discarded suggestions, and ${overallComments.length} overall comments`,
             context: this.stageName,

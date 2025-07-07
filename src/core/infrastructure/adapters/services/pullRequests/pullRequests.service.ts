@@ -11,6 +11,7 @@ import {
     IFile,
     IPullRequestUser,
     ICommit,
+    ISuggestionByPR,
 } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { IPullRequestsService } from '@/core/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
@@ -165,6 +166,58 @@ export class PullRequestsService implements IPullRequestsService {
             repositoryName,
         );
     }
+
+    async addPrLevelSuggestions(
+        pullRequestNumber: number,
+        repositoryName: string,
+        prLevelSuggestions: ISuggestionByPR[],
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<PullRequestsEntity | null> {
+        try {
+            const existingPR = await this.findByNumberAndRepository(
+                pullRequestNumber,
+                repositoryName,
+                organizationAndTeamData,
+            );
+
+            if (!existingPR) {
+                this.logger.warn({
+                    message: `PR not found when trying to add PR level suggestions`,
+                    context: PullRequestsService.name,
+                    metadata: {
+                        pullRequestNumber,
+                        repositoryName,
+                        organizationAndTeamData,
+                    },
+                });
+                return null;
+            }
+
+            const existingPrLevelSuggestions = existingPR.prLevelSuggestions || [];
+            const updatedPrLevelSuggestions = [
+                ...existingPrLevelSuggestions,
+                ...prLevelSuggestions,
+            ];
+
+            return this.update(existingPR, {
+                prLevelSuggestions: updatedPrLevelSuggestions,
+                updatedAt: new Date().toISOString(),
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Failed to add PR level suggestions to PR#${pullRequestNumber}`,
+                context: PullRequestsService.name,
+                error,
+                metadata: {
+                    pullRequestNumber,
+                    repositoryName,
+                    suggestionsCount: prLevelSuggestions.length,
+                    organizationAndTeamData,
+                },
+            });
+            return null;
+        }
+    }
     //#endregion
 
     //#region Update
@@ -231,6 +284,7 @@ export class PullRequestsService implements IPullRequestsService {
         platformType: PlatformType,
         organizationId: string,
         commits: ICommit[],
+        prLevelSuggestions?: ISuggestionByPR[],
     ): Promise<IPullRequests | null> {
         try {
             const enrichedPullRequest = {
@@ -284,6 +338,7 @@ export class PullRequestsService implements IPullRequestsService {
                     unusedSuggestions,
                     platformType,
                     organizationId,
+                    prLevelSuggestions,
                 );
             }
 
@@ -315,6 +370,15 @@ export class PullRequestsService implements IPullRequestsService {
                 ),
                 commits: enrichedPullRequest.commits,
             });
+
+            if (prLevelSuggestions && prLevelSuggestions.length > 0) {
+                await this.addPrLevelSuggestions(
+                    pullRequest.number,
+                    repository.name,
+                    prLevelSuggestions,
+                    organizationAndTeamData,
+                );
+            }
 
             return this.handleExistingPullRequest(
                 enrichedPullRequest,
@@ -397,6 +461,7 @@ export class PullRequestsService implements IPullRequestsService {
                     : [],
                 syncedEmbeddedSuggestions: false,
                 syncedWithIssues: false,
+                prLevelSuggestions: [],
             };
         } catch (error) {
             this.logger.log({
@@ -533,6 +598,7 @@ export class PullRequestsService implements IPullRequestsService {
         unusedSuggestions: Array<ISuggestion>,
         platformType: PlatformType,
         organizationId: string,
+        prLevelSuggestions?: ISuggestionByPR[],
     ): Promise<IPullRequests> {
         try {
             this.logger.log({
@@ -561,6 +627,10 @@ export class PullRequestsService implements IPullRequestsService {
                 prioritizedSuggestions,
                 unusedSuggestions,
             );
+
+            if (prLevelSuggestions && prLevelSuggestions.length > 0) {
+                structure.prLevelSuggestions = prLevelSuggestions;
+            }
 
             return this.create(structure as Omit<IPullRequests, 'uuid'>);
         } catch (error) {

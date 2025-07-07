@@ -15,6 +15,7 @@ import { RequestChangesOrApproveStage } from '@/core/infrastructure/adapters/ser
 import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/context/code-review-pipeline.context';
 import { KodyFineTuningStage } from '../stages/kody-fine-tuning.stage';
 import { CodeAnalysisASTStage } from '../stages/code-analysis-ast.stage';
+import { ProcessFilesPrLevelReviewStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/process-files-pr-level-review.stage';
 
 @Injectable()
 export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeReviewPipelineContext> {
@@ -25,6 +26,7 @@ export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeRevie
         private readonly initialCommentStage: InitialCommentStage,
         private readonly kodyFineTuningStage: KodyFineTuningStage,
         private readonly codeAnalysisASTStage: CodeAnalysisASTStage,
+        private readonly processFilesPrLevelReviewStage: ProcessFilesPrLevelReviewStage,
         private readonly processFilesReview: ProcessFilesReview,
         private readonly aggregateResultsStage: AggregateResultsStage,
         private readonly updateCommentsAndGenerateSummaryStage: UpdateCommentsAndGenerateSummaryStage,
@@ -42,6 +44,7 @@ export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeRevie
             this.initialCommentStage,
             this.kodyFineTuningStage,
             this.codeAnalysisASTStage,
+            this.processFilesPrLevelReviewStage,
             this.processFilesReview,
             this.aggregateResultsStage,
             this.updateCommentsAndGenerateSummaryStage,
