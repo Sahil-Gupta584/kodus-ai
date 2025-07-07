@@ -138,23 +138,65 @@ export class KodyRulesPrLevelAnalysisService
         context: AnalysisContext,
         suggestions?: AIAnalysisResult,
     ): Promise<AIAnalysisResultPrLevel> {
+        // Validações de segurança
+        if (!context?.codeReviewConfig) {
+            this.logger.error({
+                message: 'Missing codeReviewConfig in context',
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: { organizationAndTeamData, prNumber },
+            });
+            return { codeSuggestions: [] };
+        }
+
+        if (!context.codeReviewConfig.kodyRules || !Array.isArray(context.codeReviewConfig.kodyRules)) {
+            this.logger.warn({
+                message: 'No kodyRules found in config',
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: { organizationAndTeamData, prNumber },
+            });
+            return { codeSuggestions: [] };
+        }
+
         const changedFiles = (context as any).changedFiles as FileChange[];
+
+        if (!changedFiles || !Array.isArray(changedFiles) || changedFiles.length === 0) {
+            this.logger.warn({
+                message: 'No changed files found in context',
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: { organizationAndTeamData, prNumber },
+            });
+            return { codeSuggestions: [] };
+        }
 
         const kodyRules = context.codeReviewConfig.kodyRules;
         const language =
             context.codeReviewConfig.languageResultPrompt || 'en-US';
 
         const kodyRulesPrLevel = kodyRules.filter(
-            (rule) => rule.scope === KodyRulesScope.PULL_REQUEST,
+            (rule) => rule?.scope === KodyRulesScope.PULL_REQUEST,
         );
+
+        if (!kodyRulesPrLevel.length) {
+            this.logger.log({
+                message: `No PR-level rules found for PR#${prNumber}`,
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    totalRules: kodyRules.length,
+                },
+            });
+            return { codeSuggestions: [] };
+        }
 
         let filteredKodyRules: Array<Partial<IKodyRule>> = [];
 
-        if (
-            context.codeReviewConfig.suggestionControl?.applyFiltersToKodyRules
-        ) {
-            const minimalSeverityLevel =
-                context.codeReviewConfig.suggestionControl.severityLevelFilter;
+        // Verificação segura de suggestionControl
+        const suggestionControl = context.codeReviewConfig?.suggestionControl;
+        const applyFiltersToKodyRules = suggestionControl?.applyFiltersToKodyRules;
+
+        if (applyFiltersToKodyRules) {
+            const minimalSeverityLevel = suggestionControl?.severityLevelFilter;
 
             filteredKodyRules = await this.filterRulesByMinimumSeverity(
                 kodyRulesPrLevel,
@@ -203,7 +245,9 @@ export class KodyRulesPrLevelAnalysisService
                 },
                 error,
             });
-            throw error;
+            return {
+                codeSuggestions: [],
+            };
         }
     }
 
@@ -359,19 +403,42 @@ export class KodyRulesPrLevelAnalysisService
     ): ExtendedKodyRule[] | null {
         try {
             if (!response) {
+                this.logger.warn({
+                    message: 'Empty response from LLM analyzer',
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    metadata: {
+                        prNumber,
+                        organizationAndTeamData,
+                        filesCount: files.length,
+                    },
+                });
                 return null;
             }
 
             const parsedResponse = this.processLLMResponse(response);
 
-            if (!parsedResponse?.length) {
+            if (!parsedResponse) {
                 this.logger.warn({
-                    message:
-                        'Failed to parse analyzer response OR no violations found',
+                    message: 'Failed to parse LLM response - continuing without violations',
                     context: KodyRulesPrLevelAnalysisService.name,
                     metadata: {
                         prNumber,
                         organizationAndTeamData,
+                        responseLength: response.length,
+                    },
+                });
+                return null;
+            }
+
+            if (!Array.isArray(parsedResponse) || parsedResponse.length === 0) {
+                this.logger.log({
+                    message: 'No violations found in LLM response',
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    metadata: {
+                        prNumber,
+                        organizationAndTeamData,
+                        responseType: typeof parsedResponse,
+                        isArray: Array.isArray(parsedResponse),
                     },
                 });
                 return null;
@@ -381,28 +448,63 @@ export class KodyRulesPrLevelAnalysisService
             const violatedRules: ExtendedKodyRule[] = [];
 
             for (const ruleResult of parsedResponse) {
+                if (!ruleResult?.ruleId) {
+                    this.logger.warn({
+                        message: 'Rule result missing ruleId, skipping',
+                        context: KodyRulesPrLevelAnalysisService.name,
+                        metadata: { ruleResult, prNumber },
+                    });
+                    continue;
+                }
+
                 const rule = kodyRulesPrLevel.find(
                     (r) => r.uuid === ruleResult.ruleId,
                 );
-                if (rule) {
-                    violatedRules.push({
-                        ...rule,
-                        violations: ruleResult.violations,
+
+                if (!rule) {
+                    this.logger.warn({
+                        message: 'Rule not found for ruleId, skipping',
+                        context: KodyRulesPrLevelAnalysisService.name,
+                        metadata: {
+                            ruleId: ruleResult.ruleId,
+                            prNumber,
+                            availableRuleIds: kodyRulesPrLevel.map(r => r.uuid).filter(Boolean),
+                        },
                     });
+                    continue;
                 }
+
+                if (!ruleResult.violations || !Array.isArray(ruleResult.violations)) {
+                    this.logger.warn({
+                        message: 'Invalid violations format for rule, skipping',
+                        context: KodyRulesPrLevelAnalysisService.name,
+                        metadata: {
+                            ruleId: ruleResult.ruleId,
+                            violationsType: typeof ruleResult.violations,
+                            prNumber,
+                        },
+                    });
+                    continue;
+                }
+
+                violatedRules.push({
+                    ...rule,
+                    violations: ruleResult.violations,
+                });
             }
 
             this.logger.log({
                 message: 'Successfully processed analyzer response',
                 context: KodyRulesPrLevelAnalysisService.name,
                 metadata: {
+                    totalRulesInResponse: parsedResponse.length,
                     totalViolatedRules: violatedRules.length,
                     prNumber,
                     organizationAndTeamData,
                 },
             });
 
-            return violatedRules;
+            return violatedRules?.length > 0 ? violatedRules : null;
         } catch (error) {
             this.logger.error({
                 message: 'Error processing analyzer response',
@@ -411,6 +513,7 @@ export class KodyRulesPrLevelAnalysisService
                 metadata: {
                     prNumber,
                     organizationAndTeamData,
+                    responseLength: response?.length || 0,
                 },
             });
             return null;
@@ -794,6 +897,9 @@ export class KodyRulesPrLevelAnalysisService
     ): Promise<ChunkProcessingResult> {
         const { retryAttempts, retryDelay } = batchConfig;
 
+        // Limitar delay máximo para evitar timeouts muito longos
+        const MAX_RETRY_DELAY = 10000; // 10 segundos máximo
+
         for (let attempt = 1; attempt <= retryAttempts; attempt++) {
             try {
                 this.logger.log({
@@ -827,14 +933,34 @@ export class KodyRulesPrLevelAnalysisService
                     message: `Error processing chunk ${chunkIndex + 1}, attempt ${attempt}`,
                     context: KodyRulesPrLevelAnalysisService.name,
                     error,
-                    metadata: { chunkIndex, attempt, prNumber },
+                    metadata: { chunkIndex, attempt, prNumber, organizationAndTeamData },
                 });
 
                 // Se não é a última tentativa, aguardar antes de tentar novamente
                 if (attempt < retryAttempts) {
-                    await this.delay(retryDelay * attempt); // Exponential backoff
+                    // Usar delay linear limitado ao invés de exponencial para evitar timeouts muito longos
+                    const delayMs = Math.min(retryDelay * attempt, MAX_RETRY_DELAY);
+                    this.logger.log({
+                        message: `Waiting ${delayMs}ms before retry ${attempt + 1}`,
+                        context: KodyRulesPrLevelAnalysisService.name,
+                        metadata: { chunkIndex, attempt, delayMs },
+                    });
+                    await this.delay(delayMs);
                 } else {
-                    // Última tentativa falhou
+                    // Última tentativa falhou - logar erro detalhado
+                    this.logger.error({
+                        message: `Chunk ${chunkIndex + 1} failed after ${retryAttempts} attempts`,
+                        context: KodyRulesPrLevelAnalysisService.name,
+                        error,
+                        metadata: {
+                            chunkIndex,
+                            totalAttempts: retryAttempts,
+                            prNumber,
+                            organizationAndTeamData,
+                            filesInChunk: chunk.length,
+                        },
+                    });
+
                     return {
                         chunkIndex,
                         result: null,
@@ -1118,54 +1244,117 @@ export class KodyRulesPrLevelAnalysisService
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
     ): Promise<ISuggestionByPR> {
+        // Validação de segurança
+        if (!duplicatedSuggestions || duplicatedSuggestions.length === 0) {
+            this.logger.error({
+                message: 'No duplicated suggestions provided for grouping',
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: { ruleId: rule?.uuid, prNumber, organizationAndTeamData },
+            });
+            // Retornar uma suggestion padrão
+            return {
+                id: uuidv4(),
+                suggestionContent: 'Error processing suggestions',
+                oneSentenceSummary: 'Error occurred during processing',
+                label: LabelType.KODY_RULES,
+                brokenKodyRulesIds: rule?.uuid ? [rule.uuid] : [],
+                deliveryStatus: DeliveryStatus.NOT_SENT,
+                files: { violatedFileSha: [], relatedFileSha: [] },
+            };
+        }
+
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
 
         // Preparar payload para o prompt de agrupamento
         const groupingPayload = {
             rule: {
-                title: rule.title,
-                description: rule.rule,
+                title: rule?.title || '',
+                description: rule?.rule || '',
             },
             language: language,
             violations: duplicatedSuggestions.map((s) => ({
                 violatedFileSha: s.files?.violatedFileSha || [],
                 relatedFileSha: s.files?.relatedFileSha || [],
-                reason: s.suggestionContent,
+                reason: s.suggestionContent || '',
             })),
         };
 
-        // Criar chain com fallback
-        const groupingChain = await this.createGroupingChain(
-            provider,
-            groupingPayload,
-            prNumber,
-            organizationAndTeamData,
-        );
+        try {
+            // Criar chain com fallback
+            const groupingChain = await this.createGroupingChain(
+                provider,
+                groupingPayload,
+                prNumber,
+                organizationAndTeamData,
+            );
 
-        // Executar agrupamento
-        const response = await groupingChain.invoke(groupingPayload);
+            // Executar agrupamento
+            const response = await groupingChain.invoke(groupingPayload);
 
-        const groupedContent = this.processLLMResponse(response);
+            const groupedContent = this.processLLMResponse(response);
 
-        // Criar nova suggestion agrupada baseada na primeira suggestion
-        const baseSuggestion = duplicatedSuggestions[0];
-        const groupedSuggestion: ISuggestionByPR = {
-            id: uuidv4(),
-            suggestionContent:
-                groupedContent.violations[0].suggestionContent.trim(),
-            oneSentenceSummary:
-                groupedContent.violations[0].oneSentenceSummary.trim(),
-            label: baseSuggestion.label,
-            brokenKodyRulesIds: baseSuggestion.brokenKodyRulesIds,
-            deliveryStatus: baseSuggestion.deliveryStatus,
-            severity: baseSuggestion.severity,
-            files: {
-                violatedFileSha: groupedContent.violations[0]?.violatedFileSha,
-                relatedFileSha: groupedContent.violations[0]?.relatedFileSha,
-            },
-        };
+            // Validação de segurança do resultado
+            if (!groupedContent?.violations?.[0]) {
+                this.logger.warn({
+                    message: 'Invalid grouped content returned from LLM',
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    metadata: { ruleId: rule?.uuid, prNumber, organizationAndTeamData },
+                });
 
-        return groupedSuggestion;
+                // Usar primeira suggestion como fallback
+                const baseSuggestion = duplicatedSuggestions[0];
+                return {
+                    id: uuidv4(),
+                    suggestionContent: baseSuggestion.suggestionContent || '',
+                    oneSentenceSummary: baseSuggestion.oneSentenceSummary || '',
+                    label: baseSuggestion.label,
+                    brokenKodyRulesIds: baseSuggestion.brokenKodyRulesIds || [],
+                    deliveryStatus: baseSuggestion.deliveryStatus,
+                    severity: baseSuggestion.severity,
+                    files: baseSuggestion.files || { violatedFileSha: [], relatedFileSha: [] },
+                };
+            }
+
+            // Criar nova suggestion agrupada baseada na primeira suggestion
+            const baseSuggestion = duplicatedSuggestions[0];
+            const firstViolation = groupedContent.violations[0];
+
+            const groupedSuggestion: ISuggestionByPR = {
+                id: uuidv4(),
+                suggestionContent: firstViolation.suggestionContent?.trim() || baseSuggestion.suggestionContent || '',
+                oneSentenceSummary: firstViolation.oneSentenceSummary?.trim() || baseSuggestion.oneSentenceSummary || '',
+                label: baseSuggestion.label,
+                brokenKodyRulesIds: baseSuggestion.brokenKodyRulesIds || [],
+                deliveryStatus: baseSuggestion.deliveryStatus,
+                severity: baseSuggestion.severity,
+                files: {
+                    violatedFileSha: firstViolation?.violatedFileSha || [],
+                    relatedFileSha: firstViolation?.relatedFileSha || [],
+                },
+            };
+
+            return groupedSuggestion;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error during rule grouping',
+                context: KodyRulesPrLevelAnalysisService.name,
+                error,
+                metadata: { ruleId: rule?.uuid, prNumber, organizationAndTeamData },
+            });
+
+            // Retornar primeira suggestion como fallback
+            const baseSuggestion = duplicatedSuggestions[0];
+            return {
+                id: uuidv4(),
+                suggestionContent: baseSuggestion.suggestionContent || '',
+                oneSentenceSummary: baseSuggestion.oneSentenceSummary || '',
+                label: baseSuggestion.label,
+                brokenKodyRulesIds: baseSuggestion.brokenKodyRulesIds || [],
+                deliveryStatus: baseSuggestion.deliveryStatus,
+                severity: baseSuggestion.severity,
+                files: baseSuggestion.files || { violatedFileSha: [], relatedFileSha: [] },
+            };
+        }
     }
 
     private async createGroupingChain(
@@ -1304,10 +1493,13 @@ export class KodyRulesPrLevelAnalysisService
                     .filter(Boolean);
 
                 if (severities && severities.length > 0) {
-                    return {
-                        ...suggestion,
-                        severity: severities[0]?.toLowerCase() as SeverityLevel,
-                    };
+                    const firstSeverity = severities[0];
+                    if (firstSeverity) {
+                        return {
+                            ...suggestion,
+                            severity: firstSeverity.toLowerCase() as SeverityLevel,
+                        };
+                    }
                 }
 
                 return suggestion;
