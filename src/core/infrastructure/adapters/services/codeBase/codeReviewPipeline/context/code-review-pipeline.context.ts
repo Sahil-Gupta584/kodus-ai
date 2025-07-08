@@ -70,6 +70,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     lastAnalyzedCommit?: any;
 
     validSuggestionsByPR?: ISuggestionByPR[];
+    validCrossFileSuggestions?: CodeSuggestion[];
 
     lineComments?: CommentResult[];
 
