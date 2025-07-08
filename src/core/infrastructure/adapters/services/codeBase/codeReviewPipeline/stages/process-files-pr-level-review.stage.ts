@@ -125,7 +125,7 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                         const codeSuggestions =
                             kodyRulesPrLevelAnalysis?.codeSuggestions || [];
 
-                        this.updateContext(context, (draft) => {
+                        context = this.updateContext(context, (draft) => {
                             if (!draft.validSuggestionsByPR) {
                                 draft.validSuggestionsByPR = [];
                             }
@@ -194,19 +194,14 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                     },
                 });
 
-                this.updateContext(context, (draft) => {
-                    if (!draft.validCrossFileSuggestions) {
-                        draft.validCrossFileSuggestions = [];
+                context = this.updateContext(context, (draft) => {
+                    if (!draft.prAnalysisResults) {
+                        draft.prAnalysisResults = {};
                     }
-
-                    if (
-                        crossFileAnalysisSuggestions &&
-                        Array.isArray(crossFileAnalysisSuggestions)
-                    ) {
-                        draft.validCrossFileSuggestions.push(
-                            ...crossFileAnalysisSuggestions,
-                        );
+                    if (!draft.prAnalysisResults.validCrossFileSuggestions) {
+                        draft.prAnalysisResults.validCrossFileSuggestions = [];
                     }
+                    draft.prAnalysisResults.validCrossFileSuggestions.push(...crossFileAnalysisSuggestions);
                 });
             } else {
                 this.logger.log({
@@ -229,7 +224,6 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
             });
         }
         //#endregion Cross-file analysis
-
         return context;
     }
 }

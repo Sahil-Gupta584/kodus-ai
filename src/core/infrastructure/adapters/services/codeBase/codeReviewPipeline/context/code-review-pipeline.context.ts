@@ -64,6 +64,11 @@ export interface CodeReviewPipelineContext extends PipelineContext {
         file: FileChange;
     }>;
 
+    prAnalysisResults?: {
+        validSuggestionsByPR?: ISuggestionByPR[];
+        validCrossFileSuggestions?: CodeSuggestion[];
+    };
+
     validSuggestions: Partial<CodeSuggestion>[];
     discardedSuggestions: Partial<CodeSuggestion>[];
     overallComments: { filepath: string; summary: string }[];

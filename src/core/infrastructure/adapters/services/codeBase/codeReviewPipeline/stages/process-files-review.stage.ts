@@ -83,8 +83,12 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         }
 
         try {
-            const { validSuggestions, discardedSuggestions, overallComments, fileMetadata } =
-                await this.analyzeChangedFilesInBatches(context);
+            const {
+                validSuggestions,
+                discardedSuggestions,
+                overallComments,
+                fileMetadata,
+            } = await this.analyzeChangedFilesInBatches(context);
 
             return this.updateContext(context, (draft) => {
                 draft.validSuggestions = validSuggestions;
@@ -121,6 +125,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         discardedSuggestions: Partial<CodeSuggestion>[];
         overallComments: { filepath: string; summary: string }[];
         fileMetadata: Map<string, any>;
+        validCrossFileSuggestions: CodeSuggestion[];
     }> {
         const { organizationAndTeamData, pullRequest, changedFiles } = context;
         const analysisContext =
@@ -153,6 +158,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                         batches,
                         analysisContext,
                         fileMetadata,
+                        context.prAnalysisResults?.validCrossFileSuggestions,
                     );
 
                     this.logger.log({
@@ -163,7 +169,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                                 execution.validSuggestions.length,
                             discardedCount:
                                 execution.discardedSuggestions.length,
-                            overallCommentsCount: execution.overallComments.length,
+                            overallCommentsCount:
+                                execution.overallComments.length,
                             organizationAndTeamData: organizationAndTeamData,
                         },
                     });
@@ -174,6 +181,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                         discardedSuggestions: execution.discardedSuggestions,
                         overallComments: execution.overallComments,
                         fileMetadata: fileMetadata,
+                        validCrossFileSuggestions:
+                            execution.validCrossFileSuggestions,
                     };
                 } catch (error) {
                     this.logProcessingError(
@@ -186,13 +195,12 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                         discardedSuggestions: [],
                         overallComments: [],
                         fileMetadata: new Map(),
+                        validCrossFileSuggestions: [],
                     };
                 }
             },
         );
     }
-
-
 
     /**
      * Logs processing errors
@@ -221,10 +229,12 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         batches: FileChange[][],
         context: AnalysisContext,
         fileMetadata: Map<string, any>,
+        validCrossFileSuggestions: CodeSuggestion[],
     ): Promise<{
         validSuggestions: Partial<CodeSuggestion>[];
         discardedSuggestions: Partial<CodeSuggestion>[];
         overallComments: { filepath: string; summary: string }[];
+        validCrossFileSuggestions: CodeSuggestion[];
     }> {
         const validSuggestions: Partial<CodeSuggestion>[] = [];
         const discardedSuggestions: Partial<CodeSuggestion>[] = [];
@@ -237,12 +247,14 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             discardedSuggestions,
             overallComments,
             fileMetadata,
+            validCrossFileSuggestions,
         );
 
         return {
             validSuggestions,
             discardedSuggestions,
             overallComments,
+            validCrossFileSuggestions,
         };
     }
 
@@ -301,6 +313,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[],
         overallComments: { filepath: string; summary: string }[],
         fileMetadata: Map<string, any>,
+        validCrossFileSuggestions: CodeSuggestion[],
     ): Promise<void> {
         for (const [index, batch] of batches.entries()) {
             this.logger.log({
@@ -317,6 +330,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     overallComments,
                     index,
                     fileMetadata,
+                    validCrossFileSuggestions,
                 );
             } catch (error) {
                 this.logger.error({
@@ -342,6 +356,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         overallComments: { filepath: string; summary: string }[],
         batchIndex: number,
         fileMetadata: Map<string, any>,
+        validCrossFileSuggestions: CodeSuggestion[],
     ): Promise<void> {
         const { organizationAndTeamData, pullRequest } = context;
         const label = `processSingleBatch → Batch #${batchIndex + 1} (${batch.length} arquivos)`;
@@ -370,6 +385,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                             discardedSuggestions,
                             overallComments,
                             fileMetadata,
+                            validCrossFileSuggestions,
                         );
                     } else {
                         this.logger.error({
@@ -404,6 +420,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[],
         overallComments: { filepath: string; summary: string }[],
         fileMetadata: Map<string, any>,
+        validCrossFileSuggestions: CodeSuggestion[],
     ): void {
         const file = fileProcessingResult.file;
 
@@ -429,11 +446,11 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 codeReviewModelUsed: fileProcessingResult.codeReviewModelUsed,
             });
         }
+
+        if (validCrossFileSuggestions?.length > 0) {
+            validCrossFileSuggestions.push(...validCrossFileSuggestions);
+        }
     }
-
-
-
-
 
     private async filterAndPrepareFiles(
         batch: FileChange[],
@@ -606,6 +623,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 }),
             );
 
+            const crossFileAnalysis = context?.validCrossFileSuggestions || [];
+
             const safeGuardResponse =
                 await this.suggestionService.filterSuggestionsSafeGuard(
                     context?.organizationAndTeamData,
@@ -771,8 +790,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             codeReviewConfig: context.codeReviewConfig,
             codeAnalysisAST: context.codeAnalysisAST,
             clusterizedSuggestions: context.clusterizedSuggestions,
+            validCrossFileSuggestions:
+                context.prAnalysisResults?.validCrossFileSuggestions || [],
         };
     }
-
-
 }
