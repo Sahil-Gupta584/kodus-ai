@@ -3,7 +3,6 @@ import { CodeSuggestions } from "@gitbeaker/core";
 export interface CrossFileAnalysisPayload {
     files: {
         file: {
-            sha: string;
             filename: string;
             codeDiff: string;
         };
@@ -25,7 +24,6 @@ Analyze the following PR files for patterns that require multiple file context: 
 
 ## Input Files
 ${JSON.stringify(payload?.files.map(file => ({
-    sha: file.file.sha,
     fileName: file.file.filename,
     codeDiff: file.file.codeDiff
 })), null, 2)}

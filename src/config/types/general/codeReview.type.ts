@@ -88,6 +88,7 @@ export type AnalysisContext = {
     kodyFineTuningConfig?: KodyFineTuningConfig;
     fileChangeContext?: FileChangeContext;
     clusterizedSuggestions?: IClusterizedSuggestion[];
+    validCrossFileSuggestions?: CodeSuggestion[];
 };
 
 export type ASTAnalysisResult = {

@@ -128,6 +128,10 @@ export class CrossFileAnalysisService {
             // 2. Se temos sugestões da análise principal, executar safeguard para validá-las
             let finalSuggestions: CodeSuggestion[] = crossFileAnalysisSuggestions;
 
+            return {
+                codeSuggestions: finalSuggestions,
+            };
+
             if (crossFileAnalysisSuggestions.length > 0) {
                 const safeguardValidatedSuggestions = await this.processSafeguardAnalysis(
                     organizationAndTeamData,
@@ -814,7 +818,6 @@ export class CrossFileAnalysisService {
     private convertFilesToFileChangeContext(files: FileChange[]): Partial<any>[] {
         return files.map(file => ({
             file: {
-                sha: file.sha,
                 filename: file.filename,
                 codeDiff: file.patch || '',
             },
