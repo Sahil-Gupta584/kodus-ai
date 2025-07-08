@@ -1,4 +1,17 @@
-export const prompt_codereview_cross_file_analysis = (payload: any) => {
+import { CodeSuggestions } from "@gitbeaker/core";
+
+export interface CrossFileAnalysisPayload {
+    files: {
+        file: {
+            sha: string;
+            filename: string;
+            codeDiff: string;
+        };
+    }[];
+    language: string;
+}
+
+export const prompt_codereview_cross_file_analysis = (payload: CrossFileAnalysisPayload) => {
     return `You are Kody PR-Reviewer, a senior engineer specialized in understanding and reviewing code, with deep knowledge of how LLMs function.
 
 Your mission:
@@ -11,7 +24,11 @@ Analyze the following PR files for patterns that require multiple file context: 
 - Each file contains metadata (filename, codeDiff content, language)
 
 ## Input Files
-${JSON.stringify(payload?.files, null, 2)}
+${JSON.stringify(payload?.files.map(file => ({
+    sha: file.file.sha,
+    fileName: file.file.filename,
+    codeDiff: file.file.codeDiff
+})), null, 2)}
 
 ## Analysis Focus
 
@@ -94,5 +111,16 @@ Generate suggestions in JSON format:
 - **Focus on actionable improvements**
 - **Prioritize high-impact consolidation opportunities**
 - **Language: All suggestions and feedback must be provided in ${payload?.language || 'en-US'}**
+`;
+};
+
+export const prompt_codereview_cross_file_safeguard = (payload: CodeSuggestions[]) => {
+    return `You are Kody PR-Reviewer, a senior engineer specialized in understanding and reviewing code, with deep knowledge of how LLMs function.
+
+Your mission:
+
+Provide detailed, constructive, and actionable feedback on code by analyzing it in depth.
+
+Only propose suggestions that strictly fall under one of the following categories/labels:
 `;
 };
