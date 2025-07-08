@@ -45,6 +45,7 @@ import { GlobalParametersModule } from './global-parameters.module';
 import { LogModule } from './log.module';
 import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeBase.controller';
 import { KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN, KodyRulesPrLevelAnalysisService } from '@/ee/codeBase/kodyRulesPrLevelAnalysis.service';
+import { CROSS_FILE_ANALYSIS_SERVICE_TOKEN, CrossFileAnalysisService } from '@/core/infrastructure/adapters/services/codeBase/crossFileAnalysis.service';
 import { TokenChunkingModule } from './tokenChunking.module';
 
 @Module({
@@ -96,6 +97,10 @@ import { TokenChunkingModule } from './tokenChunking.module';
             useClass: KodyRulesPrLevelAnalysisService,
         },
         {
+            provide: CROSS_FILE_ANALYSIS_SERVICE_TOKEN,
+            useClass: CrossFileAnalysisService,
+        },
+        {
             provide: SUGGESTION_SERVICE_TOKEN,
             useClass: SuggestionService,
         },
@@ -113,6 +118,7 @@ import { TokenChunkingModule } from './tokenChunking.module';
         CODE_BASE_CONFIG_SERVICE_TOKEN,
         KODY_RULES_ANALYSIS_SERVICE_TOKEN,
         KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN,
+        CROSS_FILE_ANALYSIS_SERVICE_TOKEN,
         SUGGESTION_SERVICE_TOKEN,
         PromptService,
         CodeAnalysisOrchestrator,
