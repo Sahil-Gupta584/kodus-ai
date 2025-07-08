@@ -8,7 +8,10 @@ import {
     KodyRulesPrLevelAnalysisService,
 } from '@/ee/codeBase/kodyRulesPrLevelAnalysis.service';
 import { ReviewModeResponse } from '@/config/types/general/codeReview.type';
-import { CROSS_FILE_ANALYSIS_SERVICE_TOKEN, CrossFileAnalysisService } from '../../crossFileAnalysis.service';
+import {
+    CROSS_FILE_ANALYSIS_SERVICE_TOKEN,
+    CrossFileAnalysisService,
+} from '../../crossFileAnalysis.service';
 
 @Injectable()
 export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -74,61 +77,100 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
             return context;
         }
 
-        const kodyRulesTurnedOn =
-            context?.codeReviewConfig?.reviewOptions?.kody_rules;
-
-        if (!kodyRulesTurnedOn) {
-            this.logger.log({
-                message: `Kody Rules are not turned on for PR#${context.pullRequest.number}`,
-                context: this.stageName,
-                metadata: {
-                    organizationId:
-                        context.organizationAndTeamData.organizationId,
-                    prNumber: context.pullRequest.number,
-                },
-            });
-            return context;
-        }
-
-        // Verificar se há regras de nível de PR configuradas
-        const prLevelRules = context?.codeReviewConfig?.kodyRules?.filter(
-            (rule) => rule.scope === KodyRulesScope.PULL_REQUEST,
-        );
-
-        if (!prLevelRules?.length) {
-            this.logger.log({
-                message: `No PR-level Kody Rules configured for PR#${context.pullRequest.number}`,
-                context: this.stageName,
-                metadata: {
-                    totalRules:
-                        context?.codeReviewConfig?.kodyRules?.length || 0,
-                    organizationAndTeamData: context.organizationAndTeamData,
-                },
-            });
-            return context;
-        }
-
+        //#region Kody Rules analysis
         try {
-            this.logger.log({
-                message: `Starting PR-level Kody Rules analysis for PR#${context.pullRequest.number}`,
+            const kodyRulesTurnedOn =
+                context?.codeReviewConfig?.reviewOptions?.kody_rules;
+
+            if (kodyRulesTurnedOn) {
+                const prLevelRules =
+                    context?.codeReviewConfig?.kodyRules?.filter(
+                        (rule) => rule.scope === KodyRulesScope.PULL_REQUEST,
+                    );
+
+                if (prLevelRules?.length > 0) {
+                    this.logger.log({
+                        message: `Starting PR-level Kody Rules analysis for PR#${context.pullRequest.number}`,
+                        context: this.stageName,
+                        metadata: {
+                            organizationAndTeamData:
+                                context.organizationAndTeamData,
+                            prNumber: context.pullRequest.number,
+                        },
+                    });
+
+                    const kodyRulesPrLevelAnalysis =
+                        await this.kodyRulesPrLevelAnalysisService.analyzeCodeWithAI(
+                            context.organizationAndTeamData,
+                            context.pullRequest.number,
+                            context.changedFiles,
+                            ReviewModeResponse.HEAVY_MODE,
+                            context,
+                        );
+
+                    if (kodyRulesPrLevelAnalysis?.codeSuggestions?.length > 0) {
+                        this.logger.log({
+                            message: `PR-level analysis completed for PR#${context.pullRequest.number}`,
+                            context: this.stageName,
+                            metadata: {
+                                suggestionsCount:
+                                    kodyRulesPrLevelAnalysis?.codeSuggestions
+                                        ?.length,
+                                organizationAndTeamData:
+                                    context.organizationAndTeamData,
+                                prNumber: context.pullRequest.number,
+                            },
+                        });
+
+                        const codeSuggestions =
+                            kodyRulesPrLevelAnalysis?.codeSuggestions || [];
+
+                        this.updateContext(context, (draft) => {
+                            if (!draft.validSuggestionsByPR) {
+                                draft.validSuggestionsByPR = [];
+                            }
+
+                            if (
+                                codeSuggestions &&
+                                Array.isArray(codeSuggestions)
+                            ) {
+                                draft.validSuggestionsByPR.push(
+                                    ...codeSuggestions,
+                                );
+                            }
+                        });
+                    } else {
+                        this.logger.warn({
+                            message: `Analysis returned null for PR#${context.pullRequest.number}`,
+                            context: this.stageName,
+                            metadata: {
+                                organizationAndTeamData:
+                                    context.organizationAndTeamData,
+                            },
+                        });
+                    }
+                } else {
+                    this.logger.log({
+                        message: `No PR-level Kody Rules configured for PR#${context.pullRequest.number}`,
+                        context: this.stageName,
+                        metadata: {
+                            organizationAndTeamData:
+                                context.organizationAndTeamData,
+                        },
+                    });
+                }
+            }
+        } catch (error) {
+            this.logger.error({
+                message: `Error during PR-level Kody Rules analysis for PR#${context.pullRequest.number}`,
                 context: this.stageName,
-                metadata: {
-                    prLevelRulesCount: prLevelRules.length,
-                    totalFilesChanged: context.changedFiles?.length || 0,
-                    organizationAndTeamData: context.organizationAndTeamData,
-                },
+                error,
             });
+        }
+        //#endregion Kody Rules analysis
 
-            // Executar análise das regras de nível de PR
-            const kodyRulesPrLevelAnalysis =
-                await this.kodyRulesPrLevelAnalysisService.analyzeCodeWithAI(
-                    context.organizationAndTeamData,
-                    context.pullRequest.number,
-                    context.changedFiles,
-                    ReviewModeResponse.HEAVY_MODE,
-                    context,
-                );
-
+        //#region Cross-file analysis
+        try {
             const crossFileAnalysis =
                 await this.crossFileAnalysisService.analyzeCrossFileCode(
                     context.organizationAndTeamData,
@@ -137,50 +179,8 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                     context.changedFiles,
                 );
 
-            // Validar resultado da análise
-            if (!kodyRulesPrLevelAnalysis) {
-                this.logger.warn({
-                    message: `Analysis returned null for PR#${context.pullRequest.number}`,
-                    context: this.stageName,
-                    metadata: {
-                        organizationAndTeamData:
-                            context.organizationAndTeamData,
-                    },
-                });
-                return context;
-            }
-
-            // Obter as sugestões geradas
-            const codeSuggestions =
-                kodyRulesPrLevelAnalysis?.codeSuggestions || [];
-
             const crossFileAnalysisSuggestions =
                 crossFileAnalysis?.codeSuggestions || [];
-
-            if (codeSuggestions.length > 0) {
-                this.logger.log({
-                    message: `PR-level analysis completed for PR#${context.pullRequest.number}`,
-                    context: this.stageName,
-                    metadata: {
-                        suggestionsCount: codeSuggestions.length,
-                        organizationAndTeamData:
-                            context.organizationAndTeamData,
-                        prNumber: context.pullRequest.number,
-                    },
-                });
-
-                // Adicionar as sugestões ao contexto para o próximo stage processar
-                this.updateContext(context, (draft) => {
-                    if (!draft.validSuggestionsByPR) {
-                        draft.validSuggestionsByPR = [];
-                    }
-
-                    // Usar spread seguro para adicionar as sugestões
-                    if (codeSuggestions && Array.isArray(codeSuggestions)) {
-                        draft.validSuggestionsByPR.push(...codeSuggestions);
-                    }
-                });
-            }
 
             if (crossFileAnalysisSuggestions.length > 0) {
                 this.logger.log({
@@ -208,16 +208,9 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                         );
                     }
                 });
-            }
-
-            if (
-                codeSuggestions.length > 0 &&
-                crossFileAnalysisSuggestions.length > 0
-            ) {
-                return context;
             } else {
                 this.logger.log({
-                    message: `No PR-level violations found for PR#${context.pullRequest.number}`,
+                    message: `No cross-file analysis suggestions found for PR#${context.pullRequest.number}`,
                     context: this.stageName,
                     metadata: {
                         organizationAndTeamData:
@@ -227,7 +220,7 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
             }
         } catch (error) {
             this.logger.error({
-                message: `Error during PR-level Kody Rules analysis for PR#${context.pullRequest.number}`,
+                message: `Error during Cross-file analysis for PR#${context.pullRequest.number}`,
                 context: this.stageName,
                 error,
                 metadata: {
@@ -235,6 +228,7 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                 },
             });
         }
+        //#endregion Cross-file analysis
 
         return context;
     }
