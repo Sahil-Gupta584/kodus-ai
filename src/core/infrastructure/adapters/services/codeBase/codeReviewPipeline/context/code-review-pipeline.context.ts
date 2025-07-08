@@ -75,4 +75,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
 
     // Resultados dos comentários de nível de PR
     prLevelCommentResults?: Array<CommentResult>;
+
+    // Metadados dos arquivos processados (reviewMode, codeReviewModelUsed, etc.)
+    fileMetadata?: Map<string, any>;
 }

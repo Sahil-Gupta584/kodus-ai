@@ -7,10 +7,8 @@ import { PinoLoggerService } from '../../../logger/pino.service';
 import {
     AIAnalysisResult,
     AnalysisContext,
-    ClusteringType,
     CodeReviewConfig,
     CodeSuggestion,
-    CommentResult,
     FileChange,
     IFinalAnalysisResult,
     Repository,
@@ -18,10 +16,7 @@ import {
 import { benchmark } from '@/shared/utils/benchmark.util';
 import { createOptimizedBatches } from '@/shared/utils/batch.helper';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import {
-    COMMENT_MANAGER_SERVICE_TOKEN,
-    ICommentManagerService,
-} from '@/core/domain/codeBase/contracts/CommentManagerService.contract';
+
 import {
     IPullRequestsService,
     PULL_REQUESTS_SERVICE_TOKEN,
@@ -34,16 +29,9 @@ import {
     FILE_REVIEW_CONTEXT_PREPARATION_TOKEN,
     IFileReviewContextPreparation,
 } from '@/shared/interfaces/file-review-context-preparation.interface';
-import { CodeManagementService } from '../../../platformIntegration/codeManagement.service';
 import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
 import { ImplementationStatus } from '@/core/domain/pullRequests/enums/implementationStatus.enum';
 import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.enum';
-import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
-import { AutomationExecutionEntity } from '@/core/domain/automation/entities/automation-execution.entity';
-import {
-    AUTOMATION_EXECUTION_SERVICE_TOKEN,
-    IAutomationExecutionService,
-} from '@/core/domain/automation/contracts/automation-execution.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import {
     IKodyFineTuningContextPreparationService,
@@ -54,9 +42,6 @@ import {
     KODY_AST_ANALYZE_CONTEXT_PREPARATION_TOKEN,
 } from '@/shared/interfaces/kody-ast-analyze-context-preparation.interface';
 import { CodeAnalysisOrchestrator } from '@/ee/codeBase/codeAnalysisOrchestrator.service';
-import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
-import { PullRequestsEntity } from '@/core/domain/pullRequests/entities/pullRequests.entity';
-import { PullRequestReviewComment } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 
 @Injectable()
 export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -64,20 +49,12 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
     private readonly concurrencyLimit = 10;
 
-    private fileMetadata: Map<string, any> = new Map();
-
     constructor(
-        @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
-        private readonly automationExecutionService: IAutomationExecutionService,
-
-        @Inject(COMMENT_MANAGER_SERVICE_TOKEN)
-        private readonly commentManagerService: ICommentManagerService,
+        @Inject(SUGGESTION_SERVICE_TOKEN)
+        private readonly suggestionService: ISuggestionService,
 
         @Inject(PULL_REQUESTS_SERVICE_TOKEN)
         private readonly pullRequestService: IPullRequestsService,
-
-        @Inject(SUGGESTION_SERVICE_TOKEN)
-        private readonly suggestionService: ISuggestionService,
 
         @Inject(FILE_REVIEW_CONTEXT_PREPARATION_TOKEN)
         private readonly fileReviewContextPreparation: IFileReviewContextPreparation,
@@ -89,8 +66,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         private readonly kodyAstAnalyzeContextPreparation: IKodyASTAnalyzeContextPreparationService,
 
         private readonly codeAnalysisOrchestrator: CodeAnalysisOrchestrator,
-
-        private readonly codeManagementService: CodeManagementService,
         private logger: PinoLoggerService,
     ) {
         super();
@@ -108,13 +83,14 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         }
 
         try {
-            const { overallComments, lastAnalyzedCommit, lineComments } =
+            const { validSuggestions, discardedSuggestions, overallComments, fileMetadata } =
                 await this.analyzeChangedFilesInBatches(context);
 
             return this.updateContext(context, (draft) => {
+                draft.validSuggestions = validSuggestions;
+                draft.discardedSuggestions = discardedSuggestions;
                 draft.overallComments = overallComments;
-                draft.lastAnalyzedCommit = lastAnalyzedCommit;
-                draft.lineComments = lineComments;
+                draft.fileMetadata = fileMetadata;
             });
         } catch (error) {
             this.logger.error({
@@ -124,15 +100,16 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 metadata: {
                     pullRequestNumber: context.pullRequest.number,
                     repositoryName: context.repository.name,
-                    batchCount: context.batches.length,
+                    batchCount: context.batches?.length || 0,
                 },
             });
 
             // Mesmo em caso de erro, retornamos o contexto para que o pipeline continue
             return this.updateContext(context, (draft) => {
+                draft.validSuggestions = [];
+                draft.discardedSuggestions = [];
                 draft.overallComments = [];
-                draft.lastAnalyzedCommit = null;
-                draft.lineComments = [];
+                draft.fileMetadata = new Map();
             });
         }
     }
@@ -140,9 +117,10 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
     async analyzeChangedFilesInBatches(
         context: CodeReviewPipelineContext,
     ): Promise<{
-        overallComments: any[];
-        lastAnalyzedCommit: any;
-        lineComments: Array<CommentResult>;
+        validSuggestions: Partial<CodeSuggestion>[];
+        discardedSuggestions: Partial<CodeSuggestion>[];
+        overallComments: { filepath: string; summary: string }[];
+        fileMetadata: Map<string, any>;
     }> {
         const { organizationAndTeamData, pullRequest, changedFiles } = context;
         const analysisContext =
@@ -168,56 +146,53 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
                     const batches = this.createOptimizedBatches(changedFiles);
 
+                    // Criar um novo Map para esta execução
+                    const fileMetadata = new Map<string, any>();
+
                     const execution = await this.runBatches(
                         batches,
                         analysisContext,
+                        fileMetadata,
                     );
 
                     this.logger.log({
-                        message: `Finished all batches`,
+                        message: `Finished all batches - Analysis complete for PR#${pullRequest.number}`,
                         context: ProcessFilesReview.name,
                         metadata: {
                             validSuggestionsCount:
                                 execution.validSuggestions.length,
                             discardedCount:
                                 execution.discardedSuggestions.length,
+                            overallCommentsCount: execution.overallComments.length,
+                            organizationAndTeamData: organizationAndTeamData,
                         },
                     });
 
-                    return await this.finalizeReviewProcessing(
-                        analysisContext,
-                        changedFiles,
-                        execution.validSuggestions,
-                        execution.discardedSuggestions,
-                        execution.overallComments,
-                    );
+                    // Retornar apenas os dados analisados sem criar comentários
+                    return {
+                        validSuggestions: execution.validSuggestions,
+                        discardedSuggestions: execution.discardedSuggestions,
+                        overallComments: execution.overallComments,
+                        fileMetadata: fileMetadata,
+                    };
                 } catch (error) {
                     this.logProcessingError(
                         error,
                         organizationAndTeamData,
                         pullRequest,
                     );
-                    return this.createEmptyResult();
+                    return {
+                        validSuggestions: [],
+                        discardedSuggestions: [],
+                        overallComments: [],
+                        fileMetadata: new Map(),
+                    };
                 }
             },
         );
     }
 
-    /**
-     * Creates an empty result for error cases
-     * @returns Empty result object
-     */
-    private createEmptyResult(): {
-        overallComments: any[];
-        lastAnalyzedCommit: any;
-        lineComments: Array<CommentResult>;
-    } {
-        return {
-            overallComments: [],
-            lastAnalyzedCommit: null,
-            lineComments: [],
-        };
-    }
+
 
     /**
      * Logs processing errors
@@ -245,6 +220,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
     private async runBatches(
         batches: FileChange[][],
         context: AnalysisContext,
+        fileMetadata: Map<string, any>,
     ): Promise<{
         validSuggestions: Partial<CodeSuggestion>[];
         discardedSuggestions: Partial<CodeSuggestion>[];
@@ -260,6 +236,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             validSuggestions,
             discardedSuggestions,
             overallComments,
+            fileMetadata,
         );
 
         return {
@@ -323,6 +300,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         validSuggestionsToAnalyze: Partial<CodeSuggestion>[],
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[],
         overallComments: { filepath: string; summary: string }[],
+        fileMetadata: Map<string, any>,
     ): Promise<void> {
         for (const [index, batch] of batches.entries()) {
             this.logger.log({
@@ -338,6 +316,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     discardedSuggestionsBySafeGuard,
                     overallComments,
                     index,
+                    fileMetadata,
                 );
             } catch (error) {
                 this.logger.error({
@@ -362,6 +341,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         discardedSuggestions: Partial<CodeSuggestion>[],
         overallComments: { filepath: string; summary: string }[],
         batchIndex: number,
+        fileMetadata: Map<string, any>,
     ): Promise<void> {
         const { organizationAndTeamData, pullRequest } = context;
         const label = `processSingleBatch → Batch #${batchIndex + 1} (${batch.length} arquivos)`;
@@ -389,6 +369,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                             validSuggestions,
                             discardedSuggestions,
                             overallComments,
+                            fileMetadata,
                         );
                     } else {
                         this.logger.error({
@@ -415,12 +396,14 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
      * @param validSuggestionsToAnalyze Array to store the valid suggestions found
      * @param discardedSuggestionsBySafeGuard Array to store the discarded suggestions
      * @param overallComments Array to store the general comments
+     * @param fileMetadata Map to store file metadata
      */
     private collectFileProcessingResult(
         fileProcessingResult: IFinalAnalysisResult & { file: FileChange },
         validSuggestionsToAnalyze: Partial<CodeSuggestion>[],
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[],
         overallComments: { filepath: string; summary: string }[],
+        fileMetadata: Map<string, any>,
     ): void {
         const file = fileProcessingResult.file;
 
@@ -441,261 +424,16 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         }
 
         if (fileProcessingResult?.file?.filename) {
-            this.fileMetadata.set(fileProcessingResult.file.filename, {
+            fileMetadata.set(fileProcessingResult.file.filename, {
                 reviewMode: fileProcessingResult.reviewMode,
                 codeReviewModelUsed: fileProcessingResult.codeReviewModelUsed,
             });
         }
     }
 
-    /**
-     * Finalizes the code review process by generating comments and saving suggestions
-     * @param organizationAndTeamData Organization and team data
-     * @param pullRequest Pull request data
-     * @param codeReviewConfig Code review configuration
-     * @param repository Repository where the PR is located
-     * @param platformType Platform type (e.g., GitHub, GitLab, etc.)
-     * @param changedFiles Files changed in the PR
-     * @param validSuggestionsToAnalyze Valid suggestions found
-     * @param discardedSuggestionsBySafeGuard Discarded suggestions
-     * @param overallComments General comments
-     * @returns Processing result with comments and suggestions
-     */
-    private async finalizeReviewProcessing(
-        context: AnalysisContext,
-        changedFiles: FileChange[],
-        validSuggestionsToAnalyze: Partial<CodeSuggestion>[],
-        discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[],
-        overallComments: { filepath: string; summary: string }[],
-    ): Promise<{
-        overallComments: any[];
-        lastAnalyzedCommit: any;
-        lineComments: Array<CommentResult>;
-    }> {
-        const {
-            organizationAndTeamData,
-            pullRequest,
-            codeReviewConfig,
-            repository,
-            platformType,
-        } = context;
 
-        // Sort and prioritize suggestions
-        const { sortedPrioritizedSuggestions, allDiscardedSuggestions } =
-            await this.suggestionService.sortAndPrioritizeSuggestions(
-                organizationAndTeamData,
-                codeReviewConfig,
-                pullRequest,
-                validSuggestionsToAnalyze,
-                discardedSuggestionsBySafeGuard,
-            );
 
-        // Create line comments
-        const { commentResults, lastAnalyzedCommit } =
-            await this.createLineComments(
-                organizationAndTeamData,
-                pullRequest,
-                sortedPrioritizedSuggestions,
-                repository,
-                codeReviewConfig,
-                platformType,
-            );
 
-        // Save pull request suggestions
-        await this.savePullRequestSuggestions(
-            organizationAndTeamData,
-            pullRequest,
-            repository,
-            changedFiles,
-            commentResults,
-            sortedPrioritizedSuggestions,
-            allDiscardedSuggestions,
-            platformType,
-        );
-
-        // Resolve comments that refer to suggestions partially or fully implemented
-        await this.resolveCommentsWithImplementedSuggestions({
-            organizationAndTeamData,
-            repository,
-            prNumber: pullRequest.number,
-            platformType: platformType as PlatformType,
-        });
-
-        return {
-            overallComments,
-            lastAnalyzedCommit,
-            lineComments: commentResults,
-        };
-    }
-
-    private calculateStartLine(suggestion: any) {
-        if (
-            suggestion.relevantLinesStart === undefined ||
-            suggestion.relevantLinesStart === suggestion.relevantLinesEnd
-        ) {
-            return undefined;
-        }
-        return suggestion.relevantLinesStart + 15 > suggestion.relevantLinesEnd
-            ? suggestion.relevantLinesStart
-            : undefined;
-    }
-
-    private calculateEndLine(suggestion: any) {
-        if (
-            suggestion.relevantLinesStart === undefined ||
-            suggestion.relevantLinesStart === suggestion.relevantLinesEnd
-        ) {
-            return suggestion.relevantLinesEnd;
-        }
-        return suggestion.relevantLinesStart + 15 > suggestion.relevantLinesEnd
-            ? suggestion.relevantLinesEnd
-            : suggestion.relevantLinesStart;
-    }
-
-    private async createLineComments(
-        organizationAndTeamData: OrganizationAndTeamData,
-        pullRequest: { number: number },
-        sortedPrioritizedSuggestions: any[],
-        repository: Partial<Repository>,
-        codeReviewConfig: CodeReviewConfig,
-        platformType: string,
-    ) {
-        try {
-            const lineComments = sortedPrioritizedSuggestions
-                .filter(
-                    (suggestion) =>
-                        suggestion.clusteringInformation?.type !==
-                        ClusteringType.RELATED,
-                )
-                .map((suggestion) => ({
-                    path: suggestion.relevantFile,
-                    body: {
-                        language: repository?.language,
-                        improvedCode: suggestion?.improvedCode,
-                        suggestionContent: suggestion?.suggestionContent,
-                        actionStatement:
-                            suggestion?.clusteringInformation
-                                ?.actionStatement || '',
-                    },
-                    start_line: this.calculateStartLine(suggestion),
-                    line: this.calculateEndLine(suggestion),
-                    side: 'RIGHT',
-                    suggestion,
-                }));
-
-            const { lastAnalyzedCommit, commentResults } =
-                await this.commentManagerService.createLineComments(
-                    organizationAndTeamData,
-                    pullRequest?.number,
-                    {
-                        name: repository.name,
-                        id: repository.id,
-                        language: repository.language,
-                    },
-                    lineComments,
-                    codeReviewConfig?.languageResultPrompt,
-                );
-
-            return { lastAnalyzedCommit, commentResults };
-        } catch (error) {
-            this.logger.log({
-                message: `Error when trying to create line comments for PR#${pullRequest.number}`,
-                error: error,
-                context: ProcessFilesReview.name,
-                metadata: {
-                    organizationAndTeamData,
-                    pullRequest,
-                    sortedPrioritizedSuggestions,
-                    repository,
-                },
-            });
-
-            const lastExecution =
-                await this.findLastTeamAutomationCodeReviewExecution(
-                    organizationAndTeamData.teamId,
-                    pullRequest.number,
-                    repository.id,
-                    platformType,
-                );
-
-            return {
-                lastAnalyzedCommit:
-                    lastExecution?.dataExecution?.lastAnalyzedCommit,
-                commentResults: [],
-            };
-        }
-    }
-
-    private async findLastTeamAutomationCodeReviewExecution(
-        teamAutomationId: string,
-        pullRequestNumber: number,
-        repositoryId: string,
-        platformType: string,
-    ) {
-        const lastTeamAutomationCodeReviewExecution: AutomationExecutionEntity =
-            await this.automationExecutionService.findLatestExecutionByDataExecutionFilter(
-                { pullRequestNumber: pullRequestNumber, platformType },
-                {
-                    status: AutomationStatus.SUCCESS,
-                    teamAutomation: { uuid: teamAutomationId },
-                    pullRequestNumber: pullRequestNumber,
-                    repositoryId: repositoryId,
-                },
-            );
-
-        return lastTeamAutomationCodeReviewExecution;
-    }
-
-    private async savePullRequestSuggestions(
-        organizationAndTeamData: OrganizationAndTeamData,
-        pullRequest: { number: number },
-        repository: Partial<Repository>,
-        changedFiles: FileChange[],
-        commentResults: CommentResult[],
-        sortedPrioritizedSuggestions: Partial<CodeSuggestion>[],
-        discardedSuggestions: Partial<CodeSuggestion>[],
-        platformType: string,
-    ) {
-        const enrichedFiles = changedFiles.map((file) => {
-            const metadata = this.fileMetadata.get(file.filename);
-            if (metadata) {
-                return {
-                    ...file,
-                    reviewMode: metadata.reviewMode,
-                    codeReviewModelUsed: metadata.codeReviewModelUsed,
-                };
-            }
-            return file;
-        });
-
-        const suggestionsWithStatus =
-            await this.suggestionService.verifyIfSuggestionsWereSent(
-                organizationAndTeamData,
-                pullRequest,
-                sortedPrioritizedSuggestions,
-                commentResults,
-            );
-
-        const pullRequestCommits =
-            await this.codeManagementService.getCommitsForPullRequestForCodeReview(
-                {
-                    organizationAndTeamData,
-                    repository: { id: repository.id, name: repository.name },
-                    prNumber: pullRequest.number,
-                },
-            );
-
-        await this.pullRequestService.aggregateAndSaveDataStructure(
-            pullRequest,
-            repository,
-            enrichedFiles,
-            suggestionsWithStatus,
-            discardedSuggestions,
-            platformType,
-            organizationAndTeamData?.organizationId,
-            pullRequestCommits,
-        );
-    }
 
     private async filterAndPrepareFiles(
         batch: FileChange[],
@@ -1036,122 +774,5 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         };
     }
 
-    private async resolveCommentsWithImplementedSuggestions({
-        organizationAndTeamData,
-        repository,
-        prNumber,
-        platformType,
-    }: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        repository: Partial<Repository>;
-        prNumber: number;
-        platformType: PlatformType;
-    }) {
-        const codeManagementRequestData = {
-            organizationAndTeamData,
-            repository: {
-                id: repository.id,
-                name: repository.name,
-            },
-            prNumber: prNumber,
-        };
 
-        let isPlatformTypeGithub: boolean =
-            platformType === PlatformType.GITHUB;
-
-        const pr = await this.pullRequestService.findByNumberAndRepository(
-            prNumber,
-            repository.name,
-            organizationAndTeamData,
-        );
-
-        let implementedSuggestionsCommentIds =
-            this.getImplementedSuggestionsCommentIds(pr);
-
-        let reviewComments = [];
-
-        /**
-         * Marking comments as resolved in github needs to be done using another API.
-         * Marking comments as resolved in github also is done using threadId rather than the comment Id.
-         */
-        if (isPlatformTypeGithub) {
-            reviewComments =
-                await this.codeManagementService.getPullRequestReviewThreads(
-                    codeManagementRequestData,
-                    PlatformType.GITHUB,
-                );
-        } else {
-            reviewComments =
-                await this.codeManagementService.getPullRequestReviewComments(
-                    codeManagementRequestData,
-                );
-        }
-
-        const foundComments = isPlatformTypeGithub
-            ? reviewComments.filter((comment) =>
-                  implementedSuggestionsCommentIds.includes(
-                      Number(comment.fullDatabaseId),
-                  ),
-              )
-            : reviewComments.filter((comment) =>
-                  implementedSuggestionsCommentIds.includes(comment.id),
-              );
-
-        if (foundComments?.length > 0) {
-            const promises = foundComments.map(
-                async (foundComment: PullRequestReviewComment) => {
-                    let commentId =
-                        platformType === PlatformType.BITBUCKET
-                            ? foundComment.id
-                            : foundComment.threadId;
-
-                    return this.codeManagementService.markReviewCommentAsResolved(
-                        {
-                            organizationAndTeamData,
-                            repository,
-                            prNumber: pr.number,
-                            commentId: commentId,
-                        },
-                    );
-                },
-            );
-
-            // timeout mechanism for the Promise.allSettled operation to prevent potential hanging.
-            await Promise.race([
-                Promise.allSettled(promises),
-                new Promise((_, reject) =>
-                    setTimeout(
-                        () => reject(new Error('Operation timed out')),
-                        30000,
-                    ),
-                ),
-            ]);
-        }
-    }
-
-    private getImplementedSuggestionsCommentIds(
-        pr: PullRequestsEntity,
-    ): number[] {
-        const implementedSuggestionsCommentIds: number[] = [];
-
-        pr.files?.forEach((file) => {
-            if (file.suggestions.length > 0) {
-                file.suggestions
-                    ?.filter(
-                        (suggestion) =>
-                            suggestion.comment &&
-                            suggestion.implementationStatus !==
-                                ImplementationStatus.NOT_IMPLEMENTED &&
-                            suggestion.deliveryStatus === DeliveryStatus.SENT,
-                    )
-                    .forEach((filteredSuggestion) => {
-                        implementedSuggestionsCommentIds.push(
-                            filteredSuggestion.comment.id,
-                        );
-                    });
-            }
-        });
-
-        return implementedSuggestionsCommentIds;
-    }
 }
