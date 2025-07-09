@@ -104,6 +104,41 @@ interface GitHubAuthResponse {
     repositorySelection?: string;
 }
 
+interface PullRequestChange {
+    filename: string;
+    additions: number;
+    deletions: number;
+    changes: number;
+    patch: string;
+}
+
+interface PullRequestData {
+    id: number;
+    repository: string;
+    repositoryId: string | number;
+    pull_number: number;
+    author_id: number;
+    author_name: string;
+    author_created_at: string;
+    message: string;
+    state: string;
+    prURL?: string;
+    changes?: PullRequestChange[];
+}
+
+interface GitHubInstallationAccount {
+    login: string;
+    id: number;
+    type: 'User' | 'Organization';
+}
+
+interface GitHubInstallationData {
+    id: number;
+    account: GitHubInstallationAccount;
+    target_type: 'User' | 'Organization';
+    target_id: number;
+}
+
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITHUB, 'codeManagement')
 export class GithubService
@@ -174,13 +209,13 @@ export class GithubService
         return new Octokit({
             authStrategy: createAppAuth,
             auth: {
-                appId: process.env.API_GITHUB_APP_ID,
-                privateKey: process.env.API_GITHUB_PRIVATE_KEY.replace(
+                appId: this.configService.get<string>('API_GITHUB_APP_ID'),
+                privateKey: this.configService.get<string>('API_GITHUB_PRIVATE_KEY').replace(
                     /\\n/g,
                     '\n',
                 ),
-                clientId: process.env.GLOBAL_GITHUB_CLIENT_ID,
-                clientSecret: process.env.API_GITHUB_CLIENT_SECRET,
+                clientId: this.configService.get<string>('GLOBAL_GITHUB_CLIENT_ID'),
+                clientSecret: this.configService.get<string>('API_GITHUB_CLIENT_SECRET'),
             },
         });
     }
@@ -264,8 +299,9 @@ export class GithubService
 
             // Removed restriction for personal accounts - now we support both organizations and personal accounts
             // Detectar tipo de conta e cachear no authDetails
-            const accountLogin = (installLogin?.data as any)?.account?.login;
-            const accountType = (installLogin?.data as any)?.target_type?.toLowerCase() === 'user' ? 'user' : 'organization';
+            const installationData = installLogin.data as GitHubInstallationData;
+            const accountLogin = installationData.account.login;
+            const accountType = installationData.target_type.toLowerCase() === 'user' ? 'user' : 'organization';
             
             const authDetails = {
                 // @ts-ignore
@@ -709,7 +745,7 @@ export class GithubService
                             const pr = prResponse.data;
 
                             if (pr) {
-                                const pullRequestData: any = {
+                                const pullRequestData: PullRequestData = {
                                     id: pr.id,
                                     repository: repo.name,
                                     repositoryId: repo.id,
@@ -768,7 +804,7 @@ export class GithubService
                 }
             } else {
                 // Create a map for quick repository lookup by name
-                const repositoryMap = new Map(
+                const repositoryMap = new Map<string, string | number>(
                     allRepositories.map((repo) => [repo.name, repo.id]),
                 );
 
@@ -800,9 +836,9 @@ export class GithubService
                         .map(async (pr) => {
                             const repositoryId = repositoryMap.get(
                                 pr.repository,
-                            );
+                            ) || pr.repository; // Fallback to repository name if ID not found
 
-                            const pullRequestData: any = {
+                            const pullRequestData: PullRequestData = {
                                 id: pr.id,
                                 repository: pr.repository,
                                 repositoryId: repositoryId,
@@ -1311,13 +1347,13 @@ export class GithubService
         const appOctokit = new Octokit({
             authStrategy: createAppAuth,
             auth: {
-                appId: process.env.API_GITHUB_APP_ID,
-                privateKey: process.env.API_GITHUB_PRIVATE_KEY.replace(
+                appId: this.configService.get<string>('API_GITHUB_APP_ID'),
+                privateKey: this.configService.get<string>('API_GITHUB_PRIVATE_KEY').replace(
                     /\\n/g,
                     '\n',
                 ),
-                clientId: process.env.GLOBAL_GITHUB_CLIENT_ID,
-                clientSecret: process.env.API_GITHUB_CLIENT_SECRET,
+                clientId: this.configService.get<string>('GLOBAL_GITHUB_CLIENT_ID'),
+                clientSecret: this.configService.get<string>('API_GITHUB_CLIENT_SECRET'),
             },
         });
 
@@ -1533,13 +1569,13 @@ export class GithubService
             const appOctokit = await new Octokit({
                 authStrategy: createAppAuth,
                 auth: {
-                    appId: process.env.API_GITHUB_APP_ID,
-                    privateKey: process.env.API_GITHUB_PRIVATE_KEY.replace(
+                    appId: this.configService.get<string>('API_GITHUB_APP_ID'),
+                    privateKey: this.configService.get<string>('API_GITHUB_PRIVATE_KEY').replace(
                         /\\n/g,
                         '\n',
                     ),
-                    clientId: process.env.GLOBAL_GITHUB_CLIENT_ID,
-                    clientSecret: process.env.API_GITHUB_CLIENT_SECRET,
+                    clientId: this.configService.get<string>('GLOBAL_GITHUB_CLIENT_ID'),
+                    clientSecret: this.configService.get<string>('API_GITHUB_CLIENT_SECRET'),
                 },
             });
 
@@ -1554,6 +1590,7 @@ export class GithubService
             });
 
             // Removido bloqueio para contas pessoais - agora suportamos tanto organizações quanto contas pessoais
+            const installationData = installLogin.data as GitHubInstallationData;
 
             const integration = await this.integrationService.findOne({
                 organization: { uuid: organizationAndTeamData.organizationId },
@@ -1568,7 +1605,7 @@ export class GithubService
                     // @ts-ignore
                     installationAuthentication?.installationId || null,
                 // @ts-ignore
-                org: installLogin?.data.account?.login || null,
+                org: installationData.account.login || null,
             };
 
             if (!integration) {
@@ -1584,7 +1621,7 @@ export class GithubService
                         // @ts-ignore
                         installationAuthentication?.installationId,
                     // @ts-ignore
-                    org: installLogin?.data.account?.login,
+                    org: installationData.account.login,
                 });
             }
 
@@ -3335,20 +3372,10 @@ export class GithubService
             )
         );
 
-        const webhookUrl = process.env.API_GITHUB_CODE_MANAGEMENT_WEBHOOK;
+        const webhookUrl = this.configService.get<string>('API_GITHUB_CODE_MANAGEMENT_WEBHOOK');
 
-        // Determinar o owner correto: para contas pessoais, usar o nome do usuário autenticado
-        const isOrgAccount = await this.isOrganization(
-            githubAuthDetail.org,
-            octokit,
-        );
-        let owner = githubAuthDetail.org;
-
-        if (!isOrgAccount) {
-            // Para contas pessoais, usar o nome do usuário autenticado
-            const user = await octokit.rest.users.getAuthenticated();
-            owner = user.data.login;
-        }
+        // Usar método centralizado para determinar o owner correto
+        const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
 
         try {
             for (const repo of repositories) {
@@ -3396,7 +3423,6 @@ export class GithubService
                         ...params,
                         owner,
                         repositoryName: repo.name,
-                        isOrgAccount,
                         webhookId: response?.data?.id,
                     },
                 });
@@ -3410,7 +3436,6 @@ export class GithubService
                 metadata: {
                     ...params,
                     owner,
-                    isOrgAccount,
                 },
             });
             throw error;
@@ -4269,18 +4294,8 @@ export class GithubService
                 );
 
             if (repositories) {
-                // Get the correct owner for API calls
-                const isOrgAccount = await this.isOrganization(
-                    authDetails.org,
-                    octokit,
-                );
-                let owner = authDetails.org;
-
-                if (!isOrgAccount) {
-                    // For personal accounts, use the authenticated user's name
-                    const user = await octokit.rest.users.getAuthenticated();
-                    owner = user.data.login;
-                }
+                // Usar método centralizado para determinar o owner correto
+                const owner = await this.getCorrectOwner(authDetails, octokit);
 
                 for (const repo of repositories) {
                     try {
@@ -4317,7 +4332,6 @@ export class GithubService
                                     params.organizationAndTeamData,
                                 repoId: repo.id,
                                 owner,
-                                isOrgAccount,
                             },
                         });
                     }
