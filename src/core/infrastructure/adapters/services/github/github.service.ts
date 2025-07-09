@@ -262,14 +262,11 @@ export class GithubService
                 installation_id: parseInt(params.code),
             });
 
-            const isUserToken =
-                installLogin?.data?.target_type?.toLowerCase() === 'user';
-            if (isUserToken)
-                return {
-                    success: false,
-                    status: CreateAuthIntegrationStatus.NO_ORGANIZATION,
-                };
-
+            // Removed restriction for personal accounts - now we support both organizations and personal accounts
+            // Detectar tipo de conta e cachear no authDetails
+            const accountLogin = (installLogin?.data as any)?.account?.login;
+            const accountType = (installLogin?.data as any)?.target_type?.toLowerCase() === 'user' ? 'user' : 'organization';
+            
             const authDetails = {
                 // @ts-ignore
                 authToken: installationAuthentication?.token,
@@ -277,14 +274,14 @@ export class GithubService
                     // @ts-ignore
                     installationAuthentication?.installationId || null,
                 // @ts-ignore
-                org: installLogin?.data.account?.login || null,
+                org: accountLogin || null,
                 authMode: params.authMode || AuthMode.OAUTH,
+                accountType: accountType as 'organization' | 'user',
             };
 
             const repoPermissions = await this.checkRepositoryPermissions({
                 organizationAndTeamData: params.organizationAndTeamData,
-                // @ts-ignore
-                org: installLogin?.data.account?.login,
+                org: accountLogin,
                 authDetails,
             });
 
@@ -334,29 +331,27 @@ export class GithubService
             const { token } = params;
             const userOctokit = new Octokit({ auth: token });
 
-            // Verificar se o PAT setá associado à organização especificada
+            const user = await userOctokit.rest.users.getAuthenticated();
+
             const orgs = await userOctokit.rest.orgs.listForAuthenticatedUser();
 
-            if (!orgs?.data[0]?.login) {
-                return {
-                    success: false,
-                    status: CreateAuthIntegrationStatus.NO_ORGANIZATION,
-                };
-            }
-
-            const orgLogin = orgs.data[0].login;
+            const accountLogin = orgs?.data[0]?.login || user.data.login;
+            
+            // Detectar tipo de conta: se tem orgs é organização, senão é conta pessoal
+            const accountType = orgs?.data[0]?.login ? 'organization' : 'user';
 
             const encryptedPAT = encrypt(token);
 
             const authDetails = {
                 authToken: encryptedPAT,
-                org: orgLogin,
+                org: accountLogin,
                 authMode: params.authMode || AuthMode.TOKEN,
+                accountType: accountType as 'organization' | 'user',
             };
 
             const repoPermissions = await this.checkRepositoryPermissions({
                 organizationAndTeamData: params.organizationAndTeamData,
-                org: orgLogin,
+                org: accountLogin,
                 authDetails,
             });
 
@@ -387,6 +382,62 @@ export class GithubService
         }
     }
 
+    /**
+     * Verifica se um identificador é uma organização ou uma conta pessoal
+     * @param identifier - nome da organização ou usuário
+     * @param octokit - instância do Octokit
+     * @returns true se for organização, false se for conta pessoal
+     */
+    private async isOrganization(
+        identifier: string,
+        octokit: any,
+    ): Promise<boolean> {
+        try {
+            await octokit.rest.orgs.get({ org: identifier });
+            return true;
+        } catch (error) {
+            // Se der erro 404, é conta pessoal
+            if (error.status === 404) {
+                return false;
+            }
+            // Para outros erros, re-propaga
+            throw error;
+        }
+    }
+
+    /**
+     * Obtém o owner correto para operações de API GitHub
+     * Para organizações: usa o nome da organização
+     * Para contas pessoais: usa o nome do usuário autenticado
+     * @param githubAuthDetail - detalhes de autenticação do GitHub
+     * @param octokit - instância do Octokit
+     * @returns owner correto para usar nas chamadas de API
+     */
+    private async getCorrectOwner(
+        githubAuthDetail: any,
+        octokit: any,
+    ): Promise<string> {
+        // Usar cache do accountType se disponível
+        if (githubAuthDetail.accountType) {
+            if (githubAuthDetail.accountType === 'organization') {
+                return githubAuthDetail.org;
+            } else {
+                // Para contas pessoais, usar o nome do usuário autenticado
+                const user = await octokit.rest.users.getAuthenticated();
+                return user.data.login;
+            }
+        }
+
+        // Para integrações legadas, assumir organização (historicamente só orgs eram permitidas)
+        this.logger.log({
+            message: 'Legacy integration detected - assuming organization',
+            context: 'GitHubService',
+            metadata: { org: githubAuthDetail.org }
+        });
+        
+        return githubAuthDetail.org;
+    }
+
     private async checkRepositoryPermissions(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         org: string;
@@ -400,10 +451,32 @@ export class GithubService
                 authDetails,
             );
 
-            const repos = await octokit.paginate(
-                octokit.rest.repos.listForOrg,
-                { org },
-            );
+            // Usar cache do accountType se disponível
+            let isOrgAccount = authDetails.accountType === 'organization';
+            
+            // Para integrações legadas, assumir organização (historicamente só orgs eram permitidas)
+            if (!authDetails.accountType) {
+                isOrgAccount = true;
+                this.logger.log({
+                    message: 'Legacy integration detected - assuming organization',
+                    context: 'GitHubService',
+                    metadata: { org }
+                });
+            }
+
+            let repos;
+
+            if (isOrgAccount) {
+                repos = await octokit.paginate(octokit.rest.repos.listForOrg, {
+                    org,
+                });
+            } else {
+                // Para contas pessoais, listamos repositórios do usuário autenticado
+                repos = await octokit.paginate(
+                    octokit.rest.repos.listForAuthenticatedUser,
+                    { type: 'all' },
+                );
+            }
 
             if (repos.length === 0) {
                 return {
@@ -696,7 +769,7 @@ export class GithubService
             } else {
                 // Create a map for quick repository lookup by name
                 const repositoryMap = new Map(
-                    allRepositories.map(repo => [repo.name, repo.id])
+                    allRepositories.map((repo) => [repo.name, repo.id]),
                 );
 
                 // Fetch all pull requests across all repositories
@@ -725,7 +798,9 @@ export class GithubService
                             );
                         })
                         .map(async (pr) => {
-                            const repositoryId = repositoryMap.get(pr.repository);
+                            const repositoryId = repositoryMap.get(
+                                pr.repository,
+                            );
 
                             const pullRequestData: any = {
                                 id: pr.id,
@@ -773,15 +848,20 @@ export class GithubService
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<PullRequestAuthor[]> {
         try {
-            const githubAuthDetail = await this.getGithubAuthDetails(params.organizationAndTeamData);
-            const allRepositories = await this.findOneByOrganizationAndTeamDataAndConfigKey(
-                params?.organizationAndTeamData,
-                IntegrationConfigKey.REPOSITORIES,
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                params.organizationAndTeamData,
             );
+            const allRepositories =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params?.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
 
             if (!githubAuthDetail || !allRepositories) return [];
 
-            const octokit = await this.instanceOctokit(params?.organizationAndTeamData);
+            const octokit = await this.instanceOctokit(
+                params?.organizationAndTeamData,
+            );
             const since = new Date();
             since.setDate(since.getDate() - 60);
 
@@ -815,14 +895,14 @@ export class GithubService
                             }
                         }
                     }
-
                 } catch (error) {
                     this.logger.error({
                         message: 'Error in getPullRequestAuthors',
                         context: GithubService.name,
                         error: error,
                         metadata: {
-                            organizationAndTeamData: params?.organizationAndTeamData,
+                            organizationAndTeamData:
+                                params?.organizationAndTeamData,
                         },
                     });
                 }
@@ -830,9 +910,9 @@ export class GithubService
 
             await Promise.all(repoPromises);
 
-            return Array.from(authorsData.values())
-                .sort((a, b) => a.name.localeCompare(b.name));
-
+            return Array.from(authorsData.values()).sort((a, b) =>
+                a.name.localeCompare(b.name),
+            );
         } catch (err) {
             this.logger.error({
                 message: 'Error in getPullRequestAuthors',
@@ -918,12 +998,32 @@ export class GithubService
                 params.organizationAndTeamData,
             );
 
-            const repos = await octokit.paginate(
-                octokit.rest.repos.listForOrg,
-                {
+            // Usar cache do accountType se disponível
+            let isOrgAccount = githubAuthDetail.accountType === 'organization';
+            
+            // Para integrações legadas, assumir organização (historicamente só orgs eram permitidas)
+            if (!githubAuthDetail.accountType) {
+                isOrgAccount = true;
+                this.logger.log({
+                    message: 'Legacy integration detected - assuming organization',
+                    context: 'GitHubService',
+                    metadata: { org: githubAuthDetail?.org }
+                });
+            }
+
+            let repos;
+
+            if (isOrgAccount) {
+                repos = await octokit.paginate(octokit.rest.repos.listForOrg, {
                     org: githubAuthDetail?.org,
-                },
-            );
+                });
+            } else {
+                // Para contas pessoais, listar repositórios do usuário autenticado
+                repos = await octokit.paginate(
+                    octokit.rest.repos.listForAuthenticatedUser,
+                    { type: 'all' },
+                );
+            }
 
             const integration = await this.integrationService.findOne({
                 organization: {
@@ -1453,11 +1553,7 @@ export class GithubService
                 installation_id: parseInt(code),
             });
 
-            if (
-                installLogin?.data?.target_type?.toLocaleLowerCase() === 'user'
-            ) {
-                return { isUserToken: true };
-            }
+            // Removido bloqueio para contas pessoais - agora suportamos tanto organizações quanto contas pessoais
 
             const integration = await this.integrationService.findOne({
                 organization: { uuid: organizationAndTeamData.organizationId },
@@ -1522,16 +1618,34 @@ export class GithubService
             }
 
             const octokit = await this.instanceOctokit(organizationAndTeamData);
+            
+            // Usar cache do accountType se disponível
+            let isOrgAccount = githubAuthDetail.accountType === 'organization';
+            
+            // Para integrações legadas, assumir organização (historicamente só orgs eram permitidas)
+            if (!githubAuthDetail.accountType) {
+                isOrgAccount = true;
+                this.logger.log({
+                    message: 'Legacy integration detected - assuming organization',
+                    context: 'GitHubService',
+                    metadata: { org: githubAuthDetail?.org }
+                });
+            }
 
-            const members = await octokit.paginate(
-                octokit.rest.orgs.listMembers,
-                {
-                    org: githubAuthDetail?.org,
-                    per_page: 100,
-                },
-            );
-
-            return members;
+            if (isOrgAccount) {
+                const members = await octokit.paginate(
+                    octokit.rest.orgs.listMembers,
+                    {
+                        org: githubAuthDetail?.org,
+                        per_page: 100,
+                    },
+                );
+                return members;
+            } else {
+                // Para contas pessoais, retornar o próprio usuário como "membro"
+                const user = await octokit.rest.users.getAuthenticated();
+                return [user.data];
+            }
         } catch (err) {
             throw new BadRequestException(err);
         }
@@ -3221,34 +3335,49 @@ export class GithubService
             )
         );
 
-        const webhookUrl = process.env.API_GITHUB_CODE_MANAGEMENT_WEBHOOK; // Replace with your webhook URL
+        const webhookUrl = process.env.API_GITHUB_CODE_MANAGEMENT_WEBHOOK;
+
+        // Determinar o owner correto: para contas pessoais, usar o nome do usuário autenticado
+        const isOrgAccount = await this.isOrganization(
+            githubAuthDetail.org,
+            octokit,
+        );
+        let owner = githubAuthDetail.org;
+
+        if (!isOrgAccount) {
+            // Para contas pessoais, usar o nome do usuário autenticado
+            const user = await octokit.rest.users.getAuthenticated();
+            owner = user.data.login;
+        }
 
         try {
             for (const repo of repositories) {
                 const { data: webhooks } = await octokit.repos.listWebhooks({
-                    owner: githubAuthDetail.org,
+                    owner: owner,
                     repo: repo.name,
                 });
 
+                // Verificação segura do config para evitar erro "Parameter config does not exist"
                 const webhookToDelete = webhooks.find(
-                    (webhook) => webhook.config.url === webhookUrl,
+                    (webhook) =>
+                        webhook.config && webhook.config.url === webhookUrl,
                 );
 
                 if (webhookToDelete) {
                     await octokit.repos.deleteWebhook({
-                        owner: githubAuthDetail.org,
+                        owner: owner,
                         repo: repo.name,
                         hook_id: webhookToDelete.id,
                     });
                 }
 
                 const response = await octokit.repos.createWebhook({
-                    owner: githubAuthDetail.org,
+                    owner: owner,
                     repo: repo.name,
                     config: {
                         url: webhookUrl,
                         content_type: 'json',
-                        insecure_ssl: '0', // "1" if SSL is not available
+                        insecure_ssl: '0',
                     },
                     events: [
                         'push',
@@ -3261,12 +3390,14 @@ export class GithubService
                 });
 
                 this.logger.log({
-                    message: `Webhook adicionado ao projeto ${repo.id}`,
+                    message: `Webhook adicionado ao repositório ${repo.name} (owner: ${owner})`,
                     context: GithubService.name,
                     metadata: {
                         ...params,
-                        ...response?.data?.config,
-                        ...response?.data?.events,
+                        owner,
+                        repositoryName: repo.name,
+                        isOrgAccount,
+                        webhookId: response?.data?.id,
                     },
                 });
             }
@@ -3278,6 +3409,8 @@ export class GithubService
                 error: error,
                 metadata: {
                     ...params,
+                    owner,
+                    isOrgAccount,
                 },
             });
             throw error;
@@ -4136,11 +4269,24 @@ export class GithubService
                 );
 
             if (repositories) {
+                // Get the correct owner for API calls
+                const isOrgAccount = await this.isOrganization(
+                    authDetails.org,
+                    octokit,
+                );
+                let owner = authDetails.org;
+
+                if (!isOrgAccount) {
+                    // For personal accounts, use the authenticated user's name
+                    const user = await octokit.rest.users.getAuthenticated();
+                    owner = user.data.login;
+                }
+
                 for (const repo of repositories) {
                     try {
                         const { data: webhooks } =
                             await octokit.repos.listWebhooks({
-                                owner: authDetails.org,
+                                owner: owner,
                                 repo: repo.name,
                             });
 
@@ -4149,12 +4295,14 @@ export class GithubService
                         );
 
                         const webhookToDelete = webhooks.find(
-                            (webhook) => webhook.config.url === webhookUrl,
+                            (webhook) =>
+                                webhook.config &&
+                                webhook.config.url === webhookUrl,
                         );
 
                         if (webhookToDelete) {
                             await octokit.repos.deleteWebhook({
-                                owner: authDetails.org,
+                                owner: owner,
                                 repo: repo.name,
                                 hook_id: webhookToDelete.id,
                             });
@@ -4168,6 +4316,8 @@ export class GithubService
                                 organizationAndTeamData:
                                     params.organizationAndTeamData,
                                 repoId: repo.id,
+                                owner,
+                                isOrgAccount,
                             },
                         });
                     }
@@ -4184,7 +4334,13 @@ export class GithubService
         language?: string;
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<string> {
-        const { suggestion, repository, includeHeader = true, includeFooter = true, language } = params;
+        const {
+            suggestion,
+            repository,
+            includeHeader = true,
+            includeFooter = true,
+            language,
+        } = params;
 
         let commentBody = '';
 
@@ -4198,7 +4354,9 @@ export class GithubService
                 getCodeReviewBadge(),
                 suggestion?.label ? getLabelShield(suggestion.label) : '',
                 severityShield,
-            ].filter(Boolean).join(' ');
+            ]
+                .filter(Boolean)
+                .join(' ');
 
             commentBody += `${badges}\n\n`;
         }
@@ -4225,7 +4383,8 @@ export class GithubService
             );
 
             commentBody += this.formatSub(translations.talkToKody) + '\n';
-            commentBody += this.formatSub(translations.feedback) +
+            commentBody +=
+                this.formatSub(translations.feedback) +
                 '<!-- kody-codereview -->&#8203;\n&#8203;';
         }
 
