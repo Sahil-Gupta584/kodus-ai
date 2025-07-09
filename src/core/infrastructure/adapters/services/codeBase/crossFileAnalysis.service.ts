@@ -51,7 +51,15 @@ interface ChunkProcessingResult {
 type AnalysisType = 'cross_file_analysis' | 'safeguard';
 //#endregion
 
-export const CROSS_FILE_ANALYSIS_SERVICE_TOKEN = Symbol('CrossFileAnalysisService');
+export const CROSS_FILE_ANALYSIS_SERVICE_TOKEN = Symbol(
+    'CrossFileAnalysisService',
+);
+
+interface PreparedFileData {
+    filename: string;
+    patchWithLinesStr: string;
+    file: FileChange;
+}
 
 @Injectable()
 export class CrossFileAnalysisService {
@@ -76,19 +84,20 @@ export class CrossFileAnalysisService {
         );
     }
 
-    /**
-     * Executa análise cross-file completa: análise principal + safeguard
-     */
     async analyzeCrossFileCode(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         context: AnalysisContext,
-        changedFiles: FileChange[],
+        preparedFiles: PreparedFileData[],
     ): Promise<{ codeSuggestions: CodeSuggestion[] }> {
         // Validações de segurança
-        if (!changedFiles || !Array.isArray(changedFiles) || changedFiles.length === 0) {
+        if (
+            !preparedFiles ||
+            !Array.isArray(preparedFiles) ||
+            preparedFiles.length === 0
+        ) {
             this.logger.warn({
-                message: 'No changed files found for cross-file analysis',
+                message: 'No prepared files found for cross-file analysis',
                 context: CrossFileAnalysisService.name,
                 metadata: { organizationAndTeamData, prNumber },
             });
@@ -108,50 +117,35 @@ export class CrossFileAnalysisService {
             };
         }
 
-        const language = context.codeReviewConfig.languageResultPrompt || 'en-US';
+        const language =
+            context.codeReviewConfig.languageResultPrompt || 'en-US';
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
 
         this.tokenTracker.reset();
 
         try {
-            // 1. Executar análise cross-file principal
-            const crossFileAnalysisSuggestions = await this.processWithTokenChunking(
-                organizationAndTeamData,
-                prNumber,
-                context,
-                changedFiles,
-                language,
-                provider,
-                'cross_file_analysis',
-            );
-
-            // 2. Se temos sugestões da análise principal, executar safeguard para validá-las
-            let finalSuggestions: CodeSuggestion[] = crossFileAnalysisSuggestions;
-
-            return {
-                codeSuggestions: finalSuggestions,
-            };
-
-            if (crossFileAnalysisSuggestions.length > 0) {
-                const safeguardValidatedSuggestions = await this.processSafeguardAnalysis(
+            // 1. Executar análise cross-file principal com arquivos preparados
+            const crossFileAnalysisSuggestions =
+                await this.processWithTokenChunking(
                     organizationAndTeamData,
                     prNumber,
-                    crossFileAnalysisSuggestions,
+                    context,
+                    preparedFiles,
                     language,
                     provider,
+                    'cross_file_analysis',
                 );
 
-                // O safeguard retorna apenas as sugestões que passaram na validação
-                finalSuggestions = safeguardValidatedSuggestions;
-            }
+            let finalSuggestions: CodeSuggestion[] =
+                crossFileAnalysisSuggestions;
 
             this.logger.log({
-                message: 'Cross-file analysis completed successfully',
+                message:
+                    'Cross-file analysis with prepared files completed successfully',
                 context: CrossFileAnalysisService.name,
                 metadata: {
                     organizationAndTeamData,
                     prNumber,
-                    originalSuggestions: crossFileAnalysisSuggestions.length,
                     finalSuggestions: finalSuggestions.length,
                 },
             });
@@ -161,7 +155,7 @@ export class CrossFileAnalysisService {
             };
         } catch (error) {
             this.logger.error({
-                message: `Error during cross-file analysis for PR#${prNumber}`,
+                message: `Error during cross-file analysis with prepared files for PR#${prNumber}`,
                 context: CrossFileAnalysisService.name,
                 error,
                 metadata: { organizationAndTeamData, prNumber },
@@ -259,13 +253,17 @@ export class CrossFileAnalysisService {
 
                     switch (analysisType) {
                         case 'cross_file_analysis':
-                            systemPrompt = prompt_codereview_cross_file_analysis(payload);
+                            systemPrompt =
+                                prompt_codereview_cross_file_analysis(payload);
                             break;
                         case 'safeguard':
-                            systemPrompt = prompt_codereview_cross_file_safeguard(payload);
+                            systemPrompt =
+                                prompt_codereview_cross_file_safeguard(payload);
                             break;
                         default:
-                            throw new Error(`Unknown analysis type: ${analysisType}`);
+                            throw new Error(
+                                `Unknown analysis type: ${analysisType}`,
+                            );
                     }
 
                     return [
@@ -299,7 +297,12 @@ export class CrossFileAnalysisService {
                 message: 'Error creating generic provider chain',
                 error,
                 context: CrossFileAnalysisService.name,
-                metadata: { provider, prNumber, organizationAndTeamData, analysisType },
+                metadata: {
+                    provider,
+                    prNumber,
+                    organizationAndTeamData,
+                    analysisType,
+                },
             });
             throw error;
         }
@@ -308,32 +311,33 @@ export class CrossFileAnalysisService {
 
     //#region Token Chunking with Parallel Processing
     /**
-     * Processa análise com token chunking
+     * Processa análise com token chunking para arquivos preparados
      */
     private async processWithTokenChunking(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         context: AnalysisContext,
-        changedFiles: FileChange[],
+        preparedFiles: PreparedFileData[],
         language: string,
         provider: LLMModelProvider,
         analysisType: AnalysisType,
     ): Promise<CodeSuggestion[]> {
-        // 1. Preparar dados para chunking
-        const preparedFiles = this.prepareFilesForPayload(changedFiles);
+        // 1. Preparar dados para chunking (já temos patchWithLinesStr)
+        const preparedFilesForChunking =
+            this.prepareFilesForPayload(preparedFiles);
 
         // 2. Dividir arquivos em chunks
         const chunkingResult = this.tokenChunkingService.chunkDataByTokens({
             model: provider,
-            data: preparedFiles,
+            data: preparedFilesForChunking,
             usagePercentage: this.DEFAULT_USAGE_LLM_MODEL_PERCENTAGE,
         });
 
         this.logger.log({
-            message: `PR divided into ${chunkingResult.totalChunks} chunks for ${analysisType}`,
+            message: `PR with prepared files divided into ${chunkingResult.totalChunks} chunks for ${analysisType}`,
             context: CrossFileAnalysisService.name,
             metadata: {
-                totalFiles: preparedFiles.length,
+                totalFiles: preparedFilesForChunking.length,
                 totalChunks: chunkingResult.totalChunks,
                 tokenLimit: chunkingResult.tokenLimit,
                 tokensPerChunk: chunkingResult.tokensPerChunk,
@@ -347,37 +351,26 @@ export class CrossFileAnalysisService {
         const batchConfig = { ...this.DEFAULT_BATCH_CONFIG };
 
         // 4. Processar chunks em batches paralelos
-        const allSuggestions = await this.processChunksInBatches(
-            chunkingResult.chunks,
-            context,
-            language,
-            provider,
-            analysisType,
-            prNumber,
-            organizationAndTeamData,
-            batchConfig,
-        );
-
-        this.logger.log({
-            message: `Parallel chunk processing completed for ${analysisType}`,
-            context: CrossFileAnalysisService.name,
-            metadata: {
-                totalChunks: chunkingResult.totalChunks,
-                suggestionsFound: allSuggestions.length,
+        const allSuggestions =
+            await this.processChunksInBatches(
+                chunkingResult.chunks,
+                context,
+                language,
+                provider,
+                analysisType,
                 prNumber,
                 organizationAndTeamData,
-                analysisType,
-            },
-        });
+                batchConfig,
+            );
 
         return allSuggestions;
     }
 
     /**
-     * Processa chunks em batches paralelos
+     * NOVO MÉTODO: Processa chunks em batches paralelos para arquivos preparados
      */
     private async processChunksInBatches(
-        chunks: FileChange[][],
+        chunks: PreparedFileData[][],
         context: AnalysisContext,
         language: string,
         provider: LLMModelProvider,
@@ -396,7 +389,7 @@ export class CrossFileAnalysisService {
             const batchChunks = chunks.slice(i, i + maxConcurrentChunks);
 
             this.logger.log({
-                message: `Processing batch ${batchNumber}/${totalBatches} for ${analysisType}`,
+                message: `Processing prepared files batch ${batchNumber}/${totalBatches} for ${analysisType}`,
                 context: CrossFileAnalysisService.name,
                 metadata: {
                     batchNumber,
@@ -407,22 +400,23 @@ export class CrossFileAnalysisService {
                 },
             });
 
-            const batchResults = await this.processBatchInParallel(
-                batchChunks,
-                i,
-                context,
-                language,
-                provider,
-                analysisType,
-                prNumber,
-                organizationAndTeamData,
-                batchConfig,
-            );
+            const batchResults =
+                await this.processBatchInParallel(
+                    batchChunks,
+                    i,
+                    context,
+                    language,
+                    provider,
+                    analysisType,
+                    prNumber,
+                    organizationAndTeamData,
+                    batchConfig,
+                );
 
             batchResults.forEach(({ result, error, chunkIndex }) => {
                 if (error) {
                     this.logger.error({
-                        message: `Error in batch ${batchNumber}, chunk ${chunkIndex} for ${analysisType}`,
+                        message: `Error in prepared files batch ${batchNumber}, chunk ${chunkIndex} for ${analysisType}`,
                         context: CrossFileAnalysisService.name,
                         error,
                         metadata: {
@@ -447,10 +441,10 @@ export class CrossFileAnalysisService {
     }
 
     /**
-     * Processa batch em paralelo
+     * Processa batch em paralelo para arquivos preparados
      */
     private async processBatchInParallel(
-        batchChunks: FileChange[][],
+        batchChunks: PreparedFileData[][],
         indexOffset: number,
         context: AnalysisContext,
         language: string,
@@ -480,10 +474,10 @@ export class CrossFileAnalysisService {
     }
 
     /**
-     * Processa chunk com retry
+     * Processa chunk com retry para arquivos preparados
      */
     private async processChunkWithRetry(
-        chunk: FileChange[],
+        chunk: PreparedFileData[],
         chunkIndex: number,
         context: AnalysisContext,
         language: string,
@@ -499,7 +493,7 @@ export class CrossFileAnalysisService {
         for (let attempt = 1; attempt <= retryAttempts; attempt++) {
             try {
                 this.logger.log({
-                    message: `Processing chunk ${chunkIndex + 1} for ${analysisType} (attempt ${attempt})`,
+                    message: `Processing prepared files chunk ${chunkIndex + 1} for ${analysisType} (attempt ${attempt})`,
                     context: CrossFileAnalysisService.name,
                     metadata: {
                         chunkIndex,
@@ -525,7 +519,7 @@ export class CrossFileAnalysisService {
                 return { chunkIndex, result };
             } catch (error) {
                 this.logger.warn({
-                    message: `Error processing chunk ${chunkIndex + 1} for ${analysisType}, attempt ${attempt}`,
+                    message: `Error processing prepared files chunk ${chunkIndex + 1} for ${analysisType}, attempt ${attempt}`,
                     context: CrossFileAnalysisService.name,
                     error,
                     metadata: {
@@ -538,11 +532,14 @@ export class CrossFileAnalysisService {
                 });
 
                 if (attempt < retryAttempts) {
-                    const delayMs = Math.min(retryDelay * attempt, MAX_RETRY_DELAY);
+                    const delayMs = Math.min(
+                        retryDelay * attempt,
+                        MAX_RETRY_DELAY,
+                    );
                     await this.delay(delayMs);
                 } else {
                     this.logger.error({
-                        message: `Chunk ${chunkIndex + 1} failed after ${retryAttempts} attempts for ${analysisType}`,
+                        message: `Prepared files chunk ${chunkIndex + 1} failed after ${retryAttempts} attempts for ${analysisType}`,
                         context: CrossFileAnalysisService.name,
                         error,
                         metadata: {
@@ -567,11 +564,11 @@ export class CrossFileAnalysisService {
     }
 
     /**
-     * Processa chunk individual
+     * Processa chunk individual para arquivos preparados
      */
     private async processChunk(
         context: AnalysisContext,
-        filesChunk: FileChange[],
+        preparedFilesChunk: PreparedFileData[],
         language: string,
         provider: LLMModelProvider,
         analysisType: AnalysisType,
@@ -579,18 +576,21 @@ export class CrossFileAnalysisService {
         prNumber: number,
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<CodeSuggestion[] | null> {
-        // Preparar payload baseado no tipo de análise
+        // Preparar payload baseado no tipo de análise usando patchWithLinesStr
         let payload: any;
 
         if (analysisType === 'cross_file_analysis') {
-            const fileContexts = this.convertFilesToFileChangeContext(filesChunk);
+            const fileContexts =
+                this.convertFilesToFileChangeContext(
+                    preparedFilesChunk,
+                );
             payload = {
                 files: fileContexts,
                 language,
             } as CrossFileAnalysisPayload;
         } else {
             // Para safeguard, o payload são as próprias sugestões
-            payload = filesChunk; // Neste caso seria as sugestões
+            payload = preparedFilesChunk; // Neste caso seria as sugestões
         }
 
         const analysisChain = await this.createGenericAnalysisChain(
@@ -696,7 +696,11 @@ export class CrossFileAnalysisService {
                 this.logger.warn({
                     message: `Empty response from LLM for ${analysisType}`,
                     context: CrossFileAnalysisService.name,
-                    metadata: { prNumber, organizationAndTeamData, analysisType },
+                    metadata: {
+                        prNumber,
+                        organizationAndTeamData,
+                        analysisType,
+                    },
                 });
                 return null;
             }
@@ -737,8 +741,10 @@ export class CrossFileAnalysisService {
 
             // Validar e enriquecer sugestões
             const validSuggestions = suggestions
-                .filter(suggestion => this.validateSuggestion(suggestion, analysisType))
-                .map(suggestion => this.enrichSuggestion(suggestion));
+                .filter((suggestion) =>
+                    this.validateSuggestion(suggestion, analysisType),
+                )
+                .map((suggestion) => this.enrichSuggestion(suggestion));
 
             this.logger.log({
                 message: `Successfully processed ${analysisType} response`,
@@ -772,7 +778,10 @@ export class CrossFileAnalysisService {
     /**
      * Valida se uma sugestão tem os campos obrigatórios
      */
-    private validateSuggestion(suggestion: any, analysisType: AnalysisType): boolean {
+    private validateSuggestion(
+        suggestion: any,
+        analysisType: AnalysisType,
+    ): boolean {
         const requiredFields = ['suggestionContent', 'relevantFile'];
 
         for (const field of requiredFields) {
@@ -813,24 +822,32 @@ export class CrossFileAnalysisService {
 
     //#region Utility Methods
     /**
-     * Converte FileChange[] para Partial<FileChangeContext>[]
+     * Converte PreparedFileData[] para formato esperado pelo prompt
      */
-    private convertFilesToFileChangeContext(files: FileChange[]): Partial<any>[] {
-        return files.map(file => ({
+    private convertFilesToFileChangeContext(
+        preparedFiles: PreparedFileData[],
+    ): Partial<any>[] {
+        return preparedFiles.map((preparedFile) => ({
             file: {
-                filename: file.filename,
-                codeDiff: file.patch || '',
+                filename: preparedFile.filename,
+                codeDiff: preparedFile.patchWithLinesStr, // ✨ Usa patchWithLinesStr em vez de patch
             },
         }));
     }
 
     /**
-     * Prepara arquivos para payload removendo conteúdo desnecessário
+     * Prepara arquivos já processados para payload removendo conteúdo desnecessário
      */
-    private prepareFilesForPayload(changedFiles: FileChange[]): FileChange[] {
-        return changedFiles.map((file) => ({
-            ...file,
-            fileContent: undefined,
+    private prepareFilesForPayload(
+        preparedFiles: PreparedFileData[],
+    ): PreparedFileData[] {
+        return preparedFiles.map((preparedFile) => ({
+            filename: preparedFile.filename,
+            patchWithLinesStr: preparedFile.patchWithLinesStr,
+            file: {
+                ...preparedFile.file,
+                fileContent: undefined,
+            },
         }));
     }
 
