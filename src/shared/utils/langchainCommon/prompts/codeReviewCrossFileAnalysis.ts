@@ -98,7 +98,8 @@ Generate suggestions in JSON format:
   "oneSentenceSummary": "brief description of the cross-file issue",
   "relevantLinesStart": number,
   "relevantLinesEnd": number,
-  "label": "refactoring|error_handling|maintainability|potential_issues"
+  "label": "refactoring|error_handling|maintainability|potential_issues",
+  "rankScore": "0"
 }
 \`\`\`
 
