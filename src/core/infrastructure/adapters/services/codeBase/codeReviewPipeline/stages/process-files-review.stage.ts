@@ -330,7 +330,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     overallComments,
                     index,
                     fileMetadata,
-                    validCrossFileSuggestions,
                 );
             } catch (error) {
                 this.logger.error({
@@ -356,7 +355,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         overallComments: { filepath: string; summary: string }[],
         batchIndex: number,
         fileMetadata: Map<string, any>,
-        validCrossFileSuggestions: CodeSuggestion[],
     ): Promise<void> {
         const { organizationAndTeamData, pullRequest } = context;
         const label = `processSingleBatch → Batch #${batchIndex + 1} (${batch.length} arquivos)`;
@@ -385,7 +383,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                             discardedSuggestions,
                             overallComments,
                             fileMetadata,
-                            validCrossFileSuggestions,
                         );
                     } else {
                         this.logger.error({
@@ -420,7 +417,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[],
         overallComments: { filepath: string; summary: string }[],
         fileMetadata: Map<string, any>,
-        validCrossFileSuggestions: CodeSuggestion[],
     ): void {
         const file = fileProcessingResult.file;
 
@@ -445,10 +441,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 reviewMode: fileProcessingResult.reviewMode,
                 codeReviewModelUsed: fileProcessingResult.codeReviewModelUsed,
             });
-        }
-
-        if (validCrossFileSuggestions?.length > 0) {
-            validCrossFileSuggestions.push(...validCrossFileSuggestions);
         }
     }
 
@@ -559,9 +551,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
         const validSuggestionsToAnalyze: Partial<CodeSuggestion>[] = [];
         const discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[] = [];
-        const discardedSuggestionsByCodeDiff: Partial<CodeSuggestion>[] = [];
-        const discardedSuggestionsByKodyFineTuning: Partial<CodeSuggestion>[] =
-            [];
         let safeguardLLMProvider = '';
 
         if (
@@ -570,84 +559,64 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             Array.isArray(result.codeSuggestions) &&
             result.codeSuggestions.length > 0
         ) {
-            // Filter code suggestions by review options
-            let filteredSuggestionsByOptions =
-                this.suggestionService.filterCodeSuggestionsByReviewOptions(
-                    context?.codeReviewConfig?.reviewOptions,
-                    result,
+            const crossFileAnalysisSuggestions =
+                context?.validCrossFileSuggestions || [];
+
+            const validCrossFileSuggestions =
+                crossFileAnalysisSuggestions.filter(
+                    (suggestion) => suggestion.relevantFile === file.filename,
                 );
 
             const suggestionsWithId = await this.addSuggestionsId(
-                filteredSuggestionsByOptions.codeSuggestions,
+                result.codeSuggestions,
             );
 
-            const filterSuggestionsCodeDiff =
-                await this.suggestionService.filterSuggestionsCodeDiff(
-                    patchWithLinesStr,
-                    suggestionsWithId,
-                );
+            result.codeSuggestions.push(...suggestionsWithId);
 
-            discardedSuggestionsByCodeDiff.push(
-                ...this.suggestionService.getDiscardedSuggestions(
-                    suggestionsWithId,
-                    filterSuggestionsCodeDiff,
-                    PriorityStatus.DISCARDED_BY_CODE_DIFF,
-                ),
+            const initialFilterResult = await this.initialFilterSuggestions(
+                result,
+                context,
+                validCrossFileSuggestions,
+                patchWithLinesStr,
             );
 
-            const getDataPipelineKodyFineTunning =
-                await this.kodyFineTuningContextPreparation.prepareKodyFineTuningContext(
-                    context?.organizationAndTeamData.organizationId,
-                    context?.pullRequest?.number,
-                    {
-                        id: context?.pullRequest?.repository?.id || '',
-                        full_name:
-                            context?.pullRequest?.repository?.fullName || '',
-                    },
-                    suggestionsWithId,
-                    context?.codeReviewConfig?.kodyFineTuningConfig?.enabled,
-                    context?.clusterizedSuggestions,
-                );
-
-            const keepedSuggestions: Partial<CodeSuggestion>[] =
-                getDataPipelineKodyFineTunning?.keepedSuggestions;
-
-            const discardedSuggestions: Partial<CodeSuggestion>[] =
-                getDataPipelineKodyFineTunning?.discardedSuggestions;
-
-            discardedSuggestionsByKodyFineTuning.push(
-                ...discardedSuggestions.map((suggestion) => {
-                    suggestion.priorityStatus =
-                        PriorityStatus.DISCARDED_BY_KODY_FINE_TUNING;
-                    return suggestion;
-                }),
+            const kodyFineTuningResult = await this.applyKodyFineTuningFilter(
+                initialFilterResult.filteredSuggestions,
+                context,
             );
 
-            const crossFileAnalysis = context?.validCrossFileSuggestions || [];
+            const discardedSuggestionsByCodeDiff =
+                initialFilterResult.discardedSuggestionsByCodeDiff;
+            const discardedSuggestionsByKodyFineTuning =
+                kodyFineTuningResult.discardedSuggestionsByKodyFineTuning;
+            const keepedSuggestions = kodyFineTuningResult.keepedSuggestions;
 
-            const safeGuardResponse =
-                await this.suggestionService.filterSuggestionsSafeGuard(
-                    context?.organizationAndTeamData,
-                    context?.pullRequest?.number,
-                    file,
-                    patchWithLinesStr,
-                    keepedSuggestions,
-                    context?.codeReviewConfig?.languageResultPrompt,
-                    reviewModeResponse,
-                );
+            // Separar sugestões cross-file das demais
+            const crossFileIds = new Set(
+                validCrossFileSuggestions.map((suggestion) => suggestion.id),
+            );
 
-            safeguardLLMProvider =
-                safeGuardResponse?.codeReviewModelUsed?.safeguard;
+            const filteredCrossFileSuggestions = keepedSuggestions.filter(
+                (suggestion) => crossFileIds.has(suggestion.id),
+            );
+
+            const filteredKeepedSuggestions = keepedSuggestions.filter(
+                (suggestion) => !crossFileIds.has(suggestion.id),
+            );
+
+            // Aplicar safeguard apenas nas sugestões não cross-file
+            const safeGuardResult = await this.applySafeguardFilter(
+                filteredKeepedSuggestions,
+                context,
+                file,
+                patchWithLinesStr,
+                reviewModeResponse,
+            );
+
+            safeguardLLMProvider = safeGuardResult.safeguardLLMProvider;
 
             discardedSuggestionsBySafeGuard.push(
-                ...this.suggestionService.getDiscardedSuggestions(
-                    keepedSuggestions,
-                    safeGuardResponse?.suggestions || [],
-                    PriorityStatus.DISCARDED_BY_SAFEGUARD,
-                ),
-            );
-
-            discardedSuggestionsBySafeGuard.push(
+                ...safeGuardResult.discardedSuggestionsBySafeGuard,
                 ...discardedSuggestionsByCodeDiff,
                 ...discardedSuggestionsByKodyFineTuning,
             );
@@ -656,7 +625,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 await this.suggestionService.analyzeSuggestionsSeverity(
                     context?.organizationAndTeamData,
                     context?.pullRequest?.number,
-                    safeGuardResponse?.suggestions,
+                    safeGuardResult.safeguardSuggestions,
                     context?.codeReviewConfig?.reviewOptions,
                 );
 
@@ -694,6 +663,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             mergedSuggestions = [
                 ...mergedSuggestions,
                 ...(kodyASTSuggestions?.codeSuggestions || []),
+                ...filteredCrossFileSuggestions,
             ];
 
             const VALID_ACTIONS = [
@@ -776,6 +746,128 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             ...suggestion,
             id: uuidv4(),
         }));
+    }
+
+    private async initialFilterSuggestions(
+        result: AIAnalysisResult,
+        context: AnalysisContext,
+        crossFileAnalysis: CodeSuggestion[],
+        patchWithLinesStr: string,
+    ): Promise<{
+        filteredSuggestions: any[];
+        discardedSuggestionsByCodeDiff: Partial<CodeSuggestion>[];
+    }> {
+        // Combinar sugestões regulares com cross-file suggestions
+        const combinedResult = {
+            ...result,
+            codeSuggestions: [
+                ...(result.codeSuggestions || []),
+                ...crossFileAnalysis,
+            ],
+        };
+
+        let filteredSuggestionsByOptions =
+            this.suggestionService.filterCodeSuggestionsByReviewOptions(
+                context?.codeReviewConfig?.reviewOptions,
+                combinedResult,
+            );
+
+        const filterSuggestionsCodeDiff =
+            await this.suggestionService.filterSuggestionsCodeDiff(
+                patchWithLinesStr,
+                filteredSuggestionsByOptions.codeSuggestions,
+            );
+
+        const discardedSuggestionsByCodeDiff =
+            this.suggestionService.getDiscardedSuggestions(
+                filteredSuggestionsByOptions.codeSuggestions,
+                filterSuggestionsCodeDiff,
+                PriorityStatus.DISCARDED_BY_CODE_DIFF,
+            );
+
+        return {
+            filteredSuggestions: filterSuggestionsCodeDiff,
+            discardedSuggestionsByCodeDiff,
+        };
+    }
+
+    private async applyKodyFineTuningFilter(
+        filteredSuggestions: any[],
+        context: AnalysisContext,
+    ): Promise<{
+        keepedSuggestions: Partial<CodeSuggestion>[];
+        discardedSuggestionsByKodyFineTuning: Partial<CodeSuggestion>[];
+    }> {
+        const getDataPipelineKodyFineTunning =
+            await this.kodyFineTuningContextPreparation.prepareKodyFineTuningContext(
+                context?.organizationAndTeamData.organizationId,
+                context?.pullRequest?.number,
+                {
+                    id: context?.pullRequest?.repository?.id || '',
+                    full_name: context?.pullRequest?.repository?.fullName || '',
+                },
+                filteredSuggestions,
+                context?.codeReviewConfig?.kodyFineTuningConfig?.enabled,
+                context?.clusterizedSuggestions,
+            );
+
+        const keepedSuggestions: Partial<CodeSuggestion>[] =
+            getDataPipelineKodyFineTunning?.keepedSuggestions;
+
+        const discardedSuggestions: Partial<CodeSuggestion>[] =
+            getDataPipelineKodyFineTunning?.discardedSuggestions;
+
+        const discardedSuggestionsByKodyFineTuning = discardedSuggestions.map(
+            (suggestion) => {
+                suggestion.priorityStatus =
+                    PriorityStatus.DISCARDED_BY_KODY_FINE_TUNING;
+                return suggestion;
+            },
+        );
+
+        return {
+            keepedSuggestions,
+            discardedSuggestionsByKodyFineTuning,
+        };
+    }
+
+    private async applySafeguardFilter(
+        suggestions: Partial<CodeSuggestion>[],
+        context: AnalysisContext,
+        file: any,
+        patchWithLinesStr: string,
+        reviewModeResponse: any,
+    ): Promise<{
+        safeguardSuggestions: Partial<CodeSuggestion>[];
+        discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
+        safeguardLLMProvider: string;
+    }> {
+        const safeGuardResponse =
+            await this.suggestionService.filterSuggestionsSafeGuard(
+                context?.organizationAndTeamData,
+                context?.pullRequest?.number,
+                file,
+                patchWithLinesStr,
+                suggestions,
+                context?.codeReviewConfig?.languageResultPrompt,
+                reviewModeResponse,
+            );
+
+        const safeguardLLMProvider =
+            safeGuardResponse?.codeReviewModelUsed?.safeguard || '';
+
+        const discardedSuggestionsBySafeGuard =
+            this.suggestionService.getDiscardedSuggestions(
+                suggestions,
+                safeGuardResponse?.suggestions || [],
+                PriorityStatus.DISCARDED_BY_SAFEGUARD,
+            );
+
+        return {
+            safeguardSuggestions: safeGuardResponse?.suggestions || [],
+            discardedSuggestionsBySafeGuard,
+            safeguardLLMProvider,
+        };
     }
 
     private createAnalysisContextFromPipelineContext(
