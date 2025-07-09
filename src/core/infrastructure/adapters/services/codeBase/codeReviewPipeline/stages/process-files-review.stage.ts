@@ -724,7 +724,10 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 );
             }
 
-            validSuggestionsToAnalyze.push(...mergedSuggestions);
+            const mergedSuggestionsWithId =
+                await this.addSuggestionsId(mergedSuggestions);
+
+            validSuggestionsToAnalyze.push(...mergedSuggestionsWithId);
         }
 
         return {
@@ -744,7 +747,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
     private async addSuggestionsId(suggestions: any[]): Promise<any[]> {
         return suggestions?.map((suggestion) => ({
             ...suggestion,
-            id: uuidv4(),
+            id: suggestion?.id || uuidv4(),
         }));
     }
 

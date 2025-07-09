@@ -803,7 +803,7 @@ export class CrossFileAnalysisService {
      */
     private enrichSuggestion(suggestion: any): CodeSuggestion {
         return {
-            id: suggestion.id || uuidv4(),
+            id: uuidv4(),
             relevantFile: suggestion.relevantFile,
             language: suggestion.language || 'typescript',
             suggestionContent: suggestion.suggestionContent,

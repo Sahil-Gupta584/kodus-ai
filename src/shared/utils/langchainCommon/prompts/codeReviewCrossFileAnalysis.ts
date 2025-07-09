@@ -88,7 +88,6 @@ Generate suggestions in JSON format:
 
 \`\`\`json
 {
-  "id": "uuid",
   "relevantFile": "primary affected file where suggestion will be posted",
   "relatedFile": "secondary file that shows the pattern/inconsistency",
   "language": "detected language",
