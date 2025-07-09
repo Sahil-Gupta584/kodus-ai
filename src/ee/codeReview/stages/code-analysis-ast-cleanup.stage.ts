@@ -11,8 +11,8 @@ const ENABLE_CODE_REVIEW_AST =
     process.env.API_ENABLE_CODE_REVIEW_AST === 'true';
 
 @Injectable()
-export class CodeAnalysisASTStage extends BasePipelineStage<CodeReviewPipelineContext> {
-    stageName = 'CodeAnalysisASTStage';
+export class CodeAnalysisASTCleanupStage extends BasePipelineStage<CodeReviewPipelineContext> {
+    stageName = 'CodeAnalysisASTCleanupStage';
 
     constructor(
         @Inject(AST_ANALYSIS_SERVICE_TOKEN)
@@ -34,20 +34,17 @@ export class CodeAnalysisASTStage extends BasePipelineStage<CodeReviewPipelineCo
         }
 
         try {
-            const { taskId } =
-                await this.codeASTAnalysisService.initializeASTAnalysis(
-                    context.repository,
-                    context.pullRequest,
-                    context.platformType,
-                    context.organizationAndTeamData,
-                );
+            await this.codeASTAnalysisService.deleteASTAnalysis(
+                context.repository,
+                context.pullRequest,
+                context.platformType,
+                context.organizationAndTeamData,
+            );
 
-            return this.updateContext(context, (draft) => {
-                draft.tasks.astAnalysis.taskId = taskId;
-            });
+            return context;
         } catch (error) {
             this.logger.error({
-                message: 'Error during AST analysis initialization',
+                message: 'Error during AST analysis cleanup',
                 error,
                 context: this.stageName,
                 metadata: {

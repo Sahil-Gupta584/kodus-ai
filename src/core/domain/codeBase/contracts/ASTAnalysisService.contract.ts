@@ -26,6 +26,12 @@ export interface IASTAnalysisService {
         organizationAndTeamData: OrganizationAndTeamData,
         filePaths?: string[],
     ): Promise<InitializeRepositoryResponse>;
+    deleteASTAnalysis(
+        repository: any,
+        pullRequest: any,
+        platformType: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<void>;
     initializeImpactAnalysis(
         repository: any,
         pullRequest: any,

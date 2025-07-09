@@ -170,6 +170,7 @@ export type FileChange = {
 
 export type FileChangeContext = {
     file: FileChange;
+    relevantContent?: string | null;
     patchWithLinesStr?: string;
 };
 

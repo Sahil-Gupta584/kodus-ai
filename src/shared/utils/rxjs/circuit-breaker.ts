@@ -1,4 +1,12 @@
-import { Observable, defer, throwError, Observer, timer } from 'rxjs';
+import { LoggerService } from '@nestjs/common';
+import {
+    Observable,
+    defer,
+    throwError,
+    Observer,
+    timer,
+    MonoTypeOperatorFunction,
+} from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 
 /**
@@ -9,6 +17,9 @@ import { tap, catchError } from 'rxjs/operators';
 export class CircuitBreakerOpenError extends Error {
     constructor(message: string) {
         super(message);
+        this.name = CircuitBreakerOpenError.name;
+        // Ensure the prototype chain is correct
+        Object.setPrototypeOf(this, new.target.prototype);
     }
 }
 
@@ -26,10 +37,17 @@ export enum CircuitBreakerState {
  */
 export interface CircuitBreakerOptions {
     /**
-     * The number of failures required to open the circuit.
-     * @default 5
+     * The percentage of failures (between 1 and 100) that will trip the circuit.
+     * This is only considered after the `volumeThreshold` has been met.
+     * @default 50
      */
-    maxFailures?: number;
+    errorThresholdPercentage?: number;
+    /**
+     * The minimum number of calls within the rolling window before the
+     * error percentage is calculated.
+     * @default 10
+     */
+    volumeThreshold?: number;
     /**
      * The time in milliseconds to wait in the OPEN state
      * before transitioning to HALF_OPEN.
@@ -51,88 +69,176 @@ export interface CircuitBreakerOptions {
 }
 
 /**
- * Creates a new RxJS pipeable operator that acts as a circuit breaker.
- *
- * @param config Configuration options for the circuit breaker.
- * @returns An RxJS operator function.
+ * Represents a single Circuit Breaker instance with its own state.
+ * This class encapsulates all logic for one circuit.
  */
-export function circuitBreaker<T>(config?: CircuitBreakerOptions) {
-    // --- Default Configuration ---
-    const {
-        maxFailures = 5,
-        resetTimeout = 30000,
-        openObserver,
-        closeObserver,
-        halfOpenObserver,
-    } = config || {};
+class CircuitBreaker {
+    private readonly serviceName: string;
+    private state = CircuitBreakerState.CLOSED;
+    private readonly options: Required<CircuitBreakerOptions>;
+    // Stores the outcomes of the most recent calls (true for success, false for failure).
+    private callHistory: boolean[] = [];
 
-    // --- State Management per Circuit ---
-    let state = CircuitBreakerState.CLOSED;
-    let failures = 0;
-    let resetTimer: Observable<number> | null = null;
+    constructor(
+        serviceName: string,
+        options?: CircuitBreakerOptions & {
+            logger?: LoggerService;
+        },
+    ) {
+        const { logger } = options || {};
+        const logMethod = (msg: string) => {
+            if (logger) {
+                logger.error({
+                    message: msg,
+                    service: serviceName,
+                    context: serviceName,
+                });
+            } else {
+                console.error(`[${serviceName}] ${msg}`);
+            }
+        };
+
+        // Set default options
+        this.options = {
+            errorThresholdPercentage: options?.errorThresholdPercentage ?? 50,
+            volumeThreshold: options?.volumeThreshold ?? 10,
+            resetTimeout: options?.resetTimeout ?? 60000,
+            openObserver: options?.openObserver ?? {
+                next: () => logMethod('Circuit opened'),
+            },
+            closeObserver: options?.closeObserver ?? {
+                next: () => logMethod('Circuit closed'),
+            },
+            halfOpenObserver: options?.halfOpenObserver ?? {
+                next: () => logMethod('Circuit half-open'),
+            },
+        };
+
+        this.serviceName = serviceName;
+    }
 
     /**
-     * Moves the circuit to the OPEN state and starts the reset timer.
+     * Records the outcome of a call and checks if the circuit should trip.
+     * @param success The outcome of the call.
      */
-    const trip = () => {
-        failures++;
-        if (failures < maxFailures) {
+    private recordCall(success: boolean): void {
+        this.callHistory.push(success);
+
+        // Keep the history window at the specified size.
+        if (this.callHistory.length > this.options.volumeThreshold) {
+            this.callHistory.shift();
+        }
+
+        // Only check for tripping if we have enough data points.
+        if (this.callHistory.length < this.options.volumeThreshold) {
             return;
         }
 
-        state = CircuitBreakerState.OPEN;
-        openObserver?.next(); // Notify observers
+        const failures = this.callHistory.filter((s) => s === false).length;
+        const failureRate = (failures / this.callHistory.length) * 100;
 
-        // After the reset timeout, move to HALF_OPEN
-        resetTimer = timer(resetTimeout);
-        resetTimer.subscribe(() => {
-            state = CircuitBreakerState.HALF_OPEN;
-            halfOpenObserver?.next();
-        });
-    };
+        if (failureRate >= this.options.errorThresholdPercentage) {
+            this.trip();
+        }
+    }
 
     /**
-     * Resets the circuit to the CLOSED state.
+     * Trips the circuit, moving it to the OPEN state.
      */
-    const reset = () => {
-        failures = 0;
-        state = CircuitBreakerState.CLOSED;
-        closeObserver?.next(); // Notify observers
-    };
+    private trip(): void {
+        if (this.state === CircuitBreakerState.OPEN) return;
 
-    // --- The Operator Function ---
-    return (source: Observable<T>): Observable<T> => {
-        // defer() ensures this logic runs for each new subscription.
-        return defer(() => {
-            // 1. Check the state on each subscription.
-            if (state === CircuitBreakerState.OPEN) {
-                return throwError(
-                    () => new CircuitBreakerOpenError('Circuit is open'),
-                );
-            }
+        this.state = CircuitBreakerState.OPEN;
+        this.options.openObserver?.next?.();
 
-            // 2. If CLOSED or HALF_OPEN, allow the operation to proceed.
-            return source.pipe(
-                tap({
-                    // A successful emission or completion resets the circuit if it was HALF_OPEN.
-                    next: () => {
-                        if (state === CircuitBreakerState.HALF_OPEN) {
-                            reset();
-                        }
-                    },
-                    complete: () => {
-                        if (state === CircuitBreakerState.HALF_OPEN) {
-                            reset();
-                        }
-                    },
-                }),
-                catchError((err) => {
-                    // On any error, trip the circuit.
-                    trip();
-                    // Re-throw the original error to the consumer.
-                    return throwError(() => err);
-                }),
-            );
+        timer(this.options.resetTimeout).subscribe(() => {
+            this.state = CircuitBreakerState.HALF_OPEN;
+            this.options.halfOpenObserver?.next?.();
         });
-    };
+    }
+
+    /**
+     * Resets the circuit to the CLOSED state and clears history.
+     */
+    private reset(): void {
+        this.state = CircuitBreakerState.CLOSED;
+        this.callHistory = []; // Clear history on reset
+        this.options.closeObserver?.next?.();
+    }
+
+    /**
+     * Returns the RxJS pipeable operator for this circuit breaker instance.
+     */
+    public getOperator<T>(): MonoTypeOperatorFunction<T> {
+        return (source: Observable<T>): Observable<T> => {
+            return defer(() => {
+                if (this.state === CircuitBreakerState.OPEN) {
+                    return throwError(
+                        () =>
+                            new CircuitBreakerOpenError(
+                                `Circuit for ${this.serviceName} is open`,
+                            ),
+                    );
+                }
+
+                return source.pipe(
+                    tap({
+                        next: () => {
+                            if (this.state === CircuitBreakerState.HALF_OPEN)
+                                this.reset();
+                            else this.recordCall(true);
+                        },
+                        complete: () => {
+                            if (this.state === CircuitBreakerState.HALF_OPEN)
+                                this.reset();
+                            else this.recordCall(true);
+                        },
+                    }),
+                    catchError((err) => {
+                        this.recordCall(false);
+                        return throwError(() => err);
+                    }),
+                );
+            });
+        };
+    }
+}
+
+/** Singleton Registry */
+const breakers = new Map<string, CircuitBreaker>();
+
+/**
+ * Initializes a new shared circuit breaker for a service.
+ * This should be called once per service (e.g., in onModuleInit).
+ * @param serviceName The unique name of the service.
+ * @param options Configuration options including an optional logger.
+ */
+export function initCircuitBreaker(
+    serviceName: string,
+    options?: CircuitBreakerOptions & { logger?: LoggerService },
+): void {
+    if (breakers.has(serviceName)) {
+        // Optionally log a warning if trying to re-initialize
+        options?.logger?.warn(
+            `Circuit breaker for '${serviceName}' is already initialized.`,
+        );
+        return;
+    }
+    breakers.set(serviceName, new CircuitBreaker(serviceName, options));
+}
+
+/**
+ * Retrieves the pipeable operator for a previously initialized circuit breaker.
+ * @param serviceName The unique name of the service.
+ * @returns An RxJS pipeable operator.
+ */
+export function circuitBreaker<T>(
+    serviceName: string,
+): MonoTypeOperatorFunction<T> {
+    if (!breakers.has(serviceName)) {
+        throw new Error(
+            `Circuit breaker for '${serviceName}' has not been initialized. Call initCircuitBreaker first.`,
+        );
+    }
+    return breakers.get(serviceName)!.getOperator<T>();
 }

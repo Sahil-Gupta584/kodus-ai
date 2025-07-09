@@ -56,28 +56,29 @@ export class CodeBaseController {
     ): Promise<StreamableFile> {
         const { id, name, full_name, number, head, base, platform, teamId } =
             body;
-        const task = await this.codeASTAnalysisService.initializeASTAnalysis(
-            {
-                id,
-                name,
-                full_name,
-            },
-            {
-                number,
-                head,
-                base,
-            },
-            platform,
-            {
-                organizationId: this.request.user?.organization.uuid,
-                teamId,
-            },
-            body.filePaths || [],
-        );
+        const { taskId } =
+            await this.codeASTAnalysisService.initializeASTAnalysis(
+                {
+                    id,
+                    name,
+                    full_name,
+                },
+                {
+                    number,
+                    head,
+                    base,
+                },
+                platform,
+                {
+                    organizationId: this.request.user?.organization.uuid,
+                    teamId,
+                },
+                body.filePaths || [],
+            );
 
-        await this.codeASTAnalysisService.awaitTask(task.taskId);
+        await this.codeASTAnalysisService.awaitTask(taskId);
 
-        const result = task;
+        const result = taskId;
 
         // Converte o resultado para JSON
         const jsonString = JSON.stringify(result, replacer);

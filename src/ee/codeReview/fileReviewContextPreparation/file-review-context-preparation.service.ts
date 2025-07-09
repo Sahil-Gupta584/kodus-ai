@@ -20,6 +20,7 @@ import { ReviewModeOptions } from '@/shared/interfaces/file-review-context-prepa
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisService.contract';
 import { LLM_ANALYSIS_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/codeBase/llmAnalysis.service';
+import { TaskStatus } from '@kodus/kodus-proto/task';
 
 /**
  * Enterprise (cloud) implementation of the file review context preparation service
@@ -92,11 +93,9 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
      */
     protected async prepareFileContextInternal(
         file: FileChange,
-        patchWithLinesStr,
+        patchWithLinesStr: string,
         context: AnalysisContext,
     ): Promise<{ fileContext: AnalysisContext } | null> {
-        let reviewMode = ReviewModeResponse.HEAVY_MODE;
-
         const baseContext = await super.prepareFileContextInternal(
             file,
             patchWithLinesStr,
@@ -110,31 +109,67 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
         let fileContext: AnalysisContext = baseContext.fileContext;
 
         // Check if we should execute the AST analysis
-        const shouldRunAST = reviewMode === ReviewModeResponse.HEAVY_MODE;
+        const shouldRunAST =
+            fileContext.reviewModeResponse === ReviewModeResponse.HEAVY_MODE &&
+            fileContext.tasks.astAnalysis.taskId &&
+            fileContext.codeReviewConfig.reviewOptions?.breaking_changes;
 
         if (shouldRunAST) {
             try {
-                await this.astService.awaitTask(
-                    context.tasks.astAnalysis.taskId,
+                const { task: astTask } = await this.astService.awaitTask(
+                    fileContext.tasks.astAnalysis.taskId,
                 );
+
+                if (
+                    !astTask ||
+                    astTask.status !== TaskStatus.TASK_STATUS_COMPLETED
+                ) {
+                    this.logger.warn({
+                        message:
+                            'AST analysis task did not complete successfully',
+                        context: FileReviewContextPreparation.name,
+                        metadata: {
+                            ...fileContext?.organizationAndTeamData,
+                            filename: file.filename,
+                        },
+                    });
+                    return { fileContext };
+                }
 
                 const { taskId } =
                     await this.astService.initializeImpactAnalysis(
-                        context.repository,
-                        context.pullRequest,
-                        context.platformType,
-                        context.organizationAndTeamData,
+                        fileContext.repository,
+                        fileContext.pullRequest,
+                        fileContext.platformType,
+                        fileContext.organizationAndTeamData,
                         patchWithLinesStr,
                         file.filename,
                     );
 
-                await this.astService.awaitTask(taskId);
+                const { task: impactTask } =
+                    await this.astService.awaitTask(taskId);
+
+                if (
+                    !impactTask ||
+                    impactTask.status !== TaskStatus.TASK_STATUS_COMPLETED
+                ) {
+                    this.logger.warn({
+                        message:
+                            'Impact analysis task did not complete successfully',
+                        context: FileReviewContextPreparation.name,
+                        metadata: {
+                            ...fileContext?.organizationAndTeamData,
+                            filename: file.filename,
+                        },
+                    });
+                    return { fileContext };
+                }
 
                 const impactAnalysis = await this.astService.getImpactAnalysis(
-                    context.repository,
-                    context.pullRequest,
-                    context.platformType,
-                    context.organizationAndTeamData,
+                    fileContext.repository,
+                    fileContext.pullRequest,
+                    fileContext.platformType,
+                    fileContext.organizationAndTeamData,
                 );
 
                 // Creates a new context by combining the fileContext with the AST analysis
@@ -170,5 +205,75 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
         );
 
         return response;
+    }
+
+    protected async getRelevantFileContent(
+        file: FileChange,
+        context: AnalysisContext,
+    ): Promise<string | null> {
+        try {
+            const { taskId } = context.tasks.astAnalysis;
+
+            if (!taskId) {
+                this.logger.warn({
+                    message:
+                        'No AST analysis task ID found, returning file content',
+                    context: FileReviewContextPreparation.name,
+                    metadata: {
+                        ...context?.organizationAndTeamData,
+                        filename: file.filename,
+                    },
+                });
+                return file.fileContent || file.content || null;
+            }
+
+            const { task } = await this.astService.awaitTask(taskId);
+
+            if (!task || task.status !== TaskStatus.TASK_STATUS_COMPLETED) {
+                this.logger.warn({
+                    message: 'AST analysis task did not complete successfully',
+                    context: FileReviewContextPreparation.name,
+                    metadata: {
+                        ...context?.organizationAndTeamData,
+                        filename: file.filename,
+                    },
+                });
+                return file.fileContent || file.content || null;
+            }
+
+            const content = await this.astService.getRelatedContentFromDiff(
+                context.repository,
+                context.pullRequest,
+                context.platformType,
+                context.organizationAndTeamData,
+                file.patch,
+                file.filename,
+            );
+
+            if (content) {
+                return content;
+            } else {
+                this.logger.warn({
+                    message: 'No relevant content found for the file',
+                    context: FileReviewContextPreparation.name,
+                    metadata: {
+                        ...context?.organizationAndTeamData,
+                        filename: file.filename,
+                    },
+                });
+                return file.fileContent || file.content || null;
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error retrieving relevant file content',
+                error,
+                context: FileReviewContextPreparation.name,
+                metadata: {
+                    ...context?.organizationAndTeamData,
+                    filename: file.filename,
+                },
+            });
+            return file.fileContent || file.content || null;
+        }
     }
 }

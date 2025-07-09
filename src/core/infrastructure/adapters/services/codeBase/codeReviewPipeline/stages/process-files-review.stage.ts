@@ -743,20 +743,21 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         baseContext: AnalysisContext,
     ): Promise<IFinalAnalysisResult & { file: FileChange }> {
         const { reviewModeResponse } = baseContext;
-        const { file, patchWithLinesStr } = baseContext.fileChangeContext;
+        const { file, relevantContent, patchWithLinesStr } =
+            baseContext.fileChangeContext;
 
         try {
             const context: AnalysisContext = {
                 ...baseContext,
                 reviewModeResponse: reviewModeResponse,
-                fileChangeContext: { file, patchWithLinesStr },
+                fileChangeContext: { file, relevantContent, patchWithLinesStr },
             };
 
             const standardAnalysisResult =
                 await this.codeAnalysisOrchestrator.executeStandardAnalysis(
                     context.organizationAndTeamData,
                     context.pullRequest.number,
-                    { file, patchWithLinesStr },
+                    { file, relevantContent, patchWithLinesStr },
                     reviewModeResponse,
                     context,
                 );
@@ -795,7 +796,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         context: AnalysisContext,
     ): Promise<IFinalAnalysisResult> {
         const { reviewModeResponse } = context;
-        const { file, patchWithLinesStr } = context.fileChangeContext;
+        const { file, relevantContent, patchWithLinesStr } =
+            context.fileChangeContext;
 
         const overallComment = {
             filepath: file.filename,
@@ -873,6 +875,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context?.organizationAndTeamData,
                     context?.pullRequest?.number,
                     file,
+                    relevantContent,
                     patchWithLinesStr,
                     keepedSuggestions,
                     context?.codeReviewConfig?.languageResultPrompt,

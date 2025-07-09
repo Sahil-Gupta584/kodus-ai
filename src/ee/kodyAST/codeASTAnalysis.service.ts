@@ -17,7 +17,7 @@ import { LLMResponseProcessor } from '@/core/infrastructure/adapters/services/co
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { ClientGrpc } from '@nestjs/microservices';
-import { lastValueFrom, reduce, map } from 'rxjs';
+import { lastValueFrom, reduce, map, retry } from 'rxjs';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { concatUint8Arrays } from '@/shared/utils/buffer/arrays';
@@ -36,13 +36,15 @@ import {
 import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import {
-    GetTaskInfoResponse,
     TASK_MANAGER_SERVICE_NAME,
     TaskManagerServiceClient,
     TaskStatus,
 } from '@kodus/kodus-proto/task';
-import { TASK_MICROSERVICE_OPTIONS } from '../configs/microservices/task-options';
-import { circuitBreaker } from '@/shared/utils/rxjs/circuit-breaker';
+import {
+    CircuitBreakerOpenError,
+    initCircuitBreaker,
+    circuitBreaker,
+} from '@/shared/utils/rxjs/circuit-breaker';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -75,6 +77,9 @@ export class CodeAstAnalysisService
         this.taskMicroservice = this.taskMicroserviceClient.getService(
             TASK_MANAGER_SERVICE_NAME,
         );
+
+        initCircuitBreaker(AST_ANALYZER_SERVICE_NAME, { logger: this.logger });
+        initCircuitBreaker(TASK_MANAGER_SERVICE_NAME, { logger: this.logger });
     }
 
     async analyzeASTWithAI(
@@ -152,24 +157,12 @@ export class CodeAstAnalysisService
                     filePaths,
                 })
                 .pipe(
-                    circuitBreaker({
-                        maxFailures: 3,
-                        resetTimeout: 30000, // 30 seconds
-                        openObserver: {
-                            next: () =>
-                                this.logger.warn({
-                                    message: `Circuit Breaker OPEN for AST analysis task for PR#${pullRequest.number}`,
-                                    context: CodeAstAnalysisService.name,
-                                }),
-                        },
-                        closeObserver: {
-                            next: () =>
-                                this.logger.log({
-                                    message: `Circuit Breaker CLOSED for AST analysis task for PR#${pullRequest.number}`,
-                                    context: CodeAstAnalysisService.name,
-                                }),
-                        },
+                    retry({
+                        count: 3,
+                        delay: 1000,
+                        resetOnSuccess: true,
                     }),
+                    circuitBreaker(AST_ANALYZER_SERVICE_NAME),
                 );
 
             const task = await lastValueFrom(init);
@@ -185,7 +178,7 @@ export class CodeAstAnalysisService
                 },
                 error,
             });
-            return null;
+            throw error;
         }
     }
 
@@ -251,24 +244,12 @@ export class CodeAstAnalysisService
                     fileName,
                 })
                 .pipe(
-                    circuitBreaker({
-                        maxFailures: 3,
-                        resetTimeout: 30000, // 30 seconds
-                        openObserver: {
-                            next: () =>
-                                this.logger.warn({
-                                    message: `Circuit Breaker OPEN for AST Impact Analysis initialization for PR#${pullRequest.number}`,
-                                    context: CodeAstAnalysisService.name,
-                                }),
-                        },
-                        closeObserver: {
-                            next: () =>
-                                this.logger.log({
-                                    message: `Circuit Breaker CLOSED for AST Impact Analysis initialization for PR#${pullRequest.number}`,
-                                    context: CodeAstAnalysisService.name,
-                                }),
-                        },
+                    retry({
+                        count: 3,
+                        delay: 1000,
+                        resetOnSuccess: true,
                     }),
+                    circuitBreaker(AST_ANALYZER_SERVICE_NAME),
                 );
 
             const task = await lastValueFrom(init);
@@ -340,24 +321,12 @@ export class CodeAstAnalysisService
                     headRepo: headDirParams,
                 })
                 .pipe(
-                    circuitBreaker({
-                        maxFailures: 3,
-                        resetTimeout: 30000, // 30 seconds
-                        openObserver: {
-                            next: () =>
-                                this.logger.warn({
-                                    message: `Circuit Breaker OPEN for AST Impact Analysis for PR#${pullRequest.number}`,
-                                    context: CodeAstAnalysisService.name,
-                                }),
-                        },
-                        closeObserver: {
-                            next: () =>
-                                this.logger.log({
-                                    message: `Circuit Breaker CLOSED for AST Impact Analysis for PR#${pullRequest.number}`,
-                                    context: CodeAstAnalysisService.name,
-                                }),
-                        },
+                    retry({
+                        count: 3,
+                        delay: 1000,
+                        resetOnSuccess: true,
                     }),
+                    circuitBreaker(AST_ANALYZER_SERVICE_NAME),
                 )
                 .subscribe({
                     next: (batch) => {
@@ -494,24 +463,13 @@ export class CodeAstAnalysisService
                 filePath,
             })
             .pipe(
-                circuitBreaker({
-                    maxFailures: 3,
-                    resetTimeout: 30000, // 30 seconds
-                    openObserver: {
-                        next: () =>
-                            this.logger.warn({
-                                message: `Circuit Breaker OPEN for related content from diff for PR#${pullRequest.number}`,
-                                context: CodeAstAnalysisService.name,
-                            }),
-                    },
-                    closeObserver: {
-                        next: () =>
-                            this.logger.log({
-                                message: `Circuit Breaker CLOSED for related content from diff for PR#${pullRequest.number}`,
-                                context: CodeAstAnalysisService.name,
-                            }),
-                    },
+                retry({
+                    count: 3,
+                    delay: 1000,
+                    resetOnSuccess: true,
                 }),
+
+                circuitBreaker(AST_ANALYZER_SERVICE_NAME),
                 reduce((acc, chunk) => {
                     return {
                         ...acc,
@@ -596,36 +554,24 @@ export class CodeAstAnalysisService
         options: {
             timeout?: number;
             interval?: number;
-            maxRetries?: number;
         } = {
             timeout: 60000, // Default timeout of 60 seconds
             interval: 5000, // Check every 5 seconds
-            maxRetries: 12, // Maximum of 12 retries (60 seconds / 5 seconds)
         },
     ) {
-        const { timeout, interval, maxRetries } = options;
+        if (!taskId) {
+            throw new Error('Task ID is required to await task completion');
+        }
 
-        let retries = 0;
+        const { timeout, interval } = options;
+
         const startTime = Date.now();
 
-        const taskServiceBreaker = circuitBreaker<GetTaskInfoResponse>({
-            maxFailures: 3,
-            resetTimeout: 30000, // 30 seconds
-            openObserver: {
-                next: () =>
-                    this.logger.warn({
-                        message: `Task Service Circuit Breaker OPEN for task ${taskId}`,
-                        context: CodeAstAnalysisService.name,
-                    }),
-            },
-            closeObserver: {
-                next: () =>
-                    this.logger.log({
-                        message: `Task Service Circuit Breaker CLOSED for task ${taskId}`,
-                        context: CodeAstAnalysisService.name,
-                    }),
-            },
-        });
+        const endStates = [
+            TaskStatus.TASK_STATUS_COMPLETED,
+            TaskStatus.TASK_STATUS_FAILED,
+            TaskStatus.TASK_STATUS_CANCELLED,
+        ];
 
         while (true) {
             if (Date.now() - startTime > timeout) {
@@ -634,42 +580,87 @@ export class CodeAstAnalysisService
 
             try {
                 const taskStatus = await lastValueFrom(
-                    this.taskMicroservice
-                        .getTaskInfo({ taskId })
-                        .pipe(taskServiceBreaker),
+                    this.taskMicroservice.getTaskInfo({ taskId }).pipe(
+                        retry({
+                            count: 3,
+                            delay: 1000,
+                            resetOnSuccess: true,
+                        }),
+                        circuitBreaker(TASK_MANAGER_SERVICE_NAME),
+                    ),
                 );
 
-                if (
-                    taskStatus.task.status === TaskStatus.TASK_STATUS_COMPLETED
-                ) {
+                if (!taskStatus || !taskStatus.task) {
+                    throw new Error(`Task ${taskId} not found`);
+                }
+
+                if (endStates.includes(taskStatus.task.status)) {
                     return taskStatus;
                 }
-
-                if (
-                    taskStatus.task.status === TaskStatus.TASK_STATUS_FAILED ||
-                    taskStatus.task.status === TaskStatus.TASK_STATUS_CANCELLED
-                ) {
-                    throw new Error(
-                        `Task ${taskId} failed with status: ${taskStatus.task.status}`,
-                    );
-                }
-
-                if (retries >= maxRetries) {
-                    throw new Error(
-                        `Task ${taskId} did not complete within the maximum retries`,
-                    );
-                }
-
-                retries++;
-                await new Promise((resolve) => setTimeout(resolve, interval));
             } catch (error) {
-                this.logger.error({
-                    message: `Error while awaiting task ${taskId}`,
+                if (error instanceof CircuitBreakerOpenError) {
+                    this.logger.error({
+                        message: `Circuit breaker is open for task ${taskId}`,
+                        context: CodeAstAnalysisService.name,
+                    });
+                    throw error;
+                }
+
+                this.logger.warn({
+                    message: `A transient error occurred while polling for task ${taskId}. Retrying...`,
                     error,
                     context: CodeAstAnalysisService.name,
                 });
-                throw error;
             }
+
+            await new Promise((resolve) => setTimeout(resolve, interval));
+        }
+    }
+
+    async deleteASTAnalysis(
+        repository: any,
+        pullRequest: any,
+        platformType: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<void> {
+        try {
+            const { headRepo, baseRepo } = await this.getRepoParams(
+                repository,
+                pullRequest,
+                organizationAndTeamData,
+                platformType,
+            );
+
+            if (!headRepo) {
+                throw new Error('Head repository parameters are missing');
+            }
+
+            await lastValueFrom(
+                this.astMicroservice
+                    .deleteRepository({
+                        baseRepo: baseRepo,
+                        headRepo: headRepo,
+                    })
+                    .pipe(
+                        retry({
+                            count: 3,
+                            delay: 1000,
+                            resetOnSuccess: true,
+                        }),
+                        circuitBreaker(AST_ANALYZER_SERVICE_NAME),
+                    ),
+            );
+        } catch (error) {
+            this.logger.error({
+                message: `Error during AST analysis deletion for PR#${pullRequest.number}`,
+                context: CodeAstAnalysisService.name,
+                metadata: {
+                    organizationAndTeamData: organizationAndTeamData,
+                    prNumber: pullRequest?.number,
+                },
+                error,
+            });
+            throw error;
         }
     }
 }
