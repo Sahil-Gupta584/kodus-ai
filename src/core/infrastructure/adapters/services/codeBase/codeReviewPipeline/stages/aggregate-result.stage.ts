@@ -22,52 +22,69 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
                 message: `No file analysis results to aggregate for PR#${context.pullRequest.number}`,
                 context: this.stageName,
             });
-            return context;
-        }
 
-        const overallComments = [];
-        const validSuggestions = [];
-        const discardedSuggestions = [];
+            const overallComments = [];
+            const validSuggestions = [];
+            const discardedSuggestions = [];
 
-        context.fileAnalysisResults.forEach((result) => {
-            if (result.validSuggestionsToAnalyze.length > 0) {
-                validSuggestions.push(...result.validSuggestionsToAnalyze);
-            }
-            if (result.discardedSuggestionsBySafeGuard.length > 0) {
-                discardedSuggestions.push(
-                    ...result.discardedSuggestionsBySafeGuard,
-                );
-            }
-            if (result.overallComment.summary) {
-                overallComments.push(result.overallComment);
-            }
-        });
-
-        if (
-            context.validSuggestionsByPR &&
-            context.validSuggestionsByPR.length > 0
-        ) {
-            validSuggestions.push(...context.validSuggestionsByPR);
+            context.fileAnalysisResults.forEach((result) => {
+                if (result.validSuggestionsToAnalyze.length > 0) {
+                    validSuggestions.push(...result.validSuggestionsToAnalyze);
+                }
+                if (result.discardedSuggestionsBySafeGuard.length > 0) {
+                    discardedSuggestions.push(
+                        ...result.discardedSuggestionsBySafeGuard,
+                    );
+                }
+                if (result.overallComment.summary) {
+                    overallComments.push(result.overallComment);
+                }
+            });
 
             this.logger.log({
-                message: `Added ${context.validSuggestionsByPR.length} PR-level suggestions to aggregation`,
+                message: `Aggregated ${validSuggestions.length} valid suggestions, ${discardedSuggestions.length} discarded suggestions, and ${overallComments.length} overall comments`,
                 context: this.stageName,
-                metadata: {
-                    organizationId: context.organizationAndTeamData.organizationId,
-                    prNumber: context.pullRequest.number,
-                },
+            });
+
+            return this.updateContext(context, (draft) => {
+                draft.overallComments = overallComments;
+                draft.validSuggestions = validSuggestions;
+                draft.discardedSuggestions = discardedSuggestions;
             });
         }
 
-        this.logger.log({
-            message: `Aggregated ${validSuggestions.length} valid suggestions, ${discardedSuggestions.length} discarded suggestions, and ${overallComments.length} overall comments`,
-            context: this.stageName,
-        });
+        if (context.prAnalysisResults?.validSuggestionsByPR?.length > 0) {
+            const validSuggestionsByPR = [];
+            const validCrossFileSuggestions = [];
+            if (
+                context.prAnalysisResults?.validSuggestionsByPR &&
+                context.prAnalysisResults.validSuggestionsByPR?.length > 0
+            ) {
+                validSuggestionsByPR.push(
+                    ...context.prAnalysisResults.validSuggestionsByPR,
+                );
+            }
 
-        return this.updateContext(context, (draft) => {
-            draft.overallComments = overallComments;
-            draft.validSuggestions = validSuggestions;
-            draft.discardedSuggestions = discardedSuggestions;
-        });
+            if (
+                context.prAnalysisResults?.validCrossFileSuggestions &&
+                context.prAnalysisResults.validCrossFileSuggestions?.length > 0
+            ) {
+                validCrossFileSuggestions.push(
+                    ...context.prAnalysisResults.validCrossFileSuggestions,
+                );
+            }
+
+            this.logger.log({
+                message: `Aggregated ${validSuggestionsByPR.length} valid suggestions by PR, ${validCrossFileSuggestions.length} valid cross-file suggestions`,
+                context: this.stageName,
+            });
+
+            return this.updateContext(context, (draft) => {
+                draft.validSuggestionsByPR = validSuggestionsByPR;
+                draft.validCrossFileSuggestions = validCrossFileSuggestions;
+            });
+        }
+
+        return context;
     }
 }
