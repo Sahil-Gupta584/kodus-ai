@@ -563,15 +563,9 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 context?.validCrossFileSuggestions || [];
 
             const validCrossFileSuggestions =
-                crossFileAnalysisSuggestions.filter(
+                crossFileAnalysisSuggestions?.filter(
                     (suggestion) => suggestion.relevantFile === file.filename,
                 );
-
-            const suggestionsWithId = await this.addSuggestionsId(
-                result.codeSuggestions,
-            );
-
-            result.codeSuggestions.push(...suggestionsWithId);
 
             const initialFilterResult = await this.initialFilterSuggestions(
                 result,
@@ -593,15 +587,15 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
             // Separar sugestões cross-file das demais
             const crossFileIds = new Set(
-                validCrossFileSuggestions.map((suggestion) => suggestion.id),
+                validCrossFileSuggestions?.map((suggestion) => suggestion.id),
             );
 
             const filteredCrossFileSuggestions = keepedSuggestions.filter(
-                (suggestion) => crossFileIds.has(suggestion.id),
+                (suggestion) => crossFileIds?.has(suggestion.id),
             );
 
             const filteredKeepedSuggestions = keepedSuggestions.filter(
-                (suggestion) => !crossFileIds.has(suggestion.id),
+                (suggestion) => !crossFileIds?.has(suggestion.id),
             );
 
             // Aplicar safeguard apenas nas sugestões não cross-file
@@ -626,6 +620,14 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context?.organizationAndTeamData,
                     context?.pullRequest?.number,
                     safeGuardResult.safeguardSuggestions,
+                    context?.codeReviewConfig?.reviewOptions,
+                );
+
+            const crossFileSuggestionsWithSeverity =
+                await this.suggestionService.analyzeSuggestionsSeverity(
+                    context?.organizationAndTeamData,
+                    context?.pullRequest?.number,
+                    filteredCrossFileSuggestions,
                     context?.codeReviewConfig?.reviewOptions,
                 );
 
@@ -660,10 +662,15 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context,
                 );
 
+            // Garantir que as sugestões do AST tenham IDs
+            const kodyASTSuggestionsWithId = await this.addSuggestionsId(
+                kodyASTSuggestions?.codeSuggestions || []
+            );
+
             mergedSuggestions = [
                 ...mergedSuggestions,
-                ...(kodyASTSuggestions?.codeSuggestions || []),
-                ...filteredCrossFileSuggestions,
+                ...kodyASTSuggestionsWithId,
+                ...crossFileSuggestionsWithSeverity,
             ];
 
             const VALID_ACTIONS = [
@@ -724,10 +731,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 );
             }
 
-            const mergedSuggestionsWithId =
-                await this.addSuggestionsId(mergedSuggestions);
-
-            validSuggestionsToAnalyze.push(...mergedSuggestionsWithId);
+            validSuggestionsToAnalyze.push(...mergedSuggestions);
         }
 
         return {
@@ -761,12 +765,17 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         discardedSuggestionsByCodeDiff: Partial<CodeSuggestion>[];
     }> {
         // Combinar sugestões regulares com cross-file suggestions
+        const allSuggestions = [
+            ...(result.codeSuggestions || []),
+            ...crossFileAnalysis,
+        ];
+
+        // Adicionar IDs apenas uma vez, aqui
+        const suggestionsWithId = await this.addSuggestionsId(allSuggestions);
+
         const combinedResult = {
             ...result,
-            codeSuggestions: [
-                ...(result.codeSuggestions || []),
-                ...crossFileAnalysis,
-            ],
+            codeSuggestions: suggestionsWithId,
         };
 
         let filteredSuggestionsByOptions =
