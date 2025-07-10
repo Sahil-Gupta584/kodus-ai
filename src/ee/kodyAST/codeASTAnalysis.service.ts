@@ -36,6 +36,7 @@ import {
 import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import {
+    GetTaskInfoResponse,
     TASK_MANAGER_SERVICE_NAME,
     TaskManagerServiceClient,
     TaskStatus,
@@ -274,7 +275,7 @@ export class CodeAstAnalysisService
         pullRequest: any,
         platformType: string,
         organizationAndTeamData: any,
-    ) {
+    ): Promise<GetImpactAnalysisResponse> {
         try {
             const { headRepo, baseRepo } = await this.getRepoParams(
                 repository,
@@ -310,7 +311,7 @@ export class CodeAstAnalysisService
         baseDirParams: RepositoryData,
         headDirParams: RepositoryData,
         pullRequest: any,
-    ) {
+    ): Promise<GetImpactAnalysisResponse> {
         return new Promise<GetImpactAnalysisResponse>((resolve, reject) => {
             const functionsAffect = [];
             const functionSimilarity = [];
@@ -558,7 +559,7 @@ export class CodeAstAnalysisService
             timeout: 60000, // Default timeout of 60 seconds
             interval: 5000, // Check every 5 seconds
         },
-    ) {
+    ): Promise<GetTaskInfoResponse> {
         if (!taskId) {
             throw new Error('Task ID is required to await task completion');
         }
@@ -602,6 +603,7 @@ export class CodeAstAnalysisService
                     this.logger.error({
                         message: `Circuit breaker is open for task ${taskId}`,
                         context: CodeAstAnalysisService.name,
+                        metadata: { taskId },
                     });
                     throw error;
                 }
@@ -610,6 +612,7 @@ export class CodeAstAnalysisService
                     message: `A transient error occurred while polling for task ${taskId}. Retrying...`,
                     error,
                     context: CodeAstAnalysisService.name,
+                    metadata: { taskId },
                 });
             }
 
