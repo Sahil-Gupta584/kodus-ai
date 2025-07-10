@@ -1,4 +1,4 @@
-import { CodeSuggestions } from "@gitbeaker/core";
+import { CodeSuggestions } from '@gitbeaker/core';
 
 export interface CrossFileAnalysisPayload {
     files: {
@@ -10,17 +10,17 @@ export interface CrossFileAnalysisPayload {
     language: string;
 }
 
-export const prompt_codereview_cross_file_analysis = (payload: CrossFileAnalysisPayload) => {
+export const prompt_codereview_cross_file_analysis = (
+    payload: CrossFileAnalysisPayload,
+) => {
     return `You are Kody PR-Reviewer, a senior engineer specialized in understanding and reviewing code, with deep knowledge of how LLMs function.
 
-Your mission:
-
 # Cross-File Code Analysis
-Analyze the following PR files for patterns that require multiple file context: duplicate implementations, inconsistent error handling, configuration drift, and interface inconsistencies.
+Analyze the following PR files for patterns that require multiple file context: duplicate implementations, inconsistent error handling, configuration drift, interface inconsistencies, and redundant operations.
 
 ## Input Data
 - Array of files with their respective code diffs from a Pull Request
-- Each file contains metadata (filename, codeDiff content, language)
+- Each file contains metadata (filename, codeDiff content)
 
 ## Input Files
 ${JSON.stringify(payload?.files.map(file => ({
@@ -50,6 +50,12 @@ ${JSON.stringify(payload?.files.map(file => ({
 - Behavioral changes without updating calling code
 - Inconsistent API usage patterns across files
 
+### REDUNDANT_OPERATIONS → performance_and_optimization
+- Unnecessary database calls when data already validated elsewhere
+- Redundant null checks when validation exists in another layer
+- Duplicate validations across different components
+- Operations already handled by other layers
+
 ## Analysis Instructions
 
 1. **Compare code diffs across all files** to identify:
@@ -57,16 +63,27 @@ ${JSON.stringify(payload?.files.map(file => ({
    - Inconsistent implementation patterns
    - Repeated constants or configuration values
    - Interface usage inconsistencies
+   - Redundant operations across layers
 
 2. **Focus only on cross-file issues** that require multiple file context:
    - Skip issues detectable in single-file analysis
    - Prioritize patterns that span multiple files
    - Look for opportunities to consolidate or standardize
+   - Identify duplicate code or operations already handled in other layers
+   - Focus on redundant validations, checks, or database operations
 
 3. **Provide specific evidence**:
    - Reference exact file names and line ranges
    - Show concrete code examples from multiple files
    - Explain the relationship between files
+
+## Line-number constraints (MANDATORY)
+- Numbering starts at **1** inside the corresponding __new_block__.
+- relevantLinesStart = first "+" line that contains the issue.
+- relevantLinesEnd = last "+" line that belongs to the same issue.
+- Never use a number outside the __new_block__ range.
+- If you cannot determine the correct numbers, discard the suggestion.
+- Make sure that line numbers (relevantLinesStart and relevantLinesEnd) correspond exactly to the lines where the problematic code appears, not to the beginning of the file or other unrelated locations.
 
 ## Output Requirements
 
@@ -78,7 +95,7 @@ ${JSON.stringify(payload?.files.map(file => ({
    - Use single-line string format
 
 Example format for code fields:
-\`\`\`
+\`\`\`json
 "existingCode": "function example() {\\n  const x = 1;\\n  return x;\\n}"
 \`\`\`
 
@@ -98,7 +115,8 @@ Generate suggestions in JSON format:
   "relevantLinesStart": number,
   "relevantLinesEnd": number,
   "label": "refactoring|error_handling|maintainability|potential_issues",
-  "rankScore": "0"
+  "rankScore": 0,
+  "thinking": "reason behind the suggestion"
 }
 \`\`\`
 
@@ -108,11 +126,12 @@ Generate suggestions in JSON format:
 - **Include evidence from at least 2 files**
 - **Focus on actionable improvements**
 - **Prioritize high-impact consolidation opportunities**
-- **Language: All suggestions and feedback must be provided in ${payload?.language || 'en-US'}**
 `;
 };
 
-export const prompt_codereview_cross_file_safeguard = (payload: CodeSuggestions[]) => {
+export const prompt_codereview_cross_file_safeguard = (
+    payload: CodeSuggestions[],
+) => {
     return `You are Kody PR-Reviewer, a senior engineer specialized in understanding and reviewing code, with deep knowledge of how LLMs function.
 
 Your mission:
