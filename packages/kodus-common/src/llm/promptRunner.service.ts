@@ -179,6 +179,10 @@ export class PromptRunnerService {
                     });
                 }
 
+                if (result.length === 0) {
+                    throw new Error('No prompt content provided');
+                }
+
                 return result;
             };
 
