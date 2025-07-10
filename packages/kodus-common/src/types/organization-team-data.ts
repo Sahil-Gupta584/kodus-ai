@@ -1,6 +1,6 @@
 export type OrganizationAndTeamData = {
-    organizationId: string;
-    organizationName?: string;
-    teamId: string;
-    teamName?: string;
+    readonly organizationId: string;
+    readonly organizationName?: string;
+    readonly teamId: string;
+    readonly teamName?: string;
 };
