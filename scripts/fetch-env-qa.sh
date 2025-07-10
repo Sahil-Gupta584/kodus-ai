@@ -135,6 +135,7 @@ KEYS=(
     "/qa/kodus-orchestrator/API_POSTHOG_KEY"
 
     "/qa/kodus-orchestrator/SERVICE_AST_URL"
+    "/qa/kodus-orchestrator/SERVICE_TASK_URL"
 )
 
 # Lista de todas as chaves que você precisa
