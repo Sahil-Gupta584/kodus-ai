@@ -165,7 +165,7 @@ export class CodeAnalysisOrchestrator {
         context: AnalysisContext,
     ): Promise<AIAnalysisResult | null> {
         try {
-            if (!context?.impactASTAnalysis?.functionsAffectResult?.length) {
+            if (!context?.impactASTAnalysis?.functionsAffect?.length) {
                 return null;
             }
 

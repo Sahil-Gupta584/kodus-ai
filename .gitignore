@@ -63,3 +63,6 @@ environment.ts
 src/ee/configs/environment/environment.ts
 certs
 .windsurf
+
+.yalc
+yalc.lock

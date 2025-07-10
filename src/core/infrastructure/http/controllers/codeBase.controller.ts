@@ -50,28 +50,36 @@ export class CodeBaseController {
             };
             platform: string;
             teamId: string;
+            filePaths?: string[];
         },
         @Res({ passthrough: true }) res: Response,
     ): Promise<StreamableFile> {
         const { id, name, full_name, number, head, base, platform, teamId } =
             body;
-        const result = await this.codeASTAnalysisService.cloneAndGenerate(
-            {
-                id,
-                name,
-                full_name,
-            },
-            {
-                number,
-                head,
-                base,
-            },
-            platform,
-            {
-                organizationId: this.request.user?.organization.uuid,
-                teamId,
-            },
-        );
+        const { taskId } =
+            await this.codeASTAnalysisService.initializeASTAnalysis(
+                {
+                    id,
+                    name,
+                    full_name,
+                },
+                {
+                    number,
+                    head,
+                    base,
+                },
+                platform,
+                {
+                    organizationId: this.request.user?.organization.uuid,
+                    teamId,
+                },
+                body.filePaths || [],
+            );
+
+        await this.codeASTAnalysisService.awaitTask(taskId);
+
+        const result = taskId;
+
         // Converte o resultado para JSON
         const jsonString = JSON.stringify(result, replacer);
 
@@ -92,7 +100,87 @@ export class CodeBaseController {
         fileStream.on('close', () => {
             unlink(tempFilePath, (err) => {
                 if (err) {
-                    console.error('Erro ao deletar arquivo temporário:', err);
+                    console.error('Error deleting temp file:', err);
+                }
+            });
+        });
+
+        return new StreamableFile(fileStream);
+    }
+
+    @Post('content-from-diff')
+    async getRelatedContentFromDiff(
+        @Body()
+        body: {
+            id: string;
+            name: string;
+            full_name: string;
+            number: string;
+            head: {
+                ref: string;
+            };
+            base: {
+                ref: string;
+            };
+            platform: string;
+            teamId: string;
+            diff: string;
+            filePath: string;
+        },
+        @Res({ passthrough: true }) res: Response,
+    ): Promise<StreamableFile> {
+        const {
+            id,
+            name,
+            full_name,
+            number,
+            head,
+            base,
+            platform,
+            teamId,
+            diff,
+            filePath,
+        } = body;
+
+        const result =
+            await this.codeASTAnalysisService.getRelatedContentFromDiff(
+                {
+                    id,
+                    name,
+                    full_name,
+                },
+                {
+                    number,
+                    head,
+                    base,
+                },
+                platform,
+                {
+                    organizationId: this.request.user?.organization.uuid,
+                    teamId,
+                },
+                diff,
+                filePath,
+            );
+
+        // O resultado já é uma string regular
+        const tempFilePath = join(__dirname, `temp-${uuidv4()}.txt`);
+        writeFileSync(tempFilePath, result);
+
+        // Define os cabeçalhos para a resposta
+        res.set({
+            'Content-Type': 'text/plain',
+            'Content-Disposition': 'attachment; filename="related-content.txt"',
+        });
+
+        // Cria um stream de leitura do arquivo temporário
+        const fileStream = createReadStream(tempFilePath);
+
+        // Após o stream ser fechado, deleta o arquivo temporário
+        fileStream.on('close', () => {
+            unlink(tempFilePath, (err) => {
+                if (err) {
+                    console.error('Error deleting temp file:', err);
                 }
             });
         });
