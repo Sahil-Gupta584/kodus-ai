@@ -108,7 +108,7 @@ export abstract class BaseFileReviewContextPreparation
         patchWithLinesStr: string,
         context: AnalysisContext,
     ): Promise<{ fileContext: AnalysisContext } | null> {
-        const reviewMode = await this.determineReviewMode({
+        const reviewModeProm = this.determineReviewMode({
             fileChangeContext: {
                 file,
             },
@@ -116,14 +116,16 @@ export abstract class BaseFileReviewContextPreparation
             context,
         });
 
-        const relevantContent = await this.getRelevantFileContent(
-            file,
-            context,
-        );
+        const relevantContentProm = this.getRelevantFileContent(file, context);
+
+        const [reviewModeResponse, relevantContent] = await Promise.all([
+            reviewModeProm,
+            relevantContentProm,
+        ]);
 
         const updatedContext: AnalysisContext = {
             ...context,
-            reviewModeResponse: reviewMode,
+            reviewModeResponse,
             fileChangeContext: {
                 file,
                 relevantContent,
