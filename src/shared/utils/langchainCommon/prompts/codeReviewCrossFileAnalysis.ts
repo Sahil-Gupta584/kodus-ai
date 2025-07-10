@@ -49,6 +49,9 @@ ${JSON.stringify(payload?.files.map(file => ({
 - Function signature changes not reflected in usage within the diff
 - Behavioral changes without updating calling code
 - Inconsistent API usage patterns across files
+- Same business operation with different validation rules
+- Missing validations in one implementation while present in another
+- Inconsistent error handling for similar operations
 
 ### REDUNDANT_OPERATIONS → performance_and_optimization
 - Unnecessary database calls when data already validated elsewhere
@@ -76,6 +79,17 @@ ${JSON.stringify(payload?.files.map(file => ({
    - Reference exact file names and line ranges
    - Show concrete code examples from multiple files
    - Explain the relationship between files
+
+4. **Keep suggestions concise**:
+   - Focus on the core issue and solution
+   - Mention affected files and line ranges
+   - Avoid lengthy explanations of best practices
+   - Be direct about the problem and fix
+
+5. **Base solutions on existing patterns**:
+   - Suggest refactoring using patterns already present in the codebase
+   - Avoid assuming external frameworks or files not visible in the diff
+   - Focus on extracting shared utilities within the current structure
 
 ## Line-number constraints (MANDATORY)
 - Numbering starts at **1** inside the corresponding __new_block__.
@@ -108,7 +122,7 @@ Generate suggestions in JSON format:
   "relevantFile": "primary affected file where suggestion will be posted",
   "relatedFile": "secondary file that shows the pattern/inconsistency",
   "language": "detected language",
-  "suggestionContent": "detailed description including all affected files and specific line numbers",
+  "suggestionContent": "concise description with affected files and line numbers"
   "existingCode": "problematic code pattern from multiple files",
   "improvedCode": "proposed consolidated/consistent solution",
   "oneSentenceSummary": "brief description of the cross-file issue",
@@ -116,7 +130,6 @@ Generate suggestions in JSON format:
   "relevantLinesEnd": number,
   "label": "refactoring|error_handling|maintainability|potential_issues",
   "rankScore": 0,
-  "thinking": "reason behind the suggestion"
 }
 \`\`\`
 
@@ -126,6 +139,7 @@ Generate suggestions in JSON format:
 - **Include evidence from at least 2 files**
 - **Focus on actionable improvements**
 - **Prioritize high-impact consolidation opportunities**
+- **Language: All suggestions and feedback must be provided in ${payload?.language || 'en-US'} language**
 `;
 };
 
