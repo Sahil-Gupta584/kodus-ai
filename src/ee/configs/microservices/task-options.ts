@@ -1,17 +1,7 @@
-import { ChannelCredentials, credentials } from '@grpc/grpc-js';
-import * as fs from 'fs';
 import { ClientProviderOptions, Transport } from '@nestjs/microservices';
 import { resolve } from 'path';
 import { cwd } from 'process';
-
-function buildGrpcCredentials(): ChannelCredentials {
-    const caPath = resolve(cwd(), 'certs/ca_cert.pem');
-    if (fs.existsSync(caPath)) {
-        const rootCa = fs.readFileSync(caPath);
-        return credentials.createSsl(rootCa);
-    }
-    return credentials.createInsecure();
-}
+import { buildGrpcCredentials } from './credentials';
 
 export const TASK_MICROSERVICE_OPTIONS: ClientProviderOptions = {
     name: 'TASK_MICROSERVICE',
@@ -22,7 +12,7 @@ export const TASK_MICROSERVICE_OPTIONS: ClientProviderOptions = {
             cwd(),
             'node_modules/@kodus/kodus-proto/kodus/task/v1/manager.proto',
         ),
-        url: process.env.SERVICE_TASK_URL ?? null,
+        url: process.env.SERVICE_AST_URL ?? null,
         loader: {
             includeDirs: [resolve(cwd(), 'node_modules/@kodus/kodus-proto')],
         },
