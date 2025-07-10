@@ -1,8 +1,6 @@
 *
 
 !package.json
-!package-lock.json
-!yarn.lock
 !README.md
 !LICENSE
 !.npmignore
