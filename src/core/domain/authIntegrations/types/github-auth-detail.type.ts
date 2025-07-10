@@ -5,4 +5,5 @@ export type GithubAuthDetail = {
     installationId?: string;
     org: string;
     authMode?: AuthMode;
+    accountType?: 'organization' | 'user'; // Cache para evitar verificações repetidas
 };
