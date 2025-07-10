@@ -14,7 +14,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 WORKDIR /usr/src/app
 
 RUN apt-get update && \
-    apt-get install -y ca-certificates git && \
+    apt-get install -y ca-certificates git python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
 
 COPY package.json yarn.lock ./
@@ -52,7 +52,7 @@ WORKDIR /usr/src/app
 EXPOSE 3001
 
 RUN apt-get update && \
-    apt-get install -y ca-certificates git && \
+    apt-get install -y ca-certificates git python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=deps /usr/src/app/node_modules ./node_modules
