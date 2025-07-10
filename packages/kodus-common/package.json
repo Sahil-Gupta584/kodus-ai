@@ -60,5 +60,8 @@
         "typescript": "^5.8.3",
         "typescript-eslint": "^8.34.0"
     },
-    "peerDependencies": {}
+    "peerDependencies": {},
+    "publishConfig": {
+        "registry": "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-common/"
+    }
 }
