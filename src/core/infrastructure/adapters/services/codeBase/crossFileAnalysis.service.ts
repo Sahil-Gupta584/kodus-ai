@@ -7,6 +7,7 @@ import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking
 import {
     TokenTrackingService,
     TokenTrackingSession,
+    TOKEN_TRACKING_SERVICE_TOKEN,
 } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
@@ -75,6 +76,7 @@ export class CrossFileAnalysisService {
         private readonly llmProviderService: LLMProviderService,
         private readonly logger: PinoLoggerService,
         private readonly tokenChunkingService: TokenChunkingService,
+        @Inject(TOKEN_TRACKING_SERVICE_TOKEN)
         private readonly tokenTrackingService: TokenTrackingService
     ) {
         this.tokenTracker = new TokenTrackingSession(
