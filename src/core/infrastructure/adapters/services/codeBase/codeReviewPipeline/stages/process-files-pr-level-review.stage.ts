@@ -185,21 +185,9 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
 
         //#region Cross-file analysis
         try {
-            // Preparar arquivos com patchWithLinesStr antes da análise cross-file
-            const analysisContext =
-                this.createAnalysisContextFromPipelineContext(context);
-            const preparedFiles = await this.filterAndPrepareFiles(
-                context.changedFiles,
-                analysisContext,
-            );
-
-            // Extrair apenas os dados necessários para a análise cross-file
-            const preparedFilesData = preparedFiles.map(({ fileContext }) => ({
-                filename: fileContext.fileChangeContext.file.filename,
-                patchWithLinesStr:
-                    fileContext.fileChangeContext.file.patchWithLinesStr ||
-                    fileContext.fileChangeContext.patchWithLinesStr,
-                file: fileContext.fileChangeContext.file,
+            const preparedFilesData = context.changedFiles.map((file) => ({
+                filename: file.filename,
+                patchWithLinesStr: file.patchWithLinesStr,
             }));
 
             const crossFileAnalysis =
@@ -258,64 +246,5 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
         }
         //#endregion Cross-file analysis
         return context;
-    }
-
-    private async filterAndPrepareFiles(
-        batch: FileChange[],
-        context: AnalysisContext,
-    ): Promise<Array<{ fileContext: AnalysisContext }>> {
-        const limit = pLimit(this.concurrencyLimit);
-
-        const settledResults = await Promise.allSettled(
-            batch.map((file) =>
-                limit(() =>
-                    this.fileReviewContextPreparation.prepareFileContext(
-                        file,
-                        context,
-                    ),
-                ),
-            ),
-        );
-
-        settledResults?.forEach((res, index) => {
-            if (res.status === 'rejected') {
-                this.logger.error({
-                    message: `Error preparing the file "${batch[index]?.filename}" for analysis`,
-                    error: res.reason,
-                    context: ProcessFilesPrLevelReviewStage.name,
-                    metadata: {
-                        ...context.organizationAndTeamData,
-                        pullRequestNumber: context.pullRequest.number,
-                    },
-                });
-            }
-        });
-
-        return settledResults
-            ?.filter(
-                (
-                    res,
-                ): res is PromiseFulfilledResult<{
-                    fileContext: AnalysisContext;
-                }> => res.status === 'fulfilled' && res.value !== null,
-            )
-            ?.map((res) => res.value);
-    }
-
-    private createAnalysisContextFromPipelineContext(
-        context: CodeReviewPipelineContext,
-    ): AnalysisContext {
-        return {
-            organizationAndTeamData: context.organizationAndTeamData,
-            repository: context.repository,
-            pullRequest: context.pullRequest,
-            action: context.action,
-            platformType: context.platformType,
-            codeReviewConfig: context.codeReviewConfig,
-            tasks: context.tasks,
-            clusterizedSuggestions: context.clusterizedSuggestions,
-            validCrossFileSuggestions:
-                context.prAnalysisResults?.validCrossFileSuggestions || [],
-        };
     }
 }

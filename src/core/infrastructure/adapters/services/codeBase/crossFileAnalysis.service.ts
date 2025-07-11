@@ -58,7 +58,6 @@ export const CROSS_FILE_ANALYSIS_SERVICE_TOKEN = Symbol(
 interface PreparedFileData {
     filename: string;
     patchWithLinesStr: string;
-    file: FileChange;
 }
 
 @Injectable()
@@ -322,14 +321,9 @@ export class CrossFileAnalysisService {
         provider: LLMModelProvider,
         analysisType: AnalysisType,
     ): Promise<CodeSuggestion[]> {
-        // 1. Preparar dados para chunking (já temos patchWithLinesStr)
-        const preparedFilesForChunking =
-            this.prepareFilesForPayload(preparedFiles);
-
-        // 2. Dividir arquivos em chunks
         const chunkingResult = this.tokenChunkingService.chunkDataByTokens({
             model: provider,
-            data: preparedFilesForChunking,
+            data: preparedFiles,
             usagePercentage: this.DEFAULT_USAGE_LLM_MODEL_PERCENTAGE,
         });
 
@@ -337,7 +331,7 @@ export class CrossFileAnalysisService {
             message: `PR with prepared files divided into ${chunkingResult.totalChunks} chunks for ${analysisType}`,
             context: CrossFileAnalysisService.name,
             metadata: {
-                totalFiles: preparedFilesForChunking.length,
+                totalFiles: preparedFiles.length,
                 totalChunks: chunkingResult.totalChunks,
                 tokenLimit: chunkingResult.tokenLimit,
                 tokensPerChunk: chunkingResult.tokensPerChunk,
@@ -351,17 +345,16 @@ export class CrossFileAnalysisService {
         const batchConfig = { ...this.DEFAULT_BATCH_CONFIG };
 
         // 4. Processar chunks em batches paralelos
-        const allSuggestions =
-            await this.processChunksInBatches(
-                chunkingResult.chunks,
-                context,
-                language,
-                provider,
-                analysisType,
-                prNumber,
-                organizationAndTeamData,
-                batchConfig,
-            );
+        const allSuggestions = await this.processChunksInBatches(
+            chunkingResult.chunks,
+            context,
+            language,
+            provider,
+            analysisType,
+            prNumber,
+            organizationAndTeamData,
+            batchConfig,
+        );
 
         return allSuggestions;
     }
@@ -400,18 +393,17 @@ export class CrossFileAnalysisService {
                 },
             });
 
-            const batchResults =
-                await this.processBatchInParallel(
-                    batchChunks,
-                    i,
-                    context,
-                    language,
-                    provider,
-                    analysisType,
-                    prNumber,
-                    organizationAndTeamData,
-                    batchConfig,
-                );
+            const batchResults = await this.processBatchInParallel(
+                batchChunks,
+                i,
+                context,
+                language,
+                provider,
+                analysisType,
+                prNumber,
+                organizationAndTeamData,
+                batchConfig,
+            );
 
             batchResults.forEach(({ result, error, chunkIndex }) => {
                 if (error) {
@@ -581,9 +573,7 @@ export class CrossFileAnalysisService {
 
         if (analysisType === 'cross_file_analysis') {
             const fileContexts =
-                this.convertFilesToFileChangeContext(
-                    preparedFilesChunk,
-                );
+                this.convertFilesToFileChangeContext(preparedFilesChunk);
             payload = {
                 files: fileContexts,
                 language,
@@ -831,22 +821,6 @@ export class CrossFileAnalysisService {
             file: {
                 filename: preparedFile.filename,
                 codeDiff: preparedFile.patchWithLinesStr, // ✨ Usa patchWithLinesStr em vez de patch
-            },
-        }));
-    }
-
-    /**
-     * Prepara arquivos já processados para payload removendo conteúdo desnecessário
-     */
-    private prepareFilesForPayload(
-        preparedFiles: PreparedFileData[],
-    ): PreparedFileData[] {
-        return preparedFiles.map((preparedFile) => ({
-            filename: preparedFile.filename,
-            patchWithLinesStr: preparedFile.patchWithLinesStr,
-            file: {
-                ...preparedFile.file,
-                fileContent: undefined,
             },
         }));
     }
