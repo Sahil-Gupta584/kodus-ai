@@ -48,7 +48,7 @@ interface ChunkProcessingResult {
     tokenUsage?: TokenUsage[];
 }
 
-type AnalysisType = 'cross_file_analysis' | 'safeguard';
+type AnalysisType = 'analyzeCodeWithAI' | 'safeguard';
 //#endregion
 
 export const CROSS_FILE_ANALYSIS_SERVICE_TOKEN = Symbol(
@@ -132,7 +132,7 @@ export class CrossFileAnalysisService {
                     preparedFiles,
                     language,
                     provider,
-                    'cross_file_analysis',
+                    'analyzeCodeWithAI',
                 );
 
             let finalSuggestions: CodeSuggestion[] =
@@ -251,7 +251,7 @@ export class CrossFileAnalysisService {
                     let systemPrompt: string;
 
                     switch (analysisType) {
-                        case 'cross_file_analysis':
+                        case 'analyzeCodeWithAI':
                             systemPrompt =
                                 prompt_codereview_cross_file_analysis(payload);
                             break;
@@ -571,7 +571,7 @@ export class CrossFileAnalysisService {
         // Preparar payload baseado no tipo de análise usando patchWithLinesStr
         let payload: any;
 
-        if (analysisType === 'cross_file_analysis') {
+        if (analysisType === 'analyzeCodeWithAI') {
             const fileContexts =
                 this.convertFilesToFileChangeContext(preparedFilesChunk);
             payload = {
