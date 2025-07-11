@@ -795,14 +795,14 @@ export class CrossFileAnalysisService {
         return {
             id: uuidv4(),
             relevantFile: suggestion.relevantFile,
-            language: suggestion.language || 'typescript',
+            language: suggestion?.language || '',
             suggestionContent: suggestion.suggestionContent,
             existingCode: suggestion.existingCode,
-            improvedCode: suggestion.improvedCode || '',
+            improvedCode: suggestion?.improvedCode || '',
             oneSentenceSummary: suggestion.oneSentenceSummary,
             relevantLinesStart: suggestion.relevantLinesStart,
             relevantLinesEnd: suggestion.relevantLinesEnd,
-            label: suggestion.label || 'maintainability',
+            label: suggestion?.label || '',
             severity: suggestion.severity,
             rankScore: suggestion?.rankScore || 0,
             ...suggestion, // Preserva outros campos que podem existir
