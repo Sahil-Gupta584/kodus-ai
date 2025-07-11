@@ -51,7 +51,7 @@ export interface CircuitBreakerOptions {
     /**
      * The time in milliseconds to wait in the OPEN state
      * before transitioning to HALF_OPEN.
-     * @default 30000 (30 seconds)
+     * @default 60000 (60 seconds)
      */
     resetTimeout?: number;
     /**
