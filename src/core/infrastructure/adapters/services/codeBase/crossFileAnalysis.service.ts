@@ -75,10 +75,11 @@ export class CrossFileAnalysisService {
         private readonly llmProviderService: LLMProviderService,
         private readonly logger: PinoLoggerService,
         private readonly tokenChunkingService: TokenChunkingService,
+        private readonly tokenTrackingService: TokenTrackingService
     ) {
         this.tokenTracker = new TokenTrackingSession(
             uuidv4(),
-            new TokenTrackingService(),
+            this.tokenTrackingService,
         );
     }
 
@@ -380,10 +381,11 @@ export class CrossFileAnalysisService {
                 message: `Processing prepared files batch ${batchNumber}/${totalBatches} for ${analysisType}`,
                 context: CrossFileAnalysisService.name,
                 metadata: {
+                    organizationAndTeamData,
+                    prNumber,
                     batchNumber,
                     totalBatches,
                     chunksInBatch: batchChunks.length,
-                    prNumber,
                     analysisType,
                 },
             });

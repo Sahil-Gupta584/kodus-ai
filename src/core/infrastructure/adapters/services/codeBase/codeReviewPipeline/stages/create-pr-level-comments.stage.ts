@@ -220,6 +220,8 @@ export class CreatePrLevelCommentsStage extends BasePipelineStage<CodeReviewPipe
                         suggestionsCount: prLevelSuggestions.length,
                     },
                 });
+
+                return context;
             }
 
         } catch (error) {

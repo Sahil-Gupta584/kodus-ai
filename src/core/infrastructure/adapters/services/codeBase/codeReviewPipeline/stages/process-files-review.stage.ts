@@ -764,7 +764,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         crossFileAnalysis: CodeSuggestion[],
         patchWithLinesStr: string,
     ): Promise<{
-        filteredSuggestions: any[];
+        filteredSuggestions: Partial<CodeSuggestion>[];
         discardedSuggestionsByCodeDiff: Partial<CodeSuggestion>[];
     }> {
         // Combinar sugestões regulares com cross-file suggestions

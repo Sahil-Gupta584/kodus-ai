@@ -46,7 +46,7 @@ export abstract class BaseFileReviewContextPreparation
                 return null;
             }
 
-            let patchWithLinesStr = file.patchWithLinesStr;
+            let patchWithLinesStr = file?.patchWithLinesStr || '';
 
             if (!patchWithLinesStr) {
                 const patchFormatted = handlePatchDeletions(

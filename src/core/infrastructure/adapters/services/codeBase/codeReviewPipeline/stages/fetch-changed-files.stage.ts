@@ -95,7 +95,11 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
     }
 
     private prepareFilesWithLineNumbers(files: FileChange[]): FileChange[] {
-        return files.map((file) => {
+        if (!files?.length || files?.length === 0) {
+            return [];
+        }
+
+        return files?.map((file) => {
             try {
                 if (!file?.patch) {
                     return file;

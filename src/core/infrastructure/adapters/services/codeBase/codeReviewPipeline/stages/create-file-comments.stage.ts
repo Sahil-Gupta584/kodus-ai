@@ -315,15 +315,14 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
 
             return { lastAnalyzedCommit, commentResults };
         } catch (error) {
-            this.logger.log({
+            this.logger.error({
                 message: `Error when trying to create line comments for PR#${pullRequest.number}`,
                 error: error,
                 context: this.stageName,
                 metadata: {
                     organizationAndTeamData,
-                    pullRequest,
-                    sortedPrioritizedSuggestions,
-                    repository,
+                    prNumber: pullRequest.number,
+                    repositoryName: repository?.name,
                 },
             });
 
@@ -444,6 +443,19 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
             organizationAndTeamData,
         );
 
+        if (!pr) {
+            this.logger.warn({
+                message: `PR #${prNumber} not found, skipping comment resolution.`,
+                context: this.stageName,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    repositoryName: repository.name,
+                },
+            });
+            return;
+        }
+
         let implementedSuggestionsCommentIds =
             this.getImplementedSuggestionsCommentIds(pr);
 
@@ -464,6 +476,19 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                 await this.codeManagementService.getPullRequestReviewComments(
                     codeManagementRequestData,
                 );
+        }
+
+        if (reviewComments?.length === 0) {
+            this.logger.warn({
+                message: `No review comments found for PR#${prNumber}`,
+                context: this.stageName,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    repositoryName: repository.name,
+                },
+            });
+            return;
         }
 
         const foundComments = isPlatformTypeGithub

@@ -21,6 +21,10 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
             this.logger.warn({
                 message: `No file analysis results to aggregate for PR#${context.pullRequest.number}`,
                 context: this.stageName,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                },
             });
         } else {
             const overallComments = [];
@@ -44,6 +48,10 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
             this.logger.log({
                 message: `Aggregated ${validSuggestions.length} valid suggestions, ${discardedSuggestions.length} discarded suggestions, and ${overallComments.length} overall comments`,
                 context: this.stageName,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                },
             });
 
             context = this.updateContext(context, (draft) => {
@@ -62,6 +70,10 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
             this.logger.warn({
                 message: `No valid suggestions to aggregate for PR#${context.pullRequest.number}`,
                 context: this.stageName,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                },
             });
         } else {
             const validSuggestionsByPR = [];
@@ -88,6 +100,10 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
             this.logger.log({
                 message: `Aggregated ${validSuggestionsByPR.length} valid suggestions by PR, ${validCrossFileSuggestions.length} valid cross-file suggestions`,
                 context: this.stageName,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                },
             });
 
             context = this.updateContext(context, (draft) => {

@@ -179,6 +179,10 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                 message: `Error during PR-level Kody Rules analysis for PR#${context.pullRequest.number}`,
                 context: this.stageName,
                 error,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                },
             });
         }
         //#endregion Kody Rules analysis
@@ -241,6 +245,7 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
                 error,
                 metadata: {
                     organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
                 },
             });
         }

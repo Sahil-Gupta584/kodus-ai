@@ -21,10 +21,14 @@ Analyze the following PR files for patterns that require multiple file context: 
 - Each file contains metadata (filename, codeDiff content)
 
 ## Input Files
-${JSON.stringify(payload?.files.map(file => ({
-    fileName: file.file.filename,
-    codeDiff: file.file.codeDiff
-})), null, 2)}
+${JSON.stringify(
+    payload?.files?.map((file) => ({
+        fileName: file?.file?.filename,
+        codeDiff: file?.file?.codeDiff,
+    })),
+    null,
+    2,
+)}
 
 ## Analysis Focus
 
