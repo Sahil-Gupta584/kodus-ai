@@ -595,17 +595,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             const filteredCrossFileSuggestions = keepedSuggestions.filter(
                 (suggestion) => crossFileIds?.has(suggestion.id),
             );
-            const safeGuardResponse =
-                await this.suggestionService.filterSuggestionsSafeGuard(
-                    context?.organizationAndTeamData,
-                    context?.pullRequest?.number,
-                    file,
-                    relevantContent,
-                    patchWithLinesStr,
-                    keepedSuggestions,
-                    context?.codeReviewConfig?.languageResultPrompt,
-                    reviewModeResponse,
-                );
 
             const filteredKeepedSuggestions = keepedSuggestions.filter(
                 (suggestion) => !crossFileIds?.has(suggestion.id),
