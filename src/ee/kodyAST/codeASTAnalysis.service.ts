@@ -46,6 +46,7 @@ import {
     initCircuitBreaker,
     circuitBreaker,
 } from '@/shared/utils/rxjs/circuit-breaker';
+import { Metadata } from '@grpc/grpc-js';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -574,6 +575,9 @@ export class CodeAstAnalysisService
             TaskStatus.TASK_STATUS_CANCELLED,
         ];
 
+        const metadata = new Metadata();
+        metadata.add('x-task-key', taskId);
+
         while (true) {
             if (Date.now() - startTime > timeout) {
                 throw new Error(`Task ${taskId} timed out after ${timeout}ms`);
@@ -581,14 +585,16 @@ export class CodeAstAnalysisService
 
             try {
                 const taskStatus = await lastValueFrom(
-                    this.taskMicroservice.getTaskInfo({ taskId }).pipe(
-                        retry({
-                            count: 3,
-                            delay: 1000,
-                            resetOnSuccess: true,
-                        }),
-                        circuitBreaker(TASK_MANAGER_SERVICE_NAME),
-                    ),
+                    this.taskMicroservice
+                        .getTaskInfo({ taskId }, metadata)
+                        .pipe(
+                            retry({
+                                count: 3,
+                                delay: 1000,
+                                resetOnSuccess: true,
+                            }),
+                            circuitBreaker(TASK_MANAGER_SERVICE_NAME),
+                        ),
                 );
 
                 if (!taskStatus || !taskStatus.task) {

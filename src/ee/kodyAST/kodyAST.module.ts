@@ -1,10 +1,14 @@
-import { Global, Module } from '@nestjs/common';
+import { DynamicModule, Global, Module } from '@nestjs/common';
 import { AST_ANALYSIS_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
 import { CodeAstAnalysisService } from '@/ee/kodyAST/codeASTAnalysis.service';
 import { LLMProviderModule } from '@/modules/llmProvider.module';
 import { LogModule } from '@/modules/log.module';
 import { PlatformIntegrationModule } from '@/modules/platformIntegration.module';
-import { ClientsModule } from '@nestjs/microservices';
+import {
+    ClientProviderOptions,
+    ClientsModule,
+    ClientsProviderAsyncOptions,
+} from '@nestjs/microservices';
 import { AST_MICROSERVICE_OPTIONS } from '../configs/microservices/ast-options';
 import { environment } from '../configs/environment';
 import { TASK_MICROSERVICE_OPTIONS } from '../configs/microservices/task-options';
@@ -13,8 +17,10 @@ const staticImports = [LLMProviderModule, LogModule, PlatformIntegrationModule];
 const dynamicImports =
     environment.API_CLOUD_MODE && process.env.API_ENABLE_CODE_REVIEW_AST
         ? [
-              ClientsModule.register([AST_MICROSERVICE_OPTIONS]),
-              ClientsModule.register([TASK_MICROSERVICE_OPTIONS]),
+              ClientsModule.register([
+                  AST_MICROSERVICE_OPTIONS,
+                  TASK_MICROSERVICE_OPTIONS,
+              ]),
           ]
         : [];
 

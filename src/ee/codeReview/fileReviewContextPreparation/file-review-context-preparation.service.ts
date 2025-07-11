@@ -118,6 +118,9 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
             try {
                 const { task: astTask } = await this.astService.awaitTask(
                     fileContext.tasks.astAnalysis.taskId,
+                    {
+                        timeout: 600000, // 10 minutes
+                    },
                 );
 
                 if (
@@ -146,8 +149,12 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                         file.filename,
                     );
 
-                const { task: impactTask } =
-                    await this.astService.awaitTask(taskId);
+                const { task: impactTask } = await this.astService.awaitTask(
+                    taskId,
+                    {
+                        timeout: 600000, // 10 minutes
+                    },
+                );
 
                 if (
                     !impactTask ||
@@ -227,7 +234,9 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                 return file.fileContent || file.content || null;
             }
 
-            const { task } = await this.astService.awaitTask(taskId);
+            const { task } = await this.astService.awaitTask(taskId, {
+                timeout: 600000, // 10 minutes
+            });
 
             if (!task || task.status !== TaskStatus.TASK_STATUS_COMPLETED) {
                 this.logger.warn({

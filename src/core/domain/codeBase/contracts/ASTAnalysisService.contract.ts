@@ -14,7 +14,13 @@ import { GetTaskInfoResponse } from '@kodus/kodus-proto/task';
 export const AST_ANALYSIS_SERVICE_TOKEN = Symbol('ASTAnalysisService');
 
 export interface IASTAnalysisService {
-    awaitTask(taskId: string): Promise<GetTaskInfoResponse>;
+    awaitTask(
+        taskId: string,
+        options?: {
+            timeout?: number;
+            interval?: number;
+        },
+    ): Promise<GetTaskInfoResponse>;
     analyzeASTWithAI(
         context: AnalysisContext,
         reviewModeResponse: ReviewModeResponse,
