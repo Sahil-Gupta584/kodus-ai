@@ -22,12 +22,12 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
                 message: `No file analysis results to aggregate for PR#${context.pullRequest.number}`,
                 context: this.stageName,
             });
-
+        } else {
             const overallComments = [];
             const validSuggestions = [];
             const discardedSuggestions = [];
 
-            context.fileAnalysisResults.forEach((result) => {
+            context.fileAnalysisResults?.forEach((result) => {
                 if (result.validSuggestionsToAnalyze.length > 0) {
                     validSuggestions.push(...result.validSuggestionsToAnalyze);
                 }
@@ -46,16 +46,27 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
                 context: this.stageName,
             });
 
-            return this.updateContext(context, (draft) => {
+            context = this.updateContext(context, (draft) => {
                 draft.overallComments = overallComments;
                 draft.validSuggestions = validSuggestions;
                 draft.discardedSuggestions = discardedSuggestions;
             });
         }
 
-        if (context.prAnalysisResults?.validSuggestionsByPR?.length > 0) {
+        if (
+            !context.prAnalysisResults ||
+            (context.prAnalysisResults.validSuggestionsByPR?.length === 0 &&
+                context.prAnalysisResults.validCrossFileSuggestions?.length ===
+                    0)
+        ) {
+            this.logger.warn({
+                message: `No valid suggestions to aggregate for PR#${context.pullRequest.number}`,
+                context: this.stageName,
+            });
+        } else {
             const validSuggestionsByPR = [];
             const validCrossFileSuggestions = [];
+
             if (
                 context.prAnalysisResults?.validSuggestionsByPR &&
                 context.prAnalysisResults.validSuggestionsByPR?.length > 0
@@ -79,7 +90,7 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
                 context: this.stageName,
             });
 
-            return this.updateContext(context, (draft) => {
+            context = this.updateContext(context, (draft) => {
                 draft.validSuggestionsByPR = validSuggestionsByPR;
                 draft.validCrossFileSuggestions = validCrossFileSuggestions;
             });
