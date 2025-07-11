@@ -197,6 +197,7 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
             const preparedFilesData = preparedFiles.map(({ fileContext }) => ({
                 filename: fileContext.fileChangeContext.file.filename,
                 patchWithLinesStr:
+                    fileContext.fileChangeContext.file.patchWithLinesStr ||
                     fileContext.fileChangeContext.patchWithLinesStr,
                 file: fileContext.fileChangeContext.file,
             }));

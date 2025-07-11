@@ -167,6 +167,7 @@ export type FileChange = {
         generateSuggestions?: string;
         safeguard?: string;
     };
+    patchWithLinesStr?: string;
 };
 
 export type FileChangeContext = {
