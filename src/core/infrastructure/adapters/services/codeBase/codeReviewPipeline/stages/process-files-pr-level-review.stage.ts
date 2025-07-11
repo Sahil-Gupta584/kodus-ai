@@ -311,7 +311,7 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
             action: context.action,
             platformType: context.platformType,
             codeReviewConfig: context.codeReviewConfig,
-            codeAnalysisAST: context.codeAnalysisAST,
+            tasks: context.tasks,
             clusterizedSuggestions: context.clusterizedSuggestions,
             validCrossFileSuggestions:
                 context.prAnalysisResults?.validCrossFileSuggestions || [],
