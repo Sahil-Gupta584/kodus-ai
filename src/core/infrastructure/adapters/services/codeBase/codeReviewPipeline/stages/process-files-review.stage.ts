@@ -490,20 +490,21 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         baseContext: AnalysisContext,
     ): Promise<IFinalAnalysisResult & { file: FileChange }> {
         const { reviewModeResponse } = baseContext;
-        const { file, patchWithLinesStr } = baseContext.fileChangeContext;
+        const { file, relevantContent, patchWithLinesStr } =
+            baseContext.fileChangeContext;
 
         try {
             const context: AnalysisContext = {
                 ...baseContext,
                 reviewModeResponse: reviewModeResponse,
-                fileChangeContext: { file, patchWithLinesStr },
+                fileChangeContext: { file, relevantContent, patchWithLinesStr },
             };
 
             const standardAnalysisResult =
                 await this.codeAnalysisOrchestrator.executeStandardAnalysis(
                     context.organizationAndTeamData,
                     context.pullRequest.number,
-                    { file, patchWithLinesStr },
+                    { file, relevantContent, patchWithLinesStr },
                     reviewModeResponse,
                     context,
                 );
@@ -542,7 +543,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         context: AnalysisContext,
     ): Promise<IFinalAnalysisResult> {
         const { reviewModeResponse } = context;
-        const { file, patchWithLinesStr } = context.fileChangeContext;
+        const { file, relevantContent, patchWithLinesStr } =
+            context.fileChangeContext;
 
         const overallComment = {
             filepath: file.filename,
@@ -593,6 +595,17 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             const filteredCrossFileSuggestions = keepedSuggestions.filter(
                 (suggestion) => crossFileIds?.has(suggestion.id),
             );
+            const safeGuardResponse =
+                await this.suggestionService.filterSuggestionsSafeGuard(
+                    context?.organizationAndTeamData,
+                    context?.pullRequest?.number,
+                    file,
+                    relevantContent,
+                    patchWithLinesStr,
+                    keepedSuggestions,
+                    context?.codeReviewConfig?.languageResultPrompt,
+                    reviewModeResponse,
+                );
 
             const filteredKeepedSuggestions = keepedSuggestions.filter(
                 (suggestion) => !crossFileIds?.has(suggestion.id),
@@ -603,6 +616,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 filteredKeepedSuggestions,
                 context,
                 file,
+                relevantContent,
                 patchWithLinesStr,
                 reviewModeResponse,
             );
@@ -847,6 +861,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         suggestions: Partial<CodeSuggestion>[],
         context: AnalysisContext,
         file: any,
+        relevantContent,
         patchWithLinesStr: string,
         reviewModeResponse: any,
     ): Promise<{
@@ -859,6 +874,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 context?.organizationAndTeamData,
                 context?.pullRequest?.number,
                 file,
+                relevantContent,
                 patchWithLinesStr,
                 suggestions,
                 context?.codeReviewConfig?.languageResultPrompt,
@@ -892,10 +908,10 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             action: context.action,
             platformType: context.platformType,
             codeReviewConfig: context.codeReviewConfig,
-            codeAnalysisAST: context.codeAnalysisAST,
             clusterizedSuggestions: context.clusterizedSuggestions,
             validCrossFileSuggestions:
                 context.prAnalysisResults?.validCrossFileSuggestions || [],
+            tasks: context.tasks,
         };
     }
 }

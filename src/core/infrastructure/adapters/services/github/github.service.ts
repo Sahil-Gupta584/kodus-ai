@@ -88,7 +88,6 @@ import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
-import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 import {
     LLMModelProvider,
     MODEL_STRATEGIES,
@@ -96,6 +95,7 @@ import {
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
 import { ConfigService } from '@nestjs/config';
+import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 
 interface GitHubAuthResponse {
     token: string;

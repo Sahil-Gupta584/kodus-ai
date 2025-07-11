@@ -34,6 +34,7 @@ export interface IAIAnalysisService {
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         file: any,
+        relevantContent: string,
         codeDiff: string,
         suggestions: any[],
         languageResultPrompt: string,
@@ -63,5 +64,5 @@ export interface IAIAnalysisService {
         prNumber: number,
         provider: LLMModelProvider,
         codeSuggestions: CodeSuggestion[],
-    ): Promise<Partial<CodeSuggestion>[]>
+    ): Promise<Partial<CodeSuggestion>[]>;
 }

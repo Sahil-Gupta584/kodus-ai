@@ -20,7 +20,7 @@ import {
     Repository,
     ReviewComment,
 } from '@/config/types/general/codeReview.type';
-import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
+import { GitCloneParams } from '../types/codeManagement/gitCloneParams.type';
 
 export interface ICodeManagementService
     extends ICommonPlatformIntegrationService {
@@ -116,8 +116,8 @@ export interface ICodeManagementService
     }): Promise<PullRequestsWithChangesRequested[] | null>;
 
     getPullRequestAuthors(params: {
-        organizationAndTeamData: OrganizationAndTeamData,
-    }): Promise<PullRequestAuthor[]>
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<PullRequestAuthor[]>;
 
     checkIfPullRequestShouldBeApproved(params: {
         organizationAndTeamData: OrganizationAndTeamData;

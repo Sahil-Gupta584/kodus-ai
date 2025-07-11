@@ -1,6 +1,4 @@
-import * as path from 'path';
 import {
-    CodeAnalysisAST,
     Repository,
     ReviewModeResponse,
     AnalysisContext,
@@ -18,28 +16,36 @@ import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { LLMResponseProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/transforms/llmResponseProcessor.transform';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import {
-    CodeAnalyzerService,
-    FunctionsAffectResult,
-    FunctionSimilarity,
-} from './code-analyzer.service';
 import { ClientGrpc } from '@nestjs/microservices';
-import { lastValueFrom, reduce, map } from 'rxjs';
-import * as CircuitBreaker from 'opossum';
-import {
-    AST_ANALYZER_SERVICE_NAME,
-    ASTAnalyzerServiceClient,
-    GetGraphsResponseData as SerializedGraphs,
-    ProtoAuthMode,
-    ProtoPlatformType,
-    RepositoryData,
-} from '@kodus/kodus-proto/v2';
+import { lastValueFrom, reduce, map, retry } from 'rxjs';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { concatUint8Arrays } from '@/shared/utils/buffer/arrays';
-import { ASTDeserializerService } from './ast-deserializer.service';
-import { DiffAnalyzerService } from '../codeBase/diffAnalyzer.service';
-import { ChangeResult } from '../codeBase/types/diff-analyzer.types';
+import {
+    ASTAnalyzerServiceClient,
+    AST_ANALYZER_SERVICE_NAME,
+    GetImpactAnalysisResponse,
+    InitializeImpactAnalysisResponse,
+    InitializeRepositoryResponse,
+} from '@kodus/kodus-proto/ast';
+import {
+    RepositoryData,
+    ProtoAuthMode,
+    ProtoPlatformType,
+} from '@kodus/kodus-proto/ast/v2';
+import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
+import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
+import {
+    GetTaskInfoResponse,
+    TASK_MANAGER_SERVICE_NAME,
+    TaskManagerServiceClient,
+    TaskStatus,
+} from '@kodus/kodus-proto/task';
+import {
+    CircuitBreakerOpenError,
+    initCircuitBreaker,
+    circuitBreaker,
+} from '@/shared/utils/rxjs/circuit-breaker';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -47,16 +53,18 @@ export class CodeAstAnalysisService
 {
     private readonly llmResponseProcessor: LLMResponseProcessor;
     private astMicroservice: ASTAnalyzerServiceClient;
+    private taskMicroservice: TaskManagerServiceClient;
 
     constructor(
-        private readonly codeAnalyzerService: CodeAnalyzerService,
-        private readonly diffAnalyzerService: DiffAnalyzerService,
         private readonly codeManagementService: CodeManagementService,
         private readonly logger: PinoLoggerService,
-        private readonly astDeserializerService: ASTDeserializerService,
 
         @Inject('AST_MICROSERVICE')
         private readonly astMicroserviceClient: ClientGrpc,
+
+        @Inject('TASK_MICROSERVICE')
+        private readonly taskMicroserviceClient: ClientGrpc,
+
         @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
     ) {
@@ -67,6 +75,12 @@ export class CodeAstAnalysisService
         this.astMicroservice = this.astMicroserviceClient.getService(
             AST_ANALYZER_SERVICE_NAME,
         );
+        this.taskMicroservice = this.taskMicroserviceClient.getService(
+            TASK_MANAGER_SERVICE_NAME,
+        );
+
+        initCircuitBreaker(AST_ANALYZER_SERVICE_NAME, { logger: this.logger });
+        initCircuitBreaker(TASK_MANAGER_SERVICE_NAME, { logger: this.logger });
     }
 
     async analyzeASTWithAI(
@@ -121,102 +135,40 @@ export class CodeAstAnalysisService
         }
     }
 
-    async cloneAndGenerate(
+    async initializeASTAnalysis(
         repository: any,
         pullRequest: any,
         platformType: string,
         organizationAndTeamData: any,
-    ): Promise<CodeAnalysisAST> {
+        filePaths: string[] = [],
+    ): Promise<InitializeRepositoryResponse> {
         try {
-            const headDirParams = await this.getCloneParams(
-                {
-                    id: repository.id,
-                    name: repository.name,
-                    defaultBranch: pullRequest.head.ref,
-                    fullName:
-                        repository.full_name ||
-                        `${repository.owner}/${repository.name}`,
-                    platform: platformType as
-                        | 'github'
-                        | 'gitlab'
-                        | 'bitbucket'
-                        | 'azure-devops',
-                    language: repository.language || 'unknown',
-                },
-                organizationAndTeamData,
-            );
+            const { headRepo: headDirParams, baseRepo: baseDirParams } =
+                await this.getRepoParams(
+                    repository,
+                    pullRequest,
+                    organizationAndTeamData,
+                    platformType,
+                );
 
-            if (!headDirParams) {
-                return null;
-            }
+            const init = this.astMicroservice
+                .initializeRepository({
+                    baseRepo: baseDirParams,
+                    headRepo: headDirParams,
+                    filePaths,
+                })
+                .pipe(
+                    retry({
+                        count: 3,
+                        delay: 1000,
+                        resetOnSuccess: true,
+                    }),
+                    circuitBreaker(AST_ANALYZER_SERVICE_NAME),
+                );
 
-            const baseDirParams = await this.getCloneParams(
-                {
-                    id: repository.id,
-                    name: repository.name,
-                    defaultBranch: pullRequest.base.ref,
-                    fullName:
-                        repository.full_name ||
-                        `${repository.owner}/${repository.name}`,
-                    platform: platformType as
-                        | 'github'
-                        | 'gitlab'
-                        | 'bitbucket'
-                        | 'azure-devops',
-                    language: repository.language || 'unknown',
-                },
-                organizationAndTeamData,
-            );
+            const task = await lastValueFrom(init);
 
-            if (!baseDirParams) {
-                return null;
-            }
-
-            let result: CodeAnalysisAST;
-            const breaker = new CircuitBreaker(
-                async () => {
-                    const init = this.astMicroservice.initializeRepository({
-                        baseRepo: baseDirParams,
-                        headRepo: headDirParams,
-                    });
-
-                    await lastValueFrom(init);
-
-                    const buildEnrichedGraphRes =
-                        this.astMicroservice.getGraphs({
-                            baseRepo: baseDirParams,
-                            headRepo: headDirParams,
-                        });
-
-                    result = await lastValueFrom(
-                        buildEnrichedGraphRes.pipe(
-                            reduce((acc, chunk) => {
-                                return {
-                                    ...acc,
-                                    data: concatUint8Arrays(
-                                        acc.data,
-                                        chunk.data,
-                                    ),
-                                };
-                            }),
-                            map((data) => {
-                                const jsonData = new TextDecoder().decode(
-                                    data.data,
-                                );
-                                return this.parseGraphResponse(jsonData);
-                            }),
-                        ),
-                    );
-                },
-                {
-                    timeout: 900000, // 15 minutes
-                    errorThresholdPercentage: 50, // 50% of failures
-                    resetTimeout: 30000, // 30 seconds
-                },
-            );
-            await breaker.fire();
-
-            return result;
+            return task;
         } catch (error) {
             this.logger.error({
                 message: `Error during AST Clone and Generate graph for PR#${pullRequest.number}`,
@@ -227,66 +179,25 @@ export class CodeAstAnalysisService
                 },
                 error,
             });
-            return null;
+            throw error;
         }
     }
 
-    private parseGraphResponse(graph: string) {
-        if (!graph) {
-            return null;
-        }
+    private static readonly AuthModeMap: Record<AuthMode, ProtoAuthMode> = {
+        [AuthMode.OAUTH]: ProtoAuthMode.PROTO_AUTH_MODE_OAUTH,
+        [AuthMode.TOKEN]: ProtoAuthMode.PROTO_AUTH_MODE_TOKEN,
+    };
 
-        const parsedGraph = JSON.parse(graph) as SerializedGraphs;
-        if (!parsedGraph) {
-            throw new Error('Error parsing graph data');
-        }
-
-        const deserialized: CodeAnalysisAST = {
-            baseCodeGraph: {
-                codeGraphFunctions: undefined,
-                cloneDir: '',
-            },
-            headCodeGraph: {
-                codeGraphFunctions: undefined,
-                cloneDir: '',
-            },
-            headCodeGraphEnriched: {
-                nodes: [],
-                relationships: [],
-            },
-        };
-
-        if (parsedGraph.baseGraph) {
-            deserialized.baseCodeGraph.codeGraphFunctions = this.objectToMap(
-                parsedGraph?.baseGraph?.graph?.functions,
-            );
-        }
-
-        if (parsedGraph.headGraph) {
-            deserialized.headCodeGraph.codeGraphFunctions = this.objectToMap(
-                parsedGraph?.headGraph?.graph?.functions,
-            );
-        }
-
-        if (parsedGraph.enrichHeadGraph) {
-            deserialized.headCodeGraphEnriched =
-                this.astDeserializerService.deserializeEnrichedGraph(
-                    parsedGraph.enrichHeadGraph,
-                );
-        }
-
-        return deserialized;
-    }
-
-    private objectToMap<T>(obj: Record<string, T>): Map<string, T> {
-        const map = new Map<string, T>();
-        if (obj && typeof obj === 'object') {
-            Object.entries(obj).forEach(([key, value]) => {
-                map.set(key, value);
-            });
-        }
-        return map;
-    }
+    private static readonly PlatformTypeMap: Partial<
+        Record<PlatformType, ProtoPlatformType>
+    > = {
+        [PlatformType.GITHUB]: ProtoPlatformType.PROTO_PLATFORM_TYPE_GITHUB,
+        [PlatformType.GITLAB]: ProtoPlatformType.PROTO_PLATFORM_TYPE_GITLAB,
+        [PlatformType.BITBUCKET]:
+            ProtoPlatformType.PROTO_PLATFORM_TYPE_BITBUCKET,
+        [PlatformType.AZURE_REPOS]:
+            ProtoPlatformType.PROTO_PLATFORM_TYPE_AZURE_REPOS,
+    };
 
     private async getCloneParams(
         repository: Repository,
@@ -300,51 +211,54 @@ export class CodeAstAnalysisService
             ...params,
             auth: {
                 ...params.auth,
-                type: ProtoAuthMode[params.auth.type],
+                type: CodeAstAnalysisService.AuthModeMap[params.auth.type],
             },
-            provider: ProtoPlatformType[params.provider],
+            provider: CodeAstAnalysisService.PlatformTypeMap[params.provider],
         };
     }
 
-    async analyzeCodeWithGraph(
+    async initializeImpactAnalysis(
+        repository: any,
+        pullRequest: any,
+        platformType: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         codeChunk: string,
         fileName: string,
-        organizationAndTeamData: OrganizationAndTeamData,
-        pullRequest: any,
-        codeAnalysisAST: CodeAnalysisAST,
-    ): Promise<ChangeResult> {
+    ): Promise<InitializeImpactAnalysisResponse> {
         try {
-            const processedChunk =
-                this.codeAnalyzerService.preprocessCustomDiff(codeChunk);
-
-            const prFilePath = path.join(
-                codeAnalysisAST?.headCodeGraph?.cloneDir,
-                fileName,
-            );
-            const baseFilePath = path.join(
-                codeAnalysisAST?.baseCodeGraph?.cloneDir,
-                fileName,
+            const { headRepo, baseRepo } = await this.getRepoParams(
+                repository,
+                pullRequest,
+                organizationAndTeamData,
+                platformType,
             );
 
-            const functionsAffected: ChangeResult =
-                await this.diffAnalyzerService.analyzeDiff(
-                    {
-                        diff: processedChunk,
-                        headCodeGraphFunctions:
-                            codeAnalysisAST?.headCodeGraph?.codeGraphFunctions,
-                        prFilePath,
-                    },
-                    {
-                        baseCodeGraphFunctions:
-                            codeAnalysisAST?.baseCodeGraph?.codeGraphFunctions,
-                        baseFilePath,
-                    },
+            if (!headRepo) {
+                throw new Error('Head repository parameters are missing');
+            }
+
+            const init = this.astMicroservice
+                .initializeImpactAnalysis({
+                    baseRepo: baseRepo,
+                    headRepo: headRepo,
+                    codeChunk,
+                    fileName,
+                })
+                .pipe(
+                    retry({
+                        count: 3,
+                        delay: 1000,
+                        resetOnSuccess: true,
+                    }),
+                    circuitBreaker(AST_ANALYZER_SERVICE_NAME),
                 );
 
-            return functionsAffected;
+            const task = await lastValueFrom(init);
+
+            return task;
         } catch (error) {
             this.logger.error({
-                message: `Error during AST analyze CodeWith Graph for PR#${pullRequest.number}`,
+                message: `Error during AST Impact Analysis initialization for PR#${pullRequest.number}`,
                 context: CodeAstAnalysisService.name,
                 metadata: {
                     organizationAndTeamData: organizationAndTeamData,
@@ -356,50 +270,32 @@ export class CodeAstAnalysisService
         }
     }
 
-    async generateImpactAnalysis(
-        codeAnalysis: CodeAnalysisAST,
-        functionsAffected: ChangeResult,
+    async getImpactAnalysis(
+        repository: any,
         pullRequest: any,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<{
-        functionsAffectResult: FunctionsAffectResult[];
-        functionSimilarity: FunctionSimilarity[];
-    }> {
+        platformType: string,
+        organizationAndTeamData: any,
+    ): Promise<GetImpactAnalysisResponse> {
         try {
-            const impactedNodes =
-                await this.codeAnalyzerService.computeImpactAnalysis(
-                    codeAnalysis?.headCodeGraphEnriched,
-                    [functionsAffected],
-                    1,
-                    'backward',
-                );
+            const { headRepo, baseRepo } = await this.getRepoParams(
+                repository,
+                pullRequest,
+                organizationAndTeamData,
+                platformType,
+            );
 
-            const functionSimilarity: FunctionSimilarity[] =
-                await this.codeAnalyzerService.checkFunctionSimilarity(
-                    {
-                        organizationAndTeamData,
-                        pullRequest,
-                    },
-                    functionsAffected.added,
-                    Object.values(
-                        codeAnalysis.headCodeGraph.codeGraphFunctions,
-                    ),
-                );
+            if (!headRepo) {
+                throw new Error('Head repository parameters are missing');
+            }
 
-            const functionsAffectResult: FunctionsAffectResult[] =
-                this.codeAnalyzerService.buildFunctionsAffect(
-                    impactedNodes,
-                    codeAnalysis.baseCodeGraph.codeGraphFunctions,
-                    codeAnalysis.headCodeGraph.codeGraphFunctions,
-                );
-
-            return {
-                functionSimilarity,
-                functionsAffectResult,
-            };
+            return await this.collectImpactAnalysis(
+                baseRepo,
+                headRepo,
+                pullRequest,
+            );
         } catch (error) {
             this.logger.error({
-                message: `Error during AST generate Impact Analysis for PR#${pullRequest.number}`,
+                message: `Error during AST Impact Analysis for PR#${pullRequest.number}`,
                 context: CodeAstAnalysisService.name,
                 metadata: {
                     organizationAndTeamData: organizationAndTeamData,
@@ -409,6 +305,50 @@ export class CodeAstAnalysisService
             });
             throw error;
         }
+    }
+
+    private collectImpactAnalysis(
+        baseDirParams: RepositoryData,
+        headDirParams: RepositoryData,
+        pullRequest: any,
+    ): Promise<GetImpactAnalysisResponse> {
+        return new Promise<GetImpactAnalysisResponse>((resolve, reject) => {
+            const functionsAffect = [];
+            const functionSimilarity = [];
+
+            this.astMicroservice
+                .getImpactAnalysis({
+                    baseRepo: baseDirParams,
+                    headRepo: headDirParams,
+                })
+                .pipe(
+                    retry({
+                        count: 3,
+                        delay: 1000,
+                        resetOnSuccess: true,
+                    }),
+                    circuitBreaker(AST_ANALYZER_SERVICE_NAME),
+                )
+                .subscribe({
+                    next: (batch) => {
+                        if (batch.functionsAffect) {
+                            functionsAffect.push(...batch.functionsAffect);
+                        }
+                        if (batch.functionSimilarity) {
+                            functionSimilarity.push(
+                                ...batch.functionSimilarity,
+                            );
+                        }
+                    },
+                    error: reject,
+                    complete: () => {
+                        resolve({
+                            functionsAffect,
+                            functionSimilarity,
+                        });
+                    },
+                });
+        });
     }
 
     private async createAnalysisChainWithFallback(
@@ -493,13 +433,237 @@ export class CodeAstAnalysisService
             language: context?.repository?.language,
             languageResultPrompt:
                 context?.codeReviewConfig?.languageResultPrompt,
-            impactASTAnalysis: context?.impactASTAnalysis?.functionsAffectResult
-                ? Object.values(
-                      context?.impactASTAnalysis?.functionsAffectResult,
-                  )
+            impactASTAnalysis: context?.impactASTAnalysis?.functionsAffect
+                ? Object.values(context?.impactASTAnalysis?.functionsAffect)
                 : [],
         };
 
         return baseContext;
+    }
+
+    async getRelatedContentFromDiff(
+        repository: any,
+        pullRequest: any,
+        platformType: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        diff: string,
+        filePath: string,
+    ): Promise<string> {
+        const { headRepo, baseRepo } = await this.getRepoParams(
+            repository,
+            pullRequest,
+            organizationAndTeamData,
+            platformType,
+        );
+
+        const call = this.astMicroservice
+            .getContentFromDiff({
+                baseRepo,
+                headRepo,
+                diff,
+                filePath,
+            })
+            .pipe(
+                retry({
+                    count: 3,
+                    delay: 1000,
+                    resetOnSuccess: true,
+                }),
+
+                circuitBreaker(AST_ANALYZER_SERVICE_NAME),
+                reduce((acc, chunk) => {
+                    return {
+                        ...acc,
+                        data: concatUint8Arrays(acc.data, chunk.data),
+                    };
+                }),
+                map((data) => {
+                    const str = new TextDecoder().decode(data.data);
+                    return str;
+                }),
+            );
+
+        const relatedContent = await lastValueFrom(call);
+
+        return relatedContent;
+    }
+
+    private async getRepoParams(
+        repository: any,
+        pullRequest: any,
+        organizationAndTeamData: OrganizationAndTeamData,
+        platformType: string,
+    ): Promise<{
+        headRepo: RepositoryData | null;
+        baseRepo: RepositoryData | null;
+    } | null> {
+        const headDirParams = await this.getCloneParams(
+            {
+                id: repository.id,
+                name: repository.name,
+                defaultBranch: pullRequest.head.ref,
+                fullName:
+                    repository.full_name ||
+                    `${repository.owner}/${repository.name}`,
+                platform: platformType as
+                    | 'github'
+                    | 'gitlab'
+                    | 'bitbucket'
+                    | 'azure-devops',
+                language: repository.language || 'unknown',
+            },
+            organizationAndTeamData,
+        );
+
+        if (!headDirParams) {
+            return null;
+        }
+
+        const baseDirParams = await this.getCloneParams(
+            {
+                id: repository.id,
+                name: repository.name,
+                defaultBranch: pullRequest.base.ref,
+                fullName:
+                    repository.full_name ||
+                    `${repository.owner}/${repository.name}`,
+                platform: platformType as
+                    | 'github'
+                    | 'gitlab'
+                    | 'bitbucket'
+                    | 'azure-devops',
+                language: repository.language || 'unknown',
+            },
+            organizationAndTeamData,
+        );
+
+        if (!baseDirParams) {
+            return {
+                headRepo: headDirParams,
+                baseRepo: null,
+            };
+        }
+
+        return {
+            headRepo: headDirParams,
+            baseRepo: baseDirParams,
+        };
+    }
+
+    async awaitTask(
+        taskId: string,
+        options: {
+            timeout?: number;
+            interval?: number;
+        } = {
+            timeout: 60000, // Default timeout of 60 seconds
+            interval: 5000, // Check every 5 seconds
+        },
+    ): Promise<GetTaskInfoResponse> {
+        if (!taskId) {
+            throw new Error('Task ID is required to await task completion');
+        }
+
+        const { timeout, interval } = options;
+
+        const startTime = Date.now();
+
+        const endStates = [
+            TaskStatus.TASK_STATUS_COMPLETED,
+            TaskStatus.TASK_STATUS_FAILED,
+            TaskStatus.TASK_STATUS_CANCELLED,
+        ];
+
+        while (true) {
+            if (Date.now() - startTime > timeout) {
+                throw new Error(`Task ${taskId} timed out after ${timeout}ms`);
+            }
+
+            try {
+                const taskStatus = await lastValueFrom(
+                    this.taskMicroservice.getTaskInfo({ taskId }).pipe(
+                        retry({
+                            count: 3,
+                            delay: 1000,
+                            resetOnSuccess: true,
+                        }),
+                        circuitBreaker(TASK_MANAGER_SERVICE_NAME),
+                    ),
+                );
+
+                if (!taskStatus || !taskStatus.task) {
+                    throw new Error(`Task ${taskId} not found`);
+                }
+
+                if (endStates.includes(taskStatus.task.status)) {
+                    return taskStatus;
+                }
+            } catch (error) {
+                if (error instanceof CircuitBreakerOpenError) {
+                    this.logger.error({
+                        message: `Circuit breaker is open for task ${taskId}`,
+                        context: CodeAstAnalysisService.name,
+                        metadata: { taskId },
+                    });
+                    throw error;
+                }
+
+                this.logger.warn({
+                    message: `A transient error occurred while polling for task ${taskId}. Retrying...`,
+                    error,
+                    context: CodeAstAnalysisService.name,
+                    metadata: { taskId },
+                });
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, interval));
+        }
+    }
+
+    async deleteASTAnalysis(
+        repository: any,
+        pullRequest: any,
+        platformType: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<void> {
+        try {
+            const { headRepo, baseRepo } = await this.getRepoParams(
+                repository,
+                pullRequest,
+                organizationAndTeamData,
+                platformType,
+            );
+
+            if (!headRepo) {
+                throw new Error('Head repository parameters are missing');
+            }
+
+            await lastValueFrom(
+                this.astMicroservice
+                    .deleteRepository({
+                        baseRepo: baseRepo,
+                        headRepo: headRepo,
+                    })
+                    .pipe(
+                        retry({
+                            count: 3,
+                            delay: 1000,
+                            resetOnSuccess: true,
+                        }),
+                        circuitBreaker(AST_ANALYZER_SERVICE_NAME),
+                    ),
+            );
+        } catch (error) {
+            this.logger.error({
+                message: `Error during AST analysis deletion for PR#${pullRequest.number}`,
+                context: CodeAstAnalysisService.name,
+                metadata: {
+                    organizationAndTeamData: organizationAndTeamData,
+                    prNumber: pullRequest?.number,
+                },
+                error,
+            });
+            throw error;
+        }
     }
 }

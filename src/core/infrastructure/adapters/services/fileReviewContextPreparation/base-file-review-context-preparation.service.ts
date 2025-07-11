@@ -105,28 +105,39 @@ export abstract class BaseFileReviewContextPreparation
      */
     protected async prepareFileContextInternal(
         file: FileChange,
-        patchWithLinesStr,
+        patchWithLinesStr: string,
         context: AnalysisContext,
     ): Promise<{ fileContext: AnalysisContext } | null> {
-        const reviewMode = await this.determineReviewMode(
-            {
-                fileChangeContext: {
-                    file,
-                },
-                patch: patchWithLinesStr,
-                context,
+        const reviewModeProm = this.determineReviewMode({
+            fileChangeContext: {
+                file,
             },
-        );
+            patch: patchWithLinesStr,
+            context,
+        });
+
+        const relevantContentProm = this.getRelevantFileContent(file, context);
+
+        const [reviewModeResponse, relevantContent] = await Promise.all([
+            reviewModeProm,
+            relevantContentProm,
+        ]);
 
         const updatedContext: AnalysisContext = {
             ...context,
-            reviewModeResponse: reviewMode,
+            reviewModeResponse,
             fileChangeContext: {
                 file,
+                relevantContent,
                 patchWithLinesStr,
             },
         };
 
         return { fileContext: updatedContext };
     }
+
+    protected abstract getRelevantFileContent(
+        file: FileChange,
+        context: AnalysisContext,
+    ): Promise<string | null>;
 }

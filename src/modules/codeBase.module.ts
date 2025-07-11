@@ -35,7 +35,6 @@ import { KodyFineTuningContextModule } from '@/ee/kodyFineTuning/fineTuningConte
 import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeContext.module';
 import CodeBaseConfigService from '@/ee/codeBase/codeBaseConfig.service';
 import { CodeAnalysisOrchestrator } from '@/ee/codeBase/codeAnalysisOrchestrator.service';
-import { DiffAnalyzerService } from '@/ee/codeBase/diffAnalyzer.service';
 import { CodeAstAnalysisService } from '@/ee/kodyAST/codeASTAnalysis.service';
 import {
     KODY_RULES_ANALYSIS_SERVICE_TOKEN,

@@ -18,10 +18,12 @@ import { CodeAnalysisASTStage } from '../stages/code-analysis-ast.stage';
 import { ProcessFilesPrLevelReviewStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/process-files-pr-level-review.stage';
 import { CreatePrLevelCommentsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/create-pr-level-comments.stage';
 import { CreateFileCommentsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/create-file-comments.stage';
+import { CodeAnalysisASTCleanupStage } from '../stages/code-analysis-ast-cleanup.stage';
 
 @Injectable()
-export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeReviewPipelineContext> {
-
+export class CodeReviewPipelineStrategyEE
+    implements IPipelineStrategy<CodeReviewPipelineContext>
+{
     constructor(
         private readonly validateConfigStage: ValidateConfigStage,
         private readonly fetchChangedFilesStage: FetchChangedFilesStage,
@@ -32,10 +34,11 @@ export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeRevie
         private readonly createPrLevelCommentsStage: CreatePrLevelCommentsStage,
         private readonly processFilesReview: ProcessFilesReview,
         private readonly createFileCommentsStage: CreateFileCommentsStage,
+        private readonly codeAnalysisASTCleanupStage: CodeAnalysisASTCleanupStage,
         private readonly aggregateResultsStage: AggregateResultsStage,
         private readonly updateCommentsAndGenerateSummaryStage: UpdateCommentsAndGenerateSummaryStage,
         private readonly requestChangesOrApproveStage: RequestChangesOrApproveStage,
-    ) { }
+    ) {}
 
     getPipelineName(): string {
         return 'CodeReviewPipeline';
@@ -52,6 +55,7 @@ export class CodeReviewPipelineStrategyEE implements IPipelineStrategy<CodeRevie
             this.createPrLevelCommentsStage,
             this.processFilesReview,
             this.createFileCommentsStage,
+            this.codeAnalysisASTCleanupStage,
             this.aggregateResultsStage,
             this.updateCommentsAndGenerateSummaryStage,
             this.requestChangesOrApproveStage,

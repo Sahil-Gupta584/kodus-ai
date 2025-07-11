@@ -60,6 +60,7 @@ export interface ISuggestionService {
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         file: any,
+        relevantContent: string,
         codeDiff: string,
         suggestions: Partial<CodeSuggestion>[],
         languageResultPrompt: string,

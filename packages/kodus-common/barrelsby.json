@@ -1,0 +1,4 @@
+{
+    "directory": ["src/types", "src/llm"],
+    "singleQuotes": true
+}

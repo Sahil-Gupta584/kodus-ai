@@ -53,6 +53,14 @@ export class CodeReviewHandlerService {
                 lastAnalyzedCommit: null,
                 validSuggestionsByPR: [],
                 validCrossFileSuggestions: [],
+                tasks: {
+                    astAnalysis: {
+                        taskId: null,
+                    },
+                    impactAnalysis: {
+                        taskId: null,
+                    },
+                },
             };
 
             this.logger.log({
