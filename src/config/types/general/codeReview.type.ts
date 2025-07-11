@@ -137,6 +137,7 @@ export type CodeSuggestion = {
         id: number;
         pullRequestReviewId: number;
     };
+    type?: SuggestionType;
     createdAt?: string;
     updatedAt?: string;
 };
@@ -322,3 +323,7 @@ export enum ReviewModeConfig {
 export type KodyFineTuningConfig = {
     enabled: boolean;
 };
+
+export enum SuggestionType {
+    CROSS_FILE = 'cross_file',
+}

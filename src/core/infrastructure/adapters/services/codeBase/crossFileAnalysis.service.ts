@@ -19,6 +19,7 @@ import {
     FileChange,
     AnalysisContext,
     CodeSuggestion,
+    SuggestionType,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
@@ -805,6 +806,7 @@ export class CrossFileAnalysisService {
             label: suggestion?.label || '',
             severity: suggestion.severity,
             rankScore: suggestion?.rankScore || 0,
+            type: SuggestionType.CROSS_FILE,
             ...suggestion, // Preserva outros campos que podem existir
         };
     }

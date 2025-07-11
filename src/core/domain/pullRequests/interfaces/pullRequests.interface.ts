@@ -1,6 +1,7 @@
 import {
     ClusteringType,
     ReviewModeResponse,
+    SuggestionType,
 } from '@/config/types/general/codeReview.type';
 import { DeliveryStatus } from '../enums/deliveryStatus.enum';
 import { ImplementationStatus } from '../enums/implementationStatus.enum';
@@ -89,6 +90,7 @@ export interface ISuggestion {
         id: number;
         pullRequestReviewId: number;
     };
+    type?: SuggestionType;
     createdAt: string;
     updatedAt: string;
 }
