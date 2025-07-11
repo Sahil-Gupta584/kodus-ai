@@ -1,5 +1,3 @@
-import { CodeSuggestions } from '@gitbeaker/core';
-
 export interface CrossFileAnalysisPayload {
     files: {
         file: {
@@ -140,18 +138,5 @@ Generate suggestions in JSON format:
 - **Focus on actionable improvements**
 - **Prioritize high-impact consolidation opportunities**
 - **Language: All suggestions and feedback must be provided in ${payload?.language || 'en-US'} language**
-`;
-};
-
-export const prompt_codereview_cross_file_safeguard = (
-    payload: CodeSuggestions[],
-) => {
-    return `You are Kody PR-Reviewer, a senior engineer specialized in understanding and reviewing code, with deep knowledge of how LLMs function.
-
-Your mission:
-
-Provide detailed, constructive, and actionable feedback on code by analyzing it in depth.
-
-Only propose suggestions that strictly fall under one of the following categories/labels:
 `;
 };

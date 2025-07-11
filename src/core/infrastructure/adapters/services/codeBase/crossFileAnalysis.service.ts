@@ -13,10 +13,8 @@ import { RunnableSequence } from '@langchain/core/runnables';
 import {
     CrossFileAnalysisPayload,
     prompt_codereview_cross_file_analysis,
-    prompt_codereview_cross_file_safeguard,
 } from '@/shared/utils/langchainCommon/prompts/codeReviewCrossFileAnalysis';
 import {
-    FileChange,
     AnalysisContext,
     CodeSuggestion,
     SuggestionType,
@@ -49,7 +47,7 @@ interface ChunkProcessingResult {
     tokenUsage?: TokenUsage[];
 }
 
-type AnalysisType = 'analyzeCodeWithAI' | 'safeguard';
+type AnalysisType = 'analyzeCodeWithAI';
 //#endregion
 
 export const CROSS_FILE_ANALYSIS_SERVICE_TOKEN = Symbol(
@@ -255,10 +253,6 @@ export class CrossFileAnalysisService {
                         case 'analyzeCodeWithAI':
                             systemPrompt =
                                 prompt_codereview_cross_file_analysis(payload);
-                            break;
-                        case 'safeguard':
-                            systemPrompt =
-                                prompt_codereview_cross_file_safeguard(payload);
                             break;
                         default:
                             throw new Error(
@@ -580,8 +574,7 @@ export class CrossFileAnalysisService {
                 language,
             } as CrossFileAnalysisPayload;
         } else {
-            // Para safeguard, o payload são as próprias sugestões
-            payload = preparedFilesChunk; // Neste caso seria as sugestões
+            payload = preparedFilesChunk;
         }
 
         const analysisChain = await this.createGenericAnalysisChain(
@@ -600,75 +593,6 @@ export class CrossFileAnalysisService {
             prNumber,
             organizationAndTeamData,
         );
-    }
-    //#endregion
-
-    //#region Safeguard Analysis
-    /**
-     * Processa análise de safeguard para sugestões existentes
-     */
-    private async processSafeguardAnalysis(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        suggestions: CodeSuggestion[],
-        language: string,
-        provider: LLMModelProvider,
-    ): Promise<CodeSuggestion[]> {
-        try {
-            this.logger.log({
-                message: 'Starting safeguard analysis',
-                context: CrossFileAnalysisService.name,
-                metadata: {
-                    prNumber,
-                    organizationAndTeamData,
-                    inputSuggestions: suggestions.length,
-                },
-            });
-
-            const payload = suggestions;
-
-            const safeguardChain = await this.createGenericAnalysisChain(
-                provider,
-                'safeguard',
-                payload,
-                prNumber,
-                organizationAndTeamData,
-            );
-
-            const result = await safeguardChain.invoke(payload);
-
-            const safeguardSuggestions = this.processLLMResponse(
-                result,
-                'safeguard',
-                prNumber,
-                organizationAndTeamData,
-            );
-
-            this.logger.log({
-                message: 'Safeguard analysis completed',
-                context: CrossFileAnalysisService.name,
-                metadata: {
-                    prNumber,
-                    organizationAndTeamData,
-                    inputSuggestions: suggestions.length,
-                    outputSuggestions: safeguardSuggestions?.length || 0,
-                },
-            });
-
-            return safeguardSuggestions || [];
-        } catch (error) {
-            this.logger.error({
-                message: 'Error during safeguard analysis',
-                context: CrossFileAnalysisService.name,
-                error,
-                metadata: {
-                    prNumber,
-                    organizationAndTeamData,
-                    inputSuggestions: suggestions.length,
-                },
-            });
-            return [];
-        }
     }
     //#endregion
 
