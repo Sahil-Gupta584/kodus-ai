@@ -16,6 +16,8 @@ import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/servic
 import { KodyFineTuningStage } from '../stages/kody-fine-tuning.stage';
 import { CodeAnalysisASTStage } from '../stages/code-analysis-ast.stage';
 import { ProcessFilesPrLevelReviewStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/process-files-pr-level-review.stage';
+import { CreatePrLevelCommentsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/create-pr-level-comments.stage';
+import { CreateFileCommentsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/create-file-comments.stage';
 import { CodeAnalysisASTCleanupStage } from '../stages/code-analysis-ast-cleanup.stage';
 
 @Injectable()
@@ -30,6 +32,8 @@ export class CodeReviewPipelineStrategyEE
         private readonly codeAnalysisASTStage: CodeAnalysisASTStage,
         private readonly processFilesPrLevelReviewStage: ProcessFilesPrLevelReviewStage,
         private readonly processFilesReview: ProcessFilesReview,
+        private readonly createPrLevelCommentsStage: CreatePrLevelCommentsStage,
+        private readonly createFileCommentsStage: CreateFileCommentsStage,
         private readonly codeAnalysisASTCleanupStage: CodeAnalysisASTCleanupStage,
         private readonly aggregateResultsStage: AggregateResultsStage,
         private readonly updateCommentsAndGenerateSummaryStage: UpdateCommentsAndGenerateSummaryStage,
@@ -49,6 +53,8 @@ export class CodeReviewPipelineStrategyEE
             this.codeAnalysisASTStage,
             this.processFilesPrLevelReviewStage,
             this.processFilesReview,
+            this.createPrLevelCommentsStage,
+            this.createFileCommentsStage,
             this.codeAnalysisASTCleanupStage,
             this.aggregateResultsStage,
             this.updateCommentsAndGenerateSummaryStage,

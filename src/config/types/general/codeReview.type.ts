@@ -68,6 +68,7 @@ export type AnalysisContext = {
     kodyFineTuningConfig?: KodyFineTuningConfig;
     fileChangeContext?: FileChangeContext;
     clusterizedSuggestions?: IClusterizedSuggestion[];
+    validCrossFileSuggestions?: CodeSuggestion[];
     tasks?: {
         astAnalysis?: {
             taskId: string;
@@ -136,6 +137,7 @@ export type CodeSuggestion = {
         id: number;
         pullRequestReviewId: number;
     };
+    type?: SuggestionType;
     createdAt?: string;
     updatedAt?: string;
 };
@@ -166,6 +168,7 @@ export type FileChange = {
         generateSuggestions?: string;
         safeguard?: string;
     };
+    patchWithLinesStr?: string;
 };
 
 export type FileChangeContext = {
@@ -320,3 +323,7 @@ export enum ReviewModeConfig {
 export type KodyFineTuningConfig = {
     enabled: boolean;
 };
+
+export enum SuggestionType {
+    CROSS_FILE = 'cross_file',
+}

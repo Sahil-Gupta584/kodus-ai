@@ -62,12 +62,18 @@ export interface CodeReviewPipelineContext extends PipelineContext {
         file: FileChange;
     }>;
 
+    prAnalysisResults?: {
+        validSuggestionsByPR?: ISuggestionByPR[];
+        validCrossFileSuggestions?: CodeSuggestion[];
+    };
+
     validSuggestions: Partial<CodeSuggestion>[];
     discardedSuggestions: Partial<CodeSuggestion>[];
     overallComments: { filepath: string; summary: string }[];
     lastAnalyzedCommit?: any;
 
     validSuggestionsByPR?: ISuggestionByPR[];
+    validCrossFileSuggestions?: CodeSuggestion[];
 
     lineComments?: CommentResult[];
 
@@ -83,4 +89,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     };
     // Resultados dos comentários de nível de PR
     prLevelCommentResults?: Array<CommentResult>;
+
+    // Metadados dos arquivos processados (reviewMode, codeReviewModelUsed, etc.)
+    fileMetadata?: Map<string, any>;
 }

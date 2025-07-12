@@ -52,6 +52,7 @@ export class CodeReviewHandlerService {
                 overallComments: [],
                 lastAnalyzedCommit: null,
                 validSuggestionsByPR: [],
+                validCrossFileSuggestions: [],
                 tasks: {
                     astAnalysis: {
                         taskId: null,
