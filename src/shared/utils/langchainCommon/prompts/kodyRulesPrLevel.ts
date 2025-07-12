@@ -141,7 +141,7 @@ Return a JSON array containing only rules that have violations:
 - **Generate actionable suggestions** - provide oneSentenceSummary and detailed suggestionContent for each violation
 - **Always include rule reference** - end suggestionContent with "Kody Rule violation: [rule-id]"
 - **Base suggestions on actual context** - use the provided code diffs and file information to generate specific guidance
-
+- **Language: All suggestions and feedback must be provided in ${payload?.language || 'en-US'} language**
 ---
 
 **Now analyze the provided PR and rules to identify cross-file rule violations.**`;
