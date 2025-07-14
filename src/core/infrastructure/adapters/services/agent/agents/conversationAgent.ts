@@ -132,7 +132,6 @@ export class ConversationAgentProvider {
                 },
             },
         );
-        return null;
 
         return {
             response:
