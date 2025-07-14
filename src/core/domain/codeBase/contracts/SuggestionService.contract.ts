@@ -110,6 +110,24 @@ export interface ISuggestionService {
         maxSuggestions: number,
         groupingMode: GroupingModeSuggestions,
         prioritizedBySeverity: Partial<CodeSuggestion>[],
+        severityLimits?: {
+            low: number;
+            medium: number;
+            high: number;
+            critical: number;
+        },
+    ): Promise<Partial<CodeSuggestion>[]>;
+
+    prioritizeSuggestionsBySeverityLimits(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        suggestions: Partial<CodeSuggestion>[],
+        severityLimits: {
+            low: number;
+            medium: number;
+            high: number;
+            critical: number;
+        },
     ): Promise<Partial<CodeSuggestion>[]>;
 
     /**

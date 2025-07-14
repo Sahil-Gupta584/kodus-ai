@@ -27,6 +27,11 @@ suggestionControl:
     severityLevelFilter: 'medium'
     # ✨ CONFIGURAÇÃO SIMPLIFICADA - Controle de filtros para Kody Rules
     applyFiltersToKodyRules: false
+    severityLimits:
+        low: 0
+        medium: 0
+        high: 0
+        critical: 0
 ignoredTitleKeywords: []
 automatedReviewActive: true
 pullRequestApprovalActive: false

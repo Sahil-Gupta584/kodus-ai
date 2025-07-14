@@ -572,6 +572,13 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 repo?.applyFiltersToKodyRules ??
                 global?.applyFiltersToKodyRules ??
                 this.DEFAULT_CONFIG.suggestionControl.applyFiltersToKodyRules,
+            severityLimits:
+                (isParameterValidInConfigFile('severityLimits', validationErrors)
+                    ? kodusConfig?.severityLimits
+                    : undefined) ??
+                repo?.severityLimits ??
+                global?.severityLimits ??
+                this.DEFAULT_CONFIG.suggestionControl.severityLimits,
         };
     }
 

@@ -62,6 +62,24 @@ class SummaryConfigDto {
     behaviourForExistingDescription?: BehaviourForExistingDescription;
 }
 
+class SeverityLimitsDto {
+    @IsNumber()
+    @IsOptional()
+    low?: number;
+
+    @IsNumber()
+    @IsOptional()
+    medium?: number;
+
+    @IsNumber()
+    @IsOptional()
+    high?: number;
+
+    @IsNumber()
+    @IsOptional()
+    critical?: number;
+}
+
 class SuggestionControlConfigDto {
     @IsOptional()
     @IsEnum(GroupingModeSuggestions)
@@ -83,6 +101,11 @@ class SuggestionControlConfigDto {
     @IsOptional()
     @IsBoolean()
     applyFiltersToKodyRules?: boolean;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => SeverityLimitsDto)
+    severityLimits?: SeverityLimitsDto;
 }
 
 class PathInstructionDto {

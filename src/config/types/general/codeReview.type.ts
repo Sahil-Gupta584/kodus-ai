@@ -228,6 +228,7 @@ export enum BehaviourForExistingDescription {
 export enum LimitationType {
     FILE = 'file',
     PR = 'pr',
+    SEVERITY = 'severity',
 }
 
 export enum GroupingModeSuggestions {
@@ -253,6 +254,12 @@ export interface SuggestionControlConfig {
     maxSuggestions: number;
     severityLevelFilter?: SeverityLevel;
     applyFiltersToKodyRules?: boolean; // Default: false - Aplica TODOS os filtros (severidade + quantidade) nas Kody Rules
+    severityLimits?: {
+        low: number;
+        medium: number;
+        high: number;
+        critical: number;
+    };
 }
 
 export type ImplementedSuggestionsToAnalyze = {

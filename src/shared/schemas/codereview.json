@@ -143,7 +143,8 @@
                     "type": "string",
                     "enum": [
                         "file",
-                        "pr"
+                        "pr",
+                        "severity"
                     ],
                     "default": "pr",
                     "description": "Defines the limitation type for suggestions."
@@ -169,6 +170,38 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Whether to apply all filters (severity and quantity) to Kody Rules. When false, Kody Rules ignore all filters."
+                },
+                "severityLimits": {
+                    "type": "object",
+                    "properties": {
+                        "low": {
+                            "type": "integer",
+                            "default": 0,
+                            "minimum": 0,
+                            "description": "Maximum number of low severity suggestions."
+                        },
+                        "medium": {
+                            "type": "integer",
+                            "default": 0,
+                            "minimum": 0,
+                            "description": "Maximum number of medium severity suggestions."
+                        },
+                        "high": {
+                            "type": "integer",
+                            "default": 0,
+                            "minimum": 0,
+                            "description": "Maximum number of high severity suggestions."
+                        },
+                        "critical": {
+                            "type": "integer",
+                            "default": 0,
+                            "minimum": 0,
+                            "description": "Maximum number of critical severity suggestions."
+                        }
+                    },
+                    "required": ["low", "medium", "high", "critical"],
+                    "additionalProperties": false,
+                    "description": "Limits for suggestions by severity level. Only used when limitationType is 'severity'."
                 }
             },
             "required": [
