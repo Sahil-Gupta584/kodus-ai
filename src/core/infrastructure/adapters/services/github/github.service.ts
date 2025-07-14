@@ -210,12 +210,15 @@ export class GithubService
             authStrategy: createAppAuth,
             auth: {
                 appId: this.configService.get<string>('API_GITHUB_APP_ID'),
-                privateKey: this.configService.get<string>('API_GITHUB_PRIVATE_KEY').replace(
-                    /\\n/g,
-                    '\n',
+                privateKey: this.configService
+                    .get<string>('API_GITHUB_PRIVATE_KEY')
+                    .replace(/\\n/g, '\n'),
+                clientId: this.configService.get<string>(
+                    'GLOBAL_GITHUB_CLIENT_ID',
                 ),
-                clientId: this.configService.get<string>('GLOBAL_GITHUB_CLIENT_ID'),
-                clientSecret: this.configService.get<string>('API_GITHUB_CLIENT_SECRET'),
+                clientSecret: this.configService.get<string>(
+                    'API_GITHUB_CLIENT_SECRET',
+                ),
             },
         });
     }
@@ -299,10 +302,14 @@ export class GithubService
 
             // Removed restriction for personal accounts - now we support both organizations and personal accounts
             // Detectar tipo de conta e cachear no authDetails
-            const installationData = installLogin.data as GitHubInstallationData;
+            const installationData =
+                installLogin.data as GitHubInstallationData;
             const accountLogin = installationData.account.login;
-            const accountType = installationData.target_type.toLowerCase() === 'user' ? 'user' : 'organization';
-            
+            const accountType =
+                installationData.target_type.toLowerCase() === 'user'
+                    ? 'user'
+                    : 'organization';
+
             const authDetails = {
                 // @ts-ignore
                 authToken: installationAuthentication?.token,
@@ -372,7 +379,7 @@ export class GithubService
             const orgs = await userOctokit.rest.orgs.listForAuthenticatedUser();
 
             const accountLogin = orgs?.data[0]?.login || user.data.login;
-            
+
             // Detectar tipo de conta: se tem orgs é organização, senão é conta pessoal
             const accountType = orgs?.data[0]?.login ? 'organization' : 'user';
 
@@ -468,9 +475,9 @@ export class GithubService
         this.logger.log({
             message: 'Legacy integration detected - assuming organization',
             context: 'GitHubService',
-            metadata: { org: githubAuthDetail.org }
+            metadata: { org: githubAuthDetail.org },
         });
-        
+
         return githubAuthDetail.org;
     }
 
@@ -489,14 +496,15 @@ export class GithubService
 
             // Usar cache do accountType se disponível
             let isOrgAccount = authDetails.accountType === 'organization';
-            
+
             // Para integrações legadas, assumir organização (historicamente só orgs eram permitidas)
             if (!authDetails.accountType) {
                 isOrgAccount = true;
                 this.logger.log({
-                    message: 'Legacy integration detected - assuming organization',
+                    message:
+                        'Legacy integration detected - assuming organization',
                     context: 'GitHubService',
-                    metadata: { org }
+                    metadata: { org },
                 });
             }
 
@@ -507,11 +515,21 @@ export class GithubService
                     org,
                 });
             } else {
-                // Para contas pessoais, listamos repositórios do usuário autenticado
-                repos = await octokit.paginate(
-                    octokit.rest.repos.listForAuthenticatedUser,
-                    { type: 'all' },
-                );
+                // Para contas pessoais, verificar o tipo de autenticação
+                if (authDetails.authMode === AuthMode.OAUTH && 'installationId' in authDetails) {
+                    // Para GitHub Apps, usar a API específica que lista repos acessíveis à instalação
+                    repos = await octokit.paginate(
+                        octokit.rest.apps.listReposAccessibleToInstallation,
+                    );
+                    // A API retorna objetos com estrutura diferente, extrair os repositórios
+                    repos = repos.map(item => item.repository || item);
+                } else {
+                    // Para PATs, usar a API tradicional
+                    repos = await octokit.paginate(
+                        octokit.rest.repos.listForAuthenticatedUser,
+                        { type: 'all' },
+                    );
+                }
             }
 
             if (repos.length === 0) {
@@ -834,9 +852,9 @@ export class GithubService
                             );
                         })
                         .map(async (pr) => {
-                            const repositoryId = repositoryMap.get(
-                                pr.repository,
-                            ) || pr.repository; // Fallback to repository name if ID not found
+                            const repositoryId =
+                                repositoryMap.get(pr.repository) ||
+                                pr.repository; // Fallback to repository name if ID not found
 
                             const pullRequestData: PullRequestData = {
                                 id: pr.id,
@@ -1036,14 +1054,15 @@ export class GithubService
 
             // Usar cache do accountType se disponível
             let isOrgAccount = githubAuthDetail.accountType === 'organization';
-            
+
             // Para integrações legadas, assumir organização (historicamente só orgs eram permitidas)
             if (!githubAuthDetail.accountType) {
                 isOrgAccount = true;
                 this.logger.log({
-                    message: 'Legacy integration detected - assuming organization',
+                    message:
+                        'Legacy integration detected - assuming organization',
                     context: 'GitHubService',
-                    metadata: { org: githubAuthDetail?.org }
+                    metadata: { org: githubAuthDetail?.org },
                 });
             }
 
@@ -1054,11 +1073,21 @@ export class GithubService
                     org: githubAuthDetail?.org,
                 });
             } else {
-                // Para contas pessoais, listar repositórios do usuário autenticado
-                repos = await octokit.paginate(
-                    octokit.rest.repos.listForAuthenticatedUser,
-                    { type: 'all' },
-                );
+                // Para contas pessoais, verificar o tipo de autenticação
+                if (githubAuthDetail.authMode === AuthMode.OAUTH && 'installationId' in githubAuthDetail) {
+                    // Para GitHub Apps, usar a API específica que lista repos acessíveis à instalação
+                    repos = await octokit.paginate(
+                        octokit.rest.apps.listReposAccessibleToInstallation,
+                    );
+                    // A API retorna objetos com estrutura diferente, extrair os repositórios
+                    repos = repos.map(item => item.repository || item);
+                } else {
+                    // Para PATs, usar a API tradicional
+                    repos = await octokit.paginate(
+                        octokit.rest.repos.listForAuthenticatedUser,
+                        { type: 'all' },
+                    );
+                }
             }
 
             const integration = await this.integrationService.findOne({
@@ -1348,12 +1377,15 @@ export class GithubService
             authStrategy: createAppAuth,
             auth: {
                 appId: this.configService.get<string>('API_GITHUB_APP_ID'),
-                privateKey: this.configService.get<string>('API_GITHUB_PRIVATE_KEY').replace(
-                    /\\n/g,
-                    '\n',
+                privateKey: this.configService
+                    .get<string>('API_GITHUB_PRIVATE_KEY')
+                    .replace(/\\n/g, '\n'),
+                clientId: this.configService.get<string>(
+                    'GLOBAL_GITHUB_CLIENT_ID',
                 ),
-                clientId: this.configService.get<string>('GLOBAL_GITHUB_CLIENT_ID'),
-                clientSecret: this.configService.get<string>('API_GITHUB_CLIENT_SECRET'),
+                clientSecret: this.configService.get<string>(
+                    'API_GITHUB_CLIENT_SECRET',
+                ),
             },
         });
 
@@ -1570,12 +1602,15 @@ export class GithubService
                 authStrategy: createAppAuth,
                 auth: {
                     appId: this.configService.get<string>('API_GITHUB_APP_ID'),
-                    privateKey: this.configService.get<string>('API_GITHUB_PRIVATE_KEY').replace(
-                        /\\n/g,
-                        '\n',
+                    privateKey: this.configService
+                        .get<string>('API_GITHUB_PRIVATE_KEY')
+                        .replace(/\\n/g, '\n'),
+                    clientId: this.configService.get<string>(
+                        'GLOBAL_GITHUB_CLIENT_ID',
                     ),
-                    clientId: this.configService.get<string>('GLOBAL_GITHUB_CLIENT_ID'),
-                    clientSecret: this.configService.get<string>('API_GITHUB_CLIENT_SECRET'),
+                    clientSecret: this.configService.get<string>(
+                        'API_GITHUB_CLIENT_SECRET',
+                    ),
                 },
             });
 
@@ -1590,7 +1625,8 @@ export class GithubService
             });
 
             // Removido bloqueio para contas pessoais - agora suportamos tanto organizações quanto contas pessoais
-            const installationData = installLogin.data as GitHubInstallationData;
+            const installationData =
+                installLogin.data as GitHubInstallationData;
 
             const integration = await this.integrationService.findOne({
                 organization: { uuid: organizationAndTeamData.organizationId },
@@ -1655,17 +1691,18 @@ export class GithubService
             }
 
             const octokit = await this.instanceOctokit(organizationAndTeamData);
-            
+
             // Usar cache do accountType se disponível
             let isOrgAccount = githubAuthDetail.accountType === 'organization';
-            
+
             // Para integrações legadas, assumir organização (historicamente só orgs eram permitidas)
             if (!githubAuthDetail.accountType) {
                 isOrgAccount = true;
                 this.logger.log({
-                    message: 'Legacy integration detected - assuming organization',
+                    message:
+                        'Legacy integration detected - assuming organization',
                     context: 'GitHubService',
-                    metadata: { org: githubAuthDetail?.org }
+                    metadata: { org: githubAuthDetail?.org },
                 });
             }
 
@@ -2496,9 +2533,11 @@ export class GithubService
         const octokit = await this.instanceOctokit(organizationAndTeamData);
 
         // 1. Retrieve all commits in the Pull Request
-        const { data: commits } = await octokit.pulls.listCommits({
+        const commits = await octokit.paginate(octokit.pulls.listCommits, {
             owner: githubAuthDetail?.org,
-            repo: repository.name,
+            repo: repository?.name,
+            sort: 'created',
+            direction: 'asc',
             pull_number: prNumber,
         });
 
@@ -3372,7 +3411,9 @@ export class GithubService
             )
         );
 
-        const webhookUrl = this.configService.get<string>('API_GITHUB_CODE_MANAGEMENT_WEBHOOK');
+        const webhookUrl = this.configService.get<string>(
+            'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
+        );
 
         // Usar método centralizado para determinar o owner correto
         const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
