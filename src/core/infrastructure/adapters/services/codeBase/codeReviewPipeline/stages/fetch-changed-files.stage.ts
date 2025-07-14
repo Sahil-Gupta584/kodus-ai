@@ -39,11 +39,7 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
         const lastExecution =
-            await this.automationExecutionService.findLatestExecutionByDataExecutionFilter(
-                {
-                    pullRequestNumber: context.pullRequest.number,
-                    platformType: context.platformType,
-                },
+            await this.automationExecutionService.findLatestExecutionByFilters(
                 {
                     status: AutomationStatus.SUCCESS,
                     teamAutomation: { uuid: context.teamAutomationId },

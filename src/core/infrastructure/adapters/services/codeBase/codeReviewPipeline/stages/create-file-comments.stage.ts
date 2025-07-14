@@ -331,7 +331,6 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                     organizationAndTeamData.teamId,
                     pullRequest.number,
                     repository.id,
-                    platformType,
                 );
 
             return {
@@ -346,11 +345,9 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
         teamAutomationId: string,
         pullRequestNumber: number,
         repositoryId: string,
-        platformType: string,
     ) {
         const lastTeamAutomationCodeReviewExecution: AutomationExecutionEntity =
-            await this.automationExecutionService.findLatestExecutionByDataExecutionFilter(
-                { pullRequestNumber: pullRequestNumber, platformType },
+            await this.automationExecutionService.findLatestExecutionByFilters(
                 {
                     status: AutomationStatus.SUCCESS,
                     teamAutomation: { uuid: teamAutomationId },

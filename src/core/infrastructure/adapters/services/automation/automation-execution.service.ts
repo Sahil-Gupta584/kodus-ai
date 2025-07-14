@@ -15,13 +15,11 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         private readonly automationExecutionRepository: IAutomationExecutionRepository,
     ) {}
 
-    findLatestExecutionByDataExecutionFilter(
-        dataExecutionFilter: Partial<any>,
-        additionalFilters?: Partial<any>,
+    findLatestExecutionByFilters(
+        filters?: Partial<any>,
     ): Promise<AutomationExecutionEntity | null> {
-        return this.automationExecutionRepository.findLatestExecutionByDataExecutionFilter(
-            dataExecutionFilter,
-            additionalFilters,
+        return this.automationExecutionRepository.findLatestExecutionByFilters(
+            filters,
         );
     }
 
