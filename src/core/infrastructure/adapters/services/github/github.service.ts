@@ -515,11 +515,21 @@ export class GithubService
                     org,
                 });
             } else {
-                // Para contas pessoais, listamos repositórios do usuário autenticado
-                repos = await octokit.paginate(
-                    octokit.rest.repos.listForAuthenticatedUser,
-                    { type: 'all' },
-                );
+                // Para contas pessoais, verificar o tipo de autenticação
+                if (authDetails.authMode === AuthMode.OAUTH && 'installationId' in authDetails) {
+                    // Para GitHub Apps, usar a API específica que lista repos acessíveis à instalação
+                    repos = await octokit.paginate(
+                        octokit.rest.apps.listReposAccessibleToInstallation,
+                    );
+                    // A API retorna objetos com estrutura diferente, extrair os repositórios
+                    repos = repos.map(item => item.repository || item);
+                } else {
+                    // Para PATs, usar a API tradicional
+                    repos = await octokit.paginate(
+                        octokit.rest.repos.listForAuthenticatedUser,
+                        { type: 'all' },
+                    );
+                }
             }
 
             if (repos.length === 0) {
@@ -1063,11 +1073,21 @@ export class GithubService
                     org: githubAuthDetail?.org,
                 });
             } else {
-                // Para contas pessoais, listar repositórios do usuário autenticado
-                repos = await octokit.paginate(
-                    octokit.rest.repos.listForAuthenticatedUser,
-                    { type: 'all' },
-                );
+                // Para contas pessoais, verificar o tipo de autenticação
+                if (githubAuthDetail.authMode === AuthMode.OAUTH && 'installationId' in githubAuthDetail) {
+                    // Para GitHub Apps, usar a API específica que lista repos acessíveis à instalação
+                    repos = await octokit.paginate(
+                        octokit.rest.apps.listReposAccessibleToInstallation,
+                    );
+                    // A API retorna objetos com estrutura diferente, extrair os repositórios
+                    repos = repos.map(item => item.repository || item);
+                } else {
+                    // Para PATs, usar a API tradicional
+                    repos = await octokit.paginate(
+                        octokit.rest.repos.listForAuthenticatedUser,
+                        { type: 'all' },
+                    );
+                }
             }
 
             const integration = await this.integrationService.findOne({
