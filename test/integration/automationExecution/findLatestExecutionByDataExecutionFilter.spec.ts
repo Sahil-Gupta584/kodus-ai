@@ -6,277 +6,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-describe('AutomationExecutionRepository - Backward Compatibility', () => {
-    let repository: AutomationExecutionRepository;
-    let mockTypeOrmRepository: jest.Mocked<Repository<AutomationExecutionModel>>;
-    let queryBuilder: any;
-
-    const mockTeamAutomationId = 'team-123-uuid';
-    const pullRequestNumber = 45;
-    const repositoryId = 'repo-456-uuid';
-
-    beforeEach(async () => {
-        // Mock do QueryBuilder
-        queryBuilder = {
-            andWhere: jest.fn().mockReturnThis(),
-            orderBy: jest.fn().mockReturnThis(),
-            getOne: jest.fn(),
-        };
-
-        mockTypeOrmRepository = {
-            createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
-        } as any;
-
-        const module: TestingModule = await Test.createTestingModule({
-            providers: [
-                AutomationExecutionRepository,
-                {
-                    provide: getRepositoryToken(AutomationExecutionModel),
-                    useValue: mockTypeOrmRepository,
-                },
-            ],
-        }).compile();
-
-        repository = module.get<AutomationExecutionRepository>(AutomationExecutionRepository);
-    });
-
-    afterEach(() => {
-        jest.clearAllMocks();
-    });
-
-    describe('Cenário 1 - Dados apenas no formato antigo (jsonB)', () => {
-        it('deve encontrar execution com dados no formato antigo quando não há dados nas colunas separadas', async () => {
-            // Arrange
-            const oldFormatExecution: AutomationExecutionModel = {
-                uuid: 'execution-old-uuid',
-                createdAt: new Date('2025-01-15T10:00:00Z'),
-                updatedAt: new Date('2025-01-15T10:00:00Z'),
-                status: AutomationStatus.SUCCESS,
-                dataExecution: {
-                    pullRequestNumber: pullRequestNumber,
-                    platformType: 'GITHUB',
-                    // Outros dados do jsonB
-                    noteId: null,
-                    threadId: null,
-                    commentId: 2960318631,
-                    overallComments: []
-                },
-                // Colunas separadas são null (formato antigo)
-                pullRequestNumber: null,
-                repositoryId: null,
-                teamAutomation: { uuid: mockTeamAutomationId } as any,
-                origin: 'github',
-                errorMessage: null,
-            };
-
-            // Mock: primeira busca (por colunas separadas) retorna null
-            // Segunda busca (por jsonB) retorna o dado antigo
-            queryBuilder.getOne
-                .mockResolvedValueOnce(null) // Primeira tentativa falha
-                .mockResolvedValueOnce(oldFormatExecution); // Segunda tentativa encontra
-
-            const dataExecutionFilter = {
-                pullRequestNumber: pullRequestNumber,
-                platformType: 'GITHUB'
-            };
-
-            const additionalFilters = {
-                pullRequestNumber: pullRequestNumber,
-                repositoryId: repositoryId,
-                status: AutomationStatus.SUCCESS,
-                teamAutomation: { uuid: mockTeamAutomationId }
-            };
-
-            // Act
-            const result = await repository.findLatestExecutionByDataExecutionFilter(
-                dataExecutionFilter,
-                additionalFilters
-            );
-
-            // Assert
-            expect(result).toBeInstanceOf(AutomationExecutionEntity);
-            expect(result.uuid).toBe('execution-old-uuid');
-            expect(result.dataExecution.pullRequestNumber).toBe(pullRequestNumber);
-            expect(result.pullRequestNumber).toBeNull(); // Coluna separada ainda é null
-            expect(result.repositoryId).toBeNull(); // Coluna separada ainda é null
-
-            // Verifica que tentou buscar pelas colunas separadas primeiro
-            expect(mockTypeOrmRepository.createQueryBuilder).toHaveBeenCalledTimes(2);
-
-            // Primeira busca - por colunas separadas
-            expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-                'automation_execution.pullRequestNumber = :pullRequestNumber',
-                { pullRequestNumber }
-            );
-            expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-                'automation_execution.repositoryId = :repositoryId',
-                { repositoryId }
-            );
-
-            // Segunda busca - por jsonB (formato antigo)
-            expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-                'automation_execution.dataExecution @> :dataExecutionFilter',
-                {
-                    dataExecutionFilter: JSON.stringify(dataExecutionFilter)
-                }
-            );
-        });
-
-        it('deve retornar a execution mais recente quando há múltiplas executions antigas para o mesmo PR', async () => {
-            // Arrange
-            const olderExecution: AutomationExecutionModel = {
-                uuid: 'execution-older-uuid',
-                createdAt: new Date('2025-01-10T10:00:00Z'),
-                updatedAt: new Date('2025-01-10T10:00:00Z'),
-                status: AutomationStatus.SUCCESS,
-                dataExecution: {
-                    pullRequestNumber: pullRequestNumber,
-                    platformType: 'GITHUB'
-                },
-                pullRequestNumber: null,
-                repositoryId: null,
-                teamAutomation: { uuid: mockTeamAutomationId } as any,
-                origin: 'github',
-                errorMessage: null,
-            };
-
-            const newerExecution: AutomationExecutionModel = {
-                uuid: 'execution-newer-uuid',
-                createdAt: new Date('2025-01-15T10:00:00Z'), // Mais recente
-                updatedAt: new Date('2025-01-15T10:00:00Z'),
-                status: AutomationStatus.SUCCESS,
-                dataExecution: {
-                    pullRequestNumber: pullRequestNumber,
-                    platformType: 'GITHUB'
-                },
-                pullRequestNumber: null,
-                repositoryId: null,
-                teamAutomation: { uuid: mockTeamAutomationId } as any,
-                origin: 'github',
-                errorMessage: null,
-            };
-
-            // Mock: primeira busca falha, segunda busca retorna a mais recente
-            queryBuilder.getOne
-                .mockResolvedValueOnce(null) // Primeira tentativa falha
-                .mockResolvedValueOnce(newerExecution); // Segunda tentativa retorna a mais recente
-
-            const dataExecutionFilter = {
-                pullRequestNumber: pullRequestNumber,
-                platformType: 'GITHUB'
-            };
-
-            const additionalFilters = {
-                pullRequestNumber: pullRequestNumber,
-                repositoryId: repositoryId,
-                status: AutomationStatus.SUCCESS,
-                teamAutomation: { uuid: mockTeamAutomationId }
-            };
-
-            // Act
-            const result = await repository.findLatestExecutionByDataExecutionFilter(
-                dataExecutionFilter,
-                additionalFilters
-            );
-
-            // Assert
-            expect(result).toBeInstanceOf(AutomationExecutionEntity);
-            expect(result.uuid).toBe('execution-newer-uuid');
-            expect(result.createdAt).toEqual(new Date('2025-01-15T10:00:00Z'));
-
-            // Verifica que aplicou ordenação por data de criação DESC
-            expect(queryBuilder.orderBy).toHaveBeenCalledWith(
-                'automation_execution.createdAt',
-                'DESC'
-            );
-        });
-
-        it('deve filtrar corretamente por status SUCCESS e teamAutomationId no formato antigo', async () => {
-            // Arrange
-            const successExecution: AutomationExecutionModel = {
-                uuid: 'execution-success-uuid',
-                createdAt: new Date('2025-01-15T10:00:00Z'),
-                updatedAt: new Date('2025-01-15T10:00:00Z'),
-                status: AutomationStatus.SUCCESS,
-                dataExecution: {
-                    pullRequestNumber: pullRequestNumber,
-                    platformType: 'GITHUB'
-                },
-                pullRequestNumber: null,
-                repositoryId: null,
-                teamAutomation: { uuid: mockTeamAutomationId } as any,
-                origin: 'github',
-                errorMessage: null,
-            };
-
-            queryBuilder.getOne
-                .mockResolvedValueOnce(null) // Primeira tentativa falha
-                .mockResolvedValueOnce(successExecution); // Segunda tentativa encontra
-
-            const dataExecutionFilter = {
-                pullRequestNumber: pullRequestNumber,
-                platformType: 'GITHUB'
-            };
-
-            const additionalFilters = {
-                pullRequestNumber: pullRequestNumber,
-                repositoryId: repositoryId,
-                status: AutomationStatus.SUCCESS,
-                teamAutomation: { uuid: mockTeamAutomationId }
-            };
-
-            // Act
-            const result = await repository.findLatestExecutionByDataExecutionFilter(
-                dataExecutionFilter,
-                additionalFilters
-            );
-
-            // Assert
-            expect(result).toBeInstanceOf(AutomationExecutionEntity);
-            expect(result.status).toBe(AutomationStatus.SUCCESS);
-
-            // Verifica que filtrou por status e teamAutomation na segunda busca
-            expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-                'automation_execution.status = :status',
-                { status: AutomationStatus.SUCCESS }
-            );
-            expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-                'automation_execution.teamAutomation = :teamAutomation',
-                { teamAutomation: mockTeamAutomationId }
-            );
-        });
-
-        it('deve retornar null quando não encontra dados nem no formato novo nem no antigo', async () => {
-            // Arrange
-            queryBuilder.getOne
-                .mockResolvedValueOnce(null) // Primeira tentativa falha
-                .mockResolvedValueOnce(null); // Segunda tentativa também falha
-
-            const dataExecutionFilter = {
-                pullRequestNumber: 999, // PR que não existe
-                platformType: 'GITHUB'
-            };
-
-            const additionalFilters = {
-                pullRequestNumber: 999,
-                repositoryId: 'inexistente-repo-id',
-                status: AutomationStatus.SUCCESS,
-                teamAutomation: { uuid: mockTeamAutomationId }
-            };
-
-            // Act
-            const result = await repository.findLatestExecutionByDataExecutionFilter(
-                dataExecutionFilter,
-                additionalFilters
-            );
-
-            // Assert
-            expect(result).toBeNull();
-            expect(mockTypeOrmRepository.createQueryBuilder).toHaveBeenCalledTimes(2);
-        });
-    });
-});
-
 describe('AutomationExecutionRepository - Forward Compatibility', () => {
     let repository: AutomationExecutionRepository;
     let mockTypeOrmRepository: jest.Mocked<Repository<AutomationExecutionModel>>;
@@ -342,12 +71,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             // Mock: primeira busca (por colunas separadas) já encontra o resultado
             queryBuilder.getOne.mockResolvedValueOnce(newFormatExecution);
 
-            const dataExecutionFilter = {
-                pullRequestNumber: pullRequestNumber,
-                platformType: 'GITHUB'
-            };
-
-            const additionalFilters = {
+            const filters = {
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
                 status: AutomationStatus.SUCCESS,
@@ -355,9 +79,8 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             };
 
             // Act
-            const result = await repository.findLatestExecutionByDataExecutionFilter(
-                dataExecutionFilter,
-                additionalFilters
+            const result = await repository.findLatestExecutionByFilters(
+                filters
             );
 
             // Assert
@@ -410,12 +133,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
 
             queryBuilder.getOne.mockResolvedValueOnce(repo1Execution);
 
-            const dataExecutionFilter = {
-                pullRequestNumber: 45,
-                platformType: 'GITHUB'
-            };
-
-            const additionalFilters = {
+            const filters = {
                 pullRequestNumber: 45,
                 repositoryId: 'repo-1-uuid', // Específico para repo 1
                 status: AutomationStatus.SUCCESS,
@@ -423,9 +141,8 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             };
 
             // Act
-            const result = await repository.findLatestExecutionByDataExecutionFilter(
-                dataExecutionFilter,
-                additionalFilters
+            const result = await repository.findLatestExecutionByFilters(
+                filters
             );
 
             // Assert
@@ -461,12 +178,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
 
             queryBuilder.getOne.mockResolvedValueOnce(newestExecution);
 
-            const dataExecutionFilter = {
-                pullRequestNumber: pullRequestNumber,
-                platformType: 'GITHUB'
-            };
-
-            const additionalFilters = {
+            const filters = {
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
                 status: AutomationStatus.SUCCESS,
@@ -474,9 +186,8 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             };
 
             // Act
-            const result = await repository.findLatestExecutionByDataExecutionFilter(
-                dataExecutionFilter,
-                additionalFilters
+            const result = await repository.findLatestExecutionByFilters(
+                filters
             );
 
             // Assert
@@ -495,12 +206,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             // Arrange
             queryBuilder.getOne.mockResolvedValueOnce(null); // Não encontra execution com status SUCCESS
 
-            const dataExecutionFilter = {
-                pullRequestNumber: pullRequestNumber,
-                platformType: 'GITHUB'
-            };
-
-            const additionalFilters = {
+            const filters = {
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
                 status: AutomationStatus.SUCCESS, // Busca apenas SUCCESS
@@ -508,9 +214,8 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             };
 
             // Act
-            const result = await repository.findLatestExecutionByDataExecutionFilter(
-                dataExecutionFilter,
-                additionalFilters
+            const result = await repository.findLatestExecutionByFilters(
+                filters
             );
 
             // Assert
@@ -543,12 +248,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
 
             queryBuilder.getOne.mockResolvedValueOnce(correctTeamExecution);
 
-            const dataExecutionFilter = {
-                pullRequestNumber: pullRequestNumber,
-                platformType: 'GITHUB'
-            };
-
-            const additionalFilters = {
+            const filters = {
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
                 status: AutomationStatus.SUCCESS,
@@ -556,9 +256,8 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             };
 
             // Act
-            const result = await repository.findLatestExecutionByDataExecutionFilter(
-                dataExecutionFilter,
-                additionalFilters
+            const result = await repository.findLatestExecutionByFilters(
+                filters
             );
 
             // Assert
@@ -592,12 +291,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
 
             queryBuilder.getOne.mockResolvedValueOnce(azureExecution);
 
-            const dataExecutionFilter = {
-                pullRequestNumber: pullRequestNumber,
-                platformType: 'AZURE_REPOS'
-            };
-
-            const additionalFilters = {
+            const filters = {
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
                 status: AutomationStatus.SUCCESS,
@@ -605,9 +299,8 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             };
 
             // Act
-            const result = await repository.findLatestExecutionByDataExecutionFilter(
-                dataExecutionFilter,
-                additionalFilters
+            const result = await repository.findLatestExecutionByFilters(
+                filters
             );
 
             // Assert
