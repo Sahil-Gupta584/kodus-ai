@@ -710,3 +710,14 @@ export class CodeAstAnalysisService
         return metadata;
     }
 }
+
+export function logOutgoingMeta(taskId: string) {
+    return function <Req, Res>(options: any, nextCall: any) {
+        return new nextCall(options, (err: any, resp: Res) => {
+            /* noop - just proxy */
+        }).start((metadata) => {
+            console.log('META ENVIADA:', metadata.get('x-task-key'));
+            return metadata;
+        });
+    };
+}

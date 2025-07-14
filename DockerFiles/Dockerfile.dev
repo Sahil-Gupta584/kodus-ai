@@ -11,17 +11,17 @@ ENV API_CLOUD_MODE=${API_CLOUD_MODE}
 WORKDIR /usr/src/app
 
 # Instalar certificados raiz e git no estágio final
-RUN apt-get update && \
-    apt-get install -y ca-certificates git make g++ python3 && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates git make g++ python3 && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # Copiamos somente os arquivos de dependências
 COPY package.json yarn.lock ./
+COPY packages/kodus-flow ./packages/kodus-flow
+COPY packages/kodus-common/package.json ./packages/kodus-common/
 
-# Instalamos todas as dependências (dev + prod)
-RUN yarn install --frozen-lockfile
+# Instalamos todas as dependências (dev + prod) e garantimos que @types estejam instalados
+RUN yarn install --check-files --frozen-lockfile --production=false
 
 # -------------------------------------------------------------
 # 2) Estágio build-code: compila o código e gera ./dist
@@ -31,8 +31,12 @@ FROM deps AS build-code
 ARG API_CLOUD_MODE
 ENV API_CLOUD_MODE=${API_CLOUD_MODE}
 
-# Copiamos o restante do código-fonte
-COPY . .
+# Copiamos apenas os arquivos necessários para o build
+COPY tsconfig*.json ./
+COPY nest-cli.json ./
+COPY packages/kodus-flow ./packages/kodus-flow
+COPY packages/kodus-common ./packages/kodus-common
+COPY src ./src
 
 # Aqui podemos (opcionalmente) aumentar o heap de novo para o build
 ENV NODE_OPTIONS="--max-old-space-size=4096"
@@ -40,14 +44,18 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 # Compilamos o código principal + workflows
 RUN yarn build
 
-# Instalar pgvector
-RUN apt-get update && apt-get install -y git build-essential postgresql-client postgresql-server-dev-all \
-    && cd /tmp \
-    && rm -rf pgvector || true \
-    && git clone --branch v0.5.1 https://github.com/pgvector/pgvector.git \
-    && cd pgvector \
-    && make \
-    && make install
+# Instalar pgvector (otimizado para cache)
+RUN apt-get update && apt-get install -y git build-essential postgresql-client postgresql-server-dev-all && \
+    cd /tmp && \
+    git clone --branch v0.5.1 --depth 1 https://github.com/pgvector/pgvector.git && \
+    cd pgvector && \
+    make && \
+    make install && \
+    cd / && \
+    rm -rf /tmp/pgvector && \
+    apt-get remove -y git build-essential && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 
 # -------------------------------------------------------------
 # 3) Estágio final de desenvolvimento
@@ -65,10 +73,14 @@ RUN apt-get update && \
     apt-get install -y ca-certificates git python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
 
-# Se no ambiente de desenvolvimento você quiser ter todas as dependências,
-# copie package.json e yarn.lock outra vez, e instale (ou não) as libs:
+# Copiar dependências do estágio deps
+COPY --from=deps /usr/src/app/node_modules ./node_modules
+COPY --from=deps /usr/src/app/packages ./packages
+
+# Copiar arquivos de configuração
 COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile
+COPY tsconfig*.json ./
+COPY nest-cli.json ./
 
 # Agora copiamos apenas os artefatos finais do build
 COPY --from=build-code /usr/src/app/dist ./dist

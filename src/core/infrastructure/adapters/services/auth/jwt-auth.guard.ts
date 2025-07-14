@@ -29,6 +29,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
         // We can use this to allow public routes;
         const excludePaths = [
+            '/health',
             '/auth/refresh',
             '/auth/login',
             '/auth/signup',
@@ -72,6 +73,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
             '/gitlab/webhook',
             '/bitbucket/webhook',
             '/azure-repos/webhook',
+            '/mcp',
         ];
 
         // Allow access to public routes

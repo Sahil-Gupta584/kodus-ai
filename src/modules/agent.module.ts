@@ -34,6 +34,7 @@ import { CheckinHistoryOrganizationModule } from './checkInHistoryOrganization.m
 import { ParametersModule } from './parameters.module';
 import { CodeReviewAgentProvider } from '@/core/infrastructure/adapters/services/agent/agents/codeReview';
 import { OrganizationParametersModule } from './organizationParameters.module';
+import { ConversationAgentProvider } from '@/core/infrastructure/adapters/services/agent/agents/conversationAgent';
 
 @Module({
     imports: [
@@ -63,6 +64,7 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         DefaultAgentProvider,
         CodeReviewAgentProvider,
         GenericQueryAgentProvider,
+        ConversationAgentProvider,
         PromptService,
         S3Service,
         {
@@ -104,4 +106,4 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         AGENT_EXECUTION_REPOSITORY_TOKEN,
     ],
 })
-export class AgentModule { }
+export class AgentModule {}

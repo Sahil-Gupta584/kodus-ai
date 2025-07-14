@@ -1,9 +1,5 @@
 import * as Sentry from '@sentry/node';
-import {
-    SentryPropagator,
-    SentrySampler,
-    SentrySpanProcessor,
-} from '@sentry/opentelemetry';
+import { SentryPropagator, SentrySampler } from '@sentry/opentelemetry';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { registerInstrumentations } from '@opentelemetry/instrumentation';
 import { PinoInstrumentation } from '@opentelemetry/instrumentation-pino';
@@ -38,7 +34,6 @@ export function setupSentryAndOpenTelemetry() {
 
     const provider = new NodeTracerProvider({
         sampler: new SentrySampler(Sentry.getClient()),
-        spanProcessors: [new SentrySpanProcessor()],
     });
 
     provider.register({

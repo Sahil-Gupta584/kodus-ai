@@ -1039,37 +1039,63 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 callbacks: [this.tokenTracker],
             });
 
-            const parser = StructuredOutputParser.fromZodSchema(
-                z.object({
-                    codeSuggestions: z.array(
-                        z
-                            .object({
-                                id: z.string(),
-                                suggestionContent: z.string(),
-                                existingCode: z.string(),
-                                improvedCode: z.string(),
-                                oneSentenceSummary: z.string(),
-                                relevantLinesStart: z.string(),
-                                relevantLinesEnd: z.string(),
-                                label: z.string().optional(),
-                                action: z.string(),
-                                reason: z.string().optional(),
-                            })
-                            .refine(
-                                (data) =>
-                                    data.suggestionContent &&
-                                    data.existingCode &&
-                                    data.oneSentenceSummary &&
-                                    data.relevantLinesStart &&
-                                    data.relevantLinesEnd &&
-                                    data.action,
-                                {
-                                    message: 'All fields are required',
-                                },
-                            ),
-                    ),
-                }),
-            );
+            // Definir o schema Zod para validação em runtime (não para inferência de tipo)
+            const suggestionSchema = z.object({
+                codeSuggestions: z.array(
+                    z.object({
+                        id: z.string(),
+                        suggestionContent: z.string(),
+                        existingCode: z.string(),
+                        improvedCode: z.string(),
+                        oneSentenceSummary: z.string(),
+                        relevantLinesStart: z.string(),
+                        relevantLinesEnd: z.string(),
+                        label: z.string().optional(),
+                        action: z.string(),
+                        reason: z.string().optional(),
+                    }).refine(
+                        (data) =>
+                            data.suggestionContent &&
+                            data.existingCode &&
+                            data.oneSentenceSummary &&
+                            data.relevantLinesStart &&
+                            data.relevantLinesEnd &&
+                            data.action,
+                        {
+                            message: 'All fields are required',
+                        },
+                    )
+                ),
+            });
+
+            // Criar um parser compatível com a interface do StructuredOutputParser
+            // mas sem usar a função fromZodSchema que causa o erro TS2589
+            const parser = {
+                getFormatInstructions: () => {
+                    return `Return a JSON object with the following schema:\n${JSON.stringify({
+                        codeSuggestions: [{
+                            id: "string",
+                            suggestionContent: "string",
+                            existingCode: "string",
+                            improvedCode: "string",
+                            oneSentenceSummary: "string",
+                            relevantLinesStart: "string",
+                            relevantLinesEnd: "string",
+                            label: "string (optional)",
+                            action: "string",
+                            reason: "string (optional)"
+                        }]
+                    }, null, 2)}\n\nAll fields are required except 'label' and 'reason'.`;
+                },
+                parse: async (text: string) => {
+                    try {
+                        const json = JSON.parse(text);
+                        return suggestionSchema.parse(json);
+                    } catch (e) {
+                        throw new Error(`Failed to parse output: ${e.message}`);
+                    }
+                }
+            };
 
             const formatInstructions = parser.getFormatInstructions();
 
