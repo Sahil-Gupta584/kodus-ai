@@ -118,6 +118,7 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
             try {
                 const { task: astTask } = await this.astService.awaitTask(
                     fileContext.tasks.astAnalysis.taskId,
+                    fileContext.organizationAndTeamData,
                     {
                         timeout: 600000, // 10 minutes
                     },
@@ -151,6 +152,7 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
 
                 const { task: impactTask } = await this.astService.awaitTask(
                     taskId,
+                    fileContext.organizationAndTeamData,
                     {
                         timeout: 600000, // 10 minutes
                     },
@@ -234,9 +236,13 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                 return file.fileContent || file.content || null;
             }
 
-            const { task } = await this.astService.awaitTask(taskId, {
-                timeout: 600000, // 10 minutes
-            });
+            const { task } = await this.astService.awaitTask(
+                taskId,
+                context.organizationAndTeamData,
+                {
+                    timeout: 600000, // 10 minutes
+                },
+            );
 
             if (!task || task.status !== TaskStatus.TASK_STATUS_COMPLETED) {
                 this.logger.warn({
