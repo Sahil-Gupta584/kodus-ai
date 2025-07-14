@@ -394,8 +394,13 @@ export class SuggestionService implements ISuggestionService {
                 const limit = severityLimits[severity];
                 const suggestionsOfSeverity = categorizedSuggestions[severity];
                 
-                if (limit > 0 && suggestionsOfSeverity.length > 0) {
-                    const selected = suggestionsOfSeverity.slice(0, limit);
+                if (suggestionsOfSeverity.length > 0) {
+                    // Se limit = 0, traz todas (sem filtro)
+                    // Se limit > 0, traz até o limite
+                    const selected = limit === 0 
+                        ? suggestionsOfSeverity 
+                        : suggestionsOfSeverity.slice(0, limit);
+                        
                     prioritizedSuggestions.push(...selected.map(s => ({
                         ...s,
                         priorityStatus: PriorityStatus.PRIORITIZED,
