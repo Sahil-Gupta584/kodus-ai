@@ -16,6 +16,7 @@ export const AST_ANALYSIS_SERVICE_TOKEN = Symbol('ASTAnalysisService');
 export interface IASTAnalysisService {
     awaitTask(
         taskId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         options?: {
             timeout?: number;
             interval?: number;
