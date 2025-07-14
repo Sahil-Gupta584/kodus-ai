@@ -509,7 +509,8 @@ export class CodeAstAnalysisService
 
         const relatedContent = await lastValueFrom(call);
 
-        return relatedContent;
+        // format newlines
+        return JSON.parse(relatedContent);
     }
 
     private async getRepoParams(
