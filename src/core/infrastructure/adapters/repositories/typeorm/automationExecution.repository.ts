@@ -162,9 +162,8 @@ export class AutomationExecutionRepository
         }
     }
 
-    async findLatestExecutionByDataExecutionFilter(
-        dataExecutionFilter: Partial<any>,
-        additionalFilters?: Partial<any>,
+    async findLatestExecutionByFilters(
+        filters?: Partial<any>,
     ): Promise<AutomationExecutionEntity | null> {
         try {
             const queryBuilder =
@@ -172,20 +171,16 @@ export class AutomationExecutionRepository
                     'automation_execution',
                 );
 
-            let resultOnlyByAdditionalFilters: AutomationExecutionModel | null =
+            let result: AutomationExecutionModel | null =
                 null;
 
-            let resultByDataExecutionAndAdditionalFilters: AutomationExecutionModel | null =
-                null;
-
-            // Primeiro tentamos buscar com os filtros adicionais - número do PR foi movido para uma coluna nova, e repositoryId foi adicionado
-            if (additionalFilters) {
-                Object.keys(additionalFilters).forEach((key) => {
+            if (filters) {
+                Object.keys(filters).forEach((key) => {
                     const value =
-                        typeof additionalFilters[key] === 'object' &&
-                        additionalFilters[key]?.uuid
-                            ? additionalFilters[key].uuid
-                            : additionalFilters[key];
+                        typeof filters[key] === 'object' &&
+                        filters[key]?.uuid
+                            ? filters[key].uuid
+                            : filters[key];
 
                     queryBuilder.andWhere(
                         `automation_execution.${key} = :${key}`,
@@ -193,55 +188,10 @@ export class AutomationExecutionRepository
                     );
                 });
 
-                resultOnlyByAdditionalFilters = await queryBuilder
+                result = await queryBuilder
                     .orderBy('automation_execution.createdAt', 'DESC')
                     .getOne();
-
-                // Se não encontrar com os filtros adicionais, tentamos como era feito anteriormente
-                if (!resultOnlyByAdditionalFilters) {
-                    const queryBuilder =
-                        this.automationExecutionRepository.createQueryBuilder(
-                            'automation_execution',
-                        );
-
-                    if (dataExecutionFilter) {
-                        queryBuilder.andWhere(
-                            'automation_execution.dataExecution @> :dataExecutionFilter',
-                            {
-                                dataExecutionFilter:
-                                    JSON.stringify(dataExecutionFilter),
-                            },
-                        );
-                    }
-
-                    if (additionalFilters) {
-                        delete additionalFilters.pullRequestNumber;
-                        delete additionalFilters.repositoryId;
-
-                        Object.keys(additionalFilters).forEach((key) => {
-                            const value =
-                                typeof additionalFilters[key] === 'object' &&
-                                additionalFilters[key]?.uuid
-                                    ? additionalFilters[key].uuid
-                                    : additionalFilters[key];
-
-                            queryBuilder.andWhere(
-                                `automation_execution.${key} = :${key}`,
-                                { [key]: value },
-                            );
-                        });
-                    }
-
-                    resultByDataExecutionAndAdditionalFilters =
-                        await queryBuilder
-                            .orderBy('automation_execution.createdAt', 'DESC')
-                            .getOne();
-                }
             }
-
-            const result =
-                resultOnlyByAdditionalFilters ||
-                resultByDataExecutionAndAdditionalFilters;
 
             return mapSimpleModelToEntity(result, AutomationExecutionEntity);
         } catch (error) {
