@@ -282,6 +282,12 @@ export class SuggestionService implements ISuggestionService {
         maxSuggestions: number,
         groupingMode: GroupingModeSuggestions,
         prioritizedBySeverity: Partial<CodeSuggestion>[],
+        severityLimits?: {
+            low: number;
+            medium: number;
+            high: number;
+            critical: number;
+        },
     ): Promise<Partial<CodeSuggestion>[]> {
         let relatedSuggestionsClustered: Partial<CodeSuggestion>[] = [];
 
@@ -298,20 +304,33 @@ export class SuggestionService implements ISuggestionService {
             );
         }
 
-        const prioritizedByQuantity =
-            !limitationType || limitationType === LimitationType.FILE
-                ? await this.prioritizeSuggestionsByFile(
-                      organizationAndTeamData,
-                      prNumber,
-                      prioritizedBySeverity,
-                      maxSuggestions,
-                  )
-                : await this.prioritizeSuggestionsByPR(
-                      organizationAndTeamData,
-                      prNumber,
-                      prioritizedBySeverity,
-                      maxSuggestions,
-                  );
+        let prioritizedByQuantity: Partial<CodeSuggestion>[] = [];
+
+        if (limitationType === LimitationType.SEVERITY && severityLimits) {
+            // Nova lógica para limitação por severidade
+            prioritizedByQuantity = await this.prioritizeSuggestionsBySeverityLimits(
+                organizationAndTeamData,
+                prNumber,
+                prioritizedBySeverity,
+                severityLimits,
+            );
+        } else if (!limitationType || limitationType === LimitationType.FILE) {
+            // Lógica existente para limitação por arquivo
+            prioritizedByQuantity = await this.prioritizeSuggestionsByFile(
+                organizationAndTeamData,
+                prNumber,
+                prioritizedBySeverity,
+                maxSuggestions,
+            );
+        } else {
+            // Lógica existente para limitação por PR
+            prioritizedByQuantity = await this.prioritizeSuggestionsByPR(
+                organizationAndTeamData,
+                prNumber,
+                prioritizedBySeverity,
+                maxSuggestions,
+            );
+        }
 
         if (relatedSuggestionsClustered?.length > 0) {
             // Adds related suggestions if the parent was prioritized
@@ -322,6 +341,119 @@ export class SuggestionService implements ISuggestionService {
         }
 
         return prioritizedByQuantity;
+    }
+
+    /**
+     * Prioritizes suggestions based on severity limits
+     */
+    public async prioritizeSuggestionsBySeverityLimits(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        suggestions: Partial<CodeSuggestion>[],
+        severityLimits: {
+            low: number;
+            medium: number;
+            high: number;
+            critical: number;
+        },
+    ): Promise<Partial<CodeSuggestion>[]> {
+        try {
+            this.logger.log({
+                message: `Prioritizing suggestions by severity limits for PR#${prNumber}`,
+                context: SuggestionService.name,
+                metadata: {
+                    severityLimits,
+                    totalSuggestions: suggestions.length,
+                    organizationAndTeamData,
+                    prNumber,
+                },
+            });
+
+            // Categorizar sugestões por severidade
+            const categorizedSuggestions = {
+                critical: suggestions.filter(s => s.severity?.toLowerCase() === 'critical'),
+                high: suggestions.filter(s => s.severity?.toLowerCase() === 'high'),
+                medium: suggestions.filter(s => s.severity?.toLowerCase() === 'medium'),
+                low: suggestions.filter(s => s.severity?.toLowerCase() === 'low'),
+            };
+
+            // Ordenar cada categoria por rankScore (decrescente)
+            Object.keys(categorizedSuggestions).forEach(severity => {
+                categorizedSuggestions[severity] = categorizedSuggestions[severity].sort((a, b) => {
+                    const scoreA = a.rankScore || 0;
+                    const scoreB = b.rankScore || 0;
+                    return scoreB - scoreA;
+                });
+            });
+
+            // Aplicar limites por severidade
+            const prioritizedSuggestions: Partial<CodeSuggestion>[] = [];
+            
+            // Prioridade: critical > high > medium > low
+            ['critical', 'high', 'medium', 'low'].forEach(severity => {
+                const limit = severityLimits[severity];
+                const suggestionsOfSeverity = categorizedSuggestions[severity];
+                
+                if (limit > 0 && suggestionsOfSeverity.length > 0) {
+                    const selected = suggestionsOfSeverity.slice(0, limit);
+                    prioritizedSuggestions.push(...selected.map(s => ({
+                        ...s,
+                        priorityStatus: PriorityStatus.PRIORITIZED,
+                        deliveryStatus: DeliveryStatus.NOT_SENT,
+                    })));
+                }
+            });
+
+            this.logger.log({
+                message: `Suggestions prioritized by severity limits for PR#${prNumber}`,
+                context: SuggestionService.name,
+                metadata: {
+                    severityLimits,
+                    totalSuggestions: suggestions.length,
+                    prioritizedCount: prioritizedSuggestions.length,
+                    breakdown: {
+                        critical: { 
+                            available: categorizedSuggestions.critical.length,
+                            limit: severityLimits.critical,
+                            selected: prioritizedSuggestions.filter(s => s.severity?.toLowerCase() === 'critical').length
+                        },
+                        high: { 
+                            available: categorizedSuggestions.high.length,
+                            limit: severityLimits.high,
+                            selected: prioritizedSuggestions.filter(s => s.severity?.toLowerCase() === 'high').length
+                        },
+                        medium: { 
+                            available: categorizedSuggestions.medium.length,
+                            limit: severityLimits.medium,
+                            selected: prioritizedSuggestions.filter(s => s.severity?.toLowerCase() === 'medium').length
+                        },
+                        low: { 
+                            available: categorizedSuggestions.low.length,
+                            limit: severityLimits.low,
+                            selected: prioritizedSuggestions.filter(s => s.severity?.toLowerCase() === 'low').length
+                        },
+                    },
+                    organizationAndTeamData,
+                    prNumber,
+                },
+            });
+
+            return prioritizedSuggestions;
+        } catch (error) {
+            this.logger.error({
+                message: `Error prioritizing suggestions by severity limits for PR#${prNumber}`,
+                error,
+                context: SuggestionService.name,
+                metadata: { severityLimits, organizationAndTeamData, prNumber },
+            });
+            
+            // Fallback: retorna todas as sugestões
+            return suggestions.map(s => ({
+                ...s,
+                priorityStatus: PriorityStatus.PRIORITIZED,
+                deliveryStatus: DeliveryStatus.NOT_SENT,
+            }));
+        }
     }
 
     /**
@@ -444,6 +576,7 @@ export class SuggestionService implements ISuggestionService {
             maxSuggestions,
             groupingMode,
             prioritizedBySeverity,
+            suggestionControl.severityLimits,
         );
 
         const discardedByQuantity = this.getDiscardedByQuantity(

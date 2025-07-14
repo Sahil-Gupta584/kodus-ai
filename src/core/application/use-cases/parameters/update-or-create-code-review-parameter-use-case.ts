@@ -130,6 +130,12 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             maxSuggestions: 9,
             severityLevelFilter: SeverityLevel.HIGH,
             applyFiltersToKodyRules: false,
+            severityLimits: {
+                low: 0,
+                medium: 0,
+                high: 0,
+                critical: 0,
+            },
         };
     }
 
