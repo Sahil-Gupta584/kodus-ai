@@ -140,7 +140,7 @@ export class CodeAstAnalysisService
         repository: any,
         pullRequest: any,
         platformType: string,
-        organizationAndTeamData: any,
+        organizationAndTeamData: OrganizationAndTeamData,
         filePaths: string[] = [],
     ): Promise<InitializeRepositoryResponse> {
         try {
@@ -152,12 +152,18 @@ export class CodeAstAnalysisService
                     platformType,
                 );
 
+            const metadata = new Metadata();
+            metadata.add('x-task-key', organizationAndTeamData.organizationId);
+
             const init = this.astMicroservice
-                .initializeRepository({
-                    baseRepo: baseDirParams,
-                    headRepo: headDirParams,
-                    filePaths,
-                })
+                .initializeRepository(
+                    {
+                        baseRepo: baseDirParams,
+                        headRepo: headDirParams,
+                        filePaths,
+                    },
+                    metadata,
+                )
                 .pipe(
                     retry({
                         count: 3,
@@ -238,13 +244,18 @@ export class CodeAstAnalysisService
                 throw new Error('Head repository parameters are missing');
             }
 
+            const metadata = this.createMetadata(organizationAndTeamData);
+
             const init = this.astMicroservice
-                .initializeImpactAnalysis({
-                    baseRepo: baseRepo,
-                    headRepo: headRepo,
-                    codeChunk,
-                    fileName,
-                })
+                .initializeImpactAnalysis(
+                    {
+                        baseRepo: baseRepo,
+                        headRepo: headRepo,
+                        codeChunk,
+                        fileName,
+                    },
+                    metadata,
+                )
                 .pipe(
                     retry({
                         count: 3,
@@ -275,7 +286,7 @@ export class CodeAstAnalysisService
         repository: any,
         pullRequest: any,
         platformType: string,
-        organizationAndTeamData: any,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<GetImpactAnalysisResponse> {
         try {
             const { headRepo, baseRepo } = await this.getRepoParams(
@@ -293,6 +304,7 @@ export class CodeAstAnalysisService
                 baseRepo,
                 headRepo,
                 pullRequest,
+                organizationAndTeamData,
             );
         } catch (error) {
             this.logger.error({
@@ -312,16 +324,22 @@ export class CodeAstAnalysisService
         baseDirParams: RepositoryData,
         headDirParams: RepositoryData,
         pullRequest: any,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<GetImpactAnalysisResponse> {
         return new Promise<GetImpactAnalysisResponse>((resolve, reject) => {
             const functionsAffect = [];
             const functionSimilarity = [];
 
+            const metadata = this.createMetadata(organizationAndTeamData);
+
             this.astMicroservice
-                .getImpactAnalysis({
-                    baseRepo: baseDirParams,
-                    headRepo: headDirParams,
-                })
+                .getImpactAnalysis(
+                    {
+                        baseRepo: baseDirParams,
+                        headRepo: headDirParams,
+                    },
+                    metadata,
+                )
                 .pipe(
                     retry({
                         count: 3,
@@ -457,13 +475,18 @@ export class CodeAstAnalysisService
             platformType,
         );
 
+        const metadata = this.createMetadata(organizationAndTeamData);
+
         const call = this.astMicroservice
-            .getContentFromDiff({
-                baseRepo,
-                headRepo,
-                diff,
-                filePath,
-            })
+            .getContentFromDiff(
+                {
+                    baseRepo,
+                    headRepo,
+                    diff,
+                    filePath,
+                },
+                metadata,
+            )
             .pipe(
                 retry({
                     count: 3,
@@ -553,6 +576,7 @@ export class CodeAstAnalysisService
 
     async awaitTask(
         taskId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         options: {
             timeout?: number;
             interval?: number;
@@ -575,8 +599,7 @@ export class CodeAstAnalysisService
             TaskStatus.TASK_STATUS_CANCELLED,
         ];
 
-        const metadata = new Metadata();
-        metadata.add('x-task-key', taskId);
+        const metadata = this.createMetadata(organizationAndTeamData);
 
         while (true) {
             if (Date.now() - startTime > timeout) {
@@ -644,12 +667,17 @@ export class CodeAstAnalysisService
                 throw new Error('Head repository parameters are missing');
             }
 
+            const metadata = this.createMetadata(organizationAndTeamData);
+
             await lastValueFrom(
                 this.astMicroservice
-                    .deleteRepository({
-                        baseRepo: baseRepo,
-                        headRepo: headRepo,
-                    })
+                    .deleteRepository(
+                        {
+                            baseRepo: baseRepo,
+                            headRepo: headRepo,
+                        },
+                        metadata,
+                    )
                     .pipe(
                         retry({
                             count: 3,
@@ -671,5 +699,13 @@ export class CodeAstAnalysisService
             });
             throw error;
         }
+    }
+
+    private createMetadata(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Metadata {
+        const metadata = new Metadata();
+        metadata.add('x-task-key', organizationAndTeamData.organizationId);
+        return metadata;
     }
 }

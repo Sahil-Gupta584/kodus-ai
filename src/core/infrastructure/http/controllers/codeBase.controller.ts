@@ -76,7 +76,10 @@ export class CodeBaseController {
                 body.filePaths || [],
             );
 
-        await this.codeASTAnalysisService.awaitTask(taskId);
+        await this.codeASTAnalysisService.awaitTask(taskId, {
+            organizationId: this.request.user?.organization.uuid,
+            teamId,
+        });
 
         const result = taskId;
 
