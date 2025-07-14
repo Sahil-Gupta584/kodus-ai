@@ -1,6 +1,5 @@
 import {
     AnalysisContext,
-    CodeAnalysisAST,
     CodeReviewConfig,
     CodeSuggestion,
     CommentResult,
@@ -12,6 +11,7 @@ import { AutomationExecutionEntity } from '@/core/domain/automation/entities/aut
 import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { PipelineContext } from '../../../pipeline/interfaces/pipeline-context.interface';
+import { TaskStatus } from '@kodus/kodus-proto/task';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 
 export interface CodeReviewPipelineContext extends PipelineContext {
@@ -53,8 +53,6 @@ export interface CodeReviewPipelineContext extends PipelineContext {
 
     clusterizedSuggestions?: IClusterizedSuggestion[];
 
-    codeAnalysisAST?: CodeAnalysisAST;
-
     preparedFileContexts: AnalysisContext[];
 
     fileAnalysisResults?: Array<{
@@ -64,15 +62,34 @@ export interface CodeReviewPipelineContext extends PipelineContext {
         file: FileChange;
     }>;
 
+    prAnalysisResults?: {
+        validSuggestionsByPR?: ISuggestionByPR[];
+        validCrossFileSuggestions?: CodeSuggestion[];
+    };
+
     validSuggestions: Partial<CodeSuggestion>[];
     discardedSuggestions: Partial<CodeSuggestion>[];
     overallComments: { filepath: string; summary: string }[];
     lastAnalyzedCommit?: any;
 
     validSuggestionsByPR?: ISuggestionByPR[];
+    validCrossFileSuggestions?: CodeSuggestion[];
 
     lineComments?: CommentResult[];
 
+    tasks?: {
+        astAnalysis?: {
+            taskId: string;
+            status?: TaskStatus;
+        };
+        impactAnalysis?: {
+            taskId: string;
+            status?: TaskStatus;
+        };
+    };
     // Resultados dos comentários de nível de PR
     prLevelCommentResults?: Array<CommentResult>;
+
+    // Metadados dos arquivos processados (reviewMode, codeReviewModelUsed, etc.)
+    fileMetadata?: Map<string, any>;
 }

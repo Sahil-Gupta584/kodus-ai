@@ -12,12 +12,9 @@ import {
 import {
     AnalysisContext,
     FileChange,
-    FileChangeContext,
-    ReviewModeConfig,
     ReviewModeResponse,
 } from '@/config/types/general/codeReview.type';
 import { PinoLoggerService } from '../logger/pino.service';
-import { benchmark } from '@/shared/utils/benchmark.util';
 import {
     convertToHunksWithLinesNumbers,
     handlePatchDeletions,
@@ -49,19 +46,23 @@ export abstract class BaseFileReviewContextPreparation
                 return null;
             }
 
-            const patchFormatted = handlePatchDeletions(
-                file.patch,
-                file.filename,
-                file.status,
-            );
-            if (!patchFormatted) {
-                return null;
-            }
+            let patchWithLinesStr = file?.patchWithLinesStr || '';
 
-            const patchWithLinesStr = convertToHunksWithLinesNumbers(
-                patchFormatted,
-                file,
-            );
+            if (!patchWithLinesStr) {
+                const patchFormatted = handlePatchDeletions(
+                    file.patch,
+                    file.filename,
+                    file.status,
+                );
+                if (!patchFormatted) {
+                    return null;
+                }
+
+                patchWithLinesStr = convertToHunksWithLinesNumbers(
+                    patchFormatted,
+                    file,
+                );
+            }
 
             return await this.prepareFileContextInternal(
                 file,
@@ -105,28 +106,39 @@ export abstract class BaseFileReviewContextPreparation
      */
     protected async prepareFileContextInternal(
         file: FileChange,
-        patchWithLinesStr,
+        patchWithLinesStr: string,
         context: AnalysisContext,
     ): Promise<{ fileContext: AnalysisContext } | null> {
-        const reviewMode = await this.determineReviewMode(
-            {
-                fileChangeContext: {
-                    file,
-                },
-                patch: patchWithLinesStr,
-                context,
+        const reviewModeProm = this.determineReviewMode({
+            fileChangeContext: {
+                file,
             },
-        );
+            patch: patchWithLinesStr,
+            context,
+        });
+
+        const relevantContentProm = this.getRelevantFileContent(file, context);
+
+        const [reviewModeResponse, relevantContent] = await Promise.all([
+            reviewModeProm,
+            relevantContentProm,
+        ]);
 
         const updatedContext: AnalysisContext = {
             ...context,
-            reviewModeResponse: reviewMode,
+            reviewModeResponse,
             fileChangeContext: {
                 file,
+                relevantContent,
                 patchWithLinesStr,
             },
         };
 
         return { fileContext: updatedContext };
     }
+
+    protected abstract getRelevantFileContent(
+        file: FileChange,
+        context: AnalysisContext,
+    ): Promise<string | null>;
 }

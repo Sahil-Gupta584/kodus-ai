@@ -358,10 +358,26 @@ export class CommentAnalysisService {
             categories.kody_rules = true;
             categories.breaking_changes = true;
 
+            const severityLevels: SeverityLevel[] = [
+                SeverityLevel.LOW,
+                SeverityLevel.MEDIUM,
+                SeverityLevel.HIGH,
+                SeverityLevel.CRITICAL,
+            ];
+
             thresholds = this.getThresholds({
                 alignmentLevel,
                 values: Object.values(frequency.severity),
             });
+            // traverses the severity levels in order of importance and returns the first one that has a frequency inside the threshold
+            const severity =
+                severityLevels.find((level) => {
+                    return (
+                        frequency.severity[level] >=
+                            thresholds.lowerThreshold &&
+                        frequency.severity[level] <= thresholds.upperThreshold
+                    );
+                }) || SeverityLevel.HIGH;
 
             const defaultConfig =
                 await this.codeBaseConfigService.getDefaultConfigs();

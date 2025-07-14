@@ -61,7 +61,6 @@ import { CreateAuthIntegrationStatus } from '@/shared/domain/enums/create-auth-i
 import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
-import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 import { KODY_CODE_REVIEW_COMPLETED_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 import {
     MODEL_STRATEGIES,
@@ -71,6 +70,7 @@ import { LLM_PROVIDER_SERVICE_TOKEN } from './llmProviders/llmProvider.service.c
 import { throws } from 'assert';
 import { LLMProviderService } from './llmProviders/llmProvider.service';
 import { ConfigService } from '@nestjs/config';
+import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')

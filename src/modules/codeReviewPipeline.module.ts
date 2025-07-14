@@ -30,6 +30,9 @@ import { CodeAnalysisASTStage } from '@/ee/codeReview/stages/code-analysis-ast.s
 import { KodyFineTuningContextModule } from '@/ee/kodyFineTuning/fineTuningContext/kodyFineTuningContext.module';
 import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeContext.module';
 import { ProcessFilesPrLevelReviewStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/process-files-pr-level-review.stage';
+import { CreatePrLevelCommentsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/create-pr-level-comments.stage';
+import { CreateFileCommentsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/create-file-comments.stage';
+import { CodeAnalysisASTCleanupStage } from '@/ee/codeReview/stages/code-analysis-ast-cleanup.stage';
 
 @Module({
     imports: [
@@ -56,11 +59,14 @@ import { ProcessFilesPrLevelReviewStage } from '@/core/infrastructure/adapters/s
         BatchCreationStage,
         ProcessFilesReview,
         ProcessFilesPrLevelReviewStage,
+        CreatePrLevelCommentsStage,
+        CreateFileCommentsStage,
         AggregateResultsStage,
         UpdateCommentsAndGenerateSummaryStage,
         RequestChangesOrApproveStage,
         KodyFineTuningStage,
         CodeAnalysisASTStage,
+        CodeAnalysisASTCleanupStage,
     ],
     exports: [
         PipelineExecutor,
@@ -70,8 +76,11 @@ import { ProcessFilesPrLevelReviewStage } from '@/core/infrastructure/adapters/s
         BatchCreationStage,
         ProcessFilesReview,
         ProcessFilesPrLevelReviewStage,
+        CreatePrLevelCommentsStage,
+        CreateFileCommentsStage,
         KodyFineTuningStage,
         CodeAnalysisASTStage,
+        CodeAnalysisASTCleanupStage,
         AggregateResultsStage,
         UpdateCommentsAndGenerateSummaryStage,
         RequestChangesOrApproveStage,

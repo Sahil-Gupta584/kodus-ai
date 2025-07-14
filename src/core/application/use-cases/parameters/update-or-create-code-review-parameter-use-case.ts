@@ -165,24 +165,27 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         configValue: CodeReviewConfigWithoutLLMProvider,
         filteredRepositoryInfo: IFilteredCodeRepository[],
     ) {
-        const defaultSuggestionControl = this.getDefaultSuggestionControlConfig();
-        
+        const defaultSuggestionControl =
+            this.getDefaultSuggestionControlConfig();
+
         const updatedConfigValue = {
             global: {
                 ...configValue,
                 summary: !configValue.summary
                     ? this.getDefaultPRSummaryConfig()
                     : {
-                        ...this.getDefaultPRSummaryConfig(),
-                        ...configValue.summary,
-                    },
+                          ...this.getDefaultPRSummaryConfig(),
+                          ...configValue.summary,
+                      },
                 suggestionControl: !configValue.suggestionControl
                     ? defaultSuggestionControl
                     : {
-                        ...defaultSuggestionControl,
-                        ...configValue.suggestionControl,
-                        applyFiltersToKodyRules: configValue.suggestionControl.applyFiltersToKodyRules ?? false,
-                    },
+                          ...defaultSuggestionControl,
+                          ...configValue.suggestionControl,
+                          applyFiltersToKodyRules:
+                              configValue.suggestionControl
+                                  .applyFiltersToKodyRules ?? false,
+                      },
                 isCommitMode: configValue?.isCommitMode ?? false,
             },
             repositories: filteredRepositoryInfo,
@@ -240,8 +243,9 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         codeReviewConfigs: ICodeReviewParameter,
         newGlobalInfo: CodeReviewConfigWithoutLLMProvider,
     ) {
-        const defaultSuggestionControl = this.getDefaultSuggestionControlConfig();
-        
+        const defaultSuggestionControl =
+            this.getDefaultSuggestionControlConfig();
+
         const updatedCodeReviewConfigValue = {
             global: {
                 ...codeReviewConfigs.global,
@@ -254,12 +258,17 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                     ...defaultSuggestionControl,
                     ...codeReviewConfigs.global.suggestionControl,
                     ...newGlobalInfo?.suggestionControl,
-                    applyFiltersToKodyRules: 
-                        newGlobalInfo?.suggestionControl?.applyFiltersToKodyRules ?? 
-                        codeReviewConfigs.global.suggestionControl?.applyFiltersToKodyRules ?? 
+                    applyFiltersToKodyRules:
+                        newGlobalInfo?.suggestionControl
+                            ?.applyFiltersToKodyRules ??
+                        codeReviewConfigs.global.suggestionControl
+                            ?.applyFiltersToKodyRules ??
                         false,
                 },
-                isCommitMode: newGlobalInfo?.isCommitMode ?? codeReviewConfigs.global.isCommitMode ?? false,
+                isCommitMode:
+                    newGlobalInfo?.isCommitMode ??
+                    codeReviewConfigs.global.isCommitMode ??
+                    false,
             },
             repositories: codeReviewConfigs.repositories,
         };

@@ -65,10 +65,10 @@ import {
     TranslationsCategory,
 } from '@/shared/utils/translations/translations';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
-import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 import { KODY_CRITICAL_ISSUE_COMMENT_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
 import { AzurePRStatus } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
 import { ConfigService } from '@nestjs/config';
+import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService

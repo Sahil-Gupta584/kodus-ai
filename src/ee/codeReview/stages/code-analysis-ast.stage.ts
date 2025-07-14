@@ -5,6 +5,7 @@ import {
 } from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
 import { BasePipelineStage } from '@/core/infrastructure/adapters/services/pipeline/base-stage.abstract';
 import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/context/code-review-pipeline.context';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 const ENABLE_CODE_REVIEW_AST =
     process.env.API_ENABLE_CODE_REVIEW_AST === 'true';
@@ -16,6 +17,8 @@ export class CodeAnalysisASTStage extends BasePipelineStage<CodeReviewPipelineCo
     constructor(
         @Inject(AST_ANALYSIS_SERVICE_TOKEN)
         private readonly codeASTAnalysisService: IASTAnalysisService,
+
+        private readonly logger: PinoLoggerService,
     ) {
         super();
     }
@@ -30,16 +33,29 @@ export class CodeAnalysisASTStage extends BasePipelineStage<CodeReviewPipelineCo
             return context;
         }
 
-        const codeAnalysisAST =
-            await this.codeASTAnalysisService.cloneAndGenerate(
-                context.repository,
-                context.pullRequest,
-                context.platformType,
-                context.organizationAndTeamData,
-            );
+        try {
+            const { taskId } =
+                await this.codeASTAnalysisService.initializeASTAnalysis(
+                    context.repository,
+                    context.pullRequest,
+                    context.platformType,
+                    context.organizationAndTeamData,
+                );
 
-        return this.updateContext(context, (draft) => {
-            draft.codeAnalysisAST = codeAnalysisAST;
-        });
+            return this.updateContext(context, (draft) => {
+                draft.tasks.astAnalysis.taskId = taskId;
+            });
+        } catch (error) {
+            this.logger.error({
+                message: 'Error during AST analysis initialization',
+                error,
+                context: this.stageName,
+                metadata: {
+                    ...context.organizationAndTeamData,
+                    pullRequestNumber: context.pullRequest.number,
+                },
+            });
+            return context;
+        }
     }
 }

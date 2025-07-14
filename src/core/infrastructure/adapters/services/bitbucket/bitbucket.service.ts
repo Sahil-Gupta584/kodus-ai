@@ -63,7 +63,6 @@ import {
     KODY_CRITICAL_ISSUE_COMMENT_MARKER,
     KODY_START_COMMAND_MARKER,
 } from '@/shared/utils/codeManagement/codeCommentMarkers';
-import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
 import {
     MODEL_STRATEGIES,
     LLMModelProvider,
@@ -72,6 +71,7 @@ import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
 import { ConfigService } from '@nestjs/config';
 import { AuthorContribution } from '@/core/domain/pullRequests/interfaces/authorContributor.interface';
+import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -114,24 +114,21 @@ export class BitbucketService
         private readonly configService: ConfigService,
     ) {}
 
-    async getPullRequestAuthors(
-        params: {
-            organizationAndTeamData: OrganizationAndTeamData;
-        },
-    ): Promise<PullRequestAuthor[]> {
+    async getPullRequestAuthors(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<PullRequestAuthor[]> {
         try {
             const startDate = new Date();
             const endDate = new Date(startDate);
             endDate.setDate(startDate.getDate() - 60);
 
-            const pullRequests =
-                await this.getPullRequests({
-                    organizationAndTeamData: params.organizationAndTeamData,
-                    filters: {
-                        startDate: endDate.toISOString(), // Reversing the dates to fetch the last 15 days
-                        endDate: startDate.toISOString(),
-                    },
-                });
+            const pullRequests = await this.getPullRequests({
+                organizationAndTeamData: params.organizationAndTeamData,
+                filters: {
+                    startDate: endDate.toISOString(), // Reversing the dates to fetch the last 15 days
+                    endDate: startDate.toISOString(),
+                },
+            });
 
             // Group the PRs by author and count the contributions
             const authorContributions = pullRequests.reduce<

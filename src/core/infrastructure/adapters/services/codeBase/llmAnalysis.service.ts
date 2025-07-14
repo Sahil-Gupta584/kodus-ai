@@ -26,6 +26,7 @@ import { prompt_selectorLightOrHeavyMode_system } from '@/shared/utils/langchain
 import {
     prompt_codereview_system_gemini,
     prompt_codereview_user_deepseek,
+    prompt_codereview_user_gemini,
 } from '@/shared/utils/langchainCommon/prompts/configuration/codeReview';
 import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
 import { LLMProviderService } from '../llmProviders/llmProvider.service';
@@ -131,6 +132,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
         context: {
             patchWithLinesStr: string;
             fileContent: string;
+            relevantContent: string;
             language: string;
             filePath: string;
             suggestions?: CodeSuggestion[];
@@ -167,7 +169,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
 ## Context
 
 <fileContent>
-    ${context.fileContent}
+    ${context.relevantContent || context.fileContent}
 </fileContent>
 
 <codeDiff>
@@ -279,6 +281,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             groupingMode:
                 context?.codeReviewConfig?.suggestionControl?.groupingMode,
             organizationAndTeamData: context?.organizationAndTeamData,
+            relevantContent: fileContext?.relevantContent,
         };
 
         return baseContext;
@@ -372,13 +375,24 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 async (input: any) => {
                     return [
                         {
-                            role: 'user',
+                            role: 'system',
                             content: [
                                 {
                                     type: 'text',
                                     text: prompt_codereview_system_gemini(
                                         input,
                                     ),
+                                },
+                            ],
+                        },
+                        {
+                            role: 'user',
+                            content: [
+                                {
+                                    type: 'text',
+                                    text:
+                                        prompt_codereview_user_gemini(input) ||
+                                        '',
                                 },
                             ],
                         },
@@ -448,8 +462,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         reviewMode: ReviewModeResponse = ReviewModeResponse.LIGHT_MODE,
     ) {
         const provider =
-            parameters.llmProvider ||
-            LLMModelProvider.GEMINI_2_5_PRO;
+            parameters.llmProvider || LLMModelProvider.GEMINI_2_5_PRO;
 
         // Reset token tracking for new suggestions
         this.tokenTracker.reset();
@@ -659,6 +672,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         file: any,
+        relevantContent: string,
         codeDiff: string,
         suggestions: any[],
         languageResultPrompt: string,
@@ -684,6 +698,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                     ...file,
                     fileContent: file.fileContent,
                 },
+                relevantContent,
                 codeDiff,
                 suggestions,
                 languageResultPrompt,
@@ -865,6 +880,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                                 this.preparePrefixChainForCache(
                                     {
                                         fileContent: input.file.fileContent,
+                                        relevantContent: input.relevantContent,
                                         patchWithLinesStr: input.codeDiff,
                                         language: input.file.language,
                                         filePath: input.file.filename,

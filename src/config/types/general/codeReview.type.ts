@@ -4,15 +4,10 @@ import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.
 import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { ImplementationStatus } from '@/core/domain/pullRequests/enums/implementationStatus.enum';
-
 import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
-import {
-    EnrichGraph,
-    FunctionsAffectResult,
-    FunctionSimilarity,
-} from '@/ee/kodyAST/code-analyzer.service';
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
-import { FunctionAnalysis } from '@/ee/codeBase/ast/types/types';
+import { GetImpactAnalysisResponse } from '@kodus/kodus-proto/ast';
+import { TaskStatus } from '@kodus/kodus-proto/task';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 
 export interface IFinalAnalysisResult {
@@ -60,17 +55,6 @@ export type Repository = {
     defaultBranch: string;
 };
 
-export type CodeGraphContext = {
-    codeGraphFunctions: Map<string, FunctionAnalysis>;
-    cloneDir: string;
-};
-
-export type CodeAnalysisAST = {
-    headCodeGraph: CodeGraphContext;
-    baseCodeGraph: CodeGraphContext;
-    headCodeGraphEnriched?: EnrichGraph;
-};
-
 export type AnalysisContext = {
     pullRequest?: any;
     repository?: Partial<Repository>;
@@ -79,15 +63,22 @@ export type AnalysisContext = {
     platformType: string;
     action?: string;
     baseDir?: string;
-    codeAnalysisAST?: CodeAnalysisAST;
-    impactASTAnalysis?: {
-        functionsAffectResult: FunctionsAffectResult[];
-        functionSimilarity: FunctionSimilarity[];
-    };
+    impactASTAnalysis?: GetImpactAnalysisResponse;
     reviewModeResponse?: ReviewModeResponse;
     kodyFineTuningConfig?: KodyFineTuningConfig;
     fileChangeContext?: FileChangeContext;
     clusterizedSuggestions?: IClusterizedSuggestion[];
+    validCrossFileSuggestions?: CodeSuggestion[];
+    tasks?: {
+        astAnalysis?: {
+            taskId: string;
+            status?: TaskStatus;
+        };
+        impactAnalysis?: {
+            taskId: string;
+            status?: TaskStatus;
+        };
+    };
 };
 
 export type ASTAnalysisResult = {
@@ -118,7 +109,6 @@ export type AIAnalysisResultPrLevel = {
     codeSuggestions: ISuggestionByPR[];
 };
 
-
 export type CodeSuggestion = {
     id?: string;
     relevantFile: string;
@@ -147,6 +137,7 @@ export type CodeSuggestion = {
         id: number;
         pullRequestReviewId: number;
     };
+    type?: SuggestionType;
     createdAt?: string;
     updatedAt?: string;
 };
@@ -177,10 +168,12 @@ export type FileChange = {
         generateSuggestions?: string;
         safeguard?: string;
     };
+    patchWithLinesStr?: string;
 };
 
 export type FileChangeContext = {
     file: FileChange;
+    relevantContent?: string | null;
     patchWithLinesStr?: string;
 };
 
@@ -330,3 +323,7 @@ export enum ReviewModeConfig {
 export type KodyFineTuningConfig = {
     enabled: boolean;
 };
+
+export enum SuggestionType {
+    CROSS_FILE = 'cross_file',
+}

@@ -24,7 +24,7 @@ import {
     ReviewComment,
 } from '@/config/types/general/codeReview.type';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
-import { GitCloneParams } from '@/ee/codeBase/ast/types/types';
+import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 
 @Injectable()
 export class CodeManagementService implements ICodeManagementService {
