@@ -92,7 +92,7 @@ export interface ICommentManagerService {
         prNumber: number,
         repository: { name: string; id: string },
         platformType: PlatformType,
-    ): Promise<{ commentId: string; nodeId?: string } | null>;
+    ): Promise<{ commentId: number; nodeId?: string } | null>;
 
     minimizeLastReviewComment(
         organizationAndTeamData: OrganizationAndTeamData,

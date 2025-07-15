@@ -52,7 +52,6 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
                         prNumber: context.pullRequest.number,
                     },
                 });
-                return context;
             }
         }
 

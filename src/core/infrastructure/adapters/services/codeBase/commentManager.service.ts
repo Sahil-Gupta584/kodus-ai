@@ -538,7 +538,7 @@ Avoid making assumptions or including inferred details not present in the provid
             }
 
             // Adicionar tag única com timestamp para identificar este comentário como finalizado
-            const uniqueId = `completed-${Date.now()}`;
+            const uniqueId = `completed-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
             return `${resultText}\n\n${this.generateConfigReviewMarkdown(organizationAndTeamData, prNumber, codeReviewConfig)}\n\n<!-- kody-codereview-${uniqueId} -->\n<!-- kody-codereview -->\n&#8203;`;
         } catch (error) {
@@ -551,7 +551,7 @@ Avoid making assumptions or including inferred details not present in the provid
             });
 
             const fallbackText = '## Code Review Completed! 🔥';
-            const uniqueId = `completed-${Date.now()}`;
+            const uniqueId = `completed-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
             return `${fallbackText}\n\n<!-- kody-codereview-${uniqueId} -->\n<!-- kody-codereview -->\n&#8203;`;
         }
@@ -1226,20 +1226,19 @@ ${reviewOptionsMarkdown}
 
     /**
      * Encontra o último comentário de code review finalizado em um PR
-     * usando a tag <!-- kody-codereview-completed-{executionId} -->
+     * usando a tag <!-- kody-codereview-completed-{uniqueId} -->
      */
     async findLastReviewComment(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         repository: { name: string; id: string },
         platformType: PlatformType,
-    ): Promise<{ commentId: string; nodeId?: string } | null> {
+    ): Promise<{ commentId: number; nodeId?: string } | null> {
         try {
             if (platformType !== PlatformType.GITHUB) {
-                return null; // Por enquanto só implementado para GitHub
+                return null;
             }
 
-            // Buscar todos os comentários do PR
             const comments = await this.codeManagementService.getAllCommentsInPullRequest({
                 organizationAndTeamData,
                 repository,
@@ -1250,57 +1249,30 @@ ${reviewOptionsMarkdown}
                 return null;
             }
 
-            // Filtrar comentários que contêm a tag de code review finalizado
-            // Procura por comentários que terminam com kody-codereview e não contêm "kody-codereview-completed"
-            const kodyReviewComments = comments.filter(comment => {
-                const body = comment.body || '';
-                return (
-                    body.includes('<!-- kody-codereview -->') &&
-                    !body.includes('Code Review Started') && // Não é comentário inicial
-                    (
-                        body.includes('Code Review Completed') ||
-                        body.includes('Revisão de Código Concluída') ||
-                        body.includes('Code Review Finalizado') ||
-                        body.includes('<!-- kody-codereview-completed-') // Nova tag única
-                    )
-                );
-            });
+            // ✅ SIMPLES: Filtra apenas pela tag HTML + ordena por data
+            const completedReviewComments = comments
+                .filter((comment: any) => {
+                    const body = comment.body || '';
+                    return body.includes('<!-- kody-codereview-completed-');
+                })
+                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-            if (!kodyReviewComments.length) {
+            if (!completedReviewComments.length) {
                 return null;
             }
 
-            // Pegar o mais recente (último comentário de review finalizado)
-            const lastReviewComment = kodyReviewComments.sort(
-                (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            )[0];
-
-            this.logger.log({
-                message: `Found last review comment for PR#${prNumber}`,
-                context: CommentManagerService.name,
-                metadata: {
-                    commentId: lastReviewComment.id,
-                    createdAt: lastReviewComment.created_at,
-                    organizationAndTeamData,
-                    prNumber,
-                },
-            });
+            // Pega o mais recente (primeiro após ordenação)
+            const lastReviewComment = completedReviewComments[0];
 
             return {
-                commentId: lastReviewComment.id.toString(),
-                nodeId: lastReviewComment.node_id, // GraphQL ID se disponível
+                commentId: lastReviewComment.id,
+                nodeId: lastReviewComment.node_id,
             };
         } catch (error) {
             this.logger.error({
                 message: `Failed to find last review comment for PR#${prNumber}`,
                 context: CommentManagerService.name,
                 error: error.message,
-                metadata: {
-                    organizationAndTeamData,
-                    prNumber,
-                    repository,
-                    platformType,
-                },
             });
             return null;
         }
@@ -1321,7 +1293,7 @@ ${reviewOptionsMarkdown}
                 this.logger.log({
                     message: `Skipping minimize comment for PR#${prNumber} - platform ${platformType} not supported`,
                     context: CommentManagerService.name,
-                    metadata: { platformType, prNumber },
+                    metadata: { organizationAndTeamData, platformType, prNumber },
                 });
                 return false;
             }
@@ -1338,7 +1310,7 @@ ${reviewOptionsMarkdown}
                 this.logger.log({
                     message: `No previous review comment found to minimize for PR#${prNumber}`,
                     context: CommentManagerService.name,
-                    metadata: { prNumber, repository: repository.name },
+                    metadata: { organizationAndTeamData, prNumber, repository: repository.name },
                 });
                 return false;
             }
@@ -1348,7 +1320,7 @@ ${reviewOptionsMarkdown}
 
             await this.codeManagementService.minimizeComment({
                 organizationAndTeamData,
-                commentId: commentIdToMinimize,
+                commentId: commentIdToMinimize.toString(),
                 reason: 'OUTDATED',
             });
 
