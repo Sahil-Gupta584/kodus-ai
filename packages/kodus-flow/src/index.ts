@@ -48,14 +48,17 @@ export type {
 
 // ✅ LEGACY LLM INTEGRATION (Backwards compatibility)
 export { createLangChainProvider } from './core/llm/providers/langchain-provider.js';
+export type { LangChainProvider } from './core/llm/providers/langchain-provider.js';
+
+// ✅ LLM ADAPTER INTERFACE
 export type {
     LLMAdapter,
-    LLMProvider,
     LLMMessage,
     LLMResponse,
-    LLMOptions,
-} from './core/llm/llm-adapter.js';
-export type { LangChainProvider } from './core/llm/providers/langchain-provider.js';
+    LLMRequest,
+    LLMConfig,
+} from './adapters/llm/index.js';
+export { createMockLLMProvider } from './adapters/llm/mock-provider.js';
 // export { AgentEngine } from './engine/agents/agent-engine.js';
 // export { ToolEngine } from './engine/tools/tool-engine.js';
 // export { WorkflowEngine } from './engine/workflows/workflow-engine.js';

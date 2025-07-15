@@ -19,95 +19,148 @@ export type EventId = string;
  * Event type schema and type
  * Defines the type of an event
  */
-export const eventTypeSchema = z.string().min(1);
+// ✅ Zod v4: Type guards mais robustos
+export const eventTypeSchema = z.enum([
+    'agent.started',
+    'agent.stopped',
+    'agent.error',
+    'workflow.started',
+    'workflow.completed',
+    'workflow.error',
+    'tool.called',
+    'tool.result',
+    'tool.error',
+    'kernel.state_changed',
+    'kernel.snapshot_created',
+    'runtime.event_processed',
+    'runtime.event_failed',
+]);
 export type EventType = z.infer<typeof eventTypeSchema>;
 
 /**
  * Event payload schema and type
  * The data payload of an event
  */
-export const eventPayloadSchema = z.unknown();
+// ✅ Zod v4: Validação de payload mais específica
+export const eventPayloadSchema = z
+    .unknown()
+    .refine((val) => val !== null && typeof val === 'object', {
+        message: 'Event payload must be an object',
+    });
 export type EventPayload = z.infer<typeof eventPayloadSchema>;
 
 /**
  * Event schema and type
  * Represents a single event in the system
  */
-export const eventSchema = z.object({
-    id: eventIdSchema,
-    type: eventTypeSchema,
-    payload: eventPayloadSchema,
-    timestamp: z.number(),
-    source: z.string().optional(),
-    entityId: entityIdSchema.optional(),
-    sessionId: sessionIdSchema.optional(),
-    tenantId: z.string().optional(),
-    contextId: contextIdSchema.optional(),
-    metadata: z.record(z.unknown()).optional(),
-});
+// ✅ Zod v4: Schema de evento otimizado para performance
+export const eventSchema = z
+    .object({
+        id: z.string().uuid(),
+        type: eventTypeSchema,
+        timestamp: z.number().positive(),
+        payload: eventPayloadSchema.optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        correlationId: z.string().optional(),
+        tenantId: z.string().optional(),
+    })
+    .strict()
+    .refine(
+        // ✅ Zod v4: strict() + refine() para performance
+        (data) => {
+            // ✅ Validação cross-field: correlationId deve existir para eventos críticos
+            const criticalEvents = [
+                'agent.error',
+                'workflow.error',
+                'tool.error',
+            ];
+            if (criticalEvents.includes(data.type)) {
+                return !!data.correlationId;
+            }
+            return true;
+        },
+        {
+            message: 'Critical events must have correlationId',
+            path: ['correlationId'],
+        },
+    );
 export type Event = z.infer<typeof eventSchema>;
 
 /**
  * Event handler schema and type
  * A function that handles an event
  */
-export const eventHandlerSchema = z
-    .function()
-    .args(eventSchema)
-    .returns(z.void());
+// ✅ Zod v4: Event handler com validação de função otimizada
+export const eventHandlerSchema = z.instanceof(Function).refine(
+    (fn) => {
+        // ✅ Validação de assinatura da função
+        return fn.length >= 1; // Deve aceitar pelo menos 1 parâmetro
+    },
+    {
+        message: 'Event handler must accept at least one parameter',
+    },
+);
 export type EventHandler = z.infer<typeof eventHandlerSchema>;
 
 /**
  * Event filter schema and type
  * Used to filter events
  */
-export const eventFilterSchema = z.object({
-    type: z.string().or(z.array(z.string())).optional(),
-    source: z.string().or(z.array(z.string())).optional(),
-    entityId: entityIdSchema.optional(),
-    sessionId: sessionIdSchema.optional(),
-    tenantId: z.string().optional(),
-    contextId: contextIdSchema.optional(),
-    fromTimestamp: z.number().optional(),
-    toTimestamp: z.number().optional(),
-});
+export const eventFilterSchema = z
+    .object({
+        type: z.string().or(z.array(z.string())).optional(),
+        source: z.string().or(z.array(z.string())).optional(),
+        entityId: entityIdSchema.optional(),
+        sessionId: sessionIdSchema.optional(),
+        tenantId: z.string().optional(),
+        contextId: contextIdSchema.optional(),
+        fromTimestamp: z.number().optional(),
+        toTimestamp: z.number().optional(),
+    })
+    .strict(); // ✅ Zod v4: strict() para performance
 export type EventFilter = z.infer<typeof eventFilterSchema>;
 
 /**
  * Event subscription schema and type
  * Represents a subscription to events
  */
-export const eventSubscriptionSchema = z.object({
-    id: z.string(),
-    filter: eventFilterSchema,
-    handler: eventHandlerSchema,
-});
+export const eventSubscriptionSchema = z
+    .object({
+        id: z.string(),
+        filter: eventFilterSchema,
+        handler: eventHandlerSchema,
+    })
+    .strict(); // ✅ Zod v4: strict() para performance
 export type EventSubscription = z.infer<typeof eventSubscriptionSchema>;
 
 /**
  * Event bus options schema and type
  * Options for configuring an event bus
  */
-export const eventBusOptionsSchema = z.object({
-    // Whether to buffer events when there are no subscribers
-    bufferEvents: z.boolean().optional(),
-    // Maximum number of events to buffer
-    maxBufferSize: z.number().int().positive().optional(),
-    // Whether to allow wildcard event types
-    allowWildcards: z.boolean().optional(),
-});
+export const eventBusOptionsSchema = z
+    .object({
+        // Whether to buffer events when there are no subscribers
+        bufferEvents: z.boolean().optional(),
+        // Maximum number of events to buffer
+        maxBufferSize: z.number().int().positive().optional(),
+        // Whether to allow wildcard event types
+        allowWildcards: z.boolean().optional(),
+    })
+    .strict(); // ✅ Zod v4: strict() para performance
 export type EventBusOptions = z.infer<typeof eventBusOptionsSchema>;
 
 /**
  * Event emitter options schema and type
  * Options for emitting an event
  */
-export const eventEmitOptionsSchema = z.object({
-    // Whether to wait for all handlers to complete
-    waitForHandlers: z.boolean().optional(),
-    // Timeout for waiting for handlers in milliseconds
-    handlerTimeoutMs: z.number().int().positive().optional(),
-});
+export const eventEmitOptionsSchema = z
+    .object({
+        // Whether to wait for all handlers to complete
+        waitForHandlers: z.boolean().optional(),
+        // Timeout for waiting for handlers in milliseconds
+        handlerTimeoutMs: z.number().int().positive().optional(),
+    })
+    .strict(); // ✅ Zod v4: strict() para performance
 export type EventEmitOptions = z.infer<typeof eventEmitOptionsSchema>;
 
 /**
@@ -157,3 +210,38 @@ export enum SystemEventType {
     SYSTEM_WARNING = 'system.warning',
     SYSTEM_INFO = 'system.info',
 }
+
+// ✅ Zod v4: Type guards customizados
+export const isEventType = (value: unknown): value is EventType => {
+    return eventTypeSchema.safeParse(value).success;
+};
+
+export const isEventHandler = (value: unknown): value is EventHandler => {
+    return eventHandlerSchema.safeParse(value).success;
+};
+
+// ✅ Zod v4: Validação de eventos em batch
+// ✅ Zod v4: Schema de batch otimizado
+export const eventBatchSchema = z
+    .object({
+        events: z.array(eventSchema).min(1).max(1000),
+        batchId: z.string().uuid(),
+        timestamp: z.number().positive(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+    })
+    .strict()
+    .refine(
+        // ✅ Zod v4: strict() + refine() para performance
+        (data) => {
+            // ✅ Validação: todos os eventos devem ter o mesmo tenantId
+            const tenantIds = new Set(
+                data.events.map((e) => e.tenantId).filter(Boolean),
+            );
+            return tenantIds.size <= 1;
+        },
+        {
+            message: 'All events in batch must have the same tenantId',
+            path: ['events'],
+        },
+    );
+export type EventBatch = z.infer<typeof eventBatchSchema>;

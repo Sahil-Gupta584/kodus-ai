@@ -17,17 +17,35 @@ const createMockLLMAdapter = (options: {
     createPlanResponse?: unknown;
 }) => {
     const mockAdapter: Partial<LLMAdapter> = {
+        call: vi.fn().mockResolvedValue({
+            content: JSON.stringify({
+                reasoning: 'Test reasoning',
+                action: { type: 'final_answer', content: 'Test response' },
+            }),
+        }),
+        getProvider: () => ({ name: 'test-provider' }),
         supportsStructuredGeneration: () => options.supportsStructured || false,
         generateStructured: vi
             .fn()
             .mockResolvedValue(options.structuredResponse),
         createPlan: vi.fn().mockResolvedValue(
             options.createPlanResponse || {
-                steps: [{ tool: 'test_tool', arguments: { query: 'test' } }],
+                id: 'test-plan',
+                strategy: 'react',
+                goal: 'test goal',
+                steps: [
+                    {
+                        id: 'step_1',
+                        description: 'test step',
+                        tool: 'test_tool',
+                        arguments: { query: 'test' },
+                        type: 'action',
+                    },
+                ],
                 reasoning: 'Test reasoning',
+                complexity: 'medium',
             },
         ),
-        getProvider: () => ({ name: 'test-provider' }),
         getAvailableTechniques: () => ['react'],
     };
     return mockAdapter as LLMAdapter;

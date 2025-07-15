@@ -71,7 +71,10 @@ export const toolParameterSchema = z.object({
     required: z.boolean().optional(),
     enum: z.array(z.string()).optional(),
     properties: z
-        .record(z.lazy((): z.ZodType<unknown> => toolParameterSchema))
+        .record(
+            z.string(),
+            z.lazy((): z.ZodType<unknown> => toolParameterSchema),
+        )
         .optional(),
     items: z.lazy((): z.ZodType<unknown> => toolParameterSchema).optional(),
     default: z.unknown().optional(),
@@ -444,11 +447,11 @@ export const toolExecutionRuleSchema = z.object({
     id: z.string().min(1),
     name: z.string().min(1),
     description: z.string(),
-    condition: z.union([z.string(), z.function()]),
+    condition: z.union([z.string(), z.unknown()]),
     strategy: toolExecutionStrategySchema,
     priority: z.number(),
     enabled: z.boolean(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -464,7 +467,7 @@ export const toolExecutionHintSchema = z.object({
     benefits: z.array(z.string()).optional(),
     drawbacks: z.array(z.string()).optional(),
     alternatives: z.array(toolExecutionStrategySchema).optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -473,7 +476,7 @@ export const toolExecutionHintSchema = z.object({
 export const toolDependencySchema = z.object({
     toolName: z.string().min(1),
     type: z.enum(['required', 'optional', 'conditional']),
-    condition: z.union([z.string(), z.function()]).optional(),
+    condition: z.union([z.string(), z.unknown()]).optional(),
     failureAction: z.enum(['stop', 'continue', 'retry', 'fallback']).optional(),
     fallbackTool: z.string().optional(),
 });
@@ -495,42 +498,132 @@ export const toolBatchConfigSchema = z.object({
         .optional(),
 });
 
-export const toolDefinitionSchema = z.object({
-    name: z.string().min(1),
-    description: z.string().optional(),
-    version: z.string().optional(),
-    metadata: z.record(z.unknown()).optional(),
-    handler: z.function(),
-    config: z
-        .object({
-            timeout: z.number().positive().optional(),
-            requiresAuth: z.boolean().optional(),
-            allowParallel: z.boolean().optional(),
-            maxConcurrentCalls: z.number().positive().optional(),
-        })
-        .optional(),
-    categories: z.array(z.string()).optional(),
-    dependencies: z.array(z.string()).optional(),
-    validateInput: z.function().optional(),
-    transformOutput: z.function().optional(),
-});
+// ✅ Zod v4: Schemas otimizados para performance
+export const toolDefinitionSchema = z
+    .object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        version: z.string().optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        handler: z.instanceof(Function), // ✅ Zod v4: Mais específico que z.unknown()
+        config: z
+            .object({
+                timeout: z.number().positive().optional(),
+                requiresAuth: z.boolean().optional(),
+                allowParallel: z.boolean().optional(),
+                maxConcurrentCalls: z.number().positive().optional(),
+            })
+            .optional(),
+        categories: z.array(z.string()).optional(),
+        dependencies: z.array(z.string()).optional(),
+    })
+    .strict()
+    .refine(
+        // ✅ Zod v4: strict() + refine() para performance
+        (data) => {
+            // ✅ Validação cross-field: se requiresAuth=true, deve ter metadata.auth
+            if (data.config?.requiresAuth) {
+                return data.metadata?.auth !== undefined;
+            }
+            return true;
+        },
+        {
+            message: 'Tools requiring auth must have auth metadata',
+            path: ['metadata', 'auth'],
+        },
+    );
+
+// ✅ Zod v4: Schema de tool input com coerção automática
+export const toolInputSchema = z
+    .object({
+        arguments: z.record(z.string(), z.unknown()),
+        context: z.record(z.string(), z.unknown()).optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+    })
+    .transform((data) => {
+        // ✅ Transformação automática: normalizar argumentos
+        return {
+            ...data,
+            arguments: Object.fromEntries(
+                Object.entries(data.arguments).map(([key, value]) => [
+                    key.toLowerCase(),
+                    value,
+                ]),
+            ),
+        };
+    });
+
+// ✅ Zod v4: Schema de tool result com validação de sucesso
+export const toolResultSchema = z
+    .object({
+        success: z.boolean(),
+        data: z.unknown().optional(),
+        error: z.string().optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        executionTime: z.number().positive().optional(),
+    })
+    .refine(
+        (data) => {
+            // ✅ Validação: se success=true, deve ter data; se success=false, deve ter error
+            if (data.success) {
+                return data.data !== undefined;
+            } else {
+                return data.error !== undefined;
+            }
+        },
+        {
+            message:
+                'Successful tools must have data, failed tools must have error',
+            path: ['success'],
+        },
+    );
+
+// ✅ Zod v4: Schema de tool execution com validação de timeout
+export const toolExecutionSchema = z
+    .object({
+        toolName: z.string().min(1),
+        input: toolInputSchema,
+        config: z
+            .object({
+                timeout: z.number().positive().default(30000),
+                retries: z.number().nonnegative().default(3),
+                enableCaching: z.boolean().default(false),
+            })
+            .optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+    })
+    .transform((data) => {
+        // ✅ Transformação: aplicar configurações padrão
+        return {
+            ...data,
+            config: {
+                timeout: 30000,
+                retries: 3,
+                enableCaching: false,
+                ...data.config,
+            },
+        };
+    });
 
 export const toolExecutionOptionsSchema = z.object({
     timeout: z.number().positive().optional(),
     validateArguments: z.boolean().optional(),
     continueOnError: z.boolean().optional(),
-    context: z.record(z.unknown()).optional(),
-    metadata: z.record(z.unknown()).optional(),
+    context: z.record(z.string(), z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const toolCallSchema = z.object({
-    id: z.string(),
-    toolName: z.string(),
-    arguments: z.record(z.unknown()),
-    timestamp: z.number(),
-    correlationId: z.string().optional(),
-    metadata: z.record(z.unknown()).optional(),
-});
+// ✅ Zod v4: Schema otimizado para tool call
+export const toolCallSchema = z
+    .object({
+        id: z.string(),
+        toolName: z.string(),
+        arguments: z.record(z.string(), z.unknown()),
+        timestamp: z.number(),
+        correlationId: z.string().optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+    })
+    .strict(); // ✅ Zod v4: strict() para performance
 
 // ===== HELPER FUNCTIONS =====
 
@@ -553,6 +646,9 @@ export function createToolContext(
         // BaseContext
         tenantId: tenantId || 'default',
         correlationId: options.correlationId || 'default',
+        startTime: Date.now(),
+        status: 'RUNNING',
+        metadata: options.metadata || {},
 
         // ToolContext specific
         toolName,

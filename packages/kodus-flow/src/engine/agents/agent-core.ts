@@ -181,23 +181,18 @@ export abstract class AgentCore<
     protected toolEngine?: ToolEngine;
     protected router?: Router;
 
-    // Multi-agent mode (BÁSICO)
-    protected agents = new Map<
-        string,
-        AgentDefinition<unknown, unknown, unknown>
-    >();
-
-    // Multi-agent mode (AVANÇADO)
-    protected agentCapabilities = new Map<string, AgentCapability>();
-    protected messages = new Map<string, TrackedMessage>();
-    protected agentInboxes = new Map<string, TrackedMessage[]>();
-    protected activeDelegations = new Map<string, DelegationContext>();
-    protected messageHistory: TrackedMessage[] = [];
-    protected deliveryQueue: TrackedMessage[] = [];
+    // Multi-agent mode (LAZY INITIALIZATION)
+    private _agents?: Map<string, AgentDefinition<unknown, unknown, unknown>>;
+    private _agentCapabilities?: Map<string, AgentCapability>;
+    private _messages?: Map<string, TrackedMessage>;
+    private _agentInboxes?: Map<string, TrackedMessage[]>;
+    private _activeDelegations?: Map<string, DelegationContext>;
+    private _messageHistory?: TrackedMessage[];
+    private _deliveryQueue?: TrackedMessage[];
     protected deliveryIntervalId?: NodeJS.Timeout;
     protected isProcessingQueue = false;
 
-    // Execution tracking
+    // Execution tracking (sempre necessário)
     protected activeExecutions = new Map<
         string,
         {
@@ -210,6 +205,59 @@ export abstract class AgentCore<
 
     // Kernel integration
     protected kernelHandler?: MultiKernelHandler;
+
+    // === LAZY INITIALIZATION GETTERS ===
+    protected get agents() {
+        if (!this._agents) {
+            this._agents = new Map<
+                string,
+                AgentDefinition<unknown, unknown, unknown>
+            >();
+        }
+        return this._agents;
+    }
+
+    protected get agentCapabilities() {
+        if (!this._agentCapabilities) {
+            this._agentCapabilities = new Map<string, AgentCapability>();
+        }
+        return this._agentCapabilities;
+    }
+
+    protected get messages() {
+        if (!this._messages) {
+            this._messages = new Map<string, TrackedMessage>();
+        }
+        return this._messages;
+    }
+
+    protected get agentInboxes() {
+        if (!this._agentInboxes) {
+            this._agentInboxes = new Map<string, TrackedMessage[]>();
+        }
+        return this._agentInboxes;
+    }
+
+    protected get activeDelegations() {
+        if (!this._activeDelegations) {
+            this._activeDelegations = new Map<string, DelegationContext>();
+        }
+        return this._activeDelegations;
+    }
+
+    protected get messageHistory() {
+        if (!this._messageHistory) {
+            this._messageHistory = [];
+        }
+        return this._messageHistory;
+    }
+
+    protected get deliveryQueue() {
+        if (!this._deliveryQueue) {
+            this._deliveryQueue = [];
+        }
+        return this._deliveryQueue;
+    }
 
     // NEW: Think→Act→Observe components
     protected planner?: Planner;
@@ -262,7 +310,7 @@ export abstract class AgentCore<
 
         // Apply defaults
         this.config = {
-            maxThinkingIterations: 5,
+            maxThinkingIterations: 2,
             thinkingTimeout: 30000,
             timeout: 60000,
             enableFallback: true,
@@ -272,14 +320,14 @@ export abstract class AgentCore<
             maxChainDepth: 5,
             enableDelegation: true,
             toolTimeout: 30000,
-            maxToolRetries: 3,
+            maxToolRetries: 2,
             // Advanced multi-agent defaults
             enableAdvancedCoordination: true,
             enableMessaging: true,
             enableMetrics: true,
             maxHistorySize: 10000,
             deliveryRetryInterval: 1000,
-            defaultMaxAttempts: 3,
+            defaultMaxAttempts: 2,
             ...this.config,
         };
 
@@ -541,7 +589,9 @@ export abstract class AgentCore<
                 toolsUsed: this.countToolCallsInThoughts(
                     finalResult?.thoughts || [],
                 ),
-                events: [], // TODO: Extract events from execution context
+                events: this.extractEventsFromExecutionContext(
+                    executionContext,
+                ),
             };
         } catch (error) {
             this.logger.error(
@@ -712,7 +762,7 @@ export abstract class AgentCore<
                             agentName: context.agentName,
                             actionType,
                             correlationId,
-                            sessionId: context.sessionId,
+                            sessionId: context.separated.system.sessionId,
                         },
                         {
                             deliveryGuarantee: 'at-least-once',
@@ -730,7 +780,7 @@ export abstract class AgentCore<
                         agentName: context.agentName,
                         actionType,
                         correlationId,
-                        sessionId: context.sessionId,
+                        sessionId: context.separated.system.sessionId,
                     });
                 }
             }
@@ -794,7 +844,11 @@ export abstract class AgentCore<
                           );
 
                     // Update context with tool result
-                    context.state.set('lastToolResult', toolResult);
+                    await context.stateManager.set(
+                        'main',
+                        'lastToolResult',
+                        toolResult,
+                    );
                     toolUsed = true;
 
                     // Update input for next iteration with tool result
@@ -815,7 +869,8 @@ export abstract class AgentCore<
                                     agentName: context.agentName,
                                     toolName: toolName,
                                     correlationId,
-                                    sessionId: context.sessionId,
+                                    sessionId:
+                                        context.separated.system.sessionId,
                                     result: toolResult,
                                 },
                                 {
@@ -834,7 +889,7 @@ export abstract class AgentCore<
                                 agentName: context.agentName,
                                 toolName: toolName,
                                 correlationId,
-                                sessionId: context.sessionId,
+                                sessionId: context.separated.system.sessionId,
                             });
                         }
                     }
@@ -859,7 +914,8 @@ export abstract class AgentCore<
                                     agentName: context.agentName,
                                     toolName: toolName,
                                     correlationId,
-                                    sessionId: context.sessionId,
+                                    sessionId:
+                                        context.separated.system.sessionId,
                                     error: (error as Error).message,
                                 },
                                 {
@@ -881,7 +937,7 @@ export abstract class AgentCore<
                                 agentName: context.agentName,
                                 toolName: toolName,
                                 correlationId,
-                                sessionId: context.sessionId,
+                                sessionId: context.separated.system.sessionId,
                                 error: (error as Error).message,
                             });
                         }
@@ -919,11 +975,15 @@ export abstract class AgentCore<
                         targetAgent,
                         delegateAction.input,
                         correlationId,
-                        context.sessionId,
+                        context.separated.system.sessionId,
                     );
 
                     // Update context with delegation result
-                    context.state.set('delegationResult', delegationResult);
+                    await context.stateManager.set(
+                        'main',
+                        'delegationResult',
+                        delegationResult,
+                    );
 
                     this.logger.debug('Agent delegation completed', {
                         agentName: context.agentName,
@@ -1537,6 +1597,7 @@ export abstract class AgentCore<
         correlationId: string,
         sessionId?: string,
         executionId?: string,
+        options?: AgentExecutionOptions,
     ): AgentContext {
         const config: AgentContextConfig = {
             agentName,
@@ -1544,6 +1605,7 @@ export abstract class AgentCore<
             correlationId,
             sessionId,
             executionId,
+            metadata: options?.context || {},
         };
         return this.agentContextFactory(config);
     }
@@ -1653,7 +1715,7 @@ export abstract class AgentCore<
                         agentName: context.agentName,
                         toolNames: tools.map((t) => t.toolName),
                         correlationId,
-                        sessionId: context.sessionId,
+                        sessionId: context.separated.system.sessionId,
                     },
                     {
                         deliveryGuarantee: 'at-least-once',
@@ -1681,7 +1743,7 @@ export abstract class AgentCore<
                       tools: toolEngineAction.tools,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.sessionId,
+                          sessionId: context.separated.system.sessionId,
                           correlationId,
                       },
                   },
@@ -1703,7 +1765,7 @@ export abstract class AgentCore<
                         agentName: context.agentName,
                         results,
                         correlationId,
-                        sessionId: context.sessionId,
+                        sessionId: context.separated.system.sessionId,
                     },
                     {
                         deliveryGuarantee: 'at-least-once',
@@ -1760,7 +1822,7 @@ export abstract class AgentCore<
                       stopOnError: toolEngineAction.stopOnError,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.sessionId,
+                          sessionId: context.separated.system.sessionId,
                           correlationId,
                       },
                   },
@@ -1810,7 +1872,7 @@ export abstract class AgentCore<
                       conditions: toolEngineAction.conditions,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.sessionId,
+                          sessionId: context.separated.system.sessionId,
                           correlationId,
                       },
                   },
@@ -1867,7 +1929,7 @@ export abstract class AgentCore<
                               failFast: parallelAction.failFast,
                               metadata: {
                                   agentName: context.agentName,
-                                  sessionId: context.sessionId,
+                                  sessionId: context.separated.system.sessionId,
                                   correlationId,
                               },
                           },
@@ -1893,7 +1955,7 @@ export abstract class AgentCore<
                               timeout: sequentialAction.timeout,
                               metadata: {
                                   agentName: context.agentName,
-                                  sessionId: context.sessionId,
+                                  sessionId: context.separated.system.sessionId,
                                   correlationId,
                               },
                           },
@@ -1919,7 +1981,7 @@ export abstract class AgentCore<
                               conditions: conditionalAction.conditions,
                               metadata: {
                                   agentName: context.agentName,
-                                  sessionId: context.sessionId,
+                                  sessionId: context.separated.system.sessionId,
                                   correlationId,
                               },
                           },
@@ -1995,7 +2057,7 @@ export abstract class AgentCore<
                           concurrency: parallelAction.concurrency,
                           metadata: {
                               agentName: _context.agentName,
-                              sessionId: _context.sessionId,
+                              sessionId: _context.separated.system.sessionId,
                               correlationId: _correlationId,
                           },
                       },
@@ -2017,7 +2079,7 @@ export abstract class AgentCore<
                           tools: sequentialAction.tools,
                           metadata: {
                               agentName: _context.agentName,
-                              sessionId: _context.sessionId,
+                              sessionId: _context.separated.system.sessionId,
                               correlationId: _correlationId,
                           },
                       },
@@ -2065,7 +2127,7 @@ export abstract class AgentCore<
                       },
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.sessionId,
+                          sessionId: context.separated.system.sessionId,
                           correlationId,
                       },
                   },
@@ -2121,7 +2183,7 @@ export abstract class AgentCore<
                           failFast: false,
                           metadata: {
                               agentName: context.agentName,
-                              sessionId: context.sessionId,
+                              sessionId: context.separated.system.sessionId,
                               correlationId,
                           },
                       },
@@ -2146,16 +2208,17 @@ export abstract class AgentCore<
         // Prepare context for Router analysis
         const routerContext = {
             agentName: context.agentName,
-            executionId: context.executionId,
+            executionId: context.separated.system.executionId,
             tenantId: context.tenantId,
             metadata: context.metadata || {},
             // Add agent-specific context
-            iterationCount: context.system?.iteration || 0,
-            toolsUsed: context.system?.toolsUsed || 0,
+            iterationCount: context.separated.system.iteration || 0,
+            toolsUsed: context.separated.system.toolsUsed || 0,
             hasAuth: !!(
-                context.user?.metadata?.token || context.user?.metadata?.apiKey
+                context.separated.user.metadata?.token ||
+                context.separated.user.metadata?.apiKey
             ),
-            environment: context.system?.debugInfo || {},
+            environment: context.separated.system.debugInfo || {},
             ...constraints,
         };
 
@@ -2170,7 +2233,7 @@ export abstract class AgentCore<
                       constraints,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.sessionId,
+                          sessionId: context.separated.system.sessionId,
                           correlationId,
                       },
                   },
@@ -2345,7 +2408,7 @@ export abstract class AgentCore<
                       plan,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.sessionId,
+                          sessionId: context.separated.system.sessionId,
                           correlationId,
                       },
                   },
@@ -2408,7 +2471,7 @@ export abstract class AgentCore<
                       planId: planId || `${context.agentName}-${Date.now()}`,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.sessionId,
+                          sessionId: context.separated.system.sessionId,
                           correlationId,
                       },
                   },
@@ -2536,7 +2599,24 @@ export abstract class AgentCore<
 
         // Also set KernelHandler for ToolEngine if available
         if (this.toolEngine && 'setKernelHandler' in this.toolEngine) {
+            this.logger.info(
+                '🔧 [AGENT] Setting KernelHandler for ToolEngine',
+                {
+                    toolEngineExists: !!this.toolEngine,
+                    hasSetKernelHandler: 'setKernelHandler' in this.toolEngine,
+                },
+            );
             (this.toolEngine as ToolEngine).setKernelHandler(kernelHandler);
+        } else {
+            this.logger.warn(
+                '🔧 [AGENT] ToolEngine not available for KernelHandler setup',
+                {
+                    toolEngineExists: !!this.toolEngine,
+                    hasSetKernelHandler: this.toolEngine
+                        ? 'setKernelHandler' in this.toolEngine
+                        : false,
+                },
+            );
         }
 
         this.logger.info('KernelHandler set for AgentCore');
@@ -4259,11 +4339,18 @@ export abstract class AgentCore<
             !this.executionContext.isComplete
         ) {
             try {
+                // Get initial event count from kernel
+                const kernel = this.kernelHandler
+                    ?.getMultiKernelManager()
+                    ?.getKernelByNamespace('agent');
+                const initialEventCount = kernel?.getState().eventCount || 0;
+
                 this.logger.debug('Think→Act→Observe iteration', {
                     iteration: iterations + 1,
                     maxIterations,
                     agentName: this.config.agentName,
                     contextHistory: this.executionContext.history.length,
+                    initialEventCount,
                 });
 
                 // 1. THINK - Planner decides next action
@@ -4292,6 +4379,10 @@ export abstract class AgentCore<
 
                 iterations++;
 
+                // Get final event count from kernel
+                const finalEventCount = kernel?.getState().eventCount || 0;
+                const eventsGenerated = finalEventCount - initialEventCount;
+
                 // Enhanced logging with performance metrics
                 this.logger.debug('Think→Act→Observe iteration completed', {
                     iteration: iterations,
@@ -4302,7 +4393,37 @@ export abstract class AgentCore<
                     confidence: thought.confidence,
                     isComplete: observation.isComplete,
                     shouldContinue: observation.shouldContinue,
+                    eventsGenerated,
+                    totalEvents: finalEventCount,
                 });
+
+                // 🚨 CRITICAL: Check for excessive event generation
+                if (eventsGenerated > 100) {
+                    this.logger.error(
+                        'Excessive event generation detected - breaking loop',
+                        undefined,
+                        {
+                            eventsGenerated: eventsGenerated.toString(),
+                            iteration: iterations,
+                            agentName: this.config.agentName,
+                            actionType: thought.action.type,
+                        },
+                    );
+                    break;
+                }
+
+                // 🚨 CRITICAL: Check for kernel quota approaching limit
+                if (finalEventCount > 5000) {
+                    this.logger.warn(
+                        'Kernel event count approaching quota limit - breaking loop',
+                        {
+                            finalEventCount,
+                            iteration: iterations,
+                            agentName: this.config.agentName,
+                        },
+                    );
+                    break;
+                }
 
                 // 5. CHECK - Early termination conditions
                 if (observation.isComplete) {
@@ -4406,19 +4527,66 @@ export abstract class AgentCore<
                     throw new Error('Tool engine not available');
                 }
 
-                const toolResult = this.kernelHandler
-                    ? await this.kernelHandler.requestToolExecution(
-                          action.tool,
-                          action.arguments || {},
-                          {
-                              correlationId: this.generateCorrelationId(),
-                              timeout: 30000,
-                          },
-                      )
-                    : await this.toolEngine.executeCall(
-                          action.tool,
-                          action.arguments || {},
-                      );
+                let toolResult: unknown;
+                if (this.kernelHandler) {
+                    try {
+                        this.logger.info(
+                            '🤖 [AGENT] Requesting tool execution via kernel',
+                            {
+                                toolName: action.tool,
+                                hasArgs: !!(
+                                    action.arguments &&
+                                    Object.keys(action.arguments).length > 0
+                                ),
+                                agentName: this.config.agentName,
+                            },
+                        );
+
+                        toolResult =
+                            await this.kernelHandler.requestToolExecution(
+                                action.tool,
+                                action.arguments || {},
+                                {
+                                    correlationId: this.generateCorrelationId(),
+                                    timeout: 15000, // Reduced timeout
+                                },
+                            );
+
+                        this.logger.info(
+                            '🤖 [AGENT] Tool execution completed via kernel',
+                            {
+                                toolName: action.tool,
+                                hasResult: !!toolResult,
+                                agentName: this.config.agentName,
+                            },
+                        );
+                    } catch (error) {
+                        this.logger.warn(
+                            '🤖 [AGENT] Kernel tool execution failed, falling back to direct execution',
+                            {
+                                toolName: action.tool,
+                                error: (error as Error).message,
+                                agentName: this.config.agentName,
+                            },
+                        );
+
+                        // Fallback to direct execution
+                        toolResult = await this.toolEngine.executeCall(
+                            action.tool,
+                            action.arguments || {},
+                        );
+                    }
+                } else {
+                    this.logger.info('🤖 [AGENT] Executing tool directly', {
+                        toolName: action.tool,
+                        agentName: this.config.agentName,
+                    });
+
+                    toolResult = await this.toolEngine.executeCall(
+                        action.tool,
+                        action.arguments || {},
+                    );
+                }
 
                 return {
                     type: 'tool_result',
@@ -4622,6 +4790,86 @@ export abstract class AgentCore<
                 remainingCount: this.activeExecutions.size,
             });
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────────
+    // 🔍 CONTEXT CAPTURE & OBSERVABILITY HELPERS
+    // ──────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Extract events from execution context
+     */
+    private extractEventsFromExecutionContext(
+        context?: PlannerExecutionContext,
+    ): AnyEvent[] {
+        if (!context) {
+            return [];
+        }
+
+        const events: AnyEvent[] = [];
+
+        // Extract events from history entries
+        for (const entry of context.history) {
+            // Create events from thought-action-result cycle
+            if (entry.thought) {
+                events.push({
+                    id: `thought-${Date.now()}-${Math.random()}`,
+                    type: 'agent.thought',
+                    threadId:
+                        context.plannerMetadata?.correlationId || 'unknown',
+                    data: {
+                        reasoning: entry.thought.reasoning,
+                        action: entry.thought.action,
+                        agentName: context.plannerMetadata?.agentName,
+                    },
+                    ts: Date.now(),
+                });
+            }
+
+            if (entry.action) {
+                events.push({
+                    id: `action-${Date.now()}-${Math.random()}`,
+                    type: 'agent.action',
+                    threadId:
+                        context.plannerMetadata?.correlationId || 'unknown',
+                    data: {
+                        action: entry.action,
+                        agentName: context.plannerMetadata?.agentName,
+                    },
+                    ts: Date.now(),
+                });
+            }
+
+            if (entry.result) {
+                events.push({
+                    id: `result-${Date.now()}-${Math.random()}`,
+                    type: 'agent.result',
+                    threadId:
+                        context.plannerMetadata?.correlationId || 'unknown',
+                    data: {
+                        result: entry.result,
+                        agentName: context.plannerMetadata?.agentName,
+                    },
+                    ts: Date.now(),
+                });
+            }
+
+            if (entry.observation) {
+                events.push({
+                    id: `observation-${Date.now()}-${Math.random()}`,
+                    type: 'agent.observation',
+                    threadId:
+                        context.plannerMetadata?.correlationId || 'unknown',
+                    data: {
+                        observation: entry.observation,
+                        agentName: context.plannerMetadata?.agentName,
+                    },
+                    ts: Date.now(),
+                });
+            }
+        }
+
+        return events;
     }
 }
 

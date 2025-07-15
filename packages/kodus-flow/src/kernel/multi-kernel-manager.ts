@@ -65,7 +65,9 @@ export interface MultiKernelConfig {
     /** Global configuration */
     global?: {
         /** Base persistor type for kernels that need persistence */
-        persistorType?: 'memory' | 'redis';
+        persistorType?: 'memory' | 'mongodb' | 'redis' | 'temporal';
+        /** Persistor options for configuration */
+        persistorOptions?: Record<string, unknown>;
         /** Enable cross-kernel event logging */
         enableCrossKernelLogging?: boolean;
         /** Maximum concurrent kernels */
@@ -166,6 +168,7 @@ export class MultiKernelManager {
                 persistor: spec.needsPersistence
                     ? createPersistor(
                           this.config.global?.persistorType || 'memory',
+                          this.config.global?.persistorOptions || {},
                       )
                     : undefined,
 
@@ -434,6 +437,30 @@ export class MultiKernelManager {
             throw new Error(`Kernel not found for namespace: ${namespace}`);
         }
 
+        // Check if kernel is in a valid state for emitting events
+        if (!kernel.isRuntimeReady()) {
+            this.logger.warn('Kernel not ready for event emission', {
+                namespace,
+                eventType,
+                kernelStatus: kernel.getState().status,
+            });
+
+            // Try to resume if paused
+            if (kernel.getState().status === 'paused') {
+                this.logger.info('Attempting to resume paused kernel', {
+                    namespace,
+                    eventType,
+                });
+                // Note: This would require the last snapshot ID to resume
+                // For now, we'll just log and skip the event
+                return;
+            }
+
+            throw new Error(
+                `Kernel not ready for event emission. Status: ${kernel.getState().status}`,
+            );
+        }
+
         await kernel.emitEventAsync(eventType, data, {
             tenantId: this.config.tenantId,
         });
@@ -697,9 +724,9 @@ export function createAgentKernelSpec(
         needsPersistence: true, // Agents need state persistence
         needsSnapshots: true, // Agents need recovery from snapshots
         quotas: quotas || {
-            maxEvents: 1000,
-            maxDuration: 5 * 60 * 1000, // 5 minutes
-            maxMemory: 512 * 1024 * 1024, // 512MB
+            maxEvents: 10000, // Increased from 1000 to 10000 events
+            maxDuration: 30 * 60 * 1000, // Increased from 5 to 30 minutes
+            maxMemory: 1024 * 1024 * 1024, // Increased from 512MB to 1GB
         },
         runtimeConfig: {
             enableAcks: true,

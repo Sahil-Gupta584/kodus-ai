@@ -14,6 +14,7 @@ import { createLogger } from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
 import type { Event } from '../../core/types/events.js';
 import type { AgentContext } from '../../core/types/agent-types.js';
+import { createAgentContext } from '../../core/context/context-factory.js';
 import type { MultiKernelHandler } from '../core/multi-kernel-handler.js';
 import type {
     ToolExecutionStrategy,
@@ -164,6 +165,7 @@ export interface PlannerOptions {
     beamWidth?: number; // For ToT
     temperature?: number; // For CoT
     timeout?: number;
+    context?: Record<string, unknown>; // Additional context for planning
 }
 
 /**
@@ -222,7 +224,7 @@ export class CoTPlanner implements Planner {
             maxSteps,
             maxDepth: _options?.maxDepth || 3,
             tenantId: context.tenantId,
-            executionId: context.executionId,
+            executionId: context.separated.system.executionId,
             correlationId: context.correlationId,
             addPlanHistory: (
                 planId: string,
@@ -336,7 +338,7 @@ export class CoTPlanner implements Planner {
                 });
 
                 // Add to context state for agent intelligence
-                context.state?.set('plannerSuggestions', [
+                await context.stateManager.set('main', 'plannerSuggestions', [
                     {
                         stepId: 'parallel-execution',
                         toolStrategy: 'parallel',
@@ -1719,22 +1721,15 @@ export class PlannerHandler {
                 );
             }
 
-            // Create agent context
-            const agentContext: AgentContext = {
-                correlationId,
-                executionId,
+            // Create agent context using factory
+            const agentContext = createAgentContext({
                 agentName,
-                invocationId: `plan-${Date.now()}`,
-                startTime: Date.now(),
-                availableTools: [],
                 tenantId: 'default',
-                status: 'RUNNING',
-                signal: new AbortController().signal,
-                stateManager: {} as never,
-                state: new Map<string, unknown>(),
-                cleanup: async () => {},
-                ...planContext,
-            } as AgentContext;
+                executionId,
+                correlationId,
+                enableSession: false,
+                enableState: true,
+            });
 
             // 🔥 CALLBACK: onPlanStart
             this.callbacks?.onPlanStart?.(goal, agentContext, planner.strategy);
@@ -1743,7 +1738,7 @@ export class PlannerHandler {
             const plan = await planner.createPlan(
                 goal,
                 agentContext,
-                options,
+                { ...options, context: planContext },
                 this.callbacks,
             );
 
@@ -1944,22 +1939,15 @@ export class PlannerHandler {
             );
         }
 
-        // Create new agent context
-        const agentContext: AgentContext = {
-            correlationId: `replan-${Date.now()}`,
-            executionId: `replan-${Date.now()}`,
+        // Create new agent context using factory
+        const agentContext = createAgentContext({
             agentName: existingPlan.agentName,
-            invocationId: `replan-${Date.now()}`,
-            startTime: Date.now(),
-            availableTools: [],
             tenantId: 'default',
-            status: 'RUNNING',
-            signal: new AbortController().signal,
-            stateManager: {} as never,
-            state: new Map<string, unknown>(),
-            cleanup: async () => {},
-            ...existingPlan.context,
-        } as AgentContext;
+            executionId: `replan-${Date.now()}`,
+            correlationId: `replan-${Date.now()}`,
+            enableSession: false,
+            enableState: true,
+        });
 
         // 🔥 CALLBACK: onPlanStart (for replan)
         this.callbacks?.onPlanStart?.(

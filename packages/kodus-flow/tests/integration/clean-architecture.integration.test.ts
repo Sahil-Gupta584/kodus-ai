@@ -67,7 +67,12 @@ describe('🚀 Clean Architecture Integration Tests', () => {
             // Create math agent
             await orchestrator.createAgent({
                 name: 'math-agent',
-                description: 'Expert agent for solving mathematical problems',
+                identity: {
+                    role: 'Mathematical Problem Solver',
+                    goal: 'Solve complex mathematical problems step by step',
+                    description:
+                        'Expert agent for solving mathematical problems',
+                },
                 planner: 'react',
                 maxIterations: 3,
                 executionMode: 'simple',
@@ -126,7 +131,11 @@ describe('🚀 Clean Architecture Integration Tests', () => {
 
             await orchestrator.createAgent({
                 name: 'advanced-math-agent',
-                description: 'Agent for advanced mathematical operations',
+                identity: {
+                    role: 'Advanced Mathematical Operations Specialist',
+                    goal: 'Perform complex mathematical operations with precision',
+                    description: 'Agent for advanced mathematical operations',
+                },
                 planner: 'react',
             });
 
@@ -208,7 +217,11 @@ describe('🚀 Clean Architecture Integration Tests', () => {
 
             await orchestrator.createAgent({
                 name: 'info-agent',
-                description: 'Information gathering and analysis agent',
+                identity: {
+                    role: 'Information Gathering Specialist',
+                    goal: 'Collect and analyze information from multiple sources',
+                    description: 'Information gathering and analysis agent',
+                },
                 planner: 'react',
                 maxIterations: 4,
             });
@@ -314,7 +327,12 @@ describe('🚀 Clean Architecture Integration Tests', () => {
 
             await orchestrator.createAgent({
                 name: 'workflow-agent',
-                description: 'Agent specialized in executing complex workflows',
+                identity: {
+                    role: 'Workflow Execution Specialist',
+                    goal: 'Execute complex multi-step workflows efficiently',
+                    description:
+                        'Agent specialized in executing complex workflows',
+                },
                 planner: 'react',
                 maxIterations: 6,
             });
@@ -379,7 +397,11 @@ describe('🚀 Clean Architecture Integration Tests', () => {
 
             await orchestrator.createAgent({
                 name: 'resilient-agent',
-                description: 'Agent that can recover from tool failures',
+                identity: {
+                    role: 'Resilient Problem Solver',
+                    goal: 'Recover from tool failures and continue execution',
+                    description: 'Agent that can recover from tool failures',
+                },
                 planner: 'react',
                 maxIterations: 4,
             });
@@ -413,7 +435,11 @@ describe('🚀 Clean Architecture Integration Tests', () => {
 
             await orchestrator.createAgent({
                 name: 'quick-agent',
-                description: 'Agent optimized for quick responses',
+                identity: {
+                    role: 'Quick Response Specialist',
+                    goal: 'Provide fast and efficient responses',
+                    description: 'Agent optimized for quick responses',
+                },
                 planner: 'react',
                 maxIterations: 2,
             });
@@ -435,7 +461,11 @@ describe('🚀 Clean Architecture Integration Tests', () => {
         test('deve otimizar para tarefas que não precisam de tools', async () => {
             await orchestrator.createAgent({
                 name: 'direct-agent',
-                description: 'Agent for direct responses without tools',
+                identity: {
+                    role: 'Direct Response Specialist',
+                    goal: 'Provide direct responses without using tools',
+                    description: 'Agent for direct responses without tools',
+                },
                 planner: 'react',
                 maxIterations: 2,
             });

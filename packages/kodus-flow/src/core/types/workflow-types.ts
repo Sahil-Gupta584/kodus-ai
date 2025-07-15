@@ -408,13 +408,17 @@ export const stepDefinitionSchema = z.object({
     name: z.string(),
     description: z.string().optional(),
     type: stepTypeSchema,
-    config: z.record(z.unknown()).optional(),
-    inputs: z.record(z.unknown()).optional(),
-    outputs: z.record(z.unknown()).optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
+    inputs: z.record(z.string(), z.unknown()).optional(),
+    outputs: z.record(z.string(), z.unknown()).optional(),
     next: z
-        .union([z.string(), z.array(z.string()), z.record(z.string())])
+        .union([
+            z.string(),
+            z.array(z.string()),
+            z.record(z.string(), z.string()),
+        ])
         .optional(),
-    condition: z.function().optional(),
+    condition: z.unknown().optional(), // ✅ Zod v4: z.function() não é mais suportado em objetos
     retry: z
         .object({
             maxAttempts: z.number().int().positive(),
@@ -424,15 +428,15 @@ export const stepDefinitionSchema = z.object({
         })
         .optional(),
     timeout: z.number().int().positive().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const workflowDefinitionSchema = z.object({
     name: z.string().min(1),
     description: z.string().optional(),
     version: z.string().optional(),
-    metadata: z.record(z.unknown()).optional(),
-    steps: z.record(stepDefinitionSchema),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+    steps: z.record(z.string(), stepDefinitionSchema),
     entryPoints: z.array(z.string()).min(1),
     config: z
         .object({
@@ -446,7 +450,7 @@ export const workflowDefinitionSchema = z.object({
         .array(
             z.object({
                 type: z.string(),
-                config: z.record(z.unknown()).optional(),
+                config: z.record(z.string(), z.unknown()).optional(),
             }),
         )
         .optional(),
@@ -455,7 +459,7 @@ export const workflowDefinitionSchema = z.object({
             z.object({
                 name: z.string(),
                 description: z.string().optional(),
-                schema: z.record(z.unknown()).optional(),
+                schema: z.record(z.string(), z.unknown()).optional(),
             }),
         )
         .optional(),
@@ -463,12 +467,12 @@ export const workflowDefinitionSchema = z.object({
 });
 
 export const workflowExecutionOptionsSchema = z.object({
-    inputs: z.record(z.unknown()).optional(),
-    metadata: z.record(z.unknown()).optional(),
+    inputs: z.record(z.string(), z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     timeout: z.number().positive().optional(),
     maxConcurrency: z.number().positive().optional(),
     enableStateTracking: z.boolean().optional(),
-    context: z.record(z.unknown()).optional(),
+    context: z.record(z.string(), z.unknown()).optional(),
 });
 
 // ===== HELPER FUNCTIONS =====
@@ -494,6 +498,9 @@ export function createWorkflowContext(
         executionId,
         tenantId,
         correlationId: options.correlationId || 'default',
+        startTime: Date.now(),
+        status: 'RUNNING',
+        metadata: options.metadata || {},
 
         // WorkflowContext specific
         workflowName,
@@ -539,6 +546,9 @@ export function createStepContext(
         // BaseContext
         tenantId: workflowContext.tenantId,
         correlationId: workflowContext.correlationId,
+        startTime: Date.now(),
+        status: 'RUNNING',
+        metadata: options.metadata || {},
 
         // StepContext specific
         stepId,

@@ -23,7 +23,7 @@ export interface CreateElicitationRequest {
     };
 }
 
-export type TransportType = 'http' | 'sse' | 'websocket';
+export type TransportType = 'http' | 'sse' | 'websocket' | 'stdio';
 
 export interface MCPTransport {
     connect(): Promise<void>;
@@ -282,7 +282,61 @@ export interface MCPAdapterConfig {
     defaultTimeout?: number;
     maxRetries?: number;
     onError?: (error: Error, serverName: string) => void;
+
+    // =============================================================================
+    // TOOL FILTERING & ACCESS CONTROL
+    // =============================================================================
+
+    /** Tools que podem ser usadas (whitelist) */
+    allowedTools?: {
+        /** Lista de nomes de tools permitidas */
+        names?: string[];
+        /** Padrões regex para tools permitidas */
+        patterns?: RegExp[];
+        /** Servidores específicos para tools */
+        servers?: string[];
+        /** Categorias de tools permitidas */
+        categories?: string[];
+    };
+
+    /** Tools que NÃO podem ser usadas (blacklist) */
+    blockedTools?: {
+        /** Lista de nomes de tools bloqueadas */
+        names?: string[];
+        /** Padrões regex para tools bloqueadas */
+        patterns?: RegExp[];
+        /** Servidores específicos para tools bloqueadas */
+        servers?: string[];
+        /** Categorias de tools bloqueadas */
+        categories?: string[];
+    };
+
+    /** Configuração de segurança por tool */
+    toolSecurity?: {
+        /** Tools que requerem aprovação humana */
+        requireApproval?: string[];
+        /** Tools com timeout específico */
+        timeouts?: Record<string, number>;
+        /** Tools com rate limit específico */
+        rateLimits?: Record<string, number>;
+        /** Tools com permissões específicas */
+        permissions?: Record<string, string[]>;
+    };
+
+    /** Configuração de cache por tool */
+    toolCache?: {
+        /** Tools que devem ser cacheadas */
+        enabled?: boolean;
+        /** TTL específico por tool */
+        ttls?: Record<string, number>;
+        /** Tools que não devem ser cacheadas */
+        disabled?: string[];
+    };
 }
+
+// =============================================================================
+// TOOL TYPES WITH VALIDATION
+// =============================================================================
 
 // Raw tool from MCP SDK (without execute function)
 export interface MCPToolRaw {
@@ -296,12 +350,33 @@ export interface MCPTool extends MCPToolRaw {
     execute: (args: unknown, ctx: unknown) => Promise<unknown>;
 }
 
+// Tool with server information
+export interface MCPToolRawWithServer extends MCPToolRaw {
+    serverName: string;
+}
+
+export interface MCPToolWithServer extends MCPTool {
+    serverName: string;
+}
+
+// =============================================================================
+// RESOURCE TYPES
+// =============================================================================
+
 export interface MCPResource {
     uri: string;
     name: string;
     description?: string;
     mimeType?: string;
 }
+
+export interface MCPResourceWithServer extends MCPResource {
+    serverName: string;
+}
+
+// =============================================================================
+// PROMPT TYPES
+// =============================================================================
 
 export interface MCPPrompt {
     name: string;
@@ -313,21 +388,13 @@ export interface MCPPrompt {
     }>;
 }
 
-export interface MCPToolRawWithServer extends MCPToolRaw {
-    serverName: string;
-}
-
-export interface MCPToolWithServer extends MCPTool {
-    serverName: string;
-}
-
-export interface MCPResourceWithServer extends MCPResource {
-    serverName: string;
-}
-
 export interface MCPPromptWithServer extends MCPPrompt {
     serverName: string;
 }
+
+// =============================================================================
+// ADAPTER INTERFACE
+// =============================================================================
 
 export interface MCPAdapter {
     connect(): Promise<void>;
@@ -349,4 +416,113 @@ export interface MCPAdapter {
     ): Promise<unknown>;
     getMetrics(): Record<string, unknown>;
     getRegistry(): unknown;
+}
+
+// =============================================================================
+// HEALTH CHECKS & CIRCUIT BREAKER
+// =============================================================================
+
+export interface MCPHealthCheck {
+    interval: number; // Verificar a cada 30s
+    timeout: number; // Timeout de 5s
+    retries: number; // 3 tentativas
+    enabled: boolean; // Habilitar/desabilitar
+}
+
+export interface MCPCircuitBreaker {
+    failureThreshold: number; // 5 falhas
+    resetTimeout: number; // 60s para reset
+    state: 'closed' | 'open' | 'half-open';
+    failureCount: number;
+    lastFailureTime: number;
+}
+
+export interface MCPRateLimiter {
+    requestsPerMinute: number; // 100 requests/min
+    burstSize: number; // 10 requests burst
+    windowMs: number; // 60000ms (1 min)
+    currentRequests: number;
+    lastResetTime: number;
+}
+
+export interface MCPSchemaCache {
+    ttl: number; // Cache por 5 minutos
+    maxSize: number; // Máximo 100 schemas
+    invalidateOnChange: boolean; // Invalidar quando tool muda
+    cache: Map<string, { schema: unknown; timestamp: number }>;
+}
+
+// =============================================================================
+// SERVER STATUS TYPES
+// =============================================================================
+
+export interface MCPServerStatus {
+    name: string;
+    connected: boolean;
+    lastHealthCheck: number;
+    lastError?: string;
+    responseTime: number;
+    uptime: number;
+    metrics: {
+        requestsTotal: number;
+        requestsSuccessful: number;
+        requestsFailed: number;
+        averageResponseTime: number;
+    };
+}
+
+export interface MCPHealthCheckResult {
+    serverName: string;
+    healthy: boolean;
+    responseTime: number;
+    error?: string;
+    timestamp: number;
+}
+
+// =============================================================================
+// VALIDATION FUNCTIONS
+// =============================================================================
+
+/**
+ * Validate MCP server configuration
+ */
+export function validateMCPServerConfig(config: MCPServerConfig): boolean {
+    if (!config.name || typeof config.name !== 'string') {
+        return false;
+    }
+
+    if (!config.type || !['http', 'sse', 'websocket'].includes(config.type)) {
+        return false;
+    }
+
+    // For network transports, URL is required
+    if (['http', 'sse', 'websocket'].includes(config.type) && !config.url) {
+        return false;
+    }
+
+    // For stdio transport, command is required
+    if (config.type === 'stdio' && !config.command) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Validate MCP tool configuration
+ */
+export function validateMCPToolConfig(tool: MCPToolRaw): boolean {
+    if (!tool.name || typeof tool.name !== 'string') {
+        return false;
+    }
+
+    if (
+        tool.name.includes('..') ||
+        tool.name.startsWith('.') ||
+        tool.name.endsWith('.')
+    ) {
+        return false;
+    }
+
+    return true;
 }

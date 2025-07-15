@@ -13,7 +13,7 @@ import type { BaseContext } from './base-types.js';
 export const baseStorageItemSchema = z.object({
     id: z.string().min(1),
     timestamp: z.number(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     // Framework integration
     tenantId: z.string().optional(),
     correlationId: z.string().optional(),

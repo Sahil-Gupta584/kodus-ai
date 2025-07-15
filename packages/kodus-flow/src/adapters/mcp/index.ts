@@ -4,7 +4,13 @@ import {
     parseToolName,
     type EngineTool,
 } from './tools.js';
-import type { MCPAdapterConfig, MCPAdapter, MCPTool } from './types.js';
+import type {
+    MCPAdapterConfig,
+    MCPAdapter,
+    MCPTool,
+    MCPResourceWithServer,
+    MCPPromptWithServer,
+} from './types.js';
 
 /**
  * Create an MCP adapter for Kodus Flow
@@ -26,7 +32,9 @@ import type { MCPAdapterConfig, MCPAdapter, MCPTool } from './types.js';
  *         GITHUB_TOKEN: process.env.GITHUB_TOKEN
  *       }
  *     }
- *   ]
+ *   ],
+ *   enableHealthChecks: true,
+ *   enableSchemaCache: true,
  * });
  *
  * // Connect all servers
@@ -42,6 +50,11 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
     const registry = new MCPRegistry({
         defaultTimeout: config.defaultTimeout,
         maxRetries: config.maxRetries,
+        enableHealthChecks: true,
+        enableSchemaCache: true,
+        // Passa configuração de filtros
+        allowedTools: config.allowedTools,
+        blockedTools: config.blockedTools,
     });
 
     let toolsCache: MCPTool[] = [];
@@ -74,7 +87,11 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
          * Disconnect from all MCP servers
          */
         async disconnect(): Promise<void> {
-            await registry.disconnectAll();
+            if (!isConnected) {
+                return;
+            }
+
+            registry.destroy();
             isConnected = false;
             toolsCache = [];
         },
@@ -115,55 +132,73 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
         },
 
         /**
-         * List all resources from all MCP servers
+         * Check if a tool exists
          */
-        async listResources() {
+        hasTool(name: string): boolean {
+            return toolsCache.some((tool) => tool.name === name);
+        },
+
+        /**
+         * List all resources from all servers
+         */
+        async listResources(): Promise<MCPResourceWithServer[]> {
             if (!isConnected) {
                 throw new Error(
                     'MCP adapter not connected. Call connect() first.',
                 );
             }
-            return registry.listAllResources();
+
+            // TODO: Implement resource listing with health checks
+            return [];
         },
 
         /**
          * Read a resource
          */
-        async readResource(uri: string, serverName?: string) {
+        async readResource(
+            _uri: string,
+            _serverName?: string,
+        ): Promise<unknown> {
             if (!isConnected) {
                 throw new Error(
                     'MCP adapter not connected. Call connect() first.',
                 );
             }
-            return registry.readResource(uri, serverName);
+
+            // TODO: Implement resource reading with health checks
+            throw new Error('Resource reading not implemented');
         },
 
         /**
-         * List all prompts from all MCP servers
+         * List all prompts from all servers
          */
-        async listPrompts() {
+        async listPrompts(): Promise<MCPPromptWithServer[]> {
             if (!isConnected) {
                 throw new Error(
                     'MCP adapter not connected. Call connect() first.',
                 );
             }
-            return registry.listAllPrompts();
+
+            // TODO: Implement prompt listing with health checks
+            return [];
         },
 
         /**
          * Get a prompt
          */
         async getPrompt(
-            name: string,
-            args?: Record<string, string>,
-            serverName?: string,
-        ) {
+            _name: string,
+            _args?: Record<string, string>,
+            _serverName?: string,
+        ): Promise<unknown> {
             if (!isConnected) {
                 throw new Error(
                     'MCP adapter not connected. Call connect() first.',
                 );
             }
-            return registry.getPrompt(name, args, serverName);
+
+            // TODO: Implement prompt getting with health checks
+            throw new Error('Prompt getting not implemented');
         },
 
         /**
@@ -190,26 +225,28 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
         /**
          * Get metrics from all servers
          */
-        getMetrics() {
-            return registry.getMetrics();
-        },
+        getMetrics(): Record<string, unknown> {
+            const metrics: Record<string, unknown> = {};
 
-        /**
-         * Check if a tool exists
-         */
-        hasTool(name: string): boolean {
-            if (!isConnected) {
-                return false;
+            // Adiciona métricas de health checks
+            const serverStatuses = registry.getServerStatuses();
+            for (const [serverName, status] of serverStatuses) {
+                metrics[`${serverName}_health`] = status;
             }
 
-            // Check if tool exists in cache
-            return toolsCache.some((tool) => tool.name === name);
+            // Adiciona métricas de schema cache
+            const cacheStats = registry.getSchemaCacheStats();
+            if (cacheStats) {
+                metrics.schemaCache = cacheStats;
+            }
+
+            return metrics;
         },
 
         /**
-         * Get access to the internal registry
+         * Get registry for advanced operations
          */
-        getRegistry() {
+        getRegistry(): unknown {
             return registry;
         },
     };

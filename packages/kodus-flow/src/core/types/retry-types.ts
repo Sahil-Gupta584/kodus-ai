@@ -29,11 +29,7 @@ export const retryOptionsSchema = z.object({
     retryableStatusCodes: z
         .array(z.number().int())
         .default([408, 429, 500, 502, 503, 504]),
-    retryPredicate: z
-        .function()
-        .args(z.unknown())
-        .returns(z.boolean())
-        .optional(),
+    retryPredicate: z.instanceof(Function).optional(),
 });
 export type RetryOptions = z.infer<typeof retryOptionsSchema>;
 

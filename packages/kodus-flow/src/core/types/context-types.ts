@@ -23,7 +23,7 @@ export const executionContextSchema = z.object({
     sessionId: z.string().optional(),
     tenantId: z.string().optional(),
     parentContextId: contextIdSchema.optional(),
-    metadata: z.record(z.unknown()).default({}),
+    metadata: z.record(z.string(), z.unknown()).default({}),
     startTime: z.number().optional(),
     endTime: z.number().optional(),
 });
@@ -33,14 +33,14 @@ export type ExecutionContext = z.infer<typeof executionContextSchema>;
  * Context state schema and type
  * Used to store state within a context
  */
-export const contextStateSchema = z.record(z.unknown());
+export const contextStateSchema = z.record(z.string(), z.unknown());
 export type ContextState = z.infer<typeof contextStateSchema>;
 
 /**
  * Context variables schema and type
  * Used to store variables within a context
  */
-export const contextVariablesSchema = z.record(z.unknown());
+export const contextVariablesSchema = z.record(z.string(), z.unknown());
 export type ContextVariables = z.infer<typeof contextVariablesSchema>;
 
 /**
@@ -52,7 +52,7 @@ export const contextOptionsSchema = z.object({
     sessionId: z.string().optional(),
     tenantId: z.string().optional(),
     parentContextId: contextIdSchema.optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     state: contextStateSchema.optional(),
     variables: contextVariablesSchema.optional(),
     timeoutMs: z.number().int().positive().optional(),
@@ -65,7 +65,7 @@ export type ContextOptions = z.infer<typeof contextOptionsSchema>;
  */
 export const contextFactoryOptionsSchema = z.object({
     defaultTimeoutMs: z.number().int().positive().optional(),
-    defaultMetadata: z.record(z.unknown()).optional(),
+    defaultMetadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type ContextFactoryOptions = z.infer<typeof contextFactoryOptionsSchema>;
 
@@ -77,7 +77,7 @@ export const contextEventSchema = z.object({
     type: z.enum(['created', 'updated', 'destroyed', 'timeout']),
     contextId: contextIdSchema,
     timestamp: z.number(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type ContextEvent = z.infer<typeof contextEventSchema>;
 
@@ -121,6 +121,6 @@ export const contextInfoSchema = z.object({
     startTime: z.number().optional(),
     endTime: z.number().optional(),
     duration: z.number().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type ContextInfo = z.infer<typeof contextInfoSchema>;

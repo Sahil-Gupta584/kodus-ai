@@ -18,7 +18,7 @@
  */
 
 import { createKernel, type ExecutionKernel } from '../../kernel/index.js';
-import { createLogger } from '../../observability/index.js';
+import { createLogger, getObservability } from '../../observability/index.js';
 
 import type { KernelConfig } from '../../kernel/kernel.js';
 import type { Middleware } from '../../runtime/middleware/types.js';
@@ -29,11 +29,8 @@ import {
     Workflow,
     WorkflowContext,
 } from '../../core/types/common-types.js';
-import {
-    createCircuitBreaker,
-    type CircuitBreaker,
-} from '../old/circuit-breaker.js';
 import { ExecutionId } from '../../core/types/base-types.js';
+import { CircuitBreaker } from '../../runtime/core/circuit-breaker.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 
 /**
@@ -177,22 +174,16 @@ export class KernelHandler implements KernelHandlerInterface {
             maxEventRate: loopConfig.maxEventRate ?? 50, // events per second
             windowSize: loopConfig.windowSize ?? 5000, // 5 seconds
             eventHistory: [],
-            circuitBreaker: createCircuitBreaker(
-                `kernel-handler-${config.tenantId}`,
-                {
-                    failureThreshold:
-                        loopConfig.circuitBreakerConfig?.failureThreshold ?? 5,
-                    failureRateThreshold: 0.8,
-                    requestVolumeThreshold: 10,
-                    timeout: loopConfig.circuitBreakerConfig?.timeout ?? 10000,
-                    resetTimeout:
-                        loopConfig.circuitBreakerConfig?.resetTimeout ?? 30000,
-                    cooldownPeriod: 60000,
-                    successThreshold: 3,
-                    slowCallDurationThreshold: 5000,
-                    slowCallRateThreshold: 0.7,
-                },
-            ),
+            circuitBreaker: new CircuitBreaker(getObservability(), {
+                name: `kernel-handler-${config.tenantId}`,
+                failureThreshold:
+                    loopConfig.circuitBreakerConfig?.failureThreshold ?? 5,
+                recoveryTimeout:
+                    loopConfig.circuitBreakerConfig?.resetTimeout ?? 30000,
+                successThreshold: 3,
+                operationTimeout:
+                    loopConfig.circuitBreakerConfig?.timeout ?? 10000,
+            }),
         };
 
         this.logger.info('KernelHandler created', {

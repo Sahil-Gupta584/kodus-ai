@@ -50,7 +50,7 @@ export function zodToJSONSchema(
 function zodSchemaToJsonSchemaObject(
     schema: z.ZodSchema,
 ): Record<string, unknown> {
-    const zodType = schema._def as ZodInternalDef;
+    const zodType = schema._def as unknown as ZodInternalDef;
 
     switch (zodType.typeName) {
         case 'ZodString':
@@ -174,7 +174,7 @@ function zodSchemaToJsonSchemaObject(
  * Verifica se um schema Zod é opcional
  */
 function isOptional(schema: z.ZodSchema): boolean {
-    const zodType = schema._def as ZodInternalDef;
+    const zodType = schema._def as unknown as ZodInternalDef;
     return (
         zodType.typeName === 'ZodOptional' || zodType.typeName === 'ZodDefault'
     );
@@ -252,17 +252,20 @@ export function validateWithZod<T>(
     schema: z.ZodSchema<T>,
     value: unknown,
 ): { success: true; data: T } | { success: false; error: string } {
-    try {
-        const result = schema.parse(value);
-        return { success: true, data: result };
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            const message = error.errors
-                .map((err) => `${err.path.join('.')}: ${err.message}`)
-                .join(', ');
-            return { success: false, error: message };
-        }
-        return { success: false, error: 'Unknown validation error' };
+    // ✅ Zod v4: safeParse() é mais performático que parse() + try/catch
+    const result = schema.safeParse(value);
+
+    if (result.success) {
+        return { success: true, data: result.data };
+    } else {
+        const message = (
+            result.error as unknown as {
+                errors: Array<{ path: string[]; message: string }>;
+            }
+        ).errors
+            .map((err) => `${err.path.join('.')}: ${err.message}`)
+            .join(', ');
+        return { success: false, error: message };
     }
 }
 
@@ -273,15 +276,19 @@ export function validateToolInput<T>(
     schema: z.ZodSchema<T>,
     input: unknown,
 ): T {
-    try {
-        return schema.parse(input);
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            const message = error.errors
-                .map((err) => `${err.path.join('.')}: ${err.message}`)
-                .join(', ');
-            throw new Error(`Tool input validation failed: ${message}`);
-        }
-        throw new Error('Tool input validation failed: Unknown error');
+    // ✅ Zod v4: safeParse() é mais performático que parse() + try/catch
+    const result = schema.safeParse(input);
+
+    if (result.success) {
+        return result.data;
+    } else {
+        const message = (
+            result.error as unknown as {
+                errors: Array<{ path: string[]; message: string }>;
+            }
+        ).errors
+            .map((err) => `${err.path.join('.')}: ${err.message}`)
+            .join(', ');
+        throw new Error(`Tool input validation failed: ${message}`);
     }
 }

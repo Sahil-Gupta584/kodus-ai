@@ -8,12 +8,47 @@
 // Base types (foundation)
 export * from './base-types.js';
 
-// Common types (shared across all modules)
+// Common types (shared across all modules) - avoiding conflicts
+export type {
+    // Agent types
+    AgentContext,
+    AgentDefinition,
+    AgentAction,
+    AgentThought,
+    AgentExecutionResult,
+
+    // Tool types
+    ToolDefinition,
+    ToolContext,
+    ToolExecutionResult,
+
+    // Workflow types
+    WorkflowContext,
+    WorkflowDefinition,
+    StepContext,
+    StepDefinition,
+
+    // Other common types
+    Thread,
+
+    // Schemas
+    sessionIdSchema,
+    entityIdSchema,
+} from './common-types.js';
 
 // Tool types (core tool definitions)
 export * from './tool-types.js';
 
-// Workflow types (core workflow definitions)
+// Workflow types (core workflow definitions) - avoiding conflicts
+export type {
+    WorkflowEngineConfig,
+    WorkflowExecutionOptions,
+    WorkflowExecutionResult,
+    Workflow,
+    StepType,
+    StepStatus,
+    WorkflowExecutionId,
+} from './workflow-types.js';
 
 // Event types (core event system)
 // Note: event-types.js and events.js have conflicts with common-types.js

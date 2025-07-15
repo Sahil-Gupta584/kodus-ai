@@ -44,7 +44,7 @@ export const errorMetadataSchema = z.object({
     severity: errorSeveritySchema.default('ERROR'),
     retryable: z.boolean().default(false),
     source: z.string().optional(),
-    details: z.record(z.unknown()).optional(),
+    details: z.record(z.string(), z.unknown()).optional(),
     stackTrace: z.string().optional(),
     timestamp: z.number().optional(),
 });
@@ -59,7 +59,7 @@ export const toolErrorSchema = z.object({
     toolId: z.string().optional(),
     toolName: z.string().optional(),
     argumentName: z.string().optional(),
-    validationErrors: z.record(z.string()).optional(),
+    validationErrors: z.record(z.string(), z.unknown()).optional(),
     metadata: errorMetadataSchema.optional(),
     cause: z.unknown().optional(),
 });
@@ -71,7 +71,7 @@ export type ToolErrorData = z.infer<typeof toolErrorSchema>;
 export const validationErrorSchema = z.object({
     code: z.literal('VALIDATION_ERROR'),
     message: z.string(),
-    validationErrors: z.record(z.string()),
+    validationErrors: z.record(z.string(), z.unknown()),
     metadata: errorMetadataSchema.optional(),
 });
 export type ValidationErrorData = z.infer<typeof validationErrorSchema>;

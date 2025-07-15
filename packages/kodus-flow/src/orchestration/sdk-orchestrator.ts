@@ -63,6 +63,23 @@ export interface OrchestrationConfig {
     // Agent defaults
     defaultPlanner?: PlannerType;
     defaultMaxIterations?: number;
+
+    // Persistence configuration
+    persistorConfig?: {
+        type: 'memory' | 'mongodb' | 'redis' | 'temporal';
+        connectionString?: string;
+        database?: string;
+        collection?: string;
+        maxPoolSize?: number;
+        serverSelectionTimeoutMS?: number;
+        connectTimeoutMS?: number;
+        socketTimeoutMS?: number;
+        ttl?: number;
+        maxSnapshots?: number;
+        enableCompression?: boolean;
+        enableDeltaCompression?: boolean;
+        cleanupInterval?: number;
+    };
 }
 
 export interface OrchestrationConfigInternal
@@ -148,7 +165,14 @@ const orchestrator = new SDKOrchestrator({
             enableObservability: config.enableObservability ?? true,
             defaultTimeout: config.defaultTimeout || 30000,
             defaultPlanner: config.defaultPlanner || 'react',
-            defaultMaxIterations: config.defaultMaxIterations || 10,
+            defaultMaxIterations: config.defaultMaxIterations || 1,
+            persistorConfig: config.persistorConfig || {
+                type: 'memory',
+                maxSnapshots: 1000,
+                enableCompression: true,
+                enableDeltaCompression: true,
+                cleanupInterval: 300000,
+            },
         };
 
         this.mcpAdapter = config.mcpAdapter;
@@ -157,6 +181,10 @@ const orchestrator = new SDKOrchestrator({
         // Initialize multi-kernel handler with separate kernels for observability and agent execution
         this.kernelHandler = createDefaultMultiKernelHandler(
             this.config.tenantId,
+            {
+                type: this.config.persistorConfig.type,
+                options: this.config.persistorConfig,
+            },
         );
 
         this.logger.info('Clean SDKOrchestrator initialized', {

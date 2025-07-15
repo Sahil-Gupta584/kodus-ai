@@ -263,6 +263,17 @@ export class SpecCompliantMCPClient extends EventEmitter<MCPClientEvents> {
     private promptsCache: Prompt[] | null = null;
     private rootsCache: Root[] | null = null;
 
+    // Logger for internal use
+    private logger?: {
+        info: (message: string, meta?: Record<string, unknown>) => void;
+        warn: (message: string, meta?: Record<string, unknown>) => void;
+        error: (
+            message: string,
+            error?: Error,
+            meta?: Record<string, unknown>,
+        ) => void;
+    };
+
     constructor(private config: MCPClientConfig) {
         super();
 
@@ -694,11 +705,136 @@ export class SpecCompliantMCPClient extends EventEmitter<MCPClientEvents> {
         return this.promptsCache;
     }
 
+    /**
+     * Execute tool with intelligent retry logic
+     */
     async executeTool(
         name: string,
         args?: Record<string, unknown>,
     ): Promise<CallToolResult> {
-        return this.callTool(name, args);
+        const maxRetries = this.config.transport.retries || 3;
+        const timeout = this.config.transport.timeout || 30000;
+        let lastError: Error = new Error('Unknown error');
+        const startTime = Date.now();
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                // Create timeout promise
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    setTimeout(() => {
+                        reject(
+                            new Error(
+                                `MCP tool execution timeout after ${timeout}ms`,
+                            ),
+                        );
+                    }, timeout);
+                });
+
+                // Create execution promise
+                const executionPromise = this.callTool(name, args);
+
+                // Race between execution and timeout
+                const result = await Promise.race([
+                    executionPromise,
+                    timeoutPromise,
+                ]);
+
+                const duration = Date.now() - startTime;
+                this.metricsCollector.recordRequest(
+                    'tool_call',
+                    duration,
+                    true,
+                );
+
+                if (attempt > 1) {
+                    this.logger?.info(
+                        'MCP tool execution succeeded after retry',
+                        {
+                            toolName: name,
+                            attempt,
+                            maxRetries,
+                            duration,
+                        },
+                    );
+                }
+
+                return result;
+            } catch (error) {
+                lastError = error as Error;
+                const duration = Date.now() - startTime;
+
+                this.metricsCollector.recordRequest(
+                    'tool_call',
+                    duration,
+                    false,
+                );
+
+                // Log error with context
+                this.logger?.warn('MCP tool execution failed', {
+                    toolName: name,
+                    attempt,
+                    maxRetries,
+                    error: lastError.message,
+                    duration,
+                });
+
+                // Check if error is retryable
+                if (attempt < maxRetries && this.isRetryableError(lastError)) {
+                    const delay = this.calculateRetryDelay(attempt, maxRetries);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Log final failure
+        this.logger?.error(
+            'MCP tool execution failed after all retries',
+            lastError,
+            {
+                toolName: name,
+                maxRetries,
+            },
+        );
+
+        throw lastError!;
+    }
+
+    /**
+     * Check if error is retryable
+     */
+    private isRetryableError(error: Error): boolean {
+        const retryableMessages = [
+            'timeout',
+            'network',
+            'connection',
+            'temporary',
+            'rate limit',
+            'too many requests',
+            'service unavailable',
+        ];
+
+        return retryableMessages.some((msg) =>
+            error.message.toLowerCase().includes(msg),
+        );
+    }
+
+    /**
+     * Calculate retry delay with exponential backoff and jitter
+     */
+    private calculateRetryDelay(attempt: number, _maxRetries: number): number {
+        const baseDelay = 1000; // 1 second
+        const maxDelay = 10000; // 10 seconds
+
+        // Exponential backoff
+        const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
+
+        // Add jitter (±25%)
+        const jitter = exponentialDelay * 0.25 * (Math.random() * 2 - 1);
+        const delay = Math.min(exponentialDelay + jitter, maxDelay);
+
+        return Math.max(delay, 100); // Minimum 100ms
     }
 
     async getPrompt(

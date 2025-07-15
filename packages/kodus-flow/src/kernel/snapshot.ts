@@ -25,7 +25,7 @@ export type { Snapshot, DeltaSnapshot } from '../core/types/common-types.js';
 const snapshotSchema = z.object({
     xcId: z.string(),
     ts: z.number(),
-    events: z.array(z.any()), // Not validating event structure deeply here
+    events: z.array(z.unknown()), // ✅ Zod v4: Mais type-safe que z.any()
     state: z.unknown(),
     hash: z.string(),
 });

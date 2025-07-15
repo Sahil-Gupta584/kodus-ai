@@ -43,10 +43,7 @@ import type { Snapshot } from './snapshot.js';
 import { stableHash } from './snapshot.js';
 import type { WorkflowContext } from '../core/types/workflow-types.js';
 import { IdGenerator } from '../utils/id-generator.js';
-import {
-    CircuitBreakerManager,
-    createCircuitBreakerManager,
-} from '../engine/old/circuit-breaker.js';
+// import { CircuitBreakerManager } from '../runtime/middleware/circuit-breaker.js';
 
 /**
  * Simple LRU Cache implementation for context caching
@@ -251,7 +248,7 @@ export class ExecutionKernel {
     private readonly maxQuotaTimers = 100;
 
     // Circuit breakers for critical operations
-    private circuitBreakerManager: CircuitBreakerManager;
+    // private circuitBreakerManager: CircuitBreakerManager;
 
     // Context factory for context management
     private contextFactory: UnifiedContextFactory;
@@ -281,11 +278,12 @@ export class ExecutionKernel {
         this.persistor = config.persistor || createPersistor('memory');
 
         // Initialize circuit breaker manager
-        this.circuitBreakerManager = createCircuitBreakerManager({
-            failureThreshold: 5,
-            timeout: 30000,
-            resetTimeout: 60000,
-        });
+        // this.circuitBreakerManager = new CircuitBreakerManager({
+        //     failureThreshold: 5,
+        //     timeout: 30000,
+        //     resetTimeout: 60000,
+        // });
+        // this.circuitBreakerManager = null;
 
         // Initialize context factory
         this.contextFactory =
@@ -949,38 +947,27 @@ export class ExecutionKernel {
         // Performance: Flush pending updates before snapshot
         await this.flushContextUpdates();
 
-        // Use circuit breaker for persistence operations
-        return await this.circuitBreakerManager.executeWithBreaker(
-            'kernel-persistence',
-            async () => {
-                const snapshotData = {
-                    xcId: this.state.id,
-                    ts: Date.now(),
-                    events: [], // Events are handled by runtime
-                    state: {
-                        ...this.state,
-                        contextData: this.createSafeContextCopy(
-                            this.state.contextData,
-                        ),
-                    },
-                };
-
-                // Generate proper hash for the snapshot
-                const hash = stableHash({
-                    events: snapshotData.events,
-                    state: snapshotData.state,
-                });
-
-                return {
-                    ...snapshotData,
-                    hash,
-                };
+        // Create snapshot without circuit breaker
+        const snapshotData = {
+            xcId: this.state.id,
+            ts: Date.now(),
+            events: [], // Events are handled by runtime
+            state: {
+                ...this.state,
+                contextData: this.createSafeContextCopy(this.state.contextData),
             },
-            {
-                resourceName: 'kernel-persistence',
-                operation: 'create_snapshot',
-            },
-        );
+        };
+
+        // Generate proper hash for the snapshot
+        const hash = stableHash({
+            events: snapshotData.events,
+            state: snapshotData.state,
+        });
+
+        return {
+            ...snapshotData,
+            hash,
+        };
     }
 
     /**
@@ -988,26 +975,18 @@ export class ExecutionKernel {
      */
     private async restoreFromSnapshot(snapshot: Snapshot): Promise<void> {
         // Use circuit breaker for context operations
-        await this.circuitBreakerManager.executeWithBreaker(
-            'kernel-context',
-            async () => {
-                const restoredState = snapshot.state as Record<string, unknown>;
+        // Restore snapshot without circuit breaker
+        const restoredState = snapshot.state as Record<string, unknown>;
 
-                this.state = {
-                    ...this.state,
-                    ...restoredState,
-                    status: 'running',
-                };
+        this.state = {
+            ...this.state,
+            ...restoredState,
+            status: 'running',
+        };
 
-                // Performance: Clear cache after restore
-                this.contextCache.clear();
-                this.contextUpdateQueue.clear();
-            },
-            {
-                resourceName: 'kernel-context',
-                operation: 'restore_snapshot',
-            },
-        );
+        // Performance: Clear cache after restore
+        this.contextCache.clear();
+        this.contextUpdateQueue.clear();
     }
 
     /**
@@ -1056,6 +1035,11 @@ export class ExecutionKernel {
 
         if (maxDuration) {
             const timer = setTimeout(() => {
+                this.logger.warn('Duration quota exceeded', {
+                    maxDuration,
+                    kernelId: this.state.id,
+                    runtime: Date.now() - this.state.startTime,
+                });
                 this.handleQuotaExceeded('duration');
             }, maxDuration);
             this.quotaTimers.add(timer);
@@ -1065,6 +1049,11 @@ export class ExecutionKernel {
             const timer = setInterval(() => {
                 const memoryUsage = process.memoryUsage().heapUsed;
                 if (memoryUsage > maxMemory) {
+                    this.logger.warn('Memory quota exceeded', {
+                        memoryUsage,
+                        maxMemory,
+                        kernelId: this.state.id,
+                    });
                     this.handleQuotaExceeded('memory');
                 }
             }, 1000);
@@ -1259,6 +1248,11 @@ export class ExecutionKernel {
         const { maxEvents } = this.state.quotas;
 
         if (maxEvents && this.state.eventCount >= maxEvents) {
+            this.logger.warn('Event quota exceeded', {
+                eventCount: this.state.eventCount,
+                maxEvents,
+                kernelId: this.state.id,
+            });
             this.handleQuotaExceeded('events');
         }
     }
@@ -1392,6 +1386,13 @@ export class ExecutionKernel {
         }
 
         return runtimeExists && statusRunning;
+    }
+
+    /**
+     * Get current kernel state (READ-ONLY)
+     */
+    getState(): Readonly<KernelState> {
+        return { ...this.state };
     }
 
     /**

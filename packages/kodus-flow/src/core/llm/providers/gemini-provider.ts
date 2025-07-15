@@ -7,12 +7,37 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createLogger } from '../../../observability/index.js';
-import type {
-    LLMProvider,
-    LLMMessage,
-    LLMResponse,
-    LLMOptions,
-} from '../llm-adapter.js';
+import type { LLMMessage, LLMResponse } from '../../../adapters/llm/index.js';
+
+// Simple provider interface for legacy providers
+export interface LLMProvider {
+    name: string;
+    call(messages: LLMMessage[], options?: LLMOptions): Promise<LLMResponse>;
+    stream?(
+        messages: LLMMessage[],
+        options?: LLMOptions,
+    ): AsyncGenerator<LLMResponse>;
+}
+
+export interface LLMOptions {
+    temperature?: number;
+    maxTokens?: number;
+    model?: string;
+    topP?: number;
+    stop?: string[];
+    frequencyPenalty?: number;
+    presencePenalty?: number;
+    stream?: boolean;
+    tools?: Array<{
+        name: string;
+        description: string;
+        parameters: Record<string, unknown>;
+    }>;
+    toolChoice?:
+        | 'auto'
+        | 'none'
+        | { type: 'function'; function: { name: string } };
+}
 
 export interface GeminiConfig {
     apiKey: string;
@@ -156,8 +181,6 @@ export class GeminiProvider implements LLMProvider {
                         return `USER: ${msg.content}`;
                     case 'assistant':
                         return `ASSISTANT: ${msg.content}`;
-                    case 'tool':
-                        return `TOOL: ${msg.content}`;
                     default:
                         return msg.content;
                 }

@@ -66,6 +66,7 @@ export interface EventQueueConfig {
  * Métricas de recursos do sistema
  */
 interface SystemMetrics {
+    timestamp: number; // Timestamp da medição
     memoryUsage: number; // 0.0 - 1.0
     cpuUsage: number; // 0.0 - 1.0
     queueDepth: number;
@@ -260,6 +261,7 @@ export class EventQueue {
         const cpuUsage = this.getCpuUsage();
 
         return {
+            timestamp: Date.now(),
             memoryUsage,
             cpuUsage,
             queueDepth: this.queue.length,
@@ -282,27 +284,61 @@ export class EventQueue {
     }
 
     /**
-     * Obter uso de CPU (0.0 - 1.0)
+     * Obter uso de CPU real (0.0 - 1.0)
      */
     private getCpuUsage(): number {
         try {
-            // Simulação - em produção seria mais sofisticado
-            return Math.random() * 0.3 + 0.2; // 20-50%
+            // TODO: Implementar medição real de CPU
+            // Por enquanto, usar heurística baseada em processamento
+            const processingRate = this.calculateProcessingRate();
+            const queueDepth = this.queue.length;
+
+            // CPU alta se processamento lento ou fila cheia
+            if (processingRate < 100 || queueDepth > 1000) {
+                return 0.8; // CPU alta
+            } else if (processingRate > 500 && queueDepth < 100) {
+                return 0.3; // CPU baixa
+            } else {
+                return 0.6; // CPU média
+            }
         } catch {
-            return 0.3; // Fallback
+            return 0.5; // Fallback conservador
         }
     }
 
     /**
-     * Calcular taxa de processamento
+     * Calcular taxa de processamento real (eventos/segundo)
      */
     private calculateProcessingRate(): number {
         if (this.performanceHistory.length < 2) return 0;
 
-        const recent = this.performanceHistory.slice(-5);
-        const avgQueueDepth =
-            recent.reduce((sum, m) => sum + m.queueDepth, 0) / recent.length;
-        return avgQueueDepth > 0 ? 1000 / avgQueueDepth : 0; // eventos/segundo estimado
+        const recent = this.performanceHistory.slice(-10);
+        const processingTimes: number[] = [];
+
+        // Calcular tempo médio de processamento
+        for (let i = 1; i < recent.length; i++) {
+            const current = recent[i];
+            const previous = recent[i - 1];
+
+            if (current && previous) {
+                const timeDiff = current.timestamp - previous.timestamp;
+                const eventsProcessed =
+                    previous.queueDepth - current.queueDepth;
+
+                if (timeDiff > 0 && eventsProcessed > 0) {
+                    const rate = (eventsProcessed / timeDiff) * 1000; // eventos/segundo
+                    processingTimes.push(rate);
+                }
+            }
+        }
+
+        if (processingTimes.length === 0) return 0;
+
+        // Retornar média dos últimos tempos
+        return (
+            processingTimes.reduce((sum, rate) => sum + rate, 0) /
+            processingTimes.length
+        );
     }
 
     /**
@@ -366,7 +402,7 @@ export class EventQueue {
     }
 
     /**
-     * Auto-ajustar parâmetros baseado na performance
+     * Auto-ajustar parâmetros baseado na performance REAL
      */
     private autoAdjust(): void {
         if (this.performanceHistory.length < 5) return;
@@ -374,53 +410,83 @@ export class EventQueue {
         const metrics = this.getSystemMetrics();
         const adjustments = [];
 
-        // Ajustar batch size baseado na taxa de processamento
+        // === CORREÇÃO: Ajustar batch size CORRETAMENTE ===
         const targetRate = 1000; // eventos/segundo desejado
+
         if (metrics.processingRate < targetRate * 0.8) {
-            const newBatchSize = Math.min(this.batchSize * 1.2, 1000);
-            if (newBatchSize !== this.batchSize) {
-                adjustments.push({
-                    parameter: 'batchSize',
-                    oldValue: this.batchSize,
-                    newValue: newBatchSize,
-                    reason: 'Low processing rate',
-                });
-                this.batchSize = newBatchSize;
-            }
-        } else if (metrics.processingRate > targetRate * 1.2) {
+            // Taxa baixa = diminuir batch para processar mais rápido
             const newBatchSize = Math.max(this.batchSize * 0.8, 10);
             if (newBatchSize !== this.batchSize) {
                 adjustments.push({
                     parameter: 'batchSize',
                     oldValue: this.batchSize,
                     newValue: newBatchSize,
-                    reason: 'High processing rate',
+                    reason: 'Low processing rate - reducing batch size',
+                });
+                this.batchSize = newBatchSize;
+            }
+        } else if (
+            metrics.processingRate > targetRate * 1.2 &&
+            metrics.cpuUsage < 0.7
+        ) {
+            // Taxa alta e CPU baixa = aumentar batch para eficiência
+            const newBatchSize = Math.min(this.batchSize * 1.2, 2000);
+            if (newBatchSize !== this.batchSize) {
+                adjustments.push({
+                    parameter: 'batchSize',
+                    oldValue: this.batchSize,
+                    newValue: newBatchSize,
+                    reason: 'High processing rate - increasing batch size',
                 });
                 this.batchSize = newBatchSize;
             }
         }
 
-        // Ajustar concorrência baseado no uso de CPU
-        if (metrics.cpuUsage < this.maxCpuUsage * 0.5) {
-            const newConcurrency = Math.min(this.maxConcurrent * 1.2, 50);
+        // === CORREÇÃO: Ajustar concorrência CORRETAMENTE ===
+        if (
+            metrics.cpuUsage < this.maxCpuUsage * 0.5 &&
+            metrics.queueDepth > 100
+        ) {
+            // CPU baixa e fila cheia = aumentar concorrência
+            const newConcurrency = Math.min(this.maxConcurrent * 1.5, 200); // Limite maior
             if (newConcurrency !== this.maxConcurrent) {
                 adjustments.push({
                     parameter: 'maxConcurrent',
                     oldValue: this.maxConcurrent,
                     newValue: newConcurrency,
-                    reason: 'Low CPU usage',
+                    reason: 'Low CPU usage with high queue - increasing concurrency',
                 });
                 this.maxConcurrent = newConcurrency;
                 this.semaphore = new Semaphore(this.maxConcurrent);
             }
-        } else if (metrics.cpuUsage > this.maxCpuUsage * 0.9) {
-            const newConcurrency = Math.max(this.maxConcurrent * 0.8, 1);
+        } else if (
+            metrics.cpuUsage > this.maxCpuUsage * 0.9 ||
+            metrics.memoryUsage > 0.8
+        ) {
+            // CPU alta ou memória alta = diminuir concorrência
+            const newConcurrency = Math.max(this.maxConcurrent * 0.7, 5);
             if (newConcurrency !== this.maxConcurrent) {
                 adjustments.push({
                     parameter: 'maxConcurrent',
                     oldValue: this.maxConcurrent,
                     newValue: newConcurrency,
-                    reason: 'High CPU usage',
+                    reason: 'High resource usage - reducing concurrency',
+                });
+                this.maxConcurrent = newConcurrency;
+                this.semaphore = new Semaphore(this.maxConcurrent);
+            }
+        }
+
+        // === NOVO: Ajustar baseado na profundidade da fila ===
+        if (metrics.queueDepth > 5000 && this.maxConcurrent < 100) {
+            // Fila muito cheia = aumentar concorrência
+            const newConcurrency = Math.min(this.maxConcurrent * 2, 300);
+            if (newConcurrency !== this.maxConcurrent) {
+                adjustments.push({
+                    parameter: 'maxConcurrent',
+                    oldValue: this.maxConcurrent,
+                    newValue: newConcurrency,
+                    reason: 'Very high queue depth - emergency concurrency increase',
                 });
                 this.maxConcurrent = newConcurrency;
                 this.semaphore = new Semaphore(this.maxConcurrent);
@@ -435,6 +501,12 @@ export class EventQueue {
                     oldValue: adjustment.oldValue,
                     newValue: adjustment.newValue,
                     reason: adjustment.reason,
+                    metrics: {
+                        processingRate: metrics.processingRate,
+                        cpuUsage: metrics.cpuUsage,
+                        memoryUsage: metrics.memoryUsage,
+                        queueDepth: metrics.queueDepth,
+                    },
                 });
             }
         });

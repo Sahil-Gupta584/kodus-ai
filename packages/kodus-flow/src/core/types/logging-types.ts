@@ -14,7 +14,7 @@ export const loggerConfigSchema = z.object({
     minLevel: logLevelSchema.default('info'),
     enableConsole: z.boolean().default(true),
     enableTelemetry: z.boolean().default(false),
-    context: z.record(z.unknown()).optional(),
+    context: z.record(z.string(), z.unknown()).optional(),
 });
 export type LoggerConfig = z.infer<typeof loggerConfigSchema>;
 
@@ -25,7 +25,7 @@ export const logEntrySchema = z.object({
     timestamp: z.string().datetime(),
     level: logLevelSchema,
     message: z.string(),
-    context: z.record(z.unknown()).optional(),
+    context: z.record(z.string(), z.unknown()).optional(),
     error: z
         .object({
             name: z.string().optional(),
@@ -34,7 +34,7 @@ export const logEntrySchema = z.object({
             cause: z.unknown().optional(),
         })
         .optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type LogEntry = z.infer<typeof logEntrySchema>;
 
@@ -80,6 +80,6 @@ export type ConsoleTransportOptions = z.infer<
 export const otelTransportOptionsSchema = z.object({
     serviceName: z.string(),
     serviceVersion: z.string().optional(),
-    resourceAttributes: z.record(z.string()).optional(),
+    resourceAttributes: z.record(z.string(), z.unknown()).optional(),
 });
 export type OtelTransportOptions = z.infer<typeof otelTransportOptionsSchema>;

@@ -14,7 +14,13 @@
  * - Factory pattern com validação e sanitização
  */
 
-import type { BaseContext, AgentContext } from '../types/common-types.js';
+import type {
+    BaseContext,
+    AgentContext,
+    UserContext,
+    SystemContext,
+    SeparatedContext,
+} from '../types/common-types.js';
 import type { WorkflowContext } from '../types/workflow-types.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextStateService } from './services/state-service.js';
@@ -155,19 +161,61 @@ export class UnifiedContextFactory {
             }
         }
 
+        // Create user context
+        const userContext: UserContext = {
+            metadata: {},
+        };
+
+        // Create system context
+        const systemContext: SystemContext = {
+            executionId: IdGenerator.executionId(),
+            correlationId: baseContext.correlationId,
+            sessionId: config.sessionId,
+            threadId: config.threadId || 'default',
+            tenantId: config.tenantId,
+            iteration: 0,
+            toolsUsed: 0,
+            conversationHistory: sessionContext?.conversationHistory || [],
+            startTime: Date.now(),
+            status: 'running',
+            availableTools: [],
+            debugInfo: {
+                agentName: config.agentName,
+                invocationId: IdGenerator.executionId(),
+            },
+        };
+
+        // Create separated context
+        const separatedContext: SeparatedContext = {
+            user: userContext,
+            system: systemContext,
+        };
+
         return {
             ...baseContext,
             agentName: config.agentName,
-            state: new Map<string, unknown>(),
-            availableTools: [],
-            // TODO
-            //sessionId: sessionContext?.sessionId || sessionContext?.id,
-            stateManager: stateService,
             invocationId: IdGenerator.executionId(),
+            separated: separatedContext,
+            availableTools: [],
+            stateManager: stateService,
             signal: new AbortController().signal,
+
+            // === V1 API: Primitivos poderosos ===
+            save: async (_key: string, _value: unknown) => {
+                // Implementation will be provided by the engine
+                throw new Error(
+                    'save method not implemented in context factory',
+                );
+            },
+            load: async (_key: string) => {
+                // Implementation will be provided by the engine
+                throw new Error(
+                    'load method not implemented in context factory',
+                );
+            },
+
             cleanup: async () => {
-                // TODO
-                // await baseContext.cleanup();
+                await baseContext.cleanup();
                 await stateService.clear();
             },
         };

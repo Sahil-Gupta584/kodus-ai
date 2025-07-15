@@ -311,13 +311,26 @@ export class ToolEngine {
                 };
                 const correlationId = event.metadata?.correlationId;
 
-                this.logger.debug('Received tool execution request', {
+                this.logger.info('🔧 [TOOL] Received tool execution request', {
                     toolName,
                     correlationId,
+                    eventId: event.id,
+                    hasInput: !!input,
                 });
 
                 try {
+                    this.logger.info('🔧 [TOOL] Executing tool', {
+                        toolName,
+                        correlationId,
+                    });
+
                     const result = await this.executeCall(toolName, input);
+
+                    this.logger.info('🔧 [TOOL] Tool execution successful', {
+                        toolName,
+                        correlationId,
+                        hasResult: !!result,
+                    });
 
                     // Emit success response
                     this.kernelHandler!.emit('tool.execute.response', {
@@ -330,7 +343,7 @@ export class ToolEngine {
                     });
                 } catch (error) {
                     this.logger.error(
-                        'Tool execution failed via events',
+                        '🔧 [TOOL] Tool execution failed via events',
                         error as Error,
                         {
                             toolName,

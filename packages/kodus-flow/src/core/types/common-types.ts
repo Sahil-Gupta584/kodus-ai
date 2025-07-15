@@ -15,34 +15,67 @@ import { WorkflowContext } from './workflow-types.js';
 import { AgentContext } from './agent-types.js';
 import type { ThreadId } from './base-types.js';
 
-// ===== CORE BASE TYPES =====
-// Re-export all base types that other components extend
+// ===== CORE CONTEXT TYPES =====
+// Re-export all core context types from the consolidated base-types module
 export type {
-    // Status and metadata
-    ExecutionStatus,
-    Metadata,
+    // Identifiers (EntityId já vem de base-types)
+    TenantId,
+    ThreadId,
+    SessionId,
+    ExecutionId,
+    CorrelationId,
+    UserId,
+    InvocationId,
+    WorkflowId,
+    StepId,
+    AgentId,
+    ToolId,
+    EventId,
+    OperationId,
+    ParentId,
+    SnapshotId,
 
-    // Base interfaces
+    // Core context types
+    UserContext,
+    SystemContext,
+    SeparatedContext,
     BaseContext,
-    BaseDefinition,
-    BaseExecutionResult,
-    BaseEngineConfig,
+    ExecutionContext,
+    OperationContext,
+    EventContext,
+    SnapshotContext,
 } from './base-types.js';
 
 export {
     // Schemas for validation
     identifierSchemas,
 
-    // Helper functions
-    validateBaseContext,
+    // Factory functions
     createBaseContext,
+    validateBaseContext,
+} from './base-types.js';
+
+// Re-export specific schemas for backwards compatibility
+export const sessionIdSchema = z.string().min(1);
+export const entityIdSchema = z.string().min(1);
+
+// ===== CORE BASE TYPES =====
+// Re-export all base types that other components extend (avoiding duplicates)
+export type {
+    // Status and metadata
+    ExecutionStatus,
+    Metadata,
+
+    // Base interfaces
+    BaseDefinition,
+    BaseExecutionResult,
+    BaseEngineConfig,
 } from './base-types.js';
 
 // ===== AGENT TYPES =====
-// Re-export all agent-related types
+// Re-export all agent-related types (avoiding duplicates)
 export type {
-    // Agent identity
-    InvocationId,
+    // Agent identity (excluindo InvocationId que já vem de context-core)
 
     // Agent thinking types
     AgentActionType,
@@ -69,9 +102,8 @@ export type {
 } from './agent-types.js';
 
 export {
-    // Schemas
+    // Schemas (excluindo invocationIdSchema que já vem de context-core)
     agentIdSchema,
-    invocationIdSchema,
     agentActionTypeSchema,
     agentDefinitionSchema,
     agentExecutionOptionsSchema,
@@ -135,8 +167,7 @@ export {
 // ===== WORKFLOW TYPES =====
 // Re-export all workflow-related types
 export type {
-    // Workflow identity
-    StepId,
+    // Workflow identity (StepId já vem de base-types)
     WorkflowExecutionId,
 
     // Workflow step types
@@ -332,11 +363,10 @@ export interface EventStream<T extends AnyEvent = AnyEvent>
 
 // ===== LEGACY SCHEMAS =====
 // Keep existing schemas for backward compatibility
-export const entityIdSchema = z.string().min(1);
-export type EntityId = z.infer<typeof entityIdSchema>;
+// entityIdSchema já exportado acima
 
-export const sessionIdSchema = z.string().min(1);
-export type SessionId = z.infer<typeof sessionIdSchema>;
+// Note: sessionIdSchema is already exported from context-core.js above
+// export type SessionId = z.infer<typeof sessionIdSchema>; // Using SessionId from context-core
 
 export const contextIdSchema = z.string().min(1);
 export type ContextId = z.infer<typeof contextIdSchema>;
@@ -669,14 +699,14 @@ export interface CombinedIntelligence {
  * Create a new execution ID
  */
 export function createExecutionId(): string {
-    return `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `exec_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 }
 
 /**
  * Create a new correlation ID
  */
 export function createCorrelationId(): string {
-    return `corr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `corr_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 }
 
 /**
@@ -715,7 +745,7 @@ export const threadMetadataSchema = z
             .enum(['user', 'organization', 'system', 'bot', 'custom'])
             .optional(),
     })
-    .and(z.record(z.union([z.string(), z.number()])));
+    .and(z.record(z.string(), z.union([z.string(), z.number()])));
 
 /**
  * Thread schema for validation

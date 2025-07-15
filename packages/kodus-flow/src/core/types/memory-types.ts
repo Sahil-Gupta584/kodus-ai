@@ -26,7 +26,7 @@ export const memoryItemSchema = z.object({
     type: z.string().optional(),
     timestamp: z.number(),
     expireAt: z.number().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     entityId: entityIdSchema.optional(),
     sessionId: sessionIdSchema.optional(),
     tenantId: z.string().optional(),
@@ -80,7 +80,7 @@ export const memoryStoreOptionsSchema = z.object({
     storage: z
         .object({
             type: z.enum(['memory', 'redis', 'custom']),
-            config: z.record(z.unknown()).optional(),
+            config: z.record(z.string(), z.unknown()).optional(),
         })
         .optional(),
 });
@@ -94,7 +94,7 @@ export const memoryVectorSchema = z.object({
     id: memoryIdSchema,
     vector: z.array(z.number()),
     text: z.string().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     timestamp: z.number(),
     entityId: entityIdSchema.optional(),
     sessionId: sessionIdSchema.optional(),
@@ -118,7 +118,7 @@ export const memoryVectorQuerySchema = z.object({
             sessionId: sessionIdSchema.optional(),
             tenantId: z.string().optional(),
             contextId: contextIdSchema.optional(),
-            metadata: z.record(z.unknown()).optional(),
+            metadata: z.record(z.string(), z.unknown()).optional(),
         })
         .optional(),
 });
@@ -137,7 +137,7 @@ export const memoryVectorStoreOptionsSchema = z.object({
     storage: z
         .object({
             type: z.enum(['memory', 'redis', 'pinecone', 'qdrant', 'custom']),
-            config: z.record(z.unknown()).optional(),
+            config: z.record(z.string(), z.unknown()).optional(),
         })
         .optional(),
 });
@@ -154,7 +154,7 @@ export const memoryVectorSearchResultSchema = z.object({
     score: z.number(),
     vector: z.array(z.number()).optional(),
     text: z.string().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     timestamp: z.number(),
     entityId: entityIdSchema.optional(),
     sessionId: sessionIdSchema.optional(),

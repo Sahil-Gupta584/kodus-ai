@@ -67,9 +67,8 @@ export type { Middleware } from './middleware/types.js';
 // Constants
 export {
     DEFAULT_TIMEOUT_MS,
-    DEFAULT_RETRY_OPTIONS,
+    DEFAULT_RETRY_CONFIG,
     DEFAULT_CONCURRENCY_OPTIONS,
-    DEFAULT_SCHEDULE_OPTIONS,
 } from './constants.js';
 
 /**

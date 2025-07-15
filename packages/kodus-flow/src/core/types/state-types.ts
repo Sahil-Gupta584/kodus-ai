@@ -32,7 +32,7 @@ export const stateEntrySchema = z.object({
     value: stateValueSchema,
     version: z.number().int().nonnegative(),
     timestamp: z.number(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type StateEntry = z.infer<typeof stateEntrySchema>;
 
@@ -93,7 +93,7 @@ export const stateUpdateSchema = z.object({
     entityId: entityIdSchema.optional(),
     sessionId: sessionIdSchema.optional(),
     contextId: contextIdSchema.optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     // If provided, the update will only succeed if the current version matches
     expectedVersion: z.number().int().nonnegative().optional(),
 });
@@ -152,7 +152,7 @@ export const stateManagerOptionsSchema = z.object({
     storage: z
         .object({
             type: z.enum(['memory', 'redis', 'custom']),
-            config: z.record(z.unknown()).optional(),
+            config: z.record(z.string(), z.unknown()).optional(),
         })
         .optional(),
 });

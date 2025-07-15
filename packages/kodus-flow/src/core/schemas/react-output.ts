@@ -12,7 +12,7 @@ export const reActOutputSchema = z.object({
             type: z.literal('tool_call'),
             tool: z.string().describe('Exact tool name from available tools'),
             arguments: z
-                .record(z.unknown())
+                .record(z.string(), z.unknown())
                 .describe('Tool arguments as key-value pairs'),
         }),
         z.object({

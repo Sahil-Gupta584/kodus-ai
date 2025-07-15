@@ -1,49 +1,82 @@
-import type {
-    GetPromptResult,
-    ReadResourceResult,
-} from '@modelcontextprotocol/sdk/types.js';
 import {
     MCPClientConfig,
-    MCPPromptWithServer,
-    MCPResourceWithServer,
     MCPServerConfig,
     MCPToolRawWithServer,
     TransportType,
 } from './types.js';
 import { SpecCompliantMCPClient } from './client.js';
+import { MCPHealthManager } from './health-manager.js';
+import { MCPSchemaCacheManager } from './schema-cache.js';
+import { createLogger } from '../../observability/index.js';
 
 export interface MCPRegistryOptions {
     /** timeout padrão dos clientes (ms) */
     defaultTimeout?: number;
     /** tentativas de retry */
     maxRetries?: number;
+    /** health checks habilitados */
+    enableHealthChecks?: boolean;
+    /** schema cache habilitado */
+    enableSchemaCache?: boolean;
+    /** Configuração de filtros para tools */
+    allowedTools?: {
+        names?: string[];
+        patterns?: RegExp[];
+        servers?: string[];
+        categories?: string[];
+    };
+    blockedTools?: {
+        names?: string[];
+        patterns?: RegExp[];
+        servers?: string[];
+        categories?: string[];
+    };
 }
 
 export class MCPRegistry {
-    /** clientes já conectados */
     private clients = new Map<string, SpecCompliantMCPClient>();
-    /** promessas em andamento p/ evitar corrida */
     private pending = new Map<string, Promise<void>>();
-    /** opções globais */
     private options: Required<MCPRegistryOptions>;
+    private healthManager!: MCPHealthManager;
+    private schemaCache!: MCPSchemaCacheManager;
+    private logger = createLogger('MCPRegistry');
 
-    constructor(opts: MCPRegistryOptions = {}) {
+    constructor(options: MCPRegistryOptions = {}) {
         this.options = {
-            defaultTimeout: opts.defaultTimeout ?? 30_000,
-            maxRetries: opts.maxRetries ?? 3,
+            defaultTimeout: 30000,
+            maxRetries: 3,
+            enableHealthChecks: true,
+            enableSchemaCache: true,
+            allowedTools: options.allowedTools ?? {
+                names: [],
+                patterns: [],
+                servers: [],
+                categories: [],
+            },
+            blockedTools: options.blockedTools ?? {
+                names: [],
+                patterns: [],
+                servers: [],
+                categories: [],
+            },
         };
-    }
 
-    // ────────────────────────────────────────────────────────────────────────────
-    // REGISTRO DE SERVIDOR
-    // ────────────────────────────────────────────────────────────────────────────
-    async register(config: MCPServerConfig): Promise<void> {
-        // se já existe cliente, nada a fazer
-        if (this.clients.has(config.name)) {
-            return;
+        // Inicializa health manager se habilitado
+        if (this.options.enableHealthChecks) {
+            this.healthManager = new MCPHealthManager();
         }
 
-        // se já existe uma promessa pendente, espera ela terminar (e sai)
+        // Inicializa schema cache se habilitado
+        if (this.options.enableSchemaCache) {
+            this.schemaCache = new MCPSchemaCacheManager();
+        }
+    }
+
+    /**
+     * Registra um servidor MCP com health checks
+     */
+    async register(config: MCPServerConfig): Promise<void> {
+        // Verifica se já está registrando
         if (this.pending.has(config.name)) {
             await this.pending.get(config.name);
             return;
@@ -80,6 +113,16 @@ export class MCPRegistry {
                 const client = new SpecCompliantMCPClient(clientConfig);
                 await client.connect();
                 this.clients.set(config.name, client);
+
+                // ─── 4. Configurar health check se habilitado ─────────────────────
+                if (this.options.enableHealthChecks && this.healthManager) {
+                    this.healthManager.addHealthCheck(config.name, {
+                        interval: 30000, // 30s
+                        timeout: 5000, // 5s
+                        retries: 3,
+                        enabled: true,
+                    });
+                }
             } finally {
                 // remove promessa pendente (sucesso ou erro)
                 this.pending.delete(config.name);
@@ -91,123 +134,217 @@ export class MCPRegistry {
         await job;
     }
 
-    // ────────────────────────────────────────────────────────────────────────────
-    // UNREGISTER
-    // ────────────────────────────────────────────────────────────────────────────
-    async unregister(name: string): Promise<void> {
-        const client = this.clients.get(name);
-
-        if (!client) {
-            throw new Error(`MCP server ${name} not found`);
+    /**
+     * Remove um servidor MCP
+     */
+    async unregister(serverName: string): Promise<void> {
+        const client = this.clients.get(serverName);
+        if (client) {
+            await client.disconnect();
+            this.clients.delete(serverName);
         }
 
-        await client.disconnect();
-        this.clients.delete(name);
+        // Remove health check se habilitado
+        if (this.options.enableHealthChecks && this.healthManager) {
+            this.healthManager.removeHealthCheck(serverName);
+        }
+
+        // Remove schemas do cache
+        if (this.options.enableSchemaCache && this.schemaCache) {
+            // Remove todos os schemas deste servidor
+            const removedCount =
+                this.schemaCache.removeSchemasByServer(serverName);
+
+            this.logger.info('Removed schemas from cache', {
+                serverName,
+                removedCount,
+            });
+        }
     }
 
-    // ────────────────────────────────────────────────────────────────────────────
-    // GETTERS BÁSICOS
-    // ────────────────────────────────────────────────────────────────────────────
-    getClient(name: string) {
-        return this.clients.get(name);
-    }
-    getAllClients(): Map<string, SpecCompliantMCPClient> {
-        return new Map(this.clients);
-    }
-
-    // ────────────────────────────────────────────────────────────────────────────
-    // LIST/EXEC HELPERS (igual ao que já havia, apenas identação ajustada)
-    // ────────────────────────────────────────────────────────────────────────────
+    /**
+     * Lista todas as tools com cache de schemas
+     */
     async listAllTools(): Promise<MCPToolRawWithServer[]> {
-        const outputTools: MCPToolRawWithServer[] = [];
+        const allTools: MCPToolRawWithServer[] = [];
 
         for (const [serverName, client] of this.clients) {
             try {
+                // Verifica health check se habilitado
+                if (this.options.enableHealthChecks && this.healthManager) {
+                    if (!this.healthManager.isServerHealthy(serverName)) {
+                        continue;
+                    }
+                }
+
+                // Verifica rate limit se habilitado
+                if (this.options.enableHealthChecks && this.healthManager) {
+                    if (!this.healthManager.checkRateLimit(serverName)) {
+                        continue;
+                    }
+                }
+
                 const tools = await client.listTools();
 
-                outputTools.push(
-                    ...tools
-                        .filter((tool) => tool.name)
-                        .map((tool) => ({
-                            ...tool,
-                            name: tool.name!,
-                            inputSchema: tool.inputSchema || {},
-                            serverName: serverName,
-                        })),
-                );
-            } catch {
-                /* ignora */
+                for (const tool of tools) {
+                    // Filtra tools baseado na configuração
+                    if (!this.isToolAllowed(tool, serverName)) {
+                        continue;
+                    }
+
+                    // Usa cache de schema se habilitado
+                    if (this.options.enableSchemaCache && this.schemaCache) {
+                        const schemaHash = this.schemaCache.generateSchemaHash(
+                            tool.inputSchema,
+                        );
+                        const cacheKey = this.schemaCache.generateKey(
+                            serverName,
+                            tool.name,
+                            schemaHash,
+                        );
+
+                        // Tenta obter do cache
+                        const cachedSchema = this.schemaCache.get(cacheKey);
+                        if (
+                            cachedSchema &&
+                            typeof cachedSchema === 'object' &&
+                            'type' in cachedSchema &&
+                            (cachedSchema as { type: unknown }).type ===
+                                'object'
+                        ) {
+                            tool.inputSchema = cachedSchema as {
+                                [x: string]: unknown;
+                                type: 'object';
+                                properties?: { [x: string]: unknown };
+                                required?: string[];
+                            };
+                        } else {
+                            // Adiciona ao cache
+                            this.schemaCache.set(cacheKey, tool.inputSchema);
+                        }
+                    }
+
+                    allTools.push({
+                        ...tool,
+                        serverName,
+                    });
+                }
+            } catch {}
+        }
+
+        return allTools;
+    }
+
+    /**
+     * Verifica se uma tool está permitida baseado na configuração
+     */
+    private isToolAllowed(
+        tool: Record<string, unknown>,
+        serverName: string,
+    ): boolean {
+        const config = this.options;
+
+        // Se não há configuração de filtros, permite tudo
+        if (!config.allowedTools && !config.blockedTools) {
+            return true;
+        }
+
+        const toolName = tool.name;
+        const fullToolName = `${serverName}.${toolName}`;
+
+        // 1. Verifica blacklist primeiro (tem prioridade)
+        if (config.blockedTools) {
+            // Verifica nomes específicos
+            if (
+                config.blockedTools.names?.includes(toolName as string) ||
+                config.blockedTools.names?.includes(fullToolName as string)
+            ) {
+                return false;
+            }
+
+            // Verifica padrões regex
+            if (
+                config.blockedTools.patterns?.some(
+                    (pattern: RegExp) =>
+                        pattern.test(toolName as string) ||
+                        pattern.test(fullToolName as string),
+                )
+            ) {
+                return false;
+            }
+
+            // Verifica servidores
+            if (config.blockedTools.servers?.includes(serverName)) {
+                return false;
+            }
+
+            // Verifica categorias (se tool tiver categoria)
+            if (
+                (tool.category as string) &&
+                config.blockedTools.categories?.includes(
+                    tool.category as string,
+                )
+            ) {
+                return false;
             }
         }
 
-        return outputTools;
-    }
-
-    async listAllResources(): Promise<MCPResourceWithServer[]> {
-        const outputResources: MCPResourceWithServer[] = [];
-
-        for (const [serverName, client] of this.clients) {
-            try {
-                const resources = await client.listResources();
-
-                outputResources.push(
-                    ...resources
-                        .filter((resource) => resource.uri)
-                        .map((resource) => ({
-                            ...resource,
-                            uri: resource.uri!,
-                            name: resource.name || resource.uri!,
-                            serverName: serverName,
-                        })),
-                );
-            } catch {
-                /* ignora */
+        // 2. Se há whitelist, verifica se está permitida
+        if (config.allowedTools) {
+            // Se whitelist está vazia, não permite nada
+            if (
+                !config.allowedTools.names?.length &&
+                !config.allowedTools.patterns?.length &&
+                !config.allowedTools.servers?.length &&
+                !config.allowedTools.categories?.length
+            ) {
+                return false;
             }
+
+            // Verifica nomes específicos
+            const nameAllowed = config.allowedTools.names?.some(
+                (name: string) => name === toolName || name === fullToolName,
+            );
+
+            // Verifica padrões regex
+            const patternAllowed = config.allowedTools.patterns?.some(
+                (pattern: RegExp) =>
+                    pattern.test(toolName as string) ||
+                    pattern.test(fullToolName as string),
+            );
+
+            // Verifica servidores
+            const serverAllowed =
+                config.allowedTools.servers?.includes(serverName);
+
+            // Verifica categorias
+            const categoryAllowed =
+                tool.category &&
+                config.allowedTools.categories?.includes(
+                    tool.category as string,
+                );
+
+            // Tool deve estar em pelo menos uma das listas permitidas
+            return !!(
+                nameAllowed ||
+                patternAllowed ||
+                serverAllowed ||
+                categoryAllowed
+            );
         }
 
-        return outputResources;
+        // Se não há whitelist, permite tudo (após passar pela blacklist)
+        return true;
     }
 
-    async listAllPrompts(): Promise<MCPPromptWithServer[]> {
-        const outputPrompts: MCPPromptWithServer[] = [];
-
-        for (const [serverName, client] of this.clients) {
-            try {
-                const prompts = await client.listPrompts();
-
-                outputPrompts.push(
-                    ...prompts
-                        .filter((prompt) => prompt.name)
-                        .map((prompt) => ({
-                            ...prompt,
-                            name: prompt.name!,
-                            arguments: prompt.arguments
-                                ?.filter((argument) => argument.name)
-                                .map((argument) => ({
-                                    name: argument.name!,
-                                    description: argument.description,
-                                    required: argument.required,
-                                })),
-                            serverName: serverName,
-                        })),
-                );
-            } catch {
-                /* ignora */
-            }
-        }
-
-        return outputPrompts;
-    }
-
-    // ────────────────────────────────────────────────────────────────────────────
-    // EXEC / READ / PROMPT (sem mudanças de lógica)
-    // ────────────────────────────────────────────────────────────────────────────
+    /**
+     * Executa tool com health checks e circuit breaker
+     */
     async executeTool(
         toolName: string,
         args?: Record<string, unknown>,
         serverName?: string,
     ): Promise<unknown> {
-        debugger;
         if (serverName) {
             const client = this.clients.get(serverName);
 
@@ -215,11 +352,36 @@ export class MCPRegistry {
                 throw new Error(`MCP server ${serverName} not found`);
             }
 
+            // Verifica health check se habilitado
+            if (this.options.enableHealthChecks && this.healthManager) {
+                if (!this.healthManager.isServerHealthy(serverName)) {
+                    throw new Error(`MCP server ${serverName} is unhealthy`);
+                }
+
+                if (!this.healthManager.checkRateLimit(serverName)) {
+                    throw new Error(
+                        `Rate limit exceeded for server ${serverName}`,
+                    );
+                }
+            }
+
             return client.executeTool(toolName, args);
         }
 
-        for (const [, client] of this.clients) {
+        // Tenta encontrar tool em qualquer servidor
+        for (const [serverName, client] of this.clients) {
             try {
+                // Verifica health check se habilitado
+                if (this.options.enableHealthChecks && this.healthManager) {
+                    if (!this.healthManager.isServerHealthy(serverName)) {
+                        continue;
+                    }
+
+                    if (!this.healthManager.checkRateLimit(serverName)) {
+                        continue;
+                    }
+                }
+
                 const tools = await client.listTools();
 
                 if (tools.some((tool) => tool.name === toolName)) {
@@ -234,86 +396,44 @@ export class MCPRegistry {
         );
     }
 
-    async readResource(
-        uri: string,
-        serverName?: string,
-    ): Promise<ReadResourceResult> {
-        if (serverName) {
-            const client = this.clients.get(serverName);
-
-            if (!client) {
-                throw new Error(`MCP server ${serverName} not found`);
-            }
-
-            return client.readResource(uri);
+    /**
+     * Obtém status de todos os servidores
+     */
+    getServerStatuses(): Map<string, unknown> {
+        if (this.options.enableHealthChecks && this.healthManager) {
+            return this.healthManager.getServerStatuses();
         }
-
-        for (const [, client] of this.clients) {
-            try {
-                const resources = await client.listResources();
-
-                if (resources.some((resource) => resource.uri === uri)) {
-                    return client.readResource(uri);
-                }
-            } catch {
-                /* ignora */
-            }
-        }
-        throw new Error(
-            `Resource ${uri} not found in any registered MCP server`,
-        );
+        return new Map();
     }
 
-    async getPrompt(
-        name: string,
-        args?: Record<string, string>,
-        serverName?: string,
-    ): Promise<GetPromptResult> {
-        if (serverName) {
-            const client = this.clients.get(serverName);
-
-            if (!client) {
-                throw new Error(`MCP server ${serverName} not found`);
-            }
-
-            return client.getPrompt(name, args);
+    /**
+     * Obtém estatísticas do schema cache
+     */
+    getSchemaCacheStats(): Record<string, unknown> | null {
+        if (this.options.enableSchemaCache && this.schemaCache) {
+            return this.schemaCache.getStats();
         }
-
-        for (const [, client] of this.clients) {
-            try {
-                const prompts = await client.listPrompts();
-
-                if (prompts.some((prompt) => prompt.name === name)) {
-                    return client.getPrompt(name, args);
-                }
-            } catch {
-                /* ignora */
-            }
-        }
-        throw new Error(
-            `Prompt ${name} not found in any registered MCP server`,
-        );
+        return null;
     }
 
-    // ────────────────────────────────────────────────────────────────────────────
-    // DISCONNECT & METRICS (inalterado)
-    // ────────────────────────────────────────────────────────────────────────────
-    async disconnectAll(): Promise<void> {
-        await Promise.all(
-            [...this.clients.values()].map((client) =>
-                client.disconnect().catch(() => {}),
-            ),
-        );
+    /**
+     * Limpa recursos
+     */
+    destroy(): void {
+        // Desconecta todos os clientes
+        for (const [, client] of this.clients) {
+            client.disconnect().catch(console.error);
+        }
         this.clients.clear();
-    }
 
-    getMetrics(): Record<string, unknown> {
-        const metrics: Record<string, unknown> = {};
-
-        for (const [serverName, client] of this.clients) {
-            metrics[serverName] = client.getMetrics();
+        // Destrói health manager
+        if (this.healthManager) {
+            this.healthManager.destroy();
         }
 
-        return metrics;
+        // Limpa schema cache
+        if (this.schemaCache) {
+            this.schemaCache.clear();
+        }
     }
 }

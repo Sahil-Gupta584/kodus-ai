@@ -42,7 +42,7 @@ export const planStepParametersSchema = z.object({
     tool: z
         .object({
             input: z.unknown().optional(),
-            options: z.record(z.unknown()).optional(),
+            options: z.record(z.string(), z.unknown()).optional(),
             timeout: z.number().positive().optional(),
             retry: z.number().nonnegative().optional(),
         })
@@ -50,13 +50,86 @@ export const planStepParametersSchema = z.object({
     agent: z
         .object({
             input: z.unknown().optional(),
-            context: z.record(z.unknown()).optional(),
-            options: z.record(z.unknown()).optional(),
+            context: z.record(z.string(), z.unknown()).optional(),
+            options: z.record(z.string(), z.unknown()).optional(),
             timeout: z.number().positive().optional(),
         })
         .optional(),
-    custom: z.record(z.unknown()).optional(),
+    custom: z.record(z.string(), z.unknown()).optional(),
 });
+
+// ✅ Zod v4: Novos recursos para validação avançada
+export const enhancedValidationSchema = z.object({
+    // ✅ z.preprocess() para limpeza automática
+    email: z.preprocess(
+        (val) => (typeof val === 'string' ? val.toLowerCase().trim() : val),
+        z.string().email(),
+    ),
+
+    // ✅ z.transform() para conversão automática
+    age: z.number().transform((val) => Math.floor(val)),
+
+    // ✅ z.coerce() para conversão automática de tipos
+    userId: z.coerce.number().positive(),
+    isActive: z.coerce.boolean(),
+
+    // ✅ z.nullish() para valores null/undefined
+    optionalField: z.string().nullish(),
+
+    // ✅ z.brand() para tipos branded (quando necessário)
+    tenantId: z.string().brand<'TenantId'>(),
+});
+
+// ✅ Zod v4: Validação customizada mais robusta
+export const customValidationSchema = z
+    .object({
+        input: z.unknown().optional(),
+        options: z.record(z.string(), z.unknown()).optional(),
+    })
+    .refine(
+        (data) => {
+            // ✅ Validação customizada mais performática
+            return (
+                data.input !== undefined ||
+                Object.keys(data.options || {}).length > 0
+            );
+        },
+        {
+            message: 'Either input or options must be provided',
+            path: ['input'], // ✅ Path específico para erro
+        },
+    );
+
+// ✅ Zod v4: Validação condicional
+export const conditionalValidationSchema = z
+    .object({
+        type: z.enum(['user', 'admin']),
+        permissions: z.array(z.string()).optional(),
+    })
+    .refine(
+        (data) => {
+            if (data.type === 'admin') {
+                return data.permissions && data.permissions.length > 0;
+            }
+            return true;
+        },
+        {
+            message: 'Admin users must have permissions',
+            path: ['permissions'],
+        },
+    );
+
+// ✅ Zod v4: Validação cross-field
+export const crossFieldValidationSchema = z
+    .object({
+        startDate: z.date(),
+        endDate: z.date(),
+        custom: z.record(z.string(), z.unknown()).optional(),
+    })
+    .refine((data) => data.endDate > data.startDate, {
+        message: 'End date must be after start date',
+        path: ['endDate'],
+    });
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🔍 VALIDATION FUNCTIONS

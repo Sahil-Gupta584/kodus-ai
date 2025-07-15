@@ -21,7 +21,7 @@ import type {
     SeparatedContext,
     UserContext,
     SystemContext,
-} from './context-separation.js';
+} from './base-types.js';
 import type { ToolCall } from './tool-types.js';
 import { ContextStateService } from '../context/services/state-service.js';
 import { Persistor } from '../../persistor/index.js';
@@ -300,9 +300,8 @@ export interface AgentContext extends BaseContext {
     // === AGENT IDENTITY ===
     agentName: string;
     invocationId: string;
-    stateManager: ContextStateService;
 
-    // ✅ NEW: Structured agent identity for enhanced execution context
+    // ✅ AGENT IDENTITY: Structured for enhanced execution context
     agentIdentity?: {
         role?: string;
         goal?: string;
@@ -313,23 +312,20 @@ export interface AgentContext extends BaseContext {
         systemPrompt?: string;
     };
 
-    // === EXECUTION IDENTIFIERS ===
-    sessionId?: string;
-    executionId?: string;
+    // === SEPARATED CONTEXT (fonte única para user/system data) ===
+    separated: SeparatedContext;
 
-    // === TOOLS ===
+    // === RUNTIME SERVICES ===
+    stateManager: ContextStateService;
+    persistorService?: Persistor;
+
+    // === RESOURCES ===
     availableTools: Array<{
         name: string;
         description: string;
         schema: unknown;
     }>;
-
-    // === STATE ===
-    state: Map<string, unknown>;
     signal: AbortSignal;
-
-    // === SERVICES ===
-    persistorService?: Persistor;
 
     // === OBSERVABILITY ===
     logger?: {
@@ -343,13 +339,9 @@ export interface AgentContext extends BaseContext {
         ) => void;
     };
 
-    // === METADATA ===
-    metadata?: Metadata;
-
-    // === SEPARATED CONTEXT ===
-    separatedContext?: SeparatedContext;
-    user?: UserContext;
-    system?: SystemContext;
+    // === V1 API: Primitivos poderosos ===
+    save(key: string, value: unknown): Promise<void>;
+    load(key: string): Promise<unknown>;
 
     // === CLEANUP ===
     cleanup(): Promise<void>;
@@ -386,10 +378,6 @@ export interface AgentExecutionOptions {
     // === CONFIGURAÇÕES ===
     timeout?: number;
     maxIterations?: number;
-
-    // === SEPARATED CONTEXT OPTIONS ===
-    user?: UserContext;
-    system?: SystemContext;
 
     // === LEGACY SUPPORT ===
     context?: Partial<AgentContext>;
@@ -463,8 +451,8 @@ export const parallelToolsActionSchema = z.object({
             priority: z.number().optional(),
             timeout: z.number().positive().optional(),
             dependencies: z.array(z.string()).optional(),
-            conditions: z.record(z.unknown()).optional(),
-            metadata: z.record(z.unknown()).optional(),
+            conditions: z.record(z.string(), z.unknown()).optional(),
+            metadata: z.record(z.string(), z.unknown()).optional(),
         }),
     ),
     concurrency: z.number().positive().optional(),
@@ -486,8 +474,8 @@ export const sequentialToolsActionSchema = z.object({
             priority: z.number().optional(),
             timeout: z.number().positive().optional(),
             dependencies: z.array(z.string()).optional(),
-            conditions: z.record(z.unknown()).optional(),
-            metadata: z.record(z.unknown()).optional(),
+            conditions: z.record(z.string(), z.unknown()).optional(),
+            metadata: z.record(z.string(), z.unknown()).optional(),
         }),
     ),
     stopOnError: z.boolean().optional(),
@@ -508,11 +496,11 @@ export const conditionalToolsActionSchema = z.object({
             priority: z.number().optional(),
             timeout: z.number().positive().optional(),
             dependencies: z.array(z.string()).optional(),
-            conditions: z.record(z.unknown()).optional(),
-            metadata: z.record(z.unknown()).optional(),
+            conditions: z.record(z.string(), z.unknown()).optional(),
+            metadata: z.record(z.string(), z.unknown()).optional(),
         }),
     ),
-    conditions: z.record(z.unknown()),
+    conditions: z.record(z.string(), z.unknown()),
     defaultTool: z.string().optional(),
     evaluateAll: z.boolean().optional(),
     reasoning: z.string().optional(),
@@ -531,8 +519,8 @@ export const mixedToolsActionSchema = z.object({
             priority: z.number().optional(),
             timeout: z.number().positive().optional(),
             dependencies: z.array(z.string()).optional(),
-            conditions: z.record(z.unknown()).optional(),
-            metadata: z.record(z.unknown()).optional(),
+            conditions: z.record(z.string(), z.unknown()).optional(),
+            metadata: z.record(z.string(), z.unknown()).optional(),
         }),
     ),
     config: z
@@ -540,7 +528,7 @@ export const mixedToolsActionSchema = z.object({
             concurrency: z.number().positive().optional(),
             timeout: z.number().positive().optional(),
             failFast: z.boolean().optional(),
-            conditions: z.record(z.unknown()).optional(),
+            conditions: z.record(z.string(), z.unknown()).optional(),
         })
         .optional(),
     reasoning: z.string().optional(),
@@ -556,7 +544,7 @@ export const dependencyToolsActionSchema = z.object({
             toolName: z.string().min(1),
             input: z.unknown(),
             timeout: z.number().positive().optional(),
-            metadata: z.record(z.unknown()).optional(),
+            metadata: z.record(z.string(), z.unknown()).optional(),
         }),
     ),
     dependencies: z.array(
@@ -620,35 +608,67 @@ export const agentIdentitySchema = z
         },
     );
 
-export const agentDefinitionSchema = z.object({
-    name: z.string().min(1),
-    identity: agentIdentitySchema,
-    version: z.string().optional(),
-    metadata: z.record(z.unknown()).optional(),
-    think: z.function(),
-    formatResponse: z.function().optional(),
-    validateInput: z.function().optional(),
-    config: z
-        .object({
-            maxIterations: z.number().positive().optional(),
-            timeout: z.number().positive().optional(),
-            enableTools: z.boolean().optional(),
-            enableLLM: z.boolean().optional(),
-            enableMemory: z.boolean().optional(),
-            enablePersistence: z.boolean().optional(),
-        })
-        .optional(),
-    requiredTools: z.array(z.string()).optional(),
-    optionalTools: z.array(z.string()).optional(),
-});
+// ✅ Zod v4: Lazy loading para schemas complexos (performance)
+export const agentDefinitionSchema = z.lazy(() =>
+    z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        version: z.string().optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+        think: z.instanceof(Function), // ✅ Zod v4: Mais específico que z.unknown()
+        formatResponse: z.instanceof(Function).optional(),
+        validateInput: z.instanceof(Function).optional(),
+        config: z
+            .object({
+                timeout: z.number().positive().optional(),
+                maxRetries: z.number().nonnegative().optional(),
+                enableMemory: z.boolean().optional(),
+                enablePlanning: z.boolean().optional(),
+                enableRouting: z.boolean().optional(),
+                enableStreaming: z.boolean().optional(),
+                enableHumanApproval: z.boolean().optional(),
+                enableCostTracking: z.boolean().optional(),
+                enableHallucinationPrevention: z.boolean().optional(),
+                enableDebugging: z.boolean().optional(),
+                enableMetrics: z.boolean().optional(),
+                enableAudit: z.boolean().optional(),
+                enableSecurity: z.boolean().optional(),
+                enableMultiTenancy: z.boolean().optional(),
+                enableCircuitBreaker: z.boolean().optional(),
+                enableRateLimiting: z.boolean().optional(),
+                enableCaching: z.boolean().optional(),
+                enableCompression: z.boolean().optional(),
+                enableEncryption: z.boolean().optional(),
+                enableBackup: z.boolean().optional(),
+                enableRecovery: z.boolean().optional(),
+                enableMonitoring: z.boolean().optional(),
+                enableAlerting: z.boolean().optional(),
+                enableReporting: z.boolean().optional(),
+                enableAnalytics: z.boolean().optional(),
+                enableProfiling: z.boolean().optional(),
+                enableTracing: z.boolean().optional(),
+                enableLogging: z.boolean().optional(),
+                enableValidation: z.boolean().optional(),
+                enableSerialization: z.boolean().optional(),
+                enableDeserialization: z.boolean().optional(),
+            })
+            .optional(),
+        categories: z.array(z.string()).optional(),
+        dependencies: z.array(z.string()).optional(),
+        tags: z.array(z.string()).optional(),
+    }),
+);
 
-export const agentExecutionOptionsSchema = z.object({
-    sessionId: z.string().optional(),
-    correlationId: z.string().optional(),
-    timeout: z.number().positive().optional(),
-    maxIterations: z.number().positive().optional(),
-    context: z.record(z.unknown()).optional(),
-});
+// ✅ Zod v4: Schema otimizado para validação rápida
+export const agentExecutionOptionsSchema = z
+    .object({
+        sessionId: z.string().optional(),
+        correlationId: z.string().optional(),
+        timeout: z.number().positive().optional(),
+        maxIterations: z.number().positive().optional(),
+        context: z.record(z.string(), z.unknown()).optional(),
+    })
+    .strict(); // ✅ Zod v4: strict() para performance
 
 // ===== UTILITY TYPES =====
 
@@ -793,13 +813,21 @@ export function createAgentContext(
     };
 
     return {
+        // BaseContext
         tenantId: tenantId,
         correlationId: correlationId,
+        startTime: Date.now(),
+        status: 'RUNNING',
+        metadata: {},
 
         // AgentContext specific
         agentName,
         invocationId,
-        persistorService: options.persistorService,
+
+        // Separated context (fonte única)
+        separated: separatedContext,
+
+        // Runtime services
         stateManager: new ContextStateService(
             {
                 tenantId: tenantId,
@@ -810,13 +838,25 @@ export function createAgentContext(
                 maxNamespaces: 100,
             },
         ),
+        persistorService: options.persistorService,
+
+        // Resources
         availableTools: options.availableTools || [],
-        state: new Map<string, unknown>(),
         signal: new AbortController().signal,
 
-        separatedContext,
-        user: userContext,
-        system: systemContext,
+        // === V1 API: Primitivos poderosos ===
+        save: async (_key: string, _value: unknown) => {
+            // Implementation will be provided by the engine
+            throw new Error(
+                'save method not implemented in createAgentContext',
+            );
+        },
+        load: async (_key: string) => {
+            // Implementation will be provided by the engine
+            throw new Error(
+                'load method not implemented in createAgentContext',
+            );
+        },
 
         cleanup: async () => {
             // Cleanup logic will be implemented by the engine
@@ -1240,6 +1280,9 @@ export function createAgentLifecycleContext(
         // BaseContext
         tenantId: tenantId,
         correlationId: options.correlationId || 'default',
+        startTime: Date.now(),
+        status: 'RUNNING',
+        metadata: options.metadata || {},
 
         // AgentLifecycleContext specific
         agentName,

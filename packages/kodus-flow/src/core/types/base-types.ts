@@ -27,6 +27,8 @@ export type TenantId = string;
 export type SessionId = string;
 export type ThreadId = string;
 export type CorrelationId = string;
+export type UserId = string;
+export type InvocationId = string;
 
 /**
  * Identificadores de execução e workflow
@@ -63,6 +65,8 @@ export const identifierSchemas = {
     sessionId: z.string().min(1),
     threadId: z.string().min(1),
     correlationId: z.string().min(1).max(100),
+    userId: z.string().min(1),
+    invocationId: z.string().min(1),
     executionId: z.string().min(1),
     workflowId: z.string().min(1),
     stepId: z.string().min(1),
@@ -85,6 +89,10 @@ export const identifierSchemas = {
 export interface BaseContext {
     tenantId: TenantId;
     correlationId: CorrelationId;
+    startTime: number;
+    status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'PAUSED';
+    metadata: Record<string, unknown>;
+    cleanup(): Promise<void>;
 }
 
 /**
@@ -96,12 +104,7 @@ export interface ExecutionContext extends BaseContext {
     threadId?: ThreadId;
 }
 
-/**
- * Contexto específico para workflows
- */
-export interface WorkflowContext extends ExecutionContext {
-    workflowId: WorkflowId;
-}
+// WorkflowContext é definido em workflow-types.ts para evitar conflitos
 
 /**
  * Contexto específico para operações
@@ -119,6 +122,81 @@ export interface EventContext extends BaseContext {
     threadId?: ThreadId;
     sessionId?: SessionId;
     parentId?: ParentId;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 👤 CONTEXTOS SEPARADOS - User vs System
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Contexto do Usuário - Dados controlados pelo usuário
+ * IMUTÁVEL durante a execução
+ */
+export interface UserContext {
+    userId?: UserId;
+    sessionId?: SessionId;
+    preferences?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+}
+
+/**
+ * Contexto do Sistema - Dados gerados automaticamente pelo runtime
+ * MUTÁVEL durante a execução
+ */
+export interface SystemContext {
+    // === IDENTIDADE ===
+    executionId: ExecutionId;
+    correlationId: CorrelationId;
+    sessionId?: SessionId;
+    threadId: ThreadId;
+    tenantId: TenantId;
+
+    // === ESTADO DA EXECUÇÃO ===
+    iteration: number;
+    toolsUsed: number;
+    lastToolResult?: unknown;
+    lastToolName?: string;
+
+    // === MEMÓRIA E HISTÓRICO ===
+    conversationHistory: unknown[];
+    memoryData?: unknown;
+
+    // === MÉTRICAS E TIMING ===
+    startTime: number;
+    duration?: number;
+    status: 'running' | 'completed' | 'failed' | 'paused';
+
+    // === DEBUGGING ===
+    debugInfo?: {
+        agentName: string;
+        invocationId: InvocationId;
+        parentId?: string;
+        [key: string]: unknown;
+    };
+
+    // === RECURSOS DISPONÍVEIS ===
+    availableTools: Array<{
+        name: string;
+        description: string;
+        schema: unknown;
+    }>;
+
+    // === PERFORMANCE ===
+    performanceMetrics?: {
+        memoryUsage?: number;
+        cpuUsage?: number;
+        networkLatency?: number;
+        [key: string]: unknown;
+    };
+}
+
+/**
+ * Contexto Separado - Combina contexto do usuário e sistema
+ * Mantém separação clara entre responsabilidades
+ */
+export interface SeparatedContext {
+    user: UserContext;
+    system: SystemContext;
 }
 
 /**
@@ -298,9 +376,16 @@ export function validateBaseContext(obj: unknown): obj is BaseContext {
 export function createBaseContext(
     tenantIdValue: string,
     correlationIdValue: string,
+    metadata: Record<string, unknown> = {},
 ): BaseContext {
     return {
         tenantId: tenantIdValue,
         correlationId: correlationIdValue,
+        startTime: Date.now(),
+        status: 'RUNNING',
+        metadata,
+        cleanup: async () => {
+            // Implementação padrão de cleanup
+        },
     };
 }

@@ -67,7 +67,8 @@ export interface MultiKernelHandlerConfig {
 
     // Global configuration
     global?: {
-        persistorType?: 'memory' | 'redis';
+        persistorType?: 'memory' | 'mongodb' | 'redis' | 'temporal';
+        persistorOptions?: Record<string, unknown>;
         enableCrossKernelLogging?: boolean;
     };
 
@@ -865,12 +866,19 @@ export function createMultiKernelHandler(
  */
 export function createDefaultMultiKernelHandler(
     tenantId: string,
+    persistorConfig?: {
+        type: 'memory' | 'mongodb' | 'redis' | 'temporal';
+        options?: Record<string, unknown>;
+    },
 ): MultiKernelHandler {
     return createMultiKernelHandler({
         tenantId,
         observability: { enabled: true },
         agent: { enabled: true },
-        global: { persistorType: 'memory' },
+        global: {
+            persistorType: persistorConfig?.type || 'memory',
+            persistorOptions: persistorConfig?.options || {},
+        },
         loopProtection: { enabled: true },
     });
 }

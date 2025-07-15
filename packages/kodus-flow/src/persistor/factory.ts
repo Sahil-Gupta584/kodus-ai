@@ -22,6 +22,21 @@ export function createPersistorFromConfig(config: PersistorConfig): Persistor {
         case 'memory':
             return new StoragePersistorAdapter({ type: 'memory' });
 
+        case 'mongodb':
+            return new StoragePersistorAdapter({
+                type: 'mongodb',
+                connectionString: config.connectionString,
+                options: {
+                    database: config.database,
+                    collection: config.collection,
+                    maxPoolSize: config.maxPoolSize,
+                    serverSelectionTimeoutMS: config.serverSelectionTimeoutMS,
+                    connectTimeoutMS: config.connectTimeoutMS,
+                    socketTimeoutMS: config.socketTimeoutMS,
+                    ttl: config.ttl,
+                },
+            });
+
         case 'redis':
             return new StoragePersistorAdapter({ type: 'redis' });
 
@@ -37,7 +52,7 @@ export function createPersistorFromConfig(config: PersistorConfig): Persistor {
  * Create persistor with simple type and options
  */
 export function createPersistor(
-    type: 'memory' | 'redis' | 'temporal' = 'memory',
+    type: 'memory' | 'mongodb' | 'redis' | 'temporal' = 'memory',
     options: Record<string, unknown> = {},
 ): Persistor {
     const config: PersistorConfig = {

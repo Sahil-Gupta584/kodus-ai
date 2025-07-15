@@ -32,9 +32,10 @@ export class ReActPlanner implements Planner {
     constructor(private llmAdapter: LLMAdapter) {
         this.logger.info('ReAct Planner initialized', {
             llmProvider: llmAdapter.getProvider?.()?.name || 'unknown',
-            hasReActTechnique:
-                llmAdapter.getAvailableTechniques?.()?.includes('react') ||
-                false,
+            supportsStructured:
+                llmAdapter.supportsStructuredGeneration?.() || false,
+            supportsPlanning: !!llmAdapter.createPlan,
+            availableTechniques: llmAdapter.getAvailableTechniques?.() || [],
         });
     }
 
@@ -49,18 +50,8 @@ export class ReActPlanner implements Planner {
         });
 
         try {
-            // Use LLMAdapter ReAct technique if available
-            if (this.llmAdapter.getAvailableTechniques?.()?.includes('react')) {
-                return this.thinkWithLLMReAct(input, context);
-            }
-
-            return {
-                reasoning: 'No ReAct technique available',
-                action: {
-                    type: 'final_answer',
-                    content: 'No ReAct technique available',
-                },
-            };
+            // Try LLM-based ReAct (structured, createPlan, or basic call)
+            return await this.thinkWithLLMReAct(input, context);
         } catch (error) {
             this.logger.error('ReAct thinking failed', error as Error);
 
@@ -79,98 +70,160 @@ export class ReActPlanner implements Planner {
         input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        try {
-            // ✅ Try structured generation first if supported
-            if (
-                this.llmAdapter.supportsStructuredGeneration &&
-                this.llmAdapter.supportsStructuredGeneration()
-            ) {
-                const structuredOutput = await this.generateStructuredReAct(
-                    input,
-                    context,
-                );
+        const prompt = this.buildImprovedReActPrompt(input, context);
+
+        // ✅ OPTION 1: Try structured generation if supported
+        if (this.llmAdapter.supportsStructuredGeneration?.()) {
+            try {
+                const structuredOutput = await this.llmAdapter
+                    .generateStructured!<ReActOutput>({
+                    messages: [{ role: 'user', content: prompt }],
+                    schema: reActOutputSchema,
+                    temperature: 0,
+                });
+
                 return this.convertReActOutputToThought(
                     structuredOutput,
                     context,
                 );
+            } catch (error) {
+                this.logger.warn(
+                    'Structured generation failed, trying next option',
+                    {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
+                );
             }
-        } catch (error) {
-            this.logger.warn(
-                'Structured generation failed, falling back to traditional approach',
-                {
+        }
+
+        // ✅ OPTION 2: Try planning approach if supported
+        if (this.llmAdapter.createPlan) {
+            try {
+                const plan = (await this.llmAdapter.createPlan(input, 'react', {
+                    availableTools: context.availableTools.map((t) => t.name),
+                    agentIdentity: context.agentIdentity as string,
+                    previousPlans: this.extractPreviousPlans(context),
+                })) as {
+                    reasoning: string;
+                    steps: Array<{
+                        tool?: string;
+                        arguments?: Record<string, unknown>;
+                        description?: string;
+                    }>;
+                };
+
+                const reactOutput = convertPlanToReActOutput({
+                    reasoning: plan.reasoning,
+                    steps: plan.steps,
+                });
+
+                return this.convertReActOutputToThought(reactOutput, context);
+            } catch (error) {
+                this.logger.warn('Plan creation failed, using basic approach', {
                     error:
                         error instanceof Error ? error.message : String(error),
-                },
-            );
+                });
+            }
         }
 
-        // ✅ Fallback to traditional approach
-        if (!this.llmAdapter.createPlan) {
-            throw new Error('LLM Adapter does not support createPlan method');
+        // ✅ OPTION 3: Basic LLM call (always works)
+        const response = await this.llmAdapter.call({
+            messages: [{ role: 'user', content: prompt }],
+        });
+
+        // Try to parse as JSON
+        try {
+            const parsed = JSON.parse(response.content);
+            if (parsed.reasoning && parsed.action) {
+                return this.convertReActOutputToThought(parsed, context);
+            }
+        } catch {
+            // Not JSON, continue with text parsing
         }
 
-        const plan = await this.llmAdapter.createPlan(
-            this.buildImprovedReActPrompt(input, context),
-            'react',
-            {
-                availableTools: context.availableTools.map((tool) => tool.name),
-                agentIdentity: context.agentIdentity as string,
-                previousPlans: context.history.map((h) => ({
-                    strategy: 'react',
-                    goal: h.thought.reasoning,
-                    steps: [
-                        {
-                            id: 'step_1',
-                            description: JSON.stringify(h.action),
-                            type:
-                                h.action.type === 'tool_call'
-                                    ? 'action'
-                                    : 'decision',
-                        },
-                    ],
-                    reasoning: h.observation.feedback,
-                    complexity: 'medium' as const,
-                })),
-            },
-        );
-
-        // Convert legacy plan to structured format for consistency
-        const reactOutput = convertPlanToReActOutput(
-            plan as {
-                reasoning?: string;
-                steps?: Array<{
-                    tool?: string;
-                    arguments?: Record<string, unknown>;
-                    description?: string;
-                }>;
-            },
-        );
-        return this.convertReActOutputToThought(reactOutput, context);
+        // Parse text response for ReAct pattern
+        return this.parseTextResponse(response.content, context);
     }
 
     /**
-     * ✅ NEW: Generate structured ReAct output using schema
+     * Extract previous plans from execution history
      */
-    private async generateStructuredReAct(
-        input: string,
-        context: PlannerExecutionContext,
-    ): Promise<ReActOutput> {
-        const prompt = this.buildImprovedReActPrompt(input, context);
+    private extractPreviousPlans(context: PlannerExecutionContext): unknown[] {
+        return context.history.map((h) => ({
+            id: `plan-${Date.now()}`,
+            strategy: 'react',
+            goal: h.thought.reasoning,
+            steps: [
+                {
+                    id: 'step_1',
+                    description: JSON.stringify(h.action),
+                    type: h.action.type === 'tool_call' ? 'action' : 'decision',
+                },
+            ],
+            reasoning: h.observation.feedback,
+            complexity: 'medium' as const,
+        }));
+    }
 
-        // Use structured generation API
-        if (!this.llmAdapter.generateStructured) {
-            throw new Error(
-                'LLM Adapter does not support generateStructured method',
-            );
+    /**
+     * Parse text response into ReAct format
+     */
+    private parseTextResponse(
+        text: string,
+        context: PlannerExecutionContext,
+    ): AgentThought {
+        // Look for common ReAct patterns in text
+        const thoughtMatch = text.match(
+            /(?:Thought|Reasoning|Think):\s*(.+?)(?=Action:|$)/is,
+        );
+        const actionMatch = text.match(
+            /(?:Action|Act):\s*(.+?)(?=Observation:|$)/is,
+        );
+
+        const reasoning = thoughtMatch?.[1]?.trim() || text;
+
+        // Try to extract tool call from action
+        if (actionMatch) {
+            const actionText = actionMatch[1]?.trim();
+            const toolMatch = actionText?.match(/(\w+)\s*\((.*?)\)/);
+
+            if (toolMatch) {
+                const [, toolName, argsStr] = toolMatch;
+                const availableTools = context.availableTools.map(
+                    (t) => t.name,
+                );
+
+                if (toolName && availableTools.includes(toolName)) {
+                    try {
+                        const args = JSON.parse(argsStr || '{}');
+                        return {
+                            reasoning,
+                            action: {
+                                type: 'tool_call' as const,
+                                tool: toolName,
+                                arguments: args,
+                            },
+                            confidence: 0.7,
+                        };
+                    } catch {
+                        // Failed to parse args
+                    }
+                }
+            }
         }
 
-        const response = await this.llmAdapter.generateStructured({
-            messages: [{ role: 'user', content: prompt }],
-            schema: reActOutputSchema,
-            temperature: 0.7,
-        });
-
-        return response as ReActOutput;
+        // Default to final answer
+        return {
+            reasoning,
+            action: {
+                type: 'final_answer' as const,
+                content: text,
+            },
+            confidence: 0.6,
+        };
     }
 
     /**
