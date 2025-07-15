@@ -268,6 +268,10 @@ export class KodyIssuesManagementService
         files: any[],
     ): Promise<void> {
         try {
+            if (!files || files?.length === 0) {
+                return;
+            }
+
             const prChangedFiles = await this.getChangedFiles(context);
 
             for (const file of files) {

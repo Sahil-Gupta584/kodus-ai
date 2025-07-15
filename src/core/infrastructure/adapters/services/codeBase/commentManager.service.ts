@@ -537,7 +537,10 @@ Avoid making assumptions or including inferred details not present in the provid
                 );
             }
 
-            return `${resultText}\n\n${this.generateConfigReviewMarkdown(organizationAndTeamData, prNumber, codeReviewConfig)}\n\n<!-- kody-codereview -->\n&#8203;`;
+            // Adicionar tag única com timestamp para identificar este comentário como finalizado
+            const uniqueId = `completed-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+            return `${resultText}\n\n${this.generateConfigReviewMarkdown(organizationAndTeamData, prNumber, codeReviewConfig)}\n\n<!-- kody-codereview-${uniqueId} -->\n<!-- kody-codereview -->\n&#8203;`;
         } catch (error) {
             this.logger.error({
                 message:
@@ -548,8 +551,9 @@ Avoid making assumptions or including inferred details not present in the provid
             });
 
             const fallbackText = '## Code Review Completed! 🔥';
+            const uniqueId = `completed-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-            return `${fallbackText}\n\n<!-- kody-codereview -->\n&#8203;`;
+            return `${fallbackText}\n\n<!-- kody-codereview-${uniqueId} -->\n<!-- kody-codereview -->\n&#8203;`;
         }
     }
 
@@ -1217,6 +1221,134 @@ ${reviewOptionsMarkdown}
             });
 
             return { commentResults: [] };
+        }
+    }
+
+    /**
+     * Encontra o último comentário de code review finalizado em um PR
+     * usando a tag <!-- kody-codereview-completed-{uniqueId} -->
+     */
+    async findLastReviewComment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string },
+        platformType: PlatformType,
+    ): Promise<{ commentId: number; nodeId?: string } | null> {
+        try {
+            if (platformType !== PlatformType.GITHUB) {
+                return null;
+            }
+
+            const comments = await this.codeManagementService.getAllCommentsInPullRequest({
+                organizationAndTeamData,
+                repository,
+                prNumber,
+            });
+
+            if (!comments?.length) {
+                return null;
+            }
+
+            // ✅ SIMPLES: Filtra apenas pela tag HTML + ordena por data
+            const completedReviewComments = comments
+                .filter((comment: any) => {
+                    const body = comment.body || '';
+                    return body.includes('<!-- kody-codereview-completed-');
+                })
+                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+            if (!completedReviewComments.length) {
+                return null;
+            }
+
+            // Pega o mais recente (primeiro após ordenação)
+            const lastReviewComment = completedReviewComments[0];
+
+            return {
+                commentId: lastReviewComment.id,
+                nodeId: lastReviewComment.node_id,
+            };
+        } catch (error) {
+            this.logger.error({
+                message: `Failed to find last review comment for PR#${prNumber}`,
+                context: CommentManagerService.name,
+                error: error.message,
+            });
+            return null;
+        }
+    }
+
+    /**
+     * Minimiza o último comentário de code review finalizado em um PR
+     * para evitar spam na timeline quando há múltiplas reviews
+     */
+    async minimizeLastReviewComment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string },
+        platformType: PlatformType,
+    ): Promise<boolean> {
+        try {
+            if (platformType !== PlatformType.GITHUB) {
+                this.logger.log({
+                    message: `Skipping minimize comment for PR#${prNumber} - platform ${platformType} not supported`,
+                    context: CommentManagerService.name,
+                    metadata: { organizationAndTeamData, platformType, prNumber },
+                });
+                return false;
+            }
+
+            // Encontrar o último comentário de review finalizado
+            const lastReviewComment = await this.findLastReviewComment(
+                organizationAndTeamData,
+                prNumber,
+                repository,
+                platformType,
+            );
+
+            if (!lastReviewComment) {
+                this.logger.log({
+                    message: `No previous review comment found to minimize for PR#${prNumber}`,
+                    context: CommentManagerService.name,
+                    metadata: { organizationAndTeamData, prNumber, repository: repository.name },
+                });
+                return false;
+            }
+
+            // Minimizar o comentário usando o nodeId (GraphQL ID) se disponível, senão usar o commentId
+            const commentIdToMinimize = lastReviewComment.nodeId || lastReviewComment.commentId;
+
+            await this.codeManagementService.minimizeComment({
+                organizationAndTeamData,
+                commentId: commentIdToMinimize.toString(),
+                reason: 'OUTDATED',
+            });
+
+            this.logger.log({
+                message: `Successfully minimized previous review comment for PR#${prNumber}`,
+                context: CommentManagerService.name,
+                metadata: {
+                    commentId: lastReviewComment.commentId,
+                    nodeId: lastReviewComment.nodeId,
+                    prNumber,
+                    organizationAndTeamData,
+                },
+            });
+
+            return true;
+        } catch (error) {
+            this.logger.error({
+                message: `Failed to minimize last review comment for PR#${prNumber}`,
+                context: CommentManagerService.name,
+                error: error.message,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    repository,
+                    platformType,
+                },
+            });
+            return false;
         }
     }
 }

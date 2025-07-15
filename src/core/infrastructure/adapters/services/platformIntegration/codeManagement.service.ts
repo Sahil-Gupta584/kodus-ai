@@ -648,6 +648,26 @@ export class CodeManagementService implements ICodeManagementService {
         return codeManagementService.countReactions(params);
     }
 
+    async minimizeComment(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            commentId: string;
+            reason?: 'ABUSE' | 'OFF_TOPIC' | 'OUTDATED' | 'RESOLVED' | 'DUPLICATE' | 'SPAM';
+        },
+        type?: PlatformType,
+    ): Promise<any | null> {
+        if (!type) {
+            type = await this.getTypeIntegration(
+                extractOrganizationAndTeamData(params),
+            );
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.minimizeComment(params);
+    }
+
     async getRepositoryAllFiles(
         params: {
             repository: string;

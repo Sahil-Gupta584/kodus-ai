@@ -18,9 +18,8 @@ export interface IAutomationExecutionRepository {
     find(
         filter?: Partial<IAutomationExecution>,
     ): Promise<AutomationExecutionEntity[]>;
-    findLatestExecutionByDataExecutionFilter(
-        dataExecutionFilter: Partial<any>,
-        additionalFilters?: Partial<any>,
+    findLatestExecutionByFilters(
+        filters?: Partial<any>,
     ): Promise<AutomationExecutionEntity | null>;
     findByPeriodAndTeamAutomationId(
         startDate: Date,
