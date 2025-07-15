@@ -5,6 +5,8 @@ import { McpServerService } from './services/mcp-server.service';
 import { McpEnabledGuard } from './guards/mcp-enabled.guard';
 import { PlatformIntegrationModule } from '../../../../modules/platformIntegration.module';
 import { CodeManagementTools, RepositoryTools } from './tools';
+import { MCPManagerService } from '../services/mcp/mcpManager.service';
+import { JwtModule } from '@nestjs/jwt';
 
 @Module({})
 export class McpModule {
@@ -19,7 +21,7 @@ export class McpModule {
             configService?.get<boolean>('API_MCP_SERVER_ENABLED', false);
 
         if (isEnabled) {
-            imports.push(PlatformIntegrationModule);
+            imports.push(PlatformIntegrationModule, JwtModule);
 
             controllers.push(McpController);
 
@@ -28,6 +30,7 @@ export class McpModule {
                 McpEnabledGuard,
                 CodeManagementTools,
                 RepositoryTools,
+                MCPManagerService,
             );
 
             exports.push(McpServerService);
