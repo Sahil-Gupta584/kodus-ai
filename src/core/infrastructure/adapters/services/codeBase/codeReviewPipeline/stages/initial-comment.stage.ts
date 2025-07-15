@@ -6,6 +6,7 @@ import {
 } from '@/core/domain/codeBase/contracts/CommentManagerService.contract';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 
 @Injectable()
 export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -22,6 +23,38 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
     protected async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
+        if (context.lastExecution && context.platformType === PlatformType.GITHUB) {
+            this.logger.log({
+                message: `Minimizing previous review comment for subsequent review on PR#${context.pullRequest.number}`,
+                context: this.stageName,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                    repository: context.repository.name,
+                    lastExecution: context.lastExecution,
+                },
+            });
+
+            try {
+                await this.commentManagerService.minimizeLastReviewComment(
+                    context.organizationAndTeamData,
+                    context.pullRequest.number,
+                    context.repository,
+                    context.platformType,
+                );
+            } catch (error) {
+                this.logger.warn({
+                    message: `Failed to minimize previous review comment for PR#${context.pullRequest.number}, continuing with new review`,
+                    context: this.stageName,
+                    error: error.message,
+                    metadata: {
+                        organizationAndTeamData: context.organizationAndTeamData,
+                        prNumber: context.pullRequest.number,
+                    },
+                });
+            }
+        }
+
         const result = await this.commentManagerService.createInitialComment(
             context.organizationAndTeamData,
             context.pullRequest.number,
