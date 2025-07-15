@@ -85,7 +85,19 @@ export interface ICommentManagerService {
         repository: { name: string; id: string; language: string },
         prLevelSuggestions: ISuggestionByPR[],
         language: string,
-    ): Promise<{
-        commentResults: Array<CommentResult>;
-    }>;
+    ): Promise<{ commentResults: Array<CommentResult>; }>;
+
+    findLastReviewComment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string },
+        platformType: PlatformType,
+    ): Promise<{ commentId: string; nodeId?: string } | null>;
+
+    minimizeLastReviewComment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string },
+        platformType: PlatformType,
+    ): Promise<boolean>;
 }

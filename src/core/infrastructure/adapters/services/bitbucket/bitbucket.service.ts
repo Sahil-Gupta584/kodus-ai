@@ -3844,4 +3844,18 @@ export class BitbucketService
 
         return Promise.resolve(commentBody.trim());
     }
+
+    minimizeComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        commentId: string;
+        reason?:
+            | 'ABUSE'
+            | 'OFF_TOPIC'
+            | 'OUTDATED'
+            | 'RESOLVED'
+            | 'DUPLICATE'
+            | 'SPAM';
+    }): Promise<any | null> {
+        throw new Error('Method not implemented.');
+    }
 }

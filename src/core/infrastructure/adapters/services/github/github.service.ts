@@ -516,13 +516,16 @@ export class GithubService
                 });
             } else {
                 // Para contas pessoais, verificar o tipo de autenticação
-                if (authDetails.authMode === AuthMode.OAUTH && 'installationId' in authDetails) {
+                if (
+                    authDetails.authMode === AuthMode.OAUTH &&
+                    'installationId' in authDetails
+                ) {
                     // Para GitHub Apps, usar a API específica que lista repos acessíveis à instalação
                     repos = await octokit.paginate(
                         octokit.rest.apps.listReposAccessibleToInstallation,
                     );
                     // A API retorna objetos com estrutura diferente, extrair os repositórios
-                    repos = repos.map(item => item.repository || item);
+                    repos = repos.map((item) => item.repository || item);
                 } else {
                     // Para PATs, usar a API tradicional
                     repos = await octokit.paginate(
@@ -1074,13 +1077,16 @@ export class GithubService
                 });
             } else {
                 // Para contas pessoais, verificar o tipo de autenticação
-                if (githubAuthDetail.authMode === AuthMode.OAUTH && 'installationId' in githubAuthDetail) {
+                if (
+                    githubAuthDetail.authMode === AuthMode.OAUTH &&
+                    'installationId' in githubAuthDetail
+                ) {
                     // Para GitHub Apps, usar a API específica que lista repos acessíveis à instalação
                     repos = await octokit.paginate(
                         octokit.rest.apps.listReposAccessibleToInstallation,
                     );
                     // A API retorna objetos com estrutura diferente, extrair os repositórios
-                    repos = repos.map(item => item.repository || item);
+                    repos = repos.map((item) => item.repository || item);
                 } else {
                     // Para PATs, usar a API tradicional
                     repos = await octokit.paginate(
@@ -3245,6 +3251,72 @@ export class GithubService
                     ...params,
                 },
             });
+        }
+    }
+
+    async minimizeComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        commentId: string;
+        reason?:
+            | 'ABUSE'
+            | 'OFF_TOPIC'
+            | 'OUTDATED'
+            | 'RESOLVED'
+            | 'DUPLICATE'
+            | 'SPAM';
+    }): Promise<any | null> {
+        try {
+            const {
+                organizationAndTeamData,
+                commentId,
+                reason = 'OUTDATED',
+            } = params;
+
+            const graphql = await this.instanceGraphQL(organizationAndTeamData);
+
+            const mutation = `
+            mutation MinimizeComment($input: MinimizeCommentInput!) {
+                minimizeComment(input: $input) {
+                    clientMutationId
+                    minimizedComment {
+                        isMinimized
+                        minimizedReason
+                        viewerCanMinimize
+                    }
+                }
+            }
+        `;
+
+            const response = await graphql(mutation, {
+                input: {
+                    subjectId: commentId,
+                    classifier: reason,
+                },
+            });
+
+            this.logger.log({
+                message: `Successfully minimized comment ${commentId}`,
+                context: GithubService.name,
+                metadata: {
+                    commentId,
+                    reason,
+                    organizationId: organizationAndTeamData.organizationId,
+                    teamId: organizationAndTeamData.teamId,
+                },
+            });
+
+            return response;
+        } catch (error) {
+            this.logger.error({
+                message: `Error minimizing comment ${params.commentId}:`,
+                context: GithubService.name,
+                serviceName: 'GithubService minimizeComment',
+                error: error,
+                metadata: {
+                    ...params,
+                },
+            });
+            throw error;
         }
     }
 

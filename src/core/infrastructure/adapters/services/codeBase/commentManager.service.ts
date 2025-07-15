@@ -537,7 +537,10 @@ Avoid making assumptions or including inferred details not present in the provid
                 );
             }
 
-            return `${resultText}\n\n${this.generateConfigReviewMarkdown(organizationAndTeamData, prNumber, codeReviewConfig)}\n\n<!-- kody-codereview -->\n&#8203;`;
+            // Adicionar tag única com timestamp para identificar este comentário como finalizado
+            const uniqueId = `completed-${Date.now()}`;
+
+            return `${resultText}\n\n${this.generateConfigReviewMarkdown(organizationAndTeamData, prNumber, codeReviewConfig)}\n\n<!-- kody-codereview-${uniqueId} -->\n<!-- kody-codereview -->\n&#8203;`;
         } catch (error) {
             this.logger.error({
                 message:
@@ -548,8 +551,9 @@ Avoid making assumptions or including inferred details not present in the provid
             });
 
             const fallbackText = '## Code Review Completed! 🔥';
+            const uniqueId = `completed-${Date.now()}`;
 
-            return `${fallbackText}\n\n<!-- kody-codereview -->\n&#8203;`;
+            return `${fallbackText}\n\n<!-- kody-codereview-${uniqueId} -->\n<!-- kody-codereview -->\n&#8203;`;
         }
     }
 
@@ -1217,6 +1221,162 @@ ${reviewOptionsMarkdown}
             });
 
             return { commentResults: [] };
+        }
+    }
+
+    /**
+     * Encontra o último comentário de code review finalizado em um PR
+     * usando a tag <!-- kody-codereview-completed-{executionId} -->
+     */
+    async findLastReviewComment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string },
+        platformType: PlatformType,
+    ): Promise<{ commentId: string; nodeId?: string } | null> {
+        try {
+            if (platformType !== PlatformType.GITHUB) {
+                return null; // Por enquanto só implementado para GitHub
+            }
+
+            // Buscar todos os comentários do PR
+            const comments = await this.codeManagementService.getAllCommentsInPullRequest({
+                organizationAndTeamData,
+                repository,
+                prNumber,
+            });
+
+            if (!comments?.length) {
+                return null;
+            }
+
+            // Filtrar comentários que contêm a tag de code review finalizado
+            // Procura por comentários que terminam com kody-codereview e não contêm "kody-codereview-completed"
+            const kodyReviewComments = comments.filter(comment => {
+                const body = comment.body || '';
+                return (
+                    body.includes('<!-- kody-codereview -->') &&
+                    !body.includes('Code Review Started') && // Não é comentário inicial
+                    (
+                        body.includes('Code Review Completed') ||
+                        body.includes('Revisão de Código Concluída') ||
+                        body.includes('Code Review Finalizado') ||
+                        body.includes('<!-- kody-codereview-completed-') // Nova tag única
+                    )
+                );
+            });
+
+            if (!kodyReviewComments.length) {
+                return null;
+            }
+
+            // Pegar o mais recente (último comentário de review finalizado)
+            const lastReviewComment = kodyReviewComments.sort(
+                (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            )[0];
+
+            this.logger.log({
+                message: `Found last review comment for PR#${prNumber}`,
+                context: CommentManagerService.name,
+                metadata: {
+                    commentId: lastReviewComment.id,
+                    createdAt: lastReviewComment.created_at,
+                    organizationAndTeamData,
+                    prNumber,
+                },
+            });
+
+            return {
+                commentId: lastReviewComment.id.toString(),
+                nodeId: lastReviewComment.node_id, // GraphQL ID se disponível
+            };
+        } catch (error) {
+            this.logger.error({
+                message: `Failed to find last review comment for PR#${prNumber}`,
+                context: CommentManagerService.name,
+                error: error.message,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    repository,
+                    platformType,
+                },
+            });
+            return null;
+        }
+    }
+
+    /**
+     * Minimiza o último comentário de code review finalizado em um PR
+     * para evitar spam na timeline quando há múltiplas reviews
+     */
+    async minimizeLastReviewComment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string },
+        platformType: PlatformType,
+    ): Promise<boolean> {
+        try {
+            if (platformType !== PlatformType.GITHUB) {
+                this.logger.log({
+                    message: `Skipping minimize comment for PR#${prNumber} - platform ${platformType} not supported`,
+                    context: CommentManagerService.name,
+                    metadata: { platformType, prNumber },
+                });
+                return false;
+            }
+
+            // Encontrar o último comentário de review finalizado
+            const lastReviewComment = await this.findLastReviewComment(
+                organizationAndTeamData,
+                prNumber,
+                repository,
+                platformType,
+            );
+
+            if (!lastReviewComment) {
+                this.logger.log({
+                    message: `No previous review comment found to minimize for PR#${prNumber}`,
+                    context: CommentManagerService.name,
+                    metadata: { prNumber, repository: repository.name },
+                });
+                return false;
+            }
+
+            // Minimizar o comentário usando o nodeId (GraphQL ID) se disponível, senão usar o commentId
+            const commentIdToMinimize = lastReviewComment.nodeId || lastReviewComment.commentId;
+
+            await this.codeManagementService.minimizeComment({
+                organizationAndTeamData,
+                commentId: commentIdToMinimize,
+                reason: 'OUTDATED',
+            });
+
+            this.logger.log({
+                message: `Successfully minimized previous review comment for PR#${prNumber}`,
+                context: CommentManagerService.name,
+                metadata: {
+                    commentId: lastReviewComment.commentId,
+                    nodeId: lastReviewComment.nodeId,
+                    prNumber,
+                    organizationAndTeamData,
+                },
+            });
+
+            return true;
+        } catch (error) {
+            this.logger.error({
+                message: `Failed to minimize last review comment for PR#${prNumber}`,
+                context: CommentManagerService.name,
+                error: error.message,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    repository,
+                    platformType,
+                },
+            });
+            return false;
         }
     }
 }

@@ -49,6 +49,11 @@ export interface ICodeManagementService
     createIssueComment(params: any): Promise<any | null>;
     createSingleIssueComment(params: any): Promise<any | null>;
     updateIssueComment(params: any): Promise<any | null>;
+    minimizeComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        commentId: string;
+        reason?: 'ABUSE' | 'OFF_TOPIC' | 'OUTDATED' | 'RESOLVED' | 'DUPLICATE' | 'SPAM';
+    }): Promise<any | null>;
 
     findTeamAndOrganizationIdByConfigKey(
         params: any,
