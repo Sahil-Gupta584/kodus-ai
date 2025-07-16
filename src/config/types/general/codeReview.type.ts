@@ -276,6 +276,7 @@ export type CodeReviewConfig = {
     ignoredTitleKeywords: string[];
     baseBranches: string[];
     automatedReviewActive: boolean;
+    reviewCadence: ReviewCadence;
     summary: SummaryConfig;
     languageResultPrompt: string;
     llmProvider?: LLMModelProvider;
@@ -333,4 +334,23 @@ export type KodyFineTuningConfig = {
 
 export enum SuggestionType {
     CROSS_FILE = 'cross_file',
+}
+
+export type ReviewCadence = {
+    type: ReviewCadenceType;
+    timeWindow?: number;
+    pushesToTrigger?: number;
+}
+
+export interface AutomaticReviewStatus {
+    previousStatus: 'automatic' | 'paused' | 'manual';
+    currentStatus: 'automatic' | 'paused' | 'manual';
+    reasonForChange?: string;
+    pauseCommentId?: string;
+}
+
+export enum ReviewCadenceType {
+    AUTOMATIC = 'automatic',
+    MANUAL = 'manual',
+    AUTO_PAUSE = 'auto_pause',
 }
