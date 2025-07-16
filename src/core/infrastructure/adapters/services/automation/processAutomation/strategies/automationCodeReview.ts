@@ -145,6 +145,7 @@ export class AutomationCodeReviewService
                             noteId: result.noteId,
                             threadId: result.threadId,
                             repositoryId: repository?.id,
+                            automaticReviewStatus: result.automaticReviewStatus,
                         },
                         teamAutomationId,
                         'System',
