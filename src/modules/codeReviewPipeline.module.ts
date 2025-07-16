@@ -33,6 +33,7 @@ import { ProcessFilesPrLevelReviewStage } from '@/core/infrastructure/adapters/s
 import { CreatePrLevelCommentsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/create-pr-level-comments.stage';
 import { CreateFileCommentsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/create-file-comments.stage';
 import { CodeAnalysisASTCleanupStage } from '@/ee/codeReview/stages/code-analysis-ast-cleanup.stage';
+import { TeamAutomationModule } from './teamAutomation.module';
 
 @Module({
     imports: [
@@ -40,6 +41,7 @@ import { CodeAnalysisASTCleanupStage } from '@/ee/codeReview/stages/code-analysi
         forwardRef(() => ParametersModule),
         forwardRef(() => PlatformIntegrationModule),
         forwardRef(() => AutomationModule),
+        forwardRef(() => TeamAutomationModule),
         forwardRef(() => PullRequestsModule),
         forwardRef(() => KodyRulesModule),
         forwardRef(() => SuggestionEmbeddedModule),
