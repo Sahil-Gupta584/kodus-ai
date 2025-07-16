@@ -275,6 +275,7 @@ export interface MCPServerConfig {
     headers?: Record<string, string>;
     timeout?: number;
     retries?: number;
+    allowedTools?: string[];
 }
 
 export interface MCPAdapterConfig {

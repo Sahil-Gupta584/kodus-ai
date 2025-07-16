@@ -4,7 +4,10 @@ import { McpController } from './controllers/mcp.controller';
 import { McpServerService } from './services/mcp-server.service';
 import { McpEnabledGuard } from './guards/mcp-enabled.guard';
 import { PlatformIntegrationModule } from '../../../../modules/platformIntegration.module';
-import { CodeManagementTools, RepositoryTools } from './tools';
+import { CodeManagementTools, KodyRulesTools } from './tools';
+import { MCPManagerService } from '../services/mcp/mcpManager.service';
+import { JwtModule } from '@nestjs/jwt';
+import { KodyRulesModule } from '@/modules/kodyRules.module';
 
 @Module({})
 export class McpModule {
@@ -19,7 +22,7 @@ export class McpModule {
             configService?.get<boolean>('API_MCP_SERVER_ENABLED', false);
 
         if (isEnabled) {
-            imports.push(PlatformIntegrationModule);
+            imports.push(PlatformIntegrationModule, JwtModule, KodyRulesModule);
 
             controllers.push(McpController);
 
@@ -27,7 +30,8 @@ export class McpModule {
                 McpServerService,
                 McpEnabledGuard,
                 CodeManagementTools,
-                RepositoryTools,
+                KodyRulesTools,
+                MCPManagerService,
             );
 
             exports.push(McpServerService);

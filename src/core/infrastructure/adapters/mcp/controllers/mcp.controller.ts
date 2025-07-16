@@ -1,9 +1,23 @@
-import { Controller, Post, Get, Delete, Body, Headers, Res, HttpStatus, UseGuards } from '@nestjs/common';
+import {
+    Controller,
+    Post,
+    Get,
+    Delete,
+    Body,
+    Headers,
+    Res,
+    HttpStatus,
+    UseGuards,
+    Inject,
+    Param,
+} from '@nestjs/common';
 import { Response } from 'express';
 import { McpServerService } from '../services/mcp-server.service';
 import { McpEnabledGuard } from '../guards/mcp-enabled.guard';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { PinoLoggerService } from '../../services/logger/pino.service';
+import { MCPManagerService } from '../../services/mcp/mcpManager.service';
+import { REQUEST } from '@nestjs/core';
 
 @Controller('mcp')
 @UseGuards(McpEnabledGuard)
@@ -11,6 +25,12 @@ export class McpController {
     constructor(
         private readonly mcpServerService: McpServerService,
         private readonly logger: PinoLoggerService,
+        private readonly mcpManagerService: MCPManagerService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: { organization: { uuid: string } };
+        },
     ) {}
 
     @Post()
@@ -25,8 +45,13 @@ export class McpController {
                 await this.mcpServerService.handleRequest(sessionId, body, res);
             } else if (!sessionId && isInitializeRequest(body)) {
                 // New initialization request
-                const newSessionId = await this.mcpServerService.createSession();
-                await this.mcpServerService.handleRequest(newSessionId, body, res);
+                const newSessionId =
+                    await this.mcpServerService.createSession();
+                await this.mcpServerService.handleRequest(
+                    newSessionId,
+                    body,
+                    res,
+                );
             } else {
                 // Invalid request
                 res.status(HttpStatus.BAD_REQUEST).json({
@@ -62,7 +87,9 @@ export class McpController {
         @Res() res: Response,
     ) {
         if (!sessionId || !this.mcpServerService.hasSession(sessionId)) {
-            res.status(HttpStatus.BAD_REQUEST).send('Invalid or missing session ID');
+            res.status(HttpStatus.BAD_REQUEST).send(
+                'Invalid or missing session ID',
+            );
             return;
         }
 
@@ -75,11 +102,12 @@ export class McpController {
         @Res() res: Response,
     ) {
         if (!sessionId || !this.mcpServerService.hasSession(sessionId)) {
-            res.status(HttpStatus.BAD_REQUEST).send('Invalid or missing session ID');
+            res.status(HttpStatus.BAD_REQUEST).send(
+                'Invalid or missing session ID',
+            );
             return;
         }
 
         await this.mcpServerService.terminateSession(sessionId, res);
     }
 }
-
