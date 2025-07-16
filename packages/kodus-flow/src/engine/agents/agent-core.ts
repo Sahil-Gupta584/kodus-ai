@@ -31,6 +31,10 @@ import {
     AgentContextConfig,
     createAgentContext,
 } from '../../core/context/context-factory.js';
+import type {
+    AgentRuntime,
+    ServiceRegistry,
+} from '../../core/services/service-registry.js';
 import type { AgentContext, ToolCall } from '../../core/types/common-types.js';
 import type { ToolEngine } from '../tools/tool-engine.js';
 import {
@@ -152,6 +156,10 @@ export interface AgentCoreConfig {
 
     // Permitir injeção de factory customizada
     agentContextFactory?: (config: AgentContextConfig) => AgentContext;
+
+    // NEW: Support for clean architecture (optional)
+    serviceRegistry?: ServiceRegistry;
+    enableCleanArchitecture?: boolean;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -267,7 +275,11 @@ export abstract class AgentCore<
     // Permitir injeção de factory customizada
     protected agentContextFactory: (
         config: AgentContextConfig,
-    ) => AgentContext = createAgentContext;
+    ) => Promise<AgentContext> = createAgentContext;
+
+    // NEW: Clean architecture support
+    protected serviceRegistry?: ServiceRegistry;
+    protected defaultRuntime?: AgentRuntime;
 
     constructor(
         definitionOrConfig:
@@ -303,9 +315,14 @@ export abstract class AgentCore<
             typeof (this.config as Partial<AgentCoreConfig>)
                 .agentContextFactory === 'function'
         ) {
-            this.agentContextFactory = (
-                this.config as AgentCoreConfig
-            ).agentContextFactory!;
+            const customFactory = (this.config as AgentCoreConfig)
+                .agentContextFactory!;
+            this.agentContextFactory = async (config: AgentContextConfig) => {
+                const result = customFactory(config);
+                return result instanceof Promise
+                    ? result
+                    : Promise.resolve(result);
+            };
         }
 
         // Apply defaults
@@ -392,7 +409,6 @@ export abstract class AgentCore<
         sessionId?: string,
         options?: AgentExecutionOptions,
     ): Promise<AgentExecutionResult<unknown>> {
-        debugger;
         const startTime = Date.now();
         const executionId = IdGenerator.executionId();
 
@@ -400,39 +416,90 @@ export abstract class AgentCore<
             agentName: agent.name,
             correlationId,
             executionId,
-            sessionId,
+            sessionId: sessionId || 'will-be-determined-by-threadId',
             inputType: typeof input,
         });
 
-        // Track execution
+        // Create context - session will be determined by threadId, not sessionId
+        const context = await this.createAgentContext(
+            agent.name,
+            correlationId,
+            undefined, // Let session be determined by threadId
+            executionId,
+            options,
+        );
+
+        // Track execution with actual sessionId from context
         this.activeExecutions.set(executionId, {
             correlationId,
-            sessionId,
+            sessionId: context.system.sessionId,
             startTime,
             status: 'running',
         });
 
-        // Create context
-        const context = this.createAgentContext(
-            agent.name,
-            correlationId,
-            sessionId,
-            executionId,
-        );
-
-        // ✅ ADD AGENT IDENTITY to context for enhanced execution
-        if (agent.identity) {
-            context.agentIdentity = agent.identity;
+        // 🚀 Add execution start to ContextManager
+        if (context.contextManager) {
+            await context.contextManager.addContextValue({
+                type: 'execution',
+                key: 'start',
+                value: {
+                    executionId,
+                    startTime,
+                    status: 'running',
+                    agentName: agent.name,
+                    timestamp: Date.now(),
+                },
+                metadata: {
+                    source: 'agent-core',
+                    action: 'execution_started',
+                    correlationId,
+                    agentName: agent.name,
+                },
+            });
         }
 
-        // Adicionar entrada na conversa se tiver sessionId
-        if (options?.sessionId) {
+        // 🚀 Add agent identity to context for enhanced execution
+        if (agent.identity) {
+            context.agentIdentity = agent.identity;
+
+            // Inform ContextManager about this context update
+            await context.contextManager?.addContextValue({
+                type: 'agent',
+                key: 'identity',
+                value: agent.identity,
+                metadata: {
+                    source: 'agent-core',
+                    action: 'initialization',
+                    agentName: agent.name,
+                },
+            });
+        }
+
+        // 🚀 Add conversation entry if session exists
+        if (context.system.sessionId) {
             sessionService.addConversationEntry(
-                options.sessionId,
+                context.system.sessionId,
                 input,
                 null, // output será adicionado depois
                 agent.name,
             );
+
+            // Inform ContextManager about this conversation entry
+            await context.contextManager?.addContextValue({
+                type: 'session',
+                key: 'conversationEntry',
+                value: {
+                    sessionId: context.system.sessionId,
+                    input,
+                    agentName: agent.name,
+                    timestamp: Date.now(),
+                },
+                metadata: {
+                    source: 'agent-core',
+                    action: 'conversation-start',
+                    sessionId: context.system.sessionId,
+                },
+            });
         }
 
         try {
@@ -453,6 +520,29 @@ export abstract class AgentCore<
                 execution.status = 'completed';
             }
 
+            // 🚀 Add execution completion to ContextManager
+            if (context.contextManager) {
+                await context.contextManager.addContextValue({
+                    type: 'execution',
+                    key: 'completion',
+                    value: {
+                        executionId,
+                        duration,
+                        iterations: result.iterations,
+                        toolsUsed: result.toolsUsed,
+                        success: true, // Assume success if no error thrown
+                        status: 'completed',
+                        timestamp: Date.now(),
+                    },
+                    metadata: {
+                        source: 'agent-core',
+                        action: 'execution_completed',
+                        correlationId,
+                        agentName: agent.name,
+                    },
+                });
+            }
+
             this.logger.info('Agent execution completed', {
                 agentName: agent.name,
                 correlationId,
@@ -464,9 +554,9 @@ export abstract class AgentCore<
             });
 
             // Atualizar saída na conversa se tiver sessionId
-            if (options?.sessionId) {
+            if (context.system.sessionId) {
                 sessionService.addConversationEntry(
-                    options.sessionId,
+                    context.system.sessionId,
                     input,
                     result.output,
                     agent.name,
@@ -479,7 +569,7 @@ export abstract class AgentCore<
                 data: result.output,
                 reasoning: result.reasoning,
                 correlationId,
-                sessionId,
+                sessionId: context.system.sessionId,
                 status: 'COMPLETED',
                 executionId,
                 duration,
@@ -503,7 +593,7 @@ export abstract class AgentCore<
                 agentName: agent.name,
                 correlationId,
                 executionId,
-                sessionId,
+                sessionId: context.system.sessionId,
                 duration,
             });
 
@@ -521,8 +611,8 @@ export abstract class AgentCore<
             | AgentDefinition<unknown, unknown, unknown>,
         input: unknown,
         context: AgentContext,
-        correlationId: string,
-        maxIterations?: number,
+        _correlationId: string,
+        _maxIterations?: number,
     ): Promise<{
         output: unknown;
         reasoning: string;
@@ -530,84 +620,50 @@ export abstract class AgentCore<
         toolsUsed: number;
         events: AnyEvent[];
     }> {
-        debugger;
-        // Check if we have planner and LLM adapter for Think→Act→Observe
+        // Agents REQUIRE planner and LLM - no fallback
         if (!this.planner || !this.llmAdapter) {
-            // ✅ Verify if agent REQUIRES planning/LLM features
-            const agentConfig = agent.config;
-            const requiresLLM = agentConfig?.enableLLM !== false; // default to true
-
-            if (requiresLLM && !this.llmAdapter) {
-                throw createAgentError(
-                    `Agent '${agent.name}' requires LLM adapter but none provided`,
-                    {
-                        severity: 'high',
-                        domain: 'infrastructure',
-                        userImpact: 'broken',
-                        retryable: false,
-                        recoverable: true,
-                        context: {
-                            agentName: agent.name,
-                            requiresLLM,
-                            hasLLMAdapter: !!this.llmAdapter,
-                        },
-                        userMessage:
-                            'This agent requires an AI language model to function properly.',
-                        recoveryHints: [
-                            'Provide an LLMAdapter when creating the agent',
-                            'Set agent.config.enableLLM = false to disable LLM features',
-                            'Check that your LLM provider is properly configured',
-                        ],
+            throw createAgentError(
+                `Agent '${agent.name}' requires both planner and LLM adapter`,
+                {
+                    severity: 'high',
+                    domain: 'infrastructure',
+                    userImpact: 'broken',
+                    retryable: false,
+                    recoverable: true,
+                    context: {
+                        agentName: agent.name,
+                        hasPlanner: !!this.planner,
+                        hasLLMAdapter: !!this.llmAdapter,
                     },
-                );
-            }
-
-            // Fallback to legacy agent.think() approach for non-LLM agents
-            return this.processAgentThinkingLegacy(
-                agent,
-                input,
-                context,
-                correlationId,
-                maxIterations,
+                    userMessage:
+                        'This agent requires both a planner and AI language model to function.',
+                    recoveryHints: [
+                        'Provide an LLMAdapter when creating the agent',
+                        'Ensure planner is properly initialized',
+                        'Check that your LLM provider is properly configured',
+                    ],
+                },
             );
         }
 
-        // Use Think→Act→Observe pattern with proper planner
-        try {
-            const result = await this.executeThinkActObserve(input, context);
+        // Use Think→Act→Observe pattern - the ONLY way
+        const result = await this.executeThinkActObserve(input, context);
 
-            // Get execution context for metrics
-            const executionContext = this.executionContext;
-            const finalResult = executionContext?.getFinalResult();
+        // Get execution context for metrics
+        const executionContext = this.executionContext;
+        const finalResult = executionContext?.getFinalResult();
 
-            return {
-                output: result,
-                reasoning:
-                    finalResult?.thoughts?.[finalResult.thoughts.length - 1]
-                        ?.reasoning || 'Think→Act→Observe completed',
-                iterations: finalResult?.iterations || 1,
-                toolsUsed: this.countToolCallsInThoughts(
-                    finalResult?.thoughts || [],
-                ),
-                events: this.extractEventsFromExecutionContext(
-                    executionContext,
-                ),
-            };
-        } catch (error) {
-            this.logger.error(
-                'Think→Act→Observe failed, falling back to legacy',
-                error as Error,
-            );
-
-            // Fallback to legacy approach
-            return this.processAgentThinkingLegacy(
-                agent,
-                input,
-                context,
-                correlationId,
-                maxIterations,
-            );
-        }
+        return {
+            output: result,
+            reasoning:
+                finalResult?.thoughts?.[finalResult.thoughts.length - 1]
+                    ?.reasoning || 'Think→Act→Observe completed',
+            iterations: finalResult?.iterations || 1,
+            toolsUsed: this.countToolCallsInThoughts(
+                finalResult?.thoughts || [],
+            ),
+            events: this.extractEventsFromExecutionContext(executionContext),
+        };
     }
 
     /**
@@ -616,107 +672,6 @@ export abstract class AgentCore<
     private countToolCallsInThoughts(thoughts: NewAgentThought[]): number {
         return thoughts.filter((thought) => thought.action.type === 'tool_call')
             .length;
-    }
-
-    /**
-     * Legacy agent thinking process (fallback when no planner/LLM available)
-     * DEPRECATED: Use Think→Act→Observe pattern instead
-     */
-    private async processAgentThinkingLegacy(
-        agent:
-            | AgentDefinition<TInput, TOutput, TContent>
-            | AgentDefinition<unknown, unknown, unknown>,
-        input: unknown,
-        context: AgentContext,
-        correlationId: string,
-        maxIterations?: number,
-    ): Promise<{
-        output: unknown;
-        reasoning: string;
-        iterations: number;
-        toolsUsed: number;
-        events: AnyEvent[];
-    }> {
-        const maxIterationsCount =
-            maxIterations || this.config.maxThinkingIterations || 5;
-        let iterations = 0;
-        let toolsUsed = 0;
-        const events: AnyEvent[] = [];
-
-        this.logger.debug('Starting legacy agent thinking process', {
-            agentName: agent.name,
-            maxIterations: maxIterationsCount,
-            correlationId,
-        });
-
-        while (iterations < maxIterationsCount) {
-            iterations++;
-
-            this.logger.debug('Legacy agent thinking iteration', {
-                agentName: agent.name,
-                iteration: iterations,
-                correlationId,
-            });
-
-            // Execute agent thinking
-            const thought = await this.executeAgentThink(agent, input, context);
-
-            // Process action
-            const actionResult = await this.processAction(
-                thought,
-                context,
-                correlationId,
-                input,
-            );
-            if (actionResult.toolUsed) {
-                toolsUsed++;
-            }
-            if (actionResult.updatedInput !== undefined) {
-                input = actionResult.updatedInput;
-            }
-            events.push(...actionResult.events);
-
-            // Check if thinking is complete (final_answer action)
-            if (thought.action.type === 'final_answer') {
-                this.logger.debug('Legacy agent thinking completed', {
-                    agentName: agent.name,
-                    iterations,
-                    toolsUsed,
-                    correlationId,
-                });
-
-                return {
-                    output: thought.action.content,
-                    reasoning: thought.reasoning || 'Thinking completed',
-                    iterations,
-                    toolsUsed,
-                    events,
-                };
-            }
-
-            // Check for timeout
-            if (iterations >= maxIterationsCount) {
-                this.logger.warn('Legacy agent thinking timeout', {
-                    agentName: agent.name,
-                    iterations,
-                    maxIterations: maxIterationsCount,
-                    correlationId,
-                });
-
-                return {
-                    output: thought.action.content,
-                    reasoning: `Thinking timeout after ${iterations} iterations`,
-                    iterations,
-                    toolsUsed,
-                    events,
-                };
-            }
-        }
-
-        throw new EngineError(
-            'AGENT_ERROR',
-            `Legacy agent thinking exceeded maximum iterations: ${maxIterationsCount}`,
-        );
     }
 
     /**
@@ -732,8 +687,6 @@ export abstract class AgentCore<
         events: AnyEvent[];
         updatedInput?: unknown;
     }> {
-        debugger;
-
         const events: AnyEvent[] = [];
         let toolUsed = false;
         let updatedInput: unknown | undefined;
@@ -762,7 +715,7 @@ export abstract class AgentCore<
                             agentName: context.agentName,
                             actionType,
                             correlationId,
-                            sessionId: context.separated.system.sessionId,
+                            sessionId: context.system.sessionId,
                         },
                         {
                             deliveryGuarantee: 'at-least-once',
@@ -780,7 +733,7 @@ export abstract class AgentCore<
                         agentName: context.agentName,
                         actionType,
                         correlationId,
-                        sessionId: context.separated.system.sessionId,
+                        sessionId: context.system.sessionId,
                     });
                 }
             }
@@ -851,6 +804,27 @@ export abstract class AgentCore<
                     );
                     toolUsed = true;
 
+                    // 🚀 Add tool result to ContextManager for rich context
+                    if (context.contextManager) {
+                        await context.contextManager.addContextValue({
+                            type: 'tools',
+                            key: `${toolName}_result`,
+                            value: {
+                                toolName,
+                                parameters: toolInput,
+                                result: toolResult,
+                                success: true, // Assume success if no error thrown
+                                timestamp: Date.now(),
+                            },
+                            metadata: {
+                                source: 'agent-core',
+                                action: 'tool_execution',
+                                correlationId,
+                                agentName: context.agentName,
+                            },
+                        });
+                    }
+
                     // Update input for next iteration with tool result
                     // This is crucial for the agent to receive the tool result as input
                     updatedInput = toolResult;
@@ -869,8 +843,7 @@ export abstract class AgentCore<
                                     agentName: context.agentName,
                                     toolName: toolName,
                                     correlationId,
-                                    sessionId:
-                                        context.separated.system.sessionId,
+                                    sessionId: context.system.sessionId,
                                     result: toolResult,
                                 },
                                 {
@@ -889,7 +862,7 @@ export abstract class AgentCore<
                                 agentName: context.agentName,
                                 toolName: toolName,
                                 correlationId,
-                                sessionId: context.separated.system.sessionId,
+                                sessionId: context.system.sessionId,
                             });
                         }
                     }
@@ -914,8 +887,7 @@ export abstract class AgentCore<
                                     agentName: context.agentName,
                                     toolName: toolName,
                                     correlationId,
-                                    sessionId:
-                                        context.separated.system.sessionId,
+                                    sessionId: context.system.sessionId,
                                     error: (error as Error).message,
                                 },
                                 {
@@ -937,7 +909,7 @@ export abstract class AgentCore<
                                 agentName: context.agentName,
                                 toolName: toolName,
                                 correlationId,
-                                sessionId: context.separated.system.sessionId,
+                                sessionId: context.system.sessionId,
                                 error: (error as Error).message,
                             });
                         }
@@ -948,6 +920,27 @@ export abstract class AgentCore<
                         toolName: toolName,
                         correlationId,
                     });
+
+                    // 🚀 Add tool error to ContextManager for learning
+                    if (context.contextManager) {
+                        await context.contextManager.addContextValue({
+                            type: 'tools',
+                            key: `${toolName}_error`,
+                            value: {
+                                toolName,
+                                parameters: toolInput,
+                                success: false,
+                                error: (error as Error).message,
+                                timestamp: Date.now(),
+                            },
+                            metadata: {
+                                source: 'agent-core',
+                                action: 'tool_execution_failed',
+                                correlationId,
+                                agentName: context.agentName,
+                            },
+                        });
+                    }
 
                     throw error;
                 }
@@ -975,7 +968,7 @@ export abstract class AgentCore<
                         targetAgent,
                         delegateAction.input,
                         correlationId,
-                        context.separated.system.sessionId,
+                        context.system.sessionId,
                     );
 
                     // Update context with delegation result
@@ -1592,20 +1585,22 @@ export abstract class AgentCore<
         return 'final_answer';
     }
 
-    protected createAgentContext(
+    protected async createAgentContext(
         agentName: string,
         correlationId: string,
         sessionId?: string,
         executionId?: string,
         options?: AgentExecutionOptions,
-    ): AgentContext {
+    ): Promise<AgentContext> {
         const config: AgentContextConfig = {
             agentName,
             tenantId: this.config.tenantId,
             correlationId,
             sessionId,
+            thread: options?.thread,
             executionId,
-            metadata: options?.context || {},
+            enableSession: true,
+            metadata: options?.userContext || {},
         };
         return this.agentContextFactory(config);
     }
@@ -1632,9 +1627,15 @@ export abstract class AgentCore<
         input: unknown,
         context: AgentContext,
     ): Promise<AgentThought<unknown>> {
-        // ✅ AGENT CORE DEVE CHAMAR agent.think() (que já é LLM-driven)
-        // O agent.think foi criado pelo Orchestrator com LLM prompting
-        // Não precisamos substituir por Planning Engine aqui - agent.think JÁ É inteligente
+        this.logger.debug('Executing agent', {
+            agentName: agent.name,
+        });
+
+        // All agents use the same API - they all have access to:
+        // - session (via context.runtime.sessionId)
+        // - state (via context.stateManager)
+        // - memory (via context.memoryManager)
+        // - business context (via context.user.businessContext)
         return await agent.think(input as TInput, context);
     }
 
@@ -1715,7 +1716,7 @@ export abstract class AgentCore<
                         agentName: context.agentName,
                         toolNames: tools.map((t) => t.toolName),
                         correlationId,
-                        sessionId: context.separated.system.sessionId,
+                        sessionId: context.system.sessionId,
                     },
                     {
                         deliveryGuarantee: 'at-least-once',
@@ -1743,7 +1744,7 @@ export abstract class AgentCore<
                       tools: toolEngineAction.tools,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.separated.system.sessionId,
+                          sessionId: context.system.sessionId,
                           correlationId,
                       },
                   },
@@ -1765,7 +1766,7 @@ export abstract class AgentCore<
                         agentName: context.agentName,
                         results,
                         correlationId,
-                        sessionId: context.separated.system.sessionId,
+                        sessionId: context.system.sessionId,
                     },
                     {
                         deliveryGuarantee: 'at-least-once',
@@ -1822,7 +1823,7 @@ export abstract class AgentCore<
                       stopOnError: toolEngineAction.stopOnError,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.separated.system.sessionId,
+                          sessionId: context.system.sessionId,
                           correlationId,
                       },
                   },
@@ -1872,7 +1873,7 @@ export abstract class AgentCore<
                       conditions: toolEngineAction.conditions,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.separated.system.sessionId,
+                          sessionId: context.system.sessionId,
                           correlationId,
                       },
                   },
@@ -1929,7 +1930,7 @@ export abstract class AgentCore<
                               failFast: parallelAction.failFast,
                               metadata: {
                                   agentName: context.agentName,
-                                  sessionId: context.separated.system.sessionId,
+                                  sessionId: context.system.sessionId,
                                   correlationId,
                               },
                           },
@@ -1955,7 +1956,7 @@ export abstract class AgentCore<
                               timeout: sequentialAction.timeout,
                               metadata: {
                                   agentName: context.agentName,
-                                  sessionId: context.separated.system.sessionId,
+                                  sessionId: context.system.sessionId,
                                   correlationId,
                               },
                           },
@@ -1981,7 +1982,7 @@ export abstract class AgentCore<
                               conditions: conditionalAction.conditions,
                               metadata: {
                                   agentName: context.agentName,
-                                  sessionId: context.separated.system.sessionId,
+                                  sessionId: context.system.sessionId,
                                   correlationId,
                               },
                           },
@@ -2057,7 +2058,7 @@ export abstract class AgentCore<
                           concurrency: parallelAction.concurrency,
                           metadata: {
                               agentName: _context.agentName,
-                              sessionId: _context.separated.system.sessionId,
+                              sessionId: _context.system.sessionId,
                               correlationId: _correlationId,
                           },
                       },
@@ -2079,7 +2080,7 @@ export abstract class AgentCore<
                           tools: sequentialAction.tools,
                           metadata: {
                               agentName: _context.agentName,
-                              sessionId: _context.separated.system.sessionId,
+                              sessionId: _context.system.sessionId,
                               correlationId: _correlationId,
                           },
                       },
@@ -2127,7 +2128,7 @@ export abstract class AgentCore<
                       },
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.separated.system.sessionId,
+                          sessionId: context.system.sessionId,
                           correlationId,
                       },
                   },
@@ -2183,7 +2184,7 @@ export abstract class AgentCore<
                           failFast: false,
                           metadata: {
                               agentName: context.agentName,
-                              sessionId: context.separated.system.sessionId,
+                              sessionId: context.system.sessionId,
                               correlationId,
                           },
                       },
@@ -2208,17 +2209,13 @@ export abstract class AgentCore<
         // Prepare context for Router analysis
         const routerContext = {
             agentName: context.agentName,
-            executionId: context.separated.system.executionId,
+            executionId: context.system.executionId,
             tenantId: context.tenantId,
             metadata: context.metadata || {},
             // Add agent-specific context
-            iterationCount: context.separated.system.iteration || 0,
-            toolsUsed: context.separated.system.toolsUsed || 0,
-            hasAuth: !!(
-                context.separated.user.metadata?.token ||
-                context.separated.user.metadata?.apiKey
-            ),
-            environment: context.separated.system.debugInfo || {},
+            iterationCount: context.system.iteration || 0,
+            toolsUsed: context.system.toolsUsed || 0,
+            environment: context.system.debugInfo || {},
             ...constraints,
         };
 
@@ -2233,7 +2230,7 @@ export abstract class AgentCore<
                       constraints,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.separated.system.sessionId,
+                          sessionId: context.system.sessionId,
                           correlationId,
                       },
                   },
@@ -2408,7 +2405,7 @@ export abstract class AgentCore<
                       plan,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.separated.system.sessionId,
+                          sessionId: context.system.sessionId,
                           correlationId,
                       },
                   },
@@ -2471,7 +2468,7 @@ export abstract class AgentCore<
                       planId: planId || `${context.agentName}-${Date.now()}`,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.separated.system.sessionId,
+                          sessionId: context.system.sessionId,
                           correlationId,
                       },
                   },
@@ -2587,8 +2584,26 @@ export abstract class AgentCore<
         name: string;
         description: string;
         schema?: unknown;
+        examples?: unknown[];
+        plannerHints?: {
+            useWhen?: string[];
+            avoidWhen?: string[];
+            combinesWith?: string[];
+            conflictsWith?: string[];
+        };
+        categories?: string[];
+        dependencies?: string[];
     }> {
-        return this.toolEngine?.getAvailableTools() || [];
+        const tools = this.toolEngine?.getAvailableTools() || [];
+        return tools.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            schema: tool.inputSchema,
+            examples: tool.examples,
+            plannerHints: tool.plannerHints,
+            categories: tool.categories,
+            dependencies: tool.dependencies,
+        }));
     }
 
     /**
@@ -4305,7 +4320,6 @@ export abstract class AgentCore<
         input: TInput,
         context: AgentContext,
     ): Promise<TOutput> {
-        debugger;
         if (!this.planner || !this.llmAdapter) {
             throw new EngineError(
                 'AGENT_ERROR',
@@ -4318,7 +4332,7 @@ export abstract class AgentCore<
             this.toolEngine?.getAvailableTools().map((t) => t.name) || [];
 
         // Create execution context
-        this.executionContext = this.createExecutionContext(
+        this.executionContext = await this.createExecutionContext(
             inputString,
             availableTools,
             context,
@@ -4332,7 +4346,7 @@ export abstract class AgentCore<
         });
 
         let iterations = 0;
-        const maxIterations = this.config.maxThinkingIterations || 10;
+        const maxIterations = this.config.maxThinkingIterations || 1;
 
         while (
             iterations < maxIterations &&
@@ -4701,11 +4715,11 @@ export abstract class AgentCore<
     /**
      * Create execution context for Think→Act→Observe
      */
-    private createExecutionContext(
+    private async createExecutionContext(
         input: string,
         availableTools: string[],
         agentContext: AgentContext,
-    ): PlannerExecutionContext {
+    ): Promise<PlannerExecutionContext> {
         const history: Array<{
             thought: NewAgentThought;
             action: NewAgentAction;
@@ -4721,12 +4735,24 @@ export abstract class AgentCore<
                 .filter((tool) => availableTools.includes(tool.name))
                 .map((tool) => ({
                     name: tool.name,
-                    description: tool.description || '',
-                    schema: tool.jsonSchema || {},
+                    description: tool.description,
+                    schema: tool.inputSchema,
+                    examples: tool.examples,
+                    plannerHints: tool.plannerHints,
+                    categories: tool.categories,
+                    dependencies: tool.dependencies,
                 })),
         };
 
-        // ✅ Use enhanced execution context for better LLM performance
+        // 🚀 Use ContextManager to build rich planner context if available
+        if (agentContext.contextManager) {
+            return await agentContext.contextManager.buildPlannerContext(
+                input,
+                enhancedAgentContext,
+            );
+        }
+
+        // ✅ Fallback to enhanced execution context for backward compatibility
         const plannerContext = createEnhancedExecutionContext(
             enhancedAgentContext,
             input,
@@ -4741,8 +4767,6 @@ export abstract class AgentCore<
                 startTime: Date.now(),
             },
         );
-
-        // ✅ Agent identity is automatically included via createEnhancedExecutionContext
 
         return plannerContext;
     }

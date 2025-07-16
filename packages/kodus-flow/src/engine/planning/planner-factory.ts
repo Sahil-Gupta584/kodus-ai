@@ -103,16 +103,37 @@ export interface ExecutionContextMetadata {
     [key: string]: unknown;
 }
 
-// Enhanced tool information with usage analytics
+// Enhanced tool information with usage analytics and context engineering
 export interface EnhancedToolInfo {
     name: string;
     description: string;
     schema: unknown;
+
+    // Usage analytics
     usageCount?: number; // How many times this tool was used
     lastSuccess?: boolean; // Was the last execution successful?
     avgResponseTime?: number; // Average execution time in ms
     errorRate?: number; // Percentage of failed executions
     lastUsed?: number; // Timestamp of last usage
+
+    // Context engineering metadata
+    examples?: Array<{
+        description: string;
+        input: Record<string, unknown>;
+        expectedOutput?: unknown;
+        context?: string;
+        tags?: string[];
+    }>;
+
+    plannerHints?: {
+        useWhen?: string[];
+        avoidWhen?: string[];
+        combinesWith?: string[];
+        conflictsWith?: string[];
+    };
+
+    categories?: string[];
+    dependencies?: string[];
 }
 
 // Learning context from previous executions
@@ -367,16 +388,27 @@ export function createPlannerExecutionContext(
     const enhancedTools: EnhancedToolInfo[] = (
         agentContext.availableTools || []
     ).map((tool) => {
-        if (enhancement?.enhanceTools) {
-            // Extract analytics from tool usage history if available
-            const toolUsageFromHistory = history.filter(
-                (entry) =>
-                    entry.action.type === 'tool_call' &&
-                    (entry.action as ToolCallAction).tool === tool.name,
-            );
+        // Extract analytics from tool usage history if available
+        const toolUsageFromHistory = history.filter(
+            (entry) =>
+                entry.action.type === 'tool_call' &&
+                (entry.action as ToolCallAction).tool === tool.name,
+        );
 
+        const baseEnhancedTool: EnhancedToolInfo = {
+            name: tool.name,
+            description: tool.description,
+            schema: tool.schema,
+            examples: tool.examples as EnhancedToolInfo['examples'],
+            plannerHints: tool.plannerHints as EnhancedToolInfo['plannerHints'],
+            categories: tool.categories,
+            dependencies: tool.dependencies,
+        };
+
+        if (enhancement?.enhanceTools) {
+            // Add usage analytics
             return {
-                ...tool,
+                ...baseEnhancedTool,
                 usageCount: toolUsageFromHistory.length,
                 lastSuccess:
                     toolUsageFromHistory.length > 0
@@ -398,7 +430,8 @@ export function createPlannerExecutionContext(
                         : undefined,
             };
         }
-        return tool as EnhancedToolInfo;
+
+        return baseEnhancedTool;
     });
 
     return {

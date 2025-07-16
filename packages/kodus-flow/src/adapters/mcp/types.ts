@@ -399,8 +399,9 @@ export interface MCPPromptWithServer extends MCPPrompt {
 export interface MCPAdapter {
     connect(): Promise<void>;
     disconnect(): Promise<void>;
+    ensureConnection(): Promise<void>;
     getTools(): Promise<MCPTool[]>;
-    hasTool(name: string): boolean;
+    hasTool(name: string): Promise<boolean>;
     listResources(): Promise<MCPResourceWithServer[]>;
     readResource(uri: string, serverName?: string): Promise<unknown>;
     listPrompts(): Promise<MCPPromptWithServer[]>;
@@ -445,12 +446,7 @@ export interface MCPRateLimiter {
     lastResetTime: number;
 }
 
-export interface MCPSchemaCache {
-    ttl: number; // Cache por 5 minutos
-    maxSize: number; // Máximo 100 schemas
-    invalidateOnChange: boolean; // Invalidar quando tool muda
-    cache: Map<string, { schema: unknown; timestamp: number }>;
-}
+// Schema cache removed - keeping it simple
 
 // =============================================================================
 // SERVER STATUS TYPES

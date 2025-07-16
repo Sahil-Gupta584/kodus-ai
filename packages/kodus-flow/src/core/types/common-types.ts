@@ -38,7 +38,7 @@ export type {
     // Core context types
     UserContext,
     SystemContext,
-    SeparatedContext,
+    RuntimeContext,
     BaseContext,
     ExecutionContext,
     OperationContext,

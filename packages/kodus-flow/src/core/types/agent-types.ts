@@ -17,15 +17,13 @@ import type {
     Metadata,
 } from './base-types.js';
 import type { Thread } from './common-types.js';
-import type {
-    SeparatedContext,
-    UserContext,
-    SystemContext,
-} from './base-types.js';
+import type { UserContext, SystemContext } from './base-types.js';
 import type { ToolCall } from './tool-types.js';
 import { ContextStateService } from '../context/services/state-service.js';
 import { Persistor } from '../../persistor/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
+import type { MemoryManager } from '../memory/memory-manager.js';
+import type { ContextManager } from '../context/context-manager-types.js';
 
 // ===== AGENT IDENTITY TYPES =====
 
@@ -312,18 +310,30 @@ export interface AgentContext extends BaseContext {
         systemPrompt?: string;
     };
 
-    // === SEPARATED CONTEXT (fonte única para user/system data) ===
-    separated: SeparatedContext;
+    // === CONTEXT SEPARATION (fonte única para user/system data) ===
+    user: UserContext;
+    system: SystemContext;
 
     // === RUNTIME SERVICES ===
     stateManager: ContextStateService;
     persistorService?: Persistor;
+    memoryManager?: MemoryManager;
+    contextManager?: ContextManager;
 
     // === RESOURCES ===
     availableTools: Array<{
         name: string;
         description: string;
         schema: unknown;
+        examples?: unknown[];
+        plannerHints?: {
+            useWhen?: string[];
+            avoidWhen?: string[];
+            combinesWith?: string[];
+            conflictsWith?: string[];
+        };
+        categories?: string[];
+        dependencies?: string[];
     }>;
     signal: AbortSignal;
 
@@ -338,10 +348,6 @@ export interface AgentContext extends BaseContext {
             meta?: Record<string, unknown>,
         ) => void;
     };
-
-    // === V1 API: Primitivos poderosos ===
-    save(key: string, value: unknown): Promise<void>;
-    load(key: string): Promise<unknown>;
 
     // === CLEANUP ===
     cleanup(): Promise<void>;
@@ -365,22 +371,50 @@ export interface AgentEngineConfig extends BaseEngineConfig {
 }
 
 /**
+ * Core identifiers for all agent operations
+ * Unified approach to avoid confusion between similar IDs
+ */
+export interface CoreIdentifiers {
+    /**
+     * Multi-tenancy identifier
+     */
+    tenantId: string;
+
+    /**
+     * Conversation/session context identifier
+     * Replaces: sessionId (for consistency)
+     */
+    threadId: string;
+
+    /**
+     * Unique execution instance identifier
+     * Replaces: invocationId, contextId (for consistency)
+     */
+    executionId: string;
+
+    /**
+     * Cross-service tracing identifier
+     */
+    correlationId: string;
+}
+
+/**
  * Agent Execution Options
  */
 export interface AgentExecutionOptions {
     // === IDENTIFICAÇÃO DE QUEM EXECUTA ===
     thread: Thread;
 
-    // === IDENTIFICAÇÃO DE EXECUÇÃO ===
-    sessionId?: string;
+    // // === IDENTIFICAÇÃO DE EXECUÇÃO ===
+    sessionId?: string; // Session management
     correlationId?: string;
 
     // === CONFIGURAÇÕES ===
     timeout?: number;
     maxIterations?: number;
 
-    // === LEGACY SUPPORT ===
-    context?: Partial<AgentContext>;
+    // === CONTEXTO DO USUÁRIO ===
+    userContext?: Record<string, unknown>;
 }
 
 /**
@@ -774,7 +808,6 @@ export function createAgentContext(
             schema: unknown;
         }>;
         persistorService?: Persistor;
-        metadata?: Metadata;
         userContext?: UserContext;
         systemContext?: SystemContext;
     } = {},
@@ -802,15 +835,19 @@ export function createAgentContext(
         ...options.systemContext,
     };
 
-    const userContext: UserContext = {
-        metadata: options.metadata || {},
-        ...options.userContext,
-    };
+    // SystemContext becomes RuntimeContext in public API for clarity
 
-    const separatedContext: SeparatedContext = {
-        user: userContext,
-        system: systemContext,
-    };
+    // Create state manager once
+    const stateManager = new ContextStateService(
+        {
+            tenantId: tenantId,
+            correlationId: correlationId,
+        },
+        {
+            maxNamespaceSize: 1000,
+            maxNamespaces: 100,
+        },
+    );
 
     return {
         // BaseContext
@@ -818,48 +855,27 @@ export function createAgentContext(
         correlationId: correlationId,
         startTime: Date.now(),
         status: 'RUNNING',
-        metadata: {},
+        metadata: {}, // Base metadata (technical)
 
         // AgentContext specific
         agentName,
         invocationId,
 
-        // Separated context (fonte única)
-        separated: separatedContext,
+        // Context separation (fonte única) - NEW API
+        user: options.userContext || {},
+        system: systemContext,
 
         // Runtime services
-        stateManager: new ContextStateService(
-            {
-                tenantId: tenantId,
-                correlationId: correlationId,
-            },
-            {
-                maxNamespaceSize: 1000,
-                maxNamespaces: 100,
-            },
-        ),
+        stateManager: stateManager,
         persistorService: options.persistorService,
 
         // Resources
         availableTools: options.availableTools || [],
         signal: new AbortController().signal,
 
-        // === V1 API: Primitivos poderosos ===
-        save: async (_key: string, _value: unknown) => {
-            // Implementation will be provided by the engine
-            throw new Error(
-                'save method not implemented in createAgentContext',
-            );
-        },
-        load: async (_key: string) => {
-            // Implementation will be provided by the engine
-            throw new Error(
-                'load method not implemented in createAgentContext',
-            );
-        },
-
         cleanup: async () => {
-            // Cleanup logic will be implemented by the engine
+            // Cleanup state manager
+            await stateManager.clear('agent-memory');
         },
     };
 }

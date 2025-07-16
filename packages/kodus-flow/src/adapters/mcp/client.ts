@@ -258,7 +258,6 @@ export class SpecCompliantMCPClient extends EventEmitter<MCPClientEvents> {
     private approvalHandler?: HumanApprovalHandler;
 
     // Caches (invalidated by notifications)
-    private toolsCache: Tool[] | null = null;
     private resourcesCache: Resource[] | null = null;
     private promptsCache: Prompt[] | null = null;
     private rootsCache: Root[] | null = null;
@@ -672,13 +671,8 @@ export class SpecCompliantMCPClient extends EventEmitter<MCPClientEvents> {
     async listTools(): Promise<Tool[]> {
         this.ensureConnected();
 
-        if (this.toolsCache !== null) {
-            return this.toolsCache;
-        }
-
         const result = await this.client.listTools();
-        this.toolsCache = result.tools || [];
-        return this.toolsCache;
+        return result.tools || [];
     }
 
     async listResources(): Promise<Resource[]> {
@@ -1172,11 +1166,17 @@ export class SpecCompliantMCPClient extends EventEmitter<MCPClientEvents> {
         this.transport = null;
 
         // Clear caches
-        this.toolsCache = null;
         this.resourcesCache = null;
         this.promptsCache = null;
         this.rootsCache = null;
 
         this.emit('disconnected');
+    }
+
+    /**
+     * Check if client is connected
+     */
+    isConnected(): boolean {
+        return this.connected;
     }
 }

@@ -266,7 +266,7 @@ export class ReActPlanner implements Planner {
     }
 
     /**
-     * ✅ IMPROVED: Better context engineering for ReAct prompts
+     * ✅ IMPROVED: Better context engineering for ReAct prompts with full tool schemas
      */
     private buildImprovedReActPrompt(
         input: string,
@@ -274,17 +274,10 @@ export class ReActPlanner implements Planner {
     ): string {
         const availableToolNames = context.availableTools.map((t) => t.name);
 
-        // Context-first approach (Augment Code insight)
+        // Enhanced tools context with full metadata
         const toolsContext =
             availableToolNames.length > 0
-                ? `Available tools: ${availableToolNames
-                      .map((t) => {
-                          const tool = context.availableTools.find(
-                              (tool) => tool.name === t,
-                          );
-                          return `- ${t}: ${tool?.description || 'No description'}`;
-                      })
-                      .join('\n')}`
+                ? this.buildEnhancedToolsContext(context.availableTools)
                 : `No tools available. Provide conversational guidance using your knowledge.`;
 
         // History context (last 2 steps for relevance)
@@ -299,8 +292,17 @@ export class ReActPlanner implements Planner {
                       .join('\n')}`
                 : '';
 
+        // Agent identity context
+        const identityContext = context.agentIdentity
+            ? `\nYour identity:
+- Role: ${context.agentIdentity.role || 'AI Assistant'}
+- Goal: ${context.agentIdentity.goal || 'Help the user'}
+- Expertise: ${context.agentIdentity.expertise?.join(', ') || 'General knowledge'}`
+            : '';
+
         return `
 You are a helpful AI assistant that uses ReAct (Reasoning + Acting) methodology.
+${identityContext}
 
 ${toolsContext}
 
@@ -312,7 +314,8 @@ Instructions:
 1. Think step by step about what you need to do
 2. Choose ONE action: either call a tool OR provide a final answer
 3. If calling a tool, use EXACTLY the tool name from the available list
-4. If no suitable tool exists, provide a helpful final answer
+4. When calling a tool, ensure ALL required parameters are provided with appropriate values
+5. If no suitable tool exists, provide a helpful final answer
 
 Respond with this JSON structure:
 {
@@ -326,8 +329,99 @@ Respond with this JSON structure:
     "confidence": 0.8
 }
 
-Important: Only use tools from the available list above. If uncertain, provide a final answer.
+Important:
+- Only use tools from the available list above
+- Provide ALL required parameters for tool calls
+- If uncertain about required parameters, check the tool schema
+- If you cannot provide required parameters, explain why in a final answer
         `.trim();
+    }
+
+    /**
+     * Build enhanced tools context with full metadata including schemas
+     */
+    private buildEnhancedToolsContext(
+        tools: PlannerExecutionContext['availableTools'],
+    ): string {
+        const toolDescriptions = tools
+            .map((tool) => {
+                let description = `\n### Tool: ${tool.name}`;
+                description += `\nDescription: ${tool.description}`;
+
+                // Add schema information if available
+                if (tool.schema && typeof tool.schema === 'object') {
+                    const schema = tool.schema as Record<string, unknown>;
+                    const properties = schema.properties as
+                        | Record<string, unknown>
+                        | undefined;
+                    if (properties) {
+                        description += `\nParameters:`;
+
+                        // List all parameters with their details
+                        for (const [paramName, paramDef] of Object.entries(
+                            properties,
+                        )) {
+                            const param = paramDef as Record<string, unknown>;
+                            const isRequired =
+                                (
+                                    schema.required as string[] | undefined
+                                )?.includes(paramName) ||
+                                param.required === true;
+                            description += `\n  - ${paramName} (${param.type as string}${isRequired ? ', REQUIRED' : ', optional'})`;
+                            if (param.description) {
+                                description += `: ${param.description as string}`;
+                            }
+                            if (param.enum) {
+                                description += ` [choices: ${(param.enum as unknown[]).join(', ')}]`;
+                            }
+                            if (param.default !== undefined) {
+                                description += ` [default: ${JSON.stringify(param.default)}]`;
+                            }
+                        }
+                    }
+                }
+
+                // Add examples if available
+                if (tool.examples && tool.examples.length > 0) {
+                    const example = tool.examples[0];
+                    if (example) {
+                        description += `\nExample usage:`;
+                        description += `\n  ${JSON.stringify(example.input)}`;
+                        if (example.context) {
+                            description += `\n  Context: ${example.context}`;
+                        }
+                    }
+                }
+
+                // Add planner hints if available
+                if (tool.plannerHints) {
+                    if (
+                        tool.plannerHints.useWhen &&
+                        tool.plannerHints.useWhen.length > 0
+                    ) {
+                        description += `\nUse when: ${tool.plannerHints.useWhen.join(', ')}`;
+                    }
+                    if (
+                        tool.plannerHints.avoidWhen &&
+                        tool.plannerHints.avoidWhen.length > 0
+                    ) {
+                        description += `\nAvoid when: ${tool.plannerHints.avoidWhen.join(', ')}`;
+                    }
+                }
+
+                // Add usage analytics if available
+                if (tool.usageCount !== undefined) {
+                    description += `\nUsage stats: ${tool.usageCount} calls`;
+                    if (tool.errorRate !== undefined) {
+                        description += `, ${((1 - tool.errorRate) * 100).toFixed(1)}% success rate`;
+                    }
+                }
+
+                return description;
+            })
+            .join('\n');
+
+        return `Available tools with schemas:\n${toolDescriptions}`;
     }
 
     async analyzeResult(

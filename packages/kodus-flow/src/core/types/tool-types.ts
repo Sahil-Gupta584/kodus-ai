@@ -127,8 +127,110 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown>
 
     // === CATEGORIZAÇÃO ===
     categories?: string[];
+
+    // === CONTEXT ENGINEERING ===
+    /** Exemplos de uso para context engineering */
+    examples?: ToolExample[];
+
+    /** Estratégias de error handling */
+    errorHandling?: {
+        retryStrategy?: 'exponential' | 'linear' | 'none';
+        maxRetries?: number;
+        fallbackAction?: string;
+        errorMessages?: Record<string, string>;
+    };
+
+    /** Dicas para o planner sobre como usar a tool */
+    plannerHints?: {
+        /** Quando usar esta tool */
+        useWhen?: string[];
+        /** Quando NÃO usar esta tool */
+        avoidWhen?: string[];
+        /** Tools que funcionam bem juntas */
+        combinesWith?: string[];
+        /** Tools que conflitam */
+        conflictsWith?: string[];
+    };
     dependencies?: string[];
     tags?: string[];
+}
+
+/**
+ * Exemplo de uso de uma tool para context engineering
+ */
+export interface ToolExample {
+    /** Descrição do exemplo */
+    description: string;
+
+    /** Input de exemplo */
+    input: Record<string, unknown>;
+
+    /** Output esperado (opcional) */
+    expectedOutput?: unknown;
+
+    /** Contexto em que este exemplo é útil */
+    context?: string;
+
+    /** Tags para categorizar o exemplo */
+    tags?: string[];
+}
+
+/**
+ * Metadata estruturada da tool para planners
+ */
+export interface ToolMetadataForPlanner {
+    name: string;
+    description: string;
+
+    // Schema estruturado com parâmetros obrigatórios
+    inputSchema: {
+        type: 'object';
+        properties: Record<
+            string,
+            {
+                type: string;
+                description?: string;
+                required: boolean;
+                enum?: string[];
+                default?: unknown;
+                format?: string;
+            }
+        >;
+        required: string[];
+    };
+
+    // Configuração de execução
+    config: {
+        timeout: number;
+        requiresAuth: boolean;
+        allowParallel: boolean;
+        maxConcurrentCalls: number;
+        source: 'mcp' | 'user' | 'system';
+    };
+
+    // Metadados para context engineering
+    categories: string[];
+    dependencies: string[];
+    tags: string[];
+
+    // Exemplos de uso
+    examples: ToolExample[];
+
+    // Dicas para o planner
+    plannerHints?: {
+        useWhen?: string[];
+        avoidWhen?: string[];
+        combinesWith?: string[];
+        conflictsWith?: string[];
+    };
+
+    // Estratégias de error handling
+    errorHandling?: {
+        retryStrategy?: 'exponential' | 'linear' | 'none';
+        maxRetries?: number;
+        fallbackAction?: string;
+        errorMessages?: Record<string, string>;
+    };
 }
 
 // ===== TOOL CONTEXT =====

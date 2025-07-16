@@ -132,18 +132,13 @@ export interface EventContext extends BaseContext {
  * Contexto do Usuário - Dados controlados pelo usuário
  * IMUTÁVEL durante a execução
  */
-export interface UserContext {
-    userId?: UserId;
-    sessionId?: SessionId;
-    preferences?: Record<string, unknown>;
-    metadata?: Record<string, unknown>;
-}
+export type UserContext = Record<string, unknown>;
 
 /**
  * Contexto do Sistema - Dados gerados automaticamente pelo runtime
  * MUTÁVEL durante a execução
  */
-export interface SystemContext {
+export type SystemContext = {
     // === IDENTIDADE ===
     executionId: ExecutionId;
     correlationId: CorrelationId;
@@ -188,16 +183,17 @@ export interface SystemContext {
         networkLatency?: number;
         [key: string]: unknown;
     };
-}
+};
+
+// SeparatedContext removed - use AgentContext with user/runtime pattern instead
 
 /**
- * Contexto Separado - Combina contexto do usuário e sistema
- * Mantém separação clara entre responsabilidades
+ * Runtime Context - Dados técnicos/internos do sistema
+ * Alias mais claro para SystemContext
  */
-export interface SeparatedContext {
-    user: UserContext;
-    system: SystemContext;
-}
+export type RuntimeContext = SystemContext;
+
+// AgentContextPattern integrated directly into AgentContext interface
 
 /**
  * Contexto específico para snapshots

@@ -21,20 +21,31 @@ import type {
  *   servers: [
  *     {
  *       name: 'filesystem',
- *       command: 'npx',
- *       args: ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/files'],
+ *       type: 'http',
+ *       url: 'http://localhost:3000',
  *     },
  *     {
  *       name: 'github',
- *       command: 'npx',
- *       args: ['-y', '@modelcontextprotocol/server-github'],
- *       env: {
- *         GITHUB_TOKEN: process.env.GITHUB_TOKEN
+ *       type: 'http',
+ *       url: 'http://localhost:3001',
+ *       headers: {
+ *         Authorization: `Bearer ${process.env.GITHUB_TOKEN}`
  *       }
  *     }
  *   ],
- *   enableHealthChecks: true,
- *   enableSchemaCache: true,
+ *   // Tool filtering
+ *   allowedTools: {
+ *     names: ['read_file', 'write_file'],
+ *     servers: ['filesystem'],
+ *   },
+ *   blockedTools: {
+ *     names: ['dangerous_tool'],
+ *     patterns: [/delete/],
+ *   },
+ *   // Error handling
+ *   onError: (error, serverName) => {
+ *     console.error(`MCP server ${serverName} error:`, error);
+ *   }
  * });
  *
  * // Connect all servers
@@ -50,14 +61,10 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
     const registry = new MCPRegistry({
         defaultTimeout: config.defaultTimeout,
         maxRetries: config.maxRetries,
-        enableHealthChecks: true,
-        enableSchemaCache: true,
-        // Passa configuração de filtros
         allowedTools: config.allowedTools,
         blockedTools: config.blockedTools,
     });
 
-    let toolsCache: MCPTool[] = [];
     let isConnected = false;
 
     const adapter: MCPAdapter = {
@@ -65,8 +72,9 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
          * Connect to all configured MCP servers
          */
         async connect(): Promise<void> {
+            // Always reconnect to ensure fresh connections
             if (isConnected) {
-                return;
+                await this.disconnect();
             }
 
             const promises = config.servers.map((server) =>
@@ -80,7 +88,6 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
 
             await Promise.all(promises);
             isConnected = true;
-            toolsCache = []; // Clear cache on reconnect
         },
 
         /**
@@ -91,30 +98,35 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
                 return;
             }
 
-            registry.destroy();
-            isConnected = false;
-            toolsCache = [];
+            try {
+                registry.destroy();
+            } catch (error) {
+                // Log error but don't throw to ensure cleanup
+                console.warn('Error during MCP disconnect:', error);
+            } finally {
+                isConnected = false;
+            }
         },
 
         /**
          * Get all tools as engine-compatible tools
          */
         async getTools(): Promise<MCPTool[]> {
+            debugger;
             if (!isConnected) {
                 throw new Error(
                     'MCP adapter not connected. Call connect() first.',
                 );
             }
 
-            if (toolsCache.length > 0) {
-                return toolsCache;
-            }
+            // Ensure fresh connection for each request
+            await this.ensureConnection();
 
             const mcpTools = await registry.listAllTools();
             const engineTools = mcpToolsToEngineTools(mcpTools);
 
             // Override execute functions to use the registry and propagate schemas correctly
-            toolsCache = engineTools.map((tool: EngineTool) => ({
+            return engineTools.map((tool: EngineTool) => ({
                 name: tool.name,
                 description: tool.description,
                 inputSchema: tool.jsonSchema, // Use original JSON Schema from MCP for LLMs
@@ -127,15 +139,23 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
                     );
                 },
             }));
-
-            return toolsCache;
         },
 
         /**
          * Check if a tool exists
          */
-        hasTool(name: string): boolean {
-            return toolsCache.some((tool) => tool.name === name);
+        async hasTool(name: string): Promise<boolean> {
+            if (!isConnected) {
+                return false;
+            }
+
+            try {
+                await this.ensureConnection();
+                const tools = await registry.listAllTools();
+                return tools.some((tool) => tool.name === name);
+            } catch {
+                return false;
+            }
         },
 
         /**
@@ -214,6 +234,9 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
                     'MCP adapter not connected. Call connect() first.',
                 );
             }
+
+            await this.ensureConnection();
+
             const { serverName: parsedServer, toolName } = parseToolName(name);
             return registry.executeTool(
                 toolName,
@@ -223,22 +246,38 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
         },
 
         /**
+         * Ensure connection is fresh and working
+         */
+        async ensureConnection(): Promise<void> {
+            if (!isConnected) {
+                await this.connect();
+                return;
+            }
+
+            // Try to list tools to check if connection is still working
+            try {
+                await registry.listAllTools();
+            } catch {
+                // Connection lost, reconnect
+                console.warn('MCP connection lost, reconnecting...');
+                await this.disconnect();
+                await this.connect();
+            }
+        },
+
+        /**
          * Get metrics from all servers
          */
         getMetrics(): Record<string, unknown> {
             const metrics: Record<string, unknown> = {};
 
             // Adiciona métricas de health checks
-            const serverStatuses = registry.getServerStatuses();
-            for (const [serverName, status] of serverStatuses) {
-                metrics[`${serverName}_health`] = status;
-            }
+            // const serverStatuses = registry.getServerStatuses();
+            // for (const [serverName, status] of serverStatuses) {
+            //     metrics[`${serverName}_health`] = status;
+            // }
 
-            // Adiciona métricas de schema cache
-            const cacheStats = registry.getSchemaCacheStats();
-            if (cacheStats) {
-                metrics.schemaCache = cacheStats;
-            }
+            // Schema cache removed - keeping it simple
 
             return metrics;
         },

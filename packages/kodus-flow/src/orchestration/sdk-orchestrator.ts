@@ -21,7 +21,7 @@ import { defineTool } from '../core/types/tool-types.js';
 import { AgentEngine } from '../engine/agents/agent-engine.js';
 import { AgentExecutor } from '../engine/agents/agent-executor.js';
 import { IdGenerator } from '../utils/id-generator.js';
-import { safeJsonSchemaToZod } from '../core/utils/json-schema-to-zod.js';
+
 import { createDefaultMultiKernelHandler } from '../engine/core/multi-kernel-handler.js';
 
 import type { LLMAdapter } from '../adapters/llm/index.js';
@@ -206,8 +206,6 @@ const orchestrator = new SDKOrchestrator({
     async createAgent(
         config: AgentConfig,
     ): Promise<AgentDefinition<unknown, unknown, unknown>> {
-        debugger;
-
         const correlationId = IdGenerator.correlationId();
 
         this.logger.info('Creating agent', {
@@ -321,20 +319,18 @@ const orchestrator = new SDKOrchestrator({
         input: unknown,
         options?: AgentExecutionOptions,
     ): Promise<OrchestrationResult<unknown>> {
-        debugger;
-
         const startTime = Date.now();
-        const correlationId =
-            options?.correlationId || IdGenerator.correlationId();
+        const correlationId = IdGenerator.correlationId();
 
-        this.logger.info('Agent execution started', {
-            agentName,
-            correlationId,
-            inputType: typeof input,
-        });
+        // this.logger.info('Agent execution started', {
+        //     agentName,
+        //     correlationId,
+        //     inputType: typeof input,
+        // });
 
         try {
             const agentData = this.agents.get(agentName);
+
             if (!agentData) {
                 throw new EngineError(
                     'AGENT_ERROR',
@@ -356,7 +352,6 @@ const orchestrator = new SDKOrchestrator({
                 ...options,
                 thread,
                 correlationId,
-                sessionId: options?.sessionId || IdGenerator.sessionId(),
             };
 
             let result: AgentExecutionResult<unknown>;
@@ -382,7 +377,7 @@ const orchestrator = new SDKOrchestrator({
 
             this.logger.info('Agent execution completed', {
                 agentName,
-                correlationId,
+                // correlationId,
                 success: result.success,
                 duration,
             });
@@ -526,17 +521,23 @@ const orchestrator = new SDKOrchestrator({
     }
 
     /**
-     * Get registered tools
+     * Get registered tools with full metadata for context engineering
      */
     getRegisteredTools(): Array<{
         name: string;
         description: string;
         categories?: string[];
+        schema?: unknown;
+        examples?: unknown[];
+        plannerHints?: unknown;
     }> {
         return this.toolEngine.getAvailableTools().map((tool) => ({
             name: tool.name,
-            description: tool.description || `Tool: ${tool.name}`,
-            categories: [], // ToolEngine doesn't return categories
+            description: tool.description,
+            categories: tool.categories, // Now properly extracted from metadata
+            schema: tool.inputSchema,
+            examples: tool.examples,
+            plannerHints: tool.plannerHints,
         }));
     }
 
@@ -560,14 +561,23 @@ const orchestrator = new SDKOrchestrator({
             this.logger.info(`Registering ${mcpTools.length} MCP tools`);
 
             for (const mcpTool of mcpTools) {
-                const zodSchema = safeJsonSchemaToZod(mcpTool.inputSchema);
+                this.logger.debug('Processing MCP tool', {
+                    name: mcpTool.name,
+                    description: mcpTool.description,
+                });
 
+                // Usar o schema original do MCP (JSON Schema) diretamente
                 this.createTool({
                     name: mcpTool.name,
                     description:
                         mcpTool.description || `MCP Tool: ${mcpTool.name}`,
-                    inputSchema: zodSchema,
+                    inputSchema: mcpTool.inputSchema as z.ZodSchema, // Manter schema original
                     execute: async (input: unknown) => {
+                        this.logger.debug('Executing MCP tool', {
+                            toolName: mcpTool.name,
+                            input,
+                        });
+
                         const result = await this.mcpAdapter!.executeTool(
                             mcpTool.name,
                             input as Record<string, unknown>,

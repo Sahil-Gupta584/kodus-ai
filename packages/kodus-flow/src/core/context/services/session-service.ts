@@ -77,14 +77,14 @@ export class SessionService {
      */
     createSession(
         tenantId: string,
-        threadId: string, // ← MUDANÇA: threadId em vez de userId
+        threadId: string,
         metadata: Record<string, unknown> = {},
     ): Session {
         const sessionId = IdGenerator.sessionId();
 
         const session: Session = {
             id: sessionId,
-            threadId, // ← NOVO: threadId
+            threadId,
             tenantId,
             createdAt: Date.now(),
             lastActivity: Date.now(),

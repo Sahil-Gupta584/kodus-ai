@@ -95,6 +95,7 @@ export class ConversationAgentProvider {
         // 1️⃣ conecta MCP (opcional)
         try {
             await this.orchestration.connectMCP();
+            await this.orchestration.registerMCPTools();
         } catch {
             console.warn('MCP offline, prosseguindo.');
         }
@@ -127,8 +128,8 @@ export class ConversationAgentProvider {
                         description: 'Interação com o agente conversacional',
                     },
                 },
-                context: {
-                    user: { metadata: { organizationAndTeamData: org ?? {} } },
+                userContext: {
+                    organizationAndTeamData: org ?? {},
                 },
             },
         );

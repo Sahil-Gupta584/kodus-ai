@@ -11,6 +11,7 @@ import type {
     ToolId,
     ToolCall,
     ToolDependency,
+    ToolMetadataForPlanner,
 } from '../../core/types/tool-types.js';
 import { createToolContext } from '../../core/types/tool-types.js';
 import type {
@@ -18,7 +19,10 @@ import type {
     SequentialToolsAction,
     ConditionalToolsAction,
 } from '../../core/types/agent-types.js';
-import { validateWithZod } from '../../core/utils/zod-to-json-schema.js';
+import {
+    validateWithZod,
+    zodToJSONSchema,
+} from '../../core/utils/zod-to-json-schema.js';
 import { createToolError } from '../../core/error-unified.js';
 import type { MultiKernelHandler } from '../core/multi-kernel-handler.js';
 import type { Router } from '../routing/router.js';
@@ -250,18 +254,135 @@ export class ToolEngine {
     }
 
     /**
-     * Get available tools
+     * Get available tools with metadata for planner context engineering
      */
-    getAvailableTools(): Array<{
-        name: string;
-        description: string;
-        jsonSchema?: unknown;
-    }> {
-        return Array.from(this.tools.values()).map((tool) => ({
-            name: tool.name,
-            description: tool.description || '',
-            jsonSchema: tool.jsonSchema,
-        }));
+    getAvailableTools(): ToolMetadataForPlanner[] {
+        return Array.from(this.tools.values()).map((tool) => {
+            // Prioritize existing JSON Schema, then convert Zod if needed
+            let jsonSchema: unknown = tool.jsonSchema;
+
+            // If inputSchema exists and looks like JSON Schema (not Zod), use it directly
+            if (
+                tool.inputSchema &&
+                typeof tool.inputSchema === 'object' &&
+                tool.inputSchema !== null &&
+                'type' in tool.inputSchema
+            ) {
+                jsonSchema = tool.inputSchema;
+            } else if (tool.inputSchema && !jsonSchema) {
+                // Try converting Zod schema to JSON Schema
+                try {
+                    const converted = zodToJSONSchema(
+                        tool.inputSchema,
+                        tool.name,
+                        tool.description || `Tool: ${tool.name}`,
+                    );
+                    jsonSchema = converted.parameters;
+                } catch (error) {
+                    this.logger.warn(
+                        'Failed to convert Zod schema to JSON Schema',
+                        {
+                            toolName: tool.name,
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                        },
+                    );
+                    jsonSchema = { type: 'object', properties: {} };
+                }
+            }
+
+            return {
+                name: tool.name,
+                description: tool.description || `Tool: ${tool.name}`,
+
+                inputSchema: {
+                    type: 'object' as const,
+                    properties: this.extractPropertiesWithRequiredFlag(
+                        ((jsonSchema as Record<string, unknown>)
+                            ?.properties as Record<string, unknown>) || {},
+                        ((jsonSchema as Record<string, unknown>)
+                            ?.required as string[]) || [],
+                    ),
+                    required:
+                        ((jsonSchema as Record<string, unknown>)
+                            ?.required as string[]) || [],
+                },
+
+                config: {
+                    timeout: 30000,
+                    requiresAuth: false,
+                    allowParallel: true,
+                    maxConcurrentCalls: 5,
+                    source: 'user' as const,
+                },
+
+                categories: tool.categories || [],
+                dependencies: tool.dependencies || [],
+                tags: tool.tags || [],
+
+                examples: tool.examples || [],
+
+                plannerHints: tool.plannerHints || {
+                    useWhen: [`When you need to use ${tool.name}`],
+                    avoidWhen: [],
+                    combinesWith: [],
+                    conflictsWith: [],
+                },
+
+                errorHandling: tool.errorHandling || {
+                    retryStrategy: 'exponential',
+                    maxRetries: 3,
+                    fallbackAction: 'continue',
+                    errorMessages: {},
+                },
+            };
+        });
+    }
+
+    /**
+     * Extract properties with required flag for planner context
+     */
+    private extractPropertiesWithRequiredFlag(
+        properties: Record<string, unknown>,
+        requiredFields: string[],
+    ): Record<
+        string,
+        {
+            type: string;
+            description?: string;
+            required: boolean;
+            enum?: string[];
+            default?: unknown;
+            format?: string;
+        }
+    > {
+        const result: Record<
+            string,
+            {
+                type: string;
+                description?: string;
+                required: boolean;
+                enum?: string[];
+                default?: unknown;
+                format?: string;
+            }
+        > = {};
+
+        for (const [key, prop] of Object.entries(properties)) {
+            const propObj = prop as Record<string, unknown>;
+            result[key] = {
+                type: (propObj.type as string) || 'string',
+                description: propObj.description as string | undefined,
+                required: requiredFields.includes(key),
+                enum: propObj.enum as string[] | undefined,
+                default: propObj.default,
+                format: propObj.format as string | undefined,
+            };
+        }
+
+        return result;
     }
 
     /**

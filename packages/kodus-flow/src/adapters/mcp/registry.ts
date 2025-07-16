@@ -5,8 +5,6 @@ import {
     TransportType,
 } from './types.js';
 import { SpecCompliantMCPClient } from './client.js';
-import { MCPHealthManager } from './health-manager.js';
-import { MCPSchemaCacheManager } from './schema-cache.js';
 import { createLogger } from '../../observability/index.js';
 
 export interface MCPRegistryOptions {
@@ -14,10 +12,6 @@ export interface MCPRegistryOptions {
     defaultTimeout?: number;
     /** tentativas de retry */
     maxRetries?: number;
-    /** health checks habilitados */
-    enableHealthChecks?: boolean;
-    /** schema cache habilitado */
-    enableSchemaCache?: boolean;
     /** Configuração de filtros para tools */
     allowedTools?: {
         names?: string[];
@@ -36,44 +30,99 @@ export interface MCPRegistryOptions {
 export class MCPRegistry {
     private clients = new Map<string, SpecCompliantMCPClient>();
     private pending = new Map<string, Promise<void>>();
-    private options: Required<MCPRegistryOptions>;
-    private healthManager!: MCPHealthManager;
-    private schemaCache!: MCPSchemaCacheManager;
+    private options: MCPRegistryOptions & {
+        defaultTimeout: number;
+        maxRetries: number;
+    };
     private logger = createLogger('MCPRegistry');
 
-    constructor(options: MCPRegistryOptions = {}) {
+    constructor(_options: MCPRegistryOptions = {}) {
         this.options = {
             defaultTimeout: 30000,
             maxRetries: 3,
-            enableHealthChecks: true,
-            enableSchemaCache: true,
-            allowedTools: options.allowedTools ?? {
-                names: [],
-                patterns: [],
-                servers: [],
-                categories: [],
-            },
-            blockedTools: options.blockedTools ?? {
-                names: [],
-                patterns: [],
-                servers: [],
-                categories: [],
-            },
+            allowedTools: _options.allowedTools,
+            blockedTools: _options.blockedTools,
         };
 
-        // Inicializa health manager se habilitado
-        if (this.options.enableHealthChecks) {
-            this.healthManager = new MCPHealthManager();
-        }
+        this.logger.info('MCPRegistry initialized', {
+            hasAllowedTools: !!_options.allowedTools,
+            hasBlockedTools: !!_options.blockedTools,
+            allowedToolsConfig: _options.allowedTools,
+            blockedToolsConfig: _options.blockedTools,
+        });
 
-        // Inicializa schema cache se habilitado
-        if (this.options.enableSchemaCache) {
-            this.schemaCache = new MCPSchemaCacheManager();
-        }
+        // Valida configurações de filtros
+        this.validateFilterConfig();
     }
 
     /**
-     * Registra um servidor MCP com health checks
+     * Valida configurações de filtros
+     */
+    private validateFilterConfig(): void {
+        const { allowedTools, blockedTools } = this.options;
+
+        this.logger.debug('Validating filter configuration', {
+            allowedTools,
+            blockedTools,
+        });
+
+        // Valida allowedTools
+        if (allowedTools) {
+            if (allowedTools.names && !Array.isArray(allowedTools.names)) {
+                throw new Error('Invalid allowedTools.names - must be array');
+            }
+            if (
+                allowedTools.patterns &&
+                !Array.isArray(allowedTools.patterns)
+            ) {
+                throw new Error(
+                    'Invalid allowedTools.patterns - must be array',
+                );
+            }
+            if (allowedTools.servers && !Array.isArray(allowedTools.servers)) {
+                throw new Error('Invalid allowedTools.servers - must be array');
+            }
+            if (
+                allowedTools.categories &&
+                !Array.isArray(allowedTools.categories)
+            ) {
+                throw new Error(
+                    'Invalid allowedTools.categories - must be array',
+                );
+            }
+        }
+
+        // Valida blockedTools
+        if (blockedTools) {
+            if (blockedTools.names && !Array.isArray(blockedTools.names)) {
+                throw new Error('Invalid blockedTools.names - must be array');
+            }
+            if (
+                blockedTools.patterns &&
+                !Array.isArray(blockedTools.patterns)
+            ) {
+                throw new Error(
+                    'Invalid blockedTools.patterns - must be array',
+                );
+            }
+            if (blockedTools.servers && !Array.isArray(blockedTools.servers)) {
+                throw new Error('Invalid blockedTools.servers - must be array');
+            }
+            if (
+                blockedTools.categories &&
+                !Array.isArray(blockedTools.categories)
+            ) {
+                throw new Error(
+                    'Invalid blockedTools.categories - must be array',
+                );
+            }
+        }
+
+        this.logger.debug('Filter validation completed');
+    }
+
+    /**
+     * Registra um servidor MCP
      */
     async register(config: MCPServerConfig): Promise<void> {
         // Verifica se já está registrando
@@ -85,8 +134,11 @@ export class MCPRegistry {
         // cria a promessa de registro e salva no map
         const job = (async () => {
             try {
-                // ─── 1. Normalizar tipo de transporte ───────────────────────────────
+                this.logger.info('Registering MCP server', {
+                    serverName: config.name,
+                });
 
+                // ─── 1. Normalizar tipo de transporte ───────────────────────────────
                 const transportType: TransportType = config.type ?? 'http';
 
                 // ─── 2. Montar configuração p/ SpecCompliantMCPClient ───────────────
@@ -114,15 +166,16 @@ export class MCPRegistry {
                 await client.connect();
                 this.clients.set(config.name, client);
 
-                // ─── 4. Configurar health check se habilitado ─────────────────────
-                if (this.options.enableHealthChecks && this.healthManager) {
-                    this.healthManager.addHealthCheck(config.name, {
-                        interval: 30000, // 30s
-                        timeout: 5000, // 5s
-                        retries: 3,
-                        enabled: true,
-                    });
-                }
+                this.logger.info('Successfully registered MCP server', {
+                    serverName: config.name,
+                });
+            } catch (error) {
+                this.logger.error(
+                    'Failed to register MCP server',
+                    error instanceof Error ? error : undefined,
+                    { serverName: config.name, config },
+                );
+                throw error;
             } finally {
                 // remove promessa pendente (sucesso ou erro)
                 this.pending.delete(config.name);
@@ -143,94 +196,100 @@ export class MCPRegistry {
             await client.disconnect();
             this.clients.delete(serverName);
         }
-
-        // Remove health check se habilitado
-        if (this.options.enableHealthChecks && this.healthManager) {
-            this.healthManager.removeHealthCheck(serverName);
-        }
-
-        // Remove schemas do cache
-        if (this.options.enableSchemaCache && this.schemaCache) {
-            // Remove todos os schemas deste servidor
-            const removedCount =
-                this.schemaCache.removeSchemasByServer(serverName);
-
-            this.logger.info('Removed schemas from cache', {
-                serverName,
-                removedCount,
-            });
-        }
     }
 
     /**
-     * Lista todas as tools com cache de schemas
+     * Lista todas as tools
      */
     async listAllTools(): Promise<MCPToolRawWithServer[]> {
         const allTools: MCPToolRawWithServer[] = [];
 
+        this.logger.info('Listing all tools from MCP registry', {
+            totalClients: this.clients.size,
+            filterConfig: {
+                hasAllowedTools: !!this.options.allowedTools,
+                hasBlockedTools: !!this.options.blockedTools,
+            },
+        });
+
+        // Lista todas as tools
         for (const [serverName, client] of this.clients) {
             try {
-                // Verifica health check se habilitado
-                if (this.options.enableHealthChecks && this.healthManager) {
-                    if (!this.healthManager.isServerHealthy(serverName)) {
-                        continue;
-                    }
-                }
+                this.logger.debug('Listing tools from server', { serverName });
 
-                // Verifica rate limit se habilitado
-                if (this.options.enableHealthChecks && this.healthManager) {
-                    if (!this.healthManager.checkRateLimit(serverName)) {
-                        continue;
+                // Check if client is still connected
+                if (!client.isConnected()) {
+                    this.logger.warn(
+                        'Client not connected, attempting to reconnect',
+                        { serverName },
+                    );
+                    try {
+                        await client.connect();
+                    } catch (reconnectError) {
+                        this.logger.error(
+                            'Failed to reconnect to server',
+                            reconnectError instanceof Error
+                                ? reconnectError
+                                : undefined,
+                            { serverName },
+                        );
+                        continue; // Skip this server
                     }
                 }
 
                 const tools = await client.listTools();
+                this.logger.debug('Received tools from server', {
+                    serverName,
+                    toolCount: tools.length,
+                    toolNames: tools.map((t) => t.name),
+                });
 
                 for (const tool of tools) {
                     // Filtra tools baseado na configuração
                     if (!this.isToolAllowed(tool, serverName)) {
+                        this.logger.debug('Tool filtered out', {
+                            toolName: tool.name,
+                            serverName,
+                            reason: 'not allowed by filters',
+                        });
                         continue;
                     }
 
-                    // Usa cache de schema se habilitado
-                    if (this.options.enableSchemaCache && this.schemaCache) {
-                        const schemaHash = this.schemaCache.generateSchemaHash(
-                            tool.inputSchema,
-                        );
-                        const cacheKey = this.schemaCache.generateKey(
-                            serverName,
-                            tool.name,
-                            schemaHash,
-                        );
-
-                        // Tenta obter do cache
-                        const cachedSchema = this.schemaCache.get(cacheKey);
-                        if (
-                            cachedSchema &&
-                            typeof cachedSchema === 'object' &&
-                            'type' in cachedSchema &&
-                            (cachedSchema as { type: unknown }).type ===
-                                'object'
-                        ) {
-                            tool.inputSchema = cachedSchema as {
-                                [x: string]: unknown;
-                                type: 'object';
-                                properties?: { [x: string]: unknown };
-                                required?: string[];
-                            };
-                        } else {
-                            // Adiciona ao cache
-                            this.schemaCache.set(cacheKey, tool.inputSchema);
-                        }
-                    }
+                    this.logger.debug('Tool allowed', {
+                        toolName: tool.name,
+                        serverName,
+                    });
 
                     allTools.push({
                         ...tool,
                         serverName,
                     });
                 }
-            } catch {}
+            } catch (error) {
+                this.logger.error(
+                    'Error listing tools from server',
+                    error instanceof Error ? error : undefined,
+                    {
+                        serverName,
+                        errorMessage:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
+                );
+            }
         }
+
+        this.logger.info('Finished listing tools', {
+            totalToolsFound: allTools.length,
+            toolsByServer: allTools.reduce(
+                (acc, tool) => {
+                    acc[tool.serverName] = (acc[tool.serverName] || 0) + 1;
+                    return acc;
+                },
+                {} as Record<string, number>,
+            ),
+        });
 
         return allTools;
     }
@@ -246,11 +305,23 @@ export class MCPRegistry {
 
         // Se não há configuração de filtros, permite tudo
         if (!config.allowedTools && !config.blockedTools) {
+            this.logger.debug('No filters configured, allowing tool', {
+                toolName: tool.name,
+                serverName,
+            });
             return true;
         }
 
         const toolName = tool.name;
         const fullToolName = `${serverName}.${toolName}`;
+
+        this.logger.debug('Checking tool against filters', {
+            toolName,
+            serverName,
+            fullToolName,
+            hasBlockedTools: !!config.blockedTools,
+            hasAllowedTools: !!config.allowedTools,
+        });
 
         // 1. Verifica blacklist primeiro (tem prioridade)
         if (config.blockedTools) {
@@ -259,6 +330,11 @@ export class MCPRegistry {
                 config.blockedTools.names?.includes(toolName as string) ||
                 config.blockedTools.names?.includes(fullToolName as string)
             ) {
+                this.logger.debug('Tool blocked by name', {
+                    toolName,
+                    serverName,
+                    blockedNames: config.blockedTools.names,
+                });
                 return false;
             }
 
@@ -270,35 +346,62 @@ export class MCPRegistry {
                         pattern.test(fullToolName as string),
                 )
             ) {
+                this.logger.debug('Tool blocked by pattern', {
+                    toolName,
+                    serverName,
+                    blockedPatterns: config.blockedTools.patterns.map(
+                        (p) => p.source,
+                    ),
+                });
                 return false;
             }
 
             // Verifica servidores
             if (config.blockedTools.servers?.includes(serverName)) {
+                this.logger.debug('Tool blocked by server', {
+                    toolName,
+                    serverName,
+                    blockedServers: config.blockedTools.servers,
+                });
                 return false;
             }
 
             // Verifica categorias (se tool tiver categoria)
             if (
-                (tool.category as string) &&
-                config.blockedTools.categories?.includes(
-                    tool.category as string,
-                )
+                tool.category &&
+                typeof tool.category === 'string' &&
+                config.blockedTools.categories?.includes(tool.category)
             ) {
+                this.logger.debug('Tool blocked by category', {
+                    toolName,
+                    serverName,
+                    toolCategory: tool.category,
+                    blockedCategories: config.blockedTools.categories,
+                });
                 return false;
             }
         }
 
         // 2. Se há whitelist, verifica se está permitida
         if (config.allowedTools) {
-            // Se whitelist está vazia, não permite nada
-            if (
-                !config.allowedTools.names?.length &&
-                !config.allowedTools.patterns?.length &&
-                !config.allowedTools.servers?.length &&
-                !config.allowedTools.categories?.length
-            ) {
-                return false;
+            // Verifica se há conteúdo na whitelist
+            const hasAllowedContent =
+                (config.allowedTools.names &&
+                    config.allowedTools.names.length > 0) ||
+                (config.allowedTools.patterns &&
+                    config.allowedTools.patterns.length > 0) ||
+                (config.allowedTools.servers &&
+                    config.allowedTools.servers.length > 0) ||
+                (config.allowedTools.categories &&
+                    config.allowedTools.categories.length > 0);
+
+            // Se whitelist está vazia, permite tudo (não restringe)
+            if (!hasAllowedContent) {
+                this.logger.debug('Whitelist is empty, allowing tool', {
+                    toolName,
+                    serverName,
+                });
+                return true; // ✅ PERMITE TUDO se whitelist vazia
             }
 
             // Verifica nomes específicos
@@ -320,25 +423,46 @@ export class MCPRegistry {
             // Verifica categorias
             const categoryAllowed =
                 tool.category &&
-                config.allowedTools.categories?.includes(
-                    tool.category as string,
-                );
+                typeof tool.category === 'string' &&
+                config.allowedTools.categories?.includes(tool.category);
 
-            // Tool deve estar em pelo menos uma das listas permitidas
-            return !!(
+            const isAllowed = !!(
                 nameAllowed ||
                 patternAllowed ||
                 serverAllowed ||
                 categoryAllowed
             );
+
+            this.logger.debug('Whitelist check result', {
+                toolName,
+                serverName,
+                isAllowed,
+                nameAllowed,
+                patternAllowed,
+                serverAllowed,
+                categoryAllowed,
+                allowedNames: config.allowedTools.names,
+                allowedPatterns: config.allowedTools.patterns?.map(
+                    (p) => p.source,
+                ),
+                allowedServers: config.allowedTools.servers,
+                allowedCategories: config.allowedTools.categories,
+            });
+
+            // Tool deve estar em pelo menos uma das listas permitidas
+            return isAllowed;
         }
 
         // Se não há whitelist, permite tudo (após passar pela blacklist)
+        this.logger.debug('No whitelist configured, allowing tool', {
+            toolName,
+            serverName,
+        });
         return true;
     }
 
     /**
-     * Executa tool com health checks e circuit breaker
+     * Executa tool
      */
     async executeTool(
         toolName: string,
@@ -352,36 +476,12 @@ export class MCPRegistry {
                 throw new Error(`MCP server ${serverName} not found`);
             }
 
-            // Verifica health check se habilitado
-            if (this.options.enableHealthChecks && this.healthManager) {
-                if (!this.healthManager.isServerHealthy(serverName)) {
-                    throw new Error(`MCP server ${serverName} is unhealthy`);
-                }
-
-                if (!this.healthManager.checkRateLimit(serverName)) {
-                    throw new Error(
-                        `Rate limit exceeded for server ${serverName}`,
-                    );
-                }
-            }
-
             return client.executeTool(toolName, args);
         }
 
         // Tenta encontrar tool em qualquer servidor
-        for (const [serverName, client] of this.clients) {
+        for (const [, client] of this.clients) {
             try {
-                // Verifica health check se habilitado
-                if (this.options.enableHealthChecks && this.healthManager) {
-                    if (!this.healthManager.isServerHealthy(serverName)) {
-                        continue;
-                    }
-
-                    if (!this.healthManager.checkRateLimit(serverName)) {
-                        continue;
-                    }
-                }
-
                 const tools = await client.listTools();
 
                 if (tools.some((tool) => tool.name === toolName)) {
@@ -397,26 +497,6 @@ export class MCPRegistry {
     }
 
     /**
-     * Obtém status de todos os servidores
-     */
-    getServerStatuses(): Map<string, unknown> {
-        if (this.options.enableHealthChecks && this.healthManager) {
-            return this.healthManager.getServerStatuses();
-        }
-        return new Map();
-    }
-
-    /**
-     * Obtém estatísticas do schema cache
-     */
-    getSchemaCacheStats(): Record<string, unknown> | null {
-        if (this.options.enableSchemaCache && this.schemaCache) {
-            return this.schemaCache.getStats();
-        }
-        return null;
-    }
-
-    /**
      * Limpa recursos
      */
     destroy(): void {
@@ -425,15 +505,5 @@ export class MCPRegistry {
             client.disconnect().catch(console.error);
         }
         this.clients.clear();
-
-        // Destrói health manager
-        if (this.healthManager) {
-            this.healthManager.destroy();
-        }
-
-        // Limpa schema cache
-        if (this.schemaCache) {
-            this.schemaCache.clear();
-        }
     }
 }

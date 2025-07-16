@@ -221,7 +221,7 @@ export function createRuntime(
         memoryMonitor,
         enableAcks = true,
         ackTimeout = 30000,
-        maxRetries = 3,
+        maxRetries = 1,
         tenantId,
         persistor,
         executionId,

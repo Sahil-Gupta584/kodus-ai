@@ -224,7 +224,7 @@ export class CoTPlanner implements Planner {
             maxSteps,
             maxDepth: _options?.maxDepth || 3,
             tenantId: context.tenantId,
-            executionId: context.separated.system.executionId,
+            executionId: context.system.executionId,
             correlationId: context.correlationId,
             addPlanHistory: (
                 planId: string,
@@ -1722,7 +1722,7 @@ export class PlannerHandler {
             }
 
             // Create agent context using factory
-            const agentContext = createAgentContext({
+            const agentContext = await createAgentContext({
                 agentName,
                 tenantId: 'default',
                 executionId,
@@ -1777,7 +1777,7 @@ export class PlannerHandler {
             return {
                 id: `planner-planned-${Date.now()}`,
                 type: 'planner.planned',
-                threadId: `planner-${Date.now()}`,
+                threadId: event.threadId,
                 data: {
                     plan,
                     plannerName: selectedPlannerName,
@@ -1940,7 +1940,7 @@ export class PlannerHandler {
         }
 
         // Create new agent context using factory
-        const agentContext = createAgentContext({
+        const agentContext = await createAgentContext({
             agentName: existingPlan.agentName,
             tenantId: 'default',
             executionId: `replan-${Date.now()}`,
@@ -2172,6 +2172,7 @@ export function createPlanningContext(
     plannerHandler: PlannerHandler,
     correlationId: string,
     executionId: string,
+    threadId: string,
 ): PlanningContext {
     return {
         async plan(
@@ -2182,7 +2183,7 @@ export function createPlanningContext(
             const event = {
                 id: `planner-plan-${Date.now()}`,
                 type: 'planner.plan',
-                threadId: `planner-${Date.now()}`,
+                threadId: threadId,
                 data: {
                     goal,
                     agentName,
