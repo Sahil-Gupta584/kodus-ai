@@ -354,3 +354,9 @@ export enum ReviewCadenceType {
     MANUAL = 'manual',
     AUTO_PAUSE = 'auto_pause',
 }
+
+export enum ReviewCadenceState {
+    AUTOMATIC = 'automatic',
+    MANUAL = 'manual',
+    PAUSED = 'paused',
+}
