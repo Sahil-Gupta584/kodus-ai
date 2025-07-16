@@ -118,18 +118,15 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
 
             let automaticReviewStatus: AutomaticReviewStatus;
             if (currentStatus === ReviewCadenceState.PAUSED) {
-                // Remover comentário de pausa se existir
-                await this.removePauseComment(context);
-
                 automaticReviewStatus = {
                     previousStatus: ReviewCadenceState.PAUSED,
-                    currentStatus: ReviewCadenceState.AUTOMATIC,
+                    currentStatus: ReviewCadenceState.COMMAND,
                     reasonForChange: 'Review triggered by start-review command',
                 };
             } else {
                 automaticReviewStatus = {
                     previousStatus: currentStatus,
-                    currentStatus: ReviewCadenceState.AUTOMATIC,
+                    currentStatus: ReviewCadenceState.COMMAND,
                     reasonForChange: 'Review triggered by start-review command',
                 };
             }
@@ -198,11 +195,13 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 reason: 'Processing first review in manual mode',
                 shouldSaveSkipped: false,
                 automaticReviewStatus: {
-                    previousStatus: ReviewCadenceState.MANUAL,
-                    currentStatus: ReviewCadenceState.MANUAL,
+                    previousStatus: ReviewCadenceState.AUTOMATIC,
+                    currentStatus: ReviewCadenceState.AUTOMATIC,
                 },
             };
         }
+
+        const currentStatus = await this.getCurrentPRStatus(context);
 
         // Já existe review: só processa com comando manual
         return {
@@ -210,8 +209,8 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             reason: `PR #${context.pullRequest.number} skipped - manual mode requires @kody start-review command`,
             shouldSaveSkipped: true,
             automaticReviewStatus: {
-                previousStatus: 'manual',
-                currentStatus: 'manual',
+                previousStatus: currentStatus,
+                currentStatus: ReviewCadenceState.PAUSED,
             },
         };
     }
@@ -416,19 +415,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             });
             return null;
         }
-    }
-
-    private async removePauseComment(
-        context: CodeReviewPipelineContext,
-    ): Promise<void> {
-        this.logger.log({
-            message: `Resuming from pause for PR #${context.pullRequest.number}`,
-            context: ValidateConfigStage.name,
-            metadata: {
-                prNumber: context.pullRequest.number,
-                repositoryName: context.repository.name,
-            },
-        });
     }
 
     private async saveSkippedExecution(

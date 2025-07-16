@@ -343,8 +343,8 @@ export type ReviewCadence = {
 }
 
 export interface AutomaticReviewStatus {
-    previousStatus: 'automatic' | 'paused' | 'manual';
-    currentStatus: 'automatic' | 'paused' | 'manual';
+    previousStatus: ReviewCadenceState;
+    currentStatus: ReviewCadenceState;
     reasonForChange?: string;
     pauseCommentId?: string;
 }
@@ -357,6 +357,6 @@ export enum ReviewCadenceType {
 
 export enum ReviewCadenceState {
     AUTOMATIC = 'automatic',
-    MANUAL = 'manual',
+    COMMAND = 'command',
     PAUSED = 'paused',
 }
