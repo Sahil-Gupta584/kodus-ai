@@ -516,13 +516,16 @@ export class GithubService
                 });
             } else {
                 // Para contas pessoais, verificar o tipo de autenticação
-                if (authDetails.authMode === AuthMode.OAUTH && 'installationId' in authDetails) {
+                if (
+                    authDetails.authMode === AuthMode.OAUTH &&
+                    'installationId' in authDetails
+                ) {
                     // Para GitHub Apps, usar a API específica que lista repos acessíveis à instalação
                     repos = await octokit.paginate(
                         octokit.rest.apps.listReposAccessibleToInstallation,
                     );
                     // A API retorna objetos com estrutura diferente, extrair os repositórios
-                    repos = repos.map(item => item.repository || item);
+                    repos = repos.map((item) => item.repository || item);
                 } else {
                     // Para PATs, usar a API tradicional
                     repos = await octokit.paginate(
@@ -1074,13 +1077,16 @@ export class GithubService
                 });
             } else {
                 // Para contas pessoais, verificar o tipo de autenticação
-                if (githubAuthDetail.authMode === AuthMode.OAUTH && 'installationId' in githubAuthDetail) {
+                if (
+                    githubAuthDetail.authMode === AuthMode.OAUTH &&
+                    'installationId' in githubAuthDetail
+                ) {
                     // Para GitHub Apps, usar a API específica que lista repos acessíveis à instalação
                     repos = await octokit.paginate(
                         octokit.rest.apps.listReposAccessibleToInstallation,
                     );
                     // A API retorna objetos com estrutura diferente, extrair os repositórios
-                    repos = repos.map(item => item.repository || item);
+                    repos = repos.map((item) => item.repository || item);
                 } else {
                     // Para PATs, usar a API tradicional
                     repos = await octokit.paginate(
@@ -3392,7 +3398,22 @@ export class GithubService
             pull_number: params.prNumber, // Pull Request ID
         });
 
-        return response.data;
+        const files = await octokit.pulls.listFiles({
+            owner: githubAuthDetail.org,
+            repo: params.repository.name,
+            pull_number: params.prNumber,
+        });
+
+        const modifiedFiles = files.data.map((file) => ({
+            filePath: file.filename,
+        }));
+
+        const res = {
+            ...response.data,
+            modified_files: modifiedFiles,
+        };
+
+        return res;
     }
 
     async createPullRequestWebhook(params: any) {
@@ -4444,5 +4465,52 @@ export class GithubService
         }
 
         return Promise.resolve(commentBody.trim());
+    }
+
+    async getDiffForFile(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+        filePath: string;
+    }): Promise<string | null> {
+        const { organizationAndTeamData, repository, prNumber, filePath } =
+            params;
+
+        const githubAuthDetail = await this.getGithubAuthDetails(
+            organizationAndTeamData,
+        );
+
+        const octokit = await this.instanceOctokit(organizationAndTeamData);
+
+        try {
+            const { data: files } = await octokit.rest.pulls.listFiles({
+                owner: githubAuthDetail.org,
+                repo: repository.name,
+                pull_number: prNumber,
+            });
+
+            const file = files.find((f) => f.filename === filePath);
+
+            if (!file || !file.patch) {
+                this.logger.warn({
+                    message: `No diff found for file ${filePath} in PR#${prNumber}`,
+                    context: GithubService.name,
+                    metadata: params,
+                });
+                return null;
+            }
+
+            return file.patch;
+        } catch (error) {
+            this.logger.error({
+                message: `Error retrieving diff for PR#${prNumber}`,
+                context: GithubService.name,
+                error: error,
+                metadata: {
+                    ...params,
+                },
+            });
+            return null;
+        }
     }
 }

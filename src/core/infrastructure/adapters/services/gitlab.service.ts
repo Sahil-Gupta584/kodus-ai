@@ -2,6 +2,7 @@ import { ICodeManagementService } from '@/core/domain/platformIntegrations/inter
 import {
     PullRequestAuthor,
     PullRequestCodeReviewTime,
+    PullRequestDetails,
     PullRequestReviewComment,
     PullRequests,
     PullRequestWithFiles,
@@ -84,7 +85,6 @@ export class GitlabService
             | 'getPullRequestReviewThreads'
             | 'getRepositoryAllFiles'
             | 'getAuthenticationOAuthToken'
-            | 'getPullRequestDetails'
             | 'getCommitsByReleaseMode'
             | 'getDataForCalculateDeployFrequency'
             | 'requestChangesPullRequest'
@@ -2850,7 +2850,13 @@ export class GitlabService
         language?: string;
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<string> {
-        const { suggestion, repository, includeHeader = true, includeFooter = true, language } = params;
+        const {
+            suggestion,
+            repository,
+            includeHeader = true,
+            includeFooter = true,
+            language,
+        } = params;
 
         let commentBody = '';
 
@@ -2864,7 +2870,9 @@ export class GitlabService
                 getCodeReviewBadge(),
                 suggestion?.label ? getLabelShield(suggestion.label) : '',
                 severityShield,
-            ].filter(Boolean).join(' ');
+            ]
+                .filter(Boolean)
+                .join(' ');
 
             commentBody += `${badges}\n\n`;
         }
@@ -2895,5 +2903,151 @@ export class GitlabService
         }
 
         return Promise.resolve(commentBody.trim());
+    }
+
+    async getDiffForFile(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+        filePath: string;
+    }): Promise<string | null> {
+        try {
+            const { organizationAndTeamData, repository, prNumber, filePath } =
+                params;
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!gitlabAuthDetail) {
+                return null;
+            }
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const diffs = await gitlabAPI.MergeRequests.allDiffs(
+                repository.id,
+                prNumber,
+            );
+
+            const diff = diffs.find(
+                (d) => d.new_path === filePath || d.old_path === filePath,
+            );
+
+            if (!diff) {
+                this.logger.warn({
+                    message: `No diff found for file ${params.filePath} in pull request #${prNumber}`,
+                    context: GitlabService.name,
+                    serviceName: 'GitlabService getDiffForFile',
+                    metadata: params,
+                });
+                return null;
+            }
+
+            return diff.diff || null;
+        } catch (error) {
+            this.logger.error({
+                message: `Error retrieving diff for pull request #${params.prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService getDiffForPullRequest',
+                error: error,
+                metadata: params,
+            });
+            return null;
+        }
+    }
+
+    async getPullRequestDetails(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<any | null> {
+        try {
+            const { organizationAndTeamData, repository, prNumber } = params;
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!gitlabAuthDetail) {
+                return null;
+            }
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const mergeRequest = await gitlabAPI.MergeRequests.show(
+                repository.id,
+                prNumber,
+            );
+
+            if (!mergeRequest) {
+                return null;
+            }
+
+            const diffs = await gitlabAPI.MergeRequests.allDiffs(
+                repository.id,
+                prNumber,
+            );
+
+            const modifiedFiles = diffs.map((diff) => ({
+                filePath: diff.new_path,
+            }));
+
+            const prData = {
+                id: mergeRequest.id.toString(),
+                author_id: mergeRequest.author?.id?.toString(),
+                author_name: mergeRequest.author?.name,
+                repository: repository.name,
+                repositoryId: mergeRequest.source_project_id?.toString(),
+                message: mergeRequest.description,
+                state: mergeRequest.state,
+                prURL: mergeRequest.web_url,
+                organizationId: organizationAndTeamData.organizationId,
+                pull_number: mergeRequest.id,
+                number: mergeRequest.id,
+                body: mergeRequest.description,
+                title: mergeRequest.title,
+                created_at: mergeRequest.created_at,
+                updated_at: mergeRequest.updated_at,
+                merged_at: mergeRequest.updated_at,
+                participants: {
+                    id: mergeRequest.author?.id?.toString(),
+                },
+                reviewers: mergeRequest.reviewers.map((reviewer) => ({
+                    id: reviewer.id,
+                })),
+                head: {
+                    ref: mergeRequest.source_branch,
+                    repo: {
+                        id: mergeRequest.source_project_id,
+                        name: mergeRequest.source_project_id?.toString(),
+                    },
+                },
+                base: {
+                    ref: mergeRequest.target_branch,
+                    repo: {
+                        id: mergeRequest.target_project_id,
+                        name: mergeRequest.target_project_id?.toString(),
+                    },
+                },
+                user: {
+                    login: mergeRequest.author?.username,
+                    name: mergeRequest.author?.name,
+                    id: mergeRequest.author?.id?.toString(),
+                },
+                modified_files: modifiedFiles,
+            };
+
+            return prData;
+        } catch (error) {
+            this.logger.error({
+                message: `Error retrieving pull request details for #${params.prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService getPullRequestDetails',
+                error: error,
+                metadata: params,
+            });
+            return null;
+        }
     }
 }

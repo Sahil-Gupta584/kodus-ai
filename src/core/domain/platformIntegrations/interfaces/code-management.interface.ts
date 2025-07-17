@@ -25,7 +25,11 @@ import { GitCloneParams } from '../types/codeManagement/gitCloneParams.type';
 export interface ICodeManagementService
     extends ICommonPlatformIntegrationService {
     getPullRequests(params: any): Promise<PullRequests[]>;
-    getPullRequestDetails(params: any): Promise<PullRequestDetails | null>;
+    getPullRequestDetails(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<PullRequestDetails | null>;
     getRepositories(params: any): Promise<Repositories[]>;
     getWorkflows(params: any): Promise<Workflow[]>;
     getListMembers(
@@ -137,4 +141,11 @@ export interface ICodeManagementService
         language?: string;
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<string>;
+
+    getDiffForFile(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+        filePath: string;
+    }): Promise<string | null>;
 }

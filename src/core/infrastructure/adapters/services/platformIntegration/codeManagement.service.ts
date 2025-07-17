@@ -572,7 +572,7 @@ export class CodeManagementService implements ICodeManagementService {
     async getPullRequestDetails(
         params: {
             organizationAndTeamData: OrganizationAndTeamData;
-            repository: { id: string; name: string };
+            repository: Partial<Repository>;
             prNumber: number;
         },
         type?: PlatformType,
@@ -1032,5 +1032,26 @@ export class CodeManagementService implements ICodeManagementService {
             language: params.language,
             organizationAndTeamData: params.organizationAndTeamData,
         });
+    }
+
+    async getDiffForFile(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            repository: Partial<Repository>;
+            prNumber: number;
+            filePath: string;
+        },
+        type?: PlatformType,
+    ): Promise<string | null> {
+        if (!type) {
+            type = await this.getTypeIntegration(
+                extractOrganizationAndTeamData(params),
+            );
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.getDiffForFile(params);
     }
 }
