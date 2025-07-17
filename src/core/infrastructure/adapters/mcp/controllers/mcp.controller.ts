@@ -16,7 +16,7 @@ import { McpServerService } from '../services/mcp-server.service';
 import { McpEnabledGuard } from '../guards/mcp-enabled.guard';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { PinoLoggerService } from '../../services/logger/pino.service';
-import { MCPManagerService } from '../../services/mcp/mcpManager.service';
+import { MCPManagerService } from '../services/mcp-manager.service';
 import { REQUEST } from '@nestjs/core';
 
 @Controller('mcp')
