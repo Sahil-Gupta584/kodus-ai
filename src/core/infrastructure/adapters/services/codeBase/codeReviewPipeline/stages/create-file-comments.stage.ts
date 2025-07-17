@@ -375,13 +375,11 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
             return null;
         }
 
-        const codeReviewAutomations = teamAutomations.find(
+        const codeReviewAutomation = teamAutomations.find(
             (ta) =>
                 ta.automation?.automationType ===
                 AutomationType.AUTOMATION_CODE_REVIEW,
         );
-
-        const codeReviewAutomation = codeReviewAutomations[0];
 
         if (!codeReviewAutomation) {
             return null;
