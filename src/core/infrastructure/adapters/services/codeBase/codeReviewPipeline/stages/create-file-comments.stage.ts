@@ -35,6 +35,11 @@ import {
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { PullRequestsEntity } from '@/core/domain/pullRequests/entities/pullRequests.entity';
 import { PullRequestReviewComment } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
+import {
+    ITeamAutomationService,
+    TEAM_AUTOMATION_SERVICE_TOKEN,
+} from '@/core/domain/automation/contracts/team-automation.service';
+import { AutomationType } from '@/core/domain/automation/enums/automation-type';
 
 @Injectable()
 export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -45,6 +50,9 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
 
         @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
         private readonly automationExecutionService: IAutomationExecutionService,
+
+        @Inject(TEAM_AUTOMATION_SERVICE_TOKEN)
+        private readonly teamAutomationService: ITeamAutomationService,
 
         @Inject(COMMENT_MANAGER_SERVICE_TOKEN)
         private readonly commentManagerService: ICommentManagerService,
@@ -76,7 +84,9 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
             this.logger.error({
                 message: 'Missing pullRequest data in context',
                 context: this.stageName,
-                metadata: { organizationAndTeamData: context.organizationAndTeamData },
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                },
             });
             return context;
         }
@@ -109,9 +119,18 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                     discardedSuggestionsCount: discardedSuggestions.length,
                 },
             });
+
+            const lastExecution =
+                await this.findLastTeamAutomationCodeReviewExecution(
+                    context.organizationAndTeamData.teamId,
+                    context.pullRequest.number,
+                    context.repository.id,
+                );
+
             return this.updateContext(context, (draft) => {
                 draft.lineComments = [];
-                draft.lastAnalyzedCommit = null;
+                draft.lastAnalyzedCommit =
+                    lastExecution?.dataExecution?.lastAnalyzedCommit;
             });
         }
 
@@ -128,13 +147,14 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                 },
             });
 
-            const { lineComments, lastAnalyzedCommit } = await this.finalizeReviewProcessing(
-                context,
-                changedFiles,
-                validSuggestions,
-                discardedSuggestions,
-                overallComments,
-            );
+            const { lineComments, lastAnalyzedCommit } =
+                await this.finalizeReviewProcessing(
+                    context,
+                    changedFiles,
+                    validSuggestions,
+                    discardedSuggestions,
+                    overallComments,
+                );
 
             this.logger.log({
                 message: `Successfully processed file comments for PR#${context.pullRequest.number}`,
@@ -150,7 +170,6 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                 draft.lineComments = lineComments;
                 draft.lastAnalyzedCommit = lastAnalyzedCommit;
             });
-
         } catch (error) {
             this.logger.error({
                 message: `Error during file comments creation for PR#${context.pullRequest.number}`,
@@ -342,19 +361,37 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
     }
 
     private async findLastTeamAutomationCodeReviewExecution(
-        teamAutomationId: string,
+        teamId: string,
         pullRequestNumber: number,
         repositoryId: string,
     ) {
+        const teamAutomations = await this.teamAutomationService.find({
+            team: {
+                uuid: teamId,
+            },
+        });
+
+        if (!teamAutomations || teamAutomations?.length === 0) {
+            return null;
+        }
+
+        const codeReviewAutomation = teamAutomations.find(
+            (ta) =>
+                ta.automation?.automationType ===
+                AutomationType.AUTOMATION_CODE_REVIEW,
+        );
+
+        if (!codeReviewAutomation) {
+            return null;
+        }
+
         const lastTeamAutomationCodeReviewExecution: AutomationExecutionEntity =
-            await this.automationExecutionService.findLatestExecutionByFilters(
-                {
-                    status: AutomationStatus.SUCCESS,
-                    teamAutomation: { uuid: teamAutomationId },
-                    pullRequestNumber: pullRequestNumber,
-                    repositoryId: repositoryId,
-                },
-            );
+            await this.automationExecutionService.findLatestExecutionByFilters({
+                status: AutomationStatus.SUCCESS,
+                teamAutomation: { uuid: codeReviewAutomation.uuid },
+                pullRequestNumber: pullRequestNumber,
+                repositoryId: repositoryId,
+            });
 
         return lastTeamAutomationCodeReviewExecution;
     }

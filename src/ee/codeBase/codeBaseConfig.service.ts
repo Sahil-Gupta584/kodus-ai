@@ -48,6 +48,7 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { ICodeBaseConfigService } from '@/core/domain/codeBase/contracts/CodeBaseConfigService.contract';
 import { KodyRulesValidationService } from '../kodyRules/service/kody-rules-validation.service';
+import { ReviewCadenceType } from '@/config/types/general/codeReview.type';
 
 interface GetKodusConfigFileResponse {
     kodusConfigFile: Omit<KodusConfigFile, 'version'> | null;
@@ -222,6 +223,16 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     repoConfig.automatedReviewActive ??
                     globalConfig.automatedReviewActive ??
                     this.DEFAULT_CONFIG.automatedReviewActive,
+                reviewCadence:
+                    (isParameterValidInConfigFile(
+                        'reviewCadence',
+                        validationErrors,
+                    )
+                        ? kodusConfigFile?.reviewCadence
+                        : undefined) ??
+                    repoConfig.reviewCadence ??
+                    globalConfig.reviewCadence ??
+                    this.DEFAULT_CONFIG.reviewCadence,
                 languageResultPrompt:
                     language?.configValue ||
                     this.DEFAULT_CONFIG.languageResultPrompt,
@@ -273,6 +284,11 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 languageResultPrompt: LanguageValue.ENGLISH,
                 kodyRules: [],
                 kodusConfigFileOverridesWebPreferences: false,
+                reviewCadence: {
+                    type: ReviewCadenceType.AUTOMATIC,
+                    timeWindow: 0,
+                    pushesToTrigger: 0,
+                },
             };
 
             return DEFAULT_CONFIG;
@@ -566,14 +582,20 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 global?.severityLevelFilter ??
                 this.DEFAULT_CONFIG.suggestionControl.severityLevelFilter,
             applyFiltersToKodyRules:
-                (isParameterValidInConfigFile('applyFiltersToKodyRules', validationErrors)
+                (isParameterValidInConfigFile(
+                    'applyFiltersToKodyRules',
+                    validationErrors,
+                )
                     ? kodusConfig?.applyFiltersToKodyRules
                     : undefined) ??
                 repo?.applyFiltersToKodyRules ??
                 global?.applyFiltersToKodyRules ??
                 this.DEFAULT_CONFIG.suggestionControl.applyFiltersToKodyRules,
             severityLimits:
-                (isParameterValidInConfigFile('severityLimits', validationErrors)
+                (isParameterValidInConfigFile(
+                    'severityLimits',
+                    validationErrors,
+                )
                     ? kodusConfig?.severityLimits
                     : undefined) ??
                 repo?.severityLimits ??
