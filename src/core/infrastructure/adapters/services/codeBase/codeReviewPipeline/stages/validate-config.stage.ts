@@ -58,7 +58,9 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                     repositoryName: context?.repository?.name,
                     id: context?.repository?.id,
                     organizationAndTeamData: context?.organizationAndTeamData,
-                    reviewCadence: config?.reviewCadence?.type || ReviewCadenceType.AUTOMATIC,
+                    reviewCadence:
+                        config?.reviewCadence?.type ||
+                        ReviewCadenceType.AUTOMATIC,
                 },
             });
 
@@ -363,6 +365,20 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 return [];
             }
 
+            if (!context?.repository?.id || !context?.pullRequest?.number) {
+                this.logger.warn({
+                    message:
+                        'Repository ID or PR number is missing, cannot get recent executions.',
+                    context: ValidateConfigStage.name,
+                    metadata: {
+                        organizationAndTeamData:
+                            context.organizationAndTeamData,
+                        prNumber: context.pullRequest.number,
+                    },
+                });
+                return [];
+            }
+
             // Filtrar apenas execuções SUCCESS para o mesmo PR e repositório
             return executions?.filter(
                 (execution) =>
@@ -376,6 +392,11 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 message: `Failed to get recent executions for PR #${context.pullRequest.number}`,
                 context: ValidateConfigStage.name,
                 error,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                    repositoryId: context.repository?.id,
+                },
             });
             return [];
         }
@@ -412,6 +433,11 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 message: `Failed to create pause comment for PR #${context.pullRequest.number}`,
                 context: ValidateConfigStage.name,
                 error,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                    repositoryId: context.repository?.id,
+                },
             });
             return null;
         }
@@ -441,6 +467,11 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 message: `Failed to save skipped execution for PR #${context.pullRequest.number}`,
                 context: ValidateConfigStage.name,
                 error,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                    repositoryId: context.repository?.id,
+                },
             });
         }
     }
