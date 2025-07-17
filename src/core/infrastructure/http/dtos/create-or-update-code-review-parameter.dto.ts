@@ -14,6 +14,7 @@ import {
     BehaviourForExistingDescription,
     GroupingModeSuggestions,
     LimitationType,
+    ReviewCadenceType,
 } from '@/config/types/general/codeReview.type';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
@@ -108,6 +109,19 @@ class SuggestionControlConfigDto {
     severityLimits?: SeverityLimitsDto;
 }
 
+class ReviewCadenceDto {
+    @IsEnum(ReviewCadenceType)
+    type: ReviewCadenceType;
+
+    @IsOptional()
+    @IsNumber()
+    timeWindow?: number;
+
+    @IsOptional()
+    @IsNumber()
+    pushesToTrigger?: number;
+}
+
 class PathInstructionDto {
     @IsOptional()
     @IsString()
@@ -177,6 +191,12 @@ class CodeReviewConfigWithoutLLMProviderDto {
     @IsOptional()
     @IsBoolean()
     kodyRulesGeneratorEnabled?: boolean;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => ReviewCadenceDto)
+    reviewCadence?: ReviewCadenceDto;
+
 }
 
 export class CreateOrUpdateCodeReviewParameterDto {
