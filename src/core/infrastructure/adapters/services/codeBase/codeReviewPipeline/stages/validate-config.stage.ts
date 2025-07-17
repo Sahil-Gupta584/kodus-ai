@@ -40,49 +40,73 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
     protected async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
-        const config: CodeReviewConfig =
+        try {
+            const config: CodeReviewConfig =
+                await this.codeBaseConfigService.getConfig(
+                    context.organizationAndTeamData,
+                    { name: context.repository.name, id: context.repository.id },
+                );
+
+            const cadenceResult = await this.evaluateReviewCadence(context, config);
+
+            if (!cadenceResult.shouldProcess) {
+                this.logger.warn({
+                    message: cadenceResult.reason,
+                    serviceName: ValidateConfigStage.name,
+                    context: this.stageName,
+                    metadata: {
+                        prNumber: context?.pullRequest?.number,
+                        repositoryName: context?.repository?.name,
+                        id: context?.repository?.id,
+                        organizationAndTeamData: context?.organizationAndTeamData,
+                        reviewCadence:
+                            config?.reviewCadence?.type ||
+                            ReviewCadenceType.AUTOMATIC,
+                    },
+                });
+
+                // Se foi pausado por auto_pause, registrar execução SKIPPED
+                if (cadenceResult.shouldSaveSkipped) {
+                    await this.saveSkippedExecution(
+                        context,
+                        config,
+                        cadenceResult.automaticReviewStatus,
+                    );
+                }
+
+                return this.updateContext(context, (draft) => {
+                    draft.status = PipelineStatus.SKIP;
+                    draft.codeReviewConfig = config;
+                });
+            }
+
+            return this.updateContext(context, (draft) => {
+                draft.codeReviewConfig = config;
+                draft.automaticReviewStatus = cadenceResult.automaticReviewStatus;
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error in ValidateConfigStage for PR#${context?.pullRequest?.number}`,
+                error,
+                context: this.stageName,
+                metadata: {
+                    organizationAndTeamData: context?.organizationAndTeamData,
+                    prNumber: context?.pullRequest?.number,
+                    repositoryId: context?.repository?.id,
+                },
+            });
+
+            const config: CodeReviewConfig =
             await this.codeBaseConfigService.getConfig(
                 context.organizationAndTeamData,
                 { name: context.repository.name, id: context.repository.id },
             );
-
-        const cadenceResult = await this.evaluateReviewCadence(context, config);
-
-        if (!cadenceResult.shouldProcess) {
-            this.logger.warn({
-                message: cadenceResult.reason,
-                serviceName: ValidateConfigStage.name,
-                context: this.stageName,
-                metadata: {
-                    prNumber: context?.pullRequest?.number,
-                    repositoryName: context?.repository?.name,
-                    id: context?.repository?.id,
-                    organizationAndTeamData: context?.organizationAndTeamData,
-                    reviewCadence:
-                        config?.reviewCadence?.type ||
-                        ReviewCadenceType.AUTOMATIC,
-                },
-            });
-
-            // Se foi pausado por auto_pause, registrar execução SKIPPED
-            if (cadenceResult.shouldSaveSkipped) {
-                await this.saveSkippedExecution(
-                    context,
-                    config,
-                    cadenceResult.automaticReviewStatus,
-                );
-            }
 
             return this.updateContext(context, (draft) => {
                 draft.status = PipelineStatus.SKIP;
                 draft.codeReviewConfig = config;
             });
         }
-
-        return this.updateContext(context, (draft) => {
-            draft.codeReviewConfig = config;
-            draft.automaticReviewStatus = cadenceResult.automaticReviewStatus;
-        });
     }
 
     private async evaluateReviewCadence(
