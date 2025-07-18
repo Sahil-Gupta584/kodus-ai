@@ -122,6 +122,7 @@ const getChatGemini = (
         verbose: finalOptions.verbose,
         callbacks: finalOptions.callbacks,
         maxReasoningTokens: finalOptions.thinkingBudget,
+        thinkingBudget: finalOptions.thinkingBudget,
     });
 };
 
