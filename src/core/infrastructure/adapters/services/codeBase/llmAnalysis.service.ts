@@ -13,10 +13,7 @@ import {
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '../logger/pino.service';
 import { RunnableSequence } from '@langchain/core/runnables';
-import {
-    StringOutputParser,
-    StructuredOutputParser,
-} from '@langchain/core/output_parsers';
+import { StringOutputParser, StructuredOutputParser } from '@langchain/core/output_parsers';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { HumanMessage } from '@langchain/core/messages';
 import { z } from 'zod';
@@ -34,8 +31,8 @@ import { prompt_codeReviewSafeguard_system } from '@/shared/utils/langchainCommo
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
 import {
     LLMModelProvider,
-    MODEL_STRATEGIES,
 } from '../llmProviders/llmModelProvider.helper';
+import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -365,7 +362,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                         ];
                     },
                     llm,
-                    new StringOutputParser(),
+                    new CustomStringOutputParser(),
                 ]);
 
                 return lightModeChain;
@@ -399,7 +396,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                     ];
                 },
                 llm,
-                new StringOutputParser(),
+                new CustomStringOutputParser(),
             ]);
 
             return chain;
@@ -893,7 +890,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                     ];
                 },
                 llm,
-                new StringOutputParser(),
+                new CustomStringOutputParser(),
             ]);
 
             return chain;
