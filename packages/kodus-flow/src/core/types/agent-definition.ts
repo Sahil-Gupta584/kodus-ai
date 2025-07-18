@@ -10,13 +10,12 @@
  */
 
 import { z } from 'zod';
-import type { AgentExecutionContext } from './execution-context.js';
-import type { ServiceAccess } from '../services/service-access.js';
+// AgentExecutionContext removed - using ContextManager pattern instead
 
 /**
  * Agent identity - who the agent is and what it does
  */
-export interface AgentIdentity {
+export type AgentIdentity = {
     /**
      * Agent's role/position (what they are)
      * Example: "Senior Software Engineer", "Data Analyst"
@@ -55,7 +54,7 @@ export interface AgentIdentity {
      * Custom system prompt (overrides generated prompt)
      */
     systemPrompt?: string;
-}
+};
 
 /**
  * Agent action types - what an agent can decide to do
@@ -98,8 +97,7 @@ export interface AgentThought<TContent = unknown> {
  */
 export type ThinkFunction<TInput = unknown, TOutput = unknown> = (
     input: TInput,
-    context: AgentExecutionContext,
-    services: ServiceAccess,
+    context: Record<string, unknown>, // TODO: Import proper AgentContext type
 ) => Promise<AgentThought<TOutput>>;
 
 /**

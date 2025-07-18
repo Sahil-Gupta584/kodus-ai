@@ -3,6 +3,14 @@
  * @description Robust ID generation utilities for engines
  */
 
+import {
+    CallId,
+    CorrelationId,
+    EventId,
+    ExecutionId,
+    SessionId,
+    TenantId,
+} from '@/core/types/base-types.js';
 import { randomBytes } from 'crypto';
 
 /**
@@ -18,7 +26,7 @@ export class IdGenerator {
      * Generate unique execution ID
      * Format: exec_[timestamp]_[random]_[counter]
      */
-    static executionId(): string {
+    static executionId(): ExecutionId {
         const timestamp = Date.now().toString(36);
         const random = this.generateRandomString(8);
         const counter = (++this.counter % 1000).toString(36);
@@ -29,7 +37,7 @@ export class IdGenerator {
      * Generate unique correlation ID
      * Format: corr_[random]_[timestamp]
      */
-    static correlationId(): string {
+    static correlationId(): CorrelationId {
         const random = this.generateRandomString(12);
         const timestamp = Date.now().toString(36);
         return `corr_${random}_${timestamp}`;
@@ -39,7 +47,7 @@ export class IdGenerator {
      * Generate unique call ID for tool calls
      * Format: call_[random]_[performance_now]
      */
-    static callId(): string {
+    static callId(): CallId {
         const random = this.generateRandomString(6);
         const perfNow = Math.floor(performance.now() * 1000).toString(36);
         return `call_${random}_${perfNow}`;
@@ -49,7 +57,7 @@ export class IdGenerator {
      * Generate session ID
      * Format: sess_[random]_[timestamp]
      */
-    static sessionId(): string {
+    static sessionId(): SessionId {
         const random = this.generateRandomString(10);
         const timestamp = Date.now().toString(36);
         return `sess_${random}_${timestamp}`;
@@ -59,7 +67,7 @@ export class IdGenerator {
      * Generate tenant ID
      * Format: tenant_[random]
      */
-    static tenantId(): string {
+    static tenantId(): TenantId {
         const random = this.generateRandomString(8);
         return `tenant_${random}`;
     }
@@ -124,7 +132,7 @@ export class IdGenerator {
      * Generate unique event ID
      * Format: evt_[random]_[timestamp]
      */
-    static eventId(): string {
+    static eventId(): EventId {
         const random = this.generateRandomString(8);
         const timestamp = Date.now().toString(36);
         return `evt_${random}_${timestamp}`;

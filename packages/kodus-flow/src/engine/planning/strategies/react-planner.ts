@@ -7,6 +7,8 @@
 
 import { createLogger } from '../../../observability/index.js';
 import type { LLMAdapter } from '../../../adapters/llm/index.js';
+import type { ContextManager } from '../../../core/context/context-manager.js';
+import { ContextManagerRegistry } from '../../../core/context/context-registry.js';
 import type {
     Planner,
     AgentThought,
@@ -25,6 +27,8 @@ import {
     type ReActOutput,
     convertPlanToReActOutput,
 } from '../../../core/schemas/react-output.js';
+// import { AgentContext } from '@/core/types/agent-types.js';
+import { Thread } from '../../../core/types/common-types.js';
 
 export class ReActPlanner implements Planner {
     private logger = createLogger('react-planner');
@@ -39,10 +43,45 @@ export class ReActPlanner implements Planner {
         });
     }
 
+    /**
+     * Get ContextManager for the current thread
+     */
+    private getContextManager(thread: Thread): ContextManager | null {
+        debugger;
+        const threadId = thread.id;
+        if (!threadId) {
+            this.logger.warn('No threadId found in planner metadata');
+            return null;
+        }
+        return ContextManagerRegistry.getByThread(threadId);
+    }
+
+    /**
+     * Get available tools for the current context
+     */
+    private getAvailableToolsForContext(thread: Thread): string[] {
+        debugger;
+        const contextManager = this.getContextManager(thread);
+        const tools = contextManager?.getAvailableTools() || [];
+        return tools.map((tool) => tool.name);
+    }
+
+    /**
+     * Get available tools objects for the current context
+     */
+    // private getAvailableToolsObjects(
+    //     thread: Thread,
+    //     _context?: PlannerExecutionContext,
+    // ): AgentContext['availableTools'] {
+    //     const contextManager = this.getContextManager(thread);
+    //     return contextManager?.getAvailableTools() || [];
+    // }
+
     async think(
         input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
+        debugger;
         this.logger.debug('ReAct thinking started', {
             input: input.substring(0, 100),
             iteration: context.iterations,
@@ -70,6 +109,8 @@ export class ReActPlanner implements Planner {
         input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
+        debugger;
+        const contextManager = this.getContextManager(context.thread);
         const prompt = this.buildImprovedReActPrompt(input, context);
 
         // ✅ OPTION 1: Try structured generation if supported
@@ -84,7 +125,7 @@ export class ReActPlanner implements Planner {
 
                 return this.convertReActOutputToThought(
                     structuredOutput,
-                    context,
+                    context.plannerMetadata.thread!,
                 );
             } catch (error) {
                 this.logger.warn(
@@ -103,8 +144,10 @@ export class ReActPlanner implements Planner {
         if (this.llmAdapter.createPlan) {
             try {
                 const plan = (await this.llmAdapter.createPlan(input, 'react', {
-                    availableTools: context.availableTools.map((t) => t.name),
-                    agentIdentity: context.agentIdentity as string,
+                    availableTools: this.getAvailableToolsForContext(
+                        context.plannerMetadata.thread!,
+                    ),
+                    agentIdentity: contextManager.agentIdentity as string,
                     previousPlans: this.extractPreviousPlans(context),
                 })) as {
                     reasoning: string;
@@ -120,7 +163,10 @@ export class ReActPlanner implements Planner {
                     steps: plan.steps,
                 });
 
-                return this.convertReActOutputToThought(reactOutput, context);
+                return this.convertReActOutputToThought(
+                    reactOutput,
+                    context.plannerMetadata.thread!,
+                );
             } catch (error) {
                 this.logger.warn('Plan creation failed, using basic approach', {
                     error:
@@ -138,14 +184,20 @@ export class ReActPlanner implements Planner {
         try {
             const parsed = JSON.parse(response.content);
             if (parsed.reasoning && parsed.action) {
-                return this.convertReActOutputToThought(parsed, context);
+                return this.convertReActOutputToThought(
+                    parsed,
+                    context.plannerMetadata.thread!,
+                );
             }
         } catch {
             // Not JSON, continue with text parsing
         }
 
         // Parse text response for ReAct pattern
-        return this.parseTextResponse(response.content, context);
+        return this.parseTextResponse(
+            response.content,
+            context.plannerMetadata.thread!,
+        );
     }
 
     /**
@@ -171,10 +223,7 @@ export class ReActPlanner implements Planner {
     /**
      * Parse text response into ReAct format
      */
-    private parseTextResponse(
-        text: string,
-        context: PlannerExecutionContext,
-    ): AgentThought {
+    private parseTextResponse(text: string, thread: Thread): AgentThought {
         // Look for common ReAct patterns in text
         const thoughtMatch = text.match(
             /(?:Thought|Reasoning|Think):\s*(.+?)(?=Action:|$)/is,
@@ -192,9 +241,7 @@ export class ReActPlanner implements Planner {
 
             if (toolMatch) {
                 const [, toolName, argsStr] = toolMatch;
-                const availableTools = context.availableTools.map(
-                    (t) => t.name,
-                );
+                const availableTools = this.getAvailableToolsForContext(thread);
 
                 if (toolName && availableTools.includes(toolName)) {
                     try {
@@ -231,10 +278,9 @@ export class ReActPlanner implements Planner {
      */
     private convertReActOutputToThought(
         output: ReActOutput,
-        context: PlannerExecutionContext,
+        thread: Thread,
     ): AgentThought {
-        const availableToolNames = context.availableTools.map((t) => t.name);
-
+        const availableToolNames = this.getAvailableToolsForContext(thread);
         // ✅ Tool validation for tool_call actions
         if (output.action.type === 'tool_call') {
             if (!availableToolNames.includes(output.action.tool)) {
@@ -272,12 +318,15 @@ export class ReActPlanner implements Planner {
         input: string,
         context: PlannerExecutionContext,
     ): string {
-        const availableToolNames = context.availableTools.map((t) => t.name);
+        debugger;
+        const availableToolNames = this.getAvailableToolsForContext(
+            context.plannerMetadata.thread!,
+        );
 
         // Enhanced tools context with full metadata
         const toolsContext =
             availableToolNames.length > 0
-                ? this.buildEnhancedToolsContext(context.availableTools)
+                ? availableToolNames
                 : `No tools available. Provide conversational guidance using your knowledge.`;
 
         // History context (last 2 steps for relevance)
@@ -340,89 +389,89 @@ Important:
     /**
      * Build enhanced tools context with full metadata including schemas
      */
-    private buildEnhancedToolsContext(
-        tools: PlannerExecutionContext['availableTools'],
-    ): string {
-        const toolDescriptions = tools
-            .map((tool) => {
-                let description = `\n### Tool: ${tool.name}`;
-                description += `\nDescription: ${tool.description}`;
+    // private buildEnhancedToolsContext(
+    //     tools: PlannerExecutionContext['availableTools'],
+    // ): string {
+    //     const toolDescriptions = tools
+    //         .map((tool) => {
+    //             let description = `\n### Tool: ${tool.name}`;
+    //             description += `\nDescription: ${tool.description}`;
 
-                // Add schema information if available
-                if (tool.schema && typeof tool.schema === 'object') {
-                    const schema = tool.schema as Record<string, unknown>;
-                    const properties = schema.properties as
-                        | Record<string, unknown>
-                        | undefined;
-                    if (properties) {
-                        description += `\nParameters:`;
+    //             // Add schema information if available
+    //             if (tool.schema && typeof tool.schema === 'object') {
+    //                 const schema = tool.schema as Record<string, unknown>;
+    //                 const properties = schema.properties as
+    //                     | Record<string, unknown>
+    //                     | undefined;
+    //                 if (properties) {
+    //                     description += `\nParameters:`;
 
-                        // List all parameters with their details
-                        for (const [paramName, paramDef] of Object.entries(
-                            properties,
-                        )) {
-                            const param = paramDef as Record<string, unknown>;
-                            const isRequired =
-                                (
-                                    schema.required as string[] | undefined
-                                )?.includes(paramName) ||
-                                param.required === true;
-                            description += `\n  - ${paramName} (${param.type as string}${isRequired ? ', REQUIRED' : ', optional'})`;
-                            if (param.description) {
-                                description += `: ${param.description as string}`;
-                            }
-                            if (param.enum) {
-                                description += ` [choices: ${(param.enum as unknown[]).join(', ')}]`;
-                            }
-                            if (param.default !== undefined) {
-                                description += ` [default: ${JSON.stringify(param.default)}]`;
-                            }
-                        }
-                    }
-                }
+    //                     // List all parameters with their details
+    //                     for (const [paramName, paramDef] of Object.entries(
+    //                         properties,
+    //                     )) {
+    //                         const param = paramDef as Record<string, unknown>;
+    //                         const isRequired =
+    //                             (
+    //                                 schema.required as string[] | undefined
+    //                             )?.includes(paramName) ||
+    //                             param.required === true;
+    //                         description += `\n  - ${paramName} (${param.type as string}${isRequired ? ', REQUIRED' : ', optional'})`;
+    //                         if (param.description) {
+    //                             description += `: ${param.description as string}`;
+    //                         }
+    //                         if (param.enum) {
+    //                             description += ` [choices: ${(param.enum as unknown[]).join(', ')}]`;
+    //                         }
+    //                         if (param.default !== undefined) {
+    //                             description += ` [default: ${JSON.stringify(param.default)}]`;
+    //                         }
+    //                     }
+    //                 }
+    //             }
 
-                // Add examples if available
-                if (tool.examples && tool.examples.length > 0) {
-                    const example = tool.examples[0];
-                    if (example) {
-                        description += `\nExample usage:`;
-                        description += `\n  ${JSON.stringify(example.input)}`;
-                        if (example.context) {
-                            description += `\n  Context: ${example.context}`;
-                        }
-                    }
-                }
+    //             // Add examples if available
+    //             if (tool.examples && tool.examples.length > 0) {
+    //                 const example = tool.examples[0];
+    //                 if (example) {
+    //                     description += `\nExample usage:`;
+    //                     description += `\n  ${JSON.stringify(example.input)}`;
+    //                     if (example.context) {
+    //                         description += `\n  Context: ${example.context}`;
+    //                     }
+    //                 }
+    //             }
 
-                // Add planner hints if available
-                if (tool.plannerHints) {
-                    if (
-                        tool.plannerHints.useWhen &&
-                        tool.plannerHints.useWhen.length > 0
-                    ) {
-                        description += `\nUse when: ${tool.plannerHints.useWhen.join(', ')}`;
-                    }
-                    if (
-                        tool.plannerHints.avoidWhen &&
-                        tool.plannerHints.avoidWhen.length > 0
-                    ) {
-                        description += `\nAvoid when: ${tool.plannerHints.avoidWhen.join(', ')}`;
-                    }
-                }
+    //             // Add planner hints if available
+    //             if (tool.plannerHints) {
+    //                 if (
+    //                     tool.plannerHints.useWhen &&
+    //                     tool.plannerHints.useWhen.length > 0
+    //                 ) {
+    //                     description += `\nUse when: ${tool.plannerHints.useWhen.join(', ')}`;
+    //                 }
+    //                 if (
+    //                     tool.plannerHints.avoidWhen &&
+    //                     tool.plannerHints.avoidWhen.length > 0
+    //                 ) {
+    //                     description += `\nAvoid when: ${tool.plannerHints.avoidWhen.join(', ')}`;
+    //                 }
+    //             }
 
-                // Add usage analytics if available
-                if (tool.usageCount !== undefined) {
-                    description += `\nUsage stats: ${tool.usageCount} calls`;
-                    if (tool.errorRate !== undefined) {
-                        description += `, ${((1 - tool.errorRate) * 100).toFixed(1)}% success rate`;
-                    }
-                }
+    //             // Add usage analytics if available
+    //             if (tool.usageCount !== undefined) {
+    //                 description += `\nUsage stats: ${tool.usageCount} calls`;
+    //                 if (tool.errorRate !== undefined) {
+    //                     description += `, ${((1 - tool.errorRate) * 100).toFixed(1)}% success rate`;
+    //                 }
+    //             }
 
-                return description;
-            })
-            .join('\n');
+    //             return description;
+    //         })
+    //         .join('\n');
 
-        return `Available tools with schemas:\n${toolDescriptions}`;
-    }
+    //     return `Available tools with schemas:\n${toolDescriptions}`;
+    // }
 
     async analyzeResult(
         result: ActionResult,

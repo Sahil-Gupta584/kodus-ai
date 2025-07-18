@@ -9,11 +9,11 @@ import { IdGenerator } from '../../utils/id-generator.js';
 import { cosineSimilarity } from '../../core/memory/vector-store.js';
 import type {
     AgentContext,
+    AgentId,
     AgentThought,
 } from '../../core/types/common-types.js';
 import type {
     AgentDefinition,
-    AgentId,
     AgentMetrics,
 } from '../../core/types/agent-types.js';
 import { getAgentSummary } from '../../core/types/agent-types.js';

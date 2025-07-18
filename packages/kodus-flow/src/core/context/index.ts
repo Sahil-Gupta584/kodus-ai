@@ -20,14 +20,9 @@ export {
     createWorkflowContext,
     createBaseContext,
     contextFactory,
-    createAgentBaseContext,
 } from './context-factory.js';
 
-export type {
-    BaseContextConfig,
-    AgentContextConfig,
-    ContextState,
-} from './context-factory.js';
+export type { ContextState } from './context-factory.js';
 
 // Context Manager - Unified facade
 export { ContextManager } from './context-manager.js';

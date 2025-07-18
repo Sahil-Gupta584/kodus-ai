@@ -17,39 +17,14 @@
 import type {
     BaseContext,
     AgentContext,
-    SystemContext,
-    RuntimeContext,
-    Thread,
+    ExecutionId,
+    AgentExecutionOptions,
 } from '../types/common-types.js';
 import type { WorkflowContext } from '../types/workflow-types.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextStateService } from './services/state-service.js';
-import { sessionService } from './services/session-service.js';
 import { getGlobalMemoryManager } from '../memory/memory-manager.js';
-import { ContextManager } from './context-manager.js';
-import type { AgentRuntime } from '../services/service-registry.js';
-import type {
-    RequestInfo,
-    AgentExecutionContext,
-} from '../types/execution-context.js';
-
-// Basic interfaces for context configuration
-export interface BaseContextConfig {
-    tenantId: string;
-    executionId?: string;
-    correlationId?: string;
-    parentId?: string;
-    metadata?: Record<string, unknown>;
-}
-
-export interface AgentContextConfig extends BaseContextConfig {
-    agentName: string;
-    sessionId?: string; // Session management
-    thread?: Thread; // Conversation/thread context - ALWAYS use this
-    enableSession?: boolean;
-    enableState?: boolean;
-    enableMemory?: boolean;
-}
+import { ContextManagerRegistry } from './context-registry.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🎯 CONFIGURAÇÕES UNIFICADAS
@@ -74,7 +49,7 @@ export class UnifiedContextFactory {
      * Cria contexto base - fundação para todos os outros contextos
      * Valida e sanitiza inputs, configura state management
      */
-    createBaseContext(config: BaseContextConfig): BaseContext {
+    createBaseContext(config: BaseContext): BaseContext {
         // Validação de tenantId para segurança
         if (
             !config.tenantId ||
@@ -111,7 +86,6 @@ export class UnifiedContextFactory {
             // === OBSERVABILIDADE ===
             startTime: Date.now(),
             status: 'RUNNING' as const,
-            metadata: config.metadata || {},
 
             // === CLEANUP ===
             cleanup: async () => {
@@ -140,124 +114,23 @@ export class UnifiedContextFactory {
 
     /**
      * Creates agent context with state and session management
-     * Simple, focused implementation without over-engineering
+     * Always uses ContextManager for consistency
      */
     async createAgentContext(
-        config: AgentContextConfig,
+        agentExecutionOptions: AgentExecutionOptions,
     ): Promise<AgentContext> {
-        const baseContext = this.createBaseContext(config);
+        // Initialize memory manager
+        const memoryManager = getGlobalMemoryManager();
+        await memoryManager.initialize();
 
-        // 🚀 Create ContextManager first - it will coordinate everything
-        const memoryManager =
-            config.enableMemory !== false
-                ? getGlobalMemoryManager()
-                : undefined;
-        const contextManager = memoryManager
-            ? new ContextManager(memoryManager)
-            : undefined;
+        // Get ContextManager for this thread (creates if doesn't exist)
+        const threadId = agentExecutionOptions.thread?.id || 'default';
+        const contextManager = ContextManagerRegistry.getByThread(threadId);
 
-        // 🎯 Let ContextManager initialize all services and context
-        if (contextManager && memoryManager) {
-            await memoryManager.initialize();
-
-            // ContextManager will coordinate session, state, and memory initialization
-            return await contextManager.initializeAgentContext(
-                config,
-                baseContext,
-            );
-        }
-
-        // 🔄 Fallback to old logic if no ContextManager
-        return await this.createAgentContextLegacy(config, baseContext);
-    }
-
-    /**
-     * Legacy agent context creation for backward compatibility
-     */
-    private async createAgentContextLegacy(
-        config: AgentContextConfig,
-        baseContext: BaseContext,
-    ): Promise<AgentContext> {
-        // Create state service for this agent
-        const stateService = new ContextStateService(baseContext, {
-            maxNamespaceSize: 1000,
-            maxNamespaces: 50,
-        });
-
-        // Create or get session if enabled
-        let sessionContext = undefined;
-        let sessionId = config.sessionId;
-
-        const threadId = config.thread?.id;
-
-        if (config.enableSession && threadId) {
-            sessionContext = sessionService.findSessionByThread(
-                threadId,
-                config.tenantId,
-            );
-
-            if (!sessionContext) {
-                const session = sessionService.createSession(
-                    config.tenantId,
-                    threadId,
-                    { agentName: config.agentName },
-                );
-                sessionContext = sessionService.getSessionContext(session.id);
-                sessionId = session.id; // Auto-generate sessionId
-            } else {
-                sessionId = sessionContext.id;
-            }
-        }
-
-        // Create system context
-        const systemContext: SystemContext = {
-            executionId: IdGenerator.executionId(),
-            correlationId: baseContext.correlationId,
-            sessionId: sessionId,
-            threadId: threadId || 'default',
-            tenantId: config.tenantId,
-            iteration: 0,
-            toolsUsed: 0,
-            conversationHistory: sessionContext?.conversationHistory || [],
-            startTime: Date.now(),
-            status: 'running',
-            availableTools: [],
-            debugInfo: {
-                agentName: config.agentName,
-                invocationId: IdGenerator.executionId(),
-            },
-        };
-
-        const runtimeContext: RuntimeContext = systemContext;
-
-        // Get memory manager if enabled
-        let memoryManager = undefined;
-        if (config.enableMemory !== false) {
-            memoryManager = getGlobalMemoryManager();
-            await memoryManager.initialize();
-        }
-
-        const agentContext: AgentContext = {
-            ...baseContext,
-            agentName: config.agentName,
-            invocationId: IdGenerator.executionId(),
-            user: {
-                context: config.metadata || {},
-            },
-            system: runtimeContext,
-            availableTools: [],
-            stateManager: stateService,
-            memoryManager,
-            contextManager: undefined, // No ContextManager in legacy mode
-            signal: new AbortController().signal,
-
-            cleanup: async () => {
-                await baseContext.cleanup();
-                await stateService.clear();
-            },
-        };
-
-        return agentContext;
+        return await contextManager.initializeAgentContext(
+            agentExecutionOptions,
+            agentExecutionOptions,
+        );
     }
 
     /**
@@ -265,7 +138,10 @@ export class UnifiedContextFactory {
      * Simplified implementation for essential workflow needs
      */
     createWorkflowContext(
-        config: BaseContextConfig & { workflowName: string },
+        config: BaseContext & {
+            workflowName: string;
+            executionId: ExecutionId;
+        },
     ): WorkflowContext {
         const baseContext = this.createBaseContext(config);
 
@@ -320,9 +196,9 @@ export const defaultContextFactory = new UnifiedContextFactory();
  * Main context creation functions
  */
 export const createAgentContext = async (
-    config: AgentContextConfig,
+    agentExecutionOptions: AgentExecutionOptions,
 ): Promise<AgentContext> => {
-    return defaultContextFactory.createAgentContext(config);
+    return defaultContextFactory.createAgentContext(agentExecutionOptions);
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -332,11 +208,11 @@ export const createAgentContext = async (
 /**
  * Helper functions for quick context creation
  */
-export const createBaseContext = (config: BaseContextConfig): BaseContext =>
+export const createBaseContext = (config: BaseContext): BaseContext =>
     defaultContextFactory.createBaseContext(config);
 
 export const createWorkflowContext = (
-    config: BaseContextConfig & { workflowName: string },
+    config: BaseContext & { workflowName: string; executionId: ExecutionId },
 ): WorkflowContext => defaultContextFactory.createWorkflowContext(config);
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -344,57 +220,6 @@ export const createWorkflowContext = (
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
- * NEW: Create agent execution context using service registry
- */
-export function createAgentExecutionContextFromRegistry(
-    agentName: string,
-    request: RequestInfo,
-    runtime: AgentRuntime,
-): AgentExecutionContext {
-    return {
-        agentName,
-        invocationId: `${agentName}-${request.executionId}`,
-        request,
-        runtime,
-        state: {
-            startTime: Date.now(),
-            status: 'starting',
-            iteration: 0,
-        },
-    };
-}
-
-/**
- * Create runtime from global services
- */
-export async function createDefaultRuntime(): Promise<AgentRuntime> {
-    // Create state service
-    const stateService = new ContextStateService(
-        { tenantId: 'default', correlationId: 'default' },
-        { maxNamespaceSize: 1000, maxNamespaces: 50 },
-    );
-
-    // Get memory manager
-    const memoryManager = getGlobalMemoryManager();
-    await memoryManager.initialize();
-
-    return {
-        services: {
-            state: stateService,
-            memory: memoryManager,
-            session: sessionService,
-        },
-    };
-}
-
-/**
  * Legacy compatibility functions
  */
 export const contextFactory = UnifiedContextFactory;
-
-export async function createAgentBaseContext(
-    agentName: string,
-    tenantId: string,
-): Promise<AgentContext> {
-    return createAgentContext({ agentName, tenantId });
-}

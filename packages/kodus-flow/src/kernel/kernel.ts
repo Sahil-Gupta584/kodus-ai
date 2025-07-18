@@ -29,6 +29,8 @@ import type {
     Persistor,
     EventHandler,
     EventStream,
+    TenantId,
+    CorrelationId,
 } from '../core/types/common-types.js';
 import type { Workflow } from '../core/types/workflow-types.js';
 import type { Middleware } from '../runtime/middleware/types.js';
@@ -153,7 +155,8 @@ class LRUCache<T> {
 export interface KernelState {
     // Identification
     id: string; // tenant:job format
-    tenantId: string;
+    tenantId: TenantId;
+    correlationId: CorrelationId;
     jobId: string;
 
     // Context management (ISOLATED PER TENANT)
@@ -182,7 +185,7 @@ export interface KernelState {
  * Kernel Configuration
  */
 export interface KernelConfig {
-    tenantId: string;
+    tenantId: TenantId;
     jobId?: string;
 
     // REQUIRED: Workflow for execution
@@ -277,14 +280,6 @@ export class ExecutionKernel {
         this.logger = createLogger(`kernel:${config.tenantId}`);
         this.persistor = config.persistor || createPersistor('memory');
 
-        // Initialize circuit breaker manager
-        // this.circuitBreakerManager = new CircuitBreakerManager({
-        //     failureThreshold: 5,
-        //     timeout: 30000,
-        //     resetTimeout: 60000,
-        // });
-        // this.circuitBreakerManager = null;
-
         // Initialize context factory
         this.contextFactory =
             config.contextFactory || new UnifiedContextFactory();
@@ -294,6 +289,7 @@ export class ExecutionKernel {
         this.state = {
             id: `${config.tenantId}:${jobId}`,
             tenantId: config.tenantId,
+            correlationId: IdGenerator.correlationId(),
             jobId,
             contextData: {},
             stateData: {},
@@ -998,7 +994,8 @@ export class ExecutionKernel {
             // Use context factory to create base context structure
             const baseContext = this.contextFactory.createBaseContext({
                 tenantId: this.state.tenantId,
-                executionId: this.state.id,
+                correlationId: this.state.correlationId,
+                startTime: this.state.startTime,
             });
 
             this.state.contextData = {

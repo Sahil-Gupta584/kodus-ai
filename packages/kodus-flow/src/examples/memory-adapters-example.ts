@@ -3,9 +3,9 @@
  * @description Example of using memory adapters with different backends
  */
 
-import { MemoryManager } from '@/core/memory/memory-manager.js';
-import { StorageAdapterFactory } from '@/core/storage/factory.js';
-import { createLogger } from '@/observability/index.js';
+import { MemoryManager } from '../core/memory/memory-manager.js';
+import { StorageAdapterFactory } from '../core/storage/factory.js';
+import { createLogger } from '../observability/index.js';
 
 const logger = createLogger('memory-adapters-example');
 

@@ -749,8 +749,6 @@ export function createToolContext(
         tenantId: tenantId || 'default',
         correlationId: options.correlationId || 'default',
         startTime: Date.now(),
-        status: 'RUNNING',
-        metadata: options.metadata || {},
 
         // ToolContext specific
         toolName,

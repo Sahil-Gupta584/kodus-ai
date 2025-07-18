@@ -15,31 +15,17 @@ import type {
     BaseExecutionResult,
     BaseEngineConfig,
     Metadata,
+    SessionId,
 } from './base-types.js';
 import type { Thread } from './common-types.js';
 import type { UserContext, SystemContext } from './base-types.js';
-import type { ToolCall } from './tool-types.js';
+import type { ToolCall, ToolMetadataForPlanner } from './tool-types.js';
 import { ContextStateService } from '../context/services/state-service.js';
 import { Persistor } from '../../persistor/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import type { MemoryManager } from '../memory/memory-manager.js';
 import type { ContextManager } from '../context/context-manager-types.js';
-
-// ===== AGENT IDENTITY TYPES =====
-
-/**
- * Agent ID schema for validation - uses string type (simpler than branded)
- */
-export const agentIdSchema = z.string().min(1);
-export type AgentId = string;
-
-/**
- * Invocation ID - identifies a specific agent invocation
- */
-export const invocationIdSchema = z.string().min(1);
-export type InvocationId = string;
-
-// ===== AGENT THINKING TYPES =====
+import { AgentIdentity } from './agent-definition.js';
 
 /**
  * Agent action types - what an agent can decide to do
@@ -288,27 +274,17 @@ export interface AgentDefinition<
     optionalTools?: string[];
 }
 
-// ===== AGENT CONTEXT =====
-
 /**
  * Agent Context - Execution environment for agents
  * Extends BaseContext with intelligent capabilities (memory, persistence, tools)
  */
-export interface AgentContext extends BaseContext {
+export type AgentContext = BaseContext & {
     // === AGENT IDENTITY ===
     agentName: string;
     invocationId: string;
 
     // ✅ AGENT IDENTITY: Structured for enhanced execution context
-    agentIdentity?: {
-        role?: string;
-        goal?: string;
-        description?: string;
-        expertise?: string[];
-        personality?: string;
-        style?: string;
-        systemPrompt?: string;
-    };
+    agentIdentity?: AgentIdentity;
 
     // === CONTEXT SEPARATION (fonte única para user/system data) ===
     user: UserContext;
@@ -321,20 +297,7 @@ export interface AgentContext extends BaseContext {
     contextManager?: ContextManager;
 
     // === RESOURCES ===
-    availableTools: Array<{
-        name: string;
-        description: string;
-        schema: unknown;
-        examples?: unknown[];
-        plannerHints?: {
-            useWhen?: string[];
-            avoidWhen?: string[];
-            combinesWith?: string[];
-            conflictsWith?: string[];
-        };
-        categories?: string[];
-        dependencies?: string[];
-    }>;
+    availableTools?: ToolMetadataForPlanner[];
     signal: AbortSignal;
 
     // === OBSERVABILITY ===
@@ -351,7 +314,8 @@ export interface AgentContext extends BaseContext {
 
     // === CLEANUP ===
     cleanup(): Promise<void>;
-}
+    agentExecutionOptions?: AgentExecutionOptions;
+};
 
 // ===== AGENT ENGINE TYPES =====
 
@@ -401,13 +365,14 @@ export interface CoreIdentifiers {
 /**
  * Agent Execution Options
  */
-export interface AgentExecutionOptions {
+export type AgentExecutionOptions = BaseContext & {
     // === IDENTIFICAÇÃO DE QUEM EXECUTA ===
+    agentName: string;
+
     thread: Thread;
 
     // // === IDENTIFICAÇÃO DE EXECUÇÃO ===
-    sessionId?: string; // Session management
-    correlationId?: string;
+    sessionId?: SessionId; // Session management
 
     // === CONFIGURAÇÕES ===
     timeout?: number;
@@ -415,7 +380,11 @@ export interface AgentExecutionOptions {
 
     // === CONTEXTO DO USUÁRIO ===
     userContext?: Record<string, unknown>;
-}
+
+    enableSession?: boolean;
+    enableState?: boolean;
+    enableMemory?: boolean;
+};
 
 /**
  * Agent Execution Result
@@ -802,11 +771,7 @@ export function createAgentContext(
         correlationId?: string;
         parentId?: string;
         invocationId?: string;
-        availableTools?: Array<{
-            name: string;
-            description: string;
-            schema: unknown;
-        }>;
+        availableTools?: ToolMetadataForPlanner[];
         persistorService?: Persistor;
         userContext?: UserContext;
         systemContext?: SystemContext;
@@ -826,12 +791,6 @@ export function createAgentContext(
         conversationHistory: [],
         startTime: Date.now(),
         status: 'running',
-        availableTools: options.availableTools || [],
-        debugInfo: {
-            agentName,
-            invocationId,
-            parentId: options.parentId,
-        },
         ...options.systemContext,
     };
 
@@ -850,18 +809,13 @@ export function createAgentContext(
     );
 
     return {
-        // BaseContext
         tenantId: tenantId,
         correlationId: correlationId,
         startTime: Date.now(),
-        status: 'RUNNING',
-        metadata: {}, // Base metadata (technical)
 
-        // AgentContext specific
         agentName,
         invocationId,
 
-        // Context separation (fonte única) - NEW API
         user: options.userContext || {},
         system: systemContext,
 
@@ -1271,49 +1225,6 @@ export function validateAgentStartPayload(
         typeof (payload as Record<string, unknown>).tenantId === 'string'
     );
 }
-
-/**
- * Create agent lifecycle context with defaults
- */
-export function createAgentLifecycleContext(
-    agentName: string,
-    operation: 'start' | 'stop' | 'pause' | 'resume' | 'schedule',
-    tenantId: string,
-    payload:
-        | AgentStartPayload
-        | AgentStopPayload
-        | AgentPausePayload
-        | AgentResumePayload
-        | AgentSchedulePayload,
-    options: {
-        correlationId?: string;
-        parentId?: string;
-        currentStatus?: AgentStatus;
-        metadata?: Metadata;
-    } = {},
-): AgentLifecycleContext {
-    return {
-        // BaseContext
-        tenantId: tenantId,
-        correlationId: options.correlationId || 'default',
-        startTime: Date.now(),
-        status: 'RUNNING',
-        metadata: options.metadata || {},
-
-        // AgentLifecycleContext specific
-        agentName,
-        operation,
-        currentStatus: options.currentStatus || 'stopped',
-        payload,
-
-        cleanup: async () => {
-            // Cleanup logic will be implemented by the engine
-        },
-    };
-}
-
-// ===== AGENT METRICS =====
-
 /**
  * Métricas de performance do agente
  */

@@ -5,6 +5,8 @@
 
 import type { AgentContext } from '../types/agent-types.js';
 import type { PlannerExecutionContext } from '../../engine/planning/planner-factory.js';
+import type { AgentExecutionOptions } from '../types/common-types.js';
+import { AgentIdentity } from '../types/agent-definition.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🔧 TOOL EXECUTION CONTEXT
@@ -37,10 +39,9 @@ export interface ContextValueUpdate {
 export interface ContextManager {
     // 🚀 Agent Context Initialization (NEW - main responsibility)
     initializeAgentContext(
-        config: import('../context/context-factory.js').AgentContextConfig,
-        baseContext: import('../types/base-types.js').BaseContext,
-        agent?: { name: string; identity?: AgentContext['agentIdentity'] },
-        input?: unknown,
+        agent: { name: string; identity?: AgentIdentity },
+        input: unknown,
+        config: AgentExecutionOptions,
     ): Promise<AgentContext>;
 
     // 🔧 Dynamic Context Updates (NEW - agent communication)

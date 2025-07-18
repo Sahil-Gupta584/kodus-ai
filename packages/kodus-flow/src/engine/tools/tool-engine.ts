@@ -257,7 +257,8 @@ export class ToolEngine {
      * Get available tools with metadata for planner context engineering
      */
     getAvailableTools(): ToolMetadataForPlanner[] {
-        return Array.from(this.tools.values()).map((tool) => {
+        debugger;
+        return Array.from(this.tools.values())?.map((tool) => {
             // Prioritize existing JSON Schema, then convert Zod if needed
             let jsonSchema: unknown = tool.jsonSchema;
 

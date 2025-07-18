@@ -50,6 +50,7 @@ export function zodToJSONSchema(
 function zodSchemaToJsonSchemaObject(
     schema: z.ZodSchema,
 ): Record<string, unknown> {
+    debugger;
     const zodType = schema._def as unknown as ZodInternalDef;
 
     switch (zodType.typeName) {

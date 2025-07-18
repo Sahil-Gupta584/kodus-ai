@@ -123,13 +123,7 @@ export class AgentExecutor<
             }
 
             // Execute using shared core logic
-            const result = await this.executeAgent(
-                definition,
-                input,
-                correlationId,
-                sessionId,
-                options,
-            );
+            const result = await this.executeAgent(definition, input, options);
 
             // Format response if available
             if (definition.formatResponse) {

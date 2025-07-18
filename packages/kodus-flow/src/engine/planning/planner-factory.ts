@@ -5,12 +5,13 @@
  */
 
 import { createLogger } from '../../observability/index.js';
-import type { AgentContext } from '../../core/types/agent-types.js';
 import type { LLMAdapter } from '../../adapters/llm/index.js';
 import { ReActPlanner } from './strategies/react-planner.js';
 import { TreeOfThoughtsPlanner } from './strategies/tree-of-thoughts-planner.js';
 import { ReflexionPlanner } from './strategies/reflexion-planner.js';
 import { PlanAndExecutePlanner } from './strategies/plan-execute-planner.js';
+import { Thread } from '../../core/types/common-types.js';
+import { AgentIdentity } from '@/core/types/agent-definition.js';
 
 export type PlannerType = 'react' | 'tot' | 'reflexion' | 'plan-execute';
 
@@ -98,6 +99,7 @@ export interface ExecutionContextMetadata {
     agentName?: string;
     correlationId?: string;
     tenantId?: string;
+    thread?: Thread; // ⭐ NOVO: ID da thread para acesso ao ContextManager
     startTime?: number;
     plannerType?: PlannerType;
     [key: string]: unknown;
@@ -169,26 +171,12 @@ export interface ExecutionHistoryEntry {
 // Enhanced execution context for planners with improved LLM performance
 export interface PlannerExecutionContext {
     input: string;
-
-    // Enhanced tool information with usage analytics
-    availableTools: EnhancedToolInfo[];
-
+    thread: Thread;
     history: ExecutionHistoryEntry[];
     iterations: number;
     maxIterations: number;
     constraints?: string[];
     plannerMetadata: ExecutionContextMetadata;
-
-    // ✅ Agent identity for personalized planning
-    agentIdentity?: {
-        role?: string;
-        goal?: string;
-        description?: string;
-        expertise?: string[];
-        personality?: string;
-        style?: string;
-        systemPrompt?: string;
-    };
 
     // 🚀 NEW: Execution hints for better LLM decision making
     executionHints?: ExecutionHints;
@@ -226,7 +214,7 @@ export function isSuccessResult(result: ActionResult): boolean {
  */
 export function generateExecutionHints(
     history: ExecutionHistoryEntry[],
-    agentIdentity?: PlannerExecutionContext['agentIdentity'],
+    agentIdentity?: AgentIdentity,
 ): ExecutionHints {
     const hints: ExecutionHints = {};
 
@@ -341,163 +329,161 @@ export function generateLearningContext(
 /**
  * Create an enhanced execution context with automatic hints and learning
  */
-export function createEnhancedExecutionContext(
-    agentContext: AgentContext,
-    input: string,
-    history: ExecutionHistoryEntry[],
-    iterations: number,
-    maxIterations: number,
-    constraints?: string[],
-    plannerMetadata?: ExecutionContextMetadata,
-): PlannerExecutionContext {
-    // Auto-generate execution hints and learning context
-    const autoHints = generateExecutionHints(
-        history,
-        agentContext.agentIdentity,
-    );
-    const autoLearning = generateLearningContext(history);
+// export function createEnhancedExecutionContext(
+//     agentContext: AgentContext,
+//     input: string,
+//     history: ExecutionHistoryEntry[],
+//     iterations: number,
+//     maxIterations: number,
+//     constraints?: string[],
+//     plannerMetadata?: ExecutionContextMetadata,
+// ): PlannerExecutionContext {
+//     // Auto-generate execution hints and learning context
+//     const autoHints = generateExecutionHints(
+//         history,
+//         agentContext.agentIdentity,
+//     );
+//     const autoLearning = generateLearningContext(history);
 
-    return createPlannerExecutionContext(
-        agentContext,
-        input,
-        history,
-        iterations,
-        maxIterations,
-        constraints,
-        plannerMetadata,
-        {
-            executionHints: autoHints,
-            learningContext: autoLearning,
-            enhanceTools: true, // Always enhance tools for better performance
-        },
-    );
-}
+//     return createPlannerExecutionContext(
+//         agentContext,
+//         input,
+//         history,
+//         iterations,
+//         maxIterations,
+//         constraints,
+//         plannerMetadata,
+//         {
+//             executionHints: autoHints,
+//             learningContext: autoLearning,
+//             enhanceTools: true, // Always enhance tools for better performance
+//         },
+//     );
+// }
 
 // Context adapter to convert AgentContext to PlannerExecutionContext
-export function createPlannerExecutionContext(
-    agentContext: AgentContext,
-    input: string,
-    history: ExecutionHistoryEntry[],
-    iterations: number,
-    maxIterations: number,
-    constraints?: string[],
-    plannerMetadata?: ExecutionContextMetadata,
-    enhancement?: ContextEnhancementConfig,
-): PlannerExecutionContext {
-    // Convert basic tools to enhanced tools if requested
-    const enhancedTools: EnhancedToolInfo[] = (
-        agentContext.availableTools || []
-    ).map((tool) => {
-        // Extract analytics from tool usage history if available
-        const toolUsageFromHistory = history.filter(
-            (entry) =>
-                entry.action.type === 'tool_call' &&
-                (entry.action as ToolCallAction).tool === tool.name,
-        );
+// export function createPlannerExecutionContext(
+//     agentContext: AgentContext,
+//     input: string,
+//     history: ExecutionHistoryEntry[],
+//     iterations: number,
+//     maxIterations: number,
+//     constraints?: string[],
+//     plannerMetadata?: ExecutionContextMetadata,
+//     enhancement?: ContextEnhancementConfig,
+// ): PlannerExecutionContext {
+//     // Convert basic tools to enhanced tools if requested
+//     const enhancedTools: EnhancedToolInfo[] = (
+//         agentContext.availableTools || []
+//     ).map((tool) => {
+//         // Extract analytics from tool usage history if available
+//         const toolUsageFromHistory = history.filter(
+//             (entry) =>
+//                 entry.action.type === 'tool_call' &&
+//                 (entry.action as ToolCallAction).tool === tool.name,
+//         );
 
-        const baseEnhancedTool: EnhancedToolInfo = {
-            name: tool.name,
-            description: tool.description,
-            schema: tool.schema,
-            examples: tool.examples as EnhancedToolInfo['examples'],
-            plannerHints: tool.plannerHints as EnhancedToolInfo['plannerHints'],
-            categories: tool.categories,
-            dependencies: tool.dependencies,
-        };
+//         const baseEnhancedTool: EnhancedToolInfo = {
+//             name: tool.name,
+//             description: tool.description,
+//             schema: tool.inputSchema,
+//             examples: tool.examples as EnhancedToolInfo['examples'],
+//             plannerHints: tool.plannerHints as EnhancedToolInfo['plannerHints'],
+//             categories: tool.categories,
+//             dependencies: tool.dependencies,
+//         };
 
-        if (enhancement?.enhanceTools) {
-            // Add usage analytics
-            return {
-                ...baseEnhancedTool,
-                usageCount: toolUsageFromHistory.length,
-                lastSuccess:
-                    toolUsageFromHistory.length > 0
-                        ? isSuccessResult(
-                              toolUsageFromHistory[
-                                  toolUsageFromHistory.length - 1
-                              ]!.result,
-                          )
-                        : undefined,
-                errorRate:
-                    toolUsageFromHistory.length > 0
-                        ? toolUsageFromHistory.filter((entry) =>
-                              isErrorResult(entry.result),
-                          ).length / toolUsageFromHistory.length
-                        : undefined,
-                lastUsed:
-                    toolUsageFromHistory.length > 0
-                        ? Date.now() // Would be better to get from actual execution timestamp
-                        : undefined,
-            };
-        }
+//         if (enhancement?.enhanceTools) {
+//             // Add usage analytics
+//             return {
+//                 ...baseEnhancedTool,
+//                 usageCount: toolUsageFromHistory.length,
+//                 lastSuccess:
+//                     toolUsageFromHistory.length > 0
+//                         ? isSuccessResult(
+//                               toolUsageFromHistory[
+//                                   toolUsageFromHistory.length - 1
+//                               ]!.result,
+//                           )
+//                         : undefined,
+//                 errorRate:
+//                     toolUsageFromHistory.length > 0
+//                         ? toolUsageFromHistory.filter((entry) =>
+//                               isErrorResult(entry.result),
+//                           ).length / toolUsageFromHistory.length
+//                         : undefined,
+//                 lastUsed:
+//                     toolUsageFromHistory.length > 0
+//                         ? Date.now() // Would be better to get from actual execution timestamp
+//                         : undefined,
+//             };
+//         }
 
-        return baseEnhancedTool;
-    });
+//         return baseEnhancedTool;
+//     });
 
-    return {
-        input,
-        availableTools: enhancedTools,
-        history,
-        iterations,
-        maxIterations,
-        constraints,
-        plannerMetadata: plannerMetadata || {},
+//     return {
+//         history,
+//         iterations,
+//         maxIterations,
+//         constraints,
+//         plannerMetadata: plannerMetadata || {},
 
-        // 🚀 Enhanced execution context
-        executionHints: enhancement?.executionHints,
-        learningContext: enhancement?.learningContext,
+//         // 🚀 Enhanced execution context
+//         executionHints: enhancement?.executionHints,
+//         learningContext: enhancement?.learningContext,
 
-        update(
-            thought: AgentThought,
-            result: ActionResult,
-            observation: ResultAnalysis,
-        ): void {
-            history.push({
-                thought,
-                action: thought.action,
-                result,
-                observation,
-            });
-        },
+//         update(
+//             thought: AgentThought,
+//             result: ActionResult,
+//             observation: ResultAnalysis,
+//         ): void {
+//             history.push({
+//                 thought,
+//                 action: thought.action,
+//                 result,
+//                 observation,
+//             });
+//         },
 
-        getCurrentSituation(): string {
-            const recentHistory = history.slice(-3);
-            return recentHistory
-                .map(
-                    (entry) =>
-                        `Action: ${JSON.stringify(entry.action)} -> Result: ${JSON.stringify(entry.result)}`,
-                )
-                .join('\n');
-        },
+//         getCurrentSituation(): string {
+//             const recentHistory = history.slice(-3);
+//             return recentHistory
+//                 .map(
+//                     (entry) =>
+//                         `Action: ${JSON.stringify(entry.action)} -> Result: ${JSON.stringify(entry.result)}`,
+//                 )
+//                 .join('\n');
+//         },
 
-        get isComplete(): boolean {
-            return (
-                history.length > 0 &&
-                history[history.length - 1]?.observation.isComplete === true
-            );
-        },
+//         get isComplete(): boolean {
+//             return (
+//                 history.length > 0 &&
+//                 history[history.length - 1]?.observation.isComplete === true
+//             );
+//         },
 
-        getFinalResult(): AgentExecutionResult {
-            const lastEntry = history[history.length - 1];
-            return {
-                success: lastEntry?.observation.isComplete || false,
-                result: lastEntry?.result,
-                iterations,
-                totalTime: Date.now(), // Simplified
-                thoughts: history.map((h) => h.thought),
-                metadata: {
-                    plannerType: plannerMetadata?.plannerType,
-                    toolCallsCount: history.filter(
-                        (h) => h.action.type === 'tool_call',
-                    ).length,
-                    errorsCount: history.filter(
-                        (h) => h.result.type === 'error',
-                    ).length,
-                },
-            };
-        },
-    };
-}
+//         getFinalResult(): AgentExecutionResult {
+//             const lastEntry = history[history.length - 1];
+//             return {
+//                 success: lastEntry?.observation.isComplete || false,
+//                 result: lastEntry?.result,
+//                 iterations,
+//                 totalTime: Date.now(), // Simplified
+//                 thoughts: history.map((h) => h.thought),
+//                 metadata: {
+//                     plannerType: plannerMetadata?.plannerType,
+//                     toolCallsCount: history.filter(
+//                         (h) => h.action.type === 'tool_call',
+//                     ).length,
+//                     errorsCount: history.filter(
+//                         (h) => h.result.type === 'error',
+//                     ).length,
+//                 },
+//             };
+//         },
+//     };
+// }
 
 // Specific metadata types for execution results
 export interface ExecutionResultMetadata {

@@ -49,6 +49,7 @@ export class ContextStateService implements StateManager {
      */
     async get<T>(namespace: string, key: string): Promise<T | undefined> {
         const namespaces = this.stateMap.get(this.contextKey);
+
         if (!namespaces) {
             return undefined;
         }

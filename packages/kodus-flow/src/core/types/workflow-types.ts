@@ -499,8 +499,6 @@ export function createWorkflowContext(
         tenantId,
         correlationId: options.correlationId || 'default',
         startTime: Date.now(),
-        status: 'RUNNING',
-        metadata: options.metadata || {},
 
         // WorkflowContext specific
         workflowName,
@@ -547,8 +545,6 @@ export function createStepContext(
         tenantId: workflowContext.tenantId,
         correlationId: workflowContext.correlationId,
         startTime: Date.now(),
-        status: 'RUNNING',
-        metadata: options.metadata || {},
 
         // StepContext specific
         stepId,

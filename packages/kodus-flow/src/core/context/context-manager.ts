@@ -4,15 +4,14 @@
  */
 
 import { createLogger } from '../../observability/index.js';
-import type { AgentContext } from '../types/agent-types.js';
+import type {
+    AgentContext,
+    AgentExecutionOptions,
+} from '../types/agent-types.js';
+import type { ConversationHistory } from './services/session-service.js';
 import type { PlannerExecutionContext } from '../../engine/planning/planner-factory.js';
 import type { MemoryManager } from '../memory/memory-manager.js';
-import type {
-    BaseContext,
-    SystemContext,
-    RuntimeContext,
-} from '../types/base-types.js';
-import type { AgentContextConfig } from './context-factory.js';
+import type { SystemContext, RuntimeContext } from '../types/base-types.js';
 import { ContextStateService } from './services/state-service.js';
 import { sessionService } from './services/session-service.js';
 import { IdGenerator } from '../../utils/id-generator.js';
@@ -80,53 +79,94 @@ export class ContextManager implements IContextManager {
     // ──────────────────────────────────────────────────────────────────────────────
 
     async initializeAgentContext(
-        config: AgentContextConfig,
-        baseContext: BaseContext,
-        agent?: { name: string; identity?: AgentContext['agentIdentity'] },
-        input?: unknown,
+        input: unknown,
+        agentExecutionOptions: AgentExecutionOptions,
     ): Promise<AgentContext> {
+        debugger;
+        const {
+            agentName,
+            tenantId,
+            thread,
+            correlationId,
+            enableSession,
+            enableMemory,
+            sessionId,
+        } = agentExecutionOptions;
+
         this.logger.info('Initializing agent context via ContextManager', {
-            agentName: config.agentName,
-            tenantId: config.tenantId,
-            enableSession: config.enableSession,
-            enableMemory: config.enableMemory,
+            agentName: agentName,
+            tenantId: tenantId,
+            enableSession: enableSession,
+            enableMemory: enableMemory,
         });
 
+        const contextKey = {
+            agentName: agentName,
+            tenantId: tenantId,
+            threadId: thread?.id,
+            correlationId: correlationId,
+        };
+
         // 1. Create state service for this agent
-        const stateService = new ContextStateService(baseContext, {
+        const stateService = new ContextStateService(contextKey, {
             maxNamespaceSize: 1000,
             maxNamespaces: 50,
         });
 
         // 2. Create or get session if enabled
-        let sessionContext = undefined;
-        let sessionId = config.sessionId;
-        const threadId = config.thread?.id;
+        let sessionContext: {
+            id: string | undefined;
+            threadId: string | undefined;
+            tenantId: string;
+            conversationHistory: unknown[];
+        } = {
+            id: sessionId,
+            threadId: thread?.id,
+            tenantId: tenantId,
+            conversationHistory: [],
+        };
 
-        if (config.enableSession && threadId) {
-            sessionContext = sessionService.findSessionByThread(
-                threadId,
-                config.tenantId,
+        if (enableSession && thread) {
+            const foundSession = sessionService.findSessionByThread(
+                thread.id,
+                tenantId,
             );
 
-            if (!sessionContext) {
+            if (!foundSession) {
                 const session = sessionService.createSession(
-                    config.tenantId,
-                    threadId,
-                    { agentName: config.agentName },
+                    tenantId,
+                    thread.id,
+                    { agentName: agentName },
                 );
-                sessionContext = sessionService.getSessionContext(session.id);
-                sessionId = session.id;
+
+                const newSessionContext = sessionService.getSessionContext(
+                    session.id,
+                );
+
+                if (newSessionContext) {
+                    sessionContext = {
+                        id: newSessionContext.id,
+                        threadId: thread.id,
+                        tenantId: tenantId,
+                        conversationHistory:
+                            newSessionContext.conversationHistory || [],
+                    };
+                }
 
                 this.logger.debug('Created new session', {
-                    sessionId,
-                    threadId,
+                    sessionId: session.id,
+                    threadId: thread.id,
                 });
             } else {
-                sessionId = sessionContext.id;
+                sessionContext = {
+                    id: foundSession.id,
+                    threadId: thread.id,
+                    tenantId: tenantId,
+                    conversationHistory: foundSession.conversationHistory || [],
+                };
                 this.logger.debug('Found existing session', {
-                    sessionId,
-                    threadId,
+                    sessionId: foundSession.id,
+                    threadId: thread.id,
                 });
             }
         }
@@ -134,53 +174,33 @@ export class ContextManager implements IContextManager {
         // 3. Create system context
         const systemContext: SystemContext = {
             executionId: IdGenerator.executionId(),
-            correlationId: baseContext.correlationId,
-            sessionId: sessionId,
-            threadId: threadId || 'default',
-            tenantId: config.tenantId,
-            iteration: 0,
-            toolsUsed: 0,
-            conversationHistory: sessionContext?.conversationHistory || [],
+            correlationId: correlationId,
+            sessionId: sessionContext?.id || sessionId,
+            threadId: thread.id,
+            tenantId: tenantId,
+            conversationHistory: (sessionContext?.conversationHistory ||
+                []) as ConversationHistory[],
             startTime: Date.now(),
             status: 'running',
-            availableTools: [],
-            debugInfo: {
-                agentName: config.agentName,
-                invocationId: IdGenerator.executionId(),
-            },
         };
 
         const runtimeContext: RuntimeContext = systemContext;
 
         // 4. Build unified agent context
         const agentContext: AgentContext = {
-            ...baseContext,
-            agentName: config.agentName,
+            ...agentExecutionOptions,
             invocationId: IdGenerator.executionId(),
             user: {
-                context: config.metadata || {},
+                context: {},
             },
             system: runtimeContext,
-            availableTools: [],
             stateManager: stateService,
             memoryManager: this.memoryManager,
-            contextManager: this, // Self-reference for rich context building
             signal: new AbortController().signal,
-
             cleanup: async () => {
-                await baseContext.cleanup();
                 await stateService.clear();
             },
         };
-
-        // 🚀 Add agent identity to context for enhanced execution
-        if (agent?.identity) {
-            agentContext.agentIdentity = agent.identity;
-            this.logger.debug('Agent identity added to context', {
-                role: agent.identity.role,
-                goal: agent.identity.goal,
-            });
-        }
 
         // 🚀 Add initial conversation entry if session exists and input provided
         if (sessionId && input) {
@@ -188,22 +208,25 @@ export class ContextManager implements IContextManager {
                 sessionId,
                 input,
                 null, // output será adicionado depois
-                agent?.name || config.agentName,
+                agentName,
             );
             this.logger.debug('Initial conversation entry added', {
                 sessionId,
-                agentName: agent?.name || config.agentName,
+                agentName: agentName,
             });
         }
 
         // 5. Initialize execution tracking
         await this.startExecution(systemContext.executionId, agentContext);
 
+        // 6. Save current context for getter methods
+        this.currentContext = agentContext;
+
         this.logger.info('Agent context initialized successfully', {
-            agentName: config.agentName,
+            agentName: agentName,
             executionId: systemContext.executionId,
             sessionId,
-            threadId,
+            threadId: thread.id,
         });
 
         return agentContext;
@@ -269,6 +292,41 @@ export class ContextManager implements IContextManager {
     getContextType(type: string): Map<string, ContextValueUpdate> | undefined {
         return this.contextValues.get(type);
     }
+
+    // ──────────────────────────────────────────────────────────────────────────────
+    // 🔧 SIMPLE API FOR COMPONENTS - Getter Methods
+    // ──────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Get available tools from current context
+     */
+    getAvailableTools(): AgentContext['availableTools'] {
+        return this.currentContext?.availableTools || [];
+    }
+
+    /**
+     * Get user context data
+     */
+    getUserContext(): Record<string, unknown> {
+        return this.currentContext?.user?.context || Object.create(null);
+    }
+
+    /**
+     * Get tool results from context values
+     */
+    getToolResults(): ContextValueUpdate[] {
+        const toolValues = this.contextValues.get('tools');
+        return toolValues ? Array.from(toolValues.values()) : [];
+    }
+
+    /**
+     * Get session history from current context
+     */
+    getSessionHistory(): unknown[] {
+        return this.currentContext?.system?.conversationHistory || [];
+    }
+
+    private currentContext?: AgentContext;
 
     // ──────────────────────────────────────────────────────────────────────────────
     // 📝 EVENT COLLECTION & VERSIONING
@@ -351,9 +409,9 @@ export class ContextManager implements IContextManager {
                 enrichedContext,
             );
 
-            // 📚 Generate learning context from collected patterns
-            const learningContext =
-                this.generateLearningContextFromValues(enrichedContext);
+            // // 📚 Generate learning context from collected patterns
+            // const learningContext =
+            //     this.generateLearningContextFromValues(enrichedContext);
 
             const plannerContext: PlannerExecutionContext = {
                 // Base context
@@ -373,7 +431,7 @@ export class ContextManager implements IContextManager {
                 // 🎯 Enhanced context from collected values
                 agentIdentity: enrichedContext.agentIdentity,
                 executionHints,
-                learningContext,
+                // learningContext,
                 isComplete: false,
 
                 // Methods
@@ -426,7 +484,7 @@ export class ContextManager implements IContextManager {
                 toolsEnhanced: enhancedTools.length,
                 contextTypesUsed: Object.keys(enrichedContext).length,
                 executionHints: Object.keys(executionHints).length,
-                learningPatterns: learningContext.successPatterns.length,
+                // learningPatterns: learningContext.successPatterns.length,
             });
 
             return plannerContext;
@@ -757,9 +815,7 @@ export class ContextManager implements IContextManager {
                 {
                     name: tool.name,
                     description: tool.description,
-                    schema: tool.schema,
-                    examples: tool.examples as any,
-                    plannerHints: tool.plannerHints as any,
+                    schema: tool.inputSchema,
                     categories: tool.categories,
                     dependencies: tool.dependencies,
 
@@ -873,65 +929,65 @@ export class ContextManager implements IContextManager {
     /**
      * Generate learning context from collected values
      */
-    private generateLearningContextFromValues(
-        enrichedContext: ReturnType<typeof this.buildEnrichedContextFromValues>,
-    ): import('../../engine/planning/planner-factory.js').LearningContext {
-        const context: import('../../engine/planning/planner-factory.js').LearningContext =
-            {
-                commonMistakes: [],
-                successPatterns: [],
-                userFeedback: [],
-                preferredTools: [],
-            };
+    // private generateLearningContextFromValues(
+    //     enrichedContext: ReturnType<typeof this.buildEnrichedContextFromValues>,
+    // ): import('../../engine/planning/planner-factory.js').LearningContext {
+    //     const context: import('../../engine/planning/planner-factory.js').LearningContext =
+    //         {
+    //             commonMistakes: [],
+    //             successPatterns: [],
+    //             userFeedback: [],
+    //             preferredTools: [],
+    //         };
 
-        // Extract patterns from tool results
-        if (
-            enrichedContext.toolResults &&
-            enrichedContext.toolResults.length > 0
-        ) {
-            // Analyze successful tool patterns
-            const successfulTools = enrichedContext.toolResults
-                .filter((result: any) => result?.success === true)
-                .map((result: any) => result?.toolName)
-                .filter(Boolean);
+    //     // Extract patterns from tool results
+    //     if (
+    //         enrichedContext.toolResults &&
+    //         enrichedContext.toolResults.length > 0
+    //     ) {
+    //         // Analyze successful tool patterns
+    //         const successfulTools = enrichedContext.toolResults
+    //             .filter((result: any) => result?.success === true)
+    //             .map((result: any) => result?.toolName)
+    //             .filter(Boolean);
 
-            context.preferredTools = [...new Set(successfulTools)].slice(0, 5);
+    //         context.preferredTools = [...new Set(successfulTools)].slice(0, 5);
 
-            // Extract success patterns
-            context.successPatterns = enrichedContext.toolResults
-                .filter((result: any) => result?.success === true)
-                .map(
-                    (result: any) =>
-                        `${result?.toolName || 'tool'} succeeded with ${JSON.stringify(result?.parameters || {})}`,
-                )
-                .slice(0, 5);
+    //         // Extract success patterns
+    //         context.successPatterns = enrichedContext.toolResults
+    //             .filter((result: any) => result?.success === true)
+    //             .map(
+    //                 (result: any) =>
+    //                     `${result?.toolName || 'tool'} succeeded with ${JSON.stringify(result?.parameters || {})}`,
+    //             )
+    //             .slice(0, 5);
 
-            // Extract common mistakes
-            const failedTools = enrichedContext.toolResults
-                .filter((result: unknown) => result?.success === false)
-                .map(
-                    (result: unknown) =>
-                        `${result?.toolName || 'tool'} failed: ${result?.error || 'unknown error'}`,
-                )
-                .slice(0, 5);
+    //         // Extract common mistakes
+    //         const failedTools = enrichedContext.toolResults
+    //             .filter((result: unknown) => result?.success === false)
+    //             .map(
+    //                 (result: unknown) =>
+    //                     `${result?.toolName || 'tool'} failed: ${result?.error || 'unknown error'}`,
+    //             )
+    //             .slice(0, 5);
 
-            context.commonMistakes = [...new Set(failedTools)];
-        }
+    //         context.commonMistakes = [...new Set(failedTools)];
+    //     }
 
-        // Extract user feedback from conversation history
-        if (
-            enrichedContext.conversationHistory &&
-            enrichedContext.conversationHistory.length > 0
-        ) {
-            context.userFeedback = enrichedContext.conversationHistory
-                .filter((entry: unknown) => entry?.type === 'feedback')
-                .map((entry: unknown) => entry?.content || entry?.input)
-                .filter(Boolean)
-                .slice(0, 3);
-        }
+    //     // Extract user feedback from conversation history
+    //     if (
+    //         enrichedContext.conversationHistory &&
+    //         enrichedContext.conversationHistory.length > 0
+    //     ) {
+    //         context.userFeedback = enrichedContext.conversationHistory
+    //             .filter((entry: unknown) => entry?.type === 'feedback')
+    //             .map((entry: unknown) => entry?.content || entry?.input)
+    //             .filter(Boolean)
+    //             .slice(0, 3);
+    //     }
 
-        return context;
-    }
+    //     return context;
+    // }
 
     // ──────────────────────────────────────────────────────────────────────────────
     // 🔧 PRIVATE HELPER METHODS

@@ -27,15 +27,12 @@ import { createLogger } from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
-import {
-    AgentContextConfig,
-    createAgentContext,
-} from '../../core/context/context-factory.js';
+import { createAgentContext } from '../../core/context/context-factory.js';
 import type {
-    AgentRuntime,
-    ServiceRegistry,
-} from '../../core/services/service-registry.js';
-import type { AgentContext, ToolCall } from '../../core/types/common-types.js';
+    AgentContext,
+    TenantId,
+    ToolCall,
+} from '../../core/types/common-types.js';
 import type { ToolEngine } from '../tools/tool-engine.js';
 import {
     createDefaultMultiKernelHandler,
@@ -70,15 +67,15 @@ import { createEvent } from '../../core/types/events.js';
 import type {
     AgentCapability,
     AgentMessage,
-    AgentCoordinationStrategy,
-    AgentSelectionCriteria,
-    MultiAgentContext,
-    MultiAgentResult,
-    WorkflowStep,
-    WorkflowStepContext,
+    // AgentCoordinationStrategy,
+    // AgentSelectionCriteria,
+    // MultiAgentContext,
+    // MultiAgentResult,
+    // WorkflowStep,
+    // WorkflowStepContext,
     TrackedMessage,
     DelegationContext,
-    DelegationResult,
+    // DelegationResult,
 } from './multi-agent-types.js';
 
 import { ContextStateService } from '../../core/context/services/state-service.js';
@@ -111,7 +108,7 @@ import {
 
 export interface AgentCoreConfig {
     // Identity & Multi-tenancy
-    tenantId: string;
+    tenantId: TenantId;
     agentName?: string;
 
     // NEW: Think→Act→Observe Configuration
@@ -155,11 +152,7 @@ export interface AgentCoreConfig {
     enableKernelIntegration?: boolean;
 
     // Permitir injeção de factory customizada
-    agentContextFactory?: (config: AgentContextConfig) => AgentContext;
-
-    // NEW: Support for clean architecture (optional)
-    serviceRegistry?: ServiceRegistry;
-    enableCleanArchitecture?: boolean;
+    agentContextFactory?: (config: AgentExecutionOptions) => AgentContext;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -274,12 +267,8 @@ export abstract class AgentCore<
 
     // Permitir injeção de factory customizada
     protected agentContextFactory: (
-        config: AgentContextConfig,
+        config: AgentExecutionOptions,
     ) => Promise<AgentContext> = createAgentContext;
-
-    // NEW: Clean architecture support
-    protected serviceRegistry?: ServiceRegistry;
-    protected defaultRuntime?: AgentRuntime;
 
     constructor(
         definitionOrConfig:
@@ -292,6 +281,7 @@ export abstract class AgentCore<
         this.logger = createLogger('agent-core');
         this.thinkingTimeout = 30000;
         this.stateManager = new ContextStateService({});
+        this.stateManager = new ContextStateService({}, {});
 
         if (this.isAgentDefinition(definitionOrConfig)) {
             // Single agent mode
@@ -317,7 +307,9 @@ export abstract class AgentCore<
         ) {
             const customFactory = (this.config as AgentCoreConfig)
                 .agentContextFactory!;
-            this.agentContextFactory = async (config: AgentContextConfig) => {
+            this.agentContextFactory = async (
+                config: AgentExecutionOptions,
+            ) => {
                 const result = customFactory(config);
                 return result instanceof Promise
                     ? result
@@ -370,7 +362,6 @@ export abstract class AgentCore<
         }, 300000);
 
         // Initialize state manager
-        this.stateManager = new ContextStateService({}, {});
 
         // NEW: Initialize Think→Act→Observe components
         this.initializePlannerComponents();
@@ -405,12 +396,12 @@ export abstract class AgentCore<
             | AgentDefinition<TInput, TOutput, TContent>
             | AgentDefinition<unknown, unknown, unknown>,
         input: unknown,
-        correlationId: string,
-        sessionId?: string,
-        options?: AgentExecutionOptions,
+        agentExecutionOptions?: AgentExecutionOptions,
     ): Promise<AgentExecutionResult<unknown>> {
+        debugger;
         const startTime = Date.now();
         const executionId = IdGenerator.executionId();
+        const { correlationId, sessionId } = agentExecutionOptions || {};
 
         this.logger.info('Agent execution started', {
             agentName: agent.name,
@@ -423,15 +414,13 @@ export abstract class AgentCore<
         // Create context - session will be determined by threadId, not sessionId
         const context = await this.createAgentContext(
             agent.name,
-            correlationId,
-            undefined, // Let session be determined by threadId
             executionId,
-            options,
+            agentExecutionOptions,
         );
 
         // Track execution with actual sessionId from context
         this.activeExecutions.set(executionId, {
-            correlationId,
+            correlationId: correlationId || '',
             sessionId: context.system.sessionId,
             startTime,
             status: 'running',
@@ -474,6 +463,7 @@ export abstract class AgentCore<
                 },
             });
         }
+        debugger;
 
         // 🚀 Add conversation entry if session exists
         if (context.system.sessionId) {
@@ -503,13 +493,12 @@ export abstract class AgentCore<
         }
 
         try {
+            debugger;
             // Process agent thinking (lógica principal)
             const result = await this.processAgentThinking(
                 agent,
                 input,
                 context,
-                correlationId,
-                options?.maxIterations,
             );
 
             const duration = Date.now() - startTime;
@@ -611,8 +600,6 @@ export abstract class AgentCore<
             | AgentDefinition<unknown, unknown, unknown>,
         input: unknown,
         context: AgentContext,
-        _correlationId: string,
-        _maxIterations?: number,
     ): Promise<{
         output: unknown;
         reasoning: string;
@@ -620,6 +607,7 @@ export abstract class AgentCore<
         toolsUsed: number;
         events: AnyEvent[];
     }> {
+        debugger;
         // Agents REQUIRE planner and LLM - no fallback
         if (!this.planner || !this.llmAdapter) {
             throw createAgentError(
@@ -680,13 +668,13 @@ export abstract class AgentCore<
     protected async processAction(
         thought: AgentThought<unknown>,
         context: AgentContext,
-        correlationId: string,
-        _input: unknown,
     ): Promise<{
         toolUsed: boolean;
         events: AnyEvent[];
         updatedInput?: unknown;
     }> {
+        const { correlationId } = context.agentExecutionOptions || {};
+
         const events: AnyEvent[] = [];
         let toolUsed = false;
         let updatedInput: unknown | undefined;
@@ -967,8 +955,7 @@ export abstract class AgentCore<
                     const delegationResult = await this.executeAgent(
                         targetAgent,
                         delegateAction.input,
-                        correlationId,
-                        context.system.sessionId,
+                        context.agentExecutionOptions,
                     );
 
                     // Update context with delegation result
@@ -1011,7 +998,6 @@ export abstract class AgentCore<
                     const results = await this.processParallelToolsAction(
                         parallelAction,
                         context,
-                        correlationId,
                     );
                     updatedInput = results;
                     toolUsed = true;
@@ -1040,7 +1026,6 @@ export abstract class AgentCore<
                     const results = await this.processSequentialToolsAction(
                         sequentialAction,
                         context,
-                        correlationId,
                     );
                     updatedInput = results;
                     toolUsed = true;
@@ -1069,7 +1054,6 @@ export abstract class AgentCore<
                     const results = await this.processConditionalToolsAction(
                         conditionalAction,
                         context,
-                        correlationId,
                     );
                     updatedInput = results;
                     toolUsed = true;
@@ -1097,7 +1081,6 @@ export abstract class AgentCore<
                     const results = await this.processMixedToolsAction(
                         mixedAction,
                         context,
-                        correlationId,
                     );
                     updatedInput = results;
                     toolUsed = true;
@@ -1126,7 +1109,6 @@ export abstract class AgentCore<
                     const results = await this.processDependencyToolsAction(
                         dependencyAction,
                         context,
-                        correlationId,
                     );
                     updatedInput = results;
                     toolUsed = true;
@@ -1154,115 +1136,115 @@ export abstract class AgentCore<
     /**
      * Coordenar execução de múltiplos agentes (AVANÇADO)
      */
-    async coordinate(
-        input: unknown,
-        strategy: AgentCoordinationStrategy,
-        criteria: AgentSelectionCriteria,
-        context: Partial<MultiAgentContext> = {},
-    ): Promise<MultiAgentResult> {
-        if (!this.config.enableAdvancedCoordination) {
-            throw new EngineError(
-                'AGENT_ERROR',
-                'Advanced coordination is not enabled',
-            );
-        }
+    // async coordinate(
+    //     input: unknown,
+    //     strategy: AgentCoordinationStrategy,
+    //     criteria: AgentSelectionCriteria,
+    //     context: Partial<MultiAgentContext> = {},
+    // ): Promise<MultiAgentResult> {
+    //     if (!this.config.enableAdvancedCoordination) {
+    //         throw new EngineError(
+    //             'AGENT_ERROR',
+    //             'Advanced coordination is not enabled',
+    //         );
+    //     }
 
-        const coordinationId = IdGenerator.executionId();
-        const startTime = Date.now();
+    //     const coordinationId = IdGenerator.executionId();
+    //     const startTime = Date.now();
 
-        this.logger.info('Starting multi-agent coordination', {
-            strategy,
-            coordinationId,
-            criteria,
-        });
+    //     this.logger.info('Starting multi-agent coordination', {
+    //         strategy,
+    //         coordinationId,
+    //         criteria,
+    //     });
 
-        // Criar contexto completo
-        const fullContext: MultiAgentContext = {
-            coordinationId,
-            strategy,
-            criteria,
-            availableAgents: this.getAvailableAgents(criteria),
-            startTime,
-            correlationId: context.correlationId,
-            sessionId: context.sessionId,
-            metadata: context.metadata || {},
-        };
+    //     // Criar contexto completo
+    //     const fullContext: MultiAgentContext = {
+    //         coordinationId,
+    //         strategy,
+    //         criteria,
+    //         availableAgents: this.getAvailableAgents(criteria),
+    //         startTime,
+    //         correlationId: context.correlationId,
+    //         sessionId: context.sessionId,
+    //         metadata: context.metadata || {},
+    //     };
 
-        if (fullContext.availableAgents.length === 0) {
-            return {
-                status: 'failed',
-                result: null,
-                error: 'No agents available for coordination',
-                coordinationId,
-                duration: Date.now() - startTime,
-                strategy,
-                participatingAgents: [],
-            };
-        }
+    //     if (fullContext.availableAgents.length === 0) {
+    //         return {
+    //             status: 'failed',
+    //             result: null,
+    //             error: 'No agents available for coordination',
+    //             coordinationId,
+    //             duration: Date.now() - startTime,
+    //             strategy,
+    //             participatingAgents: [],
+    //         };
+    //     }
 
-        let result: MultiAgentResult;
+    //     let result: MultiAgentResult;
 
-        try {
-            // Executar estratégia de coordenação
-            switch (strategy) {
-                case 'sequential':
-                    result = await this.executeSequential(input, fullContext);
-                    break;
-                case 'parallel':
-                    result = await this.executeParallel(input, fullContext);
-                    break;
-                case 'competition':
-                    result = await this.executeCompetition(input, fullContext);
-                    break;
-                case 'collaboration':
-                    result = await this.executeCollaboration(
-                        input,
-                        fullContext,
-                    );
-                    break;
-                case 'delegation':
-                    result = await this.executeDelegation(input, fullContext);
-                    break;
-                case 'voting':
-                    result = await this.executeVoting(input, fullContext);
-                    break;
-                default:
-                    throw new EngineError(
-                        'AGENT_ERROR',
-                        `Unknown coordination strategy: ${strategy}`,
-                    );
-            }
+    //     try {
+    //         // Executar estratégia de coordenação
+    //         switch (strategy) {
+    //             case 'sequential':
+    //                 result = await this.executeSequential(input, fullContext);
+    //                 break;
+    //             case 'parallel':
+    //                 result = await this.executeParallel(input, fullContext);
+    //                 break;
+    //             case 'competition':
+    //                 result = await this.executeCompetition(input, fullContext);
+    //                 break;
+    //             case 'collaboration':
+    //                 result = await this.executeCollaboration(
+    //                     input,
+    //                     fullContext,
+    //                 );
+    //                 break;
+    //             case 'delegation':
+    //                 result = await this.executeDelegation(input, fullContext);
+    //                 break;
+    //             case 'voting':
+    //                 result = await this.executeVoting(input, fullContext);
+    //                 break;
+    //             default:
+    //                 throw new EngineError(
+    //                     'AGENT_ERROR',
+    //                     `Unknown coordination strategy: ${strategy}`,
+    //                 );
+    //         }
 
-            this.logger.info('Multi-agent coordination completed', {
-                strategy,
-                coordinationId,
-                status: result.status,
-                duration: result.duration,
-                participatingAgents: result.participatingAgents.length,
-            });
+    //         this.logger.info('Multi-agent coordination completed', {
+    //             strategy,
+    //             coordinationId,
+    //             status: result.status,
+    //             duration: result.duration,
+    //             participatingAgents: result.participatingAgents.length,
+    //         });
 
-            return result;
-        } catch (error) {
-            this.logger.error(
-                'Multi-agent coordination failed',
-                error as Error,
-                {
-                    strategy,
-                    coordinationId,
-                },
-            );
+    //         return result;
+    //     } catch (error) {
+    //         this.logger.error(
+    //             'Multi-agent coordination failed',
+    //             error as Error,
+    //             {
+    //                 strategy,
+    //                 coordinationId,
+    //             },
+    //         );
 
-            return {
-                status: 'failed',
-                result: null,
-                error: error instanceof Error ? error.message : 'Unknown error',
-                coordinationId,
-                duration: Date.now() - startTime,
-                strategy,
-                participatingAgents: fullContext.availableAgents,
-            };
-        }
-    }
+    //         return {
+    //             status: 'failed',
+    //             result: null,
+    //             error: error instanceof Error ? error.message : 'Unknown error',
+    //             coordinationId,
+    //             duration: Date.now() - startTime,
+    //             strategy,
+    //             participatingAgents: fullContext.availableAgents,
+    //         };
+    //     }
+    // }
 
     // ──────────────────────────────────────────────────────────────────────────
     // 💬 MESSAGE HANDLING (AVANÇADO)
@@ -1376,131 +1358,131 @@ export abstract class AgentCore<
     /**
      * Lidar com delegação entre agentes (AVANÇADO)
      */
-    async handleDelegation(
-        fromAgent: string,
-        targetAgent: string,
-        input: unknown,
-        options: {
-            reason?: string;
-            timeout?: number;
-            priority?: 'low' | 'medium' | 'high' | 'critical';
-            correlationId?: string;
-        } = {},
-    ): Promise<DelegationResult> {
-        if (!this.config.enableDelegation) {
-            throw new EngineError('AGENT_ERROR', 'Delegation is not enabled');
-        }
+    // async handleDelegation(
+    //     fromAgent: string,
+    //     targetAgent: string,
+    //     input: unknown,
+    //     options: {
+    //         reason?: string;
+    //         timeout?: number;
+    //         priority?: 'low' | 'medium' | 'high' | 'critical';
+    //         correlationId?: string;
+    //     } = {},
+    // ): Promise<DelegationResult> {
+    //     if (!this.config.enableDelegation) {
+    //         throw new EngineError('AGENT_ERROR', 'Delegation is not enabled');
+    //     }
 
-        const delegationId = IdGenerator.executionId();
-        const startTime = Date.now();
+    //     const delegationId = IdGenerator.executionId();
+    //     const startTime = Date.now();
 
-        this.logger.info('Handling agent delegation', {
-            fromAgent,
-            targetAgent,
-            delegationId,
-            reason: options.reason,
-        });
+    //     this.logger.info('Handling agent delegation', {
+    //         fromAgent,
+    //         targetAgent,
+    //         delegationId,
+    //         reason: options.reason,
+    //     });
 
-        // Verificar se o agente destino existe
-        const targetAgentDefinition = this.agents.get(targetAgent);
-        if (!targetAgentDefinition) {
-            return {
-                success: false,
-                error: `Target agent not found: ${targetAgent}`,
-                duration: Date.now() - startTime,
-                targetAgent,
-                fromAgent,
-                correlationId: options.correlationId || '',
-            };
-        }
+    //     // Verificar se o agente destino existe
+    //     const targetAgentDefinition = this.agents.get(targetAgent);
+    //     if (!targetAgentDefinition) {
+    //         return {
+    //             success: false,
+    //             error: `Target agent not found: ${targetAgent}`,
+    //             duration: Date.now() - startTime,
+    //             targetAgent,
+    //             fromAgent,
+    //             correlationId: options.correlationId || '',
+    //         };
+    //     }
 
-        // Verificar profundidade da cadeia
-        const chainLevel = this.calculateChainLevel(fromAgent);
-        if (chainLevel >= (this.config.maxChainDepth || 5)) {
-            return {
-                success: false,
-                error: `Delegation chain too deep: ${chainLevel}`,
-                duration: Date.now() - startTime,
-                targetAgent,
-                fromAgent,
-                correlationId: options.correlationId || '',
-            };
-        }
+    //     // Verificar profundidade da cadeia
+    //     const chainLevel = this.calculateChainLevel(fromAgent);
+    //     if (chainLevel >= (this.config.maxChainDepth || 5)) {
+    //         return {
+    //             success: false,
+    //             error: `Delegation chain too deep: ${chainLevel}`,
+    //             duration: Date.now() - startTime,
+    //             targetAgent,
+    //             fromAgent,
+    //             correlationId: options.correlationId || '',
+    //         };
+    //     }
 
-        // Criar contexto de delegação
-        const delegationContext: DelegationContext = {
-            fromAgent,
-            targetAgent,
-            reason: options.reason,
-            timeout: options.timeout || 30000,
-            priority: options.priority || 'medium',
-            chainLevel,
-            originalAgent: this.getOriginalAgent(fromAgent),
-            correlationId: options.correlationId || IdGenerator.executionId(),
-            executionId: delegationId,
-            startTime,
-        };
+    //     // Criar contexto de delegação
+    //     const delegationContext: DelegationContext = {
+    //         fromAgent,
+    //         targetAgent,
+    //         reason: options.reason,
+    //         timeout: options.timeout || 30000,
+    //         priority: options.priority || 'medium',
+    //         chainLevel,
+    //         originalAgent: this.getOriginalAgent(fromAgent),
+    //         correlationId: options.correlationId || IdGenerator.executionId(),
+    //         executionId: delegationId,
+    //         startTime,
+    //     };
 
-        this.activeDelegations.set(delegationId, delegationContext);
+    //     this.activeDelegations.set(delegationId, delegationContext);
 
-        try {
-            // Executar delegação
-            const result = await this.executeAgent(
-                targetAgentDefinition,
-                input,
-                delegationContext.correlationId,
-                undefined,
-                {
-                    timeout: delegationContext.timeout,
-                    thread: {
-                        id: delegationContext.correlationId,
-                        metadata: {
-                            description: `Delegation from ${delegationContext.fromAgent} to ${delegationContext.targetAgent}`,
-                            type: 'delegation',
-                        },
-                    },
-                },
-            );
+    //     try {
+    //         // Executar delegação
+    //         const result = await this.executeAgent(
+    //             targetAgentDefinition,
+    //             input,
+    //             delegationContext.correlationId,
+    //             undefined,
+    //             {
+    //                 timeout: delegationContext.timeout,
+    //                 thread: {
+    //                     id: delegationContext.correlationId,
+    //                     metadata: {
+    //                         description: `Delegation from ${delegationContext.fromAgent} to ${delegationContext.targetAgent}`,
+    //                         type: 'delegation',
+    //                     },
+    //                 },
+    //             },
+    //         );
 
-            const duration = Date.now() - startTime;
+    //         const duration = Date.now() - startTime;
 
-            this.logger.info('Delegation completed successfully', {
-                fromAgent,
-                targetAgent,
-                delegationId,
-                duration,
-            });
+    //         this.logger.info('Delegation completed successfully', {
+    //             fromAgent,
+    //             targetAgent,
+    //             delegationId,
+    //             duration,
+    //         });
 
-            return {
-                success: true,
-                result: result.output,
-                duration,
-                targetAgent,
-                fromAgent,
-                correlationId: delegationContext.correlationId,
-            };
-        } catch (error) {
-            const duration = Date.now() - startTime;
+    //         return {
+    //             success: true,
+    //             result: result.output,
+    //             duration,
+    //             targetAgent,
+    //             fromAgent,
+    //             correlationId: delegationContext.correlationId,
+    //         };
+    //     } catch (error) {
+    //         const duration = Date.now() - startTime;
 
-            this.logger.error('Delegation failed', error as Error, {
-                fromAgent,
-                targetAgent,
-                delegationId,
-                duration,
-            });
+    //         this.logger.error('Delegation failed', error as Error, {
+    //             fromAgent,
+    //             targetAgent,
+    //             delegationId,
+    //             duration,
+    //         });
 
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Unknown error',
-                duration,
-                targetAgent,
-                fromAgent,
-                correlationId: delegationContext.correlationId,
-            };
-        } finally {
-            this.activeDelegations.delete(delegationId);
-        }
-    }
+    //         return {
+    //             success: false,
+    //             error: error instanceof Error ? error.message : 'Unknown error',
+    //             duration,
+    //             targetAgent,
+    //             fromAgent,
+    //             correlationId: delegationContext.correlationId,
+    //         };
+    //     } finally {
+    //         this.activeDelegations.delete(delegationId);
+    //     }
+    // }
 
     // ──────────────────────────────────────────────────────────────────────────
     // 🔧 UTILITY METHODS (COMPARTILHADAS)
@@ -1587,21 +1569,20 @@ export abstract class AgentCore<
 
     protected async createAgentContext(
         agentName: string,
-        correlationId: string,
-        sessionId?: string,
-        executionId?: string,
-        options?: AgentExecutionOptions,
+        executionId: string,
+        agentExecutionOptions?: AgentExecutionOptions,
     ): Promise<AgentContext> {
-        const config: AgentContextConfig = {
+        debugger;
+
+        const config = {
+            ...agentExecutionOptions,
             agentName,
-            tenantId: this.config.tenantId,
-            correlationId,
-            sessionId,
-            thread: options?.thread,
-            executionId,
             enableSession: true,
-            metadata: options?.userContext || {},
-        };
+            executionId,
+            tenantId: this.config.tenantId,
+            startTime: Date.now(),
+        } as AgentExecutionOptions;
+
         return this.agentContextFactory(config);
     }
 
@@ -1687,8 +1668,9 @@ export abstract class AgentCore<
     protected async processParallelToolsAction(
         action: ParallelToolsAction,
         context: AgentContext,
-        correlationId: string,
     ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
+        const { correlationId } = context.agentExecutionOptions || {};
+
         if (!this.toolEngine) {
             throw new EngineError('AGENT_ERROR', 'Tool engine not available');
         }
@@ -1793,8 +1775,9 @@ export abstract class AgentCore<
     protected async processSequentialToolsAction(
         action: SequentialToolsAction,
         context: AgentContext,
-        correlationId: string,
     ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
+        const { correlationId } = context.agentExecutionOptions || {};
+
         if (!this.toolEngine) {
             throw new EngineError('AGENT_ERROR', 'Tool engine not available');
         }
@@ -1843,8 +1826,9 @@ export abstract class AgentCore<
     protected async processConditionalToolsAction(
         action: ConditionalToolsAction,
         context: AgentContext,
-        correlationId: string,
     ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
+        const { correlationId } = context.agentExecutionOptions || {};
+
         if (!this.toolEngine) {
             throw new EngineError('AGENT_ERROR', 'Tool engine not available');
         }
@@ -1893,8 +1877,9 @@ export abstract class AgentCore<
     protected async processMixedToolsAction(
         action: MixedToolsAction,
         context: AgentContext,
-        correlationId: string,
     ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
+        const { correlationId } = context.agentExecutionOptions || {};
+
         if (!this.toolEngine) {
             throw new EngineError('AGENT_ERROR', 'Tool engine not available');
         }
@@ -1995,11 +1980,7 @@ export abstract class AgentCore<
             case 'adaptive':
             default:
                 // For adaptive strategy, analyze tools and choose best approach
-                return await this.executeAdaptiveToolStrategy(
-                    action,
-                    context,
-                    correlationId,
-                );
+                return await this.executeAdaptiveToolStrategy(action, context);
         }
     }
 
@@ -2008,9 +1989,10 @@ export abstract class AgentCore<
      */
     protected async executeAdaptiveToolStrategy(
         action: MixedToolsAction,
-        _context: AgentContext,
-        _correlationId: string,
+        context: AgentContext,
     ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
+        const { correlationId } = context.agentExecutionOptions || {};
+
         const tools = this.extractToolsFromAction(action);
 
         // Simple heuristic for now - can be enhanced with AI/ML in the future
@@ -2028,7 +2010,7 @@ export abstract class AgentCore<
                     ? await this.kernelHandler.requestToolExecution(
                           tool.toolName,
                           tool.arguments,
-                          { correlationId: _correlationId },
+                          { correlationId },
                       )
                     : await this.toolEngine!.executeCall(
                           tool.toolName as ToolId,
@@ -2057,12 +2039,12 @@ export abstract class AgentCore<
                           tools: parallelAction.tools,
                           concurrency: parallelAction.concurrency,
                           metadata: {
-                              agentName: _context.agentName,
-                              sessionId: _context.system.sessionId,
-                              correlationId: _correlationId,
+                              agentName: context.agentName,
+                              sessionId: context.system.sessionId,
+                              correlationId,
                           },
                       },
-                      { correlationId: _correlationId },
+                      { correlationId },
                   )
                 : await this.toolEngine!.executeParallelTools(parallelAction);
         } else {
@@ -2079,12 +2061,12 @@ export abstract class AgentCore<
                       {
                           tools: sequentialAction.tools,
                           metadata: {
-                              agentName: _context.agentName,
-                              sessionId: _context.system.sessionId,
-                              correlationId: _correlationId,
+                              agentName: context.agentName,
+                              sessionId: context.system.sessionId,
+                              correlationId,
                           },
                       },
-                      { correlationId: _correlationId },
+                      { correlationId },
                   )
                 : await this.toolEngine!.executeSequentialTools(
                       sequentialAction,
@@ -2098,8 +2080,9 @@ export abstract class AgentCore<
     protected async processDependencyToolsAction(
         action: DependencyToolsAction,
         context: AgentContext,
-        correlationId: string,
     ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
+        const { correlationId } = context.agentExecutionOptions || {};
+
         if (!this.toolEngine) {
             throw new EngineError('AGENT_ERROR', 'Tool engine not available');
         }
@@ -2211,11 +2194,9 @@ export abstract class AgentCore<
             agentName: context.agentName,
             executionId: context.system.executionId,
             tenantId: context.tenantId,
-            metadata: context.metadata || {},
             // Add agent-specific context
             iterationCount: context.system.iteration || 0,
             toolsUsed: context.system.toolsUsed || 0,
-            environment: context.system.debugInfo || {},
             ...constraints,
         };
 
@@ -2755,333 +2736,333 @@ export abstract class AgentCore<
     /**
      * Converter para workflow step (AVANÇADO)
      */
-    toStep(stepName?: string): WorkflowStep<unknown, MultiAgentResult> {
-        if (!this.config.enableAdvancedCoordination) {
-            throw new EngineError(
-                'AGENT_ERROR',
-                'Advanced coordination is not enabled',
-            );
-        }
+    // toStep(stepName?: string): WorkflowStep<unknown, MultiAgentResult> {
+    //     if (!this.config.enableAdvancedCoordination) {
+    //         throw new EngineError(
+    //             'AGENT_ERROR',
+    //             'Advanced coordination is not enabled',
+    //         );
+    //     }
 
-        return {
-            name:
-                stepName ||
-                `${this.config.agentName || 'agent-core'}-coordination`,
-            execute: async (
-                input: {
-                    strategy: AgentCoordinationStrategy;
-                    criteria: AgentSelectionCriteria;
-                    data: unknown;
-                },
-                context: WorkflowStepContext,
-            ): Promise<MultiAgentResult> => {
-                return this.coordinate(
-                    input.data,
-                    input.strategy,
-                    input.criteria,
-                    {
-                        correlationId: context.correlationId,
-                        sessionId: context.sessionId,
-                        metadata: context.metadata || {},
-                    },
-                );
-            },
-        };
-    }
+    //     return {
+    //         name:
+    //             stepName ||
+    //             `${this.config.agentName || 'agent-core'}-coordination`,
+    //         execute: async (
+    //             input: {
+    //                 strategy: AgentCoordinationStrategy;
+    //                 criteria: AgentSelectionCriteria;
+    //                 data: unknown;
+    //             },
+    //             context: WorkflowStepContext,
+    //         ): Promise<MultiAgentResult> => {
+    //             return this.coordinate(
+    //                 input.data,
+    //                 input.strategy,
+    //                 input.criteria,
+    //                 {
+    //                     correlationId: context.correlationId,
+    //                     sessionId: context.sessionId,
+    //                     metadata: context.metadata || {},
+    //                 },
+    //             );
+    //         },
+    //     };
+    // }
 
     // ──────────────────────────────────────────────────────────────────────────
     // 🔄 PRIVATE EXECUTION METHODS (AVANÇADO)
     // ──────────────────────────────────────────────────────────────────────────
 
-    private async executeSequential(
-        input: unknown,
-        context: MultiAgentContext,
-    ): Promise<MultiAgentResult> {
-        const results: Record<string, unknown> = {};
-        const agentResults: Record<
-            string,
-            {
-                success: boolean;
-                result?: unknown;
-                error?: string;
-                duration: number;
-            }
-        > = {};
+    // private async executeSequential(
+    //     input: unknown,
+    //     context: MultiAgentContext,
+    // ): Promise<MultiAgentResult> {
+    //     const results: Record<string, unknown> = {};
+    //     const agentResults: Record<
+    //         string,
+    //         {
+    //             success: boolean;
+    //             result?: unknown;
+    //             error?: string;
+    //             duration: number;
+    //         }
+    //     > = {};
 
-        for (const agentId of context.availableAgents) {
-            const agent = this.getAgent(agentId);
-            if (!agent) continue;
+    //     for (const agentId of context.availableAgents) {
+    //         const agent = this.getAgent(agentId);
+    //         if (!agent) continue;
 
-            const startTime = Date.now();
-            try {
-                const result = await this.executeAgent(
-                    agent,
-                    input,
-                    context.correlationId || IdGenerator.executionId(),
-                );
-                const duration = Date.now() - startTime;
+    //         const startTime = Date.now();
+    //         try {
+    //             const result = await this.executeAgent(
+    //                 agent,
+    //                 input,
+    //                 context,
+    //             );
+    //             const duration = Date.now() - startTime;
 
-                results[agentId] = result.output;
-                agentResults[agentId] = {
-                    success: true,
-                    result: result.output,
-                    duration,
-                };
+    //             results[agentId] = result.output;
+    //             agentResults[agentId] = {
+    //                 success: true,
+    //                 result: result.output,
+    //                 duration,
+    //             };
 
-                // Usar resultado do primeiro agente bem-sucedido
-                return {
-                    status: 'completed',
-                    result: result.output,
-                    coordinationId: context.coordinationId,
-                    duration: Date.now() - context.startTime,
-                    strategy: context.strategy,
-                    participatingAgents: [agentId],
-                    agentResults,
-                };
-            } catch (error) {
-                const duration = Date.now() - startTime;
-                agentResults[agentId] = {
-                    success: false,
-                    error:
-                        error instanceof Error
-                            ? error.message
-                            : 'Unknown error',
-                    duration,
-                };
-            }
-        }
+    //             // Usar resultado do primeiro agente bem-sucedido
+    //             return {
+    //                 status: 'completed',
+    //                 result: result.output,
+    //                 coordinationId: context.coordinationId,
+    //                 duration: Date.now() - context.startTime,
+    //                 strategy: context.strategy,
+    //                 participatingAgents: [agentId],
+    //                 agentResults,
+    //             };
+    //         } catch (error) {
+    //             const duration = Date.now() - startTime;
+    //             agentResults[agentId] = {
+    //                 success: false,
+    //                 error:
+    //                     error instanceof Error
+    //                         ? error.message
+    //                         : 'Unknown error',
+    //                 duration,
+    //             };
+    //         }
+    //     }
 
-        return {
-            status: 'failed',
-            result: null,
-            error: 'All agents failed in sequential execution',
-            coordinationId: context.coordinationId,
-            duration: Date.now() - context.startTime,
-            strategy: context.strategy,
-            participatingAgents: context.availableAgents,
-            agentResults,
-        };
-    }
+    //     return {
+    //         status: 'failed',
+    //         result: null,
+    //         error: 'All agents failed in sequential execution',
+    //         coordinationId: context.coordinationId,
+    //         duration: Date.now() - context.startTime,
+    //         strategy: context.strategy,
+    //         participatingAgents: context.availableAgents,
+    //         agentResults,
+    //     };
+    // }
 
-    private async executeParallel(
-        input: unknown,
-        context: MultiAgentContext,
-    ): Promise<MultiAgentResult> {
-        const agentPromises = context.availableAgents.map(async (agentId) => {
-            const agent = this.getAgent(agentId);
-            if (!agent) return null;
+    // private async executeParallel(
+    //     input: unknown,
+    //     context: MultiAgentContext,
+    // ): Promise<MultiAgentResult> {
+    //     const agentPromises = context.availableAgents.map(async (agentId) => {
+    //         const agent = this.getAgent(agentId);
+    //         if (!agent) return null;
 
-            const startTime = Date.now();
-            try {
-                const result = await this.executeAgent(
-                    agent,
-                    input,
-                    context.correlationId || IdGenerator.executionId(),
-                );
-                const duration = Date.now() - startTime;
+    //         const startTime = Date.now();
+    //         try {
+    //             const result = await this.executeAgent(
+    //                 agent,
+    //                 input,
+    //                 {context.correlationId || IdGenerator.executionId()},
+    //             );
+    //             const duration = Date.now() - startTime;
 
-                return {
-                    agentId,
-                    success: true,
-                    result: result.output,
-                    duration,
-                };
-            } catch (error) {
-                const duration = Date.now() - startTime;
-                return {
-                    agentId,
-                    success: false,
-                    error:
-                        error instanceof Error
-                            ? error.message
-                            : 'Unknown error',
-                    duration,
-                };
-            }
-        });
+    //             return {
+    //                 agentId,
+    //                 success: true,
+    //                 result: result.output,
+    //                 duration,
+    //             };
+    //         } catch (error) {
+    //             const duration = Date.now() - startTime;
+    //             return {
+    //                 agentId,
+    //                 success: false,
+    //                 error:
+    //                     error instanceof Error
+    //                         ? error.message
+    //                         : 'Unknown error',
+    //                 duration,
+    //             };
+    //         }
+    //     });
 
-        const results = await Promise.all(agentPromises);
-        const successfulResults = results.filter((r) => r && r.success);
+    //     const results = await Promise.all(agentPromises);
+    //     const successfulResults = results.filter((r) => r && r.success);
 
-        if (successfulResults.length === 0) {
-            return {
-                status: 'failed',
-                result: null,
-                error: 'All agents failed in parallel execution',
-                coordinationId: context.coordinationId,
-                duration: Date.now() - context.startTime,
-                strategy: context.strategy,
-                participatingAgents: context.availableAgents,
-                agentResults: Object.fromEntries(
-                    results.filter((r) => r).map((r) => [r!.agentId, r!]),
-                ),
-            };
-        }
+    //     if (successfulResults.length === 0) {
+    //         return {
+    //             status: 'failed',
+    //             result: null,
+    //             error: 'All agents failed in parallel execution',
+    //             coordinationId: context.coordinationId,
+    //             duration: Date.now() - context.startTime,
+    //             strategy: context.strategy,
+    //             participatingAgents: context.availableAgents,
+    //             agentResults: Object.fromEntries(
+    //                 results.filter((r) => r).map((r) => [r!.agentId, r!]),
+    //             ),
+    //         };
+    //     }
 
-        // Usar o primeiro resultado bem-sucedido
-        const firstSuccess = successfulResults[0]!;
+    //     // Usar o primeiro resultado bem-sucedido
+    //     const firstSuccess = successfulResults[0]!;
 
-        return {
-            status: 'completed',
-            result: firstSuccess.result,
-            coordinationId: context.coordinationId,
-            duration: Date.now() - context.startTime,
-            strategy: context.strategy,
-            participatingAgents: context.availableAgents,
-            agentResults: Object.fromEntries(
-                results.filter((r) => r).map((r) => [r!.agentId, r!]),
-            ),
-        };
-    }
+    //     return {
+    //         status: 'completed',
+    //         result: firstSuccess.result,
+    //         coordinationId: context.coordinationId,
+    //         duration: Date.now() - context.startTime,
+    //         strategy: context.strategy,
+    //         participatingAgents: context.availableAgents,
+    //         agentResults: Object.fromEntries(
+    //             results.filter((r) => r).map((r) => [r!.agentId, r!]),
+    //         ),
+    //     };
+    // }
 
-    private async executeCompetition(
-        input: unknown,
-        context: MultiAgentContext,
-    ): Promise<MultiAgentResult> {
-        // Implementação simplificada - competição entre agentes
-        return this.executeParallel(input, context);
-    }
+    // private async executeCompetition(
+    //     input: unknown,
+    //     context: MultiAgentContext,
+    // ): Promise<MultiAgentResult> {
+    //     // Implementação simplificada - competição entre agentes
+    //     return this.executeParallel(input, context);
+    // }
 
-    private async executeCollaboration(
-        input: unknown,
-        context: MultiAgentContext,
-    ): Promise<MultiAgentResult> {
-        // Implementação simplificada - colaboração entre agentes
-        return this.executeParallel(input, context);
-    }
+    // private async executeCollaboration(
+    //     input: unknown,
+    //     context: MultiAgentContext,
+    // ): Promise<MultiAgentResult> {
+    //     // Implementação simplificada - colaboração entre agentes
+    //     return this.executeParallel(input, context);
+    // }
 
-    private async executeDelegation(
-        input: unknown,
-        context: MultiAgentContext,
-    ): Promise<MultiAgentResult> {
-        // Implementação simplificada - delegação hierárquica
-        if (context.availableAgents.length === 0) {
-            return {
-                status: 'failed',
-                result: null,
-                error: 'No agents available for delegation',
-                coordinationId: context.coordinationId,
-                duration: Date.now() - context.startTime,
-                strategy: context.strategy,
-                participatingAgents: [],
-            };
-        }
+    // private async executeDelegation(
+    //     input: unknown,
+    //     context: MultiAgentContext,
+    // ): Promise<MultiAgentResult> {
+    //     // Implementação simplificada - delegação hierárquica
+    //     if (context.availableAgents.length === 0) {
+    //         return {
+    //             status: 'failed',
+    //             result: null,
+    //             error: 'No agents available for delegation',
+    //             coordinationId: context.coordinationId,
+    //             duration: Date.now() - context.startTime,
+    //             strategy: context.strategy,
+    //             participatingAgents: [],
+    //         };
+    //     }
 
-        const primaryAgent = context.availableAgents[0];
-        if (!primaryAgent) {
-            return {
-                status: 'failed',
-                result: null,
-                error: 'No agents available for delegation',
-                coordinationId: context.coordinationId,
-                duration: Date.now() - context.startTime,
-                strategy: context.strategy,
-                participatingAgents: [],
-            };
-        }
+    //     const primaryAgent = context.availableAgents[0];
+    //     if (!primaryAgent) {
+    //         return {
+    //             status: 'failed',
+    //             result: null,
+    //             error: 'No agents available for delegation',
+    //             coordinationId: context.coordinationId,
+    //             duration: Date.now() - context.startTime,
+    //             strategy: context.strategy,
+    //             participatingAgents: [],
+    //         };
+    //     }
 
-        const agent = this.getAgent(primaryAgent);
+    //     const agent = this.getAgent(primaryAgent);
 
-        if (!agent) {
-            return {
-                status: 'failed',
-                result: null,
-                error: `Primary agent not found: ${primaryAgent}`,
-                coordinationId: context.coordinationId,
-                duration: Date.now() - context.startTime,
-                strategy: context.strategy,
-                participatingAgents: [],
-            };
-        }
+    //     if (!agent) {
+    //         return {
+    //             status: 'failed',
+    //             result: null,
+    //             error: `Primary agent not found: ${primaryAgent}`,
+    //             coordinationId: context.coordinationId,
+    //             duration: Date.now() - context.startTime,
+    //             strategy: context.strategy,
+    //             participatingAgents: [],
+    //         };
+    //     }
 
-        try {
-            const result = await this.executeAgent(
-                agent,
-                input,
-                context.correlationId || IdGenerator.executionId(),
-            );
-            return {
-                status: 'completed',
-                result: result.output,
-                coordinationId: context.coordinationId,
-                duration: Date.now() - context.startTime,
-                strategy: context.strategy,
-                participatingAgents: [primaryAgent],
-            };
-        } catch (error) {
-            return {
-                status: 'failed',
-                result: null,
-                error: error instanceof Error ? error.message : 'Unknown error',
-                coordinationId: context.coordinationId,
-                duration: Date.now() - context.startTime,
-                strategy: context.strategy,
-                participatingAgents: [primaryAgent],
-            };
-        }
-    }
+    //     try {
+    //         const result = await this.executeAgent(
+    //             agent,
+    //             input,
+    //             context.correlationId || IdGenerator.executionId(),
+    //         );
+    //         return {
+    //             status: 'completed',
+    //             result: result.output,
+    //             coordinationId: context.coordinationId,
+    //             duration: Date.now() - context.startTime,
+    //             strategy: context.strategy,
+    //             participatingAgents: [primaryAgent],
+    //         };
+    //     } catch (error) {
+    //         return {
+    //             status: 'failed',
+    //             result: null,
+    //             error: error instanceof Error ? error.message : 'Unknown error',
+    //             coordinationId: context.coordinationId,
+    //             duration: Date.now() - context.startTime,
+    //             strategy: context.strategy,
+    //             participatingAgents: [primaryAgent],
+    //         };
+    //     }
+    // }
 
-    private async executeVoting(
-        input: unknown,
-        context: MultiAgentContext,
-    ): Promise<MultiAgentResult> {
-        // Implementação simplificada - votação entre agentes
-        return this.executeParallel(input, context);
-    }
+    // private async executeVoting(
+    //     input: unknown,
+    //     context: MultiAgentContext,
+    // ): Promise<MultiAgentResult> {
+    //     // Implementação simplificada - votação entre agentes
+    //     return this.executeParallel(input, context);
+    // }
 
-    private calculateChainLevel(_fromAgent: string): number {
-        // Implementação simplificada - calcular nível da cadeia
-        return 1;
-    }
+    // private calculateChainLevel(_fromAgent: string): number {
+    //     // Implementação simplificada - calcular nível da cadeia
+    //     return 1;
+    // }
 
-    private getOriginalAgent(fromAgent: string): string {
-        // Implementação simplificada - obter agente original
-        return fromAgent;
-    }
+    // private getOriginalAgent(fromAgent: string): string {
+    //     // Implementação simplificada - obter agente original
+    //     return fromAgent;
+    // }
 
-    private getAvailableAgents(criteria: AgentSelectionCriteria): string[] {
-        return Array.from(this.agents.entries())
-            .filter(([agentId, agent]) => {
-                // Verificar disponibilidade básica
-                if (!agent) return false;
+    // private getAvailableAgents(criteria: AgentSelectionCriteria): string[] {
+    //     return Array.from(this.agents.entries())
+    //         .filter(([agentId, agent]) => {
+    //             // Verificar disponibilidade básica
+    //             if (!agent) return false;
 
-                // Se não temos capabilities, usar lógica básica
-                const capabilities = this.agentCapabilities.get(agentId);
-                if (!capabilities) {
-                    return true; // Aceitar se não temos critérios específicos
-                }
+    //             // Se não temos capabilities, usar lógica básica
+    //             const capabilities = this.agentCapabilities.get(agentId);
+    //             if (!capabilities) {
+    //                 return true; // Aceitar se não temos critérios específicos
+    //             }
 
-                // Verificar skills requeridas
-                if (
-                    criteria.requiredSkills &&
-                    criteria.requiredSkills.length > 0
-                ) {
-                    const hasRequiredSkills = criteria.requiredSkills.some(
-                        (skill) => capabilities.skills.includes(skill),
-                    );
-                    if (!hasRequiredSkills) return false;
-                }
+    //             // Verificar skills requeridas
+    //             if (
+    //                 criteria.requiredSkills &&
+    //                 criteria.requiredSkills.length > 0
+    //             ) {
+    //                 const hasRequiredSkills = criteria.requiredSkills.some(
+    //                     (skill) => capabilities.skills.includes(skill),
+    //                 );
+    //                 if (!hasRequiredSkills) return false;
+    //             }
 
-                // Verificar domínio requerido
-                if (
-                    criteria.requiredDomain &&
-                    capabilities.domain !== criteria.requiredDomain
-                ) {
-                    return false;
-                }
+    //             // Verificar domínio requerido
+    //             if (
+    //                 criteria.requiredDomain &&
+    //                 capabilities.domain !== criteria.requiredDomain
+    //             ) {
+    //                 return false;
+    //             }
 
-                // Verificar agentes excluídos
-                if (
-                    criteria.excludedAgents &&
-                    criteria.excludedAgents.includes(agentId)
-                ) {
-                    return false;
-                }
+    //             // Verificar agentes excluídos
+    //             if (
+    //                 criteria.excludedAgents &&
+    //                 criteria.excludedAgents.includes(agentId)
+    //             ) {
+    //                 return false;
+    //             }
 
-                return true;
-            })
-            .map(([agentId, _]) => agentId);
-    }
+    //             return true;
+    //         })
+    //         .map(([agentId, _]) => agentId);
+    // }
 
     private startDeliveryProcessor(): void {
         if (!this.config.enableMessaging) return;
@@ -3346,489 +3327,237 @@ export abstract class AgentCore<
         return error;
     }
 
-    // ===== 🚀 NEW: AGENT INTELLIGENCE METHODS =====
-
-    /**
-     * Enhance context with intelligence hints for autonomous decision making
-     */
-    protected enhanceContextWithIntelligence(
-        context: AgentContext,
-        availableTools: string[],
-        currentInput: unknown,
-    ): AgentContext & {
-        intelligence: {
-            toolExecutionHints: Array<{
-                strategy:
-                    | 'parallel'
-                    | 'sequential'
-                    | 'conditional'
-                    | 'adaptive';
-                confidence: number;
-                reasoning: string;
-                estimatedTime: number;
-                riskLevel: 'low' | 'medium' | 'high';
-            }>;
-            contextualFactors: {
-                complexity: number;
-                urgency: number;
-                resourceAvailability: number;
-                qualityRequirement: number;
-            };
-            decisionFactors: {
-                timeConstraints: boolean;
-                resourceConstraints: boolean;
-                qualityConstraints: boolean;
-                safetyConstraints: boolean;
-            };
-            recommendations: {
-                preferredStrategy:
-                    | 'parallel'
-                    | 'sequential'
-                    | 'conditional'
-                    | 'adaptive';
-                alternativeStrategies: Array<
-                    'parallel' | 'sequential' | 'conditional' | 'adaptive'
-                >;
-                reasoning: string;
-            };
-        };
-    } {
-        // Analyze current input to understand complexity and requirements
-        const inputAnalysis = this.analyzeInputForToolPattern(
-            currentInput,
-            availableTools,
-        );
-
-        // Generate tool execution hints
-        const toolExecutionHints = this.generateToolExecutionHints(
-            availableTools,
-            inputAnalysis,
-        );
-
-        // Assess contextual factors
-        const contextualFactors = this.assessContextualFactors(
-            context,
-            inputAnalysis,
-        );
-
-        // Determine decision factors
-        const decisionFactors = this.determineDecisionFactors(
-            context,
-            contextualFactors,
-        );
-
-        // Generate recommendations
-        const recommendations = this.generateIntelligenceRecommendations(
-            toolExecutionHints,
-            contextualFactors,
-            decisionFactors,
-        );
-
-        // Return enhanced context
-        return {
-            ...context,
-            intelligence: {
-                toolExecutionHints,
-                contextualFactors,
-                decisionFactors,
-                recommendations,
-            },
-        };
-    }
-
     /**
      * Analyze input to understand tool execution patterns and requirements
      */
-    protected analyzeInputForToolPattern(
-        input: unknown,
-        availableTools: string[],
-    ): {
-        complexity: number;
-        toolCount: number;
-        hasSequentialDependencies: boolean;
-        hasConditionalLogic: boolean;
-        estimatedExecutionTime: number;
-        riskFactors: string[];
-        inputType: 'simple' | 'complex' | 'batch' | 'stream';
-        keywords: string[];
-    } {
-        let complexity = 0.1; // Base complexity
-        let toolCount = 0;
-        let hasSequentialDependencies = false;
-        let hasConditionalLogic = false;
-        let estimatedExecutionTime = 1000; // Base time in ms
-        const riskFactors: string[] = [];
-        let inputType: 'simple' | 'complex' | 'batch' | 'stream' = 'simple';
-        let keywords: string[] = [];
+    // protected analyzeInputForToolPattern(
+    //     input: unknown,
+    //     availableTools: string[],
+    // ): {
+    //     complexity: number;
+    //     toolCount: number;
+    //     hasSequentialDependencies: boolean;
+    //     hasConditionalLogic: boolean;
+    //     estimatedExecutionTime: number;
+    //     riskFactors: string[];
+    //     inputType: 'simple' | 'complex' | 'batch' | 'stream';
+    //     keywords: string[];
+    // } {
+    //     let complexity = 0.1; // Base complexity
+    //     let toolCount = 0;
+    //     let hasSequentialDependencies = false;
+    //     let hasConditionalLogic = false;
+    //     let estimatedExecutionTime = 1000; // Base time in ms
+    //     const riskFactors: string[] = [];
+    //     let inputType: 'simple' | 'complex' | 'batch' | 'stream' = 'simple';
+    //     let keywords: string[] = [];
 
-        // Analyze input structure
-        if (typeof input === 'string') {
-            const inputText = input.toLowerCase();
-            keywords = inputText.split(/\s+/).filter((word) => word.length > 3);
+    //     // Analyze input structure
+    //     if (typeof input === 'string') {
+    //         const inputText = input.toLowerCase();
+    //         keywords = inputText.split(/\s+/).filter((word) => word.length > 3);
 
-            // Check for complexity indicators
-            if (inputText.length > 500) {
-                complexity += 0.3;
-                inputType = 'complex';
-            }
+    //         // Check for complexity indicators
+    //         if (inputText.length > 500) {
+    //             complexity += 0.3;
+    //             inputType = 'complex';
+    //         }
 
-            // Check for batch processing indicators
-            if (
-                inputText.includes('batch') ||
-                inputText.includes('bulk') ||
-                inputText.includes('multiple')
-            ) {
-                complexity += 0.2;
-                inputType = 'batch';
-                estimatedExecutionTime *= 3;
-            }
+    //         // Check for batch processing indicators
+    //         if (
+    //             inputText.includes('batch') ||
+    //             inputText.includes('bulk') ||
+    //             inputText.includes('multiple')
+    //         ) {
+    //             complexity += 0.2;
+    //             inputType = 'batch';
+    //             estimatedExecutionTime *= 3;
+    //         }
 
-            // Check for streaming indicators
-            if (
-                inputText.includes('stream') ||
-                inputText.includes('real-time') ||
-                inputText.includes('continuous')
-            ) {
-                complexity += 0.2;
-                inputType = 'stream';
-                riskFactors.push('real-time-processing');
-            }
+    //         // Check for streaming indicators
+    //         if (
+    //             inputText.includes('stream') ||
+    //             inputText.includes('real-time') ||
+    //             inputText.includes('continuous')
+    //         ) {
+    //             complexity += 0.2;
+    //             inputType = 'stream';
+    //             riskFactors.push('real-time-processing');
+    //         }
 
-            // Check for sequential dependencies
-            if (
-                inputText.includes('then') ||
-                inputText.includes('after') ||
-                inputText.includes('depends on')
-            ) {
-                hasSequentialDependencies = true;
-                complexity += 0.2;
-                estimatedExecutionTime *= 2;
-            }
+    //         // Check for sequential dependencies
+    //         if (
+    //             inputText.includes('then') ||
+    //             inputText.includes('after') ||
+    //             inputText.includes('depends on')
+    //         ) {
+    //             hasSequentialDependencies = true;
+    //             complexity += 0.2;
+    //             estimatedExecutionTime *= 2;
+    //         }
 
-            // Check for conditional logic
-            if (
-                inputText.includes('if') ||
-                inputText.includes('when') ||
-                inputText.includes('condition')
-            ) {
-                hasConditionalLogic = true;
-                complexity += 0.15;
-                riskFactors.push('conditional-execution');
-            }
+    //         // Check for conditional logic
+    //         if (
+    //             inputText.includes('if') ||
+    //             inputText.includes('when') ||
+    //             inputText.includes('condition')
+    //         ) {
+    //             hasConditionalLogic = true;
+    //             complexity += 0.15;
+    //             riskFactors.push('conditional-execution');
+    //         }
 
-            // Estimate tool count based on action words
-            const actionWords = [
-                'analyze',
-                'process',
-                'generate',
-                'validate',
-                'transform',
-                'calculate',
-                'fetch',
-                'send',
-            ];
-            toolCount = actionWords.filter((word) =>
-                inputText.includes(word),
-            ).length;
+    //         // Estimate tool count based on action words
+    //         const actionWords = [
+    //             'analyze',
+    //             'process',
+    //             'generate',
+    //             'validate',
+    //             'transform',
+    //             'calculate',
+    //             'fetch',
+    //             'send',
+    //         ];
+    //         toolCount = actionWords.filter((word) =>
+    //             inputText.includes(word),
+    //         ).length;
 
-            if (toolCount === 0) {
-                // Fallback: estimate based on available tools mentioned
-                toolCount = availableTools.filter((tool) =>
-                    inputText.includes(tool.toLowerCase()),
-                ).length;
-            }
+    //         if (toolCount === 0) {
+    //             // Fallback: estimate based on available tools mentioned
+    //             toolCount = availableTools.filter((tool) =>
+    //                 inputText.includes(tool.toLowerCase()),
+    //             ).length;
+    //         }
 
-            toolCount = Math.max(1, Math.min(toolCount, availableTools.length));
-        } else if (Array.isArray(input)) {
-            // Array input suggests batch processing
-            complexity += 0.3;
-            inputType = 'batch';
-            toolCount = Math.min(input.length, availableTools.length);
-            estimatedExecutionTime = toolCount * 500;
-        } else if (input && typeof input === 'object') {
-            // Object input suggests complex structure
-            complexity += 0.2;
-            inputType = 'complex';
+    //         toolCount = Math.max(1, Math.min(toolCount, availableTools.length));
+    //     } else if (Array.isArray(input)) {
+    //         // Array input suggests batch processing
+    //         complexity += 0.3;
+    //         inputType = 'batch';
+    //         toolCount = Math.min(input.length, availableTools.length);
+    //         estimatedExecutionTime = toolCount * 500;
+    //     } else if (input && typeof input === 'object') {
+    //         // Object input suggests complex structure
+    //         complexity += 0.2;
+    //         inputType = 'complex';
 
-            const inputObj = input as Record<string, unknown>;
-            const keys = Object.keys(inputObj);
+    //         const inputObj = input as Record<string, unknown>;
+    //         const keys = Object.keys(inputObj);
 
-            // Check for parallel processing indicators
-            if (keys.includes('parallel') || keys.includes('concurrent')) {
-                complexity += 0.1;
-            }
+    //         // Check for parallel processing indicators
+    //         if (keys.includes('parallel') || keys.includes('concurrent')) {
+    //             complexity += 0.1;
+    //         }
 
-            // Check for tool specifications
-            if (keys.includes('tools') && Array.isArray(inputObj.tools)) {
-                toolCount = (inputObj.tools as unknown[]).length;
-                estimatedExecutionTime = toolCount * 300;
-            }
-        }
+    //         // Check for tool specifications
+    //         if (keys.includes('tools') && Array.isArray(inputObj.tools)) {
+    //             toolCount = (inputObj.tools as unknown[]).length;
+    //             estimatedExecutionTime = toolCount * 300;
+    //         }
+    //     }
 
-        // Add risk factors based on complexity
-        if (complexity > 0.7) {
-            riskFactors.push('high-complexity');
-        }
-        if (toolCount > 5) {
-            riskFactors.push('many-tools');
-        }
-        if (estimatedExecutionTime > 10000) {
-            riskFactors.push('long-execution');
-        }
+    //     // Add risk factors based on complexity
+    //     if (complexity > 0.7) {
+    //         riskFactors.push('high-complexity');
+    //     }
+    //     if (toolCount > 5) {
+    //         riskFactors.push('many-tools');
+    //     }
+    //     if (estimatedExecutionTime > 10000) {
+    //         riskFactors.push('long-execution');
+    //     }
 
-        return {
-            complexity: Math.min(1.0, complexity),
-            toolCount: Math.max(1, toolCount),
-            hasSequentialDependencies,
-            hasConditionalLogic,
-            estimatedExecutionTime,
-            riskFactors,
-            inputType,
-            keywords,
-        };
-    }
+    //     return {
+    //         complexity: Math.min(1.0, complexity),
+    //         toolCount: Math.max(1, toolCount),
+    //         hasSequentialDependencies,
+    //         hasConditionalLogic,
+    //         estimatedExecutionTime,
+    //         riskFactors,
+    //         inputType,
+    //         keywords,
+    //     };
+    // }
 
     /**
      * Generate tool execution hints based on analysis
      */
-    private generateToolExecutionHints(
-        _availableTools: string[],
-        inputAnalysis: ReturnType<AgentCore['analyzeInputForToolPattern']>,
-    ): Array<{
-        strategy: 'parallel' | 'sequential' | 'conditional' | 'adaptive';
-        confidence: number;
-        reasoning: string;
-        estimatedTime: number;
-        riskLevel: 'low' | 'medium' | 'high';
-    }> {
-        const hints: Array<{
-            strategy: 'parallel' | 'sequential' | 'conditional' | 'adaptive';
-            confidence: number;
-            reasoning: string;
-            estimatedTime: number;
-            riskLevel: 'low' | 'medium' | 'high';
-        }> = [];
+    // private generateToolExecutionHints(
+    //     _availableTools: string[],
+    //     inputAnalysis: ReturnType<AgentCore['analyzeInputForToolPattern']>,
+    // ): Array<{
+    //     strategy: 'parallel' | 'sequential' | 'conditional' | 'adaptive';
+    //     confidence: number;
+    //     reasoning: string;
+    //     estimatedTime: number;
+    //     riskLevel: 'low' | 'medium' | 'high';
+    // }> {
+    //     const hints: Array<{
+    //         strategy: 'parallel' | 'sequential' | 'conditional' | 'adaptive';
+    //         confidence: number;
+    //         reasoning: string;
+    //         estimatedTime: number;
+    //         riskLevel: 'low' | 'medium' | 'high';
+    //     }> = [];
 
-        // Parallel execution hint
-        if (
-            !inputAnalysis.hasSequentialDependencies &&
-            inputAnalysis.toolCount > 1
-        ) {
-            hints.push({
-                strategy: 'parallel',
-                confidence: 0.8,
-                reasoning: `${inputAnalysis.toolCount} tools can be executed simultaneously`,
-                estimatedTime: Math.max(
-                    500,
-                    inputAnalysis.estimatedExecutionTime /
-                        inputAnalysis.toolCount,
-                ),
-                riskLevel: inputAnalysis.complexity > 0.7 ? 'medium' : 'low',
-            });
-        }
+    //     // Parallel execution hint
+    //     if (
+    //         !inputAnalysis.hasSequentialDependencies &&
+    //         inputAnalysis.toolCount > 1
+    //     ) {
+    //         hints.push({
+    //             strategy: 'parallel',
+    //             confidence: 0.8,
+    //             reasoning: `${inputAnalysis.toolCount} tools can be executed simultaneously`,
+    //             estimatedTime: Math.max(
+    //                 500,
+    //                 inputAnalysis.estimatedExecutionTime /
+    //                     inputAnalysis.toolCount,
+    //             ),
+    //             riskLevel: inputAnalysis.complexity > 0.7 ? 'medium' : 'low',
+    //         });
+    //     }
 
-        // Sequential execution hint
-        if (
-            inputAnalysis.hasSequentialDependencies ||
-            inputAnalysis.complexity > 0.6
-        ) {
-            hints.push({
-                strategy: 'sequential',
-                confidence: inputAnalysis.hasSequentialDependencies ? 0.9 : 0.6,
-                reasoning: inputAnalysis.hasSequentialDependencies
-                    ? 'Sequential dependencies detected'
-                    : 'High complexity requires sequential processing',
-                estimatedTime: inputAnalysis.estimatedExecutionTime,
-                riskLevel:
-                    inputAnalysis.riskFactors.length > 2 ? 'high' : 'medium',
-            });
-        }
+    //     // Sequential execution hint
+    //     if (
+    //         inputAnalysis.hasSequentialDependencies ||
+    //         inputAnalysis.complexity > 0.6
+    //     ) {
+    //         hints.push({
+    //             strategy: 'sequential',
+    //             confidence: inputAnalysis.hasSequentialDependencies ? 0.9 : 0.6,
+    //             reasoning: inputAnalysis.hasSequentialDependencies
+    //                 ? 'Sequential dependencies detected'
+    //                 : 'High complexity requires sequential processing',
+    //             estimatedTime: inputAnalysis.estimatedExecutionTime,
+    //             riskLevel:
+    //                 inputAnalysis.riskFactors.length > 2 ? 'high' : 'medium',
+    //         });
+    //     }
 
-        // Conditional execution hint
-        if (inputAnalysis.hasConditionalLogic) {
-            hints.push({
-                strategy: 'conditional',
-                confidence: 0.85,
-                reasoning: 'Conditional logic patterns detected in input',
-                estimatedTime: inputAnalysis.estimatedExecutionTime * 1.2,
-                riskLevel: 'medium',
-            });
-        }
+    //     // Conditional execution hint
+    //     if (inputAnalysis.hasConditionalLogic) {
+    //         hints.push({
+    //             strategy: 'conditional',
+    //             confidence: 0.85,
+    //             reasoning: 'Conditional logic patterns detected in input',
+    //             estimatedTime: inputAnalysis.estimatedExecutionTime * 1.2,
+    //             riskLevel: 'medium',
+    //         });
+    //     }
 
-        // Adaptive execution hint (always available as fallback)
-        hints.push({
-            strategy: 'adaptive',
-            confidence: 0.7,
-            reasoning:
-                'Adaptive strategy can handle various execution patterns',
-            estimatedTime: inputAnalysis.estimatedExecutionTime * 1.1,
-            riskLevel: inputAnalysis.complexity > 0.8 ? 'medium' : 'low',
-        });
+    //     // Adaptive execution hint (always available as fallback)
+    //     hints.push({
+    //         strategy: 'adaptive',
+    //         confidence: 0.7,
+    //         reasoning:
+    //             'Adaptive strategy can handle various execution patterns',
+    //         estimatedTime: inputAnalysis.estimatedExecutionTime * 1.1,
+    //         riskLevel: inputAnalysis.complexity > 0.8 ? 'medium' : 'low',
+    //     });
 
-        return hints;
-    }
-
-    /**
-     * Assess contextual factors for decision making
-     */
-    private assessContextualFactors(
-        context: AgentContext,
-        inputAnalysis: ReturnType<AgentCore['analyzeInputForToolPattern']>,
-    ): {
-        complexity: number;
-        urgency: number;
-        resourceAvailability: number;
-        qualityRequirement: number;
-    } {
-        // Complexity is derived from input analysis
-        const complexity = inputAnalysis.complexity;
-
-        // Urgency assessment (based on context timing and metadata)
-        let urgency = 0.5; // Default medium urgency
-        if (context.metadata?.priority === 'high') urgency = 0.9;
-        else if (context.metadata?.priority === 'low') urgency = 0.2;
-        else if (context.metadata?.deadline) {
-            const deadline = new Date(
-                context.metadata.deadline as string,
-            ).getTime();
-            const now = Date.now();
-            const timeLeft = deadline - now;
-            urgency = timeLeft < 300000 ? 0.9 : timeLeft < 1800000 ? 0.7 : 0.4; // 5min, 30min thresholds
-        }
-
-        // Resource availability assessment
-        let resourceAvailability = 0.8; // Default high availability
-        if (context.metadata?.resourceConstraints === 'high')
-            resourceAvailability = 0.3;
-        else if (context.metadata?.resourceConstraints === 'medium')
-            resourceAvailability = 0.6;
-
-        // Quality requirement assessment
-        let qualityRequirement = 0.6; // Default medium quality
-        if (context.metadata?.quality === 'high') qualityRequirement = 0.9;
-        else if (context.metadata?.quality === 'low') qualityRequirement = 0.3;
-        else if (inputAnalysis.riskFactors.includes('high-complexity'))
-            qualityRequirement = 0.8;
-
-        return {
-            complexity,
-            urgency,
-            resourceAvailability,
-            qualityRequirement,
-        };
-    }
-
-    /**
-     * Determine decision constraints based on context
-     */
-    private determineDecisionFactors(
-        context: AgentContext,
-        contextualFactors: ReturnType<AgentCore['assessContextualFactors']>,
-    ): {
-        timeConstraints: boolean;
-        resourceConstraints: boolean;
-        qualityConstraints: boolean;
-        safetyConstraints: boolean;
-    } {
-        return {
-            timeConstraints: contextualFactors.urgency > 0.7,
-            resourceConstraints: contextualFactors.resourceAvailability < 0.5,
-            qualityConstraints: contextualFactors.qualityRequirement > 0.8,
-            safetyConstraints:
-                context.metadata?.safety === 'critical' ||
-                context.metadata?.production === true,
-        };
-    }
-
-    /**
-     * Generate intelligence recommendations
-     */
-    private generateIntelligenceRecommendations(
-        toolExecutionHints: Array<{
-            strategy: 'parallel' | 'sequential' | 'conditional' | 'adaptive';
-            confidence: number;
-            reasoning: string;
-            estimatedTime: number;
-            riskLevel: 'low' | 'medium' | 'high';
-        }>,
-        _contextualFactors: ReturnType<AgentCore['assessContextualFactors']>,
-        decisionFactors: ReturnType<AgentCore['determineDecisionFactors']>,
-    ): {
-        preferredStrategy:
-            | 'parallel'
-            | 'sequential'
-            | 'conditional'
-            | 'adaptive';
-        alternativeStrategies: Array<
-            'parallel' | 'sequential' | 'conditional' | 'adaptive'
-        >;
-        reasoning: string;
-    } {
-        // Sort hints by confidence and apply contextual filters
-        let sortedHints = [...toolExecutionHints].sort(
-            (a, b) => b.confidence - a.confidence,
-        );
-
-        // Apply constraints to filter strategies
-        if (decisionFactors.timeConstraints) {
-            // Prefer faster strategies
-            sortedHints = sortedHints.filter(
-                (hint) => hint.estimatedTime < 5000,
-            );
-        }
-
-        if (decisionFactors.resourceConstraints) {
-            // Avoid parallel strategies with many tools
-            sortedHints = sortedHints.filter(
-                (hint) =>
-                    hint.strategy !== 'parallel' || hint.riskLevel === 'low',
-            );
-        }
-
-        if (decisionFactors.qualityConstraints) {
-            // Prefer more controlled strategies
-            sortedHints = sortedHints.filter(
-                (hint) =>
-                    hint.strategy === 'sequential' ||
-                    hint.strategy === 'conditional',
-            );
-        }
-
-        if (decisionFactors.safetyConstraints) {
-            // Prefer sequential for safety
-            sortedHints = sortedHints.filter(
-                (hint) => hint.strategy === 'sequential',
-            );
-        }
-
-        // Fallback if all strategies were filtered out
-        if (sortedHints.length === 0) {
-            sortedHints = toolExecutionHints.filter(
-                (hint) => hint.strategy === 'adaptive',
-            );
-        }
-
-        const preferredStrategy = sortedHints[0]?.strategy || 'adaptive';
-        const alternativeStrategies = sortedHints
-            .slice(1, 3)
-            .map((hint) => hint.strategy);
-
-        // Build reasoning
-        let reasoning = `Selected ${preferredStrategy} strategy`;
-        if (decisionFactors.timeConstraints) reasoning += ' (time-constrained)';
-        if (decisionFactors.resourceConstraints)
-            reasoning += ' (resource-constrained)';
-        if (decisionFactors.qualityConstraints)
-            reasoning += ' (quality-focused)';
-        if (decisionFactors.safetyConstraints)
-            reasoning += ' (safety-critical)';
-
-        return {
-            preferredStrategy,
-            alternativeStrategies,
-            reasoning,
-        };
-    }
+    //     return hints;
+    // }
 
     // ===== 🚀 NEW: RESULT AGGREGATION METHODS =====
 
@@ -4320,6 +4049,7 @@ export abstract class AgentCore<
         input: TInput,
         context: AgentContext,
     ): Promise<TOutput> {
+        debugger;
         if (!this.planner || !this.llmAdapter) {
             throw new EngineError(
                 'AGENT_ERROR',
@@ -4328,20 +4058,16 @@ export abstract class AgentCore<
         }
 
         const inputString = String(input);
-        const availableTools =
-            this.toolEngine?.getAvailableTools().map((t) => t.name) || [];
 
         // Create execution context
         this.executionContext = await this.createExecutionContext(
             inputString,
-            availableTools,
             context,
         );
 
         this.logger.info('Starting Think→Act→Observe loop', {
             agentName: this.config.agentName,
             inputLength: inputString.length,
-            availableTools: availableTools.length,
             maxIterations: this.config.maxThinkingIterations,
         });
 
@@ -4510,6 +4236,7 @@ export abstract class AgentCore<
     private async think(
         context: PlannerExecutionContext,
     ): Promise<NewAgentThought> {
+        debugger;
         if (!this.planner) {
             throw new EngineError('AGENT_ERROR', 'Planner not initialized');
         }
@@ -4717,9 +4444,9 @@ export abstract class AgentCore<
      */
     private async createExecutionContext(
         input: string,
-        availableTools: string[],
         agentContext: AgentContext,
     ): Promise<PlannerExecutionContext> {
+        debugger;
         const history: Array<{
             thought: NewAgentThought;
             action: NewAgentAction;
@@ -4728,20 +4455,10 @@ export abstract class AgentCore<
         }> = [];
 
         // ✅ Add available tools to agent context for planner access
-        const tools = this.toolEngine?.getAvailableTools() || [];
+        //const tools = this.toolEngine?.getAvailableTools() || [];
+
         const enhancedAgentContext: AgentContext = {
             ...agentContext,
-            availableTools: tools
-                .filter((tool) => availableTools.includes(tool.name))
-                .map((tool) => ({
-                    name: tool.name,
-                    description: tool.description,
-                    schema: tool.inputSchema,
-                    examples: tool.examples,
-                    plannerHints: tool.plannerHints,
-                    categories: tool.categories,
-                    dependencies: tool.dependencies,
-                })),
         };
 
         // 🚀 Use ContextManager to build rich planner context if available
@@ -4764,6 +4481,7 @@ export abstract class AgentCore<
                 agentName: agentContext.agentName,
                 correlationId: agentContext.correlationId,
                 tenantId: agentContext.tenantId,
+                threadId: agentContext.system.threadId, // ⭐ NOVO: threadId para registry
                 startTime: Date.now(),
             },
         );

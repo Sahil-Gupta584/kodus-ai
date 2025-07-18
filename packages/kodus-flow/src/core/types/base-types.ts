@@ -13,6 +13,7 @@
  */
 
 import { z } from 'zod';
+import { ConversationHistory } from '../context/services/session-service.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🆔 IDENTIFICADORES BASE DO SISTEMA
@@ -29,23 +30,15 @@ export type ThreadId = string;
 export type CorrelationId = string;
 export type UserId = string;
 export type InvocationId = string;
+export type CallId = string;
 
-/**
- * Identificadores de execução e workflow
- */
 export type ExecutionId = string;
 export type WorkflowId = string;
 export type StepId = string;
 
-/**
- * Identificadores de agentes e ferramentas
- */
 export type AgentId = string;
 export type ToolId = string;
 
-/**
- * Identificadores de eventos e operações
- */
 export type EventId = string;
 export type OperationId = string;
 export type ParentId = string;
@@ -86,43 +79,41 @@ export const identifierSchemas = {
  * Interface base para todos os contextos
  * Seguindo o princípio de composição sobre herança
  */
-export interface BaseContext {
+export type BaseContext = {
     tenantId: TenantId;
     correlationId: CorrelationId;
     startTime: number;
-    status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'PAUSED';
-    metadata: Record<string, unknown>;
-    cleanup(): Promise<void>;
-}
+};
 
 /**
  * Contexto de execução com identificadores de sessão
  */
-export interface ExecutionContext extends BaseContext {
+export type ExecutionContext = BaseContext & {
     executionId: ExecutionId;
     sessionId?: SessionId;
     threadId?: ThreadId;
-}
+    status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'PAUSED';
+};
 
 // WorkflowContext é definido em workflow-types.ts para evitar conflitos
 
 /**
  * Contexto específico para operações
  */
-export interface OperationContext extends BaseContext {
+export type OperationContext = BaseContext & {
     operationId: OperationId;
     executionId: ExecutionId;
-}
+};
 
 /**
  * Contexto específico para eventos
  */
-export interface EventContext extends BaseContext {
+export type EventContext = BaseContext & {
     eventId: EventId;
     threadId?: ThreadId;
     sessionId?: SessionId;
     parentId?: ParentId;
-}
+};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 👤 CONTEXTOS SEPARADOS - User vs System
@@ -138,51 +129,24 @@ export type UserContext = Record<string, unknown>;
  * Contexto do Sistema - Dados gerados automaticamente pelo runtime
  * MUTÁVEL durante a execução
  */
-export type SystemContext = {
+export type SystemContext = BaseContext & {
     // === IDENTIDADE ===
-    executionId: ExecutionId;
-    correlationId: CorrelationId;
-    sessionId?: SessionId;
     threadId: ThreadId;
-    tenantId: TenantId;
+    status: 'running' | 'completed' | 'failed' | 'paused';
+
+    executionId: ExecutionId;
+    sessionId?: SessionId;
 
     // === ESTADO DA EXECUÇÃO ===
-    iteration: number;
-    toolsUsed: number;
+    iteration?: number;
+    toolsUsed?: number;
     lastToolResult?: unknown;
-    lastToolName?: string;
-
     // === MEMÓRIA E HISTÓRICO ===
-    conversationHistory: unknown[];
+    conversationHistory?: ConversationHistory[];
     memoryData?: unknown;
 
     // === MÉTRICAS E TIMING ===
-    startTime: number;
     duration?: number;
-    status: 'running' | 'completed' | 'failed' | 'paused';
-
-    // === DEBUGGING ===
-    debugInfo?: {
-        agentName: string;
-        invocationId: InvocationId;
-        parentId?: string;
-        [key: string]: unknown;
-    };
-
-    // === RECURSOS DISPONÍVEIS ===
-    availableTools: Array<{
-        name: string;
-        description: string;
-        schema: unknown;
-    }>;
-
-    // === PERFORMANCE ===
-    performanceMetrics?: {
-        memoryUsage?: number;
-        cpuUsage?: number;
-        networkLatency?: number;
-        [key: string]: unknown;
-    };
 };
 
 // SeparatedContext removed - use AgentContext with user/runtime pattern instead
@@ -364,24 +328,4 @@ export function validateBaseContext(obj: unknown): obj is BaseContext {
         typeof (obj as Record<string, unknown>).tenantId === 'string' &&
         typeof (obj as Record<string, unknown>).correlationId === 'string'
     );
-}
-
-/**
- * Cria um contexto base a partir de strings
- */
-export function createBaseContext(
-    tenantIdValue: string,
-    correlationIdValue: string,
-    metadata: Record<string, unknown> = {},
-): BaseContext {
-    return {
-        tenantId: tenantIdValue,
-        correlationId: correlationIdValue,
-        startTime: Date.now(),
-        status: 'RUNNING',
-        metadata,
-        cleanup: async () => {
-            // Implementação padrão de cleanup
-        },
-    };
 }

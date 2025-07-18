@@ -23,7 +23,7 @@ import type {
 } from '../../core/types/tool-types.js';
 
 import * as z from 'zod';
-import { AgentId } from '../../core/types/agent-types.js';
+import { AgentId } from '@/core/types/base-types.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🧠 PLANNING TYPES & INTERFACES
@@ -1725,8 +1725,12 @@ export class PlannerHandler {
             const agentContext = await createAgentContext({
                 agentName,
                 tenantId: 'default',
-                executionId,
+                thread: {
+                    id: executionId,
+                    metadata: { description: 'Planner execution thread' },
+                },
                 correlationId,
+                startTime: Date.now(),
                 enableSession: false,
                 enableState: true,
             });
@@ -1943,8 +1947,12 @@ export class PlannerHandler {
         const agentContext = await createAgentContext({
             agentName: existingPlan.agentName,
             tenantId: 'default',
-            executionId: `replan-${Date.now()}`,
+            thread: {
+                id: `replan-${Date.now()}`,
+                metadata: { description: 'Replan execution thread' },
+            },
             correlationId: `replan-${Date.now()}`,
+            startTime: Date.now(),
             enableSession: false,
             enableState: true,
         });

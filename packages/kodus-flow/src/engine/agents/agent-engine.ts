@@ -12,7 +12,7 @@
 
 import { createLogger } from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
-import { IdGenerator } from '../../utils/id-generator.js';
+// import { IdGenerator } from '../../utils/id-generator.js';
 import type { ToolEngine } from '../tools/tool-engine.js';
 
 // Types do sistema
@@ -77,11 +77,10 @@ export class AgentEngine<
      */
     async execute(
         input: TInput,
-        options?: AgentExecutionOptions,
+        agentExecutionOptions?: AgentExecutionOptions,
     ): Promise<AgentExecutionResult<TOutput>> {
-        const correlationId =
-            options?.correlationId || IdGenerator.correlationId();
-        const sessionId = options?.sessionId;
+        debugger;
+        const { correlationId, sessionId } = agentExecutionOptions || {};
 
         this.engineLogger.info('Agent execution started', {
             agentName: this.getDefinition()?.name,
@@ -92,6 +91,7 @@ export class AgentEngine<
 
         try {
             const definition = this.getDefinition();
+
             if (!definition) {
                 throw new EngineError(
                     'AGENT_ERROR',
@@ -103,9 +103,7 @@ export class AgentEngine<
             const result = await this.executeAgent(
                 definition,
                 input,
-                correlationId,
-                sessionId,
-                options,
+                agentExecutionOptions,
             );
 
             // Format response if available

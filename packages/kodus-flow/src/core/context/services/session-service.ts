@@ -11,24 +11,27 @@
 import { IdGenerator } from '../../../utils/id-generator.js';
 import { createLogger } from '../../../observability/index.js';
 import { ContextStateService } from './state-service.js';
+import { SessionId, ThreadId, TenantId } from '@/core/types/base-types.js';
 
-export interface Session {
+export type ConversationHistory = Array<{
+    timestamp: number;
+    input: unknown;
+    output: unknown;
+    agentName?: string;
+    metadata?: Record<string, unknown>;
+}>;
+
+export type Session = {
     id: string;
-    threadId: string; // ← NOVO: ID do thread
+    threadId: string;
     tenantId: string;
     createdAt: number;
     lastActivity: number;
     status: 'active' | 'paused' | 'expired' | 'closed';
     metadata: Record<string, unknown>;
     contextData: Record<string, unknown>;
-    conversationHistory: Array<{
-        timestamp: number;
-        input: unknown;
-        output: unknown;
-        agentName?: string;
-        metadata?: Record<string, unknown>;
-    }>;
-}
+    conversationHistory: ConversationHistory;
+};
 
 export interface SessionConfig {
     maxSessions?: number;
@@ -39,9 +42,9 @@ export interface SessionConfig {
 }
 
 export interface SessionContext {
-    sessionId: string;
-    threadId: string;
-    tenantId: string;
+    id: SessionId;
+    threadId: ThreadId;
+    tenantId: TenantId;
     stateManager: ContextStateService;
     // TODO
     //memoryService?: MemoryService;
@@ -157,7 +160,7 @@ export class SessionService {
         }
 
         return {
-            sessionId: session.id,
+            id: session.id,
             threadId: session.threadId,
             tenantId: session.tenantId,
             stateManager,
@@ -176,6 +179,7 @@ export class SessionService {
         agentName?: string,
         metadata: Record<string, unknown> = {},
     ): boolean {
+        debugger;
         const session = this.getSession(sessionId);
         if (!session) return false;
 
@@ -328,6 +332,7 @@ export class SessionService {
                 return session;
             }
         }
+
         return undefined;
     }
 

@@ -51,7 +51,6 @@ export {
     identifierSchemas,
 
     // Factory functions
-    createBaseContext,
     validateBaseContext,
 } from './base-types.js';
 
@@ -103,7 +102,6 @@ export type {
 
 export {
     // Schemas (excluindo invocationIdSchema que já vem de context-core)
-    agentIdSchema,
     agentActionTypeSchema,
     agentDefinitionSchema,
     agentExecutionOptionsSchema,

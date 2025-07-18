@@ -41,6 +41,7 @@ import type {
 import type { MCPAdapter } from '../adapters/mcp/types.js';
 import type { AgentData } from './types.js';
 import { z } from 'zod';
+import { safeJsonSchemaToZod } from '../core/utils/json-schema-to-zod.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🏗️ CLEAN ORCHESTRATOR INTERFACES
@@ -319,6 +320,7 @@ const orchestrator = new SDKOrchestrator({
         input: unknown,
         options?: AgentExecutionOptions,
     ): Promise<OrchestrationResult<unknown>> {
+        debugger;
         const startTime = Date.now();
         const correlationId = IdGenerator.correlationId();
 
@@ -352,7 +354,8 @@ const orchestrator = new SDKOrchestrator({
                 ...options,
                 thread,
                 correlationId,
-            };
+                tenantId: this.config.tenantId,
+            } as AgentExecutionOptions;
 
             let result: AgentExecutionResult<unknown>;
 
@@ -549,6 +552,7 @@ const orchestrator = new SDKOrchestrator({
      * Register MCP tools - APENAS delega para MCP adapter
      */
     async registerMCPTools(): Promise<void> {
+        debugger;
         if (!this.mcpAdapter) {
             this.logger.warn(
                 'MCP adapter not configured - cannot register tools',
@@ -560,7 +564,11 @@ const orchestrator = new SDKOrchestrator({
             const mcpTools = await this.mcpAdapter.getTools();
             this.logger.info(`Registering ${mcpTools.length} MCP tools`);
 
+            console.log('mcpTools', mcpTools);
+
             for (const mcpTool of mcpTools) {
+                const zodSchema = safeJsonSchemaToZod(mcpTool.inputSchema);
+
                 this.logger.debug('Processing MCP tool', {
                     name: mcpTool.name,
                     description: mcpTool.description,
@@ -571,7 +579,7 @@ const orchestrator = new SDKOrchestrator({
                     name: mcpTool.name,
                     description:
                         mcpTool.description || `MCP Tool: ${mcpTool.name}`,
-                    inputSchema: mcpTool.inputSchema as z.ZodSchema, // Manter schema original
+                    inputSchema: zodSchema, // Manter schema original
                     execute: async (input: unknown) => {
                         this.logger.debug('Executing MCP tool', {
                             toolName: mcpTool.name,
