@@ -84,27 +84,32 @@ export class MCPManagerService {
             status?: string;
         },
     ): Promise<MCPItem[] | MCPServerConfig[]> {
-        const { provider, status = 'ACTIVE' } = filters || {};
+        try {
+            const { provider, status = 'ACTIVE' } = filters || {};
 
-        const data: MCPData = await this.axiosMCPManagerService.get(
-            'mcp/connections',
-            {
-                headers: this.getAuthHeaders(organizationAndTeamData),
-                params: { provider, status },
-            },
-        );
+            const data: MCPData = await this.axiosMCPManagerService.get(
+                'mcp/connections',
+                {
+                    headers: this.getAuthHeaders(organizationAndTeamData),
+                    params: { provider, status },
+                },
+            );
 
-        if (!data) {
+            if (!data) {
+                return [];
+            }
+
+            if (format) {
+                return data.items.map((connection) =>
+                    this.formatConnection(connection),
+                );
+            }
+
+            return data.items;
+        } catch (error) {
+            console.error('Error fetching MCP connections:', error);
             return [];
         }
-
-        if (format) {
-            return data.items.map((connection) =>
-                this.formatConnection(connection),
-            );
-        }
-
-        return data.items;
     }
 
     public async getConnectionById(
@@ -128,25 +133,30 @@ export class MCPManagerService {
             status?: string;
         },
     ): Promise<MCPItem | MCPServerConfig | null> {
-        const { provider, status = 'ACTIVE' } = filters || {};
+        try {
+            const { provider, status = 'ACTIVE' } = filters || {};
 
-        const data: MCPItem = await this.axiosMCPManagerService.get(
-            `mcp/connections/${connectionId}`,
-            {
-                headers: this.getAuthHeaders(organizationAndTeamData),
-                params: { provider, status },
-            },
-        );
+            const data: MCPItem = await this.axiosMCPManagerService.get(
+                `mcp/connections/${connectionId}`,
+                {
+                    headers: this.getAuthHeaders(organizationAndTeamData),
+                    params: { provider, status },
+                },
+            );
 
-        if (!data) {
+            if (!data) {
+                return null;
+            }
+
+            if (format) {
+                return this.formatConnection(data);
+            }
+
+            return data || null;
+        } catch (error) {
+            console.error('Error fetching MCP connection by ID:', error);
             return null;
         }
-
-        if (format) {
-            return this.formatConnection(data);
-        }
-
-        return data || null;
     }
 
     private formatConnection(connection: MCPItem): MCPServerConfig {

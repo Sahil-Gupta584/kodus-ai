@@ -34,7 +34,7 @@ export class McpModule {
                 MCPManagerService,
             );
 
-            exports.push(McpServerService);
+            exports.push(McpServerService, MCPManagerService);
         }
 
         return {
@@ -43,6 +43,7 @@ export class McpModule {
             controllers,
             providers,
             exports,
+            global: true,
         };
     }
 }

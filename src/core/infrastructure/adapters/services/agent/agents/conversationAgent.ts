@@ -8,6 +8,8 @@ import { LLMProviderService } from '../../llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { LLMModelProvider } from '../../llmProviders/llmModelProvider.helper';
+import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
+import { MCPServerConfig } from '@kodus/flow/dist/adapters/mcp';
 
 @Injectable()
 export class ConversationAgentProvider {
@@ -20,34 +22,10 @@ export class ConversationAgentProvider {
     constructor(
         @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
+
+        private readonly mcpManagerService: MCPManagerService,
     ) {
         this.llmAdapter = this.createLLMAdapter();
-        // === MCP ================================================================
-        this.mcpAdapter = createMCPAdapter({
-            servers: [
-                {
-                    name: 'github-mcp',
-                    type: 'http' as const,
-                    url:
-                        process.env.MCP_SERVER_URL ??
-                        'http://localhost:3001/mcp',
-                    timeout: 10_000,
-                    retries: 1,
-                    headers: { contentType: 'application/json' },
-                },
-            ],
-            defaultTimeout: 10_000,
-            maxRetries: 1,
-            onError: (err) => {
-                console.error('MCP error:', err.message);
-            },
-        });
-        // === ORCHESTRATION ======================================================
-        this.orchestration = createOrchestration({
-            tenantId: 'conversation-agent',
-            mcpAdapter: this.mcpAdapter,
-            llmAdapter: this.llmAdapter,
-        });
     }
 
     private createLLMAdapter() {
@@ -88,18 +66,66 @@ export class ConversationAgentProvider {
         return createDirectLLMAdapter(wrappedLLM);
     }
 
+    private async createMCPAdapter(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ) {
+        const mcpManagerServers = await this.mcpManagerService.getConnections(
+            organizationAndTeamData,
+        );
+
+        const defaultServers: MCPServerConfig[] = [
+            {
+                name: 'github-mcp',
+                type: 'http' as const,
+                url: process.env.MCP_SERVER_URL ?? 'http://localhost:3001/mcp',
+                timeout: 10_000,
+                retries: 1,
+                headers: { contentType: 'application/json' },
+                allowedTools: [],
+            },
+        ];
+
+        const servers = [...defaultServers, ...mcpManagerServers];
+
+        this.mcpAdapter = createMCPAdapter({
+            servers,
+            defaultTimeout: 10_000,
+            maxRetries: 1,
+            onError: (err) => {
+                console.error('MCP error:', err.message);
+            },
+        });
+    }
+
+    private createOrchestration() {
+        this.orchestration = createOrchestration({
+            tenantId: 'conversation-agent',
+            llmAdapter: this.llmAdapter,
+            mcpAdapter: this.mcpAdapter,
+        });
+    }
+
     // -------------------------------------------------------------------------
-    private async initialize() {
-        if (this.isInitialized) return;
+    private async initialize(organizationAndTeamData: OrganizationAndTeamData) {
+        // if (this.isInitialized) return;
+
+        await this.createMCPAdapter(organizationAndTeamData);
+        this.createOrchestration();
 
         // 1️⃣ conecta MCP (opcional)
         try {
             await this.orchestration.connectMCP();
             await this.orchestration.registerMCPTools();
-        } catch {
+        } catch (error) {
             console.warn('MCP offline, prosseguindo.');
         }
 
+        const tools = this.orchestration.getRegisteredTools();
+
+        console.log(
+            'REGISTERED TOOLS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!',
+            tools,
+        );
         await this.orchestration.createAgent({
             name: 'conversational-agent',
             planner: 'react',
@@ -114,8 +140,8 @@ export class ConversationAgentProvider {
     }
 
     // -------------------------------------------------------------------------
-    async execute(prompt: string, org?: OrganizationAndTeamData) {
-        await this.initialize();
+    async execute(prompt: string, org: OrganizationAndTeamData) {
+        await this.initialize(org);
 
         const result = await this.orchestration.callAgent(
             'conversational-agent',

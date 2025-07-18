@@ -35,6 +35,7 @@ import { ParametersModule } from './parameters.module';
 import { CodeReviewAgentProvider } from '@/core/infrastructure/adapters/services/agent/agents/codeReview';
 import { OrganizationParametersModule } from './organizationParameters.module';
 import { ConversationAgentProvider } from '@/core/infrastructure/adapters/services/agent/agents/conversationAgent';
+import { McpModule } from '@/core/infrastructure/adapters/mcp/mcp.module';
 
 @Module({
     imports: [
