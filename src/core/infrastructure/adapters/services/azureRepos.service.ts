@@ -21,6 +21,7 @@ import {
     OneSentenceSummaryItem,
     ReactionsInComments,
     PullRequestAuthor,
+    PullRequestDetails,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { v4 as uuidv4, v4 } from 'uuid';
@@ -54,6 +55,7 @@ import { generateWebhookToken } from '@/shared/utils/webhooks/webhookTokenCrypto
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
 import {
     AzurePullRequestVote,
+    AzureRepoCommit,
     AzureRepoPRThread,
     EventConfig,
 } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
@@ -76,7 +78,6 @@ export class AzureReposService
         Omit<
             ICodeManagementService,
             | 'getOrganizations'
-            | 'getPullRequestDetails'
             | 'getWorkflows'
             | 'getListMembers'
             | 'getCommitsByReleaseMode'
@@ -3399,5 +3400,246 @@ export class AzureReposService
             | 'SPAM';
     }): Promise<any | null> {
         throw new Error('Method not implemented.');
+    }
+
+    async getDiffForFile(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+        filePath: string;
+    }): Promise<string | null> {
+        const { organizationAndTeamData, repository, prNumber, filePath } =
+            params;
+
+        try {
+            const authDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            if (!projectId) {
+                throw new Error(
+                    `Project ID not found for repository ${repository.name}`,
+                );
+            }
+
+            const files = this.getFilesByPullRequestId({
+                organizationAndTeamData,
+                repository: {
+                    id: repository.id,
+                    name: repository.name,
+                },
+                prNumber,
+            });
+
+            // get the last commit of base branch
+            const commits = await this.azureReposRequestHelper.getCommits({
+                orgName: authDetails.orgName,
+                token: authDetails.token,
+                projectId,
+                repositoryId: repository.id,
+            });
+
+            if (!commits || commits.length === 0) {
+                throw new Error(
+                    `No commits found for repository ${repository.name}`,
+                );
+            }
+
+            // get the last commit of the repo
+            const lastCommit = commits[0].commitId;
+
+            const pullCommits =
+                (await this.azureReposRequestHelper.getCommitsForPullRequest({
+                    orgName: authDetails.orgName,
+                    token: authDetails.token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                })) as AzureRepoCommit[];
+
+            if (!pullCommits || pullCommits.length === 0) {
+                throw new Error(
+                    `No commits found for pull request #${prNumber} in repository ${repository.name}`,
+                );
+            }
+
+            // Assuming the last commit in the pull request is the target commit
+            const lastPullCommit = pullCommits[0].commitId;
+
+            const changes =
+                await this.azureReposRequestHelper.getChangesForCommit({
+                    orgName: authDetails.orgName,
+                    token: authDetails.token,
+                    projectId,
+                    repositoryId: repository.id,
+                    commitId: lastPullCommit,
+                });
+
+            if (!changes || changes.length === 0) {
+                this.logger.warn({
+                    message: `No changes found for pull request #${prNumber} in repository ${repository.name}`,
+                    context: this.getDiffForFile.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        repository: repository.name,
+                        prNumber,
+                        filePath,
+                    },
+                });
+                return null; // Return null if no changes found
+            }
+
+            const fileChange = changes.find(
+                (change) =>
+                    (change.item.path === filePath ||
+                        change.item.path === `/${filePath}`) &&
+                    !change.item.isFolder,
+            );
+
+            if (!fileChange) {
+                this.logger.warn({
+                    message: `File "${filePath}" not found in pull request #${prNumber} in repository ${repository.name}`,
+                    context: this.getDiffForFile.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        repository: repository.name,
+                        prNumber,
+                        filePath,
+                    },
+                });
+                return null; // Return null if file not found
+            }
+
+            const diff = await this._generateFileDiffForAzure({
+                orgName: authDetails.orgName,
+                token: authDetails.token,
+                projectId,
+                repositoryId: repository.id,
+                filePath,
+                baseCommitId:
+                    fileChange.changeType === 'add' ? null : lastCommit, // Use the last commit of the base branch
+                targetCommitId: lastPullCommit, // Use the last commit of the pull request
+                changeType: fileChange.changeType, // Assuming 'edit' for file changes in PR
+            });
+
+            if (!diff) {
+                this.logger.warn({
+                    message: `No diff found for file "${filePath}" in pull request #${prNumber}`,
+                    context: this.getDiffForFile.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        repository: repository.name,
+                        prNumber,
+                        filePath,
+                    },
+                });
+                return null;
+            }
+
+            return diff.patch; // Return the unified diff patch
+        } catch (error) {
+            this.logger.error({
+                message: `Error getting diff for file "${filePath}" in pull request #${prNumber}`,
+                context: this.getDiffForFile.name,
+                error: error,
+                metadata: {
+                    organizationAndTeamData,
+                    repository: repository.name,
+                    prNumber,
+                    filePath,
+                },
+            });
+            return null; // Return null to indicate failure
+        }
+    }
+
+    async getPullRequestDetails(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<any | null> {
+        const { organizationAndTeamData, repository, prNumber } = params;
+
+        try {
+            const authDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            if (!projectId) {
+                throw new Error(
+                    `Project ID not found for repository ${repository.name}`,
+                );
+            }
+
+            const pullRequest =
+                await this.azureReposRequestHelper.getPullRequestDetails({
+                    orgName: authDetails.orgName,
+                    token: authDetails.token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                });
+
+            if (!pullRequest) {
+                this.logger.warn({
+                    message: `Pull request #${prNumber} not found in repository ${repository.name}`,
+                    context: this.getPullRequestDetails.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        repository: repository.name,
+                        prNumber,
+                    },
+                });
+                return null;
+            }
+
+            const pr = this.transformPullRequest(
+                pullRequest,
+                repository.name,
+                organizationAndTeamData.organizationId,
+            );
+
+            const changes =
+                await this.azureReposRequestHelper.getChangesForCommit({
+                    orgName: authDetails.orgName,
+                    token: authDetails.token,
+                    projectId,
+                    repositoryId: repository.id,
+                    commitId: pullRequest.lastMergeSourceCommit?.commitId,
+                });
+
+            const modifiedFiles = changes
+                .filter((change) => !change.item.isFolder)
+                .map((change) => ({
+                    filePath: change.item.path,
+                }));
+
+            const prData = {
+                ...pr,
+                modified_files: modifiedFiles,
+            };
+
+            return prData;
+        } catch (error) {
+            this.logger.error({
+                message: `Error getting pull request details for #${prNumber} in repository ${repository.name}`,
+                context: this.getPullRequestDetails.name,
+                error: error,
+                metadata: {
+                    organizationAndTeamData,
+                    repository: repository.name,
+                    prNumber,
+                },
+            });
+            return null; // Return null to indicate failure
+        }
     }
 }

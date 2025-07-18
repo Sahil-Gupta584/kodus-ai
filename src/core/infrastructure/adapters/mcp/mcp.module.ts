@@ -5,7 +5,7 @@ import { McpServerService } from './services/mcp-server.service';
 import { McpEnabledGuard } from './guards/mcp-enabled.guard';
 import { PlatformIntegrationModule } from '../../../../modules/platformIntegration.module';
 import { CodeManagementTools, KodyRulesTools } from './tools';
-import { MCPManagerService } from '../services/mcp/mcpManager.service';
+import { MCPManagerService } from './services/mcp-manager.service';
 import { JwtModule } from '@nestjs/jwt';
 import { KodyRulesModule } from '@/modules/kodyRules.module';
 

@@ -155,6 +155,7 @@ export class CodeManagementTools {
                     repository: args.repository,
                     prNumber: args.prNumber,
                 };
+
                 const details =
                     await this.codeManagementService.getPullRequestDetails(
                         params,
@@ -211,38 +212,63 @@ export class CodeManagementTools {
     }
 
     getRepositoryContent() {
+        const inputSchema = z.object({
+            organizationId: z.string(),
+            teamId: z.string(),
+            repository: z.object({
+                id: z.string(),
+                name: z.string(),
+            }),
+            organizationName: z.string(),
+            filePath: z.string(),
+            branch: z.string().default('main'),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
         return {
             name: 'get_repository_content',
             description: 'Get content of a specific file from repository',
-            inputSchema: z.object({
-                organizationId: z.string(),
-                teamId: z.string(),
-                repository: z.string(),
-                organizationName: z.string(),
-                filePath: z.string(),
-                branch: z.string().default('main'),
-            }),
-            execute: wrapToolHandler(async (args: any) => {
+            inputSchema,
+            execute: wrapToolHandler(async (args: InputType) => {
                 const params = {
                     organizationAndTeamData: {
                         organizationId: args.organizationId,
                         teamId: args.teamId,
                     },
-                    repository: { name: args.repository, id: args.repository },
+                    repository: {
+                        id: args.repository.id || args.repository.name,
+                        name: args.repository.name || args.repository.id,
+                    },
                     file: {
                         path: args.filePath,
+                        filename: args.filePath,
                         organizationName: args.organizationName,
                     },
-                    pullRequest: { branch: args.branch },
+                    pullRequest: {
+                        head: { ref: args.branch },
+                        base: { ref: args.branch },
+                        branch: args.branch,
+                    },
                 };
-                const content =
+
+                const fileContent =
                     await this.codeManagementService.getRepositoryContentFile(
                         params,
                     );
 
+                const content = fileContent?.data?.content;
+                let decodedContent = content;
+
+                if (content && fileContent?.data?.encoding === 'base64') {
+                    decodedContent = Buffer.from(content, 'base64').toString(
+                        'utf-8',
+                    );
+                }
+
                 return {
                     success: true,
-                    data: content,
+                    data: decodedContent,
                 };
             }),
         };
@@ -281,6 +307,118 @@ export class CodeManagementTools {
         };
     }
 
+    getPullRequestFileContent() {
+        const inputSchema = z.object({
+            organizationId: z.string(),
+            teamId: z.string(),
+            repository: z.object({
+                id: z.string(),
+                name: z.string(),
+            }),
+            prNumber: z.number(),
+            filePath: z.string(),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
+        return {
+            name: 'get_pull_request_file_content',
+            description: 'Get content of a specific file in a pull request',
+            inputSchema,
+            execute: wrapToolHandler(async (args: InputType) => {
+                const getPrParams = {
+                    organizationAndTeamData: {
+                        organizationId: args.organizationId,
+                        teamId: args.teamId,
+                    },
+                    repository: {
+                        id: args.repository.id || args.repository.name,
+                        name: args.repository.name || args.repository.id,
+                    },
+                    file: {
+                        path: args.filePath,
+                        filename: args.filePath,
+                    },
+                    prNumber: args.prNumber,
+                };
+
+                const pr =
+                    await this.codeManagementService.getPullRequestDetails(
+                        getPrParams,
+                    );
+
+                const fileContentParams = {
+                    ...getPrParams,
+                    pullRequest: {
+                        head: { ref: pr.head.ref },
+                        base: { ref: pr.base.ref },
+                        branch: pr.head.ref,
+                        number: args.prNumber,
+                    },
+                };
+
+                const fileContent =
+                    await this.codeManagementService.getRepositoryContentFile(
+                        fileContentParams,
+                    );
+
+                const content = fileContent?.data?.content;
+                let decodedContent = content;
+
+                if (content && fileContent?.data?.encoding === 'base64') {
+                    decodedContent = Buffer.from(content, 'base64').toString(
+                        'utf-8',
+                    );
+                }
+
+                return {
+                    success: true,
+                    data: decodedContent,
+                };
+            }),
+        };
+    }
+
+    getDiffForFile() {
+        const inputSchema = z.object({
+            organizationId: z.string(),
+            teamId: z.string(),
+            repository: z.object({
+                id: z.string(),
+                name: z.string(),
+            }),
+            prNumber: z.number(),
+            filePath: z.string(),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
+        return {
+            name: 'get_diff_for_file',
+            description: 'Get the diff for a specific file in a pull request',
+            inputSchema,
+            execute: wrapToolHandler(async (args: InputType) => {
+                const params = {
+                    organizationAndTeamData: {
+                        organizationId: args.organizationId,
+                        teamId: args.teamId,
+                    },
+                    repository: args.repository,
+                    prNumber: args.prNumber,
+                    filePath: args.filePath,
+                };
+
+                const diff =
+                    await this.codeManagementService.getDiffForFile(params);
+
+                return {
+                    success: true,
+                    data: diff,
+                };
+            }),
+        };
+    }
+
     // Método que retorna todas as tools desta categoria
     getAllTools() {
         return [
@@ -291,6 +429,8 @@ export class CodeManagementTools {
             this.getRepositoryFiles(),
             this.getRepositoryContent(),
             this.getRepositoryLanguages(),
+            this.getPullRequestFileContent(),
+            this.getDiffForFile(),
         ];
     }
 }

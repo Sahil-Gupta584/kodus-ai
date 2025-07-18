@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosInstance } from 'axios';
 import { Injectable } from '@nestjs/common';
 import { AzureReposRepository } from '@/core/domain/azureRepos/entities/azureReposRepository.type';
 import { AzureReposProject } from '@/core/domain/azureRepos/entities/azureReposProject.type';
@@ -341,7 +341,7 @@ export class AzureReposRequestHelper {
         orgName: string;
         token: string;
         useGraphApi?: boolean;
-    }): Promise<any> {
+    }): Promise<AxiosInstance> {
         const baseURL = useGraphApi
             ? `https://vssps.dev.azure.com/${orgName}`
             : `https://dev.azure.com/${orgName}`;
