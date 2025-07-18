@@ -3464,22 +3464,7 @@ export class GithubService
             pull_number: params.prNumber, // Pull Request ID
         });
 
-        const files = await octokit.pulls.listFiles({
-            owner: githubAuthDetail.org,
-            repo: params.repository.name,
-            pull_number: params.prNumber,
-        });
-
-        const modifiedFiles = files.data.map((file) => ({
-            filePath: file.filename,
-        }));
-
-        const res = {
-            ...response.data,
-            modified_files: modifiedFiles,
-        };
-
-        return res;
+        return response.data;
     }
 
     async createPullRequestWebhook(params: any) {
@@ -4531,52 +4516,5 @@ export class GithubService
         }
 
         return Promise.resolve(commentBody.trim());
-    }
-
-    async getDiffForFile(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        repository: Partial<Repository>;
-        prNumber: number;
-        filePath: string;
-    }): Promise<string | null> {
-        const { organizationAndTeamData, repository, prNumber, filePath } =
-            params;
-
-        const githubAuthDetail = await this.getGithubAuthDetails(
-            organizationAndTeamData,
-        );
-
-        const octokit = await this.instanceOctokit(organizationAndTeamData);
-
-        try {
-            const { data: files } = await octokit.rest.pulls.listFiles({
-                owner: githubAuthDetail.org,
-                repo: repository.name,
-                pull_number: prNumber,
-            });
-
-            const file = files.find((f) => f.filename === filePath);
-
-            if (!file || !file.patch) {
-                this.logger.warn({
-                    message: `No diff found for file ${filePath} in PR#${prNumber}`,
-                    context: GithubService.name,
-                    metadata: params,
-                });
-                return null;
-            }
-
-            return file.patch;
-        } catch (error) {
-            this.logger.error({
-                message: `Error retrieving diff for PR#${prNumber}`,
-                context: GithubService.name,
-                error: error,
-                metadata: {
-                    ...params,
-                },
-            });
-            return null;
-        }
     }
 }

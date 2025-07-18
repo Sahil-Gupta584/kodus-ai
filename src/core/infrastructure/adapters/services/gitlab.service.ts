@@ -2919,58 +2919,6 @@ export class GitlabService
         throw new Error('Method not implemented.');
     }
 
-    async getDiffForFile(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        repository: Partial<Repository>;
-        prNumber: number;
-        filePath: string;
-    }): Promise<string | null> {
-        try {
-            const { organizationAndTeamData, repository, prNumber, filePath } =
-                params;
-
-            const gitlabAuthDetail = await this.getAuthDetails(
-                organizationAndTeamData,
-            );
-
-            if (!gitlabAuthDetail) {
-                return null;
-            }
-
-            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
-
-            const diffs = await gitlabAPI.MergeRequests.allDiffs(
-                repository.id,
-                prNumber,
-            );
-
-            const diff = diffs.find(
-                (d) => d.new_path === filePath || d.old_path === filePath,
-            );
-
-            if (!diff) {
-                this.logger.warn({
-                    message: `No diff found for file ${params.filePath} in pull request #${prNumber}`,
-                    context: GitlabService.name,
-                    serviceName: 'GitlabService getDiffForFile',
-                    metadata: params,
-                });
-                return null;
-            }
-
-            return diff.diff || null;
-        } catch (error) {
-            this.logger.error({
-                message: `Error retrieving diff for pull request #${params.prNumber}`,
-                context: GitlabService.name,
-                serviceName: 'GitlabService getDiffForPullRequest',
-                error: error,
-                metadata: params,
-            });
-            return null;
-        }
-    }
-
     async getPullRequestDetails(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: Partial<Repository>;
@@ -2997,15 +2945,6 @@ export class GitlabService
             if (!mergeRequest) {
                 return null;
             }
-
-            const diffs = await gitlabAPI.MergeRequests.allDiffs(
-                repository.id,
-                prNumber,
-            );
-
-            const modifiedFiles = diffs.map((diff) => ({
-                filePath: diff.new_path,
-            }));
 
             const prData = {
                 id: mergeRequest.id.toString(),
@@ -3049,7 +2988,6 @@ export class GitlabService
                     name: mergeRequest.author?.name,
                     id: mergeRequest.author?.id?.toString(),
                 },
-                modified_files: modifiedFiles,
             };
 
             return prData;
