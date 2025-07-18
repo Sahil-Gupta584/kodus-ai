@@ -14,6 +14,8 @@ import { CopyCodeReviewParameterDTO } from '../dtos/copy-code-review-parameter.d
 import { CopyCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/copy-code-review-parameter.use-case';
 import { GenerateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/generate-code-review-paremeter.use-case';
 import { GenerateCodeReviewParameterDTO } from '../dtos/generate-code-review-parameter.dto';
+import { DeleteRepositoryCodeReviewParameterDto } from '../dtos/delete-repository-code-review-parameter.dto';
+import { DeleteRepositoryCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/delete-repository-code-review-parameter.use-case';
 @Controller('parameters')
 export class ParametersController {
     constructor(
@@ -25,6 +27,7 @@ export class ParametersController {
         private readonly generateKodusConfigFileUseCase: GenerateKodusConfigFileUseCase,
         private readonly copyCodeReviewParameterUseCase: CopyCodeReviewParameterUseCase,
         private readonly generateCodeReviewParameterUseCase: GenerateCodeReviewParameterUseCase,
+        private readonly deleteRepositoryCodeReviewParameterUseCase: DeleteRepositoryCodeReviewParameterUseCase,
     ) { }
 
     //#region Parameters
@@ -117,6 +120,14 @@ export class ParametersController {
         body: GenerateCodeReviewParameterDTO,
     ) {
         return this.generateCodeReviewParameterUseCase.execute(body);
+    }
+
+    @Post('/delete-repository-code-review-parameter')
+    public async deleteRepositoryCodeReviewParameter(
+        @Body()
+        body: DeleteRepositoryCodeReviewParameterDto,
+    ) {
+        return this.deleteRepositoryCodeReviewParameterUseCase.execute(body);
     }
     //#endregion
 }
