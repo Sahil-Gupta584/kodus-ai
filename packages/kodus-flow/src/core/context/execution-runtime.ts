@@ -1,6 +1,6 @@
 /**
- * @file context-manager.ts
- * @description Unified ContextManager facade over existing services
+ * @file execution-runtime.ts
+ * @description Unified ExecutionRuntime facade over existing services
  */
 
 import { createLogger } from '../../observability/index.js';
@@ -8,6 +8,7 @@ import type {
     AgentContext,
     AgentExecutionOptions,
 } from '../types/agent-types.js';
+import type { AgentIdentity } from '../types/agent-definition.js';
 import type { ConversationHistory } from './services/session-service.js';
 import type { PlannerExecutionContext } from '../../engine/planning/planner-factory.js';
 import type { MemoryManager } from '../memory/memory-manager.js';
@@ -16,7 +17,7 @@ import { ContextStateService } from './services/state-service.js';
 import { sessionService } from './services/session-service.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import type {
-    ContextManager as IContextManager,
+    ExecutionRuntime as IExecutionRuntime,
     ContextSource,
     ContextData,
     ContextVersion,
@@ -32,18 +33,18 @@ import type {
     ServiceHealth,
     ToolExecutionContext,
     ContextValueUpdate,
-} from './context-manager-types.js';
+} from './execution-runtime-types.js';
 
 /**
- * 🎯 ContextManager - Unified facade over existing context services
+ * 🎯 ExecutionRuntime - Unified facade over existing context services
  *
  * Acts as orchestrator and coordinator for:
  * - SessionService (conversation & threads)
  * - ContextStateService (working memory & namespaces)
  * - MemoryManager (long-term knowledge & patterns)
  */
-export class ContextManager implements IContextManager {
-    private readonly logger = createLogger('ContextManager');
+export class ExecutionRuntime implements IExecutionRuntime {
+    private readonly logger = createLogger('ExecutionRuntime');
     private readonly versions = new Map<string, ContextVersion>();
     private readonly executions = new Map<string, ExecutionStep[]>();
     private readonly contextValues = new Map<
@@ -61,7 +62,7 @@ export class ContextManager implements IContextManager {
         // this.routingStrategy =
         //     routingStrategy || new DefaultStorageRoutingStrategy();
         // this.routingStrategy = routingStrategy || null;
-        // this.logger.info('ContextManager initialized', {
+        // this.logger.info('ExecutionRuntime initialized', {
         //     sessionService: !!sessionService,
         //     stateService: !!stateService,
         //     memoryManager: !!memoryManager,
@@ -79,21 +80,27 @@ export class ContextManager implements IContextManager {
     // ──────────────────────────────────────────────────────────────────────────────
 
     async initializeAgentContext(
+        agent: {
+            name: string;
+            identity?: AgentIdentity;
+            config?: {
+                enableSession?: boolean;
+                enableState?: boolean;
+                enableMemory?: boolean;
+            };
+        },
         input: unknown,
-        agentExecutionOptions: AgentExecutionOptions,
+        config: AgentExecutionOptions,
     ): Promise<AgentContext> {
         debugger;
-        const {
-            agentName,
-            tenantId,
-            thread,
-            correlationId,
-            enableSession,
-            enableMemory,
-            sessionId,
-        } = agentExecutionOptions;
+        const { agentName, tenantId, thread, correlationId, sessionId } =
+            config;
 
-        this.logger.info('Initializing agent context via ContextManager', {
+        // Agent configuration from AgentDefinition.config
+        const enableSession = agent?.config?.enableSession ?? true;
+        const enableMemory = agent?.config?.enableMemory ?? true;
+
+        this.logger.info('Initializing agent context via ExecutionRuntime', {
             agentName: agentName,
             tenantId: tenantId,
             enableSession: enableSession,
@@ -122,19 +129,19 @@ export class ContextManager implements IContextManager {
         } = {
             id: sessionId,
             threadId: thread?.id,
-            tenantId: tenantId,
+            tenantId: tenantId || 'default',
             conversationHistory: [],
         };
 
         if (enableSession && thread) {
             const foundSession = sessionService.findSessionByThread(
                 thread.id,
-                tenantId,
+                tenantId || 'default',
             );
 
             if (!foundSession) {
                 const session = sessionService.createSession(
-                    tenantId,
+                    tenantId || 'default',
                     thread.id,
                     { agentName: agentName },
                 );
@@ -147,7 +154,7 @@ export class ContextManager implements IContextManager {
                     sessionContext = {
                         id: newSessionContext.id,
                         threadId: thread.id,
-                        tenantId: tenantId,
+                        tenantId: tenantId || 'default',
                         conversationHistory:
                             newSessionContext.conversationHistory || [],
                     };
@@ -161,7 +168,7 @@ export class ContextManager implements IContextManager {
                 sessionContext = {
                     id: foundSession.id,
                     threadId: thread.id,
-                    tenantId: tenantId,
+                    tenantId: tenantId || 'default',
                     conversationHistory: foundSession.conversationHistory || [],
                 };
                 this.logger.debug('Found existing session', {
@@ -174,10 +181,10 @@ export class ContextManager implements IContextManager {
         // 3. Create system context
         const systemContext: SystemContext = {
             executionId: IdGenerator.executionId(),
-            correlationId: correlationId,
+            correlationId: correlationId || IdGenerator.correlationId(),
             sessionId: sessionContext?.id || sessionId,
             threadId: thread.id,
-            tenantId: tenantId,
+            tenantId: tenantId || 'default',
             conversationHistory: (sessionContext?.conversationHistory ||
                 []) as ConversationHistory[],
             startTime: Date.now(),
@@ -188,7 +195,10 @@ export class ContextManager implements IContextManager {
 
         // 4. Build unified agent context
         const agentContext: AgentContext = {
-            ...agentExecutionOptions,
+            tenantId: tenantId || 'default',
+            correlationId: correlationId || IdGenerator.correlationId(),
+            startTime: Date.now(),
+            agentName: agentName,
             invocationId: IdGenerator.executionId(),
             user: {
                 context: {},
@@ -416,7 +426,11 @@ export class ContextManager implements IContextManager {
             const plannerContext: PlannerExecutionContext = {
                 // Base context
                 input,
-                availableTools: enhancedTools,
+                thread: {
+                    id: agentContext.system.threadId,
+                    metadata: { description: 'Agent execution thread' },
+                },
+                availableTools: agentContext.availableTools,
                 history: [],
                 iterations: 0,
                 maxIterations: 10,
@@ -707,7 +721,7 @@ export class ContextManager implements IContextManager {
     }
 
     async cleanup(): Promise<void> {
-        this.logger.info('Starting ContextManager cleanup');
+        this.logger.info('Starting ExecutionRuntime cleanup');
 
         // Clear old versions (keep last 1000)
         if (this.versions.size > 1000) {
@@ -733,7 +747,7 @@ export class ContextManager implements IContextManager {
             }
         }
 
-        this.logger.info('ContextManager cleanup completed', {
+        this.logger.info('ExecutionRuntime cleanup completed', {
             versionsRetained: this.versions.size,
             executionsRetained: this.executions.size,
         });

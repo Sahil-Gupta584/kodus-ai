@@ -343,6 +343,85 @@ export class ToolEngine {
     }
 
     /**
+     * Get tools in the correct format for LLMs (OpenAI, Anthropic, etc.)
+     * Removes individual 'required' flags and keeps only the 'required' array
+     */
+    getToolsForLLM(): Array<{
+        name: string;
+        description: string;
+        parameters: Record<string, unknown>;
+    }> {
+        return Array.from(this.tools.values()).map((tool) => {
+            // Prioritize existing JSON Schema, then convert Zod if needed
+            let jsonSchema: unknown = tool.jsonSchema;
+
+            // If inputSchema exists and looks like JSON Schema (not Zod), use it directly
+            if (
+                tool.inputSchema &&
+                typeof tool.inputSchema === 'object' &&
+                tool.inputSchema !== null &&
+                'type' in tool.inputSchema
+            ) {
+                jsonSchema = tool.inputSchema;
+            } else if (tool.inputSchema && !jsonSchema) {
+                // Try converting Zod schema to JSON Schema
+                try {
+                    const converted = zodToJSONSchema(
+                        tool.inputSchema,
+                        tool.name,
+                        tool.description || `Tool: ${tool.name}`,
+                    );
+                    jsonSchema = converted.parameters;
+                } catch (error) {
+                    this.logger.warn(
+                        'Failed to convert Zod schema to JSON Schema for LLM',
+                        {
+                            toolName: tool.name,
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                        },
+                    );
+                    jsonSchema = { type: 'object', properties: {} };
+                }
+            }
+
+            // Convert to LLM format - remove individual 'required' flags
+            const jsonSchemaObj = jsonSchema as Record<string, unknown>;
+            const properties =
+                (jsonSchemaObj.properties as Record<string, unknown>) || {};
+            const required = (jsonSchemaObj.required as string[]) || [];
+
+            // Clean properties - remove individual 'required' flags
+            const cleanProperties: Record<string, unknown> = {};
+            for (const [key, prop] of Object.entries(properties)) {
+                const propObj = prop as Record<string, unknown>;
+                cleanProperties[key] = {
+                    type: propObj.type || 'string',
+                    description: propObj.description,
+                    enum: propObj.enum,
+                    default: propObj.default,
+                    format: propObj.format,
+                    // ❌ REMOVED: required: propObj.required
+                };
+            }
+
+            return {
+                name: tool.name,
+                description: tool.description || `Tool: ${tool.name}`,
+                parameters: {
+                    type: 'object',
+                    properties: cleanProperties,
+                    required: required, // ✅ Keep only the array
+                    additionalProperties:
+                        jsonSchemaObj.additionalProperties ?? false,
+                },
+            };
+        });
+    }
+
+    /**
      * Extract properties with required flag for planner context
      */
     private extractPropertiesWithRequiredFlag(

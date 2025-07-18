@@ -10,7 +10,7 @@
  */
 
 import { z } from 'zod';
-// AgentExecutionContext removed - using ContextManager pattern instead
+// AgentExecutionContext removed - using ExecutionRuntime pattern instead
 
 /**
  * Agent identity - who the agent is and what it does

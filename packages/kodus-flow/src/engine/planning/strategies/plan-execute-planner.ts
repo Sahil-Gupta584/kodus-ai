@@ -103,7 +103,8 @@ export class PlanAndExecutePlanner implements Planner {
             this.buildPlanningGoal(input, context),
             'plan-execute',
             {
-                availableTools: context.availableTools.map((tool) => tool.name),
+                availableTools:
+                    context.availableTools?.map((tool) => tool.name) || [],
                 previousPlans: this.extractPreviousPlans(context),
                 agentIdentity: context.agentIdentity as string, // ✅ USE AGENT IDENTITY
             },
@@ -189,7 +190,8 @@ export class PlanAndExecutePlanner implements Planner {
         currentStep.status = 'executing';
 
         // ✅ VALIDAÇÃO - Verificar se a tool solicitada existe antes de executar
-        const availableToolNames = context.availableTools.map((t) => t.name);
+        const availableToolNames =
+            context.availableTools?.map((t) => t.name) || [];
 
         let action: AgentAction;
 
@@ -226,7 +228,8 @@ export class PlanAndExecutePlanner implements Planner {
                 stepType: currentStep.type,
                 contextHistory: context.history.length,
                 currentIteration: context.iterations,
-                availableTools: context.availableTools.map((tool) => tool.name),
+                availableTools:
+                    context.availableTools?.map((tool) => tool.name) || [],
             },
         };
     }
@@ -363,9 +366,8 @@ export class PlanAndExecutePlanner implements Planner {
         input: string,
         context: PlannerExecutionContext,
     ): string {
-        const availableToolNames = context.availableTools.map(
-            (tool) => tool.name,
-        );
+        const availableToolNames =
+            context.availableTools?.map((tool) => tool.name) || [];
 
         // ✅ CONTEXT ENGINEERING - Informar tools disponíveis de forma simples
         const toolsContext =
@@ -484,13 +486,19 @@ Create a structured plan with steps that can be executed sequentially.
 
         // Consider available tools
         if (
-            step.tool &&
-            context.availableTools.some((tool) => tool.name === step.tool)
+            (step.tool &&
+                context.availableTools?.some(
+                    (tool) => tool.name === step.tool,
+                )) ||
+            false
         ) {
             confidence += 0.1; // Tool is available
         } else if (
-            step.tool &&
-            !context.availableTools.some((tool) => tool.name === step.tool)
+            (step.tool &&
+                !context.availableTools?.some(
+                    (tool) => tool.name === step.tool,
+                )) ||
+            false
         ) {
             confidence -= 0.2; // Tool not available
         }

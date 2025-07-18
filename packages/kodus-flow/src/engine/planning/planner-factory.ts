@@ -12,6 +12,7 @@ import { ReflexionPlanner } from './strategies/reflexion-planner.js';
 import { PlanAndExecutePlanner } from './strategies/plan-execute-planner.js';
 import { Thread } from '../../core/types/common-types.js';
 import { AgentIdentity } from '@/core/types/agent-definition.js';
+import type { ToolMetadataForPlanner } from '../../core/types/tool-types.js';
 
 export type PlannerType = 'react' | 'tot' | 'reflexion' | 'plan-execute';
 
@@ -99,7 +100,7 @@ export interface ExecutionContextMetadata {
     agentName?: string;
     correlationId?: string;
     tenantId?: string;
-    thread?: Thread; // ⭐ NOVO: ID da thread para acesso ao ContextManager
+    thread?: Thread; // ⭐ NOVO: ID da thread para acesso ao ExecutionRuntime
     startTime?: number;
     plannerType?: PlannerType;
     [key: string]: unknown;
@@ -183,6 +184,12 @@ export interface PlannerExecutionContext {
 
     // 🧠 NEW: Learning context from previous executions
     learningContext?: LearningContext;
+
+    // 🛠️ Available tools for this context
+    availableTools?: ToolMetadataForPlanner[];
+
+    // 👤 Agent identity for context
+    agentIdentity?: AgentIdentity;
 
     // Methods
     update(

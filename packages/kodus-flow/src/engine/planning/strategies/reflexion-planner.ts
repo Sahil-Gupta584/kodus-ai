@@ -165,9 +165,8 @@ Improvements: [improvement 1]; [improvement 2]; [improvement 3]
                 metadata: {
                     iteration: context.iterations,
                     contextSize: context.history.length,
-                    availableTools: context.availableTools.map(
-                        (tool) => tool.name,
-                    ),
+                    availableTools:
+                        context.availableTools?.map((tool) => tool.name) || [],
                 },
             };
         } catch (error) {
@@ -199,7 +198,8 @@ Improvements: [improvement 1]; [improvement 2]; [improvement 3]
             enrichedPrompt,
             'reflexion',
             {
-                availableTools: context.availableTools.map((tool) => tool.name),
+                availableTools:
+                    context.availableTools?.map((tool) => tool.name) || [],
                 previousPlans: this.extractPreviousPlans(context),
                 agentIdentity: context.agentIdentity as string, // ✅ USE AGENT IDENTITY
             },
@@ -223,9 +223,8 @@ Improvements: [improvement 1]; [improvement 2]; [improvement 3]
         lessons: string[],
         patterns: Array<{ pattern: string; recommendations: string[] }>,
     ): string {
-        const availableToolNames = context.availableTools.map(
-            (tool) => tool.name,
-        );
+        const availableToolNames =
+            context.availableTools?.map((tool) => tool.name) || [];
 
         // ✅ CONTEXT ENGINEERING - Informar tools disponíveis de forma simples
         const toolsContext =

@@ -139,9 +139,8 @@ export class TreeOfThoughtsPlanner implements Planner {
         input: string,
         context: PlannerExecutionContext,
     ): Promise<ThoughtNode[]> {
-        const availableToolNames = context.availableTools.map(
-            (tool) => tool.name,
-        );
+        const availableToolNames =
+            context.availableTools?.map((tool) => tool.name) || [];
 
         // ✅ CONTEXT ENGINEERING - Informar tools disponíveis de forma simples
         const toolsContext =
@@ -242,9 +241,8 @@ Approach 3: [reasoning] | Action: [action_type:tool_name:arguments] | Rationale:
         context: PlannerExecutionContext,
     ): ThoughtNode[] {
         const thoughts: ThoughtNode[] = [];
-        const availableToolNames = context.availableTools.map(
-            (tool) => tool.name,
-        );
+        const availableToolNames =
+            context.availableTools?.map((tool) => tool.name) || [];
 
         if (availableToolNames.length === 0) {
             // ✅ CONTEXT ENGINEERING - Fallback para cenário sem tools
@@ -300,7 +298,7 @@ Approach 3: [reasoning] | Action: [action_type:tool_name:arguments] | Rationale:
                 content: 'Tool-based approach',
                 action: {
                     type: 'tool_call',
-                    tool: context.availableTools[0]?.name || 'unknown',
+                    tool: context.availableTools?.[0]?.name || 'unknown',
                     arguments: { query: input },
                 },
                 depth: 1,
@@ -370,7 +368,8 @@ Approach 3: [reasoning] | Action: [action_type:tool_name:arguments] | Rationale:
                 isTreeComplete: this.isTreeComplete(),
                 contextHistory: context.history.length,
                 currentIteration: context.iterations,
-                availableTools: context.availableTools.map((tool) => tool.name),
+                availableTools:
+                    context.availableTools?.map((tool) => tool.name) || [],
             },
         };
     }
@@ -616,7 +615,7 @@ Respond with just a number between 0.0 and 1.0
         const childThoughts: ThoughtNode[] = [];
 
         // Use context to inform child generation
-        const hasToolAccess = context.availableTools.length > 0;
+        const hasToolAccess = (context.availableTools?.length || 0) > 0;
         const recentFailures = context.history
             .slice(-2)
             .filter((h) => isErrorResult(h.result));
@@ -631,7 +630,7 @@ Respond with just a number between 0.0 and 1.0
                 action: shouldUseTool
                     ? {
                           type: 'tool_call',
-                          tool: context.availableTools[0]?.name || 'unknown',
+                          tool: context.availableTools?.[0]?.name || 'unknown',
                           arguments: {
                               query: `Follow up on ${parentNode.content}`,
                           },
@@ -649,9 +648,8 @@ Respond with just a number between 0.0 and 1.0
                 metadata: {
                     basedOnContext: true,
                     contextHistory: context.history.length,
-                    availableTools: context.availableTools.map(
-                        (tool) => tool.name,
-                    ),
+                    availableTools:
+                        context.availableTools?.map((tool) => tool.name) || [],
                 },
             });
         }

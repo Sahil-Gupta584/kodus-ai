@@ -24,10 +24,10 @@ export {
 
 export type { ContextState } from './context-factory.js';
 
-// Context Manager - Unified facade
-export { ContextManager } from './context-manager.js';
+// ExecutionRuntime - Unified facade
+export { ExecutionRuntime } from './execution-runtime.js';
 export type {
-    ContextManager as IContextManager,
+    ExecutionRuntime as IExecutionRuntime,
     ContextSource,
     ContextData,
     ContextVersion,
@@ -48,4 +48,10 @@ export type {
     SessionMetadata,
     ToolUsagePattern,
     WorkingState,
-} from './context-manager-types.js';
+} from './execution-runtime-types.js';
+
+// Registry
+export {
+    RuntimeRegistry,
+    getExecutionRuntimeByThread,
+} from './runtime-registry.js';

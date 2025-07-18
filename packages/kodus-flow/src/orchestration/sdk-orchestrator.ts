@@ -42,6 +42,9 @@ import type { MCPAdapter } from '../adapters/mcp/types.js';
 import type { AgentData } from './types.js';
 import { z } from 'zod';
 import { safeJsonSchemaToZod } from '../core/utils/json-schema-to-zod.js';
+import { AgentIdentity } from '@/core/types/agent-definition.js';
+import { SessionId, UserContext } from '@/core/types/base-types.js';
+import { Thread } from '@/core/types/common-types.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🏗️ CLEAN ORCHESTRATOR INTERFACES
@@ -88,22 +91,20 @@ export interface OrchestrationConfigInternal
     mcpAdapter: MCPAdapter | null;
 }
 
-export interface AgentConfig {
+export type AgentConfig = {
     name: string;
-    identity: {
-        role?: string;
-        goal?: string;
-        description?: string;
-        expertise?: string[];
-        personality?: string;
-        style?: string;
-        systemPrompt?: string;
-    };
+    identity: AgentIdentity;
     planner?: PlannerType;
     maxIterations?: number;
     executionMode?: 'simple' | 'workflow';
     constraints?: string[];
-}
+
+    // Agent capabilities - configurações do agente (não da execução)
+    enableSession?: boolean; // Default: true
+    enableState?: boolean; // Default: true
+    enableMemory?: boolean; // Default: true
+    timeout?: number;
+};
 
 export interface ToolConfig {
     name: string;
@@ -237,7 +238,13 @@ const orchestrator = new SDKOrchestrator({
                     'Agent think function should be replaced by AgentCore',
                 );
             },
-            config: {},
+            config: {
+                enableSession: config.enableSession ?? true,
+                enableState: config.enableState ?? true,
+                enableMemory: config.enableMemory ?? true,
+                maxIterations: config.maxIterations,
+                timeout: config.timeout,
+            },
         };
 
         // Create agent core configuration
@@ -318,7 +325,11 @@ const orchestrator = new SDKOrchestrator({
     async callAgent(
         agentName: string,
         input: unknown,
-        options?: AgentExecutionOptions,
+        context?: {
+            thread?: Thread;
+            userContext?: UserContext;
+            sessionId?: SessionId;
+        },
     ): Promise<OrchestrationResult<unknown>> {
         debugger;
         const startTime = Date.now();
@@ -341,7 +352,7 @@ const orchestrator = new SDKOrchestrator({
             }
 
             // Generate thread if not provided
-            const thread = options?.thread || {
+            const thread = context?.thread || {
                 id: `thread-${IdGenerator.callId()}`,
                 metadata: {
                     description: 'Auto-generated thread',
@@ -351,8 +362,8 @@ const orchestrator = new SDKOrchestrator({
 
             // Execute agent
             const executionOptions: AgentExecutionOptions = {
-                ...options,
-                thread,
+                ...context,
+                agentName,
                 correlationId,
                 tenantId: this.config.tenantId,
             } as AgentExecutionOptions;
@@ -542,6 +553,48 @@ const orchestrator = new SDKOrchestrator({
             examples: tool.examples,
             plannerHints: tool.plannerHints,
         }));
+    }
+
+    /**
+     * Get tools in the correct format for LLMs (OpenAI, Anthropic, etc.)
+     * This method ensures tools are properly formatted for LLM function calling
+     *
+     * @example
+     * ```typescript
+     * // ✅ CORRETO: Usar o novo método para LLMs
+     * const toolsForLLM = orchestrator.getToolsForLLM();
+     *
+     * // Formato correto para LLMs:
+     * // [
+     * //   {
+     * //     name: "calculator",
+     * //     description: "Perform mathematical calculations",
+     * //     parameters: {
+     * //       type: "object",
+     * //       properties: {
+     * //         expression: {
+     * //           type: "string",
+     * //           description: "Mathematical expression to evaluate"
+     * //         }
+     * //       },
+     * //       required: ["expression"] // ✅ Apenas array, sem flags individuais
+     * //     }
+     * //   }
+     * // ]
+     *
+     * // Usar com LLM adapter
+     * const response = await llmAdapter.call({
+     *   messages: [{ role: 'user', content: 'Calculate 2 + 2' }],
+     *   tools: toolsForLLM // ✅ Formato correto
+     * });
+     * ```
+     */
+    getToolsForLLM(): Array<{
+        name: string;
+        description: string;
+        parameters: Record<string, unknown>;
+    }> {
+        return this.toolEngine.getToolsForLLM();
     }
 
     // ──────────────────────────────────────────────────────────────────────────────

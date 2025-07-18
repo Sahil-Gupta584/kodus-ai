@@ -99,7 +99,6 @@ import {
     isFinalAnswerAction,
     isErrorResult,
     getResultError,
-    createEnhancedExecutionContext,
 } from '../planning/planner-factory.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -426,9 +425,9 @@ export abstract class AgentCore<
             status: 'running',
         });
 
-        // 🚀 Add execution start to ContextManager
-        if (context.contextManager) {
-            await context.contextManager.addContextValue({
+        // 🚀 Add execution start to ExecutionRuntime
+        if (context.executionRuntime) {
+            await context.executionRuntime.addContextValue({
                 type: 'execution',
                 key: 'start',
                 value: {
@@ -451,8 +450,8 @@ export abstract class AgentCore<
         if (agent.identity) {
             context.agentIdentity = agent.identity;
 
-            // Inform ContextManager about this context update
-            await context.contextManager?.addContextValue({
+            // Inform ExecutionRuntime about this context update
+            await context.executionRuntime?.addContextValue({
                 type: 'agent',
                 key: 'identity',
                 value: agent.identity,
@@ -474,8 +473,8 @@ export abstract class AgentCore<
                 agent.name,
             );
 
-            // Inform ContextManager about this conversation entry
-            await context.contextManager?.addContextValue({
+            // Inform ExecutionRuntime about this conversation entry
+            await context.executionRuntime?.addContextValue({
                 type: 'session',
                 key: 'conversationEntry',
                 value: {
@@ -509,9 +508,9 @@ export abstract class AgentCore<
                 execution.status = 'completed';
             }
 
-            // 🚀 Add execution completion to ContextManager
-            if (context.contextManager) {
-                await context.contextManager.addContextValue({
+            // 🚀 Add execution completion to ExecutionRuntime
+            if (context.executionRuntime) {
+                await context.executionRuntime.addContextValue({
                     type: 'execution',
                     key: 'completion',
                     value: {
@@ -792,9 +791,9 @@ export abstract class AgentCore<
                     );
                     toolUsed = true;
 
-                    // 🚀 Add tool result to ContextManager for rich context
-                    if (context.contextManager) {
-                        await context.contextManager.addContextValue({
+                    // 🚀 Add tool result to ExecutionRuntime for rich context
+                    if (context.executionRuntime) {
+                        await context.executionRuntime.addContextValue({
                             type: 'tools',
                             key: `${toolName}_result`,
                             value: {
@@ -909,9 +908,9 @@ export abstract class AgentCore<
                         correlationId,
                     });
 
-                    // 🚀 Add tool error to ContextManager for learning
-                    if (context.contextManager) {
-                        await context.contextManager.addContextValue({
+                    // 🚀 Add tool error to ExecutionRuntime for learning
+                    if (context.executionRuntime) {
+                        await context.executionRuntime.addContextValue({
                             type: 'tools',
                             key: `${toolName}_error`,
                             value: {
@@ -1574,14 +1573,17 @@ export abstract class AgentCore<
     ): Promise<AgentContext> {
         debugger;
 
-        const config = {
-            ...agentExecutionOptions,
+        const config: AgentExecutionOptions = {
             agentName,
-            enableSession: true,
-            executionId,
-            tenantId: this.config.tenantId,
-            startTime: Date.now(),
-        } as AgentExecutionOptions;
+            thread: agentExecutionOptions?.thread || {
+                id: executionId,
+                metadata: { description: 'Default agent thread' },
+            },
+            // Optional overrides from user
+            ...agentExecutionOptions,
+            // Force some values
+            tenantId: agentExecutionOptions?.tenantId || this.config.tenantId,
+        };
 
         return this.agentContextFactory(config);
     }
@@ -2585,6 +2587,18 @@ export abstract class AgentCore<
             categories: tool.categories,
             dependencies: tool.dependencies,
         }));
+    }
+
+    /**
+     * Get tools in the correct format for LLMs (OpenAI, Anthropic, etc.)
+     * This method ensures tools are properly formatted for LLM function calling
+     */
+    getToolsForLLM(): Array<{
+        name: string;
+        description: string;
+        parameters: Record<string, unknown>;
+    }> {
+        return this.toolEngine?.getToolsForLLM() || [];
     }
 
     /**
@@ -4461,30 +4475,78 @@ export abstract class AgentCore<
             ...agentContext,
         };
 
-        // 🚀 Use ContextManager to build rich planner context if available
-        if (agentContext.contextManager) {
-            return await agentContext.contextManager.buildPlannerContext(
+        // 🚀 Use ExecutionRuntime to build rich planner context if available
+        if (agentContext.executionRuntime) {
+            return await agentContext.executionRuntime.buildPlannerContext(
                 input,
                 enhancedAgentContext,
             );
         }
 
-        // ✅ Fallback to enhanced execution context for backward compatibility
-        const plannerContext = createEnhancedExecutionContext(
-            enhancedAgentContext,
+        // ✅ Fallback to simple execution context for backward compatibility
+        const plannerContext: PlannerExecutionContext = {
             input,
+            thread: {
+                id: agentContext.system.threadId,
+                metadata: { description: 'Agent execution thread' },
+            },
             history,
-            0, // iterations
-            this.config.maxThinkingIterations || 10, // maxIterations
-            undefined, // constraints
-            {
+            iterations: 0,
+            maxIterations: this.config.maxThinkingIterations || 10,
+            constraints: undefined,
+            plannerMetadata: {
                 agentName: agentContext.agentName,
                 correlationId: agentContext.correlationId,
                 tenantId: agentContext.tenantId,
-                threadId: agentContext.system.threadId, // ⭐ NOVO: threadId para registry
+                thread: {
+                    id: agentContext.system.threadId,
+                    metadata: { description: 'Agent execution thread' },
+                },
                 startTime: Date.now(),
             },
-        );
+            update(thought, result, observation) {
+                history.push({
+                    thought,
+                    action: thought.action,
+                    result,
+                    observation,
+                });
+            },
+            getCurrentSituation() {
+                const recentHistory = history.slice(-3);
+                return recentHistory
+                    .map(
+                        (entry) =>
+                            `Action: ${JSON.stringify(entry.action)} -> Result: ${JSON.stringify(entry.result)}`,
+                    )
+                    .join('\n');
+            },
+            get isComplete() {
+                return (
+                    history.length > 0 &&
+                    history[history.length - 1]?.observation.isComplete === true
+                );
+            },
+            getFinalResult() {
+                const lastEntry = history[history.length - 1];
+                return {
+                    success: lastEntry?.observation.isComplete || false,
+                    result: lastEntry?.result,
+                    iterations: 0,
+                    totalTime: Date.now(),
+                    thoughts: history.map((h) => h.thought),
+                    metadata: {
+                        plannerType: 'react',
+                        toolCallsCount: history.filter(
+                            (h) => h.action.type === 'tool_call',
+                        ).length,
+                        errorsCount: history.filter(
+                            (h) => h.result.type === 'error',
+                        ).length,
+                    },
+                };
+            },
+        };
 
         return plannerContext;
     }

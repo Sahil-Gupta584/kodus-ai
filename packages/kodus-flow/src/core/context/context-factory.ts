@@ -24,7 +24,7 @@ import type { WorkflowContext } from '../types/workflow-types.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextStateService } from './services/state-service.js';
 import { getGlobalMemoryManager } from '../memory/memory-manager.js';
-import { ContextManagerRegistry } from './context-registry.js';
+import { RuntimeRegistry } from './runtime-registry.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🎯 CONFIGURAÇÕES UNIFICADAS
@@ -114,7 +114,7 @@ export class UnifiedContextFactory {
 
     /**
      * Creates agent context with state and session management
-     * Always uses ContextManager for consistency
+     * Always uses ExecutionRuntime for consistency
      */
     async createAgentContext(
         agentExecutionOptions: AgentExecutionOptions,
@@ -123,12 +123,28 @@ export class UnifiedContextFactory {
         const memoryManager = getGlobalMemoryManager();
         await memoryManager.initialize();
 
-        // Get ContextManager for this thread (creates if doesn't exist)
+        // Get ExecutionRuntime for this thread (creates if doesn't exist)
         const threadId = agentExecutionOptions.thread?.id || 'default';
-        const contextManager = ContextManagerRegistry.getByThread(threadId);
+        const executionRuntime = RuntimeRegistry.getByThread(threadId);
 
-        return await contextManager.initializeAgentContext(
-            agentExecutionOptions,
+        // Create BaseContext with defaults for missing values
+        const baseContext: BaseContext = {
+            tenantId: agentExecutionOptions.tenantId || 'default',
+            correlationId:
+                agentExecutionOptions.correlationId ||
+                IdGenerator.correlationId(),
+            startTime: Date.now(),
+        };
+
+        // Merge with user options
+        const fullOptions = {
+            ...baseContext,
+            ...agentExecutionOptions,
+        };
+
+        return await executionRuntime.initializeAgentContext(
+            { name: agentExecutionOptions.agentName }, // Agent with defaults
+            fullOptions as BaseContext,
             agentExecutionOptions,
         );
     }

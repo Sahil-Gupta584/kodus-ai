@@ -24,8 +24,8 @@ import { ContextStateService } from '../context/services/state-service.js';
 import { Persistor } from '../../persistor/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import type { MemoryManager } from '../memory/memory-manager.js';
-import type { ContextManager } from '../context/context-manager-types.js';
 import { AgentIdentity } from './agent-definition.js';
+import type { ExecutionRuntime } from '../context/execution-runtime.js';
 
 /**
  * Agent action types - what an agent can decide to do
@@ -265,6 +265,8 @@ export interface AgentDefinition<
         enableLLM?: boolean;
         enableMemory?: boolean;
         enablePersistence?: boolean;
+        enableSession?: boolean;
+        enableState?: boolean;
     };
 
     // Required tools for this agent
@@ -294,7 +296,7 @@ export type AgentContext = BaseContext & {
     stateManager: ContextStateService;
     persistorService?: Persistor;
     memoryManager?: MemoryManager;
-    contextManager?: ContextManager;
+    executionRuntime?: ExecutionRuntime;
 
     // === RESOURCES ===
     availableTools?: ToolMetadataForPlanner[];
@@ -363,16 +365,20 @@ export interface CoreIdentifiers {
 }
 
 /**
- * Agent Execution Options
+ * Agent Execution Options - User-facing options for executing an agent
+ * BaseContext properties (tenantId, correlationId, startTime) are generated automatically
  */
-export type AgentExecutionOptions = BaseContext & {
+export type AgentExecutionOptions = {
     // === IDENTIFICAÇÃO DE QUEM EXECUTA ===
     agentName: string;
-
     thread: Thread;
 
-    // // === IDENTIFICAÇÃO DE EXECUÇÃO ===
+    // === IDENTIFICAÇÃO DE EXECUÇÃO (Opcional) ===
     sessionId?: SessionId; // Session management
+
+    // === CAMPOS OPCIONAIS DE BASECONTEXT (Override automático) ===
+    tenantId?: string; // Se não fornecido, usa 'default'
+    correlationId?: string; // Se não fornecido, gera automaticamente
 
     // === CONFIGURAÇÕES ===
     timeout?: number;
@@ -380,10 +386,6 @@ export type AgentExecutionOptions = BaseContext & {
 
     // === CONTEXTO DO USUÁRIO ===
     userContext?: Record<string, unknown>;
-
-    enableSession?: boolean;
-    enableState?: boolean;
-    enableMemory?: boolean;
 };
 
 /**

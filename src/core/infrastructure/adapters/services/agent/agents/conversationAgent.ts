@@ -129,7 +129,7 @@ export class ConversationAgentProvider {
                     },
                 },
                 userContext: {
-                    organizationAndTeamData: org ?? {},
+                    organizationAndTeamData: org,
                 },
             },
         );

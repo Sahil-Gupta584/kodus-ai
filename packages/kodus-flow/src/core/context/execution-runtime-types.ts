@@ -1,6 +1,6 @@
 /**
- * @file context-manager-types.ts
- * @description Types and interfaces for the unified ContextManager
+ * @file execution-runtime-types.ts
+ * @description Types and interfaces for the unified ExecutionRuntime
  */
 
 import type { AgentContext } from '../types/agent-types.js';
@@ -36,7 +36,7 @@ export interface ContextValueUpdate {
 // 🎯 CORE CONTEXT MANAGER INTERFACE
 // ──────────────────────────────────────────────────────────────────────────────
 
-export interface ContextManager {
+export interface ExecutionRuntime {
     // 🚀 Agent Context Initialization (NEW - main responsibility)
     initializeAgentContext(
         agent: { name: string; identity?: AgentIdentity },

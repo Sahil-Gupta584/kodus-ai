@@ -1,25 +1,25 @@
 /**
- * Context Manager Registry - Per-Thread ContextManager Management
+ * Runtime Registry - Per-Thread ExecutionRuntime Management
  *
  * RESPONSABILIDADES:
- * - Manter uma instância de ContextManager por threadId
+ * - Manter uma instância de ExecutionRuntime por threadId
  * - Garantir isolamento entre threads/conversas
  * - Cleanup automático de threads inativas
  * - Thread-safe access pattern
  */
 
 import { createLogger } from '../../observability/index.js';
-import { ContextManager } from './context-manager.js';
+import { ExecutionRuntime } from './execution-runtime.js';
 import { getGlobalMemoryManager } from '../memory/memory-manager.js';
 
-const logger = createLogger('context-registry');
+const logger = createLogger('runtime-registry');
 
 /**
- * Registry para gerenciar ContextManagers por thread
+ * Registry para gerenciar ExecutionRuntimes por thread
  * Garante que cada thread/conversa tenha sua própria instância persistente
  */
-export class ContextManagerRegistry {
-    private static instances = new Map<string, ContextManager>();
+export class RuntimeRegistry {
+    private static instances = new Map<string, ExecutionRuntime>();
     private static lastAccess = new Map<string, number>();
     private static cleanupInterval?: NodeJS.Timeout;
 
@@ -28,10 +28,10 @@ export class ContextManagerRegistry {
     private static readonly threadTimeoutMs = 30 * 60 * 1000; // 30 minutos
 
     /**
-     * Obter ContextManager para uma thread específica
+     * Obter ExecutionRuntime para uma thread específica
      * Cria nova instância se não existir
      */
-    static getByThread(threadId: string): ContextManager {
+    static getByThread(threadId: string): ExecutionRuntime {
         if (!threadId || typeof threadId !== 'string') {
             throw new Error('ThreadId must be a non-empty string');
         }
@@ -44,41 +44,41 @@ export class ContextManagerRegistry {
             );
         }
 
-        let contextManager = this.instances.get(threadId);
+        let executionRuntime = this.instances.get(threadId);
 
-        if (!contextManager) {
-            logger.debug('Creating new ContextManager for thread', {
+        if (!executionRuntime) {
+            logger.debug('Creating new ExecutionRuntime for thread', {
                 threadId,
             });
 
             // Criar nova instância
             const memoryManager = getGlobalMemoryManager();
-            contextManager = new ContextManager(memoryManager);
+            executionRuntime = new ExecutionRuntime(memoryManager);
 
-            this.instances.set(threadId, contextManager);
+            this.instances.set(threadId, executionRuntime);
             this.startCleanupIfNeeded();
         }
 
         // Atualizar último acesso
         this.lastAccess.set(threadId, Date.now());
 
-        logger.debug('ContextManager accessed for thread', {
+        logger.debug('ExecutionRuntime accessed for thread', {
             threadId,
             totalThreads: this.instances.size,
         });
 
-        return contextManager;
+        return executionRuntime;
     }
 
     /**
-     * Verificar se existe ContextManager para thread
+     * Verificar se existe ExecutionRuntime para thread
      */
     static hasThread(threadId: string): boolean {
         return this.instances.has(threadId);
     }
 
     /**
-     * Remover ContextManager de uma thread específica
+     * Remover ExecutionRuntime de uma thread específica
      * Útil para cleanup manual ou quando thread finaliza
      */
     static removeThread(threadId: string): boolean {
@@ -86,7 +86,7 @@ export class ContextManagerRegistry {
         this.lastAccess.delete(threadId);
 
         if (had) {
-            logger.debug('ContextManager removed for thread', {
+            logger.debug('ExecutionRuntime removed for thread', {
                 threadId,
                 remainingThreads: this.instances.size,
             });
@@ -207,6 +207,8 @@ export class ContextManagerRegistry {
 /**
  * Função helper para conveniência
  */
-export function getContextManagerByThread(threadId: string): ContextManager {
-    return ContextManagerRegistry.getByThread(threadId);
+export function getExecutionRuntimeByThread(
+    threadId: string,
+): ExecutionRuntime {
+    return RuntimeRegistry.getByThread(threadId);
 }

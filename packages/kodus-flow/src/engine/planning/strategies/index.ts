@@ -36,6 +36,5 @@ export type {
 export {
     generateExecutionHints,
     generateLearningContext,
-    createEnhancedExecutionContext,
     isSuccessResult,
 } from '../planner-factory.js';

@@ -7,8 +7,8 @@
 
 import { createLogger } from '../../../observability/index.js';
 import type { LLMAdapter } from '../../../adapters/llm/index.js';
-import type { ContextManager } from '../../../core/context/context-manager.js';
-import { ContextManagerRegistry } from '../../../core/context/context-registry.js';
+import type { ExecutionRuntime } from '../../../core/context/execution-runtime.js';
+import { RuntimeRegistry } from '../../../core/context/runtime-registry.js';
 import type {
     Planner,
     AgentThought,
@@ -44,16 +44,16 @@ export class ReActPlanner implements Planner {
     }
 
     /**
-     * Get ContextManager for the current thread
+     * Get ExecutionRuntime for the current thread
      */
-    private getContextManager(thread: Thread): ContextManager | null {
+    private getExecutionRuntime(thread: Thread): ExecutionRuntime | null {
         debugger;
         const threadId = thread.id;
         if (!threadId) {
             this.logger.warn('No threadId found in planner metadata');
             return null;
         }
-        return ContextManagerRegistry.getByThread(threadId);
+        return RuntimeRegistry.getByThread(threadId);
     }
 
     /**
@@ -61,8 +61,8 @@ export class ReActPlanner implements Planner {
      */
     private getAvailableToolsForContext(thread: Thread): string[] {
         debugger;
-        const contextManager = this.getContextManager(thread);
-        const tools = contextManager?.getAvailableTools() || [];
+        const executionRuntime = this.getExecutionRuntime(thread);
+        const tools = executionRuntime?.getAvailableTools() || [];
         return tools.map((tool) => tool.name);
     }
 
@@ -73,8 +73,8 @@ export class ReActPlanner implements Planner {
     //     thread: Thread,
     //     _context?: PlannerExecutionContext,
     // ): AgentContext['availableTools'] {
-    //     const contextManager = this.getContextManager(thread);
-    //     return contextManager?.getAvailableTools() || [];
+    //     const executionRuntime = this.getExecutionRuntime(thread);
+    //     return executionRuntime?.getAvailableTools() || [];
     // }
 
     async think(
@@ -110,7 +110,6 @@ export class ReActPlanner implements Planner {
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
         debugger;
-        const contextManager = this.getContextManager(context.thread);
         const prompt = this.buildImprovedReActPrompt(input, context);
 
         // ✅ OPTION 1: Try structured generation if supported
@@ -147,7 +146,7 @@ export class ReActPlanner implements Planner {
                     availableTools: this.getAvailableToolsForContext(
                         context.plannerMetadata.thread!,
                     ),
-                    agentIdentity: contextManager.agentIdentity as string,
+                    agentIdentity: context.agentIdentity as string,
                     previousPlans: this.extractPreviousPlans(context),
                 })) as {
                     reasoning: string;
