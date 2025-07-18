@@ -1,5 +1,6 @@
 import { CopyCodeReviewParameterUseCase } from './copy-code-review-parameter.use-case';
 import { CreateOrUpdateParametersUseCase } from './create-or-update-use-case';
+import { DeleteRepositoryCodeReviewParameterUseCase } from './delete-repository-code-review-parameter.use-case';
 import { FindByKeyParametersUseCase } from './find-by-key-use-case';
 import { GenerateCodeReviewParameterUseCase } from './generate-code-review-paremeter.use-case';
 import { GenerateKodusConfigFileUseCase } from './generate-kodus-config-file.use-case';
@@ -18,4 +19,5 @@ export const UseCases = [
     GenerateKodusConfigFileUseCase,
     CopyCodeReviewParameterUseCase,
     GenerateCodeReviewParameterUseCase,
+    DeleteRepositoryCodeReviewParameterUseCase,
 ];
