@@ -251,6 +251,8 @@ export class SpecCompliantMCPClient extends EventEmitter<MCPClientEvents> {
         prompts?: unknown;
     } | null = null;
 
+    private allowedTools: string[] = [];
+
     // Client features
     private securityManager?: SecurityManager;
     private metricsCollector: MetricsCollector;
@@ -311,6 +313,8 @@ export class SpecCompliantMCPClient extends EventEmitter<MCPClientEvents> {
                 },
             },
         });
+
+        this.allowedTools = config.allowedTools || [];
 
         this.setupNotificationHandlers();
         this.setupMetricsCollection();
@@ -672,6 +676,14 @@ export class SpecCompliantMCPClient extends EventEmitter<MCPClientEvents> {
         this.ensureConnected();
 
         const result = await this.client.listTools();
+
+        if (this.allowedTools.length > 0) {
+            // Filter tools based on allowed tools
+            result.tools = result.tools.filter((tool) =>
+                this.allowedTools.includes(tool.name),
+            );
+        }
+
         return result.tools || [];
     }
 

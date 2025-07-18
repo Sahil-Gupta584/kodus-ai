@@ -192,6 +192,8 @@ export interface MCPClientConfig {
         enableAuditLog: boolean;
         metricsInterval: number;
     };
+
+    allowedTools?: string[]; // Tools that this client is allowed to use
 }
 
 // =============================================================================
@@ -287,30 +289,6 @@ export interface MCPAdapterConfig {
     // =============================================================================
     // TOOL FILTERING & ACCESS CONTROL
     // =============================================================================
-
-    /** Tools que podem ser usadas (whitelist) */
-    allowedTools?: {
-        /** Lista de nomes de tools permitidas */
-        names?: string[];
-        /** Padrões regex para tools permitidas */
-        patterns?: RegExp[];
-        /** Servidores específicos para tools */
-        servers?: string[];
-        /** Categorias de tools permitidas */
-        categories?: string[];
-    };
-
-    /** Tools que NÃO podem ser usadas (blacklist) */
-    blockedTools?: {
-        /** Lista de nomes de tools bloqueadas */
-        names?: string[];
-        /** Padrões regex para tools bloqueadas */
-        patterns?: RegExp[];
-        /** Servidores específicos para tools bloqueadas */
-        servers?: string[];
-        /** Categorias de tools bloqueadas */
-        categories?: string[];
-    };
 
     /** Configuração de segurança por tool */
     toolSecurity?: {

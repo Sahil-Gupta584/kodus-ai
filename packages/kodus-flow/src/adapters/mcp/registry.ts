@@ -12,19 +12,6 @@ export interface MCPRegistryOptions {
     defaultTimeout?: number;
     /** tentativas de retry */
     maxRetries?: number;
-    /** Configuração de filtros para tools */
-    allowedTools?: {
-        names?: string[];
-        patterns?: RegExp[];
-        servers?: string[];
-        categories?: string[];
-    };
-    blockedTools?: {
-        names?: string[];
-        patterns?: RegExp[];
-        servers?: string[];
-        categories?: string[];
-    };
 }
 
 export class MCPRegistry {
@@ -40,85 +27,9 @@ export class MCPRegistry {
         this.options = {
             defaultTimeout: 30000,
             maxRetries: 3,
-            allowedTools: _options.allowedTools,
-            blockedTools: _options.blockedTools,
         };
 
-        this.logger.info('MCPRegistry initialized', {
-            hasAllowedTools: !!_options.allowedTools,
-            hasBlockedTools: !!_options.blockedTools,
-            allowedToolsConfig: _options.allowedTools,
-            blockedToolsConfig: _options.blockedTools,
-        });
-
-        // Valida configurações de filtros
-        this.validateFilterConfig();
-    }
-
-    /**
-     * Valida configurações de filtros
-     */
-    private validateFilterConfig(): void {
-        const { allowedTools, blockedTools } = this.options;
-
-        this.logger.debug('Validating filter configuration', {
-            allowedTools,
-            blockedTools,
-        });
-
-        // Valida allowedTools
-        if (allowedTools) {
-            if (allowedTools.names && !Array.isArray(allowedTools.names)) {
-                throw new Error('Invalid allowedTools.names - must be array');
-            }
-            if (
-                allowedTools.patterns &&
-                !Array.isArray(allowedTools.patterns)
-            ) {
-                throw new Error(
-                    'Invalid allowedTools.patterns - must be array',
-                );
-            }
-            if (allowedTools.servers && !Array.isArray(allowedTools.servers)) {
-                throw new Error('Invalid allowedTools.servers - must be array');
-            }
-            if (
-                allowedTools.categories &&
-                !Array.isArray(allowedTools.categories)
-            ) {
-                throw new Error(
-                    'Invalid allowedTools.categories - must be array',
-                );
-            }
-        }
-
-        // Valida blockedTools
-        if (blockedTools) {
-            if (blockedTools.names && !Array.isArray(blockedTools.names)) {
-                throw new Error('Invalid blockedTools.names - must be array');
-            }
-            if (
-                blockedTools.patterns &&
-                !Array.isArray(blockedTools.patterns)
-            ) {
-                throw new Error(
-                    'Invalid blockedTools.patterns - must be array',
-                );
-            }
-            if (blockedTools.servers && !Array.isArray(blockedTools.servers)) {
-                throw new Error('Invalid blockedTools.servers - must be array');
-            }
-            if (
-                blockedTools.categories &&
-                !Array.isArray(blockedTools.categories)
-            ) {
-                throw new Error(
-                    'Invalid blockedTools.categories - must be array',
-                );
-            }
-        }
-
-        this.logger.debug('Filter validation completed');
+        this.logger.info('MCPRegistry initialized');
     }
 
     /**
@@ -159,6 +70,7 @@ export class MCPRegistry {
                         sampling: {},
                         elicitation: {},
                     },
+                    allowedTools: config.allowedTools || [],
                 };
 
                 // ─── 3. Criar & conectar cliente ───────────────────────────────────
@@ -206,10 +118,6 @@ export class MCPRegistry {
 
         this.logger.info('Listing all tools from MCP registry', {
             totalClients: this.clients.size,
-            filterConfig: {
-                hasAllowedTools: !!this.options.allowedTools,
-                hasBlockedTools: !!this.options.blockedTools,
-            },
         });
 
         // Lista todas as tools
@@ -245,21 +153,6 @@ export class MCPRegistry {
                 });
 
                 for (const tool of tools) {
-                    // Filtra tools baseado na configuração
-                    if (!this.isToolAllowed(tool, serverName)) {
-                        this.logger.debug('Tool filtered out', {
-                            toolName: tool.name,
-                            serverName,
-                            reason: 'not allowed by filters',
-                        });
-                        continue;
-                    }
-
-                    this.logger.debug('Tool allowed', {
-                        toolName: tool.name,
-                        serverName,
-                    });
-
                     allTools.push({
                         ...tool,
                         serverName,
@@ -292,173 +185,6 @@ export class MCPRegistry {
         });
 
         return allTools;
-    }
-
-    /**
-     * Verifica se uma tool está permitida baseado na configuração
-     */
-    private isToolAllowed(
-        tool: Record<string, unknown>,
-        serverName: string,
-    ): boolean {
-        const config = this.options;
-
-        // Se não há configuração de filtros, permite tudo
-        if (!config.allowedTools && !config.blockedTools) {
-            this.logger.debug('No filters configured, allowing tool', {
-                toolName: tool.name,
-                serverName,
-            });
-            return true;
-        }
-
-        const toolName = tool.name;
-        const fullToolName = `${serverName}.${toolName}`;
-
-        this.logger.debug('Checking tool against filters', {
-            toolName,
-            serverName,
-            fullToolName,
-            hasBlockedTools: !!config.blockedTools,
-            hasAllowedTools: !!config.allowedTools,
-        });
-
-        // 1. Verifica blacklist primeiro (tem prioridade)
-        if (config.blockedTools) {
-            // Verifica nomes específicos
-            if (
-                config.blockedTools.names?.includes(toolName as string) ||
-                config.blockedTools.names?.includes(fullToolName as string)
-            ) {
-                this.logger.debug('Tool blocked by name', {
-                    toolName,
-                    serverName,
-                    blockedNames: config.blockedTools.names,
-                });
-                return false;
-            }
-
-            // Verifica padrões regex
-            if (
-                config.blockedTools.patterns?.some(
-                    (pattern: RegExp) =>
-                        pattern.test(toolName as string) ||
-                        pattern.test(fullToolName as string),
-                )
-            ) {
-                this.logger.debug('Tool blocked by pattern', {
-                    toolName,
-                    serverName,
-                    blockedPatterns: config.blockedTools.patterns.map(
-                        (p) => p.source,
-                    ),
-                });
-                return false;
-            }
-
-            // Verifica servidores
-            if (config.blockedTools.servers?.includes(serverName)) {
-                this.logger.debug('Tool blocked by server', {
-                    toolName,
-                    serverName,
-                    blockedServers: config.blockedTools.servers,
-                });
-                return false;
-            }
-
-            // Verifica categorias (se tool tiver categoria)
-            if (
-                tool.category &&
-                typeof tool.category === 'string' &&
-                config.blockedTools.categories?.includes(tool.category)
-            ) {
-                this.logger.debug('Tool blocked by category', {
-                    toolName,
-                    serverName,
-                    toolCategory: tool.category,
-                    blockedCategories: config.blockedTools.categories,
-                });
-                return false;
-            }
-        }
-
-        // 2. Se há whitelist, verifica se está permitida
-        if (config.allowedTools) {
-            // Verifica se há conteúdo na whitelist
-            const hasAllowedContent =
-                (config.allowedTools.names &&
-                    config.allowedTools.names.length > 0) ||
-                (config.allowedTools.patterns &&
-                    config.allowedTools.patterns.length > 0) ||
-                (config.allowedTools.servers &&
-                    config.allowedTools.servers.length > 0) ||
-                (config.allowedTools.categories &&
-                    config.allowedTools.categories.length > 0);
-
-            // Se whitelist está vazia, permite tudo (não restringe)
-            if (!hasAllowedContent) {
-                this.logger.debug('Whitelist is empty, allowing tool', {
-                    toolName,
-                    serverName,
-                });
-                return true; // ✅ PERMITE TUDO se whitelist vazia
-            }
-
-            // Verifica nomes específicos
-            const nameAllowed = config.allowedTools.names?.some(
-                (name: string) => name === toolName || name === fullToolName,
-            );
-
-            // Verifica padrões regex
-            const patternAllowed = config.allowedTools.patterns?.some(
-                (pattern: RegExp) =>
-                    pattern.test(toolName as string) ||
-                    pattern.test(fullToolName as string),
-            );
-
-            // Verifica servidores
-            const serverAllowed =
-                config.allowedTools.servers?.includes(serverName);
-
-            // Verifica categorias
-            const categoryAllowed =
-                tool.category &&
-                typeof tool.category === 'string' &&
-                config.allowedTools.categories?.includes(tool.category);
-
-            const isAllowed = !!(
-                nameAllowed ||
-                patternAllowed ||
-                serverAllowed ||
-                categoryAllowed
-            );
-
-            this.logger.debug('Whitelist check result', {
-                toolName,
-                serverName,
-                isAllowed,
-                nameAllowed,
-                patternAllowed,
-                serverAllowed,
-                categoryAllowed,
-                allowedNames: config.allowedTools.names,
-                allowedPatterns: config.allowedTools.patterns?.map(
-                    (p) => p.source,
-                ),
-                allowedServers: config.allowedTools.servers,
-                allowedCategories: config.allowedTools.categories,
-            });
-
-            // Tool deve estar em pelo menos uma das listas permitidas
-            return isAllowed;
-        }
-
-        // Se não há whitelist, permite tudo (após passar pela blacklist)
-        this.logger.debug('No whitelist configured, allowing tool', {
-            toolName,
-            serverName,
-        });
-        return true;
     }
 
     /**

@@ -61,8 +61,6 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
     const registry = new MCPRegistry({
         defaultTimeout: config.defaultTimeout,
         maxRetries: config.maxRetries,
-        allowedTools: config.allowedTools,
-        blockedTools: config.blockedTools,
     });
 
     let isConnected = false;
