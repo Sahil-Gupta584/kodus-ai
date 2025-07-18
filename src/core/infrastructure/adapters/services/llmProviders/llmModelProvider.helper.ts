@@ -106,7 +106,8 @@ const getChatGemini = (
         streaming: false,
         callbacks: [],
         json: false,
-        thinkingBudget: 0,
+        maxReasoningTokens:
+            MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO].maxReasoningTokens,
     };
 
     const finalOptions = options
@@ -121,8 +122,7 @@ const getChatGemini = (
         maxOutputTokens: finalOptions.maxTokens,
         verbose: finalOptions.verbose,
         callbacks: finalOptions.callbacks,
-        maxReasoningTokens: finalOptions.thinkingBudget,
-        thinkingBudget: finalOptions.thinkingBudget,
+        maxReasoningTokens: finalOptions.maxReasoningTokens,
     });
 };
 
@@ -216,7 +216,7 @@ export type FactoryInput = {
     baseURL?: string;
     apiKey?: string;
     json?: boolean;
-    thinkingBudget?: number;
+    maxReasoningTokens?: number;
 };
 
 export enum LLMModelProvider {
@@ -252,7 +252,7 @@ export interface ModelStrategy {
     readonly defaultMaxTokens: number;
     readonly baseURL?: string;
     readonly inputMaxTokens?: number;
-    readonly thinkingBudget?: number;
+    readonly maxReasoningTokens?: number;
 }
 
 export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
@@ -296,6 +296,7 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
         factory: getChatGemini,
         modelName: 'gemini-2.0-flash',
         defaultMaxTokens: 8000,
+        maxReasoningTokens: 1000, //CHANGE_TO_DEFAULT_MAX_REASONING_TOKENS
     },
     [LLMModelProvider.GEMINI_2_5_PRO]: {
         provider: 'google',
@@ -303,13 +304,14 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
         modelName: 'gemini-2.5-pro',
         defaultMaxTokens: 60000,
         inputMaxTokens: 1000000,
-        thinkingBudget: 10000,
+        maxReasoningTokens: 1000, //CHANGE_TO_DEFAULT_MAX_REASONING_TOKENS
     },
     [LLMModelProvider.GEMINI_2_5_FLASH]: {
         provider: 'google',
         factory: getChatGemini,
         modelName: 'gemini-2.5-flash',
         defaultMaxTokens: 60000,
+        maxReasoningTokens: 1000, //CHANGE_TO_DEFAULT_MAX_REASONING_TOKENS
     },
 
     // Vertex AI
