@@ -18,22 +18,26 @@ export class CodeManagementTools {
     ) {}
 
     listRepositories() {
+        const inputSchema = z.object({
+            organizationId: z.string().describe('Organization UUID'),
+            teamId: z.string().describe('Team UUID'),
+            filters: z
+                .object({
+                    archived: z.boolean().optional(),
+                    private: z.boolean().optional(),
+                    language: z.string().optional(),
+                })
+                .optional(),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
         return {
             name: 'list_repositories',
             description:
                 'List repositories from the configured code management platform',
-            inputSchema: z.object({
-                organizationId: z.string().describe('Organization UUID'),
-                teamId: z.string().describe('Team UUID'),
-                filters: z
-                    .object({
-                        archived: z.boolean().optional(),
-                        private: z.boolean().optional(),
-                        language: z.string().optional(),
-                    })
-                    .optional(),
-            }),
-            execute: wrapToolHandler(async (args: any) => {
+            inputSchema,
+            execute: wrapToolHandler(async (args: InputType) => {
                 const params = {
                     organizationAndTeamData: {
                         organizationId: args.organizationId,
@@ -55,21 +59,25 @@ export class CodeManagementTools {
     }
 
     listPullRequests() {
+        const inputSchema = z.object({
+            organizationId: z.string().describe('Organization UUID'),
+            teamId: z.string().describe('Team UUID'),
+            filters: z.object({
+                state: z.enum(['open', 'closed', 'merged']).optional(),
+                repository: z.string().optional(),
+                author: z.string().optional(),
+                startDate: z.string().optional(),
+                endDate: z.string().optional(),
+            }),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
         return {
             name: 'list_pull_requests',
             description: 'List pull requests with filtering options',
-            inputSchema: z.object({
-                organizationId: z.string().describe('Organization UUID'),
-                teamId: z.string().describe('Team UUID'),
-                filters: z.object({
-                    state: z.enum(['open', 'closed', 'merged']).optional(),
-                    repository: z.string().optional(),
-                    author: z.string().optional(),
-                    startDate: z.string().optional(),
-                    endDate: z.string().optional(),
-                }),
-            }),
-            execute: wrapToolHandler(async (args: any) => {
+            inputSchema,
+            execute: wrapToolHandler(async (args: InputType) => {
                 const params = {
                     organizationAndTeamData: {
                         organizationId: args.organizationId,
@@ -90,28 +98,32 @@ export class CodeManagementTools {
     }
 
     listCommits() {
+        const inputSchema = z.object({
+            organizationId: z.string().describe('Organization UUID'),
+            teamId: z.string().describe('Team UUID'),
+            repository: z
+                .object({
+                    id: z.string(),
+                    name: z.string(),
+                })
+                .optional(),
+            filters: z
+                .object({
+                    since: z.string().optional(),
+                    until: z.string().optional(),
+                    author: z.string().optional(),
+                    branch: z.string().optional(),
+                })
+                .optional(),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
         return {
             name: 'list_commits',
             description: 'List commits from repositories',
-            inputSchema: z.object({
-                organizationId: z.string().describe('Organization UUID'),
-                teamId: z.string().describe('Team UUID'),
-                repository: z
-                    .object({
-                        id: z.string(),
-                        name: z.string(),
-                    })
-                    .optional(),
-                filters: z
-                    .object({
-                        since: z.string().optional(),
-                        until: z.string().optional(),
-                        author: z.string().optional(),
-                        branch: z.string().optional(),
-                    })
-                    .optional(),
-            }),
-            execute: wrapToolHandler(async (args: any) => {
+            inputSchema,
+            execute: wrapToolHandler(async (args: InputType) => {
                 const params = {
                     organizationAndTeamData: {
                         organizationId: args.organizationId,
@@ -133,26 +145,33 @@ export class CodeManagementTools {
     }
 
     getPullRequestDetails() {
+        const inputSchema = z.object({
+            organizationId: z.string(),
+            teamId: z.string(),
+            repository: z.object({
+                id: z.string(),
+                name: z.string(),
+            }),
+            prNumber: z.number(),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
         return {
             name: 'get_pull_request_details',
             description:
                 'Get detailed information about a specific pull request',
-            inputSchema: z.object({
-                organizationId: z.string(),
-                teamId: z.string(),
-                repository: z.object({
-                    id: z.string(),
-                    name: z.string(),
-                }),
-                prNumber: z.number(),
-            }),
-            execute: wrapToolHandler(async (args: any) => {
+            inputSchema,
+            execute: wrapToolHandler(async (args: InputType) => {
                 const params = {
                     organizationAndTeamData: {
                         organizationId: args.organizationId,
                         teamId: args.teamId,
                     },
-                    repository: args.repository,
+                    repository: {
+                        id: args.repository.id || args.repository.name,
+                        name: args.repository.name || args.repository.id,
+                    },
                     prNumber: args.prNumber,
                 };
 
@@ -161,30 +180,46 @@ export class CodeManagementTools {
                         params,
                     );
 
+                const files =
+                    await this.codeManagementService.getFilesByPullRequestId(
+                        params,
+                    );
+
+                const prDetails = {
+                    ...details,
+                    modified_files: files.map((file) => ({
+                        filename: file.filename,
+                    })),
+                };
+
                 return {
                     success: true,
-                    data: details,
+                    data: prDetails,
                 };
             }),
         };
     }
 
     getRepositoryFiles() {
+        const inputSchema = z.object({
+            organizationId: z.string(),
+            teamId: z.string(),
+            repository: z.string(),
+            organizationName: z.string(),
+            branch: z.string().default('main'),
+            filePatterns: z.array(z.string()).optional(),
+            excludePatterns: z.array(z.string()).optional(),
+            maxFiles: z.number().default(1000),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
         return {
             name: 'get_repository_files',
             description:
                 'Get all files from a repository with optional filtering',
-            inputSchema: z.object({
-                organizationId: z.string(),
-                teamId: z.string(),
-                repository: z.string(),
-                organizationName: z.string(),
-                branch: z.string().default('main'),
-                filePatterns: z.array(z.string()).optional(),
-                excludePatterns: z.array(z.string()).optional(),
-                maxFiles: z.number().default(1000),
-            }),
-            execute: wrapToolHandler(async (args: any) => {
+            inputSchema,
+            execute: wrapToolHandler(async (args: InputType) => {
                 const params = {
                     repository: args.repository,
                     organizationName: args.organizationName,
@@ -275,24 +310,31 @@ export class CodeManagementTools {
     }
 
     getRepositoryLanguages() {
+        const inputSchema = z.object({
+            organizationId: z.string(),
+            teamId: z.string(),
+            repository: z.object({
+                id: z.string(),
+                name: z.string(),
+            }),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
         return {
             name: 'get_repository_languages',
             description: 'Get programming languages used in repository',
-            inputSchema: z.object({
-                organizationId: z.string(),
-                teamId: z.string(),
-                repository: z.object({
-                    id: z.string(),
-                    name: z.string(),
-                }),
-            }),
-            execute: wrapToolHandler(async (args: any) => {
+            inputSchema,
+            execute: wrapToolHandler(async (args: InputType) => {
                 const params = {
                     organizationAndTeamData: {
                         organizationId: args.organizationId,
                         teamId: args.teamId,
                     },
-                    repository: args.repository,
+                    repository: {
+                        id: args.repository.id || args.repository.name,
+                        name: args.repository.name || args.repository.id,
+                    },
                 };
                 const languages =
                     await this.codeManagementService.getLanguageRepository(
@@ -326,7 +368,7 @@ export class CodeManagementTools {
             description: 'Get content of a specific file in a pull request',
             inputSchema,
             execute: wrapToolHandler(async (args: InputType) => {
-                const getPrParams = {
+                const params = {
                     organizationAndTeamData: {
                         organizationId: args.organizationId,
                         teamId: args.teamId,
@@ -335,45 +377,19 @@ export class CodeManagementTools {
                         id: args.repository.id || args.repository.name,
                         name: args.repository.name || args.repository.id,
                     },
-                    file: {
-                        path: args.filePath,
-                        filename: args.filePath,
-                    },
                     prNumber: args.prNumber,
                 };
 
-                const pr =
-                    await this.codeManagementService.getPullRequestDetails(
-                        getPrParams,
+                const files =
+                    await this.codeManagementService.getFilesByPullRequestId(
+                        params,
                     );
 
-                const fileContentParams = {
-                    ...getPrParams,
-                    pullRequest: {
-                        head: { ref: pr.head.ref },
-                        base: { ref: pr.base.ref },
-                        branch: pr.head.ref,
-                        number: args.prNumber,
-                    },
-                };
-
-                const fileContent =
-                    await this.codeManagementService.getRepositoryContentFile(
-                        fileContentParams,
-                    );
-
-                const content = fileContent?.data?.content;
-                let decodedContent = content;
-
-                if (content && fileContent?.data?.encoding === 'base64') {
-                    decodedContent = Buffer.from(content, 'base64').toString(
-                        'utf-8',
-                    );
-                }
+                const file = files.find((f) => f.filename === args.filePath);
 
                 return {
                     success: true,
-                    data: decodedContent,
+                    data: file.content,
                 };
             }),
         };
@@ -403,17 +419,24 @@ export class CodeManagementTools {
                         organizationId: args.organizationId,
                         teamId: args.teamId,
                     },
-                    repository: args.repository,
+                    repository: {
+                        id: args.repository.id || args.repository.name,
+                        name: args.repository.name || args.repository.id,
+                    },
                     prNumber: args.prNumber,
                     filePath: args.filePath,
                 };
 
-                const diff =
-                    await this.codeManagementService.getDiffForFile(params);
+                const files =
+                    await this.codeManagementService.getFilesByPullRequestId(
+                        params,
+                    );
+
+                const file = files.find((f) => f.filename === params.filePath);
 
                 return {
                     success: true,
-                    data: diff,
+                    data: file?.patch,
                 };
             }),
         };

@@ -652,7 +652,13 @@ export class CodeManagementService implements ICodeManagementService {
         params: {
             organizationAndTeamData: OrganizationAndTeamData;
             commentId: string;
-            reason?: 'ABUSE' | 'OFF_TOPIC' | 'OUTDATED' | 'RESOLVED' | 'DUPLICATE' | 'SPAM';
+            reason?:
+                | 'ABUSE'
+                | 'OFF_TOPIC'
+                | 'OUTDATED'
+                | 'RESOLVED'
+                | 'DUPLICATE'
+                | 'SPAM';
         },
         type?: PlatformType,
     ): Promise<any | null> {
@@ -1052,26 +1058,5 @@ export class CodeManagementService implements ICodeManagementService {
             language: params.language,
             organizationAndTeamData: params.organizationAndTeamData,
         });
-    }
-
-    async getDiffForFile(
-        params: {
-            organizationAndTeamData: OrganizationAndTeamData;
-            repository: Partial<Repository>;
-            prNumber: number;
-            filePath: string;
-        },
-        type?: PlatformType,
-    ): Promise<string | null> {
-        if (!type) {
-            type = await this.getTypeIntegration(
-                extractOrganizationAndTeamData(params),
-            );
-        }
-
-        const codeManagementService =
-            this.platformIntegrationFactory.getCodeManagementService(type);
-
-        return codeManagementService.getDiffForFile(params);
     }
 }

@@ -56,7 +56,13 @@ export interface ICodeManagementService
     minimizeComment(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         commentId: string;
-        reason?: 'ABUSE' | 'OFF_TOPIC' | 'OUTDATED' | 'RESOLVED' | 'DUPLICATE' | 'SPAM';
+        reason?:
+            | 'ABUSE'
+            | 'OFF_TOPIC'
+            | 'OUTDATED'
+            | 'RESOLVED'
+            | 'DUPLICATE'
+            | 'SPAM';
     }): Promise<any | null>;
 
     findTeamAndOrganizationIdByConfigKey(
@@ -146,11 +152,4 @@ export interface ICodeManagementService
         language?: string;
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<string>;
-
-    getDiffForFile(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        repository: Partial<Repository>;
-        prNumber: number;
-        filePath: string;
-    }): Promise<string | null>;
 }
