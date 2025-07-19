@@ -21,6 +21,7 @@ type LLMProviderOptions = {
     callbacks?: BaseCallbackHandler[];
     maxTokens?: number;
     jsonMode?: boolean;
+    maxReasoningTokens?: number;
 };
 
 type LLMProviderReturn = ChatOpenAI | ChatAnthropic | ChatVertexAI | Runnable;
@@ -60,6 +61,8 @@ export class LLMProviderService implements ILLMProviderService {
                         temperature: options.temperature,
                         maxTokens: options.maxTokens,
                         jsonMode: options.jsonMode,
+                        maxReasoningTokens:
+                            options.maxReasoningTokens
                     },
                     context: LLMProviderService.name,
                 });
@@ -86,6 +89,8 @@ export class LLMProviderService implements ILLMProviderService {
                 callbacks: options.callbacks,
                 baseURL,
                 json: options.jsonMode,
+                maxReasoningTokens:
+                    options.maxReasoningTokens ?? strategy.maxReasoningTokens,
             } satisfies FactoryInput);
 
             if (options.jsonMode && strategy.provider === 'openai') {

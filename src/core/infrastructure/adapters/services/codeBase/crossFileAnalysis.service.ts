@@ -9,7 +9,6 @@ import {
     TokenTrackingSession,
     TOKEN_TRACKING_SERVICE_TOKEN,
 } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
-import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 import {
     CrossFileAnalysisPayload,
@@ -23,6 +22,7 @@ import {
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { v4 as uuidv4 } from 'uuid';
+import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 
 //#region Interfaces
 interface TokenUsage {
@@ -242,7 +242,6 @@ export class CrossFileAnalysisService {
             const llm = this.llmProviderService.getLLMProvider({
                 model: provider,
                 temperature: 0,
-                jsonMode: true,
                 callbacks: [this.tokenTracker.createCallbackHandler()],
             });
 
@@ -285,7 +284,7 @@ export class CrossFileAnalysisService {
                     ];
                 },
                 llm,
-                new StringOutputParser(),
+                new CustomStringOutputParser(),
             ]).withConfig({ tags });
 
             return chain;
