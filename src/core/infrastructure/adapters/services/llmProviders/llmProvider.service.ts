@@ -62,7 +62,7 @@ export class LLMProviderService implements ILLMProviderService {
                         maxTokens: options.maxTokens,
                         jsonMode: options.jsonMode,
                         maxReasoningTokens:
-                            options.maxReasoningTokens ?? strategy.maxReasoningTokens,
+                            options.maxReasoningTokens
                     },
                     context: LLMProviderService.name,
                 });
