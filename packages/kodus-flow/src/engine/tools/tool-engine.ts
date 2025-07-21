@@ -82,12 +82,24 @@ export class ToolEngine {
         toolName: ToolId,
         input: TInput,
     ): Promise<TOutput> {
-        debugger;
         const callId = IdGenerator.callId();
-        const maxRetries = this.config.retry?.maxRetries || 3;
-        const timeout = this.config.timeout || 30000;
+        const maxRetries = this.config.retry?.maxRetries || 1;
+        const timeout = this.config.timeout || 60000; // ✅ AUMENTADO para 60s (ferramentas MCP podem demorar)
         let lastError: Error;
         const startTime = Date.now();
+
+        this.logger.info('🔧 TOOL EXECUTION STARTED', {
+            toolName,
+            callId,
+            inputKeys: Object.keys(input as Record<string, unknown>),
+            timeout,
+            maxRetries,
+            trace: {
+                source: 'tool-engine',
+                step: 'tool-execution-started',
+                timestamp: Date.now(),
+            },
+        });
 
         // Emit tool execution event via KernelHandler if available
         if (this.kernelHandler) {
@@ -155,9 +167,40 @@ export class ToolEngine {
                     );
                 }
 
+                this.logger.info('✅ TOOL EXECUTION SUCCESS', {
+                    toolName,
+                    callId,
+                    attempt,
+                    executionTime: Date.now() - startTime,
+                    hasResult: !!result,
+                    resultKeys: result
+                        ? Object.keys(result as Record<string, unknown>)
+                        : [],
+                    trace: {
+                        source: 'tool-engine',
+                        step: 'tool-execution-success',
+                        timestamp: Date.now(),
+                    },
+                });
+
                 return result;
             } catch (error) {
                 lastError = error as Error;
+
+                this.logger.warn('❌ TOOL EXECUTION FAILED', {
+                    toolName,
+                    callId,
+                    attempt,
+                    maxRetries,
+                    error: lastError.message,
+                    errorStack: lastError.stack,
+                    executionTime: Date.now() - startTime,
+                    trace: {
+                        source: 'tool-engine',
+                        step: 'tool-execution-failed',
+                        timestamp: Date.now(),
+                    },
+                });
 
                 // Emit tool execution error event via KernelHandler
                 if (this.kernelHandler) {
@@ -491,7 +534,15 @@ export class ToolEngine {
      */
     setKernelHandler(kernelHandler: MultiKernelHandler): void {
         this.kernelHandler = kernelHandler;
-        this.logger.info('KernelHandler set for ToolEngine');
+        this.logger.info('🔧 KERNELHANDLER SET FOR TOOLENGINE', {
+            hasKernelHandler: !!kernelHandler,
+            kernelHandlerType: kernelHandler?.constructor?.name,
+            trace: {
+                source: 'tool-engine',
+                step: 'kernelhandler-set',
+                timestamp: Date.now(),
+            },
+        });
 
         // Register event handlers for tool execution
         this.registerEventHandlers();
@@ -502,8 +553,27 @@ export class ToolEngine {
      */
     private registerEventHandlers(): void {
         if (!this.kernelHandler) {
+            this.logger.warn(
+                '🔧 NO KERNELHANDLER AVAILABLE FOR EVENT HANDLERS',
+                {
+                    trace: {
+                        source: 'tool-engine',
+                        step: 'register-event-handlers-no-kernelhandler',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
             return;
         }
+
+        this.logger.info('🔧 REGISTERING TOOLENGINE EVENT HANDLERS', {
+            hasKernelHandler: !!this.kernelHandler,
+            trace: {
+                source: 'tool-engine',
+                step: 'register-event-handlers-start',
+                timestamp: Date.now(),
+            },
+        });
 
         // Register handler for tool execution requests
         this.kernelHandler.registerHandler(
@@ -537,6 +607,20 @@ export class ToolEngine {
                     });
 
                     // Emit success response
+                    this.logger.info('📤 EMITTING TOOL EXECUTION RESPONSE', {
+                        toolName,
+                        correlationId,
+                        hasResult: !!result,
+                        resultKeys: result
+                            ? Object.keys(result as Record<string, unknown>)
+                            : [],
+                        trace: {
+                            source: 'tool-engine',
+                            step: 'emit-success-response',
+                            timestamp: Date.now(),
+                        },
+                    });
+
                     this.kernelHandler!.emit('tool.execute.response', {
                         data: result,
                         metadata: {
@@ -545,6 +629,16 @@ export class ToolEngine {
                             toolName,
                         },
                     });
+
+                    // ✅ ACK the original event after successful processing
+                    if (this.kernelHandler) {
+                        await this.kernelHandler.ack(event.id);
+                        this.logger.debug('🎯 [TOOL] Event ACK successful', {
+                            eventId: event.id,
+                            toolName,
+                            correlationId,
+                        });
+                    }
                 } catch (error) {
                     this.logger.error(
                         '🔧 [TOOL] Tool execution failed via events',
@@ -556,6 +650,20 @@ export class ToolEngine {
                     );
 
                     // Emit error response
+                    this.logger.error(
+                        '📤 EMITTING TOOL EXECUTION ERROR RESPONSE',
+                        error as Error,
+                        {
+                            toolName,
+                            correlationId,
+                            trace: {
+                                source: 'tool-engine',
+                                step: 'emit-error-response',
+                                timestamp: Date.now(),
+                            },
+                        },
+                    );
+
                     this.kernelHandler!.emit('tool.execute.response', {
                         data: {
                             error: (error as Error).message,
@@ -566,11 +674,29 @@ export class ToolEngine {
                             toolName,
                         },
                     });
+
+                    // ✅ NACK the original event after error
+                    if (this.kernelHandler) {
+                        await this.kernelHandler.nack(event.id, error as Error);
+                        this.logger.debug('🎯 [TOOL] Event NACK successful', {
+                            eventId: event.id,
+                            toolName,
+                            correlationId,
+                            error: (error as Error).message,
+                        });
+                    }
                 }
             },
         );
 
-        this.logger.info('ToolEngine event handlers registered');
+        this.logger.info('✅ TOOLENGINE EVENT HANDLERS REGISTERED', {
+            eventTypes: ['tool.execute.request'],
+            trace: {
+                source: 'tool-engine',
+                step: 'register-event-handlers-complete',
+                timestamp: Date.now(),
+            },
+        });
     }
 
     /**

@@ -335,6 +335,20 @@ export class MultiKernelHandler {
         // Route event to appropriate kernel based on event type
         const targetKernel = this.determineTargetKernel(eventType);
 
+        this.logger.info('📤 EVENT EMISSION', {
+            eventType,
+            targetKernel,
+            kernelId:
+                targetKernel === 'agent' ? 'agent-execution' : 'observability',
+            hasData: !!data,
+            dataKeys: data ? Object.keys(data as Record<string, unknown>) : [],
+            trace: {
+                source: 'multi-kernel-handler',
+                step: 'event-emission',
+                timestamp: Date.now(),
+            },
+        });
+
         try {
             await this.multiKernelManager!.emitToNamespace(
                 targetKernel,
@@ -439,10 +453,16 @@ export class MultiKernelHandler {
 
         this.multiKernelManager!.registerHandler(kernelId, eventType, handler);
 
-        this.logger.debug('Handler registered', {
+        this.logger.info('📝 HANDLER REGISTRATION', {
             eventType,
             targetKernel,
             kernelId,
+            handlerRegistered: true,
+            trace: {
+                source: 'multi-kernel-handler',
+                step: 'handler-registration',
+                timestamp: Date.now(),
+            },
         });
     }
 
@@ -451,7 +471,24 @@ export class MultiKernelHandler {
      */
     async processEvents(): Promise<void> {
         this.ensureInitialized();
+
+        this.logger.info('🔄 PROCESSING EVENTS', {
+            trace: {
+                source: 'multi-kernel-handler',
+                step: 'process-events-start',
+                timestamp: Date.now(),
+            },
+        });
+
         await this.multiKernelManager!.processAllKernels();
+
+        this.logger.info('✅ EVENTS PROCESSED', {
+            trace: {
+                source: 'multi-kernel-handler',
+                step: 'process-events-complete',
+                timestamp: Date.now(),
+            },
+        });
     }
 
     /**
@@ -750,11 +787,17 @@ export class MultiKernelHandler {
             options.correlationId || this.generateCorrelationId();
         const timeout = options.timeout || 30000;
 
-        this.logger.debug('Sending request via runtime ACK/NACK', {
+        this.logger.info('🚀 MULTI-KERNEL REQUEST STARTED', {
             requestEventType,
             responseEventType,
             correlationId,
             timeout,
+            dataKeys: Object.keys(data as Record<string, unknown>),
+            trace: {
+                source: 'multi-kernel-handler',
+                step: 'request-initiated',
+                timestamp: Date.now(),
+            },
         });
 
         // ✅ Use runtime's built-in emit with ACK system
@@ -773,16 +816,74 @@ export class MultiKernelHandler {
             throw new Error('Runtime not available from kernel');
         }
 
+        this.logger.info('🎯 KERNEL TARGET IDENTIFIED', {
+            targetKernel,
+            kernelId:
+                targetKernel === 'agent' ? 'agent-execution' : 'observability',
+            correlationId,
+            trace: {
+                source: 'multi-kernel-handler',
+                step: 'kernel-target-identified',
+                timestamp: Date.now(),
+            },
+        });
+
         return new Promise<TResponse>((resolve, reject) => {
             let responseReceived = false;
-            const timeoutId = setTimeout(() => {
+            let timeoutId: NodeJS.Timeout | null = null;
+
+            // ✅ IMPROVED: Cleanup function to prevent memory leaks
+            const cleanup = () => {
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                    timeoutId = null;
+                }
+                responseReceived = true;
+            };
+
+            timeoutId = setTimeout(() => {
                 if (!responseReceived) {
-                    responseReceived = true;
-                    reject(
-                        new Error(
-                            `Timeout waiting for ${responseEventType} (${timeout}ms)`,
-                        ),
+                    cleanup();
+                    const timeoutError = new Error(
+                        `Timeout waiting for ${responseEventType} (${timeout}ms)`,
                     );
+                    this.logger.error(
+                        '⏰ MULTI-KERNEL REQUEST TIMEOUT',
+                        timeoutError,
+                        {
+                            requestEventType,
+                            responseEventType,
+                            correlationId,
+                            timeout,
+                            trace: {
+                                source: 'multi-kernel-handler',
+                                step: 'request-timeout',
+                                timestamp: Date.now(),
+                            },
+                        },
+                    );
+
+                    // ✅ CORREÇÃO: Marcar eventos relacionados como críticos para evitar re-enfileiramento
+                    if (requestEventType === 'tool.execute.request') {
+                        // Emitir evento de timeout para limpeza
+                        runtime.emit('tool.execute.timeout', {
+                            data: {
+                                correlationId,
+                                toolName:
+                                    (data as { toolName?: string }).toolName ||
+                                    'unknown',
+                                timeout,
+                                error: timeoutError.message,
+                            },
+                            metadata: {
+                                correlationId,
+                                criticalError: true,
+                                timedOut: true,
+                            },
+                        });
+                    }
+
+                    reject(timeoutError);
                 }
             }, timeout);
 
@@ -792,8 +893,22 @@ export class MultiKernelHandler {
                     event.metadata?.correlationId === correlationId &&
                     !responseReceived
                 ) {
-                    responseReceived = true;
-                    clearTimeout(timeoutId);
+                    cleanup();
+
+                    this.logger.info('📨 MULTI-KERNEL RESPONSE RECEIVED', {
+                        eventId: event.id,
+                        eventType: event.type,
+                        correlationId,
+                        hasError: !!(event.data as { error?: string })?.error,
+                        responseDataKeys: Object.keys(
+                            event.data as Record<string, unknown>,
+                        ),
+                        trace: {
+                            source: 'multi-kernel-handler',
+                            step: 'response-received',
+                            timestamp: Date.now(),
+                        },
+                    });
 
                     // ✅ Use runtime's ACK system
                     runtime.ack(event.id).catch((error) => {
@@ -804,14 +919,50 @@ export class MultiKernelHandler {
                     });
 
                     if ((event.data as { error?: string })?.error) {
-                        reject(
-                            new Error(
-                                (event.data as { error?: string }).error!,
-                            ),
+                        const responseError = new Error(
+                            (event.data as { error?: string }).error!,
                         );
+                        this.logger.error(
+                            '❌ MULTI-KERNEL RESPONSE ERROR',
+                            responseError,
+                            {
+                                correlationId,
+                                trace: {
+                                    source: 'multi-kernel-handler',
+                                    step: 'response-error',
+                                    timestamp: Date.now(),
+                                },
+                            },
+                        );
+                        reject(responseError);
                     } else {
+                        this.logger.info('✅ MULTI-KERNEL REQUEST SUCCESS', {
+                            correlationId,
+                            responseDataKeys: Object.keys(
+                                event.data as Record<string, unknown>,
+                            ),
+                            trace: {
+                                source: 'multi-kernel-handler',
+                                step: 'request-success',
+                                timestamp: Date.now(),
+                            },
+                        });
                         resolve(event.data as TResponse);
                     }
+                } else {
+                    // ✅ Log quando response não corresponde
+                    this.logger.debug('📨 RESPONSE RECEIVED BUT IGNORED', {
+                        eventId: event.id,
+                        eventType: event.type,
+                        eventCorrelationId: event.metadata?.correlationId,
+                        expectedCorrelationId: correlationId,
+                        responseReceived,
+                        trace: {
+                            source: 'multi-kernel-handler',
+                            step: 'response-ignored',
+                            timestamp: Date.now(),
+                        },
+                    });
                 }
             };
 
@@ -829,6 +980,18 @@ export class MultiKernelHandler {
                 responseHandler,
             );
 
+            this.logger.info('📝 RESPONSE HANDLER REGISTERED', {
+                responseKernel,
+                responseKernelId,
+                responseEventType,
+                correlationId,
+                trace: {
+                    source: 'multi-kernel-handler',
+                    step: 'handler-registered',
+                    timestamp: Date.now(),
+                },
+            });
+
             // ✅ Emit request using runtime's emitAsync (with built-in ACK tracking)
             runtime
                 .emitAsync(
@@ -845,16 +1008,47 @@ export class MultiKernelHandler {
                 )
                 .then(async (emitResult) => {
                     if (!emitResult.success) {
-                        responseReceived = true;
-                        clearTimeout(timeoutId);
-                        reject(
+                        cleanup();
+                        const emitError =
                             emitResult.error ||
-                                new Error('Failed to emit request'),
+                            new Error('Failed to emit request');
+                        this.logger.error(
+                            '❌ MULTI-KERNEL EMIT FAILED',
+                            emitError,
+                            {
+                                requestEventType,
+                                correlationId,
+                                trace: {
+                                    source: 'multi-kernel-handler',
+                                    step: 'emit-failed',
+                                    timestamp: Date.now(),
+                                },
+                            },
                         );
+                        reject(emitError);
                     } else {
+                        this.logger.info('📤 MULTI-KERNEL REQUEST EMITTED', {
+                            requestEventType,
+                            correlationId,
+                            emitResult,
+                            trace: {
+                                source: 'multi-kernel-handler',
+                                step: 'request-emitted',
+                                timestamp: Date.now(),
+                            },
+                        });
+
                         // ✅ Process events immediately after successful emit to ensure handlers can respond
                         try {
                             await this.processEvents();
+                            this.logger.info('🔄 EVENTS PROCESSED AFTER EMIT', {
+                                correlationId,
+                                trace: {
+                                    source: 'multi-kernel-handler',
+                                    step: 'events-processed',
+                                    timestamp: Date.now(),
+                                },
+                            });
                         } catch (processError) {
                             this.logger.error(
                                 'Failed to process events after emit',
@@ -862,6 +1056,11 @@ export class MultiKernelHandler {
                                 {
                                     requestEventType,
                                     correlationId,
+                                    trace: {
+                                        source: 'multi-kernel-handler',
+                                        step: 'process-events-failed',
+                                        timestamp: Date.now(),
+                                    },
                                 },
                             );
                             // Don't reject here - let the timeout handle it if no response comes
@@ -869,8 +1068,20 @@ export class MultiKernelHandler {
                     }
                 })
                 .catch((error) => {
-                    responseReceived = true;
-                    clearTimeout(timeoutId);
+                    cleanup();
+                    this.logger.error(
+                        '❌ MULTI-KERNEL EMIT ERROR',
+                        error as Error,
+                        {
+                            requestEventType,
+                            correlationId,
+                            trace: {
+                                source: 'multi-kernel-handler',
+                                step: 'emit-error',
+                                timestamp: Date.now(),
+                            },
+                        },
+                    );
                     reject(error);
                 });
         });
@@ -947,11 +1158,33 @@ export class MultiKernelHandler {
             eventType.includes('.metric.') ||
             eventType.includes('.trace.')
         ) {
+            this.logger.debug('🎯 KERNEL ROUTING DECISION', {
+                eventType,
+                targetKernel: 'obs',
+                kernelId: 'observability',
+                reason: 'observability-pattern',
+                trace: {
+                    source: 'multi-kernel-handler',
+                    step: 'kernel-routing-decision',
+                    timestamp: Date.now(),
+                },
+            });
             return 'obs';
         }
 
         // Agent events (execution, tools, workflows, business logic)
         // Default to agent kernel for business events
+        this.logger.debug('🎯 KERNEL ROUTING DECISION', {
+            eventType,
+            targetKernel: 'agent',
+            kernelId: 'agent-execution',
+            reason: 'business-event-default',
+            trace: {
+                source: 'multi-kernel-handler',
+                step: 'kernel-routing-decision',
+                timestamp: Date.now(),
+            },
+        });
         return 'agent';
     }
 
@@ -1076,6 +1309,82 @@ export class MultiKernelHandler {
                 kernel: targetKernel,
             });
         });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────────
+    // 🎯 ACK/NACK METHODS FOR EVENT HANDLERS
+    // ──────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Acknowledge event processing completion
+     */
+    async ack(eventId: string): Promise<void> {
+        await this.ensureInitialized();
+
+        // Get runtime from agent kernel (primary runtime)
+        const agentKernel =
+            this.multiKernelManager!.getKernel('agent-execution');
+        if (!agentKernel) {
+            this.logger.warn('Agent kernel not available for ACK', { eventId });
+            return;
+        }
+
+        const runtime = agentKernel.getRuntime();
+        if (!runtime) {
+            this.logger.warn('Runtime not available for ACK', { eventId });
+            return;
+        }
+
+        try {
+            await runtime.ack(eventId);
+            this.logger.debug('Event ACK successful', { eventId });
+        } catch (error) {
+            this.logger.error('Failed to ACK event', error as Error, {
+                eventId,
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Negative acknowledge event with optional error
+     */
+    async nack(eventId: string, error?: Error): Promise<void> {
+        await this.ensureInitialized();
+
+        // Get runtime from agent kernel (primary runtime)
+        const agentKernel =
+            this.multiKernelManager!.getKernel('agent-execution');
+        if (!agentKernel) {
+            this.logger.warn('Agent kernel not available for NACK', {
+                eventId,
+                error,
+            });
+            return;
+        }
+
+        const runtime = agentKernel.getRuntime();
+        if (!runtime) {
+            this.logger.warn('Runtime not available for NACK', {
+                eventId,
+                error,
+            });
+            return;
+        }
+
+        try {
+            await runtime.nack(eventId, error);
+            this.logger.debug('Event NACK successful', {
+                eventId,
+                error: error?.message,
+            });
+        } catch (nackError) {
+            this.logger.error('Failed to NACK event', nackError as Error, {
+                eventId,
+                originalError: error?.message,
+            });
+            throw nackError;
+        }
     }
 }
 

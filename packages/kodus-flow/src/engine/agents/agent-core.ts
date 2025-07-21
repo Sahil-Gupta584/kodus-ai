@@ -210,51 +210,9 @@ export abstract class AgentCore<
     // Circuit breaker for tool execution resilience
     protected toolCircuitBreaker?: CircuitBreaker;
 
-    // === RETRY WITH EXPONENTIAL BACKOFF ===
-    private async retryWithBackoff<T>(
-        operation: () => Promise<T>,
-        maxRetries: number = 3,
-        baseDelayMs: number = 1000,
-        context?: string,
-    ): Promise<T> {
-        let lastError: Error;
-
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                return await operation();
-            } catch (error) {
-                lastError = error as Error;
-
-                if (attempt === maxRetries) {
-                    this.logger.error('All retry attempts failed', lastError, {
-                        operation: context,
-                        attempts: maxRetries,
-                        agentName: this.config.agentName,
-                    });
-                    throw lastError;
-                }
-
-                const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
-                const jitterMs = Math.random() * delayMs * 0.1; // 10% jitter
-                const totalDelayMs = delayMs + jitterMs;
-
-                this.logger.warn('Operation failed, retrying with backoff', {
-                    operation: context,
-                    attempt,
-                    maxRetries,
-                    delayMs: Math.round(totalDelayMs),
-                    agentName: this.config.agentName,
-                    error: lastError.message,
-                });
-
-                await new Promise((resolve) =>
-                    setTimeout(resolve, totalDelayMs),
-                );
-            }
-        }
-
-        throw lastError!;
-    }
+    // === RETRY LOGIC REMOVED ===
+    // ✅ Removed retryWithBackoff method - Circuit Breaker handles retries now
+    // This eliminates retry amplification: Agent → Circuit Breaker → Runtime
 
     // === CIRCUIT BREAKER INITIALIZATION ===
     private initializeCircuitBreaker(): void {
@@ -4405,28 +4363,24 @@ export abstract class AgentCore<
 
                         // Execute tool with circuit breaker protection
                         if (this.toolCircuitBreaker) {
-                            const circuitResult = await this.retryWithBackoff(
-                                () =>
-                                    this.toolCircuitBreaker!.execute(
-                                        () =>
-                                            this.kernelHandler!.requestToolExecution(
-                                                action.tool,
-                                                action.arguments || {},
-                                                {
-                                                    correlationId:
-                                                        this.generateCorrelationId(),
-                                                    timeout: 10000, // Reduzido para 10s (circuit breaker tem 30s total)
-                                                },
-                                            ),
-                                        {
-                                            toolName: action.tool,
-                                            agentName: this.config.agentName,
-                                        },
-                                    ),
-                                3, // maxRetries
-                                1000, // baseDelayMs
-                                `MCP tool execution: ${action.tool}`,
-                            );
+                            // ✅ SIMPLIFIED: No additional retries - Circuit Breaker handles retries
+                            const circuitResult =
+                                await this.toolCircuitBreaker.execute(
+                                    () =>
+                                        this.kernelHandler!.requestToolExecution(
+                                            action.tool,
+                                            action.arguments || {},
+                                            {
+                                                correlationId:
+                                                    this.generateCorrelationId(),
+                                                timeout: 30000, // ✅ AUMENTADO para 15s (circuit breaker tem 30s total)
+                                            },
+                                        ),
+                                    {
+                                        toolName: action.tool,
+                                        agentName: this.config.agentName,
+                                    },
+                                );
 
                             if (circuitResult.error) {
                                 throw circuitResult.error;
@@ -4442,7 +4396,7 @@ export abstract class AgentCore<
                                     {
                                         correlationId:
                                             this.generateCorrelationId(),
-                                        timeout: 10000, // Reduzido para 10s
+                                        timeout: 15000, // ✅ AUMENTADO para 15s
                                     },
                                 );
                         }
@@ -4490,23 +4444,19 @@ export abstract class AgentCore<
                         }
 
                         if (this.toolCircuitBreaker) {
-                            const circuitResult = await this.retryWithBackoff(
-                                () =>
-                                    this.toolCircuitBreaker!.execute(
-                                        () =>
-                                            this.toolEngine!.executeCall(
-                                                action.tool,
-                                                action.arguments || {},
-                                            ),
-                                        {
-                                            toolName: action.tool,
-                                            agentName: this.config.agentName,
-                                        },
-                                    ),
-                                3, // maxRetries
-                                1000, // baseDelayMs
-                                `Fallback tool execution: ${action.tool}`,
-                            );
+                            // ✅ SIMPLIFIED: No additional retries - Circuit Breaker handles retries
+                            const circuitResult =
+                                await this.toolCircuitBreaker.execute(
+                                    () =>
+                                        this.toolEngine!.executeCall(
+                                            action.tool,
+                                            action.arguments || {},
+                                        ),
+                                    {
+                                        toolName: action.tool,
+                                        agentName: this.config.agentName,
+                                    },
+                                );
 
                             if (circuitResult.rejected) {
                                 throw circuitResult.error;
@@ -4534,23 +4484,19 @@ export abstract class AgentCore<
                     }
 
                     if (this.toolCircuitBreaker) {
-                        const circuitResult = await this.retryWithBackoff(
-                            () =>
-                                this.toolCircuitBreaker!.execute(
-                                    () =>
-                                        this.toolEngine!.executeCall(
-                                            action.tool,
-                                            action.arguments || {},
-                                        ),
-                                    {
-                                        toolName: action.tool,
-                                        agentName: this.config.agentName,
-                                    },
-                                ),
-                            3, // maxRetries
-                            1000, // baseDelayMs
-                            `Direct tool execution: ${action.tool}`,
-                        );
+                        // ✅ SIMPLIFIED: No additional retries - Circuit Breaker handles retries
+                        const circuitResult =
+                            await this.toolCircuitBreaker.execute(
+                                () =>
+                                    this.toolEngine!.executeCall(
+                                        action.tool,
+                                        action.arguments || {},
+                                    ),
+                                {
+                                    toolName: action.tool,
+                                    agentName: this.config.agentName,
+                                },
+                            );
 
                         if (circuitResult.rejected) {
                             throw circuitResult.error;
