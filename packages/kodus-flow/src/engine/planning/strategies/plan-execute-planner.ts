@@ -12,7 +12,7 @@ import type { LLMAdapter } from '../../../adapters/llm/index.js';
 import type {
     Planner,
     AgentThought,
-    AgentAction,
+    // AgentAction,
     ActionResult,
     ResultAnalysis,
     PlannerExecutionContext,
@@ -53,8 +53,8 @@ export class PlanAndExecutePlanner implements Planner {
 
     constructor(private llmAdapter: LLMAdapter) {
         this.logger.info('Plan-and-Execute Planner initialized', {
-            llmProvider: llmAdapter.getProvider?.()?.name || 'unknown',
-            hasCreatePlan: llmAdapter.createPlan !== undefined,
+            llmProvider: this.llmAdapter.getProvider?.()?.name || 'unknown',
+            hasCreatePlan: this.llmAdapter.createPlan !== undefined,
         });
     }
 
@@ -62,6 +62,7 @@ export class PlanAndExecutePlanner implements Planner {
         input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
+        debugger;
         this.logger.debug('Plan-and-Execute thinking started', {
             input: input.substring(0, 100),
             iteration: context.iterations,
@@ -96,57 +97,67 @@ export class PlanAndExecutePlanner implements Planner {
         input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        this.logger.debug('Creating new execution plan');
-
-        // Use LLM to create detailed plan
-        const llmPlan = await this.llmAdapter.createPlan?.(
-            this.buildPlanningGoal(input, context),
-            'plan-execute',
-            {
-                availableTools:
-                    context.availableTools?.map((tool) => tool.name) || [],
-                previousPlans: this.extractPreviousPlans(context),
-                agentIdentity: context.agentIdentity as string, // ✅ USE AGENT IDENTITY
+        console.log(input, context);
+        return {
+            reasoning: 'Plan-and-Execute thinking started',
+            action: {
+                type: 'final_answer',
+                content: 'Plan-and-Execute thinking started',
             },
-        );
-
-        // Convert LLM plan to execution plan
-        this.currentPlan = {
-            id: `plan-${Date.now()}`,
-            goal: input,
-            strategy: 'plan-execute',
-            steps: this.convertLLMStepsToExecutionSteps(
-                (
-                    llmPlan as {
-                        steps?: Array<{
-                            tool?: string;
-                            arguments?: Record<string, unknown>;
-                            description?: string;
-                            type?: string;
-                        }>;
-                    }
-                )?.steps || [],
-            ),
-            currentStepIndex: 0,
-            status: 'executing',
-            reasoning:
-                (llmPlan as { reasoning?: string })?.reasoning ||
-                'Plan created successfully',
         };
+        // debugger;
+        // this.logger.debug('Creating new execution plan');
 
-        this.logger.info('Execution plan created', {
-            planId: this.currentPlan.id,
-            totalSteps: this.currentPlan.steps.length,
-            firstStep: this.currentPlan.steps[0]?.description,
-        });
+        // // Use LLM to create detailed plan
+        // const llmPlan = await this.llmAdapter.createPlan?.(
+        //     this.buildPlanningGoal(input, context),
+        //     'plan-execute',
+        //     {
+        //         availableTools:
+        //             context.availableTools?.map((tool) => tool.name) || [],
+        //         previousPlans: this.extractPreviousPlans(context),
+        //         agentIdentity: context.agentIdentity, // ✅ USE AGENT IDENTITY
+        //     },
+        // );
 
-        // Start executing first step
-        return this.executeNextStep(context);
+        // // Convert LLM plan to execution plan
+        // this.currentPlan = {
+        //     id: `plan-${Date.now()}`,
+        //     goal: input,
+        //     strategy: 'plan-execute',
+        //     steps: this.convertLLMStepsToExecutionSteps(
+        //         (
+        //             llmPlan as {
+        //                 steps?: Array<{
+        //                     tool?: string;
+        //                     arguments?: Record<string, unknown>;
+        //                     description?: string;
+        //                     type?: string;
+        //                 }>;
+        //             }
+        //         )?.steps || [],
+        //     ),
+        //     currentStepIndex: 0,
+        //     status: 'executing',
+        //     reasoning:
+        //         (llmPlan as { reasoning?: string })?.reasoning ||
+        //         'Plan created successfully',
+        // };
+
+        // this.logger.info('Execution plan created', {
+        //     planId: this.currentPlan.id,
+        //     totalSteps: this.currentPlan.steps.length,
+        //     firstStep: this.currentPlan.steps[0]?.description,
+        // });
+
+        // // Start executing first step
+        // return this.executeNextStep(context);
     }
 
     private async executeNextStep(
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
+        debugger;
         if (!this.currentPlan) {
             throw new Error('No execution plan available');
         }
@@ -190,35 +201,35 @@ export class PlanAndExecutePlanner implements Planner {
         currentStep.status = 'executing';
 
         // ✅ VALIDAÇÃO - Verificar se a tool solicitada existe antes de executar
-        const availableToolNames =
-            context.availableTools?.map((t) => t.name) || [];
+        // const availableToolNames =
+        //     context.availableTools?.map((t) => t.name) || [];
 
-        let action: AgentAction;
+        // let action: AgentAction;
 
-        if (currentStep.tool && currentStep.tool !== 'none') {
-            if (!availableToolNames.includes(currentStep.tool)) {
-                // ✅ FALLBACK - Tool não existe, converter para resposta conversacional
-                action = {
-                    type: 'final_answer',
-                    content: `Não tenho acesso à ferramenta "${currentStep.tool}" necessária para: ${currentStep.description}. Como posso ajudar de outra forma?`,
-                };
-            } else {
-                action = {
-                    type: 'tool_call',
-                    tool: currentStep.tool,
-                    arguments: currentStep.arguments || {},
-                };
-            }
-        } else {
-            action = {
-                type: 'final_answer',
-                content: currentStep.description,
-            };
-        }
+        // if (currentStep.tool && currentStep.tool !== 'none') {
+        //     if (!availableToolNames.includes(currentStep.tool)) {
+        //         // ✅ FALLBACK - Tool não existe, converter para resposta conversacional
+        //         action = {
+        //             type: 'final_answer',
+        //             content: `Não tenho acesso à ferramenta "${currentStep.tool}" necessária para: ${currentStep.description}. Como posso ajudar de outra forma?`,
+        //         };
+        //     } else {
+        //         action = {
+        //             type: 'tool_call',
+        //             tool: currentStep.tool,
+        //             arguments: currentStep.arguments || {},
+        //         };
+        //     }
+        // } else {
+        //     action = {
+        //         type: 'final_answer',
+        //         content: currentStep.description,
+        //     };
+        // }
 
         return {
             reasoning: `Executing step ${this.currentPlan.currentStepIndex + 1}/${this.currentPlan.steps.length}: ${currentStep.description}. Context: ${context.history.length} previous actions, iteration ${context.iterations}`,
-            action,
+            // action,
             confidence: this.calculateStepConfidence(currentStep, context),
             metadata: {
                 planId: this.currentPlan.id,
@@ -228,8 +239,8 @@ export class PlanAndExecutePlanner implements Planner {
                 stepType: currentStep.type,
                 contextHistory: context.history.length,
                 currentIteration: context.iterations,
-                availableTools:
-                    context.availableTools?.map((tool) => tool.name) || [],
+                // availableTools:
+                //     context.availableTools?.map((tool) => tool.name) || [],
             },
         };
     }
@@ -362,102 +373,102 @@ export class PlanAndExecutePlanner implements Planner {
         return context.iterations < 3;
     }
 
-    private buildPlanningGoal(
-        input: string,
-        context: PlannerExecutionContext,
-    ): string {
-        const availableToolNames =
-            context.availableTools?.map((tool) => tool.name) || [];
+    //     private buildPlanningGoal(
+    //         input: string,
+    //         context: PlannerExecutionContext,
+    //     ): string {
+    //             // const availableToolNames =
+    //             //     context.availableTools?.map((tool) => tool.name) || [];
 
-        // ✅ CONTEXT ENGINEERING - Informar tools disponíveis de forma simples
-        const toolsContext =
-            availableToolNames.length > 0
-                ? `Available tools: ${availableToolNames.join(', ')}`
-                : `No tools available for this session`;
+    //         // ✅ CONTEXT ENGINEERING - Informar tools disponíveis de forma simples
+    //         const toolsContext =
+    //             availableToolNames.length > 0
+    //                 ? `Available tools: ${availableToolNames.join(', ')}`
+    //                 : `No tools available for this session`;
 
-        const historyContext =
-            context.history.length > 0
-                ? `\nPrevious attempts context: ${context.history
-                      .slice(-2)
-                      .map(
-                          (h) =>
-                              `Action: ${JSON.stringify(h.action)}, Result: ${h.observation.feedback}`,
-                      )
-                      .join('; ')}`
-                : '';
+    //         const historyContext =
+    //             context.history.length > 0
+    //                 ? `\nPrevious attempts context: ${context.history
+    //                       .slice(-2)
+    //                       .map(
+    //                           (h) =>
+    //                               `Action: ${JSON.stringify(h.action)}, Result: ${h.observation.feedback}`,
+    //                       )
+    //                       .join('; ')}`
+    //                 : '';
 
-        return `
-${toolsContext}
+    //         return `
+    // ${toolsContext}
 
-Create a detailed step-by-step plan to achieve this goal: ${input}
-${historyContext}
+    // Create a detailed step-by-step plan to achieve this goal: ${input}
+    // ${historyContext}
 
-Requirements:
-1. Break down into specific, actionable steps
-2. Each step should be clear and measurable
-3. Include appropriate actions and tool usage
-4. Consider dependencies between steps
-5. Plan for verification and error handling
+    // Requirements:
+    // 1. Break down into specific, actionable steps
+    // 2. Each step should be clear and measurable
+    // 3. Include appropriate actions and tool usage
+    // 4. Consider dependencies between steps
+    // 5. Plan for verification and error handling
 
-Create a structured plan with steps that can be executed sequentially.
-        `.trim();
-    }
+    // Create a structured plan with steps that can be executed sequentially.
+    //         `.trim();
+    //     }
 
-    private convertLLMStepsToExecutionSteps(
-        llmSteps: Array<{
-            tool?: string;
-            arguments?: Record<string, unknown>;
-            description?: string;
-            type?: string;
-        }>,
-    ): PlanStep[] {
-        return llmSteps.map((step, index) => {
-            // ✅ VALIDAÇÃO - Verificar se step usa tool inexistente
-            const finalTool = step.tool;
-            const finalDescription = step.description || `Step ${index + 1}`;
+    //     private convertLLMStepsToExecutionSteps(
+    //         llmSteps: Array<{
+    //             tool?: string;
+    //             arguments?: Record<string, unknown>;
+    //             description?: string;
+    //             type?: string;
+    //         }>,
+    //     ): PlanStep[] {
+    //         return llmSteps.map((step, index) => {
+    //             // ✅ VALIDAÇÃO - Verificar se step usa tool inexistente
+    //             const finalTool = step.tool;
+    //             const finalDescription = step.description || `Step ${index + 1}`;
 
-            if (step.tool && step.tool !== 'none') {
-                // Se step menciona uma tool, verificar se ela existe
-                // Nota: availableTools não está disponível aqui, mas a validação será feita na execução
-                // Por agora, mantemos a tool conforme especificada pelo LLM
-            }
+    //             if (step.tool && step.tool !== 'none') {
+    //                 // Se step menciona uma tool, verificar se ela existe
+    //                 // Nota: availableTools não está disponível aqui, mas a validação será feita na execução
+    //                 // Por agora, mantemos a tool conforme especificada pelo LLM
+    //             }
 
-            return {
-                id: `step-${index + 1}`,
-                description: finalDescription,
-                type:
-                    step.type === 'verification'
-                        ? 'verification'
-                        : finalTool
-                          ? 'action'
-                          : 'decision',
-                tool: finalTool,
-                arguments: step.arguments,
-                status: 'pending' as const,
-                dependencies: index > 0 ? [`step-${index}`] : [],
-                retry: 0,
-            };
-        });
-    }
+    //             return {
+    //                 id: `step-${index + 1}`,
+    //                 description: finalDescription,
+    //                 type:
+    //                     step.type === 'verification'
+    //                         ? 'verification'
+    //                         : finalTool
+    //                           ? 'action'
+    //                           : 'decision',
+    //                 tool: finalTool,
+    //                 arguments: step.arguments,
+    //                 status: 'pending' as const,
+    //                 dependencies: index > 0 ? [`step-${index}`] : [],
+    //                 retry: 0,
+    //             };
+    //         });
+    //     }
 
-    private extractPreviousPlans(context: PlannerExecutionContext) {
-        // Extract previous planning attempts from history
-        return context.history
-            .filter((h) => h.thought.metadata?.planId)
-            .map((h) => ({
-                strategy: 'plan-execute',
-                goal: context.input,
-                steps: [
-                    {
-                        id: 'previous-step',
-                        description: h.thought.reasoning,
-                        type: 'action' as const,
-                    },
-                ],
-                reasoning: h.observation.feedback,
-                complexity: 'medium' as const,
-            }));
-    }
+    //     private extractPreviousPlans(context: PlannerExecutionContext) {
+    //         // Extract previous planning attempts from history
+    //         return context.history
+    //             .filter((h) => h.thought.metadata?.planId)
+    //             .map((h) => ({
+    //                 strategy: 'plan-execute',
+    //                 goal: context.input,
+    //                 steps: [
+    //                     {
+    //                         id: 'previous-step',
+    //                         description: h.thought.reasoning,
+    //                         type: 'action' as const,
+    //                     },
+    //                 ],
+    //                 reasoning: h.observation.feedback,
+    //                 complexity: 'medium' as const,
+    //             }));
+    //     }
 
     private calculateStepConfidence(
         step: PlanStep,
@@ -484,24 +495,24 @@ Create a structured plan with steps that can be executed sequentially.
             confidence -= 0.15; // Low recent success rate
         }
 
-        // Consider available tools
-        if (
-            (step.tool &&
-                context.availableTools?.some(
-                    (tool) => tool.name === step.tool,
-                )) ||
-            false
-        ) {
-            confidence += 0.1; // Tool is available
-        } else if (
-            (step.tool &&
-                !context.availableTools?.some(
-                    (tool) => tool.name === step.tool,
-                )) ||
-            false
-        ) {
-            confidence -= 0.2; // Tool not available
-        }
+        // // Consider available tools
+        // if (
+        //     (step.tool &&
+        //         context.availableTools?.some(
+        //             (tool) => tool.name === step.tool,
+        //         )) ||
+        //     false
+        // ) {
+        //     confidence += 0.1; // Tool is available
+        // } else if (
+        //     (step.tool &&
+        //         !context.availableTools?.some(
+        //             (tool) => tool.name === step.tool,
+        //         )) ||
+        //     false
+        // ) {
+        //     confidence -= 0.2; // Tool not available
+        // }
 
         // Consider iteration count (higher iterations = lower confidence)
         if (context.iterations > 5) {

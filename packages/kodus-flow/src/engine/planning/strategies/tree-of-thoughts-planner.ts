@@ -139,17 +139,16 @@ export class TreeOfThoughtsPlanner implements Planner {
         input: string,
         context: PlannerExecutionContext,
     ): Promise<ThoughtNode[]> {
-        const availableToolNames =
-            context.availableTools?.map((tool) => tool.name) || [];
+        // const availableToolNames =
+        //     context.availableTools?.map((tool) => tool.name) || [];
 
         // ✅ CONTEXT ENGINEERING - Informar tools disponíveis de forma simples
-        const toolsContext =
-            availableToolNames.length > 0
-                ? `Available tools: ${availableToolNames.join(', ')}`
-                : `No tools available for this session`;
+        // const toolsContext =
+        //     availableToolNames.length > 0
+        //         ? `Available tools: ${availableToolNames.join(', ')}`
+        //         : `No tools available for this session`;
 
         const prompt = `
-${toolsContext}
 
 Generate ${this.maxBranches} different approaches to solve this problem: ${input}
 
@@ -238,11 +237,10 @@ Approach 3: [reasoning] | Action: [action_type:tool_name:arguments] | Rationale:
 
     private generateFallbackThoughts(
         input: string,
-        context: PlannerExecutionContext,
+        _context: PlannerExecutionContext,
     ): ThoughtNode[] {
         const thoughts: ThoughtNode[] = [];
-        const availableToolNames =
-            context.availableTools?.map((tool) => tool.name) || [];
+        const availableToolNames: string[] = [];
 
         if (availableToolNames.length === 0) {
             // ✅ CONTEXT ENGINEERING - Fallback para cenário sem tools
@@ -298,7 +296,7 @@ Approach 3: [reasoning] | Action: [action_type:tool_name:arguments] | Rationale:
                 content: 'Tool-based approach',
                 action: {
                     type: 'tool_call',
-                    tool: context.availableTools?.[0]?.name || 'unknown',
+                    tool: availableToolNames[0] || 'unknown',
                     arguments: { query: input },
                 },
                 depth: 1,
@@ -368,8 +366,7 @@ Approach 3: [reasoning] | Action: [action_type:tool_name:arguments] | Rationale:
                 isTreeComplete: this.isTreeComplete(),
                 contextHistory: context.history.length,
                 currentIteration: context.iterations,
-                availableTools:
-                    context.availableTools?.map((tool) => tool.name) || [],
+                availableTools: [],
             },
         };
     }
@@ -614,31 +611,14 @@ Respond with just a number between 0.0 and 1.0
         // Generate follow-up actions based on context and parent node
         const childThoughts: ThoughtNode[] = [];
 
-        // Use context to inform child generation
-        const hasToolAccess = (context.availableTools?.length || 0) > 0;
-        const recentFailures = context.history
-            .slice(-2)
-            .filter((h) => isErrorResult(h.result));
-
         for (let i = 0; i < Math.min(this.maxBranches, 2); i++) {
-            const shouldUseTool =
-                hasToolAccess && i === 0 && recentFailures.length === 0;
-
             childThoughts.push({
                 id: `${parentNode.id}-child-${i + 1}`,
                 content: `Continue from ${parentNode.content}`,
-                action: shouldUseTool
-                    ? {
-                          type: 'tool_call',
-                          tool: context.availableTools?.[0]?.name || 'unknown',
-                          arguments: {
-                              query: `Follow up on ${parentNode.content}`,
-                          },
-                      }
-                    : {
-                          type: 'final_answer',
-                          content: `Next step after ${parentNode.content}`,
-                      },
+                action: {
+                    type: 'final_answer',
+                    content: `Next step after ${parentNode.content}`,
+                },
                 depth: parentNode.depth + 1,
                 score: 0.5,
                 parentId: parentNode.id,
@@ -648,8 +628,7 @@ Respond with just a number between 0.0 and 1.0
                 metadata: {
                     basedOnContext: true,
                     contextHistory: context.history.length,
-                    availableTools:
-                        context.availableTools?.map((tool) => tool.name) || [],
+                    availableTools: [],
                 },
             });
         }

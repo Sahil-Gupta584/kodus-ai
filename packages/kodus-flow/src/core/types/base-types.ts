@@ -105,15 +105,7 @@ export type OperationContext = BaseContext & {
     executionId: ExecutionId;
 };
 
-/**
- * Contexto específico para eventos
- */
-export type EventContext = BaseContext & {
-    eventId: EventId;
-    threadId?: ThreadId;
-    sessionId?: SessionId;
-    parentId?: ParentId;
-};
+// EventContext removed - use ExecutionContext for event tracking or UnifiedEventContext from events-unified.ts for event metadata
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 👤 CONTEXTOS SEPARADOS - User vs System
@@ -151,11 +143,7 @@ export type SystemContext = BaseContext & {
 
 // SeparatedContext removed - use AgentContext with user/runtime pattern instead
 
-/**
- * Runtime Context - Dados técnicos/internos do sistema
- * Alias mais claro para SystemContext
- */
-export type RuntimeContext = SystemContext;
+// RuntimeContext removed - use SystemContext directly
 
 // AgentContextPattern integrated directly into AgentContext interface
 

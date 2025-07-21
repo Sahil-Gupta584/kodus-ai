@@ -46,7 +46,6 @@ export function validateMCPSchema(schema: unknown): boolean {
  */
 export function mcpToolToEngineTool(mcpTool: MCPToolRawWithServer): EngineTool {
     // Validate MCP schema
-    debugger;
     if (!validateMCPSchema(mcpTool.inputSchema)) {
         console.warn(
             `Invalid MCP schema for tool ${mcpTool.name}, using fallback`,
@@ -85,7 +84,6 @@ export function mcpToolToEngineTool(mcpTool: MCPToolRawWithServer): EngineTool {
 export function mcpToolsToEngineTools(
     mcpTools: MCPToolRawWithServer[],
 ): EngineTool[] {
-    debugger;
     const validTools: EngineTool[] = [];
     const invalidTools: string[] = [];
 

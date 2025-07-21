@@ -34,7 +34,7 @@ export interface UnifiedEventConfig {
     maxRetries?: number;
 }
 
-export interface EventContext {
+export interface UnifiedEventContext {
     correlationId?: string;
     tenantId?: string;
     timestamp?: number;
@@ -109,7 +109,7 @@ export class UnifiedEventManager extends EventEmitter {
     emitEvent<T extends EventType>(
         eventType: T,
         payload: EventPayloads[T],
-        context: EventContext = {},
+        context: UnifiedEventContext = {},
     ): Promise<EventResult> {
         return new Promise((resolve) => {
             const startTime = Date.now();
@@ -428,7 +428,7 @@ export function resetUnifiedEventManager(): void {
 export function emitUnifiedEvent<T extends EventType>(
     eventType: T,
     payload: EventPayloads[T],
-    context?: EventContext,
+    context?: UnifiedEventContext,
 ): Promise<EventResult> {
     return getUnifiedEventManager().emitEvent(eventType, payload, context);
 }

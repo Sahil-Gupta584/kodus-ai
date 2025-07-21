@@ -19,7 +19,11 @@ import type {
 } from './base-types.js';
 import type { Thread } from './common-types.js';
 import type { UserContext, SystemContext } from './base-types.js';
-import type { ToolCall, ToolMetadataForPlanner } from './tool-types.js';
+import type {
+    ToolCall,
+    ToolMetadataForLLM,
+    ToolMetadataForPlanner,
+} from './tool-types.js';
 import { ContextStateService } from '../context/services/state-service.js';
 import { Persistor } from '../../persistor/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
@@ -300,6 +304,7 @@ export type AgentContext = BaseContext & {
 
     // === RESOURCES ===
     availableTools?: ToolMetadataForPlanner[];
+    availableToolsForLLM?: ToolMetadataForLLM[];
     signal: AbortSignal;
 
     // === OBSERVABILITY ===

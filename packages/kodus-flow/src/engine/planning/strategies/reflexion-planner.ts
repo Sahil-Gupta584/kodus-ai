@@ -165,8 +165,8 @@ Improvements: [improvement 1]; [improvement 2]; [improvement 3]
                 metadata: {
                     iteration: context.iterations,
                     contextSize: context.history.length,
-                    availableTools:
-                        context.availableTools?.map((tool) => tool.name) || [],
+                    // availableTools:
+                    //     context.availableTools?.map((tool) => tool.name) || [],
                 },
             };
         } catch (error) {
@@ -195,13 +195,13 @@ Improvements: [improvement 1]; [improvement 2]; [improvement 3]
 
         // Usar LLM para pensar com base nas reflexões
         const plan = await this.llmAdapter.createPlan?.(
-            enrichedPrompt,
+            context.input, // Original input as goal
             'reflexion',
             {
-                availableTools:
-                    context.availableTools?.map((tool) => tool.name) || [],
+                // availableTools:
+                //     context.availableTools?.map((tool) => tool.name) || [],
                 previousPlans: this.extractPreviousPlans(context),
-                agentIdentity: context.agentIdentity as string, // ✅ USE AGENT IDENTITY
+                customPrompt: enrichedPrompt, // ✅ Use our enriched prompt
             },
         );
 
@@ -219,18 +219,18 @@ Improvements: [improvement 1]; [improvement 2]; [improvement 3]
 
     private buildReflectivePrompt(
         input: string,
-        context: PlannerExecutionContext,
+        _context: PlannerExecutionContext,
         lessons: string[],
         patterns: Array<{ pattern: string; recommendations: string[] }>,
     ): string {
-        const availableToolNames =
-            context.availableTools?.map((tool) => tool.name) || [];
+        // const availableToolNames =
+        //     context.availableTools?.map((tool) => tool.name) || [];
 
         // ✅ CONTEXT ENGINEERING - Informar tools disponíveis de forma simples
-        const toolsContext =
-            availableToolNames.length > 0
-                ? `Available tools: ${availableToolNames.join(', ')}`
-                : `No tools available for this session`;
+        // const toolsContext =
+        //     availableToolNames.length > 0
+        //         ? `Available tools: ${availableToolNames.join(', ')}`
+        //         : `No tools available for this session`;
 
         const lessonsContext =
             lessons.length > 0
@@ -250,7 +250,6 @@ Improvements: [improvement 1]; [improvement 2]; [improvement 3]
         return `
 Goal: ${input}
 
-${toolsContext}
 ${lessonsContext}
 ${patternsContext}
 

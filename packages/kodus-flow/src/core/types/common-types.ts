@@ -38,11 +38,11 @@ export type {
     // Core context types
     UserContext,
     SystemContext,
-    RuntimeContext,
+    // RuntimeContext removed - use SystemContext directly
     BaseContext,
     ExecutionContext,
     OperationContext,
-    EventContext,
+    // EventContext removed - use ExecutionContext or UnifiedEventContext
     SnapshotContext,
 } from './base-types.js';
 

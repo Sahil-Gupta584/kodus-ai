@@ -50,23 +50,28 @@ export function zodToJSONSchema(
 function zodSchemaToJsonSchemaObject(
     schema: z.ZodSchema,
 ): Record<string, unknown> {
-    debugger;
     const zodType = schema._def as unknown as ZodInternalDef;
 
-    switch (zodType.typeName) {
+    // ✅ CORRIGIDO para Zod 4: typeName não existe mais, usar type
+    const typeName = zodType.type || zodType.typeName;
+
+    switch (typeName) {
         case 'ZodString':
+        case 'string':
             return {
                 type: 'string',
                 ...(zodType.checks && getStringConstraints(zodType.checks)),
             };
 
         case 'ZodNumber':
+        case 'number':
             return {
                 type: 'number',
                 ...(zodType.checks && getNumberConstraints(zodType.checks)),
             };
 
         case 'ZodBoolean':
+        case 'boolean':
             return { type: 'boolean' };
 
         case 'ZodArray':
@@ -79,6 +84,7 @@ function zodSchemaToJsonSchemaObject(
             };
 
         case 'ZodObject':
+        case 'object':
             const properties: Record<string, Record<string, unknown>> = {};
             const required: string[] = [];
 
@@ -86,7 +92,13 @@ function zodSchemaToJsonSchemaObject(
                 return { type: 'object' };
             }
 
-            for (const [key, value] of Object.entries(zodType.shape())) {
+            // ✅ CORRIGIDO para Zod 4: shape é um objeto, não uma função
+            const shape =
+                typeof zodType.shape === 'function'
+                    ? zodType.shape()
+                    : zodType.shape;
+
+            for (const [key, value] of Object.entries(shape)) {
                 properties[key] = zodSchemaToJsonSchemaObject(
                     value as z.ZodSchema,
                 );

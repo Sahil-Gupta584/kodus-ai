@@ -12,7 +12,6 @@ import { RuntimeRegistry } from '../../../core/context/runtime-registry.js';
 import type {
     Planner,
     AgentThought,
-    AgentAction,
     ActionResult,
     ResultAnalysis,
     PlannerExecutionContext,
@@ -21,14 +20,13 @@ import {
     isErrorResult,
     getResultError,
     getResultContent,
+    isToolResult,
+    isFinalAnswerResult,
 } from '../planner-factory.js';
-import {
-    reActOutputSchema,
-    type ReActOutput,
-    convertPlanToReActOutput,
-} from '../../../core/schemas/react-output.js';
+// ReAct schemas removed - now using PlanningResult from DirectLLMAdapter
 // import { AgentContext } from '@/core/types/agent-types.js';
 import { Thread } from '../../../core/types/common-types.js';
+import { ToolMetadataForLLM } from '@/core/types/tool-types.js';
 
 export class ReActPlanner implements Planner {
     private logger = createLogger('react-planner');
@@ -47,7 +45,6 @@ export class ReActPlanner implements Planner {
      * Get ExecutionRuntime for the current thread
      */
     private getExecutionRuntime(thread: Thread): ExecutionRuntime | null {
-        debugger;
         const threadId = thread.id;
         if (!threadId) {
             this.logger.warn('No threadId found in planner metadata');
@@ -59,11 +56,9 @@ export class ReActPlanner implements Planner {
     /**
      * Get available tools for the current context
      */
-    private getAvailableToolsForContext(thread: Thread): string[] {
-        debugger;
+    private getAvailableToolsForContext(thread: Thread): ToolMetadataForLLM[] {
         const executionRuntime = this.getExecutionRuntime(thread);
-        const tools = executionRuntime?.getAvailableTools() || [];
-        return tools.map((tool) => tool.name);
+        return executionRuntime?.getAvailableToolsForLLM() || [];
     }
 
     /**
@@ -81,7 +76,6 @@ export class ReActPlanner implements Planner {
         input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        debugger;
         this.logger.debug('ReAct thinking started', {
             input: input.substring(0, 100),
             iteration: context.iterations,
@@ -110,366 +104,284 @@ export class ReActPlanner implements Planner {
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
         debugger;
-        const prompt = this.buildImprovedReActPrompt(input, context);
+        // Cache resources once at the beginning
+        const thread = context.plannerMetadata.thread!;
+        const availableTools = this.getAvailableToolsForContext(thread);
+        const executionRuntime = this.getExecutionRuntime(thread);
+        const agentIdentity = executionRuntime?.getAgentIdentity();
+        const userContext = executionRuntime?.getUserContext();
 
-        // ✅ OPTION 1: Try structured generation if supported
-        if (this.llmAdapter.supportsStructuredGeneration?.()) {
-            try {
-                const structuredOutput = await this.llmAdapter
-                    .generateStructured!<ReActOutput>({
-                    messages: [{ role: 'user', content: prompt }],
-                    schema: reActOutputSchema,
-                    temperature: 0,
-                });
+        // ✅ Build enhanced tools context for ReAct
+        const toolsContext = this.buildToolsContextForReAct(availableTools);
 
-                return this.convertReActOutputToThought(
-                    structuredOutput,
-                    context.plannerMetadata.thread!,
-                );
-            } catch (error) {
-                this.logger.warn(
-                    'Structured generation failed, trying next option',
-                    {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
-                    },
-                );
-            }
+        // ✅ Build proper agent_scratchpad for ReAct format
+        const agentScratchpad = this.buildAgentScratchpad(context);
+
+        const identityContext = agentIdentity
+            ? `\nYour identity:
+- Role: ${agentIdentity?.role || 'AI Assistant'}
+- Goal: ${agentIdentity?.goal || 'Help the user'}
+- Expertise: ${agentIdentity?.expertise?.join(', ') || 'General knowledge'}`
+            : '';
+
+        // ✅ Use createPlan with proper context engineering
+        if (!this.llmAdapter.createPlan) {
+            throw new Error(
+                'LLM adapter must support createPlan for ReAct planner',
+            );
         }
 
-        // ✅ OPTION 2: Try planning approach if supported
-        if (this.llmAdapter.createPlan) {
-            try {
-                const plan = (await this.llmAdapter.createPlan(input, 'react', {
-                    availableTools: this.getAvailableToolsForContext(
-                        context.plannerMetadata.thread!,
-                    ),
-                    agentIdentity: context.agentIdentity as string,
-                    previousPlans: this.extractPreviousPlans(context),
-                })) as {
-                    reasoning: string;
-                    steps: Array<{
-                        tool?: string;
-                        arguments?: Record<string, unknown>;
-                        description?: string;
-                    }>;
-                };
-
-                const reactOutput = convertPlanToReActOutput({
-                    reasoning: plan.reasoning,
-                    steps: plan.steps,
-                });
-
-                return this.convertReActOutputToThought(
-                    reactOutput,
-                    context.plannerMetadata.thread!,
-                );
-            } catch (error) {
-                this.logger.warn('Plan creation failed, using basic approach', {
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                });
-            }
-        }
-
-        // ✅ OPTION 3: Basic LLM call (always works)
-        const response = await this.llmAdapter.call({
-            messages: [{ role: 'user', content: prompt }],
+        const plan = await this.llmAdapter.createPlan(input, 'react', {
+            availableTools: availableTools,
+            // ✅ Enhanced context engineering for ReAct
+            toolsContext,
+            agentScratchpad,
+            identityContext,
+            userContext,
         });
 
-        // Try to parse as JSON
-        try {
-            const parsed = JSON.parse(response.content);
-            if (parsed.reasoning && parsed.action) {
-                return this.convertReActOutputToThought(
-                    parsed,
-                    context.plannerMetadata.thread!,
-                );
-            }
-        } catch {
-            // Not JSON, continue with text parsing
+        return this.convertPlanToReActThought(
+            plan as Record<string, unknown>,
+            thread,
+        );
+    }
+
+    /**
+     * ✅ Build enhanced tools context for ReAct format
+     */
+    private buildToolsContextForReAct(tools: ToolMetadataForLLM[]): string {
+        if (tools.length === 0) return 'No tools available.';
+
+        return tools
+            .map((tool) => {
+                const params = tool.parameters?.properties
+                    ? Object.entries(tool.parameters.properties)
+                          .map(([name, prop]) => {
+                              const propObj = prop as Record<string, unknown>;
+                              const description =
+                                  propObj.description ||
+                                  propObj.type ||
+                                  'unknown';
+                              const required = (
+                                  (tool.parameters?.required as string[]) || []
+                              ).includes(name)
+                                  ? ' (required)'
+                                  : '';
+                              return `  - ${name}: ${description}${required}`;
+                          })
+                          .join('\n')
+                    : '  No parameters';
+
+                return `${tool.name}: ${tool.description || 'No description'}\nParameters:\n${params}`;
+            })
+            .join('\n\n');
+    }
+
+    /**
+     * ✅ Build proper agent_scratchpad for ReAct format
+     */
+    private buildAgentScratchpad(context: PlannerExecutionContext): string {
+        if (context.history.length === 0) return '';
+
+        return (
+            context.history
+                .map((entry) => {
+                    const thought = `Thought: ${entry.thought.reasoning}`;
+                    const action =
+                        entry.action.type === 'tool_call'
+                            ? `Action: ${entry.action.tool}\nAction Input: ${JSON.stringify(entry.action.arguments)}`
+                            : `Action: Final Answer\nAction Input: ${entry.action.content}`;
+                    const observation = `Observation: ${this.formatObservation(entry.result)}`;
+                    return `${thought}\n${action}\n${observation}`;
+                })
+                .join('\n') + (context.history.length > 0 ? '\nThought: ' : '')
+        ); // Always end with Thought: for next iteration
+    }
+
+    /**
+     * ✅ Format observation from action result
+     */
+    private formatObservation(result: ActionResult): string {
+        if (isErrorResult(result)) {
+            const errorMsg = getResultError(result);
+            return `Error: ${errorMsg}`;
         }
 
-        // Parse text response for ReAct pattern
-        return this.parseTextResponse(
-            response.content,
-            context.plannerMetadata.thread!,
-        );
-    }
+        // Handle ToolResult specifically
+        if (isToolResult(result)) {
+            const content = result.content;
 
-    /**
-     * Extract previous plans from execution history
-     */
-    private extractPreviousPlans(context: PlannerExecutionContext): unknown[] {
-        return context.history.map((h) => ({
-            id: `plan-${Date.now()}`,
-            strategy: 'react',
-            goal: h.thought.reasoning,
-            steps: [
-                {
-                    id: 'step_1',
-                    description: JSON.stringify(h.action),
-                    type: h.action.type === 'tool_call' ? 'action' : 'decision',
-                },
-            ],
-            reasoning: h.observation.feedback,
-            complexity: 'medium' as const,
-        }));
-    }
+            // If content is a string, return it directly
+            if (typeof content === 'string') {
+                return content;
+            }
 
-    /**
-     * Parse text response into ReAct format
-     */
-    private parseTextResponse(text: string, thread: Thread): AgentThought {
-        // Look for common ReAct patterns in text
-        const thoughtMatch = text.match(
-            /(?:Thought|Reasoning|Think):\s*(.+?)(?=Action:|$)/is,
-        );
-        const actionMatch = text.match(
-            /(?:Action|Act):\s*(.+?)(?=Observation:|$)/is,
-        );
+            // If content is an object with complex structure, try to extract meaningful info
+            if (content && typeof content === 'object') {
+                // Check if it's an error result from MCP
+                if (
+                    'result' in content &&
+                    content.result &&
+                    typeof content.result === 'object'
+                ) {
+                    const mcpResult = content.result as Record<string, unknown>;
 
-        const reasoning = thoughtMatch?.[1]?.trim() || text;
+                    // Check if it has content array (like MCP error format)
+                    if (
+                        'content' in mcpResult &&
+                        Array.isArray(mcpResult.content)
+                    ) {
+                        const contentArray = mcpResult.content as Array<
+                            Record<string, unknown>
+                        >;
+                        const textContent = contentArray
+                            .filter((item) => item.type === 'text' && item.text)
+                            .map((item) => item.text)
+                            .join(' ');
 
-        // Try to extract tool call from action
-        if (actionMatch) {
-            const actionText = actionMatch[1]?.trim();
-            const toolMatch = actionText?.match(/(\w+)\s*\((.*?)\)/);
+                        if (textContent) {
+                            return textContent;
+                        }
+                    }
 
-            if (toolMatch) {
-                const [, toolName, argsStr] = toolMatch;
-                const availableTools = this.getAvailableToolsForContext(thread);
-
-                if (toolName && availableTools.includes(toolName)) {
-                    try {
-                        const args = JSON.parse(argsStr || '{}');
-                        return {
-                            reasoning,
-                            action: {
-                                type: 'tool_call' as const,
-                                tool: toolName,
-                                arguments: args,
-                            },
-                            confidence: 0.7,
-                        };
-                    } catch {
-                        // Failed to parse args
+                    // Check if it has isError flag
+                    if ('isError' in mcpResult && mcpResult.isError) {
+                        return `Error: ${JSON.stringify(mcpResult)}`;
                     }
                 }
+
+                // Try to extract any meaningful string from the object
+                const stringified = JSON.stringify(content, null, 2);
+                if (
+                    stringified &&
+                    stringified !== '{}' &&
+                    stringified !== '[]'
+                ) {
+                    return stringified;
+                }
             }
+
+            // Fallback: return the content as string
+            return String(content || 'No result');
         }
 
-        // Default to final answer
-        return {
-            reasoning,
-            action: {
-                type: 'final_answer' as const,
-                content: text,
-            },
-            confidence: 0.6,
-        };
+        // Handle FinalAnswerResult
+        if (isFinalAnswerResult(result)) {
+            return result.content as string;
+        }
+
+        // Handle other types
+        if (typeof result === 'string') {
+            return result;
+        }
+
+        if (result && typeof result === 'object') {
+            return JSON.stringify(result, null, 2);
+        }
+
+        return String(result || 'No result');
     }
 
     /**
-     * ✅ NEW: Convert ReActOutput to AgentThought with validation
+     * ✅ NEW: Convert PlanningResult to AgentThought for ReAct
      */
-    private convertReActOutputToThought(
-        output: ReActOutput,
+    private convertPlanToReActThought(
+        plan: Record<string, unknown>,
         thread: Thread,
     ): AgentThought {
-        const availableToolNames = this.getAvailableToolsForContext(thread);
-        // ✅ Tool validation for tool_call actions
-        if (output.action.type === 'tool_call') {
-            if (!availableToolNames.includes(output.action.tool)) {
-                // Convert to final_answer with clear explanation
+        const availableTools = this.getAvailableToolsForContext(thread);
+        const availableToolNames = availableTools.map((tool) => tool.name);
+
+        // Extract first step from plan
+        const steps = plan.steps as Array<Record<string, unknown>> | undefined;
+        const firstStep = steps?.[0];
+
+        if (!firstStep) {
+            return {
+                reasoning:
+                    (plan.reasoning as string) || 'No steps found in plan',
+                action: {
+                    type: 'final_answer',
+                    content: 'Unable to determine next action from the plan',
+                },
+                confidence: 0.3,
+            };
+        }
+
+        // Validate tool if it's a tool_call
+        const toolName = firstStep.tool as string;
+
+        if (toolName && toolName !== 'none') {
+            if (!availableToolNames.includes(toolName)) {
                 return {
-                    reasoning: `Tool "${output.action.tool}" is not available. Available tools: ${availableToolNames.join(', ')}`,
+                    reasoning: `Tool "${toolName}" is not available. Available tools: ${availableToolNames.join(', ')}`,
                     action: {
                         type: 'final_answer',
-                        content: `I don't have access to the "${output.action.tool}" tool. Available tools are: ${availableToolNames.join(', ')}. How can I help you with the available tools or provide guidance instead?`,
+                        content: `I don't have access to the "${toolName}" tool. Available tools are: ${availableToolNames.join(', ')}. How can I help you with the available tools?`,
                     },
                     confidence: 0.8,
                     metadata: {
-                        originalAction: output.action,
+                        originalPlan: plan,
                         fallbackReason: 'tool_not_available',
                     },
                 };
             }
+
+            return {
+                reasoning:
+                    (plan.reasoning as string) ||
+                    (firstStep.description as string) ||
+                    'Planned action',
+                action: {
+                    type: 'tool_call',
+                    tool: toolName,
+                    arguments:
+                        (firstStep.arguments as Record<string, unknown>) || {},
+                },
+                confidence: 0.8,
+                metadata: {
+                    fromPlan: true,
+                    planStrategy: plan.strategy as string,
+                },
+            };
         }
 
+        // Default to final answer
         return {
-            reasoning: output.reasoning,
-            action: output.action as AgentAction,
-            confidence: output.confidence || 0.8,
+            reasoning:
+                (plan.reasoning as string) ||
+                (firstStep.description as string) ||
+                'Planned response',
+            action: {
+                type: 'final_answer',
+                content:
+                    (firstStep.description as string) ||
+                    (plan.reasoning as string) ||
+                    'Plan completed',
+            },
+            confidence: 0.7,
             metadata: {
-                structured: true,
-                availableTools: availableToolNames,
+                fromPlan: true,
+                planStrategy: plan.strategy as string,
             },
         };
     }
 
-    /**
-     * ✅ IMPROVED: Better context engineering for ReAct prompts with full tool schemas
-     */
-    private buildImprovedReActPrompt(
-        input: string,
-        context: PlannerExecutionContext,
-    ): string {
-        debugger;
-        const availableToolNames = this.getAvailableToolsForContext(
-            context.plannerMetadata.thread!,
-        );
-
-        // Enhanced tools context with full metadata
-        const toolsContext =
-            availableToolNames.length > 0
-                ? availableToolNames
-                : `No tools available. Provide conversational guidance using your knowledge.`;
-
-        // History context (last 2 steps for relevance)
-        const historyContext =
-            context.history.length > 0
-                ? `\nRecent context:\n${context.history
-                      .slice(-2)
-                      .map(
-                          (h, i) =>
-                              `${i + 1}. Action: ${h.action.type} → Result: ${!isErrorResult(h.result) ? 'Success' : 'Failed'}`,
-                      )
-                      .join('\n')}`
-                : '';
-
-        // Agent identity context
-        const identityContext = context.agentIdentity
-            ? `\nYour identity:
-- Role: ${context.agentIdentity.role || 'AI Assistant'}
-- Goal: ${context.agentIdentity.goal || 'Help the user'}
-- Expertise: ${context.agentIdentity.expertise?.join(', ') || 'General knowledge'}`
-            : '';
-
-        return `
-You are a helpful AI assistant that uses ReAct (Reasoning + Acting) methodology.
-${identityContext}
-
-${toolsContext}
-
-${historyContext}
-
-Task: ${input}
-
-Instructions:
-1. Think step by step about what you need to do
-2. Choose ONE action: either call a tool OR provide a final answer
-3. If calling a tool, use EXACTLY the tool name from the available list
-4. When calling a tool, ensure ALL required parameters are provided with appropriate values
-5. If no suitable tool exists, provide a helpful final answer
-
-Respond with this JSON structure:
-{
-    "reasoning": "Your thought process about the next step",
-    "action": {
-        "type": "tool_call" | "final_answer",
-        "tool": "exact_tool_name_if_calling_tool",
-        "arguments": {"key": "value"},
-        "content": "your_final_answer_if_not_calling_tool"
-    },
-    "confidence": 0.8
-}
-
-Important:
-- Only use tools from the available list above
-- Provide ALL required parameters for tool calls
-- If uncertain about required parameters, check the tool schema
-- If you cannot provide required parameters, explain why in a final answer
-        `.trim();
-    }
-
-    /**
-     * Build enhanced tools context with full metadata including schemas
-     */
-    // private buildEnhancedToolsContext(
-    //     tools: PlannerExecutionContext['availableTools'],
-    // ): string {
-    //     const toolDescriptions = tools
-    //         .map((tool) => {
-    //             let description = `\n### Tool: ${tool.name}`;
-    //             description += `\nDescription: ${tool.description}`;
-
-    //             // Add schema information if available
-    //             if (tool.schema && typeof tool.schema === 'object') {
-    //                 const schema = tool.schema as Record<string, unknown>;
-    //                 const properties = schema.properties as
-    //                     | Record<string, unknown>
-    //                     | undefined;
-    //                 if (properties) {
-    //                     description += `\nParameters:`;
-
-    //                     // List all parameters with their details
-    //                     for (const [paramName, paramDef] of Object.entries(
-    //                         properties,
-    //                     )) {
-    //                         const param = paramDef as Record<string, unknown>;
-    //                         const isRequired =
-    //                             (
-    //                                 schema.required as string[] | undefined
-    //                             )?.includes(paramName) ||
-    //                             param.required === true;
-    //                         description += `\n  - ${paramName} (${param.type as string}${isRequired ? ', REQUIRED' : ', optional'})`;
-    //                         if (param.description) {
-    //                             description += `: ${param.description as string}`;
-    //                         }
-    //                         if (param.enum) {
-    //                             description += ` [choices: ${(param.enum as unknown[]).join(', ')}]`;
-    //                         }
-    //                         if (param.default !== undefined) {
-    //                             description += ` [default: ${JSON.stringify(param.default)}]`;
-    //                         }
-    //                     }
-    //                 }
-    //             }
-
-    //             // Add examples if available
-    //             if (tool.examples && tool.examples.length > 0) {
-    //                 const example = tool.examples[0];
-    //                 if (example) {
-    //                     description += `\nExample usage:`;
-    //                     description += `\n  ${JSON.stringify(example.input)}`;
-    //                     if (example.context) {
-    //                         description += `\n  Context: ${example.context}`;
-    //                     }
-    //                 }
-    //             }
-
-    //             // Add planner hints if available
-    //             if (tool.plannerHints) {
-    //                 if (
-    //                     tool.plannerHints.useWhen &&
-    //                     tool.plannerHints.useWhen.length > 0
-    //                 ) {
-    //                     description += `\nUse when: ${tool.plannerHints.useWhen.join(', ')}`;
-    //                 }
-    //                 if (
-    //                     tool.plannerHints.avoidWhen &&
-    //                     tool.plannerHints.avoidWhen.length > 0
-    //                 ) {
-    //                     description += `\nAvoid when: ${tool.plannerHints.avoidWhen.join(', ')}`;
-    //                 }
-    //             }
-
-    //             // Add usage analytics if available
-    //             if (tool.usageCount !== undefined) {
-    //                 description += `\nUsage stats: ${tool.usageCount} calls`;
-    //                 if (tool.errorRate !== undefined) {
-    //                     description += `, ${((1 - tool.errorRate) * 100).toFixed(1)}% success rate`;
-    //                 }
-    //             }
-
-    //             return description;
-    //         })
-    //         .join('\n');
-
-    //     return `Available tools with schemas:\n${toolDescriptions}`;
+    // private extractPreviousPlans(context: PlannerExecutionContext): unknown[] {
+    //     return context.history.map((h) => ({
+    //         id: `plan-${Date.now()}`,
+    //         strategy: 'react',
+    //         goal: h.thought.reasoning,
+    //         steps: [
+    //             {
+    //                 id: 'step_1',
+    //                 description: JSON.stringify(h.action),
+    //                 type: h.action.type === 'tool_call' ? 'action' : 'decision',
+    //             },
+    //         ],
+    //         reasoning: h.observation.feedback,
+    //         complexity: 'medium' as const,
+    //     }));
     // }
 
     async analyzeResult(

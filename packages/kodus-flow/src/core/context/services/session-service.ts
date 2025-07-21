@@ -179,7 +179,6 @@ export class SessionService {
         agentName?: string,
         metadata: Record<string, unknown> = {},
     ): boolean {
-        debugger;
         const session = this.getSession(sessionId);
         if (!session) return false;
 

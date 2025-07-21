@@ -24,6 +24,7 @@
 
 import { EventEmitter } from 'events';
 import { createLogger } from '../../observability/index.js';
+import { CircuitBreaker } from '../../runtime/core/circuit-breaker.js';
 import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
@@ -206,6 +207,106 @@ export abstract class AgentCore<
     // Kernel integration
     protected kernelHandler?: MultiKernelHandler;
 
+    // Circuit breaker for tool execution resilience
+    protected toolCircuitBreaker?: CircuitBreaker;
+
+    // === RETRY WITH EXPONENTIAL BACKOFF ===
+    private async retryWithBackoff<T>(
+        operation: () => Promise<T>,
+        maxRetries: number = 3,
+        baseDelayMs: number = 1000,
+        context?: string,
+    ): Promise<T> {
+        let lastError: Error;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                return await operation();
+            } catch (error) {
+                lastError = error as Error;
+
+                if (attempt === maxRetries) {
+                    this.logger.error('All retry attempts failed', lastError, {
+                        operation: context,
+                        attempts: maxRetries,
+                        agentName: this.config.agentName,
+                    });
+                    throw lastError;
+                }
+
+                const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+                const jitterMs = Math.random() * delayMs * 0.1; // 10% jitter
+                const totalDelayMs = delayMs + jitterMs;
+
+                this.logger.warn('Operation failed, retrying with backoff', {
+                    operation: context,
+                    attempt,
+                    maxRetries,
+                    delayMs: Math.round(totalDelayMs),
+                    agentName: this.config.agentName,
+                    error: lastError.message,
+                });
+
+                await new Promise((resolve) =>
+                    setTimeout(resolve, totalDelayMs),
+                );
+            }
+        }
+
+        throw lastError!;
+    }
+
+    // === CIRCUIT BREAKER INITIALIZATION ===
+    private initializeCircuitBreaker(): void {
+        // Create observability system for circuit breaker
+        const observabilitySystem = {
+            logger: this.logger,
+            monitoring: {
+                recordMetric: () => {},
+                recordHistogram: () => {},
+                incrementCounter: () => {},
+            },
+            telemetry: {
+                startSpan: () => ({
+                    end: () => {},
+                    setAttribute: () => ({ end: () => {} }),
+                    setAttributes: () => ({ end: () => {} }),
+                    setStatus: () => ({ end: () => {} }),
+                    recordException: () => ({ end: () => {} }),
+                    addEvent: () => ({ end: () => {} }),
+                    updateName: () => ({ end: () => {} }),
+                }),
+                recordException: () => {},
+            },
+            config: {},
+            monitor: {},
+            debug: {},
+            createContext: () => ({}),
+        } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+        this.toolCircuitBreaker = new CircuitBreaker(observabilitySystem, {
+            name: `tool-execution-${this.config.agentName || 'default'}`,
+            failureThreshold: 3, // Open after 3 failures
+            recoveryTimeout: 30000, // Try to recover after 30s
+            successThreshold: 2, // Close after 2 successes
+            operationTimeout: this.config.toolTimeout || 30000,
+            onStateChange: (newState, prevState) => {
+                this.logger.info('Tool circuit breaker state changed', {
+                    agentName: this.config.agentName,
+                    from: prevState,
+                    to: newState,
+                });
+            },
+            onFailure: (error, context) => {
+                this.logger.warn('Tool circuit breaker recorded failure', {
+                    agentName: this.config.agentName,
+                    error: error.message,
+                    context,
+                });
+            },
+        });
+    }
+
     // === LAZY INITIALIZATION GETTERS ===
     protected get agents() {
         if (!this._agents) {
@@ -343,6 +444,9 @@ export abstract class AgentCore<
         const agentName = this.config.agentName || 'multi-agent';
         this.logger = createLogger(`agent-core:${agentName}`);
 
+        // Initialize circuit breaker for tool execution
+        this.initializeCircuitBreaker();
+
         // KernelHandler sempre habilitado - será injetado via setKernelHandler()
         // Apenas criar local KernelHandler se tenant for 'isolated'
         if (this.config.tenantId === 'isolated') {
@@ -416,6 +520,10 @@ export abstract class AgentCore<
             executionId,
             agentExecutionOptions,
         );
+
+        // Add available tools to context immediately
+        context.availableTools = this.toolEngine?.getAvailableTools() || [];
+        context.availableToolsForLLM = this.toolEngine?.getToolsForLLM() || [];
 
         // Track execution with actual sessionId from context
         this.activeExecutions.set(executionId, {
@@ -657,8 +765,9 @@ export abstract class AgentCore<
      * Count tool calls in thoughts array
      */
     private countToolCallsInThoughts(thoughts: NewAgentThought[]): number {
-        return thoughts.filter((thought) => thought.action.type === 'tool_call')
-            .length;
+        return thoughts.filter(
+            (thought) => thought.action?.type === 'tool_call',
+        ).length;
     }
 
     /**
@@ -1571,8 +1680,6 @@ export abstract class AgentCore<
         executionId: string,
         agentExecutionOptions?: AgentExecutionOptions,
     ): Promise<AgentContext> {
-        debugger;
-
         const config: AgentExecutionOptions = {
             agentName,
             thread: agentExecutionOptions?.thread || {
@@ -4114,10 +4221,10 @@ export abstract class AgentCore<
 
                 // 2. ACT - Execute the decided action
                 const actStartTime = Date.now();
-                const result = await this.act(
-                    thought.action,
-                    this.executionContext,
-                );
+                if (!thought.action) {
+                    throw new Error('Thought action is undefined');
+                }
+                const result = await this.act(thought.action);
                 const actDuration = Date.now() - actStartTime;
 
                 // 3. OBSERVE - Analyze result and decide if continue
@@ -4143,7 +4250,7 @@ export abstract class AgentCore<
                     thinkDuration,
                     actDuration,
                     observeDuration,
-                    actionType: thought.action.type,
+                    actionType: thought.action?.type || 'unknown',
                     confidence: thought.confidence,
                     isComplete: observation.isComplete,
                     shouldContinue: observation.shouldContinue,
@@ -4160,7 +4267,7 @@ export abstract class AgentCore<
                             eventsGenerated: eventsGenerated.toString(),
                             iteration: iterations,
                             agentName: this.config.agentName,
-                            actionType: thought.action.type,
+                            actionType: thought.action?.type || 'unknown',
                         },
                     );
                     break;
@@ -4188,7 +4295,7 @@ export abstract class AgentCore<
                             Date.now() -
                             (this.executionContext.plannerMetadata
                                 .startTime as number),
-                        finalAction: thought.action.type,
+                        finalAction: thought.action?.type || 'unknown',
                     });
                     break;
                 }
@@ -4250,7 +4357,6 @@ export abstract class AgentCore<
     private async think(
         context: PlannerExecutionContext,
     ): Promise<NewAgentThought> {
-        debugger;
         if (!this.planner) {
             throw new EngineError('AGENT_ERROR', 'Planner not initialized');
         }
@@ -4266,10 +4372,8 @@ export abstract class AgentCore<
     /**
      * ACT phase - Execute action via appropriate engine
      */
-    private async act(
-        action: NewAgentAction,
-        _context: PlannerExecutionContext,
-    ): Promise<ActionResult> {
+    private async act(action: NewAgentAction): Promise<ActionResult> {
+        debugger;
         this.logger.debug('Act phase started', {
             actionType: action.type,
             tool: isToolCallAction(action) ? action.tool : undefined,
@@ -4297,15 +4401,49 @@ export abstract class AgentCore<
                             },
                         );
 
-                        toolResult =
-                            await this.kernelHandler.requestToolExecution(
-                                action.tool,
-                                action.arguments || {},
-                                {
-                                    correlationId: this.generateCorrelationId(),
-                                    timeout: 15000, // Reduced timeout
-                                },
+                        // Execute tool with circuit breaker protection
+                        if (this.toolCircuitBreaker) {
+                            const circuitResult = await this.retryWithBackoff(
+                                () =>
+                                    this.toolCircuitBreaker!.execute(
+                                        () =>
+                                            this.kernelHandler!.requestToolExecution(
+                                                action.tool,
+                                                action.arguments || {},
+                                                {
+                                                    correlationId:
+                                                        this.generateCorrelationId(),
+                                                    timeout: 10000, // Reduzido para 10s (circuit breaker tem 30s total)
+                                                },
+                                            ),
+                                        {
+                                            toolName: action.tool,
+                                            agentName: this.config.agentName,
+                                        },
+                                    ),
+                                3, // maxRetries
+                                1000, // baseDelayMs
+                                `MCP tool execution: ${action.tool}`,
                             );
+
+                            if (circuitResult.error) {
+                                throw circuitResult.error;
+                            }
+
+                            toolResult = circuitResult.result;
+                        } else {
+                            // Fallback without circuit breaker
+                            toolResult =
+                                await this.kernelHandler.requestToolExecution(
+                                    action.tool,
+                                    action.arguments || {},
+                                    {
+                                        correlationId:
+                                            this.generateCorrelationId(),
+                                        timeout: 10000, // Reduzido para 10s
+                                    },
+                                );
+                        }
 
                         this.logger.info(
                             '🤖 [AGENT] Tool execution completed via kernel',
@@ -4316,20 +4454,71 @@ export abstract class AgentCore<
                             },
                         );
                     } catch (error) {
+                        const errorMessage = (error as Error).message;
+                        const isTimeout =
+                            errorMessage.includes('timeout') ||
+                            errorMessage.includes('Timeout') ||
+                            errorMessage.includes('TIMEOUT_EXCEEDED');
+
+                        // If it's a timeout error, don't fallback to avoid duplicate execution
+                        if (isTimeout) {
+                            this.logger.error(
+                                '🤖 [AGENT] Kernel tool execution timed out - not falling back to prevent duplicates',
+                                error as Error,
+                                {
+                                    toolName: action.tool,
+                                    agentName: this.config.agentName,
+                                },
+                            );
+                            throw error; // Re-throw timeout error without fallback
+                        }
+
                         this.logger.warn(
                             '🤖 [AGENT] Kernel tool execution failed, falling back to direct execution',
                             {
                                 toolName: action.tool,
-                                error: (error as Error).message,
+                                error: errorMessage,
                                 agentName: this.config.agentName,
                             },
                         );
 
-                        // Fallback to direct execution
-                        toolResult = await this.toolEngine.executeCall(
-                            action.tool,
-                            action.arguments || {},
-                        );
+                        // Fallback to direct execution with circuit breaker (only for non-timeout errors)
+                        if (!this.toolEngine) {
+                            throw new Error('Tool engine not available');
+                        }
+
+                        if (this.toolCircuitBreaker) {
+                            const circuitResult = await this.retryWithBackoff(
+                                () =>
+                                    this.toolCircuitBreaker!.execute(
+                                        () =>
+                                            this.toolEngine!.executeCall(
+                                                action.tool,
+                                                action.arguments || {},
+                                            ),
+                                        {
+                                            toolName: action.tool,
+                                            agentName: this.config.agentName,
+                                        },
+                                    ),
+                                3, // maxRetries
+                                1000, // baseDelayMs
+                                `Fallback tool execution: ${action.tool}`,
+                            );
+
+                            if (circuitResult.rejected) {
+                                throw circuitResult.error;
+                            }
+                            if (circuitResult.error) {
+                                throw circuitResult.error;
+                            }
+                            toolResult = circuitResult.result;
+                        } else {
+                            toolResult = await this.toolEngine.executeCall(
+                                action.tool,
+                                action.arguments || {},
+                            );
+                        }
                     }
                 } else {
                     this.logger.info('🤖 [AGENT] Executing tool directly', {
@@ -4337,10 +4526,43 @@ export abstract class AgentCore<
                         agentName: this.config.agentName,
                     });
 
-                    toolResult = await this.toolEngine.executeCall(
-                        action.tool,
-                        action.arguments || {},
-                    );
+                    // Execute tool directly with circuit breaker
+                    if (!this.toolEngine) {
+                        throw new Error('Tool engine not available');
+                    }
+
+                    if (this.toolCircuitBreaker) {
+                        const circuitResult = await this.retryWithBackoff(
+                            () =>
+                                this.toolCircuitBreaker!.execute(
+                                    () =>
+                                        this.toolEngine!.executeCall(
+                                            action.tool,
+                                            action.arguments || {},
+                                        ),
+                                    {
+                                        toolName: action.tool,
+                                        agentName: this.config.agentName,
+                                    },
+                                ),
+                            3, // maxRetries
+                            1000, // baseDelayMs
+                            `Direct tool execution: ${action.tool}`,
+                        );
+
+                        if (circuitResult.rejected) {
+                            throw circuitResult.error;
+                        }
+                        if (circuitResult.error) {
+                            throw circuitResult.error;
+                        }
+                        toolResult = circuitResult.result;
+                    } else {
+                        toolResult = await this.toolEngine.executeCall(
+                            action.tool,
+                            action.arguments || {},
+                        );
+                    }
                 }
 
                 return {
@@ -4460,7 +4682,15 @@ export abstract class AgentCore<
         input: string,
         agentContext: AgentContext,
     ): Promise<PlannerExecutionContext> {
-        debugger;
+        // 🚀 Use ExecutionRuntime to build rich planner context if available
+        if (agentContext.executionRuntime) {
+            return await agentContext.executionRuntime.buildPlannerContext(
+                input,
+                agentContext, // Pass original context directly, no copying needed
+            );
+        }
+
+        // Fallback to simple execution context for backward compatibility
         const history: Array<{
             thought: NewAgentThought;
             action: NewAgentAction;
@@ -4468,32 +4698,12 @@ export abstract class AgentCore<
             observation: ResultAnalysis;
         }> = [];
 
-        // ✅ Add available tools to agent context for planner access
-        //const tools = this.toolEngine?.getAvailableTools() || [];
-
-        const enhancedAgentContext: AgentContext = {
-            ...agentContext,
-        };
-
-        // 🚀 Use ExecutionRuntime to build rich planner context if available
-        if (agentContext.executionRuntime) {
-            return await agentContext.executionRuntime.buildPlannerContext(
-                input,
-                enhancedAgentContext,
-            );
-        }
-
         // ✅ Fallback to simple execution context for backward compatibility
         const plannerContext: PlannerExecutionContext = {
             input,
-            thread: {
-                id: agentContext.system.threadId,
-                metadata: { description: 'Agent execution thread' },
-            },
             history,
             iterations: 0,
             maxIterations: this.config.maxThinkingIterations || 10,
-            constraints: undefined,
             plannerMetadata: {
                 agentName: agentContext.agentName,
                 correlationId: agentContext.correlationId,
@@ -4507,7 +4717,10 @@ export abstract class AgentCore<
             update(thought, result, observation) {
                 history.push({
                     thought,
-                    action: thought.action,
+                    action: thought.action || {
+                        type: 'final_answer',
+                        content: 'No action available',
+                    },
                     result,
                     observation,
                 });

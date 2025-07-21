@@ -12,7 +12,7 @@ import type { AgentIdentity } from '../types/agent-definition.js';
 import type { ConversationHistory } from './services/session-service.js';
 import type { PlannerExecutionContext } from '../../engine/planning/planner-factory.js';
 import type { MemoryManager } from '../memory/memory-manager.js';
-import type { SystemContext, RuntimeContext } from '../types/base-types.js';
+import type { SystemContext } from '../types/base-types.js';
 import { ContextStateService } from './services/state-service.js';
 import { sessionService } from './services/session-service.js';
 import { IdGenerator } from '../../utils/id-generator.js';
@@ -34,6 +34,10 @@ import type {
     ToolExecutionContext,
     ContextValueUpdate,
 } from './execution-runtime-types.js';
+import {
+    ToolMetadataForLLM,
+    ToolMetadataForPlanner,
+} from '../types/tool-types.js';
 
 /**
  * 🎯 ExecutionRuntime - Unified facade over existing context services
@@ -51,23 +55,9 @@ export class ExecutionRuntime implements IExecutionRuntime {
         string,
         Map<string, ContextValueUpdate>
     >();
-    // private readonly routingStrategy: StorageRoutingStrategy;
+    private currentContext?: AgentContext;
 
-    constructor(
-        // private readonly sessionService: SessionService,
-        // private readonly stateService: ContextStateService,
-        private readonly memoryManager: MemoryManager,
-        // routingStrategy?: StorageRoutingStrategy,
-    ) {
-        // this.routingStrategy =
-        //     routingStrategy || new DefaultStorageRoutingStrategy();
-        // this.routingStrategy = routingStrategy || null;
-        // this.logger.info('ExecutionRuntime initialized', {
-        //     sessionService: !!sessionService,
-        //     stateService: !!stateService,
-        //     memoryManager: !!memoryManager,
-        // });
-    }
+    constructor(private readonly memoryManager: MemoryManager) {}
     getSuccessPatterns(_component: string): Promise<Pattern[]> {
         throw new Error('Method not implemented.');
     }
@@ -92,9 +82,14 @@ export class ExecutionRuntime implements IExecutionRuntime {
         input: unknown,
         config: AgentExecutionOptions,
     ): Promise<AgentContext> {
-        debugger;
-        const { agentName, tenantId, thread, correlationId, sessionId } =
-            config;
+        const {
+            agentName,
+            tenantId,
+            thread,
+            correlationId,
+            sessionId,
+            userContext,
+        } = config;
 
         // Agent configuration from AgentDefinition.config
         const enableSession = agent?.config?.enableSession ?? true;
@@ -191,7 +186,7 @@ export class ExecutionRuntime implements IExecutionRuntime {
             status: 'running',
         };
 
-        const runtimeContext: RuntimeContext = systemContext;
+        // RuntimeContext removed - using SystemContext directly
 
         // 4. Build unified agent context
         const agentContext: AgentContext = {
@@ -200,12 +195,11 @@ export class ExecutionRuntime implements IExecutionRuntime {
             startTime: Date.now(),
             agentName: agentName,
             invocationId: IdGenerator.executionId(),
-            user: {
-                context: {},
-            },
-            system: runtimeContext,
+            user: userContext || {},
+            system: systemContext,
             stateManager: stateService,
             memoryManager: this.memoryManager,
+            executionRuntime: this, // ✅ Add reference to ExecutionRuntime
             signal: new AbortController().signal,
             cleanup: async () => {
                 await stateService.clear();
@@ -310,15 +304,23 @@ export class ExecutionRuntime implements IExecutionRuntime {
     /**
      * Get available tools from current context
      */
-    getAvailableTools(): AgentContext['availableTools'] {
+    getAvailableTools(): ToolMetadataForPlanner[] {
         return this.currentContext?.availableTools || [];
+    }
+
+    getAvailableToolsForLLM(): ToolMetadataForLLM[] {
+        return this.currentContext?.availableToolsForLLM || [];
+    }
+
+    getAgentIdentity(): AgentIdentity {
+        return this.currentContext?.agentIdentity || {};
     }
 
     /**
      * Get user context data
      */
     getUserContext(): Record<string, unknown> {
-        return this.currentContext?.user?.context || Object.create(null);
+        return this.currentContext?.user || Object.create(null);
     }
 
     /**
@@ -335,8 +337,6 @@ export class ExecutionRuntime implements IExecutionRuntime {
     getSessionHistory(): unknown[] {
         return this.currentContext?.system?.conversationHistory || [];
     }
-
-    private currentContext?: AgentContext;
 
     // ──────────────────────────────────────────────────────────────────────────────
     // 📝 EVENT COLLECTION & VERSIONING
@@ -426,15 +426,14 @@ export class ExecutionRuntime implements IExecutionRuntime {
             const plannerContext: PlannerExecutionContext = {
                 // Base context
                 input,
-                thread: {
-                    id: agentContext.system.threadId,
-                    metadata: { description: 'Agent execution thread' },
-                },
-                availableTools: agentContext.availableTools,
                 history: [],
                 iterations: 0,
                 maxIterations: 10,
                 plannerMetadata: {
+                    thread: {
+                        id: agentContext.system.threadId,
+                        metadata: { description: 'Agent execution thread' },
+                    },
                     agentName: agentContext.agentName,
                     correlationId: agentContext.correlationId,
                     tenantId: agentContext.tenantId,
@@ -442,17 +441,17 @@ export class ExecutionRuntime implements IExecutionRuntime {
                     plannerType: 'react', // Will be set properly by planner
                 },
 
-                // 🎯 Enhanced context from collected values
-                agentIdentity: enrichedContext.agentIdentity,
                 executionHints,
-                // learningContext,
                 isComplete: false,
 
                 // Methods
                 update: (thought, result, observation) => {
                     plannerContext.history.push({
                         thought,
-                        action: thought.action,
+                        action: thought.action || {
+                            type: 'final_answer',
+                            content: 'No action available',
+                        },
                         result,
                         observation,
                     });

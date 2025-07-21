@@ -1,83 +1,88 @@
 /**
- * Teste completo do processo de registro de MCP tools
+ * Teste da conversão de JSON Schema para Zod
  */
 
-import { createOrchestration } from './src/orchestration/sdk-orchestrator.js';
-import { createMCPAdapter } from './src/adapters/mcp/index.js';
-import { createLLMAdapter } from './src/adapters/llm/index.js';
-import { createMockLLMProvider } from './src/adapters/llm/mock-provider.js';
 import { safeJsonSchemaToZod } from './src/core/utils/json-schema-to-zod.js';
 
-async function testMCPRegistration() {
-    console.log('🧪 Testando registro completo de MCP tools...');
+async function testSchemaConversion() {
+    console.log('🧪 Testando conversão de JSON Schema para Zod...');
 
-    // 1. Criar LLM adapter
-    const llmAdapter = createLLMAdapter(mockProvider);
-
-    // 2. Criar MCP adapter
-    const mcpAdapter = createMCPAdapter({
-        servers: [
-            {
-                name: 'github-mcp',
-                type: 'http',
-                url: 'http://localhost:3000', // Simulado
+    // Teste com um schema do GitHub MCP
+    const testSchema = {
+        type: 'object',
+        properties: {
+            organizationId: {
+                type: 'string',
+                description: 'Organization UUID',
             },
-        ],
-    });
+            teamId: {
+                type: 'string',
+                description: 'Team UUID',
+            },
+            filters: {
+                type: 'object',
+                properties: {
+                    archived: {
+                        type: 'boolean',
+                    },
+                    private: {
+                        type: 'boolean',
+                    },
+                    language: {
+                        type: 'string',
+                    },
+                },
+                additionalProperties: false,
+            },
+        },
+        required: ['organizationId', 'teamId'],
+        additionalProperties: false,
+        $schema: 'http://json-schema.org/draft-07/schema#',
+    };
 
-    // 3. Criar orchestrator
-    const orchestrator = createOrchestration({
-        llmAdapter,
-        mcpAdapter,
-        tenantId: 'test-tenant',
-    });
+    console.log('\n📋 Schema original:');
+    console.log(JSON.stringify(testSchema, null, 2));
 
     try {
-        // 4. Conectar MCP
-        await orchestrator.connectMCP();
-        console.log('✅ MCP conectado');
-
-        // 5. Registrar tools
-        await orchestrator.registerMCPTools();
-        console.log('✅ MCP tools registradas');
-
-        // 6. Verificar tools registradas
-        const registeredTools = orchestrator.getRegisteredTools();
-        console.log('📋 Tools registradas:', registeredTools.length);
-
-        for (const tool of registeredTools) {
-            console.log(`  - ${tool.name}: ${tool.description}`);
-        }
-
-        // 7. Testar conversão de schema específico
-        const testSchema = {
-            type: 'object',
-            properties: {
-                organizationId: {
-                    type: 'string',
-                    description: 'Organization UUID',
-                },
-                teamId: {
-                    type: 'string',
-                    description: 'Team UUID',
-                },
-            },
-            required: ['organizationId', 'teamId'],
-            additionalProperties: false,
-        };
-
-        console.log('\n🔍 Testando conversão de schema...');
+        // Converter para Zod
         const zodSchema = safeJsonSchemaToZod(testSchema);
-        console.log('✅ Schema convertido:', typeof zodSchema);
+        console.log('\n✅ Schema convertido para Zod:', typeof zodSchema);
 
-        // 8. Testar validação
+        // Testar validação com dados válidos
         const validInput = {
             organizationId: 'org-123',
             teamId: 'team-456',
+            filters: {
+                archived: false,
+                private: true,
+                language: 'typescript',
+            },
         };
 
-        const result = zodSchema.safeParse(validInput);
-        console.log('✅ Validação:', result.success ? 'PASSOU' : 'FALHOU');
+        console.log('\n🧪 Testando validação com dados válidos...');
+        const validResult = zodSchema.safeParse(validInput);
+        console.log('✅ Resultado:', validResult.success ? 'PASSOU' : 'FALHOU');
+        if (!validResult.success) {
+            console.log('❌ Erros:', validResult.error);
+        }
+
+        // Testar validação com dados inválidos
+        const invalidInput = {
+            organizationId: 'org-123',
+            // Falta teamId (required)
+        };
+
+        console.log('\n🧪 Testando validação com dados inválidos...');
+        const invalidResult = zodSchema.safeParse(invalidInput);
+        console.log(
+            '✅ Resultado:',
+            invalidResult.success ? 'PASSOU' : 'FALHOU',
+        );
+        if (!invalidResult.success) {
+            console.log('❌ Erros esperados:', invalidResult.error);
+        }
+
+        console.log('\n🎉 Teste concluído com sucesso!');
     } catch (error) {
         console.error('❌ Erro no teste:', error);
         if (error instanceof Error) {
@@ -86,4 +91,4 @@ async function testMCPRegistration() {
     }
 }
 
-testMCPRegistration().catch(console.error);
+testSchemaConversion().catch(console.error);

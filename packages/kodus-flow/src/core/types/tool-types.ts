@@ -175,6 +175,12 @@ export interface ToolExample {
     tags?: string[];
 }
 
+export type ToolMetadataForLLM = {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+};
+
 /**
  * Metadata estruturada da tool para planners
  */

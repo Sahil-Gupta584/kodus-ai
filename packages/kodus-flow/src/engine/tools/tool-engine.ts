@@ -12,6 +12,7 @@ import type {
     ToolCall,
     ToolDependency,
     ToolMetadataForPlanner,
+    ToolMetadataForLLM,
 } from '../../core/types/tool-types.js';
 import { createToolContext } from '../../core/types/tool-types.js';
 import type {
@@ -81,6 +82,7 @@ export class ToolEngine {
         toolName: ToolId,
         input: TInput,
     ): Promise<TOutput> {
+        debugger;
         const callId = IdGenerator.callId();
         const maxRetries = this.config.retry?.maxRetries || 3;
         const timeout = this.config.timeout || 30000;
@@ -257,7 +259,6 @@ export class ToolEngine {
      * Get available tools with metadata for planner context engineering
      */
     getAvailableTools(): ToolMetadataForPlanner[] {
-        debugger;
         return Array.from(this.tools.values())?.map((tool) => {
             // Prioritize existing JSON Schema, then convert Zod if needed
             let jsonSchema: unknown = tool.jsonSchema;
@@ -346,11 +347,7 @@ export class ToolEngine {
      * Get tools in the correct format for LLMs (OpenAI, Anthropic, etc.)
      * Removes individual 'required' flags and keeps only the 'required' array
      */
-    getToolsForLLM(): Array<{
-        name: string;
-        description: string;
-        parameters: Record<string, unknown>;
-    }> {
+    getToolsForLLM(): ToolMetadataForLLM[] {
         return Array.from(this.tools.values()).map((tool) => {
             // Prioritize existing JSON Schema, then convert Zod if needed
             let jsonSchema: unknown = tool.jsonSchema;
@@ -360,10 +357,16 @@ export class ToolEngine {
                 tool.inputSchema &&
                 typeof tool.inputSchema === 'object' &&
                 tool.inputSchema !== null &&
-                'type' in tool.inputSchema
+                'type' in
+                    (tool.inputSchema as unknown as Record<string, unknown>) &&
+                // ✅ CORRIGIDO: Verificar se é realmente JSON Schema (não Zod)
+                !(
+                    '_def' in
+                    (tool.inputSchema as unknown as Record<string, unknown>)
+                )
             ) {
                 jsonSchema = tool.inputSchema;
-            } else if (tool.inputSchema && !jsonSchema) {
+            } else if (tool.inputSchema) {
                 // Try converting Zod schema to JSON Schema
                 try {
                     const converted = zodToJSONSchema(

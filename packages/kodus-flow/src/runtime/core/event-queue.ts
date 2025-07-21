@@ -10,6 +10,7 @@
  * - Integração com observabilidade
  */
 
+import * as os from 'os';
 import type { AnyEvent } from '../../core/types/events.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
 
@@ -180,6 +181,10 @@ export class EventQueue {
     private readonly criticalEventTypes: string[];
     private readonly criticalEventPrefixes: string[];
 
+    // CPU tracking for real measurement
+    private lastCpuInfo?: { idle: number; total: number; timestamp: number };
+    private lastCpuUsage?: number;
+
     // Future features (not implemented yet)
     // private readonly maxPersistedEvents: number;
     // private readonly enableAutoRecovery: boolean;
@@ -200,19 +205,19 @@ export class EventQueue {
     ) {
         // Configuração baseada em recursos
         this.maxMemoryUsage = config.maxMemoryUsage ?? 0.8; // 80% da memória
-        this.maxCpuUsage = config.maxCpuUsage ?? 0.7; // 70% da CPU
+        this.maxCpuUsage = config.maxCpuUsage ?? 0.85; // 85% da CPU (aumentado para evitar falsos positivos)
         this.maxQueueDepth = config.maxQueueDepth; // Sem limite por padrão
 
         // Configuração de processamento
         this.enableObservability = config.enableObservability ?? true;
-        this.batchSize = config.batchSize ?? 100;
-        this.chunkSize = config.chunkSize ?? 50;
-        this.maxConcurrent = config.maxConcurrent ?? 10;
+        this.batchSize = config.batchSize ?? 20; // Reduzido de 100 para 20
+        this.chunkSize = config.chunkSize ?? 10; // Reduzido de 50 para 10
+        this.maxConcurrent = config.maxConcurrent ?? 25; // Aumentado de 10 para 25
         this.semaphore = new Semaphore(this.maxConcurrent);
 
-        // Auto-ajuste (DISABLED by default now!)
-        this.enableAutoScaling = config.enableAutoScaling ?? false;
-        this.autoScalingInterval = config.autoScalingInterval ?? 30000;
+        // Auto-ajuste (ENABLED by default for better performance!)
+        this.enableAutoScaling = config.enableAutoScaling ?? true;
+        this.autoScalingInterval = config.autoScalingInterval ?? 10000; // Reduzido de 30s para 10s
 
         // Event Size Awareness
         this.largeEventThreshold = config.largeEventThreshold ?? 1024 * 1024;
@@ -251,6 +256,20 @@ export class EventQueue {
         if (this.enableAutoScaling) {
             this.startAutoScaling();
         }
+
+        // Adicionar limpeza automática no caso de garbage collection
+        // Isso ajuda a prevenir vazamentos se destroy() não for chamado
+        if (typeof FinalizationRegistry !== 'undefined') {
+            const registry = new FinalizationRegistry(
+                (timer: NodeJS.Timeout) => {
+                    clearInterval(timer);
+                },
+            );
+
+            if (this.autoScalingTimer) {
+                registry.register(this, this.autoScalingTimer);
+            }
+        }
     }
 
     /**
@@ -276,8 +295,11 @@ export class EventQueue {
     private getMemoryUsage(): number {
         try {
             const memUsage = process.memoryUsage();
-            // Use apenas heapUsed / heapTotal para evitar valores > 1.0
-            return Math.min(memUsage.heapUsed / memUsage.heapTotal, 1.0);
+            const totalMemory = os.totalmem();
+
+            // Use RSS (Resident Set Size) dividido pela memória total do sistema
+            // Isso dá uma medida real do uso de memória do processo
+            return Math.min(memUsage.rss / totalMemory, 1.0);
         } catch {
             return 0.5; // Fallback
         }
@@ -288,21 +310,65 @@ export class EventQueue {
      */
     private getCpuUsage(): number {
         try {
-            // TODO: Implementar medição real de CPU
-            // Por enquanto, usar heurística baseada em processamento
-            const processingRate = this.calculateProcessingRate();
-            const queueDepth = this.queue.length;
-
-            // CPU alta se processamento lento ou fila cheia
-            if (processingRate < 100 || queueDepth > 1000) {
-                return 0.8; // CPU alta
-            } else if (processingRate > 500 && queueDepth < 100) {
-                return 0.3; // CPU baixa
-            } else {
-                return 0.6; // CPU média
+            const cpus = os.cpus();
+            if (!cpus || cpus.length === 0) {
+                return 0.5; // Fallback if no CPU info
             }
-        } catch {
-            return 0.5; // Fallback conservador
+
+            // Calculate average CPU usage across all cores
+            let totalIdle = 0;
+            let totalTick = 0;
+
+            for (const cpu of cpus) {
+                const times = cpu.times;
+                totalIdle += times.idle;
+                totalTick +=
+                    times.user +
+                    times.nice +
+                    times.sys +
+                    times.idle +
+                    times.irq;
+            }
+
+            // Store previous values for delta calculation
+            if (!this.lastCpuInfo) {
+                this.lastCpuInfo = {
+                    idle: totalIdle,
+                    total: totalTick,
+                    timestamp: Date.now(),
+                };
+                return 0.5; // First measurement, return average
+            }
+
+            // Calculate delta
+            const deltaIdle = totalIdle - this.lastCpuInfo.idle;
+            const deltaTotal = totalTick - this.lastCpuInfo.total;
+            const deltaTime = Date.now() - this.lastCpuInfo.timestamp;
+
+            // Update stored values
+            this.lastCpuInfo = {
+                idle: totalIdle,
+                total: totalTick,
+                timestamp: Date.now(),
+            };
+
+            // If not enough time passed, use previous value
+            if (deltaTime < 100 || deltaTotal === 0) {
+                return this.lastCpuUsage || 0.5;
+            }
+
+            // Calculate usage (1 - idle percentage)
+            const usage = 1 - deltaIdle / deltaTotal;
+            this.lastCpuUsage = Math.max(0, Math.min(1, usage));
+
+            return this.lastCpuUsage;
+        } catch (error) {
+            if (this.enableObservability) {
+                this.observability.logger.debug('Failed to get CPU usage', {
+                    error,
+                });
+            }
+            return this.lastCpuUsage || 0.5; // Use last known value or fallback
         }
     }
 
@@ -516,6 +582,9 @@ export class EventQueue {
      * Iniciar monitoramento de auto-ajuste
      */
     private startAutoScaling(): void {
+        // Limpar timer existente primeiro para evitar vazamentos
+        this.stopAutoScaling();
+
         this.autoScalingTimer = setInterval(() => {
             const metrics = this.getSystemMetrics();
             this.performanceHistory.push(metrics);
@@ -527,6 +596,16 @@ export class EventQueue {
 
             this.autoAdjust();
         }, this.autoScalingInterval);
+    }
+
+    /**
+     * Parar monitoramento de auto-ajuste
+     */
+    private stopAutoScaling(): void {
+        if (this.autoScalingTimer) {
+            clearInterval(this.autoScalingTimer);
+            this.autoScalingTimer = undefined;
+        }
     }
 
     /**
@@ -726,8 +805,6 @@ export class EventQueue {
      * Adicionar evento à fila com backpressure e Event Size Awareness
      */
     async enqueue(event: AnyEvent, priority: number = 0): Promise<boolean> {
-        debugger;
-
         const eventSize = this.calculateEventSize(event);
         const isLarge = this.isLargeEvent(eventSize);
         const isHuge = this.isHugeEvent(eventSize);
@@ -1182,18 +1259,41 @@ export class EventQueue {
     }
 
     /**
+     * Configurar auto-scaling em runtime
+     */
+    setAutoScaling(enabled: boolean): void {
+        if (enabled && this.enableAutoScaling) {
+            this.startAutoScaling();
+        } else {
+            this.stopAutoScaling();
+        }
+
+        if (this.enableObservability) {
+            this.observability.logger.info(
+                'Auto-scaling configuration changed',
+                {
+                    enabled,
+                    timerActive: !!this.autoScalingTimer,
+                },
+            );
+        }
+    }
+
+    /**
      * Limpar recursos da fila
      */
     destroy(): void {
-        if (this.autoScalingTimer) {
-            clearInterval(this.autoScalingTimer);
-            this.autoScalingTimer = undefined;
-        }
+        // Parar auto-scaling usando método dedicado
+        this.stopAutoScaling();
+
+        // Limpar arrays
         this.queue = [];
         this.performanceHistory = [];
 
         if (this.enableObservability) {
-            this.observability.logger.info('Event queue destroyed');
+            this.observability.logger.info('Event queue destroyed', {
+                hadAutoScalingTimer: !!this.autoScalingTimer,
+            });
         }
     }
 }

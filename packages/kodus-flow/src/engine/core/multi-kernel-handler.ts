@@ -8,6 +8,43 @@
  * - Automatic routing based on event type namespace
  */
 
+/**
+ * Simple mutex implementation for thread-safe operations
+ */
+class SimpleMutex {
+    private locked = false;
+    private queue: (() => void)[] = [];
+
+    async acquire(): Promise<void> {
+        return new Promise<void>((resolve) => {
+            if (!this.locked) {
+                this.locked = true;
+                resolve();
+            } else {
+                this.queue.push(resolve);
+            }
+        });
+    }
+
+    release(): void {
+        if (this.queue.length > 0) {
+            const next = this.queue.shift()!;
+            process.nextTick(next);
+        } else {
+            this.locked = false;
+        }
+    }
+
+    async withLock<T>(operation: () => Promise<T>): Promise<T> {
+        await this.acquire();
+        try {
+            return await operation();
+        } finally {
+            this.release();
+        }
+    }
+}
+
 import {
     MultiKernelManager,
     createMultiKernelManager,
@@ -129,6 +166,10 @@ export class MultiKernelHandler {
             kernel: string;
         }>;
     };
+
+    // Thread safety mutexes
+    private eventCountsMutex = new SimpleMutex();
+    private loopProtectionMutex = new SimpleMutex();
 
     constructor(config: MultiKernelHandlerConfig) {
         this.config = {
@@ -286,9 +327,9 @@ export class MultiKernelHandler {
     ): Promise<void> {
         this.ensureInitialized();
 
-        // Check for infinite loop protection
+        // Check for infinite loop protection (thread-safe)
         if (this.loopProtection.enabled) {
-            this.checkForInfiniteLoop(eventType);
+            await this.checkForInfiniteLoopSafe(eventType);
         }
 
         // Route event to appropriate kernel based on event type
@@ -301,19 +342,11 @@ export class MultiKernelHandler {
                 data,
             );
 
-            // Update event counts
-            if (targetKernel === 'agent') {
-                this.eventCounts.agent++;
-            } else if (targetKernel === 'obs') {
-                this.eventCounts.observability++;
-            }
-
-            // Update loop protection history
-            this.loopProtection.eventHistory.push({
-                timestamp: Date.now(),
-                type: eventType,
-                kernel: targetKernel,
-            });
+            // Thread-safe update of event counts and loop protection history
+            await Promise.all([
+                this.updateEventCountsSafe(targetKernel),
+                this.updateLoopProtectionHistorySafe(eventType, targetKernel),
+            ]);
 
             this.logger.debug('Event routed successfully', {
                 eventType,
@@ -392,9 +425,9 @@ export class MultiKernelHandler {
     }
 
     /**
-     * Get comprehensive status
+     * Get comprehensive status (thread-safe)
      */
-    getStatus(): {
+    async getStatus(): Promise<{
         initialized: boolean;
         kernels: ReturnType<MultiKernelManager['getStatus']>;
         eventCounts: {
@@ -412,8 +445,17 @@ export class MultiKernelHandler {
                 kernel: string;
             }>;
         };
-    } {
+    }> {
         if (!this.isInitialized()) {
+            // Safe to access these without locks as they're read-only
+            const eventCountsCopy = await this.eventCountsMutex.withLock(
+                async () => ({
+                    agent: this.eventCounts.agent,
+                    observability: this.eventCounts.observability,
+                    crossKernel: this.eventCounts.crossKernel,
+                }),
+            );
+
             return {
                 initialized: false,
                 kernels: {
@@ -429,7 +471,7 @@ export class MultiKernelHandler {
                         recentEvents: [],
                     },
                 },
-                eventCounts: this.eventCounts,
+                eventCounts: eventCountsCopy,
                 loopProtection: {
                     enabled: this.loopProtection.enabled,
                     eventCount: 0,
@@ -439,24 +481,36 @@ export class MultiKernelHandler {
             };
         }
 
-        const now = Date.now();
-        const cutoffTime = now - this.loopProtection.windowSize;
-        const recentEvents = this.loopProtection.eventHistory.filter(
-            (e) => e.timestamp > cutoffTime,
-        );
+        // Thread-safe access to shared data
+        const [eventCountsCopy, loopProtectionData] = await Promise.all([
+            this.eventCountsMutex.withLock(async () => ({
+                agent: this.eventCounts.agent,
+                observability: this.eventCounts.observability,
+                crossKernel: this.eventCounts.crossKernel,
+            })),
+            this.loopProtectionMutex.withLock(async () => {
+                const now = Date.now();
+                const cutoffTime = now - this.loopProtection.windowSize;
+                const recentEvents = this.loopProtection.eventHistory
+                    .filter((e) => e.timestamp > cutoffTime)
+                    .map((e) => ({ ...e })); // Create copies
+
+                return {
+                    enabled: this.loopProtection.enabled,
+                    eventCount: recentEvents.length,
+                    eventRate:
+                        recentEvents.length /
+                        (this.loopProtection.windowSize / 1000),
+                    recentEvents: recentEvents.slice(-10),
+                };
+            }),
+        ]);
 
         return {
             initialized: true,
             kernels: this.multiKernelManager!.getStatus(),
-            eventCounts: this.eventCounts,
-            loopProtection: {
-                enabled: this.loopProtection.enabled,
-                eventCount: recentEvents.length,
-                eventRate:
-                    recentEvents.length /
-                    (this.loopProtection.windowSize / 1000),
-                recentEvents: recentEvents.slice(-10),
-            },
+            eventCounts: eventCountsCopy,
+            loopProtection: loopProtectionData,
         };
     }
 
@@ -469,7 +523,13 @@ export class MultiKernelHandler {
         const execId =
             `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` as ExecutionId;
         const startTime = Date.now();
-        const initialEventCounts = { ...this.eventCounts };
+        const initialEventCounts = await this.eventCountsMutex.withLock(
+            async () => ({
+                agent: this.eventCounts.agent,
+                observability: this.eventCounts.observability,
+                crossKernel: this.eventCounts.crossKernel,
+            }),
+        );
 
         this.logger.info('MultiKernelHandler starting execution', {
             executionId: execId,
@@ -487,11 +547,20 @@ export class MultiKernelHandler {
             const duration = Date.now() - startTime;
             const kernelsUsed = [];
 
-            if (this.eventCounts.agent > initialEventCounts.agent) {
+            // Thread-safe read of current event counts
+            const currentEventCounts = await this.eventCountsMutex.withLock(
+                async () => ({
+                    agent: this.eventCounts.agent,
+                    observability: this.eventCounts.observability,
+                    crossKernel: this.eventCounts.crossKernel,
+                }),
+            );
+
+            if (currentEventCounts.agent > initialEventCounts.agent) {
                 kernelsUsed.push('agent');
             }
             if (
-                this.eventCounts.observability >
+                currentEventCounts.observability >
                 initialEventCounts.observability
             ) {
                 kernelsUsed.push('observability');
@@ -501,7 +570,7 @@ export class MultiKernelHandler {
                 executionId: execId,
                 duration,
                 kernelsUsed,
-                eventCounts: this.eventCounts,
+                eventCounts: currentEventCounts,
             });
 
             return {
@@ -512,9 +581,9 @@ export class MultiKernelHandler {
                     duration,
                     kernelsUsed,
                     agentEventCount:
-                        this.eventCounts.agent - initialEventCounts.agent,
+                        currentEventCounts.agent - initialEventCounts.agent,
                     observabilityEventCount:
-                        this.eventCounts.observability -
+                        currentEventCounts.observability -
                         initialEventCounts.observability,
                 },
             };
@@ -566,8 +635,20 @@ export class MultiKernelHandler {
 
             this.multiKernelManager = null;
             this.initialized = false;
-            this.eventCounts = { agent: 0, observability: 0, crossKernel: 0 };
-            this.loopProtection.eventHistory = [];
+
+            // Thread-safe reset of shared data
+            await Promise.all([
+                this.eventCountsMutex.withLock(async () => {
+                    this.eventCounts = {
+                        agent: 0,
+                        observability: 0,
+                        crossKernel: 0,
+                    };
+                }),
+                this.loopProtectionMutex.withLock(async () => {
+                    this.loopProtection.eventHistory = [];
+                }),
+            ]);
 
             this.logger.info('MultiKernelHandler cleaned up');
         } catch (error) {
@@ -602,6 +683,7 @@ export class MultiKernelHandler {
             correlationId?: string;
         } = {},
     ): Promise<TResponse> {
+        debugger;
         this.ensureInitialized();
 
         const correlationId =
@@ -618,6 +700,14 @@ export class MultiKernelHandler {
         // Promise que aguarda resposta correlacionada
         const responsePromise = new Promise<TResponse>((resolve, reject) => {
             const timeoutId = setTimeout(() => {
+                // ✅ Clean up handler on timeout
+                if (handler) {
+                    this.multiKernelManager!.unregisterHandler(
+                        kernelId,
+                        responseEventType as EventType,
+                        handler,
+                    );
+                }
                 reject(
                     new Error(
                         `Timeout waiting for ${responseEventType} (${timeout}ms)`,
@@ -625,9 +715,21 @@ export class MultiKernelHandler {
                 );
             }, timeout);
 
+            // Determine target kernel before creating handler
+            const targetKernel = this.determineTargetKernel(responseEventType);
+            const kernelId =
+                targetKernel === 'agent' ? 'agent-execution' : 'observability';
+
             const handler = (event: AnyEvent) => {
                 if (event.metadata?.correlationId === correlationId) {
                     clearTimeout(timeoutId);
+
+                    // ✅ CRITICAL: Clean up handler immediately after use
+                    this.multiKernelManager!.unregisterHandler(
+                        kernelId,
+                        responseEventType as EventType,
+                        handler,
+                    );
 
                     if ((event.data as { error?: string })?.error) {
                         reject(
@@ -642,10 +744,6 @@ export class MultiKernelHandler {
             };
 
             // Register handler on appropriate kernel
-            const targetKernel = this.determineTargetKernel(responseEventType);
-            const kernelId =
-                targetKernel === 'agent' ? 'agent-execution' : 'observability';
-
             this.multiKernelManager!.registerHandler(
                 kernelId,
                 responseEventType as EventType,
@@ -812,43 +910,77 @@ export class MultiKernelHandler {
     /**
      * Check for infinite loop patterns
      */
-    private checkForInfiniteLoop(eventType: string): void {
-        const now = Date.now();
-        const cutoffTime = now - this.loopProtection.windowSize;
+    /**
+     * Thread-safe infinite loop check
+     */
+    private async checkForInfiniteLoopSafe(eventType: string): Promise<void> {
+        return this.loopProtectionMutex.withLock(async () => {
+            const now = Date.now();
+            const cutoffTime = now - this.loopProtection.windowSize;
 
-        // Clean up old events
-        this.loopProtection.eventHistory =
-            this.loopProtection.eventHistory.filter(
-                (event) => event.timestamp > cutoffTime,
-            );
+            // Clean up old events
+            this.loopProtection.eventHistory =
+                this.loopProtection.eventHistory.filter(
+                    (event) => event.timestamp > cutoffTime,
+                );
 
-        // Check event count threshold
-        if (
-            this.loopProtection.eventHistory.length >
-            this.loopProtection.maxEventCount
-        ) {
-            const error = new Error(
-                `Infinite loop detected: ${this.loopProtection.eventHistory.length} events in ${this.loopProtection.windowSize}ms window`,
-            );
-            this.logger.error('Infinite loop protection triggered', error, {
-                eventType,
-                eventCount: this.loopProtection.eventHistory.length,
-                recentEvents: this.loopProtection.eventHistory.slice(-10),
+            // Check event count threshold
+            if (
+                this.loopProtection.eventHistory.length >
+                this.loopProtection.maxEventCount
+            ) {
+                const error = new Error(
+                    `Infinite loop detected: ${this.loopProtection.eventHistory.length} events in ${this.loopProtection.windowSize}ms window`,
+                );
+                this.logger.error('Infinite loop protection triggered', error, {
+                    eventType,
+                    eventCount: this.loopProtection.eventHistory.length,
+                    recentEvents: this.loopProtection.eventHistory.slice(-10),
+                });
+                throw error;
+            }
+
+            // Check event rate threshold
+            const eventRate =
+                this.loopProtection.eventHistory.length /
+                (this.loopProtection.windowSize / 1000);
+            if (eventRate > this.loopProtection.maxEventRate) {
+                this.logger.warn('High event rate detected', {
+                    eventType,
+                    eventRate: eventRate.toFixed(2),
+                    maxEventRate: this.loopProtection.maxEventRate,
+                });
+            }
+        });
+    }
+
+    /**
+     * Thread-safe event counts update
+     */
+    private async updateEventCountsSafe(targetKernel: string): Promise<void> {
+        return this.eventCountsMutex.withLock(async () => {
+            if (targetKernel === 'agent') {
+                this.eventCounts.agent++;
+            } else if (targetKernel === 'obs') {
+                this.eventCounts.observability++;
+            }
+        });
+    }
+
+    /**
+     * Thread-safe loop protection history update
+     */
+    private async updateLoopProtectionHistorySafe(
+        eventType: string,
+        targetKernel: string,
+    ): Promise<void> {
+        return this.loopProtectionMutex.withLock(async () => {
+            this.loopProtection.eventHistory.push({
+                timestamp: Date.now(),
+                type: eventType,
+                kernel: targetKernel,
             });
-            throw error;
-        }
-
-        // Check event rate threshold
-        const eventRate =
-            this.loopProtection.eventHistory.length /
-            (this.loopProtection.windowSize / 1000);
-        if (eventRate > this.loopProtection.maxEventRate) {
-            this.logger.warn('High event rate detected', {
-                eventType,
-                eventRate: eventRate.toFixed(2),
-                maxEventRate: this.loopProtection.maxEventRate,
-            });
-        }
+        });
     }
 }
 

@@ -153,11 +153,25 @@ export class DirectLLMAdapter {
         goal: string,
         technique: string = 'cot',
         context?: {
-            availableTools?: string[];
+            availableTools?:
+                | string[]
+                | Array<{
+                      name: string;
+                      description?: string;
+                      [key: string]: unknown;
+                  }>;
             previousPlans?: PlanningResult[];
             constraints?: string[];
+            // Context engineering fields for enhanced prompting
+            toolsContext?: string;
+            agentScratchpad?: string; // ReAct agent_scratchpad
+            identityContext?: string;
+            userContext?: Record<string, unknown>; // User context for personalization
         },
     ): Promise<PlanningResult> {
+        debugger;
+
+        // ✅ Standard technique-based planning
         const planningTechnique = this.planningTechniques.get(technique);
         if (!planningTechnique) {
             throw new EngineError(
@@ -198,6 +212,7 @@ export class DirectLLMAdapter {
             const content =
                 typeof response === 'string' ? response : response.content;
 
+            // ✅ Always use the technique's official parser
             const result = planningTechnique.responseParser(content);
 
             this.logger.debug('Plan created successfully', {
@@ -383,39 +398,31 @@ Please create a plan using Tree of Thoughts reasoning. Consider multiple approac
             name: 'ReAct',
             description:
                 'Combines reasoning with acting in an iterative process',
-            systemPrompt: `You are an expert planning assistant that uses ReAct (Reasoning + Acting) methodology.
-Your job is to create plans that combine reasoning with actions in an iterative process.
+            systemPrompt: `You are an expert AI assistant that uses ReAct (Reasoning + Acting) methodology to solve problems step by step.`,
+            userPromptTemplate: `Answer the following questions as best you can. You have access to the following tools:
 
-Instructions:
-1. Alternate between reasoning and acting
-2. Each action should be followed by observation
-3. Use observations to inform next reasoning step
-4. Continue until goal is achieved
+{tools}
 
-Always respond in JSON format with the following structure:
-{
-  "strategy": "react",
-  "goal": "original goal",
-  "steps": [
-    {
-      "id": "step_1",
-      "description": "Step description",
-      "tool": "tool_name",
-      "arguments": {},
-      "dependencies": [],
-      "type": "analysis|action|decision|observation"
-    }
-  ],
-  "reasoning": "your reasoning about the iterative process",
-  "complexity": "simple|medium|complex"
-}`,
-            userPromptTemplate: `Goal: {goal}
+{identityContext}
 
-Available tools: {availableTools}
-Context: {context}
+{userContext}
 
-Please create a plan using ReAct methodology. Alternate between reasoning and acting.`,
-            responseParser: this.parseStandardPlanningResponse.bind(this),
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of the available tools above
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin!
+
+Question: {goal}
+Thought: {agentScratchpad}`,
+            responseParser: this.parseReActResponse.bind(this),
             options: {
                 temperature: 0.4,
                 maxTokens: 1200,
@@ -562,21 +569,113 @@ Please analyze semantic similarity and select the most appropriate tool.`,
         primary: string | Record<string, unknown>,
         context?: Record<string, unknown>,
     ): string {
-        let formatted = template.replace('{goal}', String(primary));
-        formatted = formatted.replace('{input}', JSON.stringify(primary));
+        return this.formatTemplate(template, {
+            goal: String(primary),
+            input: String(primary),
+            identityContext: String(context?.identityContext || ''),
+            userContext: this.formatUserContext(context?.userContext),
+            availableTools: this.formatAvailableTools(context?.availableTools),
+            tools: this.formatToolsForTemplate(
+                context?.availableTools,
+                context,
+            ),
+            toolNames: this.extractToolNames(context?.availableTools),
+            context: this.formatContext(context),
+            agentScratchpad: String(context?.agentScratchpad || ''),
+        });
+    }
 
-        if (context?.availableTools) {
-            formatted = formatted.replace(
-                '{availableTools}',
-                (context.availableTools as string[]).join(', '),
-            );
+    /**
+     * ✅ Simple template engine - replaces {key} with values
+     */
+    private formatTemplate(
+        template: string,
+        values: Record<string, string>,
+    ): string {
+        return template.replace(/\{(\w+)\}/g, (match, key) => {
+            return values[key] !== undefined ? values[key] : match;
+        });
+    }
+
+    /**
+     * ✅ Format user context in readable way
+     */
+    private formatUserContext(userContext?: unknown): string {
+        return userContext
+            ? `User preferences: ${JSON.stringify(userContext, null, 2)}`
+            : '';
+    }
+
+    /**
+     * ✅ Format available tools for simple listing
+     */
+    private formatAvailableTools(availableTools?: unknown): string {
+        if (!Array.isArray(availableTools)) return '';
+
+        return availableTools
+            .map((tool) => (typeof tool === 'string' ? tool : tool.name))
+            .join(', ');
+    }
+
+    /**
+     * ✅ Format tools for ReAct template (detailed format)
+     */
+    private formatToolsForTemplate(
+        availableTools?: unknown,
+        context?: Record<string, unknown>,
+    ): string {
+        // Use enhanced toolsContext if available
+        if (context?.toolsContext && typeof context.toolsContext === 'string') {
+            return context.toolsContext;
         }
 
-        formatted = formatted.replace(
-            '{context}',
-            JSON.stringify(context || {}),
-        );
-        return formatted;
+        // Fallback to basic formatting
+        if (!Array.isArray(availableTools)) return '';
+
+        return availableTools
+            .map(
+                (tool: string | { name: string; description?: string }) =>
+                    `${typeof tool === 'string' ? tool : tool.name}: ${typeof tool === 'string' ? tool : tool.description || 'No description'}`,
+            )
+            .join('\n');
+    }
+
+    /**
+     * ✅ Extract tool names for comma-separated list
+     */
+    private extractToolNames(availableTools?: unknown): string {
+        if (!Array.isArray(availableTools)) return '';
+
+        return availableTools
+            .map((tool: string | { name: string }) =>
+                typeof tool === 'string' ? tool : tool.name,
+            )
+            .join(', ');
+    }
+
+    /**
+     * ✅ Format context object with structured or fallback approach
+     */
+    private formatContext(context?: Record<string, unknown>): string {
+        if (!context) return '';
+
+        // Use structured context if available
+        if (
+            context.toolsContext ||
+            context.historyContext ||
+            context.identityContext
+        ) {
+            return [
+                context.identityContext,
+                context.toolsContext,
+                context.historyContext,
+            ]
+                .filter(Boolean)
+                .join('\n');
+        }
+
+        // Fallback to JSON
+        return JSON.stringify(context);
     }
 
     /**
@@ -601,6 +700,133 @@ Please analyze semantic similarity and select the most appropriate tool.`,
         cleaned = cleaned.trim();
 
         return cleaned;
+    }
+
+    /**
+     * ✅ NEW: Flexible parser that handles both JSON and natural text responses
+     */
+    // private parseFlexiblePlanningResponse(
+    //     response: string,
+    //     goal: string,
+    //     technique: string,
+    // ): PlanningResult {
+    //     try {
+    //         // First try JSON parsing
+    //         const cleanedResponse = this.cleanJsonResponse(response);
+    //         const parsed = JSON.parse(cleanedResponse);
+    //         return {
+    //             strategy: parsed.strategy || technique,
+    //             goal: parsed.goal || goal,
+    //             steps: parsed.steps || [],
+    //             reasoning: parsed.reasoning || '',
+    //             complexity: parsed.complexity || 'medium',
+    //         };
+    //     } catch {
+    //         // JSON parsing failed, treat as natural text response
+    //         return {
+    //             strategy: technique,
+    //             goal: goal,
+    //             steps: [
+    //                 {
+    //                     id: 'step_1',
+    //                     description: response.trim(),
+    //                     type: 'analysis' as const,
+    //                 },
+    //             ],
+    //             reasoning: response.trim(),
+    //             complexity: 'medium' as const,
+    //         };
+    //     }
+    // }
+
+    private parseReActResponse(response: string): PlanningResult {
+        try {
+            // Parse ReAct text format: Thought/Action/Action Input/Observation
+            const lines = response
+                .trim()
+                .split('\n')
+                .map((line) => line.trim());
+            const steps: Array<{
+                id: string;
+                description: string;
+                tool?: string;
+                arguments?: Record<string, unknown>;
+                type: 'analysis' | 'action' | 'decision' | 'observation';
+            }> = [];
+
+            let stepCounter = 1;
+            let currentThought = '';
+            let currentAction = '';
+            let currentActionInput = '';
+
+            for (const line of lines) {
+                if (line.startsWith('Thought:')) {
+                    currentThought = line.substring(8).trim();
+                    if (currentThought) {
+                        steps.push({
+                            id: `thought_${stepCounter}`,
+                            description: currentThought,
+                            type: 'analysis',
+                        });
+                    }
+                } else if (line.startsWith('Action:')) {
+                    currentAction = line.substring(7).trim();
+                } else if (line.startsWith('Action Input:')) {
+                    currentActionInput = line.substring(13).trim();
+                    if (currentAction) {
+                        // Try to parse action input as JSON, fallback to string
+                        let parsedInput: Record<string, unknown> = {};
+                        try {
+                            parsedInput = JSON.parse(currentActionInput);
+                        } catch {
+                            parsedInput = { input: currentActionInput };
+                        }
+
+                        steps.push({
+                            id: `action_${stepCounter}`,
+                            description: `Use ${currentAction} with input: ${currentActionInput}`,
+                            tool: currentAction,
+                            arguments: parsedInput,
+                            type: 'action',
+                        });
+                        stepCounter++;
+                    }
+                } else if (line.startsWith('Final Answer:')) {
+                    const finalAnswer = line.substring(13).trim();
+                    steps.push({
+                        id: `final_answer`,
+                        description: finalAnswer,
+                        type: 'decision',
+                    });
+                }
+            }
+
+            return {
+                strategy: 'react',
+                goal: 'ReAct reasoning',
+                steps: steps,
+                reasoning: response.trim(),
+                complexity: 'medium',
+            };
+        } catch (error) {
+            this.logger.error(
+                'Failed to parse ReAct response',
+                error instanceof Error ? error : new Error('Unknown error'),
+            );
+            return {
+                strategy: 'react',
+                goal: '',
+                steps: [
+                    {
+                        id: 'fallback',
+                        description: response.trim(),
+                        type: 'analysis',
+                    },
+                ],
+                reasoning: 'Failed to parse ReAct response',
+                complexity: 'medium',
+            };
+        }
     }
 
     private parseStandardPlanningResponse(response: string): PlanningResult {

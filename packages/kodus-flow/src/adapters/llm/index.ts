@@ -87,22 +87,12 @@ export interface LLMAdapter {
 
     // ✅ NEW: Structured generation support
     supportsStructuredGeneration?(): boolean;
-    generateStructured?<T>(request: {
-        messages: LLMMessage[];
-        schema: unknown; // Zod schema
-        temperature?: number;
-        maxTokens?: number;
-    }): Promise<T>;
 
     // ✅ NEW: Legacy planning methods (for backward compatibility)
     createPlan?(
         goal: string,
         strategy: string,
-        options?: {
-            availableTools?: string[];
-            agentIdentity?: string;
-            previousPlans?: unknown[];
-        },
+        context: unknown,
     ): Promise<unknown>;
 
     getProvider?(): { name: string };

@@ -110,7 +110,6 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
          * Get all tools as engine-compatible tools
          */
         async getTools(): Promise<MCPTool[]> {
-            debugger;
             if (!isConnected) {
                 throw new Error(
                     'MCP adapter not connected. Call connect() first.',

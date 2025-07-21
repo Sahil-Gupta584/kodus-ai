@@ -483,6 +483,26 @@ export class MultiKernelManager {
     }
 
     /**
+     * Unregister handler from specific kernel (CRITICAL for memory leak prevention)
+     */
+    unregisterHandler(
+        kernelId: string,
+        eventType: EventType,
+        handler: EventHandler<AnyEvent>,
+    ): void {
+        const kernel = this.getKernel(kernelId);
+        if (!kernel) {
+            // Don't throw on cleanup - kernel might be shutting down
+            this.logger.debug(
+                `Kernel not found during handler cleanup: ${kernelId}`,
+            );
+            return;
+        }
+
+        kernel.removeHandler(eventType, handler);
+    }
+
+    /**
      * Process events for all running kernels
      */
     async processAllKernels(): Promise<void> {

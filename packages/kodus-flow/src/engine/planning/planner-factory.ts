@@ -12,7 +12,6 @@ import { ReflexionPlanner } from './strategies/reflexion-planner.js';
 import { PlanAndExecutePlanner } from './strategies/plan-execute-planner.js';
 import { Thread } from '../../core/types/common-types.js';
 import { AgentIdentity } from '@/core/types/agent-definition.js';
-import type { ToolMetadataForPlanner } from '../../core/types/tool-types.js';
 
 export type PlannerType = 'react' | 'tot' | 'reflexion' | 'plan-execute';
 
@@ -38,7 +37,7 @@ export interface AgentThoughtMetadata {
 
 export interface AgentThought {
     reasoning: string;
-    action: AgentAction;
+    action?: AgentAction;
     confidence?: number;
     metadata?: AgentThoughtMetadata;
 }
@@ -172,24 +171,15 @@ export interface ExecutionHistoryEntry {
 // Enhanced execution context for planners with improved LLM performance
 export interface PlannerExecutionContext {
     input: string;
-    thread: Thread;
     history: ExecutionHistoryEntry[];
+    isComplete: boolean;
+
     iterations: number;
     maxIterations: number;
-    constraints?: string[];
     plannerMetadata: ExecutionContextMetadata;
 
     // 🚀 NEW: Execution hints for better LLM decision making
     executionHints?: ExecutionHints;
-
-    // 🧠 NEW: Learning context from previous executions
-    learningContext?: LearningContext;
-
-    // 🛠️ Available tools for this context
-    availableTools?: ToolMetadataForPlanner[];
-
-    // 👤 Agent identity for context
-    agentIdentity?: AgentIdentity;
 
     // Methods
     update(
@@ -198,7 +188,6 @@ export interface PlannerExecutionContext {
         observation: ResultAnalysis,
     ): void;
     getCurrentSituation(): string;
-    isComplete: boolean;
     getFinalResult(): AgentExecutionResult;
 }
 
