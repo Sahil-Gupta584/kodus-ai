@@ -6,6 +6,7 @@ import { AgentService } from '@/core/infrastructure/adapters/services/agent/agen
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { ConversationAgentUseCase } from '../../agent/conversation-agent.use-case';
 
 interface WebhookParams {
     event: string;
@@ -60,8 +61,7 @@ export class ChatWithKodyFromGitUseCase {
     constructor(
         private readonly logger: PinoLoggerService,
         private readonly codeManagementService: CodeManagementService,
-        @Inject(AGENT_SERVICE_TOKEN)
-        private readonly agentService: AgentService,
+        private readonly conversationAgentUseCase: ConversationAgentUseCase,
     ) {}
 
     async execute(params: WebhookParams): Promise<void> {
@@ -138,12 +138,18 @@ export class ChatWithKodyFromGitUseCase {
                 sender.login,
                 othersReplies,
             );
-            const response = await this.agentService.conversationWithKody(
+            console.log('Message prepared:', message);
+            const response = await this.conversationAgentUseCase.execute({
+                prompt: message,
                 organizationAndTeamData,
-                sender.id,
-                message,
-                sender.login,
-            );
+            });
+            console.log('Response:', response);
+            // const response = await this.agentService.conversationWithKody(
+            //     organizationAndTeamData,
+            //     sender.id,
+            //     message,
+            //     sender.login,
+            // );
 
             await this.codeManagementService.createResponseToComment({
                 organizationAndTeamData,

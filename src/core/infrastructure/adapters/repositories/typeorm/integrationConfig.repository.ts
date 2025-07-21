@@ -110,19 +110,15 @@ export class IntegrationConfigRepository
             const { integration, team, configValue, ...otherFilterAttributes } =
                 filter || {};
 
-            const integrationCondition = createNestedConditions(
-                'integration',
-                integration,
-            );
-
-            const teamCondition = createNestedConditions('team', team);
+            // Para integration, use objeto aninhado (TypeORM espera assim para campos primitivos do relacionamento)
+            const where: any = {
+                ...otherFilterAttributes,
+                ...(integration ? { integration: integration as any } : {}),
+                ...createNestedConditions('team', team),
+            };
 
             const findOptions: FindManyOptions<IntegrationConfigModel> = {
-                where: {
-                    ...otherFilterAttributes,
-                    ...integrationCondition,
-                    ...teamCondition,
-                },
+                where,
                 relations: ['integration', 'integration.organization', 'team'],
             };
 

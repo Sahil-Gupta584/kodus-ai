@@ -168,14 +168,8 @@ export class GithubService
         @Inject(TEAM_SERVICE_TOKEN)
         private readonly teamService: ITeamService,
 
-        @Inject(ORGANIZATION_METRICS_SERVICE_TOKEN)
-        private readonly organizationMetricsService: IOrganizationMetricsService,
-
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parameterService: IParametersService,
-
-        @Inject(DORA_METRICS_FACTORY_TOKEN)
-        private readonly doraMetricsFactory: IDoraMetricsFactory,
 
         @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
@@ -3371,6 +3365,10 @@ export class GithubService
                 await this.integrationConfigService.findOne({
                     configKey: IntegrationConfigKey.REPOSITORIES,
                     configValue: [{ id: params?.repository?.id?.toString() }],
+                    integration: {
+                        status: true,
+                        platform: PlatformType.GITHUB,
+                    },
                 });
 
             return integrationConfig &&
