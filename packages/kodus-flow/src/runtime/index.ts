@@ -20,6 +20,7 @@ import { createPersistorFromConfig } from '../persistor/factory.js';
 import { StreamManager } from './core/stream-manager.js';
 import { MemoryMonitor } from './core/memory-monitor.js';
 import { createEvent } from '../core/types/events.js';
+import { createEventStore, type EventStore } from './core/event-store.js';
 
 // Types imports
 import type {
@@ -38,6 +39,9 @@ import type { Persistor } from '../persistor/index.js';
 
 export { EventQueue } from './core/event-queue.js';
 export type { EventQueueConfig, QueueItem } from './core/event-queue.js';
+
+export { EventStore, createEventStore } from './core/event-store.js';
+export type { EventStoreConfig } from './core/event-store.js';
 
 // Import for internal use
 import type { EventQueueConfig } from './core/event-queue.js';
@@ -106,6 +110,15 @@ export interface RuntimeConfig {
 
     // Queue configuration (direct access to EventQueue config)
     queueConfig?: Partial<EventQueueConfig>;
+
+    // Event Store configuration
+    enableEventStore?: boolean; // Default: false
+    eventStoreConfig?: {
+        persistorType?: 'memory' | 'mongodb' | 'redis' | 'temporal';
+        persistorOptions?: Record<string, unknown>;
+        replayBatchSize?: number;
+        maxStoredEvents?: number;
+    };
 }
 
 /**
@@ -159,12 +172,6 @@ export interface Runtime {
         acked: number;
         failed: number;
     }>;
-    /** @deprecated Use process(true) instead */
-    processWithAcks(): Promise<{
-        processed: number;
-        acked: number;
-        failed: number;
-    }>;
 
     // ACK/NACK para delivery guarantees
     ack(eventId: string): Promise<void>;
@@ -196,6 +203,17 @@ export interface Runtime {
         eventType?: string;
     }): Promise<{ reprocessedCount: number; events: AnyEvent[] }>;
 
+    // Event Store access
+    getEventStore?(): EventStore | null;
+    replayEvents?(
+        fromTimestamp: number,
+        options?: {
+            toTimestamp?: number;
+            onlyUnprocessed?: boolean;
+            batchSize?: number;
+        },
+    ): AsyncGenerator<AnyEvent[]>;
+
     // Cleanup
     clear(): void;
     cleanup(): Promise<void>;
@@ -226,6 +244,8 @@ export function createRuntime(
         persistor,
         executionId,
         queueConfig = {},
+        enableEventStore = false,
+        eventStoreConfig = {},
     } = config;
 
     // Create persistor if not provided
@@ -242,6 +262,20 @@ export function createRuntime(
     const runtimeExecutionId =
         executionId ||
         `runtime_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+
+    // Event Store - Optional for replay capability
+    let eventStore: EventStore | undefined;
+    if (enableEventStore) {
+        eventStore = createEventStore(observability, {
+            executionId: runtimeExecutionId,
+            enableReplay: true,
+            persistorType: eventStoreConfig.persistorType || 'memory',
+            persistorOptions: eventStoreConfig.persistorOptions,
+            replayBatchSize: eventStoreConfig.replayBatchSize || 100,
+            maxStoredEvents: eventStoreConfig.maxStoredEvents || 10000,
+            enableObservability,
+        });
+    }
 
     // Event Queue - Single unified queue with simplified configuration
     const eventQueue = new EventQueue(observability, {
@@ -265,9 +299,17 @@ export function createRuntime(
         maxRetryDelay: 30000,
         enableJitter: true,
 
+        // Event Store integration
+        enableEventStore,
+        eventStore,
+
         // Override with any specific queue config provided
         ...queueConfig,
     });
+
+    // Note: Schema validation will be applied at emit level, not in EventProcessor middleware
+    // This is because EventProcessor uses Middleware (handler transformer) pattern
+    // while Schema validation uses MiddlewareFunction (context/next) pattern
 
     // Event Processor with middleware
     const eventProcessor = new OptimizedEventProcessor(context, observability, {
@@ -495,19 +537,6 @@ export function createRuntime(
             return { processed, acked, failed };
         },
 
-        /** @deprecated Use process(true) instead */
-        async processWithAcks(): Promise<{
-            processed: number;
-            acked: number;
-            failed: number;
-        }> {
-            return (await this.process(true)) as {
-                processed: number;
-                acked: number;
-                failed: number;
-            };
-        },
-
         async ack(eventId: string): Promise<void> {
             const ackInfo = pendingAcks.get(eventId);
             if (ackInfo) {
@@ -610,6 +639,23 @@ export function createRuntime(
         // Enhanced queue access (unified EventQueue now)
         getEnhancedQueue: () => {
             return eventQueue;
+        },
+
+        // Event Store access
+        getEventStore: () => {
+            return eventStore || null;
+        },
+
+        // Event replay functionality
+        replayEvents: async function* (
+            fromTimestamp: number,
+            options?: {
+                toTimestamp?: number;
+                onlyUnprocessed?: boolean;
+                batchSize?: number;
+            },
+        ) {
+            yield* eventQueue.replayEvents(fromTimestamp, options);
         },
 
         // reprocessFromDLQ: async (eventId: string) => {

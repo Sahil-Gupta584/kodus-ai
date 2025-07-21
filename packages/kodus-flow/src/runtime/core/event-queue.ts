@@ -13,6 +13,7 @@
 import * as os from 'os';
 import type { AnyEvent } from '../../core/types/events.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
+import type { EventStore } from './event-store.js';
 
 /**
  * Configuração da fila de eventos baseada em recursos
@@ -61,6 +62,10 @@ export interface EventQueueConfig {
     retryBackoffMultiplier?: number; // Default: 2 (exponential)
     enableJitter?: boolean; // Default: true
     jitterRatio?: number; // Default: 0.1 (10%)
+
+    // === EVENT STORE INTEGRATION ===
+    enableEventStore?: boolean; // Default: false
+    eventStore?: EventStore; // Event store instance
 }
 
 /**
@@ -185,6 +190,10 @@ export class EventQueue {
     private lastCpuInfo?: { idle: number; total: number; timestamp: number };
     private lastCpuUsage?: number;
 
+    // Event Store integration
+    private readonly enableEventStore: boolean;
+    private readonly eventStore?: EventStore;
+
     // Future features (not implemented yet)
     // private readonly maxPersistedEvents: number;
     // private readonly enableAutoRecovery: boolean;
@@ -237,6 +246,10 @@ export class EventQueue {
             'agent.',
             'workflow.',
         ];
+
+        // Event Store integration
+        this.enableEventStore = config.enableEventStore ?? false;
+        this.eventStore = config.eventStore;
 
         // Future features (not implemented yet)
         // this.maxPersistedEvents = config.maxPersistedEvents ?? 1000;
@@ -930,6 +943,25 @@ export class EventQueue {
             }
         }
 
+        // ✅ STORE EVENT FOR REPLAY (antes de adicionar à fila)
+        if (this.enableEventStore && this.eventStore) {
+            try {
+                await this.eventStore.appendEvents([processedEvent]);
+            } catch (error) {
+                if (this.enableObservability) {
+                    this.observability.logger.warn(
+                        'Failed to store event for replay',
+                        {
+                            eventId: event.id,
+                            eventType: event.type,
+                            error: (error as Error).message,
+                        },
+                    );
+                }
+                // Não falhar o enqueue se o event store falhar
+            }
+        }
+
         // Inserir com prioridade (maior prioridade primeiro)
         const insertIndex = this.queue.findIndex(
             (qi) => qi.priority < priority,
@@ -1034,6 +1066,27 @@ export class EventQueue {
                         try {
                             await processor(event);
                             successCount++;
+
+                            // ✅ MARK EVENT AS PROCESSED (para event store) - com error handling
+                            if (this.enableEventStore && this.eventStore) {
+                                try {
+                                    await this.eventStore.markEventsProcessed([
+                                        event.id,
+                                    ]);
+                                } catch (markError) {
+                                    // Log error but don't fail processing
+                                    if (this.enableObservability) {
+                                        this.observability.logger.warn(
+                                            'Failed to mark event as processed in event store',
+                                            {
+                                                eventId: event.id,
+                                                error: (markError as Error)
+                                                    .message,
+                                            },
+                                        );
+                                    }
+                                }
+                            }
                         } catch (error) {
                             errorCount++;
                             if (this.enableObservability) {
@@ -1277,6 +1330,36 @@ export class EventQueue {
                 },
             );
         }
+    }
+
+    /**
+     * Get Event Store instance (for replay operations)
+     */
+    getEventStore(): EventStore | undefined {
+        return this.eventStore;
+    }
+
+    /**
+     * Replay events from Event Store
+     */
+    async *replayEvents(
+        fromTimestamp: number,
+        options?: {
+            toTimestamp?: number;
+            onlyUnprocessed?: boolean;
+            batchSize?: number;
+        },
+    ): AsyncGenerator<AnyEvent[]> {
+        if (!this.enableEventStore || !this.eventStore) {
+            if (this.enableObservability) {
+                this.observability.logger.warn(
+                    'Event Store not enabled or configured',
+                );
+            }
+            return;
+        }
+
+        yield* this.eventStore.replayFromTimestamp(fromTimestamp, options);
     }
 
     /**

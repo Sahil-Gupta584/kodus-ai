@@ -363,6 +363,67 @@ export class MultiKernelHandler {
     }
 
     /**
+     * Emit event with delivery guarantee information
+     * Similar to runtime.emitAsync() but through kernel layer
+     */
+    async emitAsync<T extends EventType>(
+        eventType: T,
+        data?: EventPayloads[T],
+        options?: {
+            deliveryGuarantee?:
+                | 'at-most-once'
+                | 'at-least-once'
+                | 'exactly-once';
+            correlationId?: string;
+            timeout?: number;
+        },
+    ): Promise<{
+        success: boolean;
+        eventId: string;
+        queued: boolean;
+        error?: Error;
+        correlationId?: string;
+    }> {
+        const correlationId =
+            options?.correlationId || `corr_${Date.now()}_${Math.random()}`;
+        const eventId = `evt_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+
+        try {
+            // Add correlationId to event data
+            const enrichedData = data
+                ? {
+                      ...data,
+                      correlationId,
+                      eventId,
+                  }
+                : ({
+                      correlationId,
+                      eventId,
+                  } as EventPayloads[T]);
+
+            await this.emit(eventType, enrichedData);
+
+            // Process events immediately to ensure handlers run
+            await this.processEvents();
+
+            return {
+                success: true,
+                eventId,
+                queued: true,
+                correlationId,
+            };
+        } catch (error) {
+            return {
+                success: false,
+                eventId,
+                queued: false,
+                error: error as Error,
+                correlationId,
+            };
+        }
+    }
+
+    /**
      * Register event handler on appropriate kernel
      */
     registerHandler(
@@ -521,7 +582,7 @@ export class MultiKernelHandler {
         this.ensureInitialized();
 
         const execId =
-            `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` as ExecutionId;
+            `exec_${Date.now()}_${Math.random().toString(36).substring(2, 11)}` as ExecutionId;
         const startTime = Date.now();
         const initialEventCounts = await this.eventCountsMutex.withLock(
             async () => ({
@@ -668,11 +729,11 @@ export class MultiKernelHandler {
     }
 
     // ──────────────────────────────────────────────────────────────────────────────
-    // 🚀 REQUEST-RESPONSE PATTERN
+    // 🚀 REQUEST-RESPONSE PATTERN (Using runtime ACK/NACK system)
     // ──────────────────────────────────────────────────────────────────────────────
 
     /**
-     * Send request and wait for response using event correlation
+     * Send request using runtime's built-in ACK/NACK system
      */
     async request<TRequest = unknown, TResponse = unknown>(
         requestEventType: string,
@@ -683,53 +744,64 @@ export class MultiKernelHandler {
             correlationId?: string;
         } = {},
     ): Promise<TResponse> {
-        debugger;
         this.ensureInitialized();
 
         const correlationId =
             options.correlationId || this.generateCorrelationId();
         const timeout = options.timeout || 30000;
 
-        this.logger.debug('Sending request via events', {
+        this.logger.debug('Sending request via runtime ACK/NACK', {
             requestEventType,
             responseEventType,
             correlationId,
             timeout,
         });
 
-        // Promise que aguarda resposta correlacionada
-        const responsePromise = new Promise<TResponse>((resolve, reject) => {
+        // ✅ Use runtime's built-in emit with ACK system
+        const targetKernel = this.determineTargetKernel(requestEventType);
+        const kernel = this.multiKernelManager!.getKernel(
+            targetKernel === 'agent' ? 'agent-execution' : 'observability',
+        );
+
+        if (!kernel) {
+            throw new Error(`Target kernel not available: ${targetKernel}`);
+        }
+
+        // ✅ Get runtime instance from kernel and use its ACK/NACK system
+        const runtime = kernel.getRuntime();
+        if (!runtime) {
+            throw new Error('Runtime not available from kernel');
+        }
+
+        return new Promise<TResponse>((resolve, reject) => {
+            let responseReceived = false;
             const timeoutId = setTimeout(() => {
-                // ✅ Clean up handler on timeout
-                if (handler) {
-                    this.multiKernelManager!.unregisterHandler(
-                        kernelId,
-                        responseEventType as EventType,
-                        handler,
+                if (!responseReceived) {
+                    responseReceived = true;
+                    reject(
+                        new Error(
+                            `Timeout waiting for ${responseEventType} (${timeout}ms)`,
+                        ),
                     );
                 }
-                reject(
-                    new Error(
-                        `Timeout waiting for ${responseEventType} (${timeout}ms)`,
-                    ),
-                );
             }, timeout);
 
-            // Determine target kernel before creating handler
-            const targetKernel = this.determineTargetKernel(responseEventType);
-            const kernelId =
-                targetKernel === 'agent' ? 'agent-execution' : 'observability';
-
-            const handler = (event: AnyEvent) => {
-                if (event.metadata?.correlationId === correlationId) {
+            // ✅ Register response handler using existing patterns
+            const responseHandler = (event: AnyEvent) => {
+                if (
+                    event.metadata?.correlationId === correlationId &&
+                    !responseReceived
+                ) {
+                    responseReceived = true;
                     clearTimeout(timeoutId);
 
-                    // ✅ CRITICAL: Clean up handler immediately after use
-                    this.multiKernelManager!.unregisterHandler(
-                        kernelId,
-                        responseEventType as EventType,
-                        handler,
-                    );
+                    // ✅ Use runtime's ACK system
+                    runtime.ack(event.id).catch((error) => {
+                        this.logger.warn('Failed to ACK response event', {
+                            error,
+                            eventId: event.id,
+                        });
+                    });
 
                     if ((event.data as { error?: string })?.error) {
                         reject(
@@ -743,42 +815,65 @@ export class MultiKernelHandler {
                 }
             };
 
-            // Register handler on appropriate kernel
+            // Register handler on the target kernel for response
+            const responseKernel =
+                this.determineTargetKernel(responseEventType);
+            const responseKernelId =
+                responseKernel === 'agent'
+                    ? 'agent-execution'
+                    : 'observability';
+
             this.multiKernelManager!.registerHandler(
-                kernelId,
+                responseKernelId,
                 responseEventType as EventType,
-                handler,
+                responseHandler,
             );
+
+            // ✅ Emit request using runtime's emitAsync (with built-in ACK tracking)
+            runtime
+                .emitAsync(
+                    requestEventType as EventType,
+                    {
+                        ...data,
+                        correlationId,
+                        timestamp: Date.now(),
+                    },
+                    {
+                        correlationId,
+                        timeout: timeout,
+                    },
+                )
+                .then(async (emitResult) => {
+                    if (!emitResult.success) {
+                        responseReceived = true;
+                        clearTimeout(timeoutId);
+                        reject(
+                            emitResult.error ||
+                                new Error('Failed to emit request'),
+                        );
+                    } else {
+                        // ✅ Process events immediately after successful emit to ensure handlers can respond
+                        try {
+                            await this.processEvents();
+                        } catch (processError) {
+                            this.logger.error(
+                                'Failed to process events after emit',
+                                processError as Error,
+                                {
+                                    requestEventType,
+                                    correlationId,
+                                },
+                            );
+                            // Don't reject here - let the timeout handle it if no response comes
+                        }
+                    }
+                })
+                .catch((error) => {
+                    responseReceived = true;
+                    clearTimeout(timeoutId);
+                    reject(error);
+                });
         });
-
-        // Enviar request usando emitAsync
-        try {
-            const targetKernel = this.determineTargetKernel(requestEventType);
-            await this.multiKernelManager!.emitToNamespace(
-                targetKernel,
-                requestEventType as EventType,
-                {
-                    ...data,
-                    correlationId,
-                    timestamp: Date.now(),
-                },
-            );
-
-            this.logger.debug('Request sent successfully', {
-                requestEventType,
-                correlationId,
-                targetKernel,
-            });
-        } catch (error) {
-            this.logger.error('Failed to send request', error as Error, {
-                requestEventType,
-                correlationId,
-            });
-            throw error;
-        }
-
-        // Aguardar resposta
-        return responsePromise;
     }
 
     /**

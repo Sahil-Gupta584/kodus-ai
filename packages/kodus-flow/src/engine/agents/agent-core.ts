@@ -798,14 +798,9 @@ export abstract class AgentCore<
 
             // Emit action processing event with delivery guarantee
             if (this.kernelHandler) {
-                const kernel = this.kernelHandler
-                    .getMultiKernelManager()
-                    ?.getKernelByNamespace('agent');
-                const runtime = kernel?.getRuntime();
-
-                if (runtime?.emitAsync) {
-                    // Use emitAsync for critical events with delivery guarantee
-                    const emitResult = await runtime.emitAsync(
+                // ✅ Use kernelHandler.emitAsync() instead of accessing runtime directly
+                if (this.kernelHandler.emitAsync) {
+                    const emitResult = await this.kernelHandler.emitAsync(
                         'agent.action.start',
                         {
                             agentName: context.agentName,
@@ -819,9 +814,11 @@ export abstract class AgentCore<
                         },
                     );
 
-                    // ACK immediately since we're just starting the action
-                    if (emitResult.success && runtime.ack) {
-                        await runtime.ack(emitResult.eventId);
+                    if (!emitResult.success) {
+                        this.logger.warn('Failed to emit agent.action.start', {
+                            error: emitResult.error,
+                            correlationId,
+                        });
                     }
                 } else {
                     // Fallback to basic emit
@@ -927,30 +924,32 @@ export abstract class AgentCore<
 
                     // Emit tool completion event with delivery guarantee
                     if (this.kernelHandler) {
-                        const kernel = this.kernelHandler
-                            .getMultiKernelManager()
-                            ?.getKernelByNamespace('agent');
-                        const runtime = kernel?.getRuntime();
+                        // ✅ Use kernelHandler.emitAsync() instead of accessing runtime directly
+                        if (this.kernelHandler.emitAsync) {
+                            const emitResult =
+                                await this.kernelHandler.emitAsync(
+                                    'agent.tool.completed',
+                                    {
+                                        agentName: context.agentName,
+                                        toolName: toolName,
+                                        correlationId,
+                                        sessionId: context.system.sessionId,
+                                        result: toolResult,
+                                    },
+                                    {
+                                        deliveryGuarantee: 'at-least-once',
+                                        correlationId,
+                                    },
+                                );
 
-                        if (runtime?.emitAsync) {
-                            const emitResult = await runtime.emitAsync(
-                                'agent.tool.completed',
-                                {
-                                    agentName: context.agentName,
-                                    toolName: toolName,
-                                    correlationId,
-                                    sessionId: context.system.sessionId,
-                                    result: toolResult,
-                                },
-                                {
-                                    deliveryGuarantee: 'at-least-once',
-                                    correlationId,
-                                },
-                            );
-
-                            // ACK successful tool completion
-                            if (emitResult.success && runtime.ack) {
-                                await runtime.ack(emitResult.eventId);
+                            if (!emitResult.success) {
+                                this.logger.warn(
+                                    'Failed to emit agent.tool.completed',
+                                    {
+                                        error: emitResult.error,
+                                        correlationId,
+                                    },
+                                );
                             }
                         } else {
                             // Fallback to basic emit
@@ -969,34 +968,33 @@ export abstract class AgentCore<
                         correlationId,
                     });
                 } catch (error) {
-                    // Emit tool error event with delivery guarantee and NACK
+                    // Emit tool error event with delivery guarantee
                     if (this.kernelHandler) {
-                        const kernel = this.kernelHandler
-                            .getMultiKernelManager()
-                            ?.getKernelByNamespace('agent');
-                        const runtime = kernel?.getRuntime();
+                        // ✅ Use kernelHandler.emitAsync() instead of accessing runtime directly
+                        if (this.kernelHandler.emitAsync) {
+                            const emitResult =
+                                await this.kernelHandler.emitAsync(
+                                    'agent.tool.error',
+                                    {
+                                        agentName: context.agentName,
+                                        toolName: toolName,
+                                        correlationId,
+                                        sessionId: context.system.sessionId,
+                                        error: (error as Error).message,
+                                    },
+                                    {
+                                        deliveryGuarantee: 'at-least-once',
+                                        correlationId,
+                                    },
+                                );
 
-                        if (runtime?.emitAsync) {
-                            const emitResult = await runtime.emitAsync(
-                                'agent.tool.error',
-                                {
-                                    agentName: context.agentName,
-                                    toolName: toolName,
-                                    correlationId,
-                                    sessionId: context.system.sessionId,
-                                    error: (error as Error).message,
-                                },
-                                {
-                                    deliveryGuarantee: 'at-least-once',
-                                    correlationId,
-                                },
-                            );
-
-                            // NACK the failed tool execution
-                            if (emitResult.success && runtime.nack) {
-                                await runtime.nack(
-                                    emitResult.eventId,
-                                    error as Error,
+                            if (!emitResult.success) {
+                                this.logger.warn(
+                                    'Failed to emit agent.tool.error',
+                                    {
+                                        error: emitResult.error,
+                                        correlationId,
+                                    },
                                 );
                             }
                         } else {
@@ -1795,13 +1793,9 @@ export abstract class AgentCore<
 
         // Emit parallel tools start event
         if (this.kernelHandler) {
-            const kernel = this.kernelHandler
-                .getMultiKernelManager()
-                ?.getKernelByNamespace('agent');
-            const runtime = kernel?.getRuntime();
-
-            if (runtime?.emitAsync) {
-                const emitResult = await runtime.emitAsync(
+            // ✅ Use kernelHandler.emitAsync() instead of accessing runtime directly
+            if (this.kernelHandler.emitAsync) {
+                const emitResult = await this.kernelHandler.emitAsync(
                     'agent.parallel.tools.start',
                     {
                         agentName: context.agentName,
@@ -1815,8 +1809,14 @@ export abstract class AgentCore<
                     },
                 );
 
-                if (emitResult.success && runtime.ack) {
-                    await runtime.ack(emitResult.eventId);
+                if (!emitResult.success) {
+                    this.logger.warn(
+                        'Failed to emit agent.parallel.tools.start',
+                        {
+                            error: emitResult.error,
+                            correlationId,
+                        },
+                    );
                 }
             }
         }
@@ -1845,13 +1845,9 @@ export abstract class AgentCore<
 
         // Emit completion event
         if (this.kernelHandler) {
-            const kernel = this.kernelHandler
-                .getMultiKernelManager()
-                ?.getKernelByNamespace('agent');
-            const runtime = kernel?.getRuntime();
-
-            if (runtime?.emitAsync) {
-                const emitResult = await runtime.emitAsync(
+            // ✅ Use kernelHandler.emitAsync() instead of accessing runtime directly
+            if (this.kernelHandler.emitAsync) {
+                const emitResult = await this.kernelHandler.emitAsync(
                     'agent.parallel.tools.completed',
                     {
                         agentName: context.agentName,
@@ -1865,8 +1861,14 @@ export abstract class AgentCore<
                     },
                 );
 
-                if (emitResult.success && runtime.ack) {
-                    await runtime.ack(emitResult.eventId);
+                if (!emitResult.success) {
+                    this.logger.warn(
+                        'Failed to emit agent.parallel.tools.completed',
+                        {
+                            error: emitResult.error,
+                            correlationId,
+                        },
+                    );
                 }
             }
         }

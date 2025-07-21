@@ -1464,7 +1464,11 @@ export class ExecutionKernel {
         failed: number;
     }> {
         const runtime = this.getRuntimeSafely();
-        return await runtime.processWithAcks();
+        return (await runtime.process(true)) as {
+            processed: number;
+            acked: number;
+            failed: number;
+        };
     }
 
     /**
