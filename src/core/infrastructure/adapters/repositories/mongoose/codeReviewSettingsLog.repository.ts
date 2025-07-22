@@ -4,7 +4,10 @@ import { Model } from 'mongoose';
 import { CodeReviewSettingsLogModel } from './schema/codeReviewSettingsLog.model';
 import { ICodeReviewSettingsLogRepository } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
 import { CodeReviewSettingsLogEntity } from '@/core/domain/codeReviewSettingsLog/entities/codeReviewSettingsLog.entity';
-import { mapSimpleModelsToEntities, mapSimpleModelToEntity } from '@/shared/infrastructure/repositories/mappers';
+import {
+    mapSimpleModelsToEntities,
+    mapSimpleModelToEntity,
+} from '@/shared/infrastructure/repositories/mappers';
 import { ICodeReviewSettingsLog } from '@/core/domain/codeReviewSettingsLog/interfaces/codeReviewSettingsLog.interface';
 
 @Injectable()
@@ -17,34 +20,15 @@ export class CodeReviewSettingsLogRepository
     ) {}
 
     async create(
-        codeReviewSettingsLog: CodeReviewSettingsLogEntity,
+        codeReviewSettingsLog: Omit<ICodeReviewSettingsLog, 'uuid'>,
     ): Promise<CodeReviewSettingsLogEntity> {
         try {
-            const codeReviewSettingsLogSaved =
-                await this.codeReviewSettingsLogModel.create(codeReviewSettingsLog);
-
-            return mapSimpleModelToEntity(
-                codeReviewSettingsLogSaved,
-                CodeReviewSettingsLogEntity,
+            const saved = await this.codeReviewSettingsLogModel.create(
+                codeReviewSettingsLog,
             );
+            return mapSimpleModelToEntity(saved, CodeReviewSettingsLogEntity);
         } catch (error) {
-            console.log(error);
-        }
-    }
-
-    async bulkCreate(
-        codeReviewSettingsLog: CodeReviewSettingsLogEntity[],
-    ): Promise<CodeReviewSettingsLogEntity[]> {
-        try {
-            const codeReviewSettingsLogSaved =
-                await this.codeReviewSettingsLogModel.insertMany(codeReviewSettingsLog);
-
-            return mapSimpleModelsToEntities(
-                codeReviewSettingsLogSaved,
-                CodeReviewSettingsLogEntity,
-            );
-        } catch (error) {
-            console.log(error);
+            throw error;
         }
     }
 
@@ -60,7 +44,7 @@ export class CodeReviewSettingsLogRepository
                 CodeReviewSettingsLogEntity,
             );
         } catch (error) {
-            console.log(error);
+            throw error;
         }
     }
 }

@@ -7,12 +7,8 @@ export const CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN = Symbol(
 
 export interface ICodeReviewSettingsLogRepository {
     create(
-        codeReviewSettingsLogEntity: CodeReviewSettingsLogEntity,
+        codeReviewSettingsLog: Omit<ICodeReviewSettingsLog, 'uuid'>,
     ): Promise<CodeReviewSettingsLogEntity>;
-
-    bulkCreate(
-        codeReviewSettingsLog: CodeReviewSettingsLogEntity[],
-    ): Promise<CodeReviewSettingsLogEntity[]>;
 
     find(
         filter?: Partial<ICodeReviewSettingsLog>,

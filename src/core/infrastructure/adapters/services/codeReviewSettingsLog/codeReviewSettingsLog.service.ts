@@ -17,17 +17,11 @@ export class CodeReviewSettingsLogService
     ) {}
 
     async create(
-        codeReviewSettingsLog: CodeReviewSettingsLogEntity,
+        codeReviewSettingsLog: Omit<ICodeReviewSettingsLog, 'uuid'>,
     ): Promise<CodeReviewSettingsLogEntity> {
         return this.codeReviewSettingsLogRepository.create(
             codeReviewSettingsLog,
         );
-    }
-
-    async bulkCreate(
-        codeReviewSettingsLog: CodeReviewSettingsLogEntity[],
-    ): Promise<CodeReviewSettingsLogEntity[]> {
-        return this.codeReviewSettingsLogRepository.bulkCreate(codeReviewSettingsLog);
     }
 
     async find(
