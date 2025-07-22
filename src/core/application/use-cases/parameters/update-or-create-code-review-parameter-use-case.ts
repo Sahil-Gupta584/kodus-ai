@@ -21,6 +21,11 @@ import {
     SummaryConfig,
 } from '@/config/types/general/codeReview.type';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import {
+    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+    ICodeReviewSettingsLogService,
+} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { REQUEST } from '@nestjs/core';
 
 interface Body {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -65,12 +70,25 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
 
+        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
+        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: { organization: { uuid: string } };
+        },
+
         private readonly logger: PinoLoggerService,
     ) {}
 
     async execute(body: Body): Promise<ParametersEntity | boolean> {
         try {
             const { organizationAndTeamData, configValue, repositoryId } = body;
+
+            if (!organizationAndTeamData.organizationId) {
+                organizationAndTeamData.organizationId =
+                    this.request.user.organization.uuid;
+            }
 
             const codeReviewConfigs: ICodeReviewParameter =
                 await this.getCodeReviewConfigs(organizationAndTeamData);
@@ -249,6 +267,12 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         codeReviewConfigs: ICodeReviewParameter,
         newGlobalInfo: CodeReviewConfigWithoutLLMProvider,
     ) {
+        this.codeReviewSettingsLogService.saveCodeReviewSettingsLog(
+            codeReviewConfigs.global,
+            newGlobalInfo,
+            organizationAndTeamData,
+        );
+
         const defaultSuggestionControl =
             this.getDefaultSuggestionControlConfig();
 
