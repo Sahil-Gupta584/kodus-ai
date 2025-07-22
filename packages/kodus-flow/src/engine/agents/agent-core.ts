@@ -100,6 +100,7 @@ import {
     isFinalAnswerAction,
     isErrorResult,
     getResultError,
+    isToolResult,
 } from '../planning/planner-factory.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -459,7 +460,6 @@ export abstract class AgentCore<
         input: unknown,
         agentExecutionOptions?: AgentExecutionOptions,
     ): Promise<AgentExecutionResult<unknown>> {
-        debugger;
         const startTime = Date.now();
         const executionId = IdGenerator.executionId();
         const { correlationId, sessionId } = agentExecutionOptions || {};
@@ -479,8 +479,6 @@ export abstract class AgentCore<
             agentExecutionOptions,
         );
 
-        // Add available tools to context immediately
-        context.availableTools = this.toolEngine?.getAvailableTools() || [];
         context.availableToolsForLLM = this.toolEngine?.getToolsForLLM() || [];
 
         // Track execution with actual sessionId from context
@@ -528,7 +526,6 @@ export abstract class AgentCore<
                 },
             });
         }
-        debugger;
 
         // 🚀 Add conversation entry if session exists
         if (context.system.sessionId) {
@@ -558,7 +555,6 @@ export abstract class AgentCore<
         }
 
         try {
-            debugger;
             // Process agent thinking (lógica principal)
             const result = await this.processAgentThinking(
                 agent,
@@ -672,7 +668,6 @@ export abstract class AgentCore<
         toolsUsed: number;
         events: AnyEvent[];
     }> {
-        debugger;
         // Agents REQUIRE planner and LLM - no fallback
         if (!this.planner || !this.llmAdapter) {
             throw createAgentError(
@@ -698,6 +693,45 @@ export abstract class AgentCore<
                 },
             );
         }
+
+        // ✅ ADD: Log para verificar se está entrando no Think→Act→Observe
+        this.logger.info('🔍 AGENT CORE - About to use Think→Act→Observe', {
+            agentName: agent.name,
+            hasPlanner: !!this.planner,
+            hasLLMAdapter: !!this.llmAdapter,
+            plannerType: this.config.planner,
+            trace: {
+                source: 'agent-core',
+                step: 'before-think-act-observe',
+                timestamp: Date.now(),
+            },
+        });
+
+        // ✅ ADD: Log para verificar se está entrando no executeThinkActObserve
+        this.logger.info('🚀 AGENT CORE - EXECUTE THINK ACT OBSERVE CALLED', {
+            agentName: agent.name,
+            hasPlanner: !!this.planner,
+            hasLLMAdapter: !!this.llmAdapter,
+            plannerType: this.config.planner,
+            trace: {
+                source: 'agent-core',
+                step: 'execute-think-act-observe-called',
+                timestamp: Date.now(),
+            },
+        });
+
+        // ✅ ADD: Log para verificar se está entrando no executeThinkActObserve
+        this.logger.info('🚀 AGENT CORE - EXECUTE THINK ACT OBSERVE CALLED', {
+            agentName: agent.name,
+            hasPlanner: !!this.planner,
+            hasLLMAdapter: !!this.llmAdapter,
+            plannerType: this.config.planner,
+            trace: {
+                source: 'agent-core',
+                step: 'execute-think-act-observe-called',
+                timestamp: Date.now(),
+            },
+        });
 
         // Use Think→Act→Observe pattern - the ONLY way
         const result = await this.executeThinkActObserve(input, context);
@@ -2630,32 +2664,6 @@ export abstract class AgentCore<
         return this.singleAgentDefinition;
     }
 
-    getAvailableTools(): Array<{
-        name: string;
-        description: string;
-        schema?: unknown;
-        examples?: unknown[];
-        plannerHints?: {
-            useWhen?: string[];
-            avoidWhen?: string[];
-            combinesWith?: string[];
-            conflictsWith?: string[];
-        };
-        categories?: string[];
-        dependencies?: string[];
-    }> {
-        const tools = this.toolEngine?.getAvailableTools() || [];
-        return tools.map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            schema: tool.inputSchema,
-            examples: tool.examples,
-            plannerHints: tool.plannerHints,
-            categories: tool.categories,
-            dependencies: tool.dependencies,
-        }));
-    }
-
     /**
      * Get tools in the correct format for LLMs (OpenAI, Anthropic, etc.)
      * This method ensures tools are properly formatted for LLM function calling
@@ -2696,7 +2704,111 @@ export abstract class AgentCore<
             );
         }
 
+        // ✅ ADD: Register event handlers for agent events
+        this.registerAgentEventHandlers();
+
         this.logger.info('KernelHandler set for AgentCore');
+    }
+
+    /**
+     * Register event handlers for agent events
+     */
+    private registerAgentEventHandlers(): void {
+        if (!this.kernelHandler) {
+            this.logger.warn('No KernelHandler available for event handlers');
+            return;
+        }
+
+        this.logger.info('🔧 [AGENT] Registering agent event handlers', {
+            agentName: this.config.agentName,
+            trace: {
+                source: 'agent-core',
+                step: 'register-event-handlers',
+                timestamp: Date.now(),
+            },
+        });
+
+        // Register handler for agent.tool.error events
+        this.kernelHandler.registerHandler(
+            'agent.tool.error',
+            async (event: AnyEvent) => {
+                this.logger.info(
+                    '🔧 [AGENT] Processing agent.tool.error event',
+                    {
+                        eventId: event.id,
+                        eventType: event.type,
+                        correlationId: event.metadata?.correlationId,
+                        hasData: !!event.data,
+                        dataKeys: event.data
+                            ? Object.keys(event.data as Record<string, unknown>)
+                            : [],
+                        trace: {
+                            source: 'agent-core',
+                            step: 'process-agent-tool-error',
+                            timestamp: Date.now(),
+                        },
+                    },
+                );
+
+                const { agentName, toolName, correlationId, error } =
+                    event.data as {
+                        agentName: string;
+                        toolName: string;
+                        correlationId: string;
+                        error: string;
+                    };
+
+                // ✅ ADD: Log detalhado para debug
+                this.logger.error(
+                    '🤖 [AGENT] Tool execution failed',
+                    (error as unknown) instanceof Error
+                        ? (error as unknown as Error)
+                        : new Error(String(error)),
+                    {
+                        agent: agentName,
+                        toolName,
+                        correlationId,
+                        trace: {
+                            source: 'agent-core',
+                            step: 'tool-error-handler',
+                            timestamp: Date.now(),
+                        },
+                    },
+                );
+
+                // ✅ ADD: Update context with error information
+                if (this.stateManager) {
+                    await this.stateManager.set('main', 'lastToolError', {
+                        toolName,
+                        error,
+                        timestamp: Date.now(),
+                        correlationId,
+                    });
+                }
+
+                // ✅ ADD: Emit error event for observability
+                if (this.kernelHandler) {
+                    await this.kernelHandler.emitAsync('agent.error', {
+                        agent: agentName,
+                        error:
+                            (error as unknown) instanceof Error
+                                ? (error as unknown as Error).message
+                                : String(error),
+                        correlationId,
+                    });
+                }
+            },
+        );
+
+        this.logger.info('✅ [AGENT] Agent event handlers registered', {
+            agentName: this.config.agentName,
+            handlersRegistered: ['agent.tool.error'],
+            trace: {
+                source: 'agent-core',
+                step: 'event-handlers-registered',
+                timestamp: Date.now(),
+            },
+        });
     }
 
     /**
@@ -4130,7 +4242,20 @@ export abstract class AgentCore<
         input: TInput,
         context: AgentContext,
     ): Promise<TOutput> {
-        debugger;
+        // ✅ ADD: Log para confirmar que Think→Act→Observe está sendo usado
+        this.logger.info('🚀 Think→Act→Observe EXECUTION STARTED', {
+            agentName: this.config.agentName,
+            plannerType: this.config.planner,
+            hasPlanner: !!this.planner,
+            hasLLMAdapter: !!this.llmAdapter,
+            inputType: typeof input,
+            trace: {
+                source: 'agent-core',
+                step: 'think-act-observe-start',
+                timestamp: Date.now(),
+            },
+        });
+
         if (!this.planner || !this.llmAdapter) {
             throw new EngineError(
                 'AGENT_ERROR',
@@ -4153,7 +4278,7 @@ export abstract class AgentCore<
         });
 
         let iterations = 0;
-        const maxIterations = this.config.maxThinkingIterations || 1;
+        const maxIterations = this.config.maxThinkingIterations || 10;
 
         while (
             iterations < maxIterations &&
@@ -4187,6 +4312,7 @@ export abstract class AgentCore<
                 const result = await this.act(thought.action);
                 const actDuration = Date.now() - actStartTime;
 
+                debugger;
                 // 3. OBSERVE - Analyze result and decide if continue
                 const observeStartTime = Date.now();
                 const observation = await this.observe(
@@ -4282,6 +4408,7 @@ export abstract class AgentCore<
                     break;
                 }
             } catch (error) {
+                debugger;
                 this.logger.error(
                     'Think→Act→Observe iteration failed',
                     error as Error,
@@ -4301,13 +4428,102 @@ export abstract class AgentCore<
 
         const finalResult = this.executionContext.getFinalResult();
 
+        // ✅ Persist planner history to state service for next execution
+        if (this.executionContext && this.stateManager) {
+            try {
+                this.stateManager.set(
+                    'planner',
+                    'history',
+                    this.executionContext.history,
+                );
+                this.logger.debug(
+                    'Planner history persisted to state service',
+                    {
+                        agentName: this.config.agentName,
+                        historyLength: this.executionContext.history.length,
+                        iterations: iterations,
+                    },
+                );
+            } catch (error) {
+                this.logger.warn('Failed to persist planner history', {
+                    agentName: this.config.agentName,
+                    error: (error as Error).message,
+                });
+            }
+        }
+
         if (finalResult.success) {
             return finalResult.result as TOutput;
         } else {
-            throw new EngineError(
-                'AGENT_ERROR',
-                finalResult.error || 'Think→Act→Observe failed',
-            );
+            debugger;
+
+            // ✅ ADD: Log detalhado para debug
+            this.logger.debug('❌ THINK→ACT→OBSERVE FAILED', {
+                historyLength: this.executionContext?.history.length || 0,
+                iterations: iterations,
+                trace: {
+                    source: 'agent-core',
+                    step: 'think-act-observe-failed',
+                    timestamp: Date.now(),
+                },
+            });
+
+            // ✅ IMPROVED: Try to extract useful information from execution history
+            let lastUsefulResult: unknown = null;
+
+            if (this.executionContext?.history.length) {
+                const history = this.executionContext.history;
+
+                // Simple approach: get the last result with content
+                for (let i = history.length - 1; i >= 0; i--) {
+                    const entry = history[i];
+                    if (entry?.result) {
+                        // Check if result has content property
+                        if ('content' in entry.result && entry.result.content) {
+                            lastUsefulResult = entry.result.content;
+                            break;
+                        }
+                    }
+                }
+
+                const lastEntry = history[history.length - 1];
+                this.logger.debug('❌ LAST EXECUTION ENTRY', {
+                    thought: lastEntry?.thought,
+                    action: lastEntry?.action,
+                    result: lastEntry?.result,
+                    observation: lastEntry?.observation,
+                    trace: {
+                        source: 'agent-core',
+                        step: 'last-execution-entry',
+                        timestamp: Date.now(),
+                    },
+                });
+            }
+
+            // ✅ IMPROVED: Return helpful partial result instead of throwing error
+            if (lastUsefulResult) {
+                this.logger.info(
+                    '🔄 Returning partial result instead of failing completely',
+                    {
+                        hasUsefulResult: !!lastUsefulResult,
+                        agentName: this.config.agentName,
+                    },
+                );
+
+                // Return the last useful result we found
+                return lastUsefulResult as TOutput;
+            }
+
+            // ✅ IMPROVED: Generic helpful message instead of technical error
+            const friendlyMessage = `Desculpe, tive algumas dificuldades para processar completamente sua solicitação. Tentei ${iterations} vezes, mas encontrei alguns problemas técnicos. Posso tentar de uma forma diferente se você quiser reformular sua pergunta?`;
+
+            this.logger.warn('Returning friendly error message to user', {
+                iterations,
+                agentName: this.config.agentName,
+                originalError: finalResult.error || 'Think→Act→Observe failed',
+            });
+
+            return friendlyMessage as TOutput;
         }
     }
 
@@ -4332,195 +4548,31 @@ export abstract class AgentCore<
     /**
      * ACT phase - Execute action via appropriate engine
      */
+    /**
+     * ACT phase - Execute the decided action
+     * ✅ UNIFIED: Uses processAction for consistent execution with all enterprise features
+     */
     private async act(action: NewAgentAction): Promise<ActionResult> {
-        debugger;
         this.logger.debug('Act phase started', {
             actionType: action.type,
             tool: isToolCallAction(action) ? action.tool : undefined,
             agentName: this.config.agentName,
         });
 
+        // ✅ UNIFIED: Use processActionUnified for consistent execution with all enterprise features
+        return await this.processActionUnified(action);
+    }
+
+    /**
+     * ✅ UNIFIED: Process action with all enterprise features
+     * Incorporates all corrections: correlationId, circuit breaker, events, fallback
+     */
+    private async processActionUnified(
+        action: NewAgentAction,
+    ): Promise<ActionResult> {
         try {
             if (isToolCallAction(action)) {
-                if (!this.toolEngine) {
-                    throw new Error('Tool engine not available');
-                }
-
-                let toolResult: unknown;
-                if (this.kernelHandler) {
-                    try {
-                        this.logger.info(
-                            '🤖 [AGENT] Requesting tool execution via kernel',
-                            {
-                                toolName: action.tool,
-                                hasArgs: !!(
-                                    action.arguments &&
-                                    Object.keys(action.arguments).length > 0
-                                ),
-                                agentName: this.config.agentName,
-                            },
-                        );
-
-                        // Execute tool with circuit breaker protection
-                        if (this.toolCircuitBreaker) {
-                            // ✅ SIMPLIFIED: No additional retries - Circuit Breaker handles retries
-                            const circuitResult =
-                                await this.toolCircuitBreaker.execute(
-                                    () =>
-                                        this.kernelHandler!.requestToolExecution(
-                                            action.tool,
-                                            action.arguments || {},
-                                            {
-                                                correlationId:
-                                                    this.generateCorrelationId(),
-                                                timeout: 30000, // ✅ AUMENTADO para 15s (circuit breaker tem 30s total)
-                                            },
-                                        ),
-                                    {
-                                        toolName: action.tool,
-                                        agentName: this.config.agentName,
-                                    },
-                                );
-
-                            if (circuitResult.error) {
-                                throw circuitResult.error;
-                            }
-
-                            toolResult = circuitResult.result;
-                        } else {
-                            // Fallback without circuit breaker
-                            toolResult =
-                                await this.kernelHandler.requestToolExecution(
-                                    action.tool,
-                                    action.arguments || {},
-                                    {
-                                        correlationId:
-                                            this.generateCorrelationId(),
-                                        timeout: 15000, // ✅ AUMENTADO para 15s
-                                    },
-                                );
-                        }
-
-                        this.logger.info(
-                            '🤖 [AGENT] Tool execution completed via kernel',
-                            {
-                                toolName: action.tool,
-                                hasResult: !!toolResult,
-                                agentName: this.config.agentName,
-                            },
-                        );
-                    } catch (error) {
-                        const errorMessage = (error as Error).message;
-                        const isTimeout =
-                            errorMessage.includes('timeout') ||
-                            errorMessage.includes('Timeout') ||
-                            errorMessage.includes('TIMEOUT_EXCEEDED');
-
-                        // If it's a timeout error, don't fallback to avoid duplicate execution
-                        if (isTimeout) {
-                            this.logger.error(
-                                '🤖 [AGENT] Kernel tool execution timed out - not falling back to prevent duplicates',
-                                error as Error,
-                                {
-                                    toolName: action.tool,
-                                    agentName: this.config.agentName,
-                                },
-                            );
-                            throw error; // Re-throw timeout error without fallback
-                        }
-
-                        this.logger.warn(
-                            '🤖 [AGENT] Kernel tool execution failed, falling back to direct execution',
-                            {
-                                toolName: action.tool,
-                                error: errorMessage,
-                                agentName: this.config.agentName,
-                            },
-                        );
-
-                        // Fallback to direct execution with circuit breaker (only for non-timeout errors)
-                        if (!this.toolEngine) {
-                            throw new Error('Tool engine not available');
-                        }
-
-                        if (this.toolCircuitBreaker) {
-                            // ✅ SIMPLIFIED: No additional retries - Circuit Breaker handles retries
-                            const circuitResult =
-                                await this.toolCircuitBreaker.execute(
-                                    () =>
-                                        this.toolEngine!.executeCall(
-                                            action.tool,
-                                            action.arguments || {},
-                                        ),
-                                    {
-                                        toolName: action.tool,
-                                        agentName: this.config.agentName,
-                                    },
-                                );
-
-                            if (circuitResult.rejected) {
-                                throw circuitResult.error;
-                            }
-                            if (circuitResult.error) {
-                                throw circuitResult.error;
-                            }
-                            toolResult = circuitResult.result;
-                        } else {
-                            toolResult = await this.toolEngine.executeCall(
-                                action.tool,
-                                action.arguments || {},
-                            );
-                        }
-                    }
-                } else {
-                    this.logger.info('🤖 [AGENT] Executing tool directly', {
-                        toolName: action.tool,
-                        agentName: this.config.agentName,
-                    });
-
-                    // Execute tool directly with circuit breaker
-                    if (!this.toolEngine) {
-                        throw new Error('Tool engine not available');
-                    }
-
-                    if (this.toolCircuitBreaker) {
-                        // ✅ SIMPLIFIED: No additional retries - Circuit Breaker handles retries
-                        const circuitResult =
-                            await this.toolCircuitBreaker.execute(
-                                () =>
-                                    this.toolEngine!.executeCall(
-                                        action.tool,
-                                        action.arguments || {},
-                                    ),
-                                {
-                                    toolName: action.tool,
-                                    agentName: this.config.agentName,
-                                },
-                            );
-
-                        if (circuitResult.rejected) {
-                            throw circuitResult.error;
-                        }
-                        if (circuitResult.error) {
-                            throw circuitResult.error;
-                        }
-                        toolResult = circuitResult.result;
-                    } else {
-                        toolResult = await this.toolEngine.executeCall(
-                            action.tool,
-                            action.arguments || {},
-                        );
-                    }
-                }
-
-                return {
-                    type: 'tool_result',
-                    content: toolResult,
-                    metadata: {
-                        toolName: action.tool,
-                        arguments: action.arguments,
-                    },
-                };
+                return await this.executeToolAction(action);
             }
 
             if (isFinalAnswerAction(action)) {
@@ -4530,24 +4582,357 @@ export abstract class AgentCore<
                 };
             }
 
-            // This should never happen with proper type guards
             throw new Error(`Unknown action type`);
         } catch (error) {
-            this.logger.error('Action execution failed', error as Error, {
-                actionType: action.type,
-                tool: isToolCallAction(action) ? action.tool : 'unknown',
+            return this.handleActionError(error, action);
+        }
+    }
+
+    /**
+     * Execute tool action with all enterprise features
+     */
+    private async executeToolAction(
+        action: NewAgentAction,
+    ): Promise<ActionResult> {
+        if (!this.toolEngine) {
+            throw new Error('Tool engine not available');
+        }
+
+        if (!isToolCallAction(action)) {
+            throw new Error('Action is not a tool call action');
+        }
+
+        // ✅ FIX: Generate correlationId ONCE to prevent duplication
+        const correlationId = this.generateCorrelationId();
+
+        this.logger.info('🤖 [AGENT] Requesting tool execution via kernel', {
+            toolName: action.tool,
+            hasArgs: !!(
+                action.arguments && Object.keys(action.arguments).length > 0
+            ),
+            agentName: this.config.agentName,
+            correlationId,
+        });
+
+        // ✅ EMIT: Action start event with delivery guarantee
+        await this.emitActionStartEvent(action, correlationId);
+
+        let toolResult: unknown;
+
+        try {
+            // ✅ EXECUTE: Tool with circuit breaker protection
+            toolResult = await this.executeToolWithCircuitBreaker(
+                action,
+                correlationId,
+            );
+
+            console.log('@@@@ EIII', toolResult);
+
+            // ✅ EMIT: Tool completion event
+            await this.emitToolCompletionEvent(
+                action,
+                toolResult,
+                correlationId,
+            );
+
+            this.logger.info('🤖 [AGENT] Tool execution completed via kernel', {
+                toolName: action.tool,
+                hasResult: !!toolResult,
                 agentName: this.config.agentName,
+                correlationId,
             });
 
             return {
-                type: 'error',
-                error: error instanceof Error ? error.message : 'Unknown error',
+                type: 'tool_result',
+                content: toolResult,
                 metadata: {
-                    actionType: action.type,
-                    tool: isToolCallAction(action) ? action.tool : 'unknown',
+                    toolName: action.tool,
+                    arguments: action.arguments,
+                    correlationId,
                 },
             };
+        } catch (error) {
+            // ✅ EMIT: Tool error event
+            await this.emitToolErrorEvent(action, error, correlationId);
+
+            // ✅ HANDLE: Error with fallback logic
+            return await this.handleToolExecutionError(
+                error,
+                action,
+                correlationId,
+            );
         }
+    }
+
+    /**
+     * Execute tool with circuit breaker protection
+     */
+    private async executeToolWithCircuitBreaker(
+        action: NewAgentAction,
+        correlationId: string,
+    ): Promise<unknown> {
+        if (!isToolCallAction(action)) {
+            throw new Error('Action is not a tool call action');
+        }
+
+        if (this.kernelHandler) {
+            return await this.executeToolViaKernel(action, correlationId);
+        } else {
+            return await this.executeToolDirectly(action, correlationId);
+        }
+    }
+
+    /**
+     * Execute tool via kernel with circuit breaker
+     */
+    private async executeToolViaKernel(
+        action: NewAgentAction,
+        correlationId: string,
+    ): Promise<unknown> {
+        if (!isToolCallAction(action)) {
+            throw new Error('Action is not a tool call action');
+        }
+
+        if (this.toolCircuitBreaker) {
+            // ✅ SIMPLIFIED: No additional retries - Circuit Breaker handles retries
+            const circuitResult = await this.toolCircuitBreaker.execute(
+                () =>
+                    this.kernelHandler!.requestToolExecution(
+                        action.tool,
+                        action.arguments || {},
+                        {
+                            correlationId: correlationId, // ✅ FIX: Use same correlationId
+                            timeout: 30000, // ✅ UNIFIED: 30s timeout
+                        },
+                    ),
+                {
+                    toolName: action.tool,
+                    agentName: this.config.agentName,
+                },
+            );
+
+            if (circuitResult.error) {
+                throw circuitResult.error;
+            }
+
+            return circuitResult.result;
+        } else {
+            // Fallback without circuit breaker
+            return await this.kernelHandler!.requestToolExecution(
+                action.tool,
+                action.arguments || {},
+                {
+                    correlationId: correlationId, // ✅ FIX: Use same correlationId
+                    timeout: 15000, // ✅ UNIFIED: 15s timeout
+                },
+            );
+        }
+    }
+
+    /**
+     * Execute tool directly (fallback)
+     */
+    private async executeToolDirectly(
+        action: NewAgentAction,
+        correlationId: string,
+    ): Promise<unknown> {
+        if (!isToolCallAction(action)) {
+            throw new Error('Action is not a tool call action');
+        }
+
+        this.logger.info('🤖 [AGENT] Executing tool directly', {
+            toolName: action.tool,
+            agentName: this.config.agentName,
+            correlationId,
+        });
+
+        if (!this.toolEngine) {
+            throw new Error('Tool engine not available');
+        }
+
+        if (this.toolCircuitBreaker) {
+            // ✅ SIMPLIFIED: No additional retries - Circuit Breaker handles retries
+            const circuitResult = await this.toolCircuitBreaker.execute(
+                () =>
+                    this.toolEngine!.executeCall(
+                        action.tool,
+                        action.arguments || {},
+                    ),
+                {
+                    toolName: action.tool,
+                    agentName: this.config.agentName,
+                },
+            );
+
+            if (circuitResult.rejected || circuitResult.error) {
+                throw circuitResult.error;
+            }
+
+            return circuitResult.result;
+        } else {
+            return await this.toolEngine.executeCall(
+                action.tool,
+                action.arguments || {},
+            );
+        }
+    }
+
+    /**
+     * Handle tool execution errors - let Runtime handle retry
+     */
+    private async handleToolExecutionError(
+        error: unknown,
+        action: NewAgentAction,
+        correlationId: string,
+    ): Promise<ActionResult> {
+        if (!isToolCallAction(action)) {
+            throw new Error('Action is not a tool call action');
+        }
+
+        const errorMessage = (error as Error).message;
+
+        // ✅ SIMPLE: Let Runtime handle retry, AgentCore just logs and returns error
+        this.logger.error('🤖 [AGENT] Tool execution failed', error as Error, {
+            toolName: action.tool,
+            agentName: this.config.agentName,
+            correlationId,
+            errorMessage,
+        });
+
+        // ✅ CORRECT: Return error as context for agent to handle
+        return {
+            type: 'error',
+            error: errorMessage,
+            metadata: {
+                actionType: action.type,
+                tool: action.tool,
+                correlationId,
+                // ✅ Context for agent to understand what happened
+                errorContext: {
+                    toolName: action.tool,
+                    errorMessage,
+                    timestamp: Date.now(),
+                },
+            },
+        };
+    }
+
+    /**
+     * Emit action start event
+     */
+    private async emitActionStartEvent(
+        action: NewAgentAction,
+        correlationId: string,
+    ): Promise<void> {
+        if (!this.kernelHandler?.emitAsync) return;
+
+        const actionType = this.getActionType(action);
+        const emitResult = await this.kernelHandler.emitAsync(
+            'agent.action.start',
+            {
+                agentName: this.config.agentName,
+                actionType,
+                correlationId,
+            },
+            {
+                deliveryGuarantee: 'at-least-once',
+                correlationId,
+            },
+        );
+
+        if (!emitResult.success) {
+            this.logger.warn('Failed to emit agent.action.start', {
+                error: emitResult.error,
+                correlationId,
+            });
+        }
+    }
+
+    /**
+     * Emit tool completion event
+     */
+    private async emitToolCompletionEvent(
+        action: NewAgentAction,
+        result: unknown,
+        correlationId: string,
+    ): Promise<void> {
+        if (!isToolCallAction(action) || !this.kernelHandler?.emitAsync) return;
+
+        const emitResult = await this.kernelHandler.emitAsync(
+            'agent.tool.completed',
+            {
+                agentName: this.config.agentName,
+                toolName: action.tool,
+                correlationId,
+                result,
+            },
+            {
+                deliveryGuarantee: 'at-least-once',
+                correlationId,
+            },
+        );
+
+        if (!emitResult.success) {
+            this.logger.warn('Failed to emit agent.tool.completed', {
+                error: emitResult.error,
+                correlationId,
+            });
+        }
+    }
+
+    /**
+     * Emit tool error event
+     */
+    private async emitToolErrorEvent(
+        action: NewAgentAction,
+        error: unknown,
+        correlationId: string,
+    ): Promise<void> {
+        if (!isToolCallAction(action) || !this.kernelHandler?.emitAsync) return;
+
+        const emitResult = await this.kernelHandler.emitAsync(
+            'agent.tool.error',
+            {
+                agentName: this.config.agentName,
+                toolName: action.tool,
+                correlationId,
+                error: (error as Error).message,
+            },
+            {
+                deliveryGuarantee: 'at-least-once',
+                correlationId,
+            },
+        );
+
+        if (!emitResult.success) {
+            this.logger.warn('Failed to emit agent.tool.error', {
+                error: emitResult.error,
+                correlationId,
+            });
+        }
+    }
+
+    /**
+     * Handle action execution errors
+     */
+    private handleActionError(
+        error: unknown,
+        action: NewAgentAction,
+    ): ActionResult {
+        this.logger.error('Action execution failed', error as Error, {
+            actionType: action.type,
+            tool: isToolCallAction(action) ? action.tool : 'unknown',
+            agentName: this.config.agentName,
+        });
+
+        return {
+            type: 'error',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            metadata: {
+                actionType: action.type,
+                tool: isToolCallAction(action) ? action.tool : 'unknown',
+            },
+        };
     }
 
     /**
@@ -4557,6 +4942,7 @@ export abstract class AgentCore<
         result: ActionResult,
         context: PlannerExecutionContext,
     ): Promise<ResultAnalysis> {
+        debugger;
         if (!this.planner) {
             throw new EngineError('AGENT_ERROR', 'Planner not initialized');
         }
@@ -4566,6 +4952,36 @@ export abstract class AgentCore<
             hasError: isErrorResult(result),
             agentName: this.config.agentName,
         });
+
+        // ✅ SIMPLE: Early success detection
+        if (result.type === 'final_answer') {
+            return {
+                isComplete: true,
+                isSuccessful: true,
+                feedback: 'Task completed successfully',
+                shouldContinue: false,
+            };
+        }
+
+        debugger;
+
+        // ✅ SIMPLE: Detect when tool gives substantial result
+        if (isToolResult(result) && result.content) {
+            const content = String(result.content);
+            if (content.length > 500 && !content.includes('Error')) {
+                // Tool gave substantial response, might be sufficient
+                const analysis = await this.planner.analyzeResult(
+                    result,
+                    context,
+                );
+                return {
+                    ...analysis,
+                    feedback: `Received substantial tool result: ${analysis.feedback}`,
+                    suggestedNextAction:
+                        'Consider if this result answers the user question',
+                };
+            }
+        }
 
         return this.planner.analyzeResult(result, context);
     }
@@ -4663,7 +5079,7 @@ export abstract class AgentCore<
                 startTime: Date.now(),
             },
             update(thought, result, observation) {
-                history.push({
+                const historyEntry = {
                     thought,
                     action: thought.action || {
                         type: 'final_answer',
@@ -4671,7 +5087,13 @@ export abstract class AgentCore<
                     },
                     result,
                     observation,
-                });
+                };
+
+                // ✅ Add to in-memory history
+                history.push(historyEntry);
+
+                // ✅ Persist to state service for next execution
+                // Note: This will be handled by the AgentCore after execution
             },
             getCurrentSituation() {
                 const recentHistory = history.slice(-3);

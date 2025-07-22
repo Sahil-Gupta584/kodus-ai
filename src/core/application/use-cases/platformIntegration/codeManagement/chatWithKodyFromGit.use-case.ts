@@ -7,6 +7,8 @@ import { CodeManagementService } from '@/core/infrastructure/adapters/services/p
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { ConversationAgentUseCase } from '../../agent/conversation-agent.use-case';
+import { createThreadId } from '@kodus/flow';
+import { use } from 'passport';
 
 interface WebhookParams {
     event: string;
@@ -132,24 +134,34 @@ export class ChatWithKodyFromGitUseCase {
             );
             const sender = this.getSender(params);
 
-            const message = this.prepareMessage(
+            const prepareContext = this.prepareContext(
                 comment,
                 originalKodyComment,
                 sender.login,
                 othersReplies,
             );
-            console.log('Message prepared:', message);
+
+            const thread = createThreadId(
+                {
+                    organizationId: organizationAndTeamData.organizationId,
+                    teamId: organizationAndTeamData.teamId,
+                    repositoryId: repository.id,
+                    userId: sender.id,
+                    userName: sender.login,
+                },
+                {
+                    prefix: 'cmc', // Code Management Chat
+                },
+            );
+
+            console.log('Message prepared:', prepareContext);
             const response = await this.conversationAgentUseCase.execute({
-                prompt: message,
+                prompt: prepareContext.userQuestion,
                 organizationAndTeamData,
+                prepareContext: prepareContext,
+                thread: thread,
             });
             console.log('Response:', response);
-            // const response = await this.agentService.conversationWithKody(
-            //     organizationAndTeamData,
-            //     sender.id,
-            //     message,
-            //     sender.login,
-            // );
 
             await this.codeManagementService.createResponseToComment({
                 organizationAndTeamData,
@@ -527,21 +539,21 @@ export class ChatWithKodyFromGitUseCase {
         }
     }
 
-    private prepareMessage(
+    private prepareContext(
         comment: Comment,
         originalKodyComment: Comment,
         userName: string,
         othersReplies: Comment[],
-    ): string {
+    ): any {
         const userQuestion =
             comment.body.trim() === '@kody'
                 ? 'The user did not ask any questions. Ask them what they would like to know about the codebase or suggestions for code changes.'
                 : comment.body;
 
-        return JSON.stringify({
+        return {
             userName,
             userQuestion,
-            context: {
+            codeManagementContext: {
                 originalComment: {
                     text: originalKodyComment?.body,
                     diffHunk: originalKodyComment?.diff_hunk,
@@ -551,7 +563,7 @@ export class ChatWithKodyFromGitUseCase {
                     diffHunk: reply.diff_hunk,
                 })),
             },
-        });
+        };
     }
 
     private mentionsKody(

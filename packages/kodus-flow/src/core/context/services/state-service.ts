@@ -48,18 +48,72 @@ export class ContextStateService implements StateManager {
      * Get a value from a specific namespace
      */
     async get<T>(namespace: string, key: string): Promise<T | undefined> {
+        // ✅ ADD: Log detalhado para debug
+        console.log('🔧 CONTEXT STATE SERVICE - GET OPERATION', {
+            namespace,
+            key,
+            contextKeyExists: !!this.contextKey,
+            namespacesCount: this.stateMap.get(this.contextKey)?.size || 0,
+            trace: {
+                source: 'context-state-service',
+                step: 'get-operation-start',
+                timestamp: Date.now(),
+            },
+        });
+
         const namespaces = this.stateMap.get(this.contextKey);
 
         if (!namespaces) {
+            console.log(
+                '🔧 CONTEXT STATE SERVICE - GET FAILED - NO NAMESPACES',
+                {
+                    namespace,
+                    key,
+                    trace: {
+                        source: 'context-state-service',
+                        step: 'get-no-namespaces',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
             return undefined;
         }
 
         const namespaceMap = namespaces.get(namespace);
         if (!namespaceMap) {
+            console.log(
+                '🔧 CONTEXT STATE SERVICE - GET FAILED - NO NAMESPACE',
+                {
+                    namespace,
+                    key,
+                    availableNamespaces: Array.from(namespaces.keys()),
+                    trace: {
+                        source: 'context-state-service',
+                        step: 'get-no-namespace',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
             return undefined;
         }
 
-        return namespaceMap.get(key) as T | undefined;
+        const value = namespaceMap.get(key) as T | undefined;
+
+        // ✅ ADD: Log após get
+        console.log('🔧 CONTEXT STATE SERVICE - GET RESULT', {
+            namespace,
+            key,
+            valueFound: !!value,
+            valueType: typeof value,
+            namespaceSize: namespaceMap.size,
+            trace: {
+                source: 'context-state-service',
+                step: 'get-result',
+                timestamp: Date.now(),
+            },
+        });
+
+        return value;
     }
 
     /**
@@ -74,12 +128,39 @@ export class ContextStateService implements StateManager {
             throw new Error('Key must be a non-empty string');
         }
 
+        // ✅ ADD: Log detalhado para debug
+        console.log('🔧 CONTEXT STATE SERVICE - SET OPERATION', {
+            namespace,
+            key,
+            valueType: typeof value,
+            hasValue: !!value,
+            contextKeyExists: !!this.contextKey,
+            namespacesCount: this.stateMap.get(this.contextKey)?.size || 0,
+            trace: {
+                source: 'context-state-service',
+                step: 'set-operation-start',
+                timestamp: Date.now(),
+            },
+        });
+
         // CRÍTICO: Operação atômica para evitar race conditions
         let namespaces = this.stateMap.get(this.contextKey);
 
         if (!namespaces) {
             namespaces = new Map();
             this.stateMap.set(this.contextKey, namespaces);
+            console.log(
+                '🔧 CONTEXT STATE SERVICE - CREATED NEW NAMESPACES MAP',
+                {
+                    namespace,
+                    key,
+                    trace: {
+                        source: 'context-state-service',
+                        step: 'create-namespaces-map',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
         }
 
         // Check namespace limit ANTES de criar novo namespace
@@ -97,6 +178,16 @@ export class ContextStateService implements StateManager {
         if (!namespaceMap) {
             namespaceMap = new Map();
             namespaces.set(namespace, namespaceMap);
+            console.log('🔧 CONTEXT STATE SERVICE - CREATED NEW NAMESPACE', {
+                namespace,
+                key,
+                namespacesCount: namespaces.size,
+                trace: {
+                    source: 'context-state-service',
+                    step: 'create-namespace',
+                    timestamp: Date.now(),
+                },
+            });
         }
 
         // Check namespace size limit ANTES de adicionar nova key
@@ -110,6 +201,20 @@ export class ContextStateService implements StateManager {
         }
 
         namespaceMap.set(key, value);
+
+        // ✅ ADD: Log após set bem-sucedido
+        console.log('🔧 CONTEXT STATE SERVICE - SET SUCCESS', {
+            namespace,
+            key,
+            valueType: typeof value,
+            namespaceSize: namespaceMap.size,
+            totalNamespaces: namespaces.size,
+            trace: {
+                source: 'context-state-service',
+                step: 'set-success',
+                timestamp: Date.now(),
+            },
+        });
     }
 
     /**

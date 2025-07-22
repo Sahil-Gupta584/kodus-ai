@@ -152,6 +152,10 @@ export class EventQueue {
     private queue: QueueItem[] = [];
     private processing = false;
 
+    // ✅ DEDUPLICATION: Track processed events to prevent duplicates
+    private processedEvents = new Set<string>();
+    private readonly maxProcessedEvents = 10000; // Prevent memory leaks
+
     // Configuração baseada em recursos
     private readonly maxMemoryUsage: number;
     private readonly maxCpuUsage: number;
@@ -160,7 +164,6 @@ export class EventQueue {
     // Configuração de processamento
     private readonly enableObservability: boolean;
     private batchSize: number; // Agora adaptativo
-    private readonly chunkSize: number;
     private maxConcurrent: number; // Agora adaptativo
     private semaphore: Semaphore;
 
@@ -220,7 +223,6 @@ export class EventQueue {
         // Configuração de processamento
         this.enableObservability = config.enableObservability ?? true;
         this.batchSize = config.batchSize ?? 20; // Reduzido de 100 para 20
-        this.chunkSize = config.chunkSize ?? 10; // Reduzido de 50 para 10
         this.maxConcurrent = config.maxConcurrent ?? 25; // Aumentado de 10 para 25
         this.semaphore = new Semaphore(this.maxConcurrent);
 
@@ -438,46 +440,32 @@ export class EventQueue {
      */
     private shouldActivateBackpressure(): boolean {
         const metrics = this.getSystemMetrics();
+        const isActive =
+            metrics.memoryUsage > this.maxMemoryUsage ||
+            metrics.cpuUsage > this.maxCpuUsage ||
+            (this.maxQueueDepth
+                ? metrics.queueDepth > this.maxQueueDepth
+                : false);
 
-        // Backpressure por uso de recursos
-        if (metrics.memoryUsage > this.maxMemoryUsage) {
-            if (this.enableObservability) {
-                this.observability.logger.warn(
-                    'Backpressure: High memory usage',
-                    {
-                        memoryUsage: `${(metrics.memoryUsage * 100).toFixed(1)}%`,
-                        threshold: `${(this.maxMemoryUsage * 100).toFixed(1)}%`,
-                    },
-                );
-            }
-            return true;
+        if (this.enableObservability && isActive) {
+            this.observability.logger.warn('⚠️ BACKPRESSURE ACTIVATED', {
+                queueSize: this.queue.length,
+                memoryUsage: `${(metrics.memoryUsage * 100).toFixed(1)}%`,
+                cpuUsage: `${(metrics.cpuUsage * 100).toFixed(1)}%`,
+                queueDepth: metrics.queueDepth,
+                memoryThreshold: `${(this.maxMemoryUsage * 100).toFixed(1)}%`,
+                cpuThreshold: `${(this.maxCpuUsage * 100).toFixed(1)}%`,
+                queueThreshold: this.maxQueueDepth,
+                processedEventsCount: this.processedEvents.size,
+                trace: {
+                    source: 'event-queue',
+                    step: 'backpressure-activated',
+                    timestamp: Date.now(),
+                },
+            });
         }
 
-        if (metrics.cpuUsage > this.maxCpuUsage) {
-            if (this.enableObservability) {
-                this.observability.logger.warn('Backpressure: High CPU usage', {
-                    cpuUsage: `${(metrics.cpuUsage * 100).toFixed(1)}%`,
-                    threshold: `${(this.maxCpuUsage * 100).toFixed(1)}%`,
-                });
-            }
-            return true;
-        }
-
-        // Backpressure por profundidade da fila (se configurado)
-        if (this.maxQueueDepth && metrics.queueDepth > this.maxQueueDepth) {
-            if (this.enableObservability) {
-                this.observability.logger.warn(
-                    'Backpressure: Queue depth exceeded',
-                    {
-                        queueDepth: metrics.queueDepth,
-                        threshold: this.maxQueueDepth,
-                    },
-                );
-            }
-            return true;
-        }
-
-        return false;
+        return isActive;
     }
 
     /**
@@ -818,172 +806,256 @@ export class EventQueue {
      * Adicionar evento à fila com backpressure e Event Size Awareness
      */
     async enqueue(event: AnyEvent, priority: number = 0): Promise<boolean> {
+        console.log('📥 ENQUEUING EVENT', {
+            eventId: event.id,
+            eventType: event.type,
+            priority,
+            currentQueueSize: this.queue.length,
+            processedEventsCount: this.processedEvents.size,
+            correlationId: event.metadata?.correlationId,
+        });
+
+        // ✅ ADD: Log detalhado para detectar duplicação
+        const isAlreadyProcessed = this.processedEvents.has(event.id);
+        const isAlreadyInQueue = this.queue.some(
+            (item) => item.event.id === event.id,
+        );
+
+        if (isAlreadyProcessed || isAlreadyInQueue) {
+            console.log('🔄 DUAL EVENT', {
+                eventId: event.id,
+                eventType: event.type,
+                correlationId: event.metadata?.correlationId,
+                isAlreadyProcessed,
+                isAlreadyInQueue,
+                processedEventsCount: this.processedEvents.size,
+                queueSize: this.queue.length,
+            });
+        }
+
+        // Check if event is already processed (deduplication)
+        if (isAlreadyProcessed) {
+            console.log('🔄 EVENT ALREADY PROCESSED - SKIPPING', {
+                eventId: event.id,
+                eventType: event.type,
+                processedEventsCount: this.processedEvents.size,
+            });
+            return false;
+        }
+
+        // Check if event is already in queue (deduplication)
+        if (isAlreadyInQueue) {
+            console.log('🔄 EVENT ALREADY IN QUEUE - SKIPPING', {
+                eventId: event.id,
+                eventType: event.type,
+                queueSize: this.queue.length,
+            });
+            return false;
+        }
+
+        // Calculate event size
         const eventSize = this.calculateEventSize(event);
         const isLarge = this.isLargeEvent(eventSize);
         const isHuge = this.isHugeEvent(eventSize);
 
-        // Verificar tamanho máximo
-        if (eventSize > this.maxEventSize) {
-            if (this.enableObservability) {
-                this.observability.logger.error(
-                    'Event too large, dropping',
-                    new Error('Event exceeds maximum size'),
-                    {
-                        eventType: event.type,
-                        size: eventSize,
-                        maxSize: this.maxEventSize,
-                    },
-                );
-            }
-            return false;
-        }
+        console.log('📏 EVENT SIZE CALCULATED', {
+            eventId: event.id,
+            eventType: event.type,
+            eventSize,
+            isLarge,
+            isHuge,
+            largeEventThreshold: this.largeEventThreshold,
+            hugeEventThreshold: this.hugeEventThreshold,
+        });
 
-        // Dropar eventos enormes se configurado
+        // Drop huge events if configured
         if (isHuge && this.dropHugeEvents) {
-            if (this.enableObservability) {
-                this.observability.logger.warn('Huge event dropped', {
-                    eventType: event.type,
-                    size: eventSize,
-                    threshold: this.hugeEventThreshold,
-                });
-            }
+            console.log('🚫 HUGE EVENT DROPPED', {
+                eventId: event.id,
+                eventType: event.type,
+                eventSize,
+                hugeEventThreshold: this.hugeEventThreshold,
+                dropHugeEvents: this.dropHugeEvents,
+            });
             return false;
         }
 
-        // Comprimir evento se necessário
-        const {
-            event: processedEvent,
-            compressed,
-            originalSize,
-        } = await this.compressEvent(event, eventSize);
-
-        // Compatibilidade: rejeitar se atingir maxQueueDepth
-        if (
-            this.maxQueueDepth !== undefined &&
-            this.queue.length >= this.maxQueueDepth
-        ) {
-            if (this.enableObservability) {
-                this.observability.logger.warn(
-                    'Event queue full (maxQueueDepth), dropping event',
-                    {
-                        eventType: event.type,
-                        queueSize: this.queue.length,
-                        maxQueueDepth: this.maxQueueDepth,
-                    },
-                );
-            }
+        // Check queue depth limits
+        if (this.maxQueueDepth && this.queue.length >= this.maxQueueDepth) {
+            console.log('🚫 QUEUE FULL - EVENT DROPPED', {
+                eventId: event.id,
+                eventType: event.type,
+                queueSize: this.queue.length,
+                maxQueueDepth: this.maxQueueDepth,
+            });
             return false;
         }
 
-        // Verificar backpressure baseado em recursos
+        // Check resource limits
         if (this.shouldActivateBackpressure()) {
-            if (this.enableObservability) {
-                this.observability.logger.warn(
-                    'Backpressure activated - event may be delayed',
-                    {
-                        eventType: event.type,
-                        queueSize: this.queue.length,
-                    },
-                );
-            }
+            console.log('⚠️ BACKPRESSURE ACTIVE - EVENT MAY BE DELAYED', {
+                eventId: event.id,
+                eventType: event.type,
+                memoryUsage: this.getMemoryUsage(),
+                cpuUsage: this.getCpuUsage(),
+                maxMemoryUsage: this.maxMemoryUsage,
+                maxCpuUsage: this.maxCpuUsage,
+            });
             // Não rejeitar o evento, apenas aplicar backpressure
         }
 
-        const finalSize = compressed
-            ? this.calculateEventSize(processedEvent)
-            : eventSize;
+        // Compress event if needed
+        let compressedEvent = event;
+        let compressed = false;
+        let originalSize = eventSize;
 
-        const item: QueueItem = {
-            event: processedEvent,
+        if (this.enableCompression && isLarge) {
+            const compressionResult = await this.compressEvent(
+                event,
+                eventSize,
+            );
+            compressedEvent = compressionResult.event;
+            compressed = compressionResult.compressed;
+            originalSize = compressionResult.originalSize;
+
+            console.log('🗜️ EVENT COMPRESSION', {
+                eventId: event.id,
+                eventType: event.type,
+                originalSize,
+                compressedSize: this.calculateEventSize(compressedEvent),
+                compressed,
+                compressionRatio: compressed
+                    ? (
+                          ((originalSize -
+                              this.calculateEventSize(compressedEvent)) /
+                              originalSize) *
+                          100
+                      ).toFixed(2) + '%'
+                    : '0%',
+            });
+        }
+
+        // Create queue item
+        const queueItem: QueueItem = {
+            event: compressedEvent,
             timestamp: Date.now(),
             priority,
             retryCount: 0,
-            size: finalSize,
+            size: this.calculateEventSize(compressedEvent),
             isLarge,
             isHuge,
             compressed,
             originalSize,
         };
 
-        // Handle persistence if enabled
+        // Persist event if needed
         if (this.enablePersistence && this.persistor) {
             const shouldPersist = this.shouldPersistEvent(event);
             if (shouldPersist) {
                 try {
-                    // Create snapshot for persistence (using proper Snapshot format)
+                    // Create snapshot for persistence
                     const snapshot = {
                         xcId: this.executionId,
                         ts: Date.now(),
-                        events: [event], // Single event as array
+                        events: [event],
                         state: { eventId: event.id, eventType: event.type },
                         hash: this.generateEventHash(event),
                     };
                     await this.persistor.append(snapshot);
-                    item.persistent = true;
-                    item.persistedAt = Date.now();
+                    queueItem.persistent = true;
+                    queueItem.persistedAt = Date.now();
 
-                    if (this.enableObservability) {
-                        this.observability.logger.debug('Event persisted', {
-                            eventId: event.id,
-                            eventType: event.type,
-                        });
-                    }
+                    console.log('💾 EVENT PERSISTED', {
+                        eventId: event.id,
+                        eventType: event.type,
+                        persistent: true,
+                        persistedAt: queueItem.persistedAt,
+                    });
                 } catch (error) {
-                    if (this.enableObservability) {
-                        this.observability.logger.error(
-                            'Failed to persist event',
-                            error as Error,
-                            {
-                                eventId: event.id,
-                                eventType: event.type,
-                            },
-                        );
-                    }
+                    console.error('❌ EVENT PERSISTENCE FAILED', {
+                        eventId: event.id,
+                        eventType: event.type,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    });
                 }
+            } else {
+                console.log('💾 EVENT NOT PERSISTED (not critical)', {
+                    eventId: event.id,
+                    eventType: event.type,
+                    shouldPersist,
+                    persistCriticalEvents: this.persistCriticalEvents,
+                    criticalEventTypes: this.criticalEventTypes,
+                    criticalEventPrefixes: this.criticalEventPrefixes,
+                });
             }
         }
 
-        // ✅ STORE EVENT FOR REPLAY (antes de adicionar à fila)
-        if (this.enableEventStore && this.eventStore) {
-            try {
-                await this.eventStore.appendEvents([processedEvent]);
-            } catch (error) {
-                if (this.enableObservability) {
-                    this.observability.logger.warn(
-                        'Failed to store event for replay',
-                        {
-                            eventId: event.id,
-                            eventType: event.type,
-                            error: (error as Error).message,
-                        },
-                    );
-                }
-                // Não falhar o enqueue se o event store falhar
-            }
-        }
-
+        // Add to queue with priority
         // Inserir com prioridade (maior prioridade primeiro)
         const insertIndex = this.queue.findIndex(
             (qi) => qi.priority < priority,
         );
         if (insertIndex === -1) {
-            this.queue.push(item);
+            this.queue.push(queueItem);
         } else {
-            this.queue.splice(insertIndex, 0, item);
+            this.queue.splice(insertIndex, 0, queueItem);
         }
 
+        console.log('✅ EVENT ENQUEUED SUCCESSFULLY', {
+            eventId: event.id,
+            eventType: event.type,
+            priority,
+            newQueueSize: this.queue.length,
+            processedEventsCount: this.processedEvents.size,
+            correlationId: event.metadata?.correlationId,
+            compressed,
+            persistent: queueItem.persistent,
+            insertIndex: insertIndex === -1 ? 'end' : insertIndex,
+        });
+
         if (this.enableObservability) {
-            this.observability.logger.debug('Event enqueued', {
+            this.observability.logger.info('✅ EVENT ENQUEUED SUCCESSFULLY', {
+                eventId: event.id,
                 eventType: event.type,
                 priority,
-                queueSize: this.queue.length,
-                eventSize: finalSize,
-                isLarge,
-                isHuge,
+                newQueueSize: this.queue.length,
+                processedEventsCount: this.processedEvents.size,
+                correlationId: event.metadata?.correlationId,
                 compressed,
-                originalSize,
-                backpressureActive: this.shouldActivateBackpressure(),
+                persistent: queueItem.persistent,
+                insertIndex: insertIndex === -1 ? 'end' : insertIndex,
+                trace: {
+                    source: 'event-queue',
+                    step: 'event-enqueued',
+                    timestamp: Date.now(),
+                },
             });
+        }
+
+        // Store in Event Store if enabled
+        if (this.enableEventStore && this.eventStore) {
+            try {
+                await this.eventStore.appendEvents([event]);
+                console.log('📚 EVENT STORED', {
+                    eventId: event.id,
+                    eventType: event.type,
+                });
+            } catch (error) {
+                console.error('❌ EVENT STORE FAILED', {
+                    eventId: event.id,
+                    eventType: event.type,
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                });
+            }
+        }
+
+        // Start auto-scaling if enabled
+        if (this.enableAutoScaling && !this.autoScalingTimer) {
+            this.startAutoScaling();
         }
 
         return true;
@@ -992,8 +1064,26 @@ export class EventQueue {
     /**
      * Remover próximo item da fila (com metadata)
      */
-    dequeueItem(): QueueItem | null {
-        return this.queue.shift() || null;
+    private dequeueItem(): QueueItem | undefined {
+        const item = this.queue.shift();
+
+        if (item && this.enableObservability) {
+            this.observability.logger.debug('📤 EVENT DEQUEUED', {
+                eventId: item.event.id,
+                eventType: item.event.type,
+                correlationId: item.event.metadata?.correlationId,
+                priority: item.priority,
+                remainingInQueue: this.queue.length,
+                processedEventsCount: this.processedEvents.size,
+                trace: {
+                    source: 'event-queue',
+                    step: 'event-dequeued',
+                    timestamp: Date.now(),
+                },
+            });
+        }
+
+        return item;
     }
 
     /**
@@ -1051,195 +1141,422 @@ export class EventQueue {
         batch: AnyEvent[],
         processor: (event: AnyEvent) => Promise<void>,
     ): Promise<number> {
-        const startTime = Date.now();
         let successCount = 0;
         let errorCount = 0;
 
-        try {
-            // Processar em chunks para evitar sobrecarga
-            const chunks = this.chunkArray(batch, this.chunkSize);
+        console.log('🔧 PROCESSING BATCH WITH BACKPRESSURE', {
+            batchSize: batch.length,
+            backpressureActive: this.shouldActivateBackpressure(),
+            batchEvents: batch.map((event) => ({
+                id: event.id,
+                type: event.type,
+            })),
+        });
 
-            for (const chunk of chunks) {
-                await Promise.all(
-                    chunk.map(async (event) => {
-                        await this.semaphore.acquire();
-                        try {
-                            await processor(event);
-                            successCount++;
-
-                            // ✅ MARK EVENT AS PROCESSED (para event store) - com error handling
-                            if (this.enableEventStore && this.eventStore) {
-                                try {
-                                    await this.eventStore.markEventsProcessed([
-                                        event.id,
-                                    ]);
-                                } catch (markError) {
-                                    // Log error but don't fail processing
-                                    if (this.enableObservability) {
-                                        this.observability.logger.warn(
-                                            'Failed to mark event as processed in event store',
-                                            {
-                                                eventId: event.id,
-                                                error: (markError as Error)
-                                                    .message,
-                                            },
-                                        );
-                                    }
-                                }
-                            }
-                        } catch (error) {
-                            errorCount++;
-                            if (this.enableObservability) {
-                                this.observability.logger.error(
-                                    'Event processing failed in batch',
-                                    error as Error,
-                                    {
-                                        eventType: event.type,
-                                        queueSize: this.queue.length,
-                                        processingTime: Date.now() - startTime,
-                                    },
-                                );
-                            }
-                            // Re-enfileirar com retry se necessário
-                            this.handleRetry(event, error as Error);
-                        } finally {
-                            this.semaphore.release();
-                        }
-                    }),
-                );
-            }
-        } finally {
-            this.processing = false;
-
-            if (this.enableObservability) {
-                this.observability.logger.info('Batch processing completed', {
-                    totalEvents: batch.length,
-                    successCount,
-                    errorCount,
-                    processingTime: Date.now() - startTime,
-                    queueSize: this.queue.length,
+        if (this.enableObservability) {
+            this.observability.logger.info(
+                '🔧 PROCESSING BATCH WITH BACKPRESSURE',
+                {
+                    batchSize: batch.length,
                     backpressureActive: this.shouldActivateBackpressure(),
-                });
-            }
+                    trace: {
+                        source: 'event-queue',
+                        step: 'process-batch-with-backpressure-start',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
         }
 
-        return batch.length;
+        // Processar eventos em chunks para evitar bloqueio
+        const chunkSize = this.shouldActivateBackpressure() ? 1 : 5;
+
+        for (let i = 0; i < batch.length; i += chunkSize) {
+            const chunk = batch.slice(i, i + chunkSize);
+
+            console.log('📋 PROCESSING CHUNK', {
+                chunkIndex: Math.floor(i / chunkSize),
+                chunkSize: chunk.length,
+                totalChunks: Math.ceil(batch.length / chunkSize),
+                chunkEvents: chunk.map((event) => ({
+                    id: event.id,
+                    type: event.type,
+                })),
+            });
+
+            if (this.enableObservability) {
+                this.observability.logger.debug('📋 PROCESSING CHUNK', {
+                    chunkIndex: Math.floor(i / chunkSize),
+                    chunkSize: chunk.length,
+                    totalChunks: Math.ceil(batch.length / chunkSize),
+                    chunkEventTypes: chunk.map((e) => e.type),
+                    chunkEventIds: chunk.map((e) => e.id),
+                    trace: {
+                        source: 'event-queue',
+                        step: 'processing-chunk',
+                        timestamp: Date.now(),
+                    },
+                });
+            }
+
+            const chunkPromises = chunk.map(async (event) => {
+                try {
+                    // ✅ ADD: Log detalhado para debug de duplicação
+                    const isAlreadyProcessed = this.processedEvents.has(
+                        event.id,
+                    );
+                    console.log('🎯 PROCESSING INDIVIDUAL EVENT', {
+                        eventId: event.id,
+                        eventType: event.type,
+                        correlationId: event.metadata?.correlationId,
+                        isAlreadyProcessed,
+                        processedEventsCount: this.processedEvents.size,
+                        queueSize: this.queue.length,
+                    });
+
+                    if (this.enableObservability) {
+                        this.observability.logger.debug(
+                            '🎯 PROCESSING INDIVIDUAL EVENT',
+                            {
+                                eventId: event.id,
+                                eventType: event.type,
+                                correlationId: event.metadata?.correlationId,
+                                isAlreadyProcessed,
+                                processedEventsCount: this.processedEvents.size,
+                                queueSize: this.queue.length,
+                                trace: {
+                                    source: 'event-queue',
+                                    step: 'processing-individual-event',
+                                    timestamp: Date.now(),
+                                },
+                            },
+                        );
+                    }
+
+                    // ✅ DEDUPLICATION: Mark event as processed
+                    this.processedEvents.add(event.id);
+
+                    console.log('✅ EVENT MARKED AS PROCESSED', {
+                        eventId: event.id,
+                        eventType: event.type,
+                        processedEventsCount: this.processedEvents.size,
+                    });
+
+                    // ✅ CLEANUP: Prevent memory leaks by limiting set size
+                    if (this.processedEvents.size > this.maxProcessedEvents) {
+                        const firstEventId = this.processedEvents
+                            .values()
+                            .next().value;
+                        if (firstEventId) {
+                            this.processedEvents.delete(firstEventId);
+                            console.log('🧹 CLEANED OLD PROCESSED EVENT', {
+                                removedEventId: firstEventId,
+                                processedEventsCount: this.processedEvents.size,
+                            });
+                        }
+                    }
+
+                    await processor(event);
+                    successCount++;
+
+                    console.log('✅ INDIVIDUAL EVENT PROCESSED SUCCESS', {
+                        eventId: event.id,
+                        eventType: event.type,
+                        correlationId: event.metadata?.correlationId,
+                        successCount,
+                        errorCount,
+                        queueSize: this.queue.length,
+                        processedEventsCount: this.processedEvents.size,
+                    });
+
+                    if (this.enableObservability) {
+                        this.observability.logger.debug(
+                            '✅ INDIVIDUAL EVENT PROCESSED SUCCESS',
+                            {
+                                eventId: event.id,
+                                eventType: event.type,
+                                correlationId: event.metadata?.correlationId,
+                                successCount,
+                                errorCount,
+                                queueSize: this.queue.length,
+                                processedEventsCount: this.processedEvents.size,
+                                trace: {
+                                    source: 'event-queue',
+                                    step: 'individual-event-processed-success',
+                                    batchSize: batch.length,
+                                    chunkIndex: Math.floor(i / chunkSize),
+                                },
+                            },
+                        );
+                    }
+                } catch (error) {
+                    errorCount++;
+
+                    console.error('❌ INDIVIDUAL EVENT PROCESSED ERROR', {
+                        eventId: event.id,
+                        eventType: event.type,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        successCount,
+                        errorCount,
+                        queueSize: this.queue.length,
+                        processedEventsCount: this.processedEvents.size,
+                    });
+
+                    if (this.enableObservability) {
+                        this.observability.logger.error(
+                            '❌ INDIVIDUAL EVENT PROCESSED ERROR',
+                            error as Error,
+                            {
+                                eventId: event.id,
+                                eventType: event.type,
+                                successCount,
+                                errorCount,
+                                queueSize: this.queue.length,
+                                processedEventsCount: this.processedEvents.size,
+                                trace: {
+                                    source: 'event-queue',
+                                    step: 'individual-event-processed-error',
+                                    batchSize: batch.length,
+                                    chunkIndex: Math.floor(i / chunkSize),
+                                },
+                            },
+                        );
+                    }
+                }
+            });
+
+            await Promise.all(chunkPromises);
+
+            console.log('📋 CHUNK COMPLETED', {
+                chunkIndex: Math.floor(i / chunkSize),
+                chunkSize: chunk.length,
+                successCount,
+                errorCount,
+                queueSize: this.queue.length,
+                processedEventsCount: this.processedEvents.size,
+            });
+        }
+
+        console.log('🔧 BATCH WITH BACKPRESSURE COMPLETED', {
+            batchSize: batch.length,
+            successCount,
+            errorCount,
+            finalQueueSize: this.queue.length,
+            finalProcessedEventsCount: this.processedEvents.size,
+        });
+
+        return successCount;
     }
 
     /**
      * Processar todos os eventos disponíveis com chunking
      */
-    processAll(processor: (event: AnyEvent) => Promise<void>): Promise<number> {
+    async processAll(
+        processor: (event: AnyEvent) => Promise<void>,
+    ): Promise<void> {
         if (this.processing) {
-            return Promise.resolve(0);
+            console.log('🔄 QUEUE ALREADY PROCESSING - SKIPPING', {
+                queueSize: this.queue.length,
+                processedEventsCount: this.processedEvents.size,
+            });
+            if (this.enableObservability) {
+                this.observability.logger.warn('🔄 QUEUE ALREADY PROCESSING', {
+                    queueSize: this.queue.length,
+                    processedEventsCount: this.processedEvents.size,
+                    trace: {
+                        source: 'event-queue',
+                        step: 'process-all-already-processing',
+                        timestamp: Date.now(),
+                    },
+                });
+            }
+            return;
         }
 
         this.processing = true;
-        const startTime = Date.now();
-        // Removido variáveis não utilizadas
+
+        console.log('🚀 EVENT QUEUE - STARTING PROCESSING', {
+            queueSize: this.queue.length,
+            processedEventsCount: this.processedEvents.size,
+            batchSize: this.batchSize || 10,
+            queueEvents: this.queue.map((item) => ({
+                id: item.event.id,
+                type: item.event.type,
+                timestamp: item.timestamp,
+            })),
+        });
 
         if (this.enableObservability) {
-            this.observability.logger.info('Starting processAll', {
-                queueSize: this.queue.length,
-                chunkSize: this.chunkSize,
-                maxConcurrent: this.maxConcurrent,
-                backpressureActive: this.shouldActivateBackpressure(),
-            });
+            this.observability.logger.info(
+                '🚀 EVENT QUEUE - Processing started',
+                {
+                    queueSize: this.queue.length,
+                    processedEventsCount: this.processedEvents.size,
+                    batchSize: this.batchSize || 10,
+                    trace: {
+                        source: 'event-queue',
+                        step: 'processAll-start',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
         }
-
-        return this.processAllWithChunking(processor, startTime);
-    }
-
-    /**
-     * Processar todos os eventos em chunks
-     */
-    private async processAllWithChunking(
-        processor: (event: AnyEvent) => Promise<void>,
-        startTime: number,
-    ): Promise<number> {
-        let totalProcessed = 0;
 
         try {
             while (this.queue.length > 0) {
-                const chunk: AnyEvent[] = [];
+                const batch = this.queue.splice(0, this.batchSize || 10);
 
-                // Coletar chunk
-                for (
-                    let i = 0;
-                    i < this.chunkSize && this.queue.length > 0;
-                    i++
-                ) {
-                    const item = this.dequeueItem();
-                    if (item) {
-                        chunk.push(item.event);
-                    }
+                console.log('📦 PROCESSING BATCH', {
+                    batchSize: batch.length,
+                    remainingInQueue: this.queue.length,
+                    batchEvents: batch.map((item) => ({
+                        id: item.event.id,
+                        type: item.event.type,
+                        timestamp: item.timestamp,
+                    })),
+                    processedEventsCount: this.processedEvents.size,
+                });
+
+                if (this.enableObservability) {
+                    this.observability.logger.debug(
+                        '📦 EVENT QUEUE - Processing batch',
+                        {
+                            batchSize: batch.length,
+                            remainingInQueue: this.queue.length,
+                            batchEvents: batch.map((item) => ({
+                                id: item.event.id,
+                                type: item.event.type,
+                            })),
+                            processedEventsCount: this.processedEvents.size,
+                            batchEventTypes: batch.map(
+                                (item) => item.event.type,
+                            ),
+                            batchEventIds: batch.map((item) => item.event.id),
+                            trace: {
+                                source: 'event-queue',
+                                step: 'process-batch',
+                                timestamp: Date.now(),
+                            },
+                        },
+                    );
                 }
 
-                if (chunk.length === 0) break;
-
-                // Processar chunk com backpressure
-                const chunkResult = await this.processBatchWithBackpressure(
-                    chunk,
+                const processedCount = await this.processBatchWithBackpressure(
+                    batch.map((item) => item.event),
                     processor,
                 );
-                totalProcessed += chunkResult;
 
-                // Log de progresso
-                if (this.enableObservability && totalProcessed % 100 === 0) {
-                    this.observability.logger.debug('ProcessAll progress', {
-                        processed: totalProcessed,
-                        remaining: this.queue.length,
-                        processingTime: Date.now() - startTime,
-                        queueSize: this.queue.length,
+                console.log('✅ BATCH PROCESSED', {
+                    batchSize: batch.length,
+                    processedCount,
+                    remainingInQueue: this.queue.length,
+                    processedEventsCount: this.processedEvents.size,
+                });
+
+                if (this.enableObservability) {
+                    this.observability.logger.info('✅ BATCH PROCESSED', {
+                        batchSize: batch.length,
+                        processedCount,
+                        remainingInQueue: this.queue.length,
+                        processedEventsCount: this.processedEvents.size,
+                        trace: {
+                            source: 'event-queue',
+                            step: 'batch-processed',
+                            timestamp: Date.now(),
+                        },
                     });
+                }
+
+                // Small delay to prevent blocking
+                if (this.queue.length > 0) {
+                    await new Promise((resolve) => setTimeout(resolve, 1));
                 }
             }
 
-            if (this.enableObservability) {
-                this.observability.logger.info('ProcessAll completed', {
-                    totalProcessed,
-                    processingTime: Date.now() - startTime,
-                    finalQueueSize: this.queue.length,
-                });
-            }
+            console.log('🎉 QUEUE PROCESSING COMPLETED', {
+                finalQueueSize: this.queue.length,
+                totalProcessedEvents: this.processedEvents.size,
+                processedEventsList: Array.from(this.processedEvents),
+            });
 
-            return totalProcessed;
+            if (this.enableObservability) {
+                this.observability.logger.info(
+                    '🎉 QUEUE PROCESSING COMPLETED',
+                    {
+                        finalQueueSize: this.queue.length,
+                        totalProcessedEvents: this.processedEvents.size,
+                        trace: {
+                            source: 'event-queue',
+                            step: 'process-all-completed',
+                            timestamp: Date.now(),
+                        },
+                    },
+                );
+            }
+        } catch (error) {
+            console.error('❌ QUEUE PROCESSING FAILED', {
+                error: error instanceof Error ? error.message : String(error),
+                queueSize: this.queue.length,
+                processedEventsCount: this.processedEvents.size,
+            });
+
+            if (this.enableObservability) {
+                this.observability.logger.error(
+                    '❌ QUEUE PROCESSING FAILED',
+                    error as Error,
+                    {
+                        queueSize: this.queue.length,
+                        processedEventsCount: this.processedEvents.size,
+                        trace: {
+                            source: 'event-queue',
+                            step: 'process-all-failed',
+                            timestamp: Date.now(),
+                        },
+                    },
+                );
+            }
+            throw error;
         } finally {
             this.processing = false;
+            console.log('🏁 QUEUE PROCESSING FINISHED', {
+                finalQueueSize: this.queue.length,
+                finalProcessedEventsCount: this.processedEvents.size,
+                processing: this.processing,
+            });
         }
-    }
-
-    /**
-     * Dividir array em chunks
-     */
-    private chunkArray<T>(array: T[], size: number): T[][] {
-        const chunks: T[][] = [];
-        for (let i = 0; i < array.length; i += size) {
-            chunks.push(array.slice(i, i + size));
-        }
-        return chunks;
-    }
-
-    /**
-     * Tratar retry de eventos
-     */
-    private async handleRetry(event: AnyEvent, _error: Error): Promise<void> {
-        // Implementação de retry com backoff exponencial
-        const retryDelay = Math.min(1000 * Math.pow(2, 0), 10000); // Max 10s
-
-        setTimeout(async () => {
-            // Sempre tentar reenfileirar para retry, backpressure será aplicado se necessário
-            await this.enqueue(event, 1); // Prioridade baixa para retry
-        }, retryDelay);
     }
 
     /**
      * Limpar fila
      */
     clear(): void {
+        console.log('🧹 CLEARING EVENT QUEUE', {
+            queueSize: this.queue.length,
+            processedEventsCount: this.processedEvents.size,
+            processing: this.processing,
+        });
+
         this.queue = [];
+        this.processedEvents.clear();
+
+        console.log('✅ EVENT QUEUE CLEARED', {
+            newQueueSize: this.queue.length,
+            newProcessedEventsCount: this.processedEvents.size,
+        });
+
         if (this.enableObservability) {
-            this.observability.logger.info('Event queue cleared');
+            this.observability.logger.info('Event queue cleared', {
+                queueSize: 0,
+                processedEventsCount: 0,
+                trace: {
+                    source: 'event-queue',
+                    step: 'clear-queue',
+                    timestamp: Date.now(),
+                },
+            });
         }
     }
 
@@ -1272,7 +1589,7 @@ export class EventQueue {
                   ).toFixed(2)
                 : '0.00';
 
-        return {
+        const stats = {
             size: this.queue.length,
             maxQueueDepth: this.maxQueueDepth,
             maxSize: this.maxQueueDepth, // Alias para compatibilidade
@@ -1294,7 +1611,26 @@ export class EventQueue {
             maxEventSize: this.maxEventSize,
             enableCompression: this.enableCompression,
             dropHugeEvents: this.dropHugeEvents,
+
+            // Processed events tracking
+            processedEventsCount: this.processedEvents.size,
+            maxProcessedEvents: this.maxProcessedEvents,
         };
+
+        console.log('📊 EVENT QUEUE STATS', {
+            ...stats,
+            queueEvents: this.queue.map((item) => ({
+                id: item.event.id,
+                type: item.event.type,
+                size: item.size,
+                compressed: item.compressed,
+                isLarge: item.isLarge,
+                isHuge: item.isHuge,
+            })),
+            processedEventsList: Array.from(this.processedEvents),
+        });
+
+        return stats;
     }
 
     /**
@@ -1366,16 +1702,37 @@ export class EventQueue {
      * Limpar recursos da fila
      */
     destroy(): void {
+        console.log('💥 DESTROYING EVENT QUEUE', {
+            queueSize: this.queue.length,
+            processedEventsCount: this.processedEvents.size,
+            processing: this.processing,
+            hadAutoScalingTimer: !!this.autoScalingTimer,
+        });
+
         // Parar auto-scaling usando método dedicado
         this.stopAutoScaling();
 
-        // Limpar arrays
+        // Limpar arrays e sets
         this.queue = [];
         this.performanceHistory = [];
+        this.processedEvents.clear();
+
+        console.log('✅ EVENT QUEUE DESTROYED', {
+            newQueueSize: this.queue.length,
+            newProcessedEventsCount: this.processedEvents.size,
+            newPerformanceHistorySize: this.performanceHistory.length,
+        });
 
         if (this.enableObservability) {
             this.observability.logger.info('Event queue destroyed', {
                 hadAutoScalingTimer: !!this.autoScalingTimer,
+                queueSize: 0,
+                processedEventsCount: 0,
+                trace: {
+                    source: 'event-queue',
+                    step: 'destroy-queue',
+                    timestamp: Date.now(),
+                },
             });
         }
     }

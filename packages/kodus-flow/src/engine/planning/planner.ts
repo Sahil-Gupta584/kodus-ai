@@ -213,7 +213,6 @@ export class CoTPlanner implements Planner {
         _options?: PlannerOptions,
         callbacks?: PlannerCallbacks,
     ): Promise<Plan> {
-        debugger;
         const goalText = Array.isArray(goal) ? goal.join('; ') : goal;
         const maxSteps = _options?.maxSteps || this.options.maxSteps || 5;
 

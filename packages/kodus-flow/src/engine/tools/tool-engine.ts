@@ -1,6 +1,6 @@
 /**
  * @module engine/tool-engine
- * @description Tool engine with Zod validation and retry support
+ * @description Tool engine with Zod validation and timeout protection
  */
 
 import { createLogger } from '../../observability/index.js';
@@ -76,186 +76,144 @@ export class ToolEngine {
     }
 
     /**
-     * Execute a tool call with retry logic and timeout
+     * Execute a tool call with timeout protection
+     * Note: Retry logic is handled by Circuit Breaker at higher level
      */
     async executeCall<TInput = unknown, TOutput = unknown>(
         toolName: ToolId,
         input: TInput,
     ): Promise<TOutput> {
+        console.log('@@@@ executeCall', toolName);
+
         const callId = IdGenerator.callId();
-        const maxRetries = this.config.retry?.maxRetries || 1;
-        const timeout = this.config.timeout || 60000; // ✅ AUMENTADO para 60s (ferramentas MCP podem demorar)
-        let lastError: Error;
+        const timeout = this.config.timeout || 60000; // ✅ 60s timeout para ferramentas MCP
         const startTime = Date.now();
 
-        this.logger.info('🔧 TOOL EXECUTION STARTED', {
+        this.logger.info('🚀 TOOL ENGINE - Tool execution started', {
             toolName,
             callId,
             inputKeys: Object.keys(input as Record<string, unknown>),
             timeout,
-            maxRetries,
+            hasKernelHandler: !!this.kernelHandler,
             trace: {
                 source: 'tool-engine',
-                step: 'tool-execution-started',
+                step: 'executeCall-start',
                 timestamp: Date.now(),
             },
         });
 
-        // Emit tool execution event via KernelHandler if available
-        if (this.kernelHandler) {
-            this.kernelHandler.emit('tool.execution.start', {
+        try {
+            // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => {
+                    reject(
+                        new Error(`Tool execution timeout after ${timeout}ms`),
+                    );
+                }, timeout);
+            });
+
+            // Create execution promise
+            const executionPromise = this.executeToolInternal<TInput, TOutput>(
+                toolName,
+                input,
+                callId,
+            );
+
+            // Race between execution and timeout
+            this.logger.debug('⚡ TOOL ENGINE - Starting execution race', {
                 toolName,
                 callId,
-                input,
-                tenantId: 'default',
+                timeout,
+                trace: {
+                    source: 'tool-engine',
+                    step: 'execution-race-start',
+                    timestamp: Date.now(),
+                },
             });
-        }
 
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                // Create timeout promise
-                const timeoutPromise = new Promise<never>((_, reject) => {
-                    setTimeout(() => {
-                        reject(
-                            new Error(
-                                `Tool execution timeout after ${timeout}ms`,
-                            ),
-                        );
-                    }, timeout);
-                });
+            const result = await Promise.race([
+                executionPromise,
+                timeoutPromise,
+            ]);
 
-                // Create execution promise
-                const executionPromise = this.executeToolInternal<
-                    TInput,
-                    TOutput
-                >(toolName, input, callId);
+            console.log('@@@@ executeCall Result', result);
 
-                // Race between execution and timeout
-                const result = await Promise.race([
-                    executionPromise,
-                    timeoutPromise,
-                ]);
+            this.logger.debug('✅ TOOL ENGINE - Execution race completed', {
+                toolName,
+                callId,
+                executionTime: Date.now() - startTime,
+                trace: {
+                    source: 'tool-engine',
+                    step: 'execution-race-completed',
+                    timestamp: Date.now(),
+                },
+            });
 
-                if (attempt > 1) {
-                    this.logger.info('Tool execution succeeded after retry', {
-                        toolName,
-                        callId,
-                        attempt,
-                        maxRetries,
-                    });
-                }
+            // Record feedback metrics for successful execution
+            if (this.feedbackOptimizer) {
+                const executionTime = Date.now() - startTime;
+                this.feedbackOptimizer.recordToolExecution(
+                    toolName,
+                    executionTime,
+                    true, // success
+                    0, // no retries at this level
+                );
+            }
 
-                // Emit tool execution success event via KernelHandler
-                if (this.kernelHandler) {
-                    this.kernelHandler.emit('tool.execution.success', {
-                        toolName,
-                        callId,
-                        result,
-                        attempt,
-                        tenantId: 'default',
-                    });
-                }
-
-                // Record feedback metrics for successful execution
-                if (this.feedbackOptimizer) {
-                    const executionTime = Date.now() - startTime;
-                    this.feedbackOptimizer.recordToolExecution(
-                        toolName,
-                        executionTime,
-                        true, // success
-                        attempt - 1, // retry count (0 if first attempt succeeded)
-                    );
-                }
-
-                this.logger.info('✅ TOOL EXECUTION SUCCESS', {
+            this.logger.info(
+                '✅ TOOL ENGINE - Tool execution completed successfully',
+                {
                     toolName,
                     callId,
-                    attempt,
                     executionTime: Date.now() - startTime,
                     hasResult: !!result,
+                    resultType: typeof result,
                     resultKeys: result
                         ? Object.keys(result as Record<string, unknown>)
                         : [],
                     trace: {
                         source: 'tool-engine',
-                        step: 'tool-execution-success',
+                        step: 'executeCall-success',
                         timestamp: Date.now(),
                     },
-                });
+                },
+            );
 
-                return result;
-            } catch (error) {
-                lastError = error as Error;
+            return result;
+        } catch (error) {
+            const lastError = error as Error;
+            const executionTime = Date.now() - startTime;
 
-                this.logger.warn('❌ TOOL EXECUTION FAILED', {
+            this.logger.error(
+                '❌ TOOL ENGINE - Tool execution failed',
+                lastError,
+                {
                     toolName,
                     callId,
-                    attempt,
-                    maxRetries,
                     error: lastError.message,
-                    errorStack: lastError.stack,
-                    executionTime: Date.now() - startTime,
+                    errorType: lastError.constructor.name,
+                    executionTime,
+                    isTimeout: lastError.message.includes('timeout'),
                     trace: {
                         source: 'tool-engine',
-                        step: 'tool-execution-failed',
+                        step: 'executeCall-error',
                         timestamp: Date.now(),
                     },
-                });
-
-                // Emit tool execution error event via KernelHandler
-                if (this.kernelHandler) {
-                    this.kernelHandler.emit('tool.execution.error', {
-                        toolName,
-                        callId,
-                        error: lastError.message,
-                        attempt,
-                        maxRetries,
-                        tenantId: 'default',
-                    });
-                }
-
-                if (attempt < maxRetries) {
-                    const delay = Math.min(
-                        1000 * Math.pow(2, attempt - 1),
-                        5000,
-                    );
-                    this.logger.warn('Tool execution failed, retrying', {
-                        toolName,
-                        callId,
-                        attempt,
-                        maxRetries,
-                        error: lastError.message,
-                        retryDelay: delay,
-                    });
-
-                    await new Promise((resolve) => setTimeout(resolve, delay));
-                } else {
-                    this.logger.error(
-                        'Tool execution failed after all retries',
-                        lastError,
-                        {
-                            toolName,
-                            callId,
-                            attempt,
-                            maxRetries,
-                        },
-                    );
-                }
-            }
-        }
-
-        // Record feedback metrics for failed execution (after all retries)
-        if (this.feedbackOptimizer) {
-            const executionTime = Date.now() - startTime;
-            this.feedbackOptimizer.recordToolExecution(
-                toolName,
-                executionTime,
-                false, // failed
-                maxRetries, // used all retries
+                },
             );
-        }
 
-        throw lastError!;
+            // Record feedback metrics for failed execution
+            if (this.feedbackOptimizer) {
+                this.feedbackOptimizer.recordToolExecution(
+                    toolName,
+                    executionTime,
+                    false, // failed
+                    0, // no retries at this level
+                );
+            }
+
+            throw lastError;
+        }
     }
 
     /**
@@ -266,16 +224,61 @@ export class ToolEngine {
         input: TInput,
         callId: string,
     ): Promise<TOutput> {
+        this.logger.debug('🔧 TOOL ENGINE - Internal execution started', {
+            toolName,
+            callId,
+            inputType: typeof input,
+            trace: {
+                source: 'tool-engine',
+                step: 'executeToolInternal-start',
+                timestamp: Date.now(),
+            },
+        });
+
         // Find tool
         const tool = this.tools.get(toolName) as ToolDefinition<
             TInput,
             TOutput
         >;
         if (!tool) {
+            this.logger.error(
+                '❌ TOOL ENGINE - Tool not found',
+                new Error(`Tool not found: ${toolName}`),
+                {
+                    toolName,
+                    callId,
+                    availableTools: Array.from(this.tools.keys()),
+                    trace: {
+                        source: 'tool-engine',
+                        step: 'tool-not-found',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
             throw new Error(`Tool not found: ${toolName}`);
         }
 
+        this.logger.debug('✅ TOOL ENGINE - Tool found', {
+            toolName,
+            callId,
+            toolDescription: tool.description,
+            trace: {
+                source: 'tool-engine',
+                step: 'tool-found',
+                timestamp: Date.now(),
+            },
+        });
+
         // ✅ Unified validation
+        this.logger.debug('🔍 TOOL ENGINE - Validating input', {
+            toolName,
+            callId,
+            trace: {
+                source: 'tool-engine',
+                step: 'validate-input',
+                timestamp: Date.now(),
+            },
+        });
         this.validateToolInput(tool, input);
 
         // Create tool context using factory function
@@ -287,12 +290,30 @@ export class ToolEngine {
             input as Record<string, unknown>,
         );
 
+        this.logger.debug('⚡ TOOL ENGINE - Executing tool function', {
+            toolName,
+            callId,
+            contextType: typeof context,
+            trace: {
+                source: 'tool-engine',
+                step: 'execute-tool-function',
+                timestamp: Date.now(),
+            },
+        });
+
         // Execute tool using execute function
         const result = await tool.execute(input, context);
 
-        this.logger.debug('Tool executed successfully', {
+        this.logger.debug('✅ TOOL ENGINE - Tool executed successfully', {
             toolName,
             callId,
+            resultType: typeof result,
+            hasResult: !!result,
+            trace: {
+                source: 'tool-engine',
+                step: 'executeToolInternal-success',
+                timestamp: Date.now(),
+            },
         });
 
         return result;
@@ -377,8 +398,8 @@ export class ToolEngine {
                 },
 
                 errorHandling: tool.errorHandling || {
-                    retryStrategy: 'exponential',
-                    maxRetries: 3,
+                    retryStrategy: 'none', // ✅ No retries at tool level - Circuit Breaker handles it
+                    maxRetries: 0, // ✅ No retries at tool level
                     fallbackAction: 'continue',
                     errorMessages: {},
                 },
@@ -579,11 +600,44 @@ export class ToolEngine {
         this.kernelHandler.registerHandler(
             'tool.execute.request',
             async (event: AnyEvent) => {
+                console.log(
+                    '@@@@ registerEventHandlers',
+                    event.metadata?.correlationId,
+                );
+                // ✅ ADD: Log detalhado para debug
+                this.logger.info('🔧 [TOOL] HANDLER EXECUTION STARTED', {
+                    eventId: event.id,
+                    eventType: event.type,
+                    correlationId: event.metadata?.correlationId,
+                    hasData: !!event.data,
+                    dataKeys: event.data
+                        ? Object.keys(event.data as Record<string, unknown>)
+                        : [],
+                    trace: {
+                        source: 'tool-engine',
+                        step: 'handler-execution-start',
+                        timestamp: Date.now(),
+                    },
+                });
+
+                const correlationId = event.metadata?.correlationId;
+
+                // ✅ ADD: Log para rastrear duplicação
+                this.logger.info('🔍 [TOOL] HANDLER EXECUTION TRACE', {
+                    eventId: event.id,
+                    eventType: event.type,
+                    correlationId: event.metadata?.correlationId,
+                    timestamp: Date.now(),
+                    stackTrace: new Error().stack
+                        ?.split('\n')
+                        .slice(1, 3)
+                        .join('\n'),
+                });
+
                 const { toolName, input } = event.data as {
                     toolName: string;
                     input: unknown;
                 };
-                const correlationId = event.metadata?.correlationId;
 
                 this.logger.info('🔧 [TOOL] Received tool execution request', {
                     toolName,
@@ -621,14 +675,104 @@ export class ToolEngine {
                         },
                     });
 
-                    this.kernelHandler!.emit('tool.execute.response', {
-                        data: result,
-                        metadata: {
-                            correlationId,
-                            success: true,
-                            toolName,
+                    // ✅ ADD: Log detalhado para debug
+                    this.logger.info('🎯 TOOL ENGINE EMIT KERNEL', {
+                        eventType: 'tool.execute.response',
+                        correlationId,
+                        kernelHandlerType: this.kernelHandler?.constructor.name,
+                        hasKernelHandler: !!this.kernelHandler,
+                        trace: {
+                            source: 'tool-engine',
+                            step: 'emit-kernel-debug',
+                            timestamp: Date.now(),
                         },
                     });
+
+                    // ✅ ADD: Log para verificar se o evento está sendo emitido corretamente
+                    this.logger.info(
+                        '🎯 TOOL ENGINE - EMITTING RESPONSE EVENT',
+                        {
+                            eventType: 'tool.execute.response',
+                            correlationId,
+                            hasResult: !!result,
+                            resultKeys: result
+                                ? Object.keys(result as Record<string, unknown>)
+                                : [],
+                            trace: {
+                                source: 'tool-engine',
+                                step: 'emit-response-event',
+                                timestamp: Date.now(),
+                            },
+                        },
+                    );
+
+                    // ✅ CORREÇÃO: Usar emitAsync para garantir delivery
+                    if (this.kernelHandler?.emitAsync) {
+                        const emitResult = await this.kernelHandler.emitAsync(
+                            'tool.execute.response',
+                            {
+                                ...(typeof result === 'object' &&
+                                result !== null
+                                    ? result
+                                    : { result }),
+                                success: true,
+                                toolName,
+                                metadata: {
+                                    correlationId,
+                                    success: true,
+                                    toolName,
+                                },
+                            },
+                            {
+                                correlationId,
+                                deliveryGuarantee: 'at-least-once',
+                            },
+                        );
+
+                        this.logger.info(
+                            '🎯 TOOL ENGINE - RESPONSE EVENT EMITTED VIA EMITASYNC',
+                            {
+                                eventType: 'tool.execute.response',
+                                correlationId,
+                                success: true,
+                                emitResult,
+                                trace: {
+                                    source: 'tool-engine',
+                                    step: 'response-event-emitted-via-emitasync',
+                                    timestamp: Date.now(),
+                                },
+                            },
+                        );
+                    } else {
+                        // Fallback para emit básico
+                        this.kernelHandler!.emit('tool.execute.response', {
+                            ...(typeof result === 'object' && result !== null
+                                ? result
+                                : { result }),
+                            success: true,
+                            toolName,
+                            metadata: {
+                                correlationId,
+                                success: true,
+                                toolName,
+                            },
+                        });
+
+                        // ✅ ADD: Log após emissão
+                        this.logger.info(
+                            '🎯 TOOL ENGINE - RESPONSE EVENT EMITTED VIA BASIC EMIT',
+                            {
+                                eventType: 'tool.execute.response',
+                                correlationId,
+                                success: true,
+                                trace: {
+                                    source: 'tool-engine',
+                                    step: 'response-event-emitted-via-basic-emit',
+                                    timestamp: Date.now(),
+                                },
+                            },
+                        );
+                    }
 
                     // ✅ ACK the original event after successful processing
                     if (this.kernelHandler) {
@@ -665,9 +809,9 @@ export class ToolEngine {
                     );
 
                     this.kernelHandler!.emit('tool.execute.response', {
-                        data: {
-                            error: (error as Error).message,
-                        },
+                        error: (error as Error).message,
+                        success: false,
+                        toolName,
                         metadata: {
                             correlationId,
                             success: false,
@@ -737,79 +881,111 @@ export class ToolEngine {
     }
 
     /**
-     * Execute tool directly (for testing compatibility) - with basic retry
+     * Execute tool directly with timeout protection
+     * Note: Retry logic is handled by Circuit Breaker at higher level
      */
     async executeTool<TInput = unknown, TOutput = unknown>(
         toolName: string,
         input: TInput,
     ): Promise<TOutput> {
-        const maxRetries = this.config.retry?.maxRetries || 1;
-        let lastError: Error;
+        const callId = IdGenerator.callId();
+        const timeout = this.config.timeout || 60000; // ✅ 60s timeout para ferramentas MCP
+        const startTime = Date.now();
 
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                const tool = this.tools.get(
-                    toolName as ToolId,
-                ) as ToolDefinition<TInput, TOutput>;
-                if (!tool) {
-                    throw new Error(`Tool ${toolName} not found`);
-                }
+        this.logger.info('🔧 TOOL EXECUTION STARTED (executeTool)', {
+            toolName,
+            callId,
+            inputKeys: Object.keys(input as Record<string, unknown>),
+            timeout,
+            trace: {
+                source: 'tool-engine',
+                step: 'tool-execution-started',
+                timestamp: Date.now(),
+            },
+        });
 
-                // ✅ Unified validation - ensure all execution paths validate input
-                this.validateToolInput(tool, input);
+        try {
+            // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => {
+                    reject(
+                        new Error(`Tool execution timeout after ${timeout}ms`),
+                    );
+                }, timeout);
+            });
 
-                // Create tool context using factory function
-                const context = createToolContext(
-                    tool.name,
-                    `call-${Date.now()}`,
-                    `exec-${Date.now()}`,
-                    'default',
-                    input as Record<string, unknown>,
+            // Create execution promise using executeToolInternal
+            const executionPromise = this.executeToolInternal<TInput, TOutput>(
+                toolName as ToolId,
+                input,
+                callId,
+            );
+
+            // Race between execution and timeout
+            const result = await Promise.race([
+                executionPromise,
+                timeoutPromise,
+            ]);
+
+            // Record feedback metrics for successful execution
+            if (this.feedbackOptimizer) {
+                const executionTime = Date.now() - startTime;
+                this.feedbackOptimizer.recordToolExecution(
+                    toolName,
+                    executionTime,
+                    true, // success
+                    0, // no retries at this level
                 );
-
-                const result = await tool.execute(input, context);
-
-                if (attempt > 1) {
-                    this.logger.info('Tool execution succeeded after retry', {
-                        toolName,
-                        attempt,
-                        maxRetries,
-                    });
-                }
-
-                return result;
-            } catch (error) {
-                lastError = error as Error;
-
-                if (attempt < maxRetries) {
-                    const delay = Math.min(
-                        1000 * Math.pow(2, attempt - 1),
-                        5000,
-                    );
-                    this.logger.warn('Tool execution failed, retrying', {
-                        toolName,
-                        attempt,
-                        maxRetries,
-                        error: lastError.message,
-                        retryDelay: delay,
-                    });
-
-                    await new Promise((resolve) => setTimeout(resolve, delay));
-                } else {
-                    this.logger.error(
-                        'Tool execution failed after all retries',
-                        lastError,
-                        {
-                            toolName,
-                            attempt,
-                            maxRetries,
-                        },
-                    );
-                }
             }
-        }
 
-        throw lastError!;
+            this.logger.info('✅ TOOL EXECUTION SUCCESS (executeTool)', {
+                toolName,
+                callId,
+                executionTime: Date.now() - startTime,
+                hasResult: !!result,
+                resultKeys: result
+                    ? Object.keys(result as Record<string, unknown>)
+                    : [],
+                trace: {
+                    source: 'tool-engine',
+                    step: 'tool-execution-success',
+                    timestamp: Date.now(),
+                },
+            });
+
+            return result;
+        } catch (error) {
+            const lastError = error as Error;
+            const executionTime = Date.now() - startTime;
+
+            this.logger.error(
+                '❌ TOOL EXECUTION FAILED (executeTool)',
+                lastError,
+                {
+                    toolName,
+                    callId,
+                    error: lastError.message,
+                    executionTime,
+                    trace: {
+                        source: 'tool-engine',
+                        step: 'tool-execution-failed',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
+
+            // Record feedback metrics for failed execution
+            if (this.feedbackOptimizer) {
+                this.feedbackOptimizer.recordToolExecution(
+                    toolName,
+                    executionTime,
+                    false, // failed
+                    0, // no retries at this level
+                );
+            }
+
+            throw lastError;
+        }
     }
 
     // ===== 🚀 NEW: DEPENDENCY RESOLUTION METHODS =====

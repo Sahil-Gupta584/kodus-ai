@@ -267,6 +267,21 @@ export class OptimizedEventProcessor {
      * Processar evento com todas as otimizações
      */
     async processEvent(event: AnyEvent): Promise<void> {
+        this.observability.logger.debug(
+            '🔍 EVENT PROCESSOR - Processing event',
+            {
+                eventId: event.id,
+                eventType: event.type,
+                processingDepth: this.processingDepth,
+                correlationId: this.extractCorrelationId(event),
+                trace: {
+                    source: 'event-processor',
+                    step: 'processEvent-start',
+                    timestamp: Date.now(),
+                },
+            },
+        );
+
         // Adicionar ao buffer circular
         pushToBuffer(this.eventBuffer, event);
 
@@ -327,17 +342,65 @@ export class OptimizedEventProcessor {
         this.processingDepth++;
         context.eventChain.push(event.type);
 
+        this.observability.logger.debug(
+            '⚡ EVENT PROCESSOR - Internal processing',
+            {
+                eventId: event.id,
+                eventType: event.type,
+                processingDepth: this.processingDepth,
+                chainLength: context.eventChain.length,
+                correlationId: context.correlationId,
+                trace: {
+                    source: 'event-processor',
+                    step: 'processEventInternal-start',
+                    timestamp: Date.now(),
+                },
+            },
+        );
+
         try {
             // Verificar loop infinito
             if (
                 context.eventChain.includes(event.type) &&
                 context.eventChain.length > 1
             ) {
+                this.observability.logger.error(
+                    '❌ EVENT PROCESSOR - Event loop detected',
+                    new Error(`Event loop detected: ${event.type}`),
+                    {
+                        eventId: event.id,
+                        eventType: event.type,
+                        eventChain: Array.from(
+                            context.eventChain as unknown as Iterable<string>,
+                        ),
+                        trace: {
+                            source: 'event-processor',
+                            step: 'event-loop-detected',
+                            timestamp: Date.now(),
+                        },
+                    },
+                );
                 throw new Error(`Event loop detected: ${event.type}`);
             }
 
             // Obter handlers otimizados (middleware de handler já aplicado no registro)
             const handlers = this.getHandlersOptimized(event.type);
+
+            this.observability.logger.debug(
+                '🔍 EVENT PROCESSOR - Handlers found',
+                {
+                    eventId: event.id,
+                    eventType: event.type,
+                    handlerCount: handlers.length,
+                    batchSize: this.batchSize,
+                    willUseBatch: handlers.length > this.batchSize,
+                    trace: {
+                        source: 'event-processor',
+                        step: 'handlers-found',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
 
             // Criar função de processamento dos handlers
             const processHandlers = async () => {
@@ -381,8 +444,18 @@ export class OptimizedEventProcessor {
             // Log de resultados para debug
             const failed = results.filter((r) => r.status === 'rejected');
             if (failed.length > 0) {
-                console.warn(
-                    `${failed.length}/${results.length} handlers failed for event ${event.type}`,
+                this.observability.logger.warn(
+                    `❌ EVENT PROCESSOR - ${failed.length}/${results.length} handlers failed`,
+                    {
+                        eventType: event.type,
+                        failedCount: failed.length,
+                        totalCount: results.length,
+                        trace: {
+                            source: 'event-processor',
+                            step: 'handlers-failed',
+                            timestamp: Date.now(),
+                        },
+                    },
                 );
             }
         }
@@ -560,12 +633,8 @@ export class OptimizedEventProcessor {
      * Extrair correlation ID
      */
     private extractCorrelationId(event: AnyEvent): string | undefined {
-        if (event.data && typeof event.data === 'object') {
-            return (event.data as Record<string, unknown>).correlationId as
-                | string
-                | undefined;
-        }
-        return undefined;
+        // ✅ CORREÇÃO: Procurar correlationId apenas em metadata (padrão Runtime)
+        return event.metadata?.correlationId;
     }
 
     /**

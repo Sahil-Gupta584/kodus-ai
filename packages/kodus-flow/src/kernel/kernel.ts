@@ -289,7 +289,7 @@ export class ExecutionKernel {
         this.state = {
             id: `${config.tenantId}:${jobId}`,
             tenantId: config.tenantId,
-            correlationId: IdGenerator.correlationId(),
+            correlationId: IdGenerator.correlationId(), //TODO: Verificar se é necessário
             jobId,
             contextData: {},
             stateData: {},
@@ -1860,6 +1860,66 @@ export class ExecutionKernel {
         this.workflowContext = null;
 
         this.logger.info('Enhanced cleanup completed');
+    }
+
+    /**
+     * Clear events and resources (for testing or reset)
+     */
+    async clear(): Promise<void> {
+        this.logger.info('🔄 CLEARING KERNEL', {
+            kernelId: this.state.id,
+            status: this.state.status,
+            hasRuntime: !!this.runtime,
+            trace: {
+                source: 'kernel',
+                step: 'clear-start',
+                timestamp: Date.now(),
+            },
+        });
+
+        try {
+            // Enhanced cleanup first
+            await this.enhancedCleanup();
+
+            // Clear runtime if exists
+            if (this.runtime) {
+                this.runtime.clear();
+                this.runtime = null;
+            }
+
+            // Reset state completely
+            this.state = {
+                ...this.state,
+                contextData: {},
+                stateData: {},
+                status: 'initialized',
+                startTime: Date.now(),
+                eventCount: 0,
+                operationId: undefined,
+                lastOperationHash: undefined,
+                pendingOperations: new Set<string>(),
+            };
+
+            // Clear workflow context
+            this.workflowContext = null;
+
+            // Clear all caches and queues
+            this.contextCache.clear();
+            this.contextUpdateQueue.clear();
+            this.eventBatchQueue.length = 0;
+
+            this.logger.info('✅ KERNEL CLEARED', {
+                kernelId: this.state.id,
+                trace: {
+                    source: 'kernel',
+                    step: 'clear-complete',
+                    timestamp: Date.now(),
+                },
+            });
+        } catch (error) {
+            this.logger.error('Failed to clear kernel', error as Error);
+            throw error;
+        }
     }
 
     // ===== ENHANCED STATUS & HEALTH =====

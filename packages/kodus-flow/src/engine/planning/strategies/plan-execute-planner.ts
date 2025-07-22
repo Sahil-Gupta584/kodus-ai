@@ -62,7 +62,6 @@ export class PlanAndExecutePlanner implements Planner {
         input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        debugger;
         this.logger.debug('Plan-and-Execute thinking started', {
             input: input.substring(0, 100),
             iteration: context.iterations,
@@ -105,7 +104,7 @@ export class PlanAndExecutePlanner implements Planner {
                 content: 'Plan-and-Execute thinking started',
             },
         };
-        // debugger;
+        //
         // this.logger.debug('Creating new execution plan');
 
         // // Use LLM to create detailed plan
@@ -157,7 +156,6 @@ export class PlanAndExecutePlanner implements Planner {
     private async executeNextStep(
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        debugger;
         if (!this.currentPlan) {
             throw new Error('No execution plan available');
         }

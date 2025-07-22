@@ -8,13 +8,13 @@
 /**
  * Default timeout configuration
  */
-export const DEFAULT_TIMEOUT_MS = 30000; // 30 seconds
+export const DEFAULT_TIMEOUT_MS = 60000; // ✅ UNIFIED: 60s timeout
 
 /**
  * Default retry configuration
  */
 export const DEFAULT_RETRY_CONFIG = {
-    maxRetries: 3,
+    maxRetries: 1,
     baseDelay: 1000,
     maxDelay: 30000,
     backoffMultiplier: 2,
@@ -158,7 +158,7 @@ export const ENTERPRISE_CONFIG = {
     learningRate: 0.1, // Taxa conservadora
 
     // === RETRY OPTIMIZATION ===
-    maxRetries: 3, // 3 retries (padrão)
+    maxRetries: 1, // 1 retry (padrão)
     baseRetryDelay: 1000, // Retry padrão
     maxRetryDelay: 20000, // Max retry padrão
 

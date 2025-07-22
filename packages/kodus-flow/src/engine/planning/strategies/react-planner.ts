@@ -19,7 +19,6 @@ import type {
 import {
     isErrorResult,
     getResultError,
-    getResultContent,
     isToolResult,
     isFinalAnswerResult,
 } from '../planner-factory.js';
@@ -27,9 +26,19 @@ import {
 // import { AgentContext } from '@/core/types/agent-types.js';
 import { Thread } from '../../../core/types/common-types.js';
 import { ToolMetadataForLLM } from '@/core/types/tool-types.js';
+import type { ToolCallAction } from '../planner-factory.js';
 
 export class ReActPlanner implements Planner {
     private logger = createLogger('react-planner');
+
+    /**
+     * Confidence Score Guidelines:
+     * 0.0-0.2: Critical failure, errors, or system issues
+     * 0.3-0.4: Low confidence - missing tools, unclear goals
+     * 0.5-0.6: Medium confidence - can proceed but limitations exist
+     * 0.7-0.8: High confidence - normal operation with clear path
+     * 0.9-1.0: Very high confidence - perfect match of intent and capability
+     */
 
     constructor(private llmAdapter: LLMAdapter) {
         this.logger.info('ReAct Planner initialized', {
@@ -61,22 +70,11 @@ export class ReActPlanner implements Planner {
         return executionRuntime?.getAvailableToolsForLLM() || [];
     }
 
-    /**
-     * Get available tools objects for the current context
-     */
-    // private getAvailableToolsObjects(
-    //     thread: Thread,
-    //     _context?: PlannerExecutionContext,
-    // ): AgentContext['availableTools'] {
-    //     const executionRuntime = this.getExecutionRuntime(thread);
-    //     return executionRuntime?.getAvailableTools() || [];
-    // }
-
     async think(
         input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        this.logger.debug('ReAct thinking started', {
+        this.logger.info('🔍 ReAct thinking started', {
             input: input.substring(0, 100),
             iteration: context.iterations,
             historyLength: context.history.length,
@@ -88,13 +86,28 @@ export class ReActPlanner implements Planner {
         } catch (error) {
             this.logger.error('ReAct thinking failed', error as Error);
 
-            // Emergency fallback - at least provide some response
+            // ✅ BETTER: Error message with context
+            const lastAction =
+                context.history[context.history.length - 1]?.action;
+            const errorContext = {
+                iteration: context.iterations,
+                lastTool:
+                    lastAction?.type === 'tool_call'
+                        ? (lastAction as ToolCallAction).tool
+                        : undefined,
+                availableTools: this.getAvailableToolsForContext(
+                    context.plannerMetadata.thread!,
+                ).map((t) => t.name),
+            };
+
             return {
-                reasoning: `Error in ReAct planning: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                reasoning: `Planning failed at iteration ${context.iterations}. ${error instanceof Error ? error.message : 'Unknown error'}`,
                 action: {
                     type: 'final_answer',
-                    content: `I encountered an error while planning: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
+                    content: `I encountered an issue while planning (iteration ${context.iterations}). Available tools: ${errorContext.availableTools.join(', ')}. Please try rephrasing your request or check if the required tools are available.`,
                 },
+                confidence: 0.1, // Very low - error scenario
+                metadata: { error: true, errorContext },
             };
         }
     }
@@ -103,13 +116,46 @@ export class ReActPlanner implements Planner {
         input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        debugger;
         // Cache resources once at the beginning
         const thread = context.plannerMetadata.thread!;
         const availableTools = this.getAvailableToolsForContext(thread);
+        const availableToolNames = availableTools.map((tool) => tool.name);
+
+        // ✅ SMART: Handle no tools available - but can still think!
+        if (availableTools.length === 0) {
+            this.logger.info('No tools available, providing direct reasoning', {
+                input: input.substring(0, 100),
+                iteration: context.iterations,
+            });
+
+            return {
+                reasoning:
+                    'No external tools available, but I can provide an answer based on reasoning and general knowledge',
+                action: {
+                    type: 'final_answer',
+                    content: `I don't have access to external tools, but I can help answer based on general knowledge and reasoning.
+
+For the question: "${input}"
+
+Let me provide what I can based on available information and logical reasoning.`,
+                },
+                confidence: 0.5, // Medium - can help but limited without tools
+                metadata: {
+                    approachType: 'no_tools_reasoning',
+                    toolsAvailable: 0,
+                },
+            };
+        }
+
         const executionRuntime = this.getExecutionRuntime(thread);
         const agentIdentity = executionRuntime?.getAgentIdentity();
         const userContext = executionRuntime?.getUserContext();
+
+        // ✅ GET MEMORY CONTEXT for better reasoning
+        const memoryContext = await this.getMemoryContext(
+            executionRuntime,
+            input,
+        );
 
         // ✅ Build enhanced tools context for ReAct
         const toolsContext = this.buildToolsContextForReAct(availableTools);
@@ -138,6 +184,39 @@ export class ReActPlanner implements Planner {
             agentScratchpad,
             identityContext,
             userContext,
+            memoryContext, // ✅ ADD MEMORY CONTEXT
+            // ✅ BEST PRACTICE: Analysis happens in think phase
+            sequentialInstructions: `
+You are a ReAct agent. Follow this intelligent process:
+
+1. ANALYZE the current situation:
+   - Review the original question/goal
+   - Check what actions have been taken so far
+   - Analyze the results from previous actions
+   - Determine if the goal has been FULLY achieved
+
+2. DECIDE your approach:
+   - If goal is complete → Final Answer with comprehensive response
+   - If partial progress → Continue with next logical step
+   - If error occurred → Try alternative approach
+   - If need more info → Use appropriate tool
+
+3. BE SMART about multi-part goals:
+   - "Do X and Y" requires BOTH X and Y to be complete
+   - Don't stop at partial completion
+   - Track which parts are done vs pending
+
+4. TOOL USAGE:
+   - Use tools when you need: external data, search, calculations
+   - Answer directly when you have: sufficient knowledge from previous results
+   - Don't repeat successful tool calls unnecessarily
+
+Available tools: ${availableToolNames.join(', ')}
+
+CRITICAL: After each tool result, ask yourself:
+- Have I achieved ALL parts of the original goal?
+- What specific information am I still missing?
+- Should I continue with more actions or provide the final answer?`,
         });
 
         return this.convertPlanToReActThought(
@@ -152,6 +231,7 @@ export class ReActPlanner implements Planner {
     private buildToolsContextForReAct(tools: ToolMetadataForLLM[]): string {
         if (tools.length === 0) return 'No tools available.';
 
+        // ✅ BETTER: Clearer formatting with types and examples
         return tools
             .map((tool) => {
                 const params = tool.parameters?.properties
@@ -166,36 +246,110 @@ export class ReActPlanner implements Planner {
                                   (tool.parameters?.required as string[]) || []
                               ).includes(name)
                                   ? ' (required)'
+                                  : ' (optional)';
+                              const type = propObj.type
+                                  ? ` [${propObj.type}]`
                                   : '';
-                              return `  - ${name}: ${description}${required}`;
+                              const example = propObj.example
+                                  ? ` e.g. "${propObj.example}"`
+                                  : '';
+                              return `  - ${name}${type}: ${description}${required}${example}`;
                           })
                           .join('\n')
                     : '  No parameters';
 
-                return `${tool.name}: ${tool.description || 'No description'}\nParameters:\n${params}`;
+                return `${tool.name}: ${tool.description || 'No description'}\n${params}`;
             })
             .join('\n\n');
     }
 
     /**
-     * ✅ Build proper agent_scratchpad for ReAct format
+     * ✅ ENHANCED: Build intelligent agent_scratchpad for ReAct format
      */
     private buildAgentScratchpad(context: PlannerExecutionContext): string {
-        if (context.history.length === 0) return '';
+        // ✅ SMART: Handle first iteration - start clean
+        if (context.history.length === 0) {
+            return 'Thought:';
+        }
 
-        return (
-            context.history
-                .map((entry) => {
-                    const thought = `Thought: ${entry.thought.reasoning}`;
-                    const action =
-                        entry.action.type === 'tool_call'
-                            ? `Action: ${entry.action.tool}\nAction Input: ${JSON.stringify(entry.action.arguments)}`
-                            : `Action: Final Answer\nAction Input: ${entry.action.content}`;
-                    const observation = `Observation: ${this.formatObservation(entry.result)}`;
-                    return `${thought}\n${action}\n${observation}`;
-                })
-                .join('\n') + (context.history.length > 0 ? '\nThought: ' : '')
-        ); // Always end with Thought: for next iteration
+        // ✅ ENHANCED: More detailed debug logging
+        const lastEntry = context.history[context.history.length - 1];
+        this.logger.debug('Building agent scratchpad', {
+            historyLength: context.history.length,
+            iteration: context.iterations,
+            lastActionType: lastEntry?.action.type,
+            lastActionSuccess: lastEntry?.result
+                ? !isErrorResult(lastEntry.result)
+                : undefined,
+            hasContaminatedEntries: context.history.some(
+                (entry) =>
+                    entry.thought.reasoning?.includes('Previous execution:') ||
+                    (entry.action.type === 'final_answer' &&
+                        String(entry.action.content).includes(
+                            'Previous execution completed',
+                        )),
+            ),
+        });
+
+        // ✅ FIXED: Filter out contaminated entries and build clean scratchpad
+        const validEntries = context.history.filter((entry) => {
+            // Skip entries that look like contaminated previous executions
+            const isContaminated =
+                entry.thought.reasoning?.includes('Previous execution:') ||
+                (entry.action.type === 'final_answer' &&
+                    String(entry.action.content).includes(
+                        'Previous execution completed',
+                    ));
+
+            if (isContaminated) {
+                this.logger.warn('Filtering out contaminated history entry', {
+                    reasoning: entry.thought.reasoning?.substring(0, 100),
+                    actionType: entry.action.type,
+                });
+            }
+
+            return !isContaminated;
+        });
+
+        // ✅ SMART: Handle no valid entries
+        if (validEntries.length === 0) {
+            this.logger.info('No valid history entries found, starting fresh', {
+                totalEntries: context.history.length,
+                iteration: context.iterations,
+            });
+            return 'Previous attempts had issues. Starting fresh approach.\nThought:';
+        }
+
+        // ✅ ENHANCED: Build context-aware scratchpad
+        const scratchpadEntries = validEntries.map((entry, index) => {
+            const thought = `Thought: ${entry.thought.reasoning}`;
+
+            // Better action formatting
+            let action: string;
+            if (entry.action.type === 'tool_call') {
+                const toolAction = entry.action as ToolCallAction;
+                action = `Action: ${toolAction.tool}\nAction Input: ${JSON.stringify(toolAction.arguments || {}, null, 2)}`;
+            } else {
+                action = `Action: Final Answer\nAction Input: ${entry.action.content}`;
+            }
+
+            // Enhanced observation formatting
+            const observation = `Observation: ${this.formatObservation(entry.result)}`;
+
+            // Add context for failed attempts
+            const isLastEntry = index === validEntries.length - 1;
+            const hasError = isErrorResult(entry.result);
+
+            let contextNote = '';
+            if (isLastEntry && hasError) {
+                contextNote =
+                    '\n[Note: Previous attempt failed, consider alternative approach]';
+            }
+
+            return `${thought}\n${action}\n${observation}${contextNote}`;
+        });
+
+        return scratchpadEntries.join('\n') + '\nThought:';
     }
 
     /**
@@ -283,7 +437,7 @@ export class ReActPlanner implements Planner {
     }
 
     /**
-     * ✅ NEW: Convert PlanningResult to AgentThought for ReAct
+     * ✅ ENHANCED: Convert PlanningResult to AgentThought for ReAct with smart validation
      */
     private convertPlanToReActThought(
         plan: Record<string, unknown>,
@@ -292,24 +446,62 @@ export class ReActPlanner implements Planner {
         const availableTools = this.getAvailableToolsForContext(thread);
         const availableToolNames = availableTools.map((tool) => tool.name);
 
-        // Extract first step from plan
+        // Extract steps from plan
         const steps = plan.steps as Array<Record<string, unknown>> | undefined;
-        const firstStep = steps?.[0];
+        const reasoning = plan.reasoning as string;
 
-        if (!firstStep) {
+        // ✅ SMART: Handle direct answers (no tools needed)
+        if (!steps || steps.length === 0) {
+            // Check if this is a direct answer scenario
+            if (
+                reasoning &&
+                (reasoning.toLowerCase().includes('direct answer') ||
+                    reasoning.toLowerCase().includes('no tools needed') ||
+                    reasoning.toLowerCase().includes('can answer directly') ||
+                    plan.directAnswer)
+            ) {
+                return {
+                    reasoning:
+                        reasoning ||
+                        'Providing direct answer based on available knowledge',
+                    action: {
+                        type: 'final_answer',
+                        content:
+                            (plan.answer as string) ||
+                            (plan.directAnswer as string) ||
+                            reasoning,
+                    },
+                    confidence: 0.9, // Very high - direct answer with full context
+                    metadata: {
+                        fromPlan: true,
+                        planStrategy: plan.strategy as string,
+                        approachType: 'direct_answer',
+                    },
+                };
+            }
+
+            // Fallback for unclear plans without steps
             return {
-                reasoning:
-                    (plan.reasoning as string) || 'No steps found in plan',
+                reasoning: reasoning || 'No clear action steps found in plan',
                 action: {
                     type: 'final_answer',
-                    content: 'Unable to determine next action from the plan',
+                    content:
+                        reasoning ||
+                        'Unable to determine next action from the plan',
                 },
                 confidence: 0.3,
+                metadata: {
+                    fromPlan: true,
+                    fallbackReason: 'no_steps_found',
+                },
             };
         }
 
+        // Extract first step from plan
+        const firstStep = steps[0];
+
         // Validate tool if it's a tool_call
-        const toolName = firstStep.tool as string;
+        const toolName = firstStep?.tool as string;
 
         if (toolName && toolName !== 'none') {
             if (!availableToolNames.includes(toolName)) {
@@ -319,7 +511,7 @@ export class ReActPlanner implements Planner {
                         type: 'final_answer',
                         content: `I don't have access to the "${toolName}" tool. Available tools are: ${availableToolNames.join(', ')}. How can I help you with the available tools?`,
                     },
-                    confidence: 0.8,
+                    confidence: 0.3, // Low - requested tool not available
                     metadata: {
                         originalPlan: plan,
                         fallbackReason: 'tool_not_available',
@@ -330,15 +522,15 @@ export class ReActPlanner implements Planner {
             return {
                 reasoning:
                     (plan.reasoning as string) ||
-                    (firstStep.description as string) ||
+                    (firstStep?.description as string) ||
                     'Planned action',
                 action: {
                     type: 'tool_call',
                     tool: toolName,
                     arguments:
-                        (firstStep.arguments as Record<string, unknown>) || {},
+                        (firstStep?.arguments as Record<string, unknown>) || {},
                 },
-                confidence: 0.8,
+                confidence: 0.85, // High - found matching tool with clear plan
                 metadata: {
                     fromPlan: true,
                     planStrategy: plan.strategy as string,
@@ -350,12 +542,12 @@ export class ReActPlanner implements Planner {
         return {
             reasoning:
                 (plan.reasoning as string) ||
-                (firstStep.description as string) ||
+                (firstStep?.description as string) ||
                 'Planned response',
             action: {
                 type: 'final_answer',
                 content:
-                    (firstStep.description as string) ||
+                    (firstStep?.description as string) ||
                     (plan.reasoning as string) ||
                     'Plan completed',
             },
@@ -388,13 +580,17 @@ export class ReActPlanner implements Planner {
         result: ActionResult,
         context: PlannerExecutionContext,
     ): Promise<ResultAnalysis> {
+        debugger;
         this.logger.debug('Analyzing action result', {
             resultType: result.type,
             hasError: isErrorResult(result),
             iteration: context.iterations,
         });
 
-        // Final answer = complete
+        // ✅ BEST PRACTICE: Deterministic observation (no LLM)
+        // Based on LangChain, AutoGPT, and ReAct paper patterns
+
+        // 1. Final answer = always complete
         if (result.type === 'final_answer') {
             return {
                 isComplete: true,
@@ -404,74 +600,88 @@ export class ReActPlanner implements Planner {
             };
         }
 
-        // Error = need to continue with new approach
+        // 2. Error = continue but note the error
         if (isErrorResult(result)) {
+            const errorMsg = getResultError(result);
             return {
                 isComplete: false,
                 isSuccessful: false,
-                feedback: `Action failed: ${getResultError(result)}. Need to try a different approach.`,
+                feedback: `Error: ${errorMsg}`,
                 shouldContinue: true,
-                suggestedNextAction:
-                    'Analyze the error and try an alternative approach',
+                // Let the next think cycle decide how to handle the error
+                suggestedNextAction: undefined,
             };
         }
 
-        // Tool result = analyze if it helps with the goal
-        const analysisPrompt = `
-Original goal: ${context.input}
-Action taken: ${JSON.stringify(context.history[context.history.length - 1]?.action)}
-Result received: ${JSON.stringify(getResultContent(result))}
+        // 3. Tool result = always continue
+        // The next think cycle will analyze if we're done
+        return {
+            isComplete: false,
+            isSuccessful: true,
+            feedback: 'Tool executed successfully',
+            shouldContinue: true,
+            // No suggestion - let think decide based on full context
+            suggestedNextAction: undefined,
+        };
 
-Questions:
-1. Does this result help achieve the goal?
-2. Is the goal now complete?
-3. What should be the next step?
-
-Respond in this format:
-Complete: [yes/no]
-Helpful: [yes/no]
-Next: [suggestion for next action]
-Reasoning: [your analysis]
-        `;
-
-        try {
-            const analysis = await this.llmAdapter.call({
-                messages: [{ role: 'user', content: analysisPrompt }],
-            });
-
-            return this.parseAnalysisResponse(analysis.content);
-        } catch (error) {
-            this.logger.warn('Failed to analyze result with LLM', {
-                error: (error as Error).message,
-            });
-
-            // Simple fallback analysis
-            return {
-                isComplete: false,
-                isSuccessful: true,
-                feedback: 'Received tool result, continuing to next step',
-                shouldContinue: true,
-            };
-        }
+        // ✅ RATIONALE:
+        // - Follows ReAct paper: Observation is just the raw result
+        // - Matches LangChain: No LLM in observation phase
+        // - Efficient: One LLM call per cycle (in think)
+        // - Clear: The planner's think phase handles ALL reasoning
     }
 
-    private parseAnalysisResponse(response: string): ResultAnalysis {
-        const completeMatch = response.match(/Complete:\s*(yes|no)/i);
-        const helpfulMatch = response.match(/Helpful:\s*(yes|no)/i);
-        const nextMatch = response.match(/Next:\s*(.+?)(?=Reasoning:|$)/);
-        const reasoningMatch = response.match(/Reasoning:\s*(.+)$/);
+    /**
+     * ✅ Get relevant memory context for better ReAct reasoning
+     */
+    private async getMemoryContext(
+        executionRuntime: ExecutionRuntime | null,
+        _currentInput: string,
+    ): Promise<string> {
+        if (!executionRuntime) {
+            return '';
+        }
 
-        const isComplete = completeMatch?.[1]?.toLowerCase() === 'yes';
-        const isHelpful = helpfulMatch?.[1]?.toLowerCase() !== 'no';
-        const nextAction = nextMatch?.[1]?.trim();
-        const reasoning = reasoningMatch?.[1]?.trim() || 'Analysis completed';
+        try {
+            // For now, we'll use the existing context system
+            // Future: Integrate with proper memory and conversation history
 
-        return {
-            isComplete,
-            isSuccessful: isHelpful,
-            feedback: reasoning,
-            shouldContinue: !isComplete,
-            suggestedNextAction: nextAction,
-        };
+            // Get available context via the get method
+            const contextParts: string[] = [];
+
+            // Try to get session context (if available)
+            try {
+                const sessionData = await executionRuntime.get({
+                    path: 'session.recent',
+                });
+                if (sessionData && typeof sessionData === 'object') {
+                    contextParts.push('Session context available');
+                }
+            } catch {
+                // Session context not available - that's ok
+            }
+
+            // Try to get memory context (if available)
+            try {
+                const memoryData = await executionRuntime.get({
+                    path: 'memory.relevant',
+                });
+                if (memoryData && typeof memoryData === 'object') {
+                    contextParts.push('Memory context available');
+                }
+            } catch {
+                // Memory context not available - that's ok
+            }
+
+            // For now, return placeholder that indicates memory integration is ready
+            return contextParts.length > 0
+                ? `Previous context: ${contextParts.join(', ')}`
+                : '';
+        } catch (error) {
+            this.logger.warn('Failed to get memory context', {
+                error: (error as Error).message,
+            });
+            return '';
+        }
     }
 }

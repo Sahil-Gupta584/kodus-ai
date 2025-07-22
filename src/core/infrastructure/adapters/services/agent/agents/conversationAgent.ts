@@ -3,6 +3,7 @@ import {
     createDirectLLMAdapter,
     createMCPAdapter,
     createOrchestration,
+    Thread,
 } from '@kodus/flow';
 import { LLMProviderService } from '../../llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
@@ -107,8 +108,6 @@ export class ConversationAgentProvider {
 
     // -------------------------------------------------------------------------
     private async initialize(organizationAndTeamData: OrganizationAndTeamData) {
-        // if (this.isInitialized) return;
-
         await this.createMCPAdapter(organizationAndTeamData);
         this.createOrchestration();
 
@@ -140,22 +139,35 @@ export class ConversationAgentProvider {
     }
 
     // -------------------------------------------------------------------------
-    async execute(prompt: string, org: OrganizationAndTeamData) {
-        await this.initialize(org);
+    async execute(
+        prompt: string,
+        context?: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            prepareContext?: any;
+            thread?: Thread;
+        },
+    ) {
+        const { organizationAndTeamData, prepareContext, thread } =
+            context || {};
+
+        if (!organizationAndTeamData) {
+            throw new Error('Organization and team data is required.');
+        }
+
+        if (!thread) {
+            throw new Error('thread and team data is required.');
+        }
+
+        await this.initialize(organizationAndTeamData);
 
         const result = await this.orchestration.callAgent(
             'conversational-agent',
             prompt,
             {
-                thread: {
-                    id: 'conversation-thread',
-                    metadata: {
-                        title: 'Chat Kodus Flow',
-                        description: 'Interação com o agente conversacional',
-                    },
-                },
+                thread: thread,
                 userContext: {
-                    organizationAndTeamData: org,
+                    organizationAndTeamData: organizationAndTeamData,
+                    prepareContext: prepareContext,
                 },
             },
         );

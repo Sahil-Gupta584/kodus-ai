@@ -101,6 +101,10 @@ export class MultiKernelManager {
     private readonly logger: ReturnType<typeof createLogger>;
     private readonly kernels = new Map<string, ManagedKernel>();
     private readonly eventBridges = new Map<string, CrossKernelBridge>();
+    private readonly handlers = new Map<
+        string,
+        Map<EventType, EventHandler<AnyEvent>>
+    >();
     private readonly crossKernelEventLog: Array<{
         timestamp: number;
         from: string;
@@ -461,8 +465,20 @@ export class MultiKernelManager {
             );
         }
 
+        // ✅ CORREÇÃO: Preservar correlationId do data se existir
+        const dataWithMetadata = data as Record<string, unknown>;
+        const correlationId =
+            dataWithMetadata?.metadata &&
+            typeof dataWithMetadata.metadata === 'object' &&
+            dataWithMetadata.metadata !== null &&
+            'correlationId' in dataWithMetadata.metadata
+                ? ((dataWithMetadata.metadata as Record<string, unknown>)
+                      .correlationId as string)
+                : undefined;
+
         await kernel.emitEventAsync(eventType, data, {
             tenantId: this.config.tenantId,
+            correlationId, // ✅ Adicionar correlationId preservado
         });
     }
 
@@ -474,38 +490,94 @@ export class MultiKernelManager {
         eventType: EventType,
         handler: EventHandler<AnyEvent>,
     ): void {
-        const kernel = this.getKernel(kernelId);
-        if (!kernel) {
-            throw new Error(`Kernel not found or not running: ${kernelId}`);
+        const managedKernel = this.kernels.get(kernelId);
+        if (!managedKernel?.instance) {
+            throw new Error(`Kernel not found: ${kernelId}`);
         }
 
-        kernel.registerHandler(eventType, handler);
+        // ✅ FIX: Actually register handler on the kernel
+        managedKernel.instance.registerHandler(eventType, handler);
+
+        // Track internally
+        if (!this.handlers.has(kernelId)) {
+            this.handlers.set(kernelId, new Map());
+        }
+        this.handlers.get(kernelId)!.set(eventType, handler);
+
+        this.logger.info('📝 HANDLER REGISTERED', {
+            kernelId,
+            eventType,
+            registeredOnKernel: true,
+        });
     }
 
     /**
      * Process events for all running kernels
      */
     async processAllKernels(): Promise<void> {
-        const processPromises = Array.from(this.kernels.values())
-            .filter((k) => k.status === 'running')
-            .map(async (managedKernel) => {
-                try {
-                    if (managedKernel.instance) {
-                        await managedKernel.instance.processEvents();
-                        managedKernel.lastActivity = Date.now();
-                    }
-                } catch (error) {
-                    this.logger.error(
-                        'Failed to process events for kernel',
-                        error as Error,
-                        {
-                            kernelId: managedKernel.spec.kernelId,
+        const runningKernels = Array.from(this.kernels.values()).filter(
+            (k) => k.status === 'running',
+        );
+
+        this.logger.info('🔄 PROCESSING ALL KERNELS', {
+            totalKernels: this.kernels.size,
+            runningKernels: runningKernels.length,
+            kernelIds: runningKernels.map((k) => k.spec.kernelId),
+            trace: {
+                source: 'multi-kernel-manager',
+                step: 'process-all-kernels-start',
+                timestamp: Date.now(),
+            },
+        });
+
+        const processPromises = runningKernels.map(async (managedKernel) => {
+            try {
+                if (managedKernel.instance) {
+                    this.logger.debug('🔄 PROCESSING KERNEL', {
+                        kernelId: managedKernel.spec.kernelId,
+                        namespace: managedKernel.spec.namespace,
+                        trace: {
+                            source: 'multi-kernel-manager',
+                            step: 'processing-kernel',
+                            timestamp: Date.now(),
                         },
-                    );
+                    });
+
+                    await managedKernel.instance.processEvents();
+                    managedKernel.lastActivity = Date.now();
+
+                    this.logger.debug('✅ KERNEL PROCESSED', {
+                        kernelId: managedKernel.spec.kernelId,
+                        namespace: managedKernel.spec.namespace,
+                        trace: {
+                            source: 'multi-kernel-manager',
+                            step: 'kernel-processed',
+                            timestamp: Date.now(),
+                        },
+                    });
                 }
-            });
+            } catch (error) {
+                this.logger.error(
+                    'Failed to process events for kernel',
+                    error as Error,
+                    {
+                        kernelId: managedKernel.spec.kernelId,
+                    },
+                );
+            }
+        });
 
         await Promise.all(processPromises);
+
+        this.logger.info('✅ ALL KERNELS PROCESSED', {
+            totalKernels: this.kernels.size,
+            runningKernels: runningKernels.length,
+            trace: {
+                source: 'multi-kernel-manager',
+                step: 'process-all-kernels-complete',
+                timestamp: Date.now(),
+            },
+        });
     }
 
     /**
@@ -675,6 +747,65 @@ export class MultiKernelManager {
         this.crossKernelEventLog.length = 0;
 
         this.logger.info('MultiKernelManager cleaned up');
+    }
+
+    /**
+     * Clear events and resources (for testing or reset)
+     */
+    async clear(): Promise<void> {
+        this.logger.info('🔄 CLEARING MULTI-KERNEL MANAGER', {
+            kernelCount: this.kernels.size,
+            bridgeCount: this.eventBridges.size,
+            crossKernelEventCount: this.crossKernelEventLog.length,
+            trace: {
+                source: 'multi-kernel-manager',
+                step: 'clear-start',
+                timestamp: Date.now(),
+            },
+        });
+
+        try {
+            // Cleanup all kernels
+            const cleanupPromises = Array.from(this.kernels.values()).map(
+                async (managedKernel) => {
+                    if (managedKernel.instance) {
+                        try {
+                            await managedKernel.instance.enhancedCleanup();
+                        } catch (error) {
+                            this.logger.error(
+                                'Failed to cleanup kernel during clear',
+                                error as Error,
+                                {
+                                    kernelId: managedKernel.spec.kernelId,
+                                },
+                            );
+                        }
+                    }
+                },
+            );
+
+            await Promise.all(cleanupPromises);
+
+            // Clear all collections
+            this.kernels.clear();
+            this.eventBridges.clear();
+            this.handlers.clear();
+            this.crossKernelEventLog.length = 0;
+
+            this.logger.info('✅ MULTI-KERNEL MANAGER CLEARED', {
+                trace: {
+                    source: 'multi-kernel-manager',
+                    step: 'clear-complete',
+                    timestamp: Date.now(),
+                },
+            });
+        } catch (error) {
+            this.logger.error(
+                'Failed to clear MultiKernelManager',
+                error as Error,
+            );
+            throw error;
+        }
     }
 }
 

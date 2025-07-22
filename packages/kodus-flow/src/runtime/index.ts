@@ -238,7 +238,7 @@ export function createRuntime(
         middleware = [],
         memoryMonitor,
         enableAcks = true,
-        ackTimeout = 30000,
+        ackTimeout = 60000, // ✅ UNIFIED: 60s same as tool timeout
         maxRetries = 1,
         tenantId,
         persistor,
@@ -342,8 +342,39 @@ export function createRuntime(
         const now = Date.now();
         for (const [eventId, ackInfo] of pendingAcks.entries()) {
             if (now - ackInfo.timestamp > ackTimeout) {
+                // ✅ CORREÇÃO: Não re-enfileirar eventos de resposta ou eventos críticos que falharam
+                const event = ackInfo.event;
+                const isResponseEvent =
+                    event.type.includes('.response') ||
+                    event.type.includes('.error') ||
+                    event.type.includes('.success');
+                const isCriticalError = event.metadata?.criticalError === true;
+                const isToolExecutionTimeout =
+                    event.type === 'tool.execute.request' &&
+                    event.metadata?.timedOut === true;
+
+                if (
+                    isResponseEvent ||
+                    isCriticalError ||
+                    isToolExecutionTimeout
+                ) {
+                    // Não re-enfileirar eventos de resposta ou erros críticos
+                    pendingAcks.delete(eventId);
+                    observability.logger.warn(
+                        'Event not re-enqueued due to critical error or response type',
+                        {
+                            eventId,
+                            eventType: event.type,
+                            isResponseEvent,
+                            isCriticalError,
+                            isToolExecutionTimeout,
+                        },
+                    );
+                    continue;
+                }
+
                 if (ackInfo.retries < maxRetries) {
-                    // Re-enfileirar para retry
+                    // Re-enfileirar para retry apenas eventos não-críticos
                     ackInfo.retries++;
                     ackInfo.timestamp = now;
                     eventQueue.enqueue(ackInfo.event, 1).catch((error) => {
@@ -427,16 +458,20 @@ export function createRuntime(
             data?: EventPayloads[T],
             options: EmitOptions = {},
         ): Promise<EmitResult> {
-            const event = createEvent(eventType, data);
-            const correlationId =
-                options.correlationId || `corr_${Date.now()}_${Math.random()}`;
+            const event = createEvent(eventType, data); // event.metadata might already have correlationId from 'data'
+
+            // Determine the final correlationId, prioritizing options, then existing metadata, then new generation
+            const finalCorrelationId =
+                options.correlationId ||
+                event.metadata?.correlationId || // Check if createEvent already put one from 'data'
+                `corr_${Date.now()}_${Math.random()}`;
 
             try {
                 // Adicionar metadados de delivery
                 if (enableAcks) {
                     event.metadata = {
-                        ...event.metadata,
-                        correlationId,
+                        ...event.metadata, // Preserve existing metadata from createEvent
+                        correlationId: finalCorrelationId, // Use the determined final correlationId
                         tenantId: options.tenantId || tenantId,
                         timestamp: Date.now(),
                     };
@@ -458,7 +493,7 @@ export function createRuntime(
                     success: queued,
                     eventId: event.id,
                     queued,
-                    correlationId,
+                    correlationId: finalCorrelationId,
                 };
             } catch (error) {
                 if (enableObservability) {
@@ -468,7 +503,7 @@ export function createRuntime(
                         {
                             eventType,
                             data,
-                            correlationId,
+                            correlationId: finalCorrelationId,
                         },
                     );
                 }
@@ -478,7 +513,7 @@ export function createRuntime(
                     eventId: event.id,
                     queued: false,
                     error: error as Error,
-                    correlationId,
+                    correlationId: finalCorrelationId,
                 };
             }
         },
@@ -504,8 +539,38 @@ export function createRuntime(
         }> {
             if (!withStats) {
                 // Modo simples - sem estatísticas
+                observability.logger.info('⚡ RUNTIME PROCESSING EVENTS', {
+                    mode: 'simple',
+                    trace: {
+                        source: 'runtime',
+                        step: 'process-start',
+                        timestamp: Date.now(),
+                    },
+                });
+
                 await eventQueue.processAll(async (event) => {
+                    observability.logger.debug(
+                        '💬 RUNTIME - Processing event',
+                        {
+                            eventType: event.type,
+                            eventId: event.id,
+                            trace: {
+                                source: 'runtime',
+                                step: 'process-event',
+                                timestamp: Date.now(),
+                            },
+                        },
+                    );
                     await eventProcessor.processEvent(event);
+                });
+
+                observability.logger.info('✅ RUNTIME EVENTS PROCESSED', {
+                    mode: 'simple',
+                    trace: {
+                        source: 'runtime',
+                        step: 'process-complete',
+                        timestamp: Date.now(),
+                    },
                 });
                 return;
             }
@@ -515,24 +580,94 @@ export function createRuntime(
             let acked = 0;
             let failed = 0;
 
+            observability.logger.info(
+                '⚡ RUNTIME PROCESSING EVENTS WITH STATS',
+                {
+                    mode: 'with-stats',
+                    trace: {
+                        source: 'runtime',
+                        step: 'process-with-stats-start',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
+
             await eventQueue.processAll(async (event) => {
                 try {
+                    observability.logger.debug(
+                        '💬 RUNTIME - Processing event with stats',
+                        {
+                            eventType: event.type,
+                            eventId: event.id,
+                            hasCorrelationId: !!event.metadata?.correlationId,
+                            enableAcks,
+                            trace: {
+                                source: 'runtime',
+                                step: 'process-event-with-stats',
+                                timestamp: Date.now(),
+                            },
+                        },
+                    );
+
                     await eventProcessor.processEvent(event);
                     processed++;
 
                     // Auto-ACK se habilitado
                     if (enableAcks && event.metadata?.correlationId) {
+                        observability.logger.debug(
+                            '✅ RUNTIME - Auto-ACK event',
+                            {
+                                eventType: event.type,
+                                eventId: event.id,
+                                correlationId: event.metadata.correlationId,
+                                trace: {
+                                    source: 'runtime',
+                                    step: 'auto-ack',
+                                    timestamp: Date.now(),
+                                },
+                            },
+                        );
                         await this.ack(event.id);
                         acked++;
                     }
                 } catch (error) {
                     failed++;
+                    observability.logger.error(
+                        '❌ RUNTIME - Event processing failed',
+                        error as Error,
+                        {
+                            eventType: event.type,
+                            eventId: event.id,
+                            enableAcks,
+                            trace: {
+                                source: 'runtime',
+                                step: 'process-event-error',
+                                timestamp: Date.now(),
+                            },
+                        },
+                    );
+
                     if (enableAcks && event.metadata?.correlationId) {
                         await this.nack(event.id, error as Error);
                     }
                     throw error;
                 }
             });
+
+            observability.logger.info(
+                '✅ RUNTIME EVENTS PROCESSED WITH STATS',
+                {
+                    mode: 'with-stats',
+                    processed,
+                    acked,
+                    failed,
+                    trace: {
+                        source: 'runtime',
+                        step: 'process-with-stats-complete',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
 
             return { processed, acked, failed };
         },
@@ -542,9 +677,35 @@ export function createRuntime(
             if (ackInfo) {
                 pendingAcks.delete(eventId);
                 if (enableObservability) {
-                    observability.logger.debug('Event acknowledged', {
-                        eventId,
-                    });
+                    observability.logger.debug(
+                        '✅ RUNTIME - Event acknowledged (ACK)',
+                        {
+                            eventId,
+                            eventType: ackInfo.event.type,
+                            retries: ackInfo.retries,
+                            pendingAcksCount: pendingAcks.size,
+                            trace: {
+                                source: 'runtime',
+                                step: 'ack-event',
+                                timestamp: Date.now(),
+                            },
+                        },
+                    );
+                }
+            } else {
+                if (enableObservability) {
+                    observability.logger.warn(
+                        '⚠️ RUNTIME - ACK for unknown event',
+                        {
+                            eventId,
+                            pendingAcksCount: pendingAcks.size,
+                            trace: {
+                                source: 'runtime',
+                                step: 'ack-unknown-event',
+                                timestamp: Date.now(),
+                            },
+                        },
+                    );
                 }
             }
         },
@@ -559,22 +720,59 @@ export function createRuntime(
                     await eventQueue.enqueue(ackInfo.event, 1);
 
                     if (enableObservability) {
-                        observability.logger.warn('Event nacked, retrying', {
-                            eventId,
-                            retries: ackInfo.retries,
-                            error: error?.message,
-                        });
+                        observability.logger.warn(
+                            '❌ RUNTIME - Event NACK, retrying',
+                            {
+                                eventId,
+                                eventType: ackInfo.event.type,
+                                retries: ackInfo.retries,
+                                maxRetries,
+                                error: error?.message,
+                                pendingAcksCount: pendingAcks.size,
+                                trace: {
+                                    source: 'runtime',
+                                    step: 'nack-retry',
+                                    timestamp: Date.now(),
+                                },
+                            },
+                        );
                     }
                 } else {
                     // Máximo de retries atingido
                     pendingAcks.delete(eventId);
                     if (enableObservability) {
                         observability.logger.error(
-                            'Event max retries exceeded',
+                            '❌ RUNTIME - Event max retries exceeded',
                             error,
-                            { eventId },
+                            {
+                                eventId,
+                                eventType: ackInfo.event.type,
+                                maxRetries,
+                                pendingAcksCount: pendingAcks.size,
+                                trace: {
+                                    source: 'runtime',
+                                    step: 'nack-max-retries',
+                                    timestamp: Date.now(),
+                                },
+                            },
                         );
                     }
+                }
+            } else {
+                if (enableObservability) {
+                    observability.logger.warn(
+                        '⚠️ RUNTIME - NACK for unknown event',
+                        {
+                            eventId,
+                            error: error?.message,
+                            pendingAcksCount: pendingAcks.size,
+                            trace: {
+                                source: 'runtime',
+                                step: 'nack-unknown-event',
+                                timestamp: Date.now(),
+                            },
+                        },
+                    );
                 }
             }
         },

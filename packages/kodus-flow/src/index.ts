@@ -81,6 +81,8 @@ export { getSDKConfig } from './observability/config/sdk-config.js';
 
 // ✅ UTILITÁRIOS
 export { IdGenerator } from './utils/id-generator.js';
+export { createThreadId } from './utils/thread-helpers.js';
+export type { Thread } from './core/types/common-types.js';
 
 // ✅ ADAPTERS
 export { createMCPAdapter } from './adapters/index.js';

@@ -131,9 +131,8 @@ describe('Runtime Layer - Observability', () => {
         });
 
         expect(event.type).toBe('correlation.test');
-        expect((event.data as Record<string, unknown>).correlationId).toBe(
-            correlationId,
-        );
+        // ✅ CORREÇÃO: Verificar correlationId em metadata, não em data
+        expect(event.metadata?.correlationId).toBe(correlationId);
         expect((event.data as Record<string, unknown>).message).toBe(
             'Test message',
         );

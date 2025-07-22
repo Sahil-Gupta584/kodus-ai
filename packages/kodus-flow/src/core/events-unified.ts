@@ -119,7 +119,7 @@ export class UnifiedEventManager extends EventEmitter {
                 id: eventId,
                 type: eventType,
                 payload,
-                context: {
+                metadata: {
                     timestamp: Date.now(),
                     correlationId: context.correlationId || eventId,
                     ...context,
@@ -163,7 +163,7 @@ export class UnifiedEventManager extends EventEmitter {
     ): Promise<TResponse> {
         const correlationId =
             options.correlationId || IdGenerator.correlationId();
-        const timeout = options.timeout || 30000;
+        const timeout = options.timeout || 60000; // ✅ UNIFIED: 60s timeout
 
         return new Promise<TResponse>((resolve, reject) => {
             const timeoutHandle = setTimeout(() => {
@@ -209,10 +209,12 @@ export class UnifiedEventManager extends EventEmitter {
             this.emitEvent(
                 requestEventType as EventType,
                 {
-                    correlationId,
                     data,
                     timestamp: Date.now(),
                 } as EventPayloads[EventType],
+                {
+                    correlationId,
+                },
             );
         });
     }
@@ -229,11 +231,13 @@ export class UnifiedEventManager extends EventEmitter {
         this.emitEvent(
             responseEventType as EventType,
             {
-                correlationId,
                 data,
                 error,
                 timestamp: Date.now(),
             } as EventPayloads[EventType],
+            {
+                correlationId,
+            },
         );
     }
 

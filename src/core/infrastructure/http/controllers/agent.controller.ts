@@ -13,6 +13,7 @@ import { ExecutionAgentPromptUseCase } from '@/core/application/use-cases/agent/
 import { NewAgentUseCase } from '@/core/application/use-cases/agent/teste';
 import { ConversationAgentUseCase } from '@/core/application/use-cases/agent/conversation-agent.use-case';
 import { OrganizationAndTeamDataDto } from '../dtos/organizationAndTeamData.dto';
+import { createThreadId } from '@kodus/flow';
 
 @Controller('agent')
 export class AgentController {
@@ -102,6 +103,15 @@ export class AgentController {
             organizationAndTeamData: OrganizationAndTeamDataDto;
         },
     ) {
-        return this.conversationAgentUseCase.execute(body);
+        const thread = createThreadId(
+            {
+                organizationId: body.organizationAndTeamData.organizationId,
+                teamId: body.organizationAndTeamData.teamId,
+            },
+            {
+                prefix: 'cmc', // Code Management Chat
+            },
+        );
+        return this.conversationAgentUseCase.execute({ ...body, thread });
     }
 }

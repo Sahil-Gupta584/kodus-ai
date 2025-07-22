@@ -34,10 +34,8 @@ import type {
     ToolExecutionContext,
     ContextValueUpdate,
 } from './execution-runtime-types.js';
-import {
-    ToolMetadataForLLM,
-    ToolMetadataForPlanner,
-} from '../types/tool-types.js';
+import type { ExecutionHistoryEntry } from '../../engine/planning/planner-factory.js';
+import { ToolMetadataForLLM } from '../types/tool-types.js';
 
 /**
  * 🎯 ExecutionRuntime - Unified facade over existing context services
@@ -82,6 +80,21 @@ export class ExecutionRuntime implements IExecutionRuntime {
         input: unknown,
         config: AgentExecutionOptions,
     ): Promise<AgentContext> {
+        // ✅ ADD: Log detalhado para debug
+        console.log('🔧 EXECUTION RUNTIME - INITIALIZE AGENT CONTEXT START', {
+            agentName: agent.name,
+            agentIdentity: !!agent.identity,
+            agentConfig: agent.config,
+            inputType: typeof input,
+            hasInput: !!input,
+            configKeys: Object.keys(config),
+            trace: {
+                source: 'execution-runtime',
+                step: 'initialize-agent-context-start',
+                timestamp: Date.now(),
+            },
+        });
+
         const {
             agentName,
             tenantId,
@@ -94,6 +107,22 @@ export class ExecutionRuntime implements IExecutionRuntime {
         // Agent configuration from AgentDefinition.config
         const enableSession = agent?.config?.enableSession ?? true;
         const enableMemory = agent?.config?.enableMemory ?? true;
+
+        // ✅ ADD: Log de configuração
+        console.log('🔧 EXECUTION RUNTIME - CONFIGURATION', {
+            agentName,
+            tenantId,
+            enableSession,
+            enableMemory,
+            hasThread: !!thread,
+            hasSessionId: !!sessionId,
+            hasCorrelationId: !!correlationId,
+            trace: {
+                source: 'execution-runtime',
+                step: 'configuration-check',
+                timestamp: Date.now(),
+            },
+        });
 
         this.logger.info('Initializing agent context via ExecutionRuntime', {
             agentName: agentName,
@@ -226,6 +255,25 @@ export class ExecutionRuntime implements IExecutionRuntime {
         // 6. Save current context for getter methods
         this.currentContext = agentContext;
 
+        // ✅ ADD: Log após inicialização bem-sucedida
+        console.log(
+            '🔧 EXECUTION RUNTIME - AGENT CONTEXT INITIALIZED SUCCESS',
+            {
+                agentName: agentName,
+                executionId: systemContext.executionId,
+                sessionId,
+                threadId: thread.id,
+                hasStateManager: !!stateService,
+                hasMemoryManager: !!this.memoryManager,
+                hasExecutionRuntime: !!this,
+                trace: {
+                    source: 'execution-runtime',
+                    step: 'agent-context-initialized',
+                    timestamp: Date.now(),
+                },
+            },
+        );
+
         this.logger.info('Agent context initialized successfully', {
             agentName: agentName,
             executionId: systemContext.executionId,
@@ -301,13 +349,6 @@ export class ExecutionRuntime implements IExecutionRuntime {
     // 🔧 SIMPLE API FOR COMPONENTS - Getter Methods
     // ──────────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Get available tools from current context
-     */
-    getAvailableTools(): ToolMetadataForPlanner[] {
-        return this.currentContext?.availableTools || [];
-    }
-
     getAvailableToolsForLLM(): ToolMetadataForLLM[] {
         return this.currentContext?.availableToolsForLLM || [];
     }
@@ -336,6 +377,65 @@ export class ExecutionRuntime implements IExecutionRuntime {
      */
     getSessionHistory(): unknown[] {
         return this.currentContext?.system?.conversationHistory || [];
+    }
+
+    /**
+     * ✅ Get real planner history from current context
+     */
+    getPlannerHistory(): ExecutionHistoryEntry[] {
+        // ✅ Get planner history from current context
+        if (!this.currentContext) return [];
+
+        // ✅ Try to get planner history from state service
+        const plannerHistory = this.currentContext.stateManager?.get(
+            'planner',
+            'history',
+        );
+
+        if (Array.isArray(plannerHistory)) {
+            return plannerHistory as ExecutionHistoryEntry[];
+        }
+
+        // ✅ Fallback: try to get from session service
+        const sessionHistory = this.getSessionHistory();
+        if (Array.isArray(sessionHistory) && sessionHistory.length > 0) {
+            // ✅ Convert session history to planner format (simplified)
+            return sessionHistory.map((entry: unknown) => {
+                const typedEntry = entry as Record<string, unknown>;
+                return {
+                    thought: {
+                        reasoning: `Previous execution: ${String(typedEntry.input || 'unknown')}`,
+                        action: {
+                            type: 'final_answer' as const,
+                            content: 'Previous execution completed',
+                        },
+                        confidence: 0.8,
+                    },
+                    action: {
+                        type: 'final_answer' as const,
+                        content: 'Previous execution completed',
+                    },
+                    result: {
+                        type: 'final_answer' as const,
+                        content: String(
+                            typedEntry.output || 'Previous execution completed',
+                        ),
+                        metadata: {
+                            timestamp:
+                                Number(typedEntry.timestamp) || Date.now(),
+                        },
+                    },
+                    observation: {
+                        isComplete: true,
+                        isSuccessful: true,
+                        feedback: 'Previous execution completed successfully',
+                        shouldContinue: false,
+                    },
+                };
+            });
+        }
+
+        return [];
     }
 
     // ──────────────────────────────────────────────────────────────────────────────
@@ -423,11 +523,14 @@ export class ExecutionRuntime implements IExecutionRuntime {
             // const learningContext =
             //     this.generateLearningContextFromValues(enrichedContext);
 
+            // ✅ CARREGAR HISTÓRICO REAL DO PLANNER (se disponível)
+            const plannerHistory = this.getPlannerHistory() || [];
+
             const plannerContext: PlannerExecutionContext = {
                 // Base context
                 input,
-                history: [],
-                iterations: 0,
+                history: plannerHistory,
+                iterations: plannerHistory.length,
                 maxIterations: 10,
                 plannerMetadata: {
                     thread: {
@@ -1410,53 +1513,3 @@ export class ExecutionRuntime implements IExecutionRuntime {
         return 'healthy';
     }
 }
-
-/**
- * 🔄 Default Storage Routing Strategy
- */
-// class DefaultStorageRoutingStrategy implements StorageRoutingStrategy {
-//     shouldStoreInState(source: ContextSource, data: unknown): boolean {
-//         // Store working data in state
-//         return ['agent', 'tool'].includes(source);
-//     }
-
-//     shouldStoreInSession(source: ContextSource, data: unknown): boolean {
-//         // Store conversation data in session
-//         return ['user', 'llm'].includes(source);
-//     }
-
-//     shouldStoreInMemory(source: ContextSource, data: unknown): boolean {
-//         // Store long-term patterns in memory
-//         return data.metadata?.persistLongTerm === true;
-//     }
-
-//     getStateNamespace(source: ContextSource, data: unknown): string {
-//         switch (source) {
-//             case 'agent':
-//                 return 'agent';
-//             case 'tool':
-//                 return 'tools';
-//             default:
-//                 return 'general';
-//         }
-//     }
-
-//     getStateKey(source: ContextSource, data: unknown): string {
-//         return data.metadata?.key || `${source}_${Date.now()}`;
-//     }
-
-//     getMemoryType(source: ContextSource, data: unknown): string {
-//         return data.metadata?.memoryType || `${source}_data`;
-//     }
-
-//     getMemoryMetadata(
-//         source: ContextSource,
-//         data: unknown,
-//     ): Record<string, unknown> {
-//         return {
-//             source,
-//             timestamp: data.timestamp,
-//             executionId: data.executionId,
-//         };
-//     }
-// }

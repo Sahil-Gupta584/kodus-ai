@@ -327,6 +327,29 @@ export class MultiKernelHandler {
     ): Promise<void> {
         this.ensureInitialized();
 
+        // ✅ ADD: Log detalhado para detectar duplicação
+        const eventId =
+            data && typeof data === 'object' && 'eventId' in data
+                ? (data as { eventId: string }).eventId
+                : `evt_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+
+        this.logger.info('📤 EVENT EMISSION START', {
+            eventType,
+            eventId,
+            hasData: !!data,
+            dataKeys: data ? Object.keys(data as Record<string, unknown>) : [],
+            correlationId:
+                data && typeof data === 'object' && 'metadata' in data
+                    ? (data as { metadata?: { correlationId?: string } })
+                          .metadata?.correlationId
+                    : undefined,
+            trace: {
+                source: 'multi-kernel-handler',
+                step: 'event-emission-start',
+                timestamp: Date.now(),
+            },
+        });
+
         // Check for infinite loop protection (thread-safe)
         if (this.loopProtection.enabled) {
             await this.checkForInfiniteLoopSafe(eventType);
@@ -337,6 +360,7 @@ export class MultiKernelHandler {
 
         this.logger.info('📤 EVENT EMISSION', {
             eventType,
+            eventId,
             targetKernel,
             kernelId:
                 targetKernel === 'agent' ? 'agent-execution' : 'observability',
@@ -364,12 +388,14 @@ export class MultiKernelHandler {
 
             this.logger.debug('Event routed successfully', {
                 eventType,
+                eventId,
                 targetKernel,
                 eventCounts: this.eventCounts,
             });
         } catch (error) {
             this.logger.error('Failed to emit event', error as Error, {
                 eventType,
+                eventId,
                 targetKernel,
             });
             throw error;
@@ -402,23 +428,72 @@ export class MultiKernelHandler {
             options?.correlationId || `corr_${Date.now()}_${Math.random()}`;
         const eventId = `evt_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
+        // ✅ ADD: Log detalhado para detectar duplicação
+        this.logger.info('📤 EMITASYNC START', {
+            eventType,
+            eventId,
+            correlationId,
+            hasData: !!data,
+            dataKeys: data ? Object.keys(data as Record<string, unknown>) : [],
+            deliveryGuarantee: options?.deliveryGuarantee || 'at-least-once',
+            trace: {
+                source: 'multi-kernel-handler',
+                step: 'emitasync-start',
+                timestamp: Date.now(),
+            },
+        });
+
         try {
-            // Add correlationId to event data
+            // ✅ CORREÇÃO: Não adicionar correlationId ao data (padrão Runtime)
             const enrichedData = data
                 ? {
                       ...data,
-                      correlationId,
                       eventId,
                   }
                 : ({
-                      correlationId,
                       eventId,
                   } as EventPayloads[T]);
 
+            this.logger.info('📤 EMITASYNC CALLING EMIT', {
+                eventType,
+                eventId,
+                correlationId,
+                enrichedDataKeys: Object.keys(
+                    enrichedData as Record<string, unknown>,
+                ),
+                trace: {
+                    source: 'multi-kernel-handler',
+                    step: 'emitasync-calling-emit',
+                    timestamp: Date.now(),
+                },
+            });
+
             await this.emit(eventType, enrichedData);
+
+            this.logger.info('📤 EMITASYNC EMIT COMPLETED', {
+                eventType,
+                eventId,
+                correlationId,
+                trace: {
+                    source: 'multi-kernel-handler',
+                    step: 'emitasync-emit-completed',
+                    timestamp: Date.now(),
+                },
+            });
 
             // Process events immediately to ensure handlers run
             await this.processEvents();
+
+            this.logger.info('📤 EMITASYNC PROCESS EVENTS COMPLETED', {
+                eventType,
+                eventId,
+                correlationId,
+                trace: {
+                    source: 'multi-kernel-handler',
+                    step: 'emitasync-process-events-completed',
+                    timestamp: Date.now(),
+                },
+            });
 
             return {
                 success: true,
@@ -427,6 +502,17 @@ export class MultiKernelHandler {
                 correlationId,
             };
         } catch (error) {
+            this.logger.error('📤 EMITASYNC FAILED', error as Error, {
+                eventType,
+                eventId,
+                correlationId,
+                trace: {
+                    source: 'multi-kernel-handler',
+                    step: 'emitasync-failed',
+                    timestamp: Date.now(),
+                },
+            });
+
             return {
                 success: false,
                 eventId,
@@ -759,6 +845,60 @@ export class MultiKernelHandler {
     }
 
     /**
+     * Clear events and resources (for testing or reset)
+     */
+    async clear(): Promise<void> {
+        this.logger.info('🔄 CLEARING MULTI-KERNEL HANDLER', {
+            initialized: this.initialized,
+            hasMultiKernelManager: !!this.multiKernelManager,
+            trace: {
+                source: 'multi-kernel-handler',
+                step: 'clear-start',
+                timestamp: Date.now(),
+            },
+        });
+
+        try {
+            // Clear multi-kernel manager if exists
+            if (this.multiKernelManager) {
+                await this.multiKernelManager.cleanup();
+            }
+
+            // Reset state
+            this.initialized = false;
+            this.multiKernelManager = null;
+
+            // Thread-safe clear of shared data
+            await Promise.all([
+                this.eventCountsMutex.withLock(async () => {
+                    this.eventCounts = {
+                        agent: 0,
+                        observability: 0,
+                        crossKernel: 0,
+                    };
+                }),
+                this.loopProtectionMutex.withLock(async () => {
+                    this.loopProtection.eventHistory = [];
+                }),
+            ]);
+
+            this.logger.info('✅ MULTI-KERNEL HANDLER CLEARED', {
+                trace: {
+                    source: 'multi-kernel-handler',
+                    step: 'clear-complete',
+                    timestamp: Date.now(),
+                },
+            });
+        } catch (error) {
+            this.logger.error(
+                'Failed to clear MultiKernelHandler',
+                error as Error,
+            );
+            throw error;
+        }
+    }
+
+    /**
      * Get multi-kernel manager (for advanced operations)
      */
     getMultiKernelManager(): MultiKernelManager | null {
@@ -785,7 +925,7 @@ export class MultiKernelHandler {
 
         const correlationId =
             options.correlationId || this.generateCorrelationId();
-        const timeout = options.timeout || 30000;
+        const timeout = options.timeout || 60000; // ✅ UNIFIED: 60s timeout
 
         this.logger.info('🚀 MULTI-KERNEL REQUEST STARTED', {
             requestEventType,
@@ -838,11 +978,12 @@ export class MultiKernelHandler {
                     clearTimeout(timeoutId);
                     timeoutId = null;
                 }
-                responseReceived = true;
+                // ❌ REMOVED: responseReceived = true; // Não definir aqui!
             };
 
             timeoutId = setTimeout(() => {
                 if (!responseReceived) {
+                    responseReceived = true; // ✅ CORREÇÃO: Definir aqui ANTES do cleanup
                     cleanup();
                     const timeoutError = new Error(
                         `Timeout waiting for ${responseEventType} (${timeout}ms)`,
@@ -889,10 +1030,25 @@ export class MultiKernelHandler {
 
             // ✅ Register response handler using existing patterns
             const responseHandler = (event: AnyEvent) => {
-                if (
-                    event.metadata?.correlationId === correlationId &&
-                    !responseReceived
-                ) {
+                // ✅ ADD: Log detalhado para debug
+                this.logger.info('📨 RESPONSE HANDLER EXECUTED', {
+                    eventId: event.id,
+                    eventType: event.type,
+                    eventCorrelationId: event.metadata?.correlationId,
+                    expectedCorrelationId: correlationId,
+                    responseReceived,
+                    trace: {
+                        source: 'multi-kernel-handler',
+                        step: 'response-handler-executed',
+                        timestamp: Date.now(),
+                    },
+                });
+
+                // ✅ CORREÇÃO: Procurar correlationId apenas em metadata (padrão Runtime)
+                const eventCorrelationId = event.metadata?.correlationId;
+
+                if (eventCorrelationId === correlationId && !responseReceived) {
+                    responseReceived = true; // ✅ CORREÇÃO: Definir aqui ANTES do cleanup
                     cleanup();
 
                     this.logger.info('📨 MULTI-KERNEL RESPONSE RECEIVED', {
@@ -966,13 +1122,62 @@ export class MultiKernelHandler {
                 }
             };
 
-            // Register handler on the target kernel for response
+            // ✅ CORREÇÃO: Registrar handler no kernel CORRETO baseado no responseEventType
             const responseKernel =
                 this.determineTargetKernel(responseEventType);
             const responseKernelId =
                 responseKernel === 'agent'
                     ? 'agent-execution'
                     : 'observability';
+
+            // ✅ ADD: Log detalhado para debug
+            this.logger.info('🎯 RESPONSE HANDLER REGISTRATION DEBUG', {
+                responseEventType,
+                responseKernel,
+                responseKernelId,
+                correlationId,
+                hasMultiKernelManager: !!this.multiKernelManager,
+                multiKernelManagerType:
+                    this.multiKernelManager?.constructor.name,
+                trace: {
+                    source: 'multi-kernel-handler',
+                    step: 'handler-registration-debug',
+                    timestamp: Date.now(),
+                },
+            });
+
+            // ✅ ADD: Log adicional para verificar se o kernel existe
+            const targetKernel =
+                this.multiKernelManager?.getKernel(responseKernelId);
+            this.logger.info('🎯 KERNEL VERIFICATION', {
+                responseKernelId,
+                kernelExists: !!targetKernel,
+                kernelStatus: targetKernel?.getState()?.status,
+                trace: {
+                    source: 'multi-kernel-handler',
+                    step: 'kernel-verification',
+                    timestamp: Date.now(),
+                },
+            });
+
+            // ✅ CORREÇÃO: Verificar se o kernel existe antes de registrar
+            if (!targetKernel) {
+                const error = new Error(
+                    `Response kernel not available: ${responseKernelId}`,
+                );
+                this.logger.error('❌ RESPONSE KERNEL NOT AVAILABLE', error, {
+                    responseKernelId,
+                    responseEventType,
+                    correlationId,
+                    availableKernels:
+                        this.multiKernelManager
+                            ?.getStatus()
+                            ?.kernels?.map((k) => k.kernelId) || [],
+                });
+                cleanup();
+                reject(error);
+                return;
+            }
 
             this.multiKernelManager!.registerHandler(
                 responseKernelId,
@@ -998,7 +1203,6 @@ export class MultiKernelHandler {
                     requestEventType as EventType,
                     {
                         ...data,
-                        correlationId,
                         timestamp: Date.now(),
                     },
                     {
@@ -1056,28 +1260,22 @@ export class MultiKernelHandler {
                                 {
                                     requestEventType,
                                     correlationId,
-                                    trace: {
-                                        source: 'multi-kernel-handler',
-                                        step: 'process-events-failed',
-                                        timestamp: Date.now(),
-                                    },
                                 },
                             );
-                            // Don't reject here - let the timeout handle it if no response comes
                         }
                     }
                 })
                 .catch((error) => {
                     cleanup();
                     this.logger.error(
-                        '❌ MULTI-KERNEL EMIT ERROR',
+                        '❌ MULTI-KERNEL REQUEST FAILED',
                         error as Error,
                         {
                             requestEventType,
                             correlationId,
                             trace: {
                                 source: 'multi-kernel-handler',
-                                step: 'emit-error',
+                                step: 'request-failed',
                                 timestamp: Date.now(),
                             },
                         },
@@ -1146,6 +1344,41 @@ export class MultiKernelHandler {
      * Determine target kernel based on event type
      */
     private determineTargetKernel(eventType: string): 'agent' | 'obs' {
+        // ✅ ADD: Log detalhado para debug
+        this.logger.debug('🎯 KERNEL ROUTING ANALYSIS', {
+            eventType,
+            startsWithObs: eventType.startsWith('obs.'),
+            startsWithLog: eventType.startsWith('log.'),
+            startsWithMetric: eventType.startsWith('metric.'),
+            startsWithTrace: eventType.startsWith('trace.'),
+            startsWithAlert: eventType.startsWith('alert.'),
+            startsWithHealth: eventType.startsWith('health.'),
+            includesLog: eventType.includes('.log.'),
+            includesMetric: eventType.includes('.metric.'),
+            includesTrace: eventType.includes('.trace.'),
+            trace: {
+                source: 'multi-kernel-handler',
+                step: 'kernel-routing-analysis',
+                timestamp: Date.now(),
+            },
+        });
+
+        // ✅ ADD: Regra específica para eventos tool.execute.response
+        if (eventType === 'tool.execute.response') {
+            this.logger.debug('🎯 KERNEL ROUTING DECISION', {
+                eventType,
+                targetKernel: 'agent',
+                kernelId: 'agent-execution',
+                reason: 'tool-execute-response-specific',
+                trace: {
+                    source: 'multi-kernel-handler',
+                    step: 'kernel-routing-decision',
+                    timestamp: Date.now(),
+                },
+            });
+            return 'agent';
+        }
+
         // Observability events (logs, metrics, traces, alerts)
         if (
             eventType.startsWith('obs.') ||

@@ -58,17 +58,17 @@ export function withCorrelationId(config: CorrelationIdConfig = {}) {
         return async function correlatedHandler(
             event: T,
         ): Promise<void | AnyEvent> {
-            // Extrair correlation ID do evento ou gerar automaticamente
-            let correlationId = (event.data as Record<string, unknown>)?.[
-                fieldName
-            ] as string | undefined;
+            // ✅ CORREÇÃO: Procurar correlationId apenas em metadata (padrão Runtime)
+            let correlationId = event.metadata?.correlationId as
+                | string
+                | undefined;
 
             if (!correlationId && autoGenerate) {
                 correlationId = IdGenerator.correlationId();
 
-                // Adicionar ao evento se possível
-                if (event.data && typeof event.data === 'object') {
-                    (event.data as Record<string, unknown>)[fieldName] =
+                // ✅ Adicionar ao metadata se possível
+                if (event.metadata && typeof event.metadata === 'object') {
+                    (event.metadata as Record<string, unknown>)[fieldName] =
                         correlationId;
                 }
             }
@@ -149,9 +149,11 @@ export function withAutoCorrelationId(_config: CorrelationIdConfig = {}) {
                     'type' in args[0]
                 ) {
                     const event = args[0] as AnyEvent;
-                    if (event.data && typeof event.data === 'object') {
-                        (event.data as Record<string, unknown>).correlationId =
-                            correlationId;
+                    // ✅ CORREÇÃO: Adicionar ao metadata, não ao data
+                    if (event.metadata && typeof event.metadata === 'object') {
+                        (
+                            event.metadata as Record<string, unknown>
+                        ).correlationId = correlationId;
                     }
                 }
 
@@ -242,7 +244,8 @@ export function requireCorrelationId(config: CorrelationIdConfig = {}) {
         return async function requiredCorrelationHandler(
             event: T,
         ): Promise<void | AnyEvent> {
-            const correlationId = extractCorrelationId(event.data);
+            // ✅ CORREÇÃO: Procurar correlationId apenas em metadata
+            const correlationId = event.metadata?.correlationId;
 
             if (!correlationId) {
                 throw new Error(

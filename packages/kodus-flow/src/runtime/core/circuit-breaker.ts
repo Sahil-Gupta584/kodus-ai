@@ -47,7 +47,7 @@ export interface CircuitBreakerConfig {
 
     /**
      * Timeout para operações individuais
-     * @default 30000 (30 segundos)
+     * @default 60000 (60 segundos)
      */
     operationTimeout?: number;
 
@@ -199,7 +199,7 @@ export class CircuitBreaker {
             failureThreshold: config.failureThreshold ?? 5,
             recoveryTimeout: config.recoveryTimeout ?? 60000,
             successThreshold: config.successThreshold ?? 3,
-            operationTimeout: config.operationTimeout ?? 30000,
+            operationTimeout: config.operationTimeout ?? 60000, // ✅ UNIFIED: 60s timeout
             enabled: config.enabled ?? true,
             onStateChange: config.onStateChange ?? (() => {}),
             onFailure: config.onFailure ?? (() => {}),

@@ -83,6 +83,19 @@ export class SessionService {
         threadId: string,
         metadata: Record<string, unknown> = {},
     ): Session {
+        // ✅ ADD: Log detalhado para debug
+        console.log('🔧 SESSION SERVICE - CREATE SESSION START', {
+            tenantId,
+            threadId,
+            metadataKeys: Object.keys(metadata),
+            totalSessionsBefore: this.sessions.size,
+            trace: {
+                source: 'session-service',
+                step: 'create-session-start',
+                timestamp: Date.now(),
+            },
+        });
+
         const sessionId = IdGenerator.sessionId();
 
         const session: Session = {
@@ -112,6 +125,20 @@ export class SessionService {
         // Enforce max sessions limit
         this.enforceMaxSessions();
 
+        // ✅ ADD: Log após criação bem-sucedida
+        console.log('🔧 SESSION SERVICE - SESSION CREATED SUCCESS', {
+            sessionId,
+            threadId,
+            tenantId,
+            totalSessionsAfter: this.sessions.size,
+            stateManagersCount: this.sessionStateManagers.size,
+            trace: {
+                source: 'session-service',
+                step: 'create-session-success',
+                timestamp: Date.now(),
+            },
+        });
+
         this.logger.info('Session created', {
             sessionId,
             threadId,
@@ -126,6 +153,19 @@ export class SessionService {
      * Obter sessão existente
      */
     getSession(sessionId: string): Session | undefined {
+        // ✅ ADD: Log detalhado para debug
+        console.log('🔧 SESSION SERVICE - GET SESSION', {
+            sessionId,
+            totalSessions: this.sessions.size,
+            sessionExists: this.sessions.has(sessionId),
+            stateManagerExists: this.sessionStateManagers.has(sessionId),
+            trace: {
+                source: 'session-service',
+                step: 'get-session-start',
+                timestamp: Date.now(),
+            },
+        });
+
         const session = this.sessions.get(sessionId);
 
         if (session) {
@@ -134,12 +174,44 @@ export class SessionService {
                 session.status = 'expired';
                 // CRÍTICO: Limpar state manager quando sessão expira
                 this.sessionStateManagers.delete(sessionId);
+                console.log('🔧 SESSION SERVICE - SESSION EXPIRED', {
+                    sessionId,
+                    sessionAge: Date.now() - session.createdAt,
+                    trace: {
+                        source: 'session-service',
+                        step: 'session-expired',
+                        timestamp: Date.now(),
+                    },
+                });
                 this.logger.warn('Session expired', { sessionId });
                 return undefined;
             }
 
             // Atualizar última atividade apenas se sessão não expirou
             session.lastActivity = Date.now();
+
+            // ✅ ADD: Log após get bem-sucedido
+            console.log('🔧 SESSION SERVICE - GET SESSION SUCCESS', {
+                sessionId,
+                sessionStatus: session.status,
+                sessionAge: Date.now() - session.createdAt,
+                lastActivity: session.lastActivity,
+                trace: {
+                    source: 'session-service',
+                    step: 'get-session-success',
+                    timestamp: Date.now(),
+                },
+            });
+        } else {
+            console.log('🔧 SESSION SERVICE - GET SESSION NOT FOUND', {
+                sessionId,
+                availableSessions: Array.from(this.sessions.keys()),
+                trace: {
+                    source: 'session-service',
+                    step: 'get-session-not-found',
+                    timestamp: Date.now(),
+                },
+            });
         }
 
         return session;

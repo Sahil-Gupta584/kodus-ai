@@ -14,6 +14,62 @@ import { createLogger } from '../../observability/index.js';
 import { EngineError } from '../errors.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
+// 🎯 GLOBAL LLM SETTINGS - Best Practices
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Standardized LLM settings based on best practices from OpenAI, Anthropic, and Google
+ */
+export const DEFAULT_LLM_SETTINGS = {
+    // Temperature: Lower = more focused/deterministic, Higher = more creative
+    temperature: 0.1, // Very focused for agent tasks (0.0-0.2 recommended for tools)
+
+    // Max tokens: Sufficient for reasoning + action without waste
+    maxTokens: 1500, // Covers 99% of agent responses without truncation
+
+    // Universal stop tokens to prevent hallucination and maintain control
+    stop: [
+        // ReAct pattern stops
+        'Observation:',
+        '\nObservation',
+
+        // Conversation boundaries
+        'Human:',
+        'User:',
+        'Assistant:',
+        '\nHuman:',
+        '\nUser:',
+
+        // Additional safety stops
+        'System:',
+        '\nSystem:',
+        '<|endoftext|>',
+        '<|im_end|>',
+    ],
+} as const;
+
+/**
+ * Temperature presets for different use cases
+ */
+export const TEMPERATURE_PRESETS = {
+    DETERMINISTIC: 0.0, // Math, code generation, precise tasks
+    FOCUSED: 0.1, // Agent planning, tool selection (DEFAULT)
+    BALANCED: 0.3, // General Q&A with some variety
+    CREATIVE: 0.7, // Creative writing, brainstorming
+    EXPLORATORY: 0.9, // Maximum creativity, idea generation
+} as const;
+
+/**
+ * Token limit presets
+ */
+export const TOKEN_PRESETS = {
+    QUICK: 500, // Quick responses, tool calls
+    STANDARD: 1500, // Standard agent reasoning (DEFAULT)
+    EXTENDED: 3000, // Complex multi-step reasoning
+    MAXIMUM: 4000, // Maximum context (use sparingly)
+} as const;
+
+// ──────────────────────────────────────────────────────────────────────────────
 // 📋 LANGCHAIN NATIVE TYPES
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -38,7 +94,7 @@ export interface LangChainOptions {
     topP?: number;
     frequencyPenalty?: number;
     presencePenalty?: number;
-    stop?: string[];
+    stop?: readonly string[] | string[];
     stream?: boolean;
     tools?: unknown[];
     toolChoice?: string;
@@ -167,10 +223,10 @@ export class DirectLLMAdapter {
             agentScratchpad?: string; // ReAct agent_scratchpad
             identityContext?: string;
             userContext?: Record<string, unknown>; // User context for personalization
+            memoryContext?: string; // Memory context from conversation and knowledge
+            sequentialInstructions?: string; // Custom instructions for sequential planning
         },
     ): Promise<PlanningResult> {
-        debugger;
-
         // ✅ Standard technique-based planning
         const planningTechnique = this.planningTechniques.get(technique);
         if (!planningTechnique) {
@@ -180,10 +236,26 @@ export class DirectLLMAdapter {
             );
         }
 
+        // Format both system and user prompts
+        const formattedSystemPrompt = this.formatTemplate(
+            planningTechnique.systemPrompt,
+            {
+                identityContext: this.formatIdentityContext(
+                    context?.identityContext,
+                ),
+                userContext: this.formatUserContext(context?.userContext),
+                memoryContext: this.formatMemoryContext(
+                    typeof context?.memoryContext === 'string'
+                        ? context.memoryContext
+                        : '',
+                ),
+            },
+        );
+
         const messages: LangChainMessage[] = [
             {
                 role: 'system',
-                content: planningTechnique.systemPrompt,
+                content: formattedSystemPrompt,
             },
             {
                 role: 'user',
@@ -343,10 +415,7 @@ Context: {context}
 
 Please create a step-by-step plan using Chain of Thought reasoning.`,
             responseParser: this.parseStandardPlanningResponse.bind(this),
-            options: {
-                temperature: 0.3,
-                maxTokens: 1000,
-            },
+            options: DEFAULT_LLM_SETTINGS,
         });
 
         // Tree of Thoughts (ToT)
@@ -387,10 +456,7 @@ Context: {context}
 
 Please create a plan using Tree of Thoughts reasoning. Consider multiple approaches and select the best one.`,
             responseParser: this.parseStandardPlanningResponse.bind(this),
-            options: {
-                temperature: 0.5,
-                maxTokens: 1500,
-            },
+            options: DEFAULT_LLM_SETTINGS,
         });
 
         // ReAct (Reasoning + Acting)
@@ -398,21 +464,41 @@ Please create a plan using Tree of Thoughts reasoning. Consider multiple approac
             name: 'ReAct',
             description:
                 'Combines reasoning with acting in an iterative process',
-            systemPrompt: `You are an expert AI assistant that uses ReAct (Reasoning + Acting) methodology to solve problems step by step.`,
-            userPromptTemplate: `Answer the following questions as best you can. You have access to the following tools:
+            systemPrompt: `You are an expert AI assistant that uses ReAct (Reasoning + Acting) methodology to solve problems step by step.{identityContext}
 
+Your approach:
+1. UNDERSTAND: Analyze what is being asked carefully
+2. ASSESS: Determine if you need tools or can answer directly
+3. PLAN: Think step by step about what you need to do
+4. EXECUTE: Use tools when you need external information or actions
+5. REASON: Provide clear reasoning for your decisions
+6. DELIVER: Give accurate, helpful answers
+
+Remember: Always think before you act, and explain your reasoning clearly.`,
+            userPromptTemplate: `You solve problems using the ReAct method: Reason → Act → Observe → Answer.
+
+RESOURCES:
+Available tools (use ONLY these):
 {tools}
 
-{identityContext}
+{memoryContext}
 
 {userContext}
 
-Use the following format:
+CONSTRAINTS:
+- Use only the listed tools, never make up tools
+- JSON outputs must be valid and parseable
+- If you lack information, ask the user for clarification
+- Maximum iterations to prevent loops
+
+{sequentialInstructions}
+
+REQUIRED FORMAT:
 
 Question: the input question you must answer
 Thought: you should always think about what to do
-Action: the action to take, should be one of the available tools above
-Action Input: the input to the action
+Action: the action to take, only one name of the available tools above, just the name, exactly as it's written
+Action Input: the input to the action, just a simple JSON object, enclosed in curly braces, using " to wrap keys and values
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat N times)
 Thought: I now know the final answer
@@ -421,12 +507,9 @@ Final Answer: the final answer to the original input question
 Begin!
 
 Question: {goal}
-Thought: {agentScratchpad}`,
+{agentScratchpad}`,
             responseParser: this.parseReActResponse.bind(this),
-            options: {
-                temperature: 0.4,
-                maxTokens: 1200,
-            },
+            options: DEFAULT_LLM_SETTINGS, // ✅ Uses standardized settings with all stop tokens
         });
 
         // OODA Loop (Observe, Orient, Decide, Act)
@@ -467,10 +550,7 @@ Context: {context}
 
 Please create a plan using OODA Loop methodology. Follow the Observe, Orient, Decide, Act cycle.`,
             responseParser: this.parseStandardPlanningResponse.bind(this),
-            options: {
-                temperature: 0.3,
-                maxTokens: 1000,
-            },
+            options: DEFAULT_LLM_SETTINGS,
         });
     }
 
@@ -513,10 +593,7 @@ Available tools: {availableTools}
 
 Please analyze the input and select the most appropriate tool.`,
             responseParser: this.parseRoutingResponse.bind(this),
-            options: {
-                temperature: 0.2,
-                maxTokens: 500,
-            },
+            options: DEFAULT_LLM_SETTINGS,
         });
 
         // Semantic similarity routing
@@ -554,8 +631,8 @@ Available tools: {availableTools}
 Please analyze semantic similarity and select the most appropriate tool.`,
             responseParser: this.parseRoutingResponse.bind(this),
             options: {
-                temperature: 0.1,
-                maxTokens: 400,
+                ...DEFAULT_LLM_SETTINGS,
+                maxTokens: TOKEN_PRESETS.QUICK, // Routing needs less tokens
             },
         });
     }
@@ -572,7 +649,9 @@ Please analyze semantic similarity and select the most appropriate tool.`,
         return this.formatTemplate(template, {
             goal: String(primary),
             input: String(primary),
-            identityContext: String(context?.identityContext || ''),
+            identityContext: this.formatIdentityContext(
+                context?.identityContext,
+            ),
             userContext: this.formatUserContext(context?.userContext),
             availableTools: this.formatAvailableTools(context?.availableTools),
             tools: this.formatToolsForTemplate(
@@ -582,6 +661,14 @@ Please analyze semantic similarity and select the most appropriate tool.`,
             toolNames: this.extractToolNames(context?.availableTools),
             context: this.formatContext(context),
             agentScratchpad: String(context?.agentScratchpad || ''),
+            memoryContext: this.formatMemoryContext(
+                typeof context?.memoryContext === 'string'
+                    ? context.memoryContext
+                    : '',
+            ),
+            sequentialInstructions: String(
+                context?.sequentialInstructions || '',
+            ),
         });
     }
 
@@ -592,9 +679,36 @@ Please analyze semantic similarity and select the most appropriate tool.`,
         template: string,
         values: Record<string, string>,
     ): string {
-        return template.replace(/\{(\w+)\}/g, (match, key) => {
-            return values[key] !== undefined ? values[key] : match;
+        let result = template.replace(/\{(\w+)\}/g, (_match, key) => {
+            const value = values[key];
+            return value !== undefined ? value : '';
         });
+
+        // Clean up multiple consecutive newlines left by empty placeholders
+        result = result.replace(/\n\s*\n\s*\n/g, '\n\n');
+
+        // Clean up cases where empty placeholders leave awkward spacing
+        result = result.replace(/\.\{\w+\}/g, '.');
+        result = result.replace(/step by step\.\s*\n\n/g, 'step by step.\n\n');
+
+        return result;
+    }
+
+    /**
+     * ✅ Format identity context with proper newlines when present
+     */
+    private formatIdentityContext(identityContext?: unknown): string {
+        if (
+            !identityContext ||
+            (typeof identityContext === 'string' &&
+                identityContext.trim() === '')
+        ) {
+            return '';
+        }
+
+        const contextStr = String(identityContext);
+        // Add leading newline if content exists, so it formats nicely after the main prompt
+        return `\n\n${contextStr}`;
     }
 
     /**
@@ -679,6 +793,20 @@ Please analyze semantic similarity and select the most appropriate tool.`,
     }
 
     /**
+     * ✅ Format memory context for prompt
+     */
+    private formatMemoryContext(memoryContext?: string): string {
+        if (!memoryContext || memoryContext.trim() === '') {
+            return '';
+        }
+
+        return `MEMORY CONTEXT:
+${memoryContext}
+
+`;
+    }
+
+    /**
      * Clean JSON response from markdown code blocks
      */
     private cleanJsonResponse(response: string): string {
@@ -741,72 +869,104 @@ Please analyze semantic similarity and select the most appropriate tool.`,
 
     private parseReActResponse(response: string): PlanningResult {
         try {
-            // Parse ReAct text format: Thought/Action/Action Input/Observation
+            // ReAct should return next action, not full plan
             const lines = response
                 .trim()
                 .split('\n')
-                .map((line) => line.trim());
-            const steps: Array<{
-                id: string;
-                description: string;
-                tool?: string;
-                arguments?: Record<string, unknown>;
-                type: 'analysis' | 'action' | 'decision' | 'observation';
-            }> = [];
+                .map((line) => line.trim())
+                .filter((line) => line.length > 0);
 
-            let stepCounter = 1;
-            let currentThought = '';
-            let currentAction = '';
-            let currentActionInput = '';
+            let thought = '';
+            let action = '';
+            let actionInput = '';
+            let finalAnswer = '';
 
+            // Extract the latest Thought/Action/Final Answer from response
             for (const line of lines) {
                 if (line.startsWith('Thought:')) {
-                    currentThought = line.substring(8).trim();
-                    if (currentThought) {
-                        steps.push({
-                            id: `thought_${stepCounter}`,
-                            description: currentThought,
-                            type: 'analysis',
-                        });
-                    }
+                    thought = line.substring(8).trim();
                 } else if (line.startsWith('Action:')) {
-                    currentAction = line.substring(7).trim();
+                    action = line.substring(7).trim();
                 } else if (line.startsWith('Action Input:')) {
-                    currentActionInput = line.substring(13).trim();
-                    if (currentAction) {
-                        // Try to parse action input as JSON, fallback to string
-                        let parsedInput: Record<string, unknown> = {};
-                        try {
-                            parsedInput = JSON.parse(currentActionInput);
-                        } catch {
-                            parsedInput = { input: currentActionInput };
-                        }
-
-                        steps.push({
-                            id: `action_${stepCounter}`,
-                            description: `Use ${currentAction} with input: ${currentActionInput}`,
-                            tool: currentAction,
-                            arguments: parsedInput,
-                            type: 'action',
-                        });
-                        stepCounter++;
-                    }
+                    actionInput = line.substring(13).trim();
                 } else if (line.startsWith('Final Answer:')) {
-                    const finalAnswer = line.substring(13).trim();
-                    steps.push({
-                        id: `final_answer`,
-                        description: finalAnswer,
-                        type: 'decision',
-                    });
+                    finalAnswer = line.substring(13).trim();
                 }
             }
 
+            // If we have a final answer, this is the end
+            if (finalAnswer) {
+                return {
+                    strategy: 'react',
+                    goal: 'ReAct final answer',
+                    steps: [
+                        {
+                            id: 'final_answer',
+                            description: finalAnswer,
+                            type: 'decision',
+                        },
+                    ],
+                    reasoning: `Final answer: ${finalAnswer}`,
+                    complexity: 'simple',
+                };
+            }
+
+            // If we have action, return next tool call
+            if (action && actionInput) {
+                let parsedInput: Record<string, unknown> = {};
+                try {
+                    parsedInput = JSON.parse(actionInput);
+                } catch {
+                    parsedInput = { input: actionInput };
+                }
+
+                return {
+                    strategy: 'react',
+                    goal: 'ReAct next action',
+                    steps: [
+                        {
+                            id: 'next_action',
+                            description: thought || `Execute ${action}`,
+                            tool: action,
+                            arguments: parsedInput,
+                            type: 'action',
+                        },
+                    ],
+                    reasoning: thought || `Executing ${action}`,
+                    complexity: 'simple',
+                };
+            }
+
+            // If only thought, continue reasoning
+            if (thought) {
+                return {
+                    strategy: 'react',
+                    goal: 'ReAct continue thinking',
+                    steps: [
+                        {
+                            id: 'continue_thinking',
+                            description: thought,
+                            type: 'analysis',
+                        },
+                    ],
+                    reasoning: thought,
+                    complexity: 'simple',
+                };
+            }
+
+            // Fallback: raw response
             return {
                 strategy: 'react',
-                goal: 'ReAct reasoning',
-                steps: steps,
+                goal: 'ReAct raw response',
+                steps: [
+                    {
+                        id: 'raw_response',
+                        description: response.trim(),
+                        type: 'analysis',
+                    },
+                ],
                 reasoning: response.trim(),
-                complexity: 'medium',
+                complexity: 'simple',
             };
         } catch (error) {
             this.logger.error(
@@ -916,6 +1076,36 @@ Please analyze semantic similarity and select the most appropriate tool.`,
 
     getName(): string {
         return this.llm.name || 'unknown-llm';
+    }
+
+    // ✅ COMPATIBILITY: LLMAdapter interface compliance
+    async call(request: {
+        messages: Array<{ role: string; content: string }>;
+        temperature?: number;
+        maxTokens?: number;
+    }): Promise<{ content: string }> {
+        const messages: LangChainMessage[] = request.messages.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+        }));
+
+        const options: LangChainOptions = {
+            ...DEFAULT_LLM_SETTINGS,
+            temperature:
+                request.temperature ?? DEFAULT_LLM_SETTINGS.temperature,
+            maxTokens: request.maxTokens ?? DEFAULT_LLM_SETTINGS.maxTokens,
+        };
+
+        try {
+            const response = await this.llm.call(messages, options);
+            const content =
+                typeof response === 'string' ? response : response.content;
+
+            return { content };
+        } catch (error) {
+            this.logger.error('Direct call failed', error as Error);
+            throw error;
+        }
     }
 }
 

@@ -79,20 +79,51 @@ export class AgentEngine<
         input: TInput,
         agentExecutionOptions?: AgentExecutionOptions,
     ): Promise<AgentExecutionResult<TOutput>> {
-        debugger;
         const { correlationId, sessionId } = agentExecutionOptions || {};
 
-        this.engineLogger.info('Agent execution started', {
+        this.engineLogger.info('🚀 AGENT ENGINE - Execution started', {
             agentName: this.getDefinition()?.name,
             correlationId,
             sessionId,
             inputType: typeof input,
+            hasAgentExecutionOptions: !!agentExecutionOptions,
+            trace: {
+                source: 'agent-engine',
+                step: 'execute-start',
+                timestamp: Date.now(),
+            },
         });
 
         try {
             const definition = this.getDefinition();
 
+            this.engineLogger.debug(
+                '🔍 AGENT ENGINE - Getting agent definition',
+                {
+                    agentName: definition?.name,
+                    correlationId,
+                    hasDefinition: !!definition,
+                    trace: {
+                        source: 'agent-engine',
+                        step: 'get-definition',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
+
             if (!definition) {
+                this.engineLogger.error(
+                    '❌ AGENT ENGINE - Agent definition not found',
+                    new Error('Agent definition not found'),
+                    {
+                        correlationId,
+                        trace: {
+                            source: 'agent-engine',
+                            step: 'definition-not-found',
+                            timestamp: Date.now(),
+                        },
+                    },
+                );
                 throw new EngineError(
                     'AGENT_ERROR',
                     'Agent definition not found',
@@ -100,10 +131,39 @@ export class AgentEngine<
             }
 
             // Execute using shared core logic
+            this.engineLogger.info(
+                '⚡ AGENT ENGINE - Delegating to core executeAgent',
+                {
+                    agentName: definition.name,
+                    correlationId,
+                    trace: {
+                        source: 'agent-engine',
+                        step: 'delegate-to-core',
+                        timestamp: Date.now(),
+                    },
+                },
+            );
+
             const result = await this.executeAgent(
                 definition,
                 input,
                 agentExecutionOptions,
+            );
+
+            this.engineLogger.debug(
+                '📊 AGENT ENGINE - Core execution completed',
+                {
+                    agentName: definition.name,
+                    correlationId,
+                    success: result.success,
+                    hasOutput: !!result.output,
+                    hasReasoning: !!result.reasoning,
+                    trace: {
+                        source: 'agent-engine',
+                        step: 'core-execution-done',
+                        timestamp: Date.now(),
+                    },
+                },
             );
 
             // Format response if available

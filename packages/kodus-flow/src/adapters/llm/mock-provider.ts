@@ -71,5 +71,18 @@ export function createMockLLMProvider(): LLMAdapter {
         async generateResponse(_result: unknown, originalQuestion: string) {
             return `Mock response for: ${originalQuestion}`;
         },
+
+        getProvider() {
+            return {
+                name: 'mock-provider',
+                version: '1.0.0',
+                capabilities: ['text-generation', 'tool-calling'],
+            };
+        },
     };
+}
+
+// Alias para compatibilidade
+export function createMockLLMAdapter(): LLMAdapter {
+    return createMockLLMProvider();
 }

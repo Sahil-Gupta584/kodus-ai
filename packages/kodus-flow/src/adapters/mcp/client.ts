@@ -718,8 +718,8 @@ export class SpecCompliantMCPClient extends EventEmitter<MCPClientEvents> {
         name: string,
         args?: Record<string, unknown>,
     ): Promise<CallToolResult> {
-        const maxRetries = this.config.transport.retries || 3;
-        const timeout = this.config.transport.timeout || 30000;
+        const maxRetries = this.config.transport.retries || 1;
+        const timeout = this.config.transport.timeout || 60000; // ✅ UNIFIED: 60s timeout
         let lastError: Error = new Error('Unknown error');
         const startTime = Date.now();
 
