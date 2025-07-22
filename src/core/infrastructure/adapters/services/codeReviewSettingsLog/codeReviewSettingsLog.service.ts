@@ -62,6 +62,10 @@ export class CodeReviewSettingsLogService
         newConfig: any,
         actionType: ActionType,
         configLevel: ConfigLevel,
+        repository?: {
+            id: string;
+            name: string;
+        },
     ) {
         const userInfo = await this.getUserInfo(userId);
 
@@ -83,6 +87,7 @@ export class CodeReviewSettingsLogService
             },
             changeMetadata: {
                 configLevel: configLevel,
+                repository: repository,
             },
             changedData: changes,
         });

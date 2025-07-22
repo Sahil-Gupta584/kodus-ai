@@ -31,7 +31,10 @@ export class CodeReviewSettingsLogModel extends CoreDocument {
     @Prop({ type: Object, required: true })
     changeMetadata: {
         configLevel: ConfigLevel;
-        repositoryId?: string;
+        repository?: {
+            id: string;
+            name: string;
+        };
     };
 
     @Prop({ type: [Object], required: true })

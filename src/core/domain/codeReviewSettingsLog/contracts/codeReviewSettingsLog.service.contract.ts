@@ -15,5 +15,9 @@ export interface ICodeReviewSettingsLogService
         newConfig: any,
         actionType: ActionType,
         configLevel: ConfigLevel,
+        repository?: {
+            id: string;
+            name: string;
+        },
     ): Promise<void>;
 }

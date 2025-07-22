@@ -20,7 +20,10 @@ export class CodeReviewSettingsLogEntity
     };
     private readonly _changeMetadata: {
         configLevel: ConfigLevel;
-        repositoryId?: string;
+        repository?: {
+            id: string;
+            name: string;
+        };
     };
     private readonly _changedData: ChangedData[];
 
