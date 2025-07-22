@@ -4,7 +4,6 @@ import {
     ActionType,
     ChangedData,
     ConfigLevel,
-    MenuItem,
 } from '@/config/types/general/codeReviewSettingsLog.type';
 
 export class CodeReviewSettingsLogEntity
@@ -20,7 +19,6 @@ export class CodeReviewSettingsLogEntity
         userEmail: string;
     };
     private readonly _changeMetadata: {
-        menuItem: MenuItem;
         configLevel: ConfigLevel;
         repositoryId?: string;
     };
@@ -85,7 +83,6 @@ export class CodeReviewSettingsLogEntity
     }
 
     get changeMetadata(): {
-        menuItem: MenuItem;
         configLevel: ConfigLevel;
         repositoryId?: string;
     } {

@@ -2,7 +2,6 @@ import {
     ActionType,
     ChangedData,
     ConfigLevel,
-    MenuItem,
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import { CoreDocument } from '@/shared/infrastructure/repositories/model/mongodb';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
@@ -31,7 +30,6 @@ export class CodeReviewSettingsLogModel extends CoreDocument {
 
     @Prop({ type: Object, required: true })
     changeMetadata: {
-        menuItem: MenuItem;
         configLevel: ConfigLevel;
         repositoryId?: string;
     };

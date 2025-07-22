@@ -4,10 +4,14 @@ import { CodeReviewSettingsLogService } from '@/core/infrastructure/adapters/ser
 import { CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
 import { CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
+import { UsersModule } from './user.module';
 
 @Module({
-    imports: [MongooseModule.forFeature([CodeReviewSettingsLogModelInstance])],
+    imports: [
+        MongooseModule.forFeature([CodeReviewSettingsLogModelInstance]),
+        forwardRef(() => UsersModule),
+    ],
     providers: [
         {
             provide: CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,

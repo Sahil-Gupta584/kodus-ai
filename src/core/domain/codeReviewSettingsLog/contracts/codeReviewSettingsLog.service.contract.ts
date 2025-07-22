@@ -1,5 +1,6 @@
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { ICodeReviewSettingsLogRepository } from './codeReviewSettingsLog.repository.contract';
+import { ActionType, ConfigLevel } from '@/config/types/general/codeReviewSettingsLog.type';
 
 export const CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN = Symbol(
     'CodeReviewSettingsLogService',
@@ -8,8 +9,11 @@ export const CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN = Symbol(
 export interface ICodeReviewSettingsLogService
     extends ICodeReviewSettingsLogRepository {
     saveCodeReviewSettingsLog(
+        organizationAndTeamData: OrganizationAndTeamData,
+        userId: string,
         oldConfig: any,
         newConfig: any,
-        organizationAndTeamData: OrganizationAndTeamData,
+        actionType: ActionType,
+        configLevel: ConfigLevel,
     ): Promise<void>;
 }

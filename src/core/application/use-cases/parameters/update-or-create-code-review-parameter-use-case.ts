@@ -26,6 +26,7 @@ import {
     ICodeReviewSettingsLogService,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { REQUEST } from '@nestjs/core';
+import { ActionType, ConfigLevel } from '@/config/types/general/codeReviewSettingsLog.type';
 
 interface Body {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -75,7 +76,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string } };
+            user: { organization: { uuid: string }; uuid: string };
         },
 
         private readonly logger: PinoLoggerService,
@@ -268,9 +269,12 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         newGlobalInfo: CodeReviewConfigWithoutLLMProvider,
     ) {
         this.codeReviewSettingsLogService.saveCodeReviewSettingsLog(
+            organizationAndTeamData,
+            this.request.user.uuid,
             codeReviewConfigs.global,
             newGlobalInfo,
-            organizationAndTeamData,
+            ActionType.EDIT,
+            ConfigLevel.GLOBAL,
         );
 
         const defaultSuggestionControl =

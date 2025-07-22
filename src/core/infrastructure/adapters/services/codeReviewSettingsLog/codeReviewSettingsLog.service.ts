@@ -10,22 +10,23 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import {
     ActionType,
     ConfigLevel,
-    MenuItem,
     PropertyConfig,
     UserInfo,
-    ValueType,
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import { PROPERTY_CONFIGS } from './propertyMapping.helper';
 import { v4 as uuidv4 } from 'uuid';
+import {
+    IUsersService,
+    USER_SERVICE_TOKEN,
+} from '@/core/domain/user/contracts/user.service.contract';
 
 export type ChangedDataToExport = {
     key: string;
     displayName: string;
     previousValue: any;
     currentValue: any;
-    valueType: ValueType;
+    fieldConfig: Record<string, any>;
     description: string;
-    menuItem: MenuItem;
 };
 
 @Injectable()
@@ -35,6 +36,9 @@ export class CodeReviewSettingsLogService
     constructor(
         @Inject(CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN)
         private readonly codeReviewSettingsLogRepository: ICodeReviewSettingsLogRepository,
+
+        @Inject(USER_SERVICE_TOKEN)
+        private readonly userService: IUsersService,
     ) {}
 
     async create(
@@ -52,29 +56,33 @@ export class CodeReviewSettingsLogService
     }
 
     public async saveCodeReviewSettingsLog(
+        organizationAndTeamData: OrganizationAndTeamData,
+        userId: string,
         oldConfig: any,
         newConfig: any,
-        organizationAndTeamData: OrganizationAndTeamData,
+        actionType: ActionType,
+        configLevel: ConfigLevel,
     ) {
-        const changes = this.generateChangedData(oldConfig, newConfig, {
-            userId: '123',
-            userName: 'John Doe',
-            userEmail: 'john.doe@example.com',
-        });
+        const userInfo = await this.getUserInfo(userId);
+
+        const changes = await this.generateChangedData(
+            oldConfig,
+            newConfig,
+            userInfo,
+        );
 
         const codeReviewSettingsLog = new CodeReviewSettingsLogEntity({
             uuid: uuidv4(),
             organizationId: organizationAndTeamData.organizationId,
             teamId: organizationAndTeamData.teamId,
-            action: ActionType.EDIT,
+            action: actionType,
             userInfo: {
-                userId: '123',
-                userName: 'John Doe',
-                userEmail: 'john.doe@example.com',
+                userId: userId,
+                userName: userInfo.userName,
+                userEmail: userInfo.userEmail,
             },
             changeMetadata: {
-                menuItem: MenuItem.GENERAL,
-                configLevel: ConfigLevel.GLOBAL,
+                configLevel: configLevel,
             },
             changedData: changes,
         });
@@ -82,11 +90,20 @@ export class CodeReviewSettingsLogService
         await this.create(codeReviewSettingsLog.toObject());
     }
 
-    generateChangedData(
+    private async getUserInfo(userId: string): Promise<UserInfo> {
+        const user = await this.userService.findOne({ uuid: userId });
+        return {
+            userId: user.uuid,
+            userName: user?.teamMember?.[0]?.name,
+            userEmail: user.email,
+        };
+    }
+
+    private async generateChangedData(
         oldConfig: any,
         newConfig: any,
         userInfo: UserInfo,
-    ): ChangedDataToExport[] {
+    ): Promise<ChangedDataToExport[]> {
         const changes: ChangedDataToExport[] = [];
 
         // Flatten objects for comparison
@@ -131,14 +148,13 @@ export class CodeReviewSettingsLogService
             displayName: config.displayName,
             previousValue: oldValue,
             currentValue: newValue,
-            valueType: config.valueType,
+            fieldConfig: config.fieldConfig,
             description: this.generateDescription(
                 config,
                 oldValue,
                 newValue,
                 userInfo,
             ),
-            menuItem: config.menuItem,
         };
     }
 
@@ -162,7 +178,10 @@ export class CodeReviewSettingsLogService
         const action = this.getActionForToggle(oldValue, newValue);
 
         // Replace placeholders
-        template = template.replace('{{userName}}', userInfo.userName);
+        template = template.replace(
+            '{{userName}}',
+            userInfo.userName ? ` (${userInfo.userName}) ` : ' ',
+        );
         template = template.replace('{{userEmail}}', userInfo.userEmail);
         template = template.replace('{{displayName}}', config.displayName);
         template = template.replace('{{oldValue}}', formattedOldValue);
@@ -228,13 +247,12 @@ export class CodeReviewSettingsLogService
                             ? `${newConfig.reviewCadence.pushesToTrigger} pushes and ${newConfig.reviewCadence.timeWindow} minutes`
                             : undefined,
                 },
-                valueType: ValueType.TOGGLE_WITH_SELECT,
+                fieldConfig: { valueType: 'toggle_with_select' },
                 description: this.generateAutomatedReviewDescription(
                     oldConfig,
                     newConfig,
                     userInfo,
                 ),
-                menuItem: MenuItem.GENERAL,
             };
 
             if (automaticCodeReviewChanges?.description?.length > 0) {
@@ -266,9 +284,8 @@ export class CodeReviewSettingsLogService
                         behaviour:
                             newConfig.summary.behaviourForExistingDescription,
                     },
-                    valueType: ValueType.TOGGLE_WITH_RADIO,
-                    description: `User ${userInfo.userName} (${userInfo.userEmail}) enabled Generate PR Summary with ${this.formatBehaviour(newConfig.summary.behaviourForExistingDescription)} behavior`,
-                    menuItem: MenuItem.PR_SUMMARY,
+                    fieldConfig: { valueType: 'toggle_with_radio_button' },
+                    description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} enabled Generate PR Summary with ${this.formatBehaviour(newConfig.summary.behaviourForExistingDescription)} behavior`,
                 });
             }
         }
@@ -309,7 +326,7 @@ export class CodeReviewSettingsLogService
             return '';
         }
 
-        let description = `User ${userInfo.userName} (${userInfo.userEmail}) changed Enable Automated Code Review `;
+        let description = `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} changed Enable Automated Code Review `;
 
         if (oldPrimary !== newPrimary) {
             description += `from ${oldPrimary} to ${newPrimary}`;

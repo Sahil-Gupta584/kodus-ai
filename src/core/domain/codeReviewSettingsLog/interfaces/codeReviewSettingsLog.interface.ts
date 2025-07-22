@@ -1,4 +1,4 @@
-import { ActionType, ChangedData, ConfigLevel, MenuItem } from "@/config/types/general/codeReviewSettingsLog.type";
+import { ActionType, ChangedData, ConfigLevel } from "@/config/types/general/codeReviewSettingsLog.type";
 
 export interface ICodeReviewSettingsLog {
     uuid: string;
@@ -11,7 +11,6 @@ export interface ICodeReviewSettingsLog {
         userEmail: string;
     };
     changeMetadata: {
-        menuItem: MenuItem;
         configLevel: ConfigLevel;
         repositoryId?: string;
     };
