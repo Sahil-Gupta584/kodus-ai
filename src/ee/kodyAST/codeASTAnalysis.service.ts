@@ -9,7 +9,6 @@ import { IASTAnalysisService } from '@/core/domain/codeBase/contracts/ASTAnalysi
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import { RunnableSequence } from '@langchain/core/runnables';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { prompt_detectBreakingChanges } from '@/shared/utils/langchainCommon/prompts/detectBreakingChanges';
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
@@ -18,8 +17,6 @@ import { CodeManagementService } from '@/core/infrastructure/adapters/services/p
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { ClientGrpc } from '@nestjs/microservices';
 import { lastValueFrom, reduce, map, retry } from 'rxjs';
-import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { concatUint8Arrays } from '@/shared/utils/buffer/arrays';
 import {
     ASTAnalyzerServiceClient,
@@ -47,6 +44,7 @@ import {
     circuitBreaker,
 } from '@/shared/utils/rxjs/circuit-breaker';
 import { Metadata } from '@grpc/grpc-js';
+import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -66,7 +64,6 @@ export class CodeAstAnalysisService
         @Inject('TASK_MICROSERVICE')
         private readonly taskMicroserviceClient: ClientGrpc,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);

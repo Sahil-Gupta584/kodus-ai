@@ -7,7 +7,7 @@ import {
     ReviewModeResponse,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
+import { LLMModelProvider } from '@kodus/kodus-common/llm';
 
 export interface IAIAnalysisService {
     analyzeCodeWithAI(

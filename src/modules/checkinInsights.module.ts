@@ -7,7 +7,6 @@ import { IntegrationConfigModule } from './integrationConfig.module';
 import { TeamsModule } from './team.module';
 import { MetricsModule } from './metrics.module';
 import { ParametersModule } from './parameters.module';
-import { LLMProviderModule } from './llmProvider.module';
 
 @Module({
     imports: [
@@ -16,7 +15,6 @@ import { LLMProviderModule } from './llmProvider.module';
         forwardRef(() => TeamsModule),
         forwardRef(() => MetricsModule),
         forwardRef(() => ParametersModule),
-        forwardRef(() => LLMProviderModule),
     ],
     providers: [
         PromptService,

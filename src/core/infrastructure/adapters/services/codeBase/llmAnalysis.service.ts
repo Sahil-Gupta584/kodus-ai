@@ -13,7 +13,10 @@ import {
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '../logger/pino.service';
 import { RunnableSequence } from '@langchain/core/runnables';
-import { StringOutputParser, StructuredOutputParser } from '@langchain/core/output_parsers';
+import {
+    StringOutputParser,
+    StructuredOutputParser,
+} from '@langchain/core/output_parsers';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { HumanMessage } from '@langchain/core/messages';
 import { z } from 'zod';
@@ -26,13 +29,9 @@ import {
     prompt_codereview_user_gemini,
 } from '@/shared/utils/langchainCommon/prompts/configuration/codeReview';
 import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
-import { LLMProviderService } from '../llmProviders/llmProvider.service';
 import { prompt_codeReviewSafeguard_system } from '@/shared/utils/langchainCommon/prompts';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
-import {
-    LLMModelProvider,
-} from '../llmProviders/llmModelProvider.helper';
 import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
+import { LLMModelProvider, LLMProviderService } from '@kodus/kodus-common/llm';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -116,7 +115,6 @@ export class LLMAnalysisService implements IAIAnalysisService {
 
     constructor(
         private readonly logger: PinoLoggerService,
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();

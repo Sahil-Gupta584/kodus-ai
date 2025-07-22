@@ -1,9 +1,11 @@
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 
-export const prompt_generate_conversation_title = (
-    userMessage: string,
-    language = LanguageValue.ENGLISH,
-) => {
+export const prompt_generate_conversation_title = (params: {
+    userMessage: string;
+    language?: LanguageValue;
+}) => {
+    const { userMessage, language = LanguageValue.ENGLISH } = params;
+
     return `
     You are an assistant designed to generate short and descriptive titles for conversations in a chat application.
 

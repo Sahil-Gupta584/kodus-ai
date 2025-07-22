@@ -49,12 +49,7 @@ import {
 } from '@/core/domain/integrations/contracts/integration.service.contracts';
 import { ValidateCommunicationManagementIntegration } from '@/shared/utils/decorators/validate-communication-management-integration.decorator';
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
-import {
-    MODEL_STRATEGIES,
-    LLMModelProvider,
-} from '../../../llmProviders/llmModelProvider.helper';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../../../llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '../../../llmProviders/llmProvider.service';
+import { LLMModelProvider, LLMProviderService } from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class AutomationExecutiveCheckin
@@ -85,7 +80,6 @@ export class AutomationExecutiveCheckin
         @Inject(PROFILE_CONFIG_SERVICE_TOKEN)
         private readonly profileConfigService: ProfileConfigService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         private readonly communicationService: CommunicationService,

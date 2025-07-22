@@ -12,14 +12,16 @@ import {
     PARAMETERS_SERVICE_TOKEN,
     IParametersService,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
-import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { prompt_generate_conversation_title } from '@/shared/utils/langchainCommon/prompts';
+import {
+    LLMModelProvider,
+    PromptRole,
+    PromptRunnerService,
+} from '@kodus/kodus-common/llm';
 import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
@@ -42,8 +44,7 @@ export class CreateConversationUseCase implements IUseCase {
 
         private logger: PinoLoggerService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
-        private readonly llmProviderService: LLMProviderService,
+        private readonly promptRunnerService: PromptRunnerService,
     ) {}
 
     async execute(params: any): Promise<{ uuid: string }> {
@@ -82,7 +83,8 @@ export class CreateConversationUseCase implements IUseCase {
             }
 
             const newConversation = {
-                title: typeof title === 'string' ? title : JSON.stringify(title),
+                title:
+                    typeof title === 'string' ? title : JSON.stringify(title),
                 type: SenderType.USER,
                 sessionId: newSession.uuid,
                 organizationId,
@@ -116,12 +118,6 @@ export class CreateConversationUseCase implements IUseCase {
 
         while (retryCount < maxRetries) {
             try {
-                let llm = this.llmProviderService.getLLMProvider({
-                    model: LLMModelProvider.VERTEX_GEMINI_2_5_FLASH,
-                    temperature: 0,
-                    jsonMode: true,
-                });
-
                 const language = (
                     await this.parametersService.findByKey(
                         ParametersKey.LANGUAGE_CONFIG,
@@ -129,19 +125,30 @@ export class CreateConversationUseCase implements IUseCase {
                     )
                 )?.configValue;
 
-                const chain = await llm.invoke(
-                    prompt_generate_conversation_title(prompt, language),
-                    {
-                        metadata: {
-                            module: 'Conversation',
-                            submodule: 'CreateTitle',
-                            organizationId,
-                            userId,
-                        },
-                    },
-                );
+                const content = await this.promptRunnerService
+                    .stringMode()
+                    .addProviders({
+                        main: LLMModelProvider.VERTEX_GEMINI_2_5_FLASH,
+                    })
+                    .addPayload({
+                        userMessage: prompt,
+                        language,
+                    })
+                    .addPrompt({
+                        role: PromptRole.USER,
+                        prompt: prompt_generate_conversation_title,
+                    })
+                    .addMetadata({
+                        module: 'Conversation',
+                        submodule: 'CreateTitle',
+                        organizationId,
+                        userId,
+                    })
+                    .setTemperature(0)
+                    .setRunName('generateConversationTitle')
+                    .execute();
 
-                return chain?.content || 'No comment generated';
+                return content || 'No comment generated';
             } catch (error) {
                 this.logger.error({
                     message: `Error generate title to new converation`,

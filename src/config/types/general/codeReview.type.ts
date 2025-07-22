@@ -5,7 +5,7 @@ import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interfac
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { ImplementationStatus } from '@/core/domain/pullRequests/enums/implementationStatus.enum';
 import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
+import { LLMModelProvider } from '@kodus/kodus-common/llm';
 import { GetImpactAnalysisResponse } from '@kodus/kodus-proto/ast';
 import { TaskStatus } from '@kodus/kodus-proto/task';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
@@ -340,7 +340,7 @@ export type ReviewCadence = {
     type: ReviewCadenceType;
     timeWindow?: number;
     pushesToTrigger?: number;
-}
+};
 
 export interface AutomaticReviewStatus {
     previousStatus: ReviewCadenceState;

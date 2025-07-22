@@ -17,9 +17,8 @@ import { PinoLoggerService } from '../../logger/pino.service';
 import {
     MODEL_STRATEGIES,
     LLMModelProvider,
-} from '../../llmProviders/llmModelProvider.helper';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '../../llmProviders/llmProvider.service';
+    LLMProviderService,
+} from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class ReleaseNotesSection {
@@ -27,7 +26,6 @@ export class ReleaseNotesSection {
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         private readonly promptService: PromptService,
@@ -126,17 +124,20 @@ export class ReleaseNotesSection {
 
             const categories = safelyParseMessageContent(
                 (
-                    await llm.invoke(await promptGenerateWeekResume.format({
-                        organizationAndTeamData,
-                        payload: `Closed Tasks: ${JSON.stringify(doneTasks)} \n\n ${isGitConnected ? `Closed Pull Requests: ${JSON.stringify(closedPRs)}` : ''}`,
-                        promptIsForChat: false,
-                    }), {
-                        metadata: {
-                            module: 'AutomationWeeklyCheckin',
-                            teamId: organizationAndTeamData.teamId,
-                            submodule: 'WeekResume',
+                    await llm.invoke(
+                        await promptGenerateWeekResume.format({
+                            organizationAndTeamData,
+                            payload: `Closed Tasks: ${JSON.stringify(doneTasks)} \n\n ${isGitConnected ? `Closed Pull Requests: ${JSON.stringify(closedPRs)}` : ''}`,
+                            promptIsForChat: false,
+                        }),
+                        {
+                            metadata: {
+                                module: 'AutomationWeeklyCheckin',
+                                teamId: organizationAndTeamData.teamId,
+                                submodule: 'WeekResume',
+                            },
                         },
-                    })
+                    )
                 ).content,
             ).categories;
 

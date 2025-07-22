@@ -3,9 +3,6 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { RunnableSequence } from '@langchain/core/runnables';
 import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
-import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { Inject } from '@nestjs/common';
 import {
     prompt_kodyissues_merge_suggestions_into_issues_system,
@@ -17,6 +14,7 @@ import {
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { contextToGenerateIssues } from '../kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 export const KODY_ISSUES_ANALYSIS_SERVICE_TOKEN = Symbol(
     'KodyIssuesAnalysisService',
@@ -30,7 +28,6 @@ export class KodyIssuesAnalysisService {
     constructor(
         private readonly logger: PinoLoggerService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         @Inject(PARAMETERS_SERVICE_TOKEN)

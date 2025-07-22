@@ -16,9 +16,6 @@ import {
     KodyRulesScope,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import { RunnableSequence } from '@langchain/core/runnables';
 import {
@@ -37,6 +34,7 @@ import {
     TokenTrackingService,
     TokenTrackingSession,
 } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
+import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 //#region Interfaces
 // Interface for token tracking
@@ -117,7 +115,6 @@ export class KodyRulesPrLevelAnalysisService
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: KodyRulesService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         private readonly logger: PinoLoggerService,

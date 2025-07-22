@@ -151,7 +151,7 @@ Your output must be surrounded by \`\`\`json\`\`\` tags.
 
 export const prompt_KodyRulesGeneratorDuplicateFilterUser = (payload: {
     existingRules: LibraryKodyRule[];
-    newRules: Array<IKodyRule & { comments: UncategorizedComment[] }>;
+    newRules: Array<Partial<IKodyRule>>;
 }) => `
 existing rules:
 
@@ -249,7 +249,7 @@ Your output must be surrounded by \`\`\`json\`\`\` tags.
 `;
 
 export const prompt_KodyRulesGeneratorQualityFilterUser = (payload: {
-    rules: Array<IKodyRule & { comments: UncategorizedComment[] }>;
+    rules: Array<Partial<IKodyRule>>;
 }) => `
 rules:
 

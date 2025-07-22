@@ -88,14 +88,9 @@ import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
-import {
-    LLMModelProvider,
-    MODEL_STRATEGIES,
-} from '../llmProviders/llmModelProvider.helper';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '../llmProviders/llmProvider.service';
 import { ConfigService } from '@nestjs/config';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 interface GitHubAuthResponse {
     token: string;
@@ -177,7 +172,6 @@ export class GithubService
         @Inject(DORA_METRICS_FACTORY_TOKEN)
         private readonly doraMetricsFactory: IDoraMetricsFactory,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         private readonly cacheService: CacheService,

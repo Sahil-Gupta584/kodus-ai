@@ -15,15 +15,8 @@ import { safelyParseMessageContent } from '@/shared/utils/safelyParseMessageCont
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { PromptService } from './prompt.service';
-import { ValidateProjectManagementIntegration } from '@/shared/utils/decorators/validate-project-management-integration.decorator';
-import { ProjectManagementService } from './platformIntegration/projectManagement.service';
 import { PinoLoggerService } from './logger/pino.service';
-import {
-    MODEL_STRATEGIES,
-    LLMModelProvider,
-} from './llmProviders/llmModelProvider.helper';
-import { LLM_PROVIDER_SERVICE_TOKEN } from './llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from './llmProviders/llmProvider.service';
+import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class OrganizationParametersService
@@ -38,7 +31,6 @@ export class OrganizationParametersService
 
         private readonly promptService: PromptService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         private readonly logger: PinoLoggerService,

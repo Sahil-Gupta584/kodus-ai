@@ -1,8 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking.service';
 import {
     TokenTrackingService,
@@ -23,6 +20,7 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { v4 as uuidv4 } from 'uuid';
 import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
+import { LLMModelProvider, LLMProviderService } from '@kodus/kodus-common/llm';
 
 //#region Interfaces
 interface TokenUsage {
@@ -72,12 +70,11 @@ export class CrossFileAnalysisService {
     };
 
     constructor(
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
         private readonly logger: PinoLoggerService,
         private readonly tokenChunkingService: TokenChunkingService,
         @Inject(TOKEN_TRACKING_SERVICE_TOKEN)
-        private readonly tokenTrackingService: TokenTrackingService
+        private readonly tokenTrackingService: TokenTrackingService,
     ) {
         this.tokenTracker = new TokenTrackingSession(
             uuidv4(),

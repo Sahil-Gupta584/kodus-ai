@@ -14,7 +14,6 @@ import { RunnableSequence } from '@langchain/core/runnables';
 import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import Anthropic from '@anthropic-ai/sdk';
 import { getKodyRulesForFile } from '@/shared/utils/glob-utils';
 import {
@@ -36,13 +35,12 @@ import {
 import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisService.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
-import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { IKodyRulesAnalysisService } from '@/core/domain/codeBase/contracts/KodyRulesAnalysisService.contract';
+import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 // Interface for extended context used in Kody Rules analysis
 interface KodyRulesExtendedContext {
@@ -156,7 +154,6 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
 
     constructor(
         private readonly logger: PinoLoggerService,
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
     ) {
         this.anthropic = new Anthropic({
@@ -640,8 +637,11 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             limitationType:
                 context?.codeReviewConfig?.suggestionControl?.limitationType,
             // ✨ MODIFICAÇÃO: só passa severityLevelFilter se deve aplicar filtros
-            severityLevelFilter: this.shouldPassSeverityFilter(context?.codeReviewConfig?.suggestionControl)
-                ? context?.codeReviewConfig?.suggestionControl?.severityLevelFilter
+            severityLevelFilter: this.shouldPassSeverityFilter(
+                context?.codeReviewConfig?.suggestionControl,
+            )
+                ? context?.codeReviewConfig?.suggestionControl
+                      ?.severityLevelFilter
                 : undefined,
             organizationAndTeamData: context?.organizationAndTeamData,
             kodyRules: kodyRulesFiltered,
@@ -653,7 +653,9 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
     /**
      * ✨ SIMPLIFICADO: Determina se deve passar severityLevelFilter para análise de Kody Rules
      */
-    private shouldPassSeverityFilter(suggestionControl?: SuggestionControlConfig): boolean {
+    private shouldPassSeverityFilter(
+        suggestionControl?: SuggestionControlConfig,
+    ): boolean {
         if (!suggestionControl) {
             return false;
         }
@@ -1120,4 +1122,3 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         });
     }
 }
-

@@ -2377,6 +2377,9 @@
   dependencies:
     buffer "^6.0.3"
 
+"@kodus/kodus-common@file:.yalc/@kodus/kodus-common":
+  version "1.1.0"
+
 "@kodus/kodus-proto@https://registry.npmjs.org/@kodus/kodus-proto/-/kodus-proto-3.1.2.tgz":
   version "3.1.2"
   resolved "https://registry.npmjs.org/@kodus/kodus-proto/-/kodus-proto-3.1.2.tgz#a3f057987563fa93e50c35908f835aee06d211d6"

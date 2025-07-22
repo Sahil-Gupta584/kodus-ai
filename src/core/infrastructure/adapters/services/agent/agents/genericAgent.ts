@@ -22,7 +22,7 @@ import {
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
 import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
-import { MODEL_STRATEGIES, LLMModelProvider } from '../../llmProviders/llmModelProvider.helper';
+import { MODEL_STRATEGIES, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class GenericQueryAgentProvider implements IAgentRouterStrategy {
@@ -80,7 +80,8 @@ export class GenericQueryAgentProvider implements IAgentRouterStrategy {
                     sessionId: runParams?.sessionId,
                 },
                 {
-                    model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName,
+                    model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
+                        .modelName,
                 },
             );
 
