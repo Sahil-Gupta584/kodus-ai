@@ -29,13 +29,7 @@ export class ConfigDiffService {
         const flatOld = this.flattenObject(oldConfig);
         const flatNew = this.flattenObject(newConfig);
 
-        // Find all keys that exist in either object
-        const allKeys = new Set([
-            ...Object.keys(flatOld),
-            ...Object.keys(flatNew),
-        ]);
-
-        for (const key of allKeys) {
+        for (const key of Object.keys(flatNew)) {
             // Skip if this key has a config and values are different
             if (
                 PROPERTY_CONFIGS[key] &&
@@ -151,7 +145,7 @@ export class ConfigDiffService {
         );
 
         if (automatedChanged || cadenceChanged) {
-            changes.push({
+            const automaticCodeReviewChanges = {
                 key: 'automatedReviewActive',
                 displayName: 'Enable Automated Code Review',
                 previousValue: {
@@ -177,7 +171,11 @@ export class ConfigDiffService {
                     userInfo,
                 ),
                 menuItem: MenuItem.GENERAL,
-            });
+            };
+
+            if (automaticCodeReviewChanges?.description?.length > 0) {
+                changes.push(automaticCodeReviewChanges);
+            }
         }
 
         // Handle summary toggle with radio buttons
@@ -238,6 +236,14 @@ export class ConfigDiffService {
             newConfig.reviewCadence?.type === 'auto_pause'
                 ? `${newConfig.reviewCadence.pushesToTrigger} pushes and ${newConfig.reviewCadence.timeWindow} minutes`
                 : undefined;
+
+        if (
+            oldPrimary === newPrimary &&
+            oldSecondary === newSecondary &&
+            oldTertiary === newTertiary
+        ) {
+            return '';
+        }
 
         let description = `User ${userInfo.userName} (${userInfo.userEmail}) changed Enable Automated Code Review `;
 
