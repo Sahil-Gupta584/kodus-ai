@@ -40,17 +40,18 @@ export class CodeReviewConfigLogHandler {
     ) {}
 
     public async logCodeReviewConfig(
-        organizationAndTeamData: OrganizationAndTeamData,
-        userId: string,
-        oldConfig: any,
-        newConfig: any,
-        actionType: ActionType,
-        configLevel: ConfigLevel,
-        repository?: {
-            id: string;
-            name: string;
-        },
+        params: CodeReviewConfigLogParams,
     ) {
+        const {
+            organizationAndTeamData,
+            userId,
+            oldConfig,
+            newConfig,
+            actionType,
+            configLevel,
+            repository,
+        } = params;
+
         const userInfo = await this.getUserInfo(userId);
 
         const changes = await this.generateChangedData(

@@ -307,14 +307,14 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             organizationAndTeamData,
         );
 
-        this.codeReviewSettingsLogService.registerCodeReviewConfigLog(
+        this.codeReviewSettingsLogService.registerCodeReviewConfigLog({
             organizationAndTeamData,
-            this.request.user.uuid,
-            codeReviewConfigs.global,
-            newGlobalInfo,
-            ActionType.EDIT,
-            ConfigLevel.GLOBAL,
-        );
+            userId: this.request.user.uuid,
+            oldConfig: codeReviewConfigs.global,
+            newConfig: newGlobalInfo,
+            actionType: ActionType.EDIT,
+            configLevel: ConfigLevel.GLOBAL,
+        });
 
         return true;
     }
@@ -372,15 +372,17 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
             if (currentRepositoryConfig && newRepositoryConfig) {
                 await this.codeReviewSettingsLogService.registerCodeReviewConfigLog(
-                    organizationAndTeamData,
-                    this.request.user.uuid,
-                    currentRepositoryConfig,
-                    newRepositoryConfig,
-                    ActionType.EDIT,
-                    ConfigLevel.REPOSITORY,
                     {
-                        id: newRepositoryConfig.id,
-                        name: newRepositoryConfig.name,
+                        organizationAndTeamData,
+                        userId: this.request.user.uuid,
+                        oldConfig: currentRepositoryConfig,
+                        newConfig: newRepositoryConfig,
+                        actionType: ActionType.EDIT,
+                        configLevel: ConfigLevel.REPOSITORY,
+                        repository: {
+                            id: newRepositoryConfig.id,
+                            name: newRepositoryConfig.name,
+                        },
                     },
                 );
             }
