@@ -23,7 +23,6 @@ import {
     TEAM_SERVICE_TOKEN,
 } from '@/core/domain/team/contracts/team.service.contract';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
-import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
 
 export interface KodyRuleLogParams {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -215,6 +214,7 @@ export class KodyRulesLogHandler {
                     oldRule!,
                     ruleTitle,
                     userInfo,
+                    repository,
                 );
 
             case ActionType.CLONE:
@@ -251,7 +251,6 @@ export class KodyRulesLogHandler {
                     instructions: newRule.rule,
                     severity: newRule.severity,
                     examples: newRule?.examples ?? [],
-                    repositoryLevel: !isGlobal,
                     origin: newRule.origin,
                 },
                 fieldConfig: { valueType: 'kody_rule_action' },
@@ -347,10 +346,11 @@ export class KodyRulesLogHandler {
         oldRule: Partial<IKodyRule>,
         ruleTitle?: string,
         userInfo?: any,
+        repository?: { id: string; name: string },
     ): ChangedDataToExport[] {
         const title = ruleTitle || oldRule.title;
         const isGlobal = oldRule.repositoryId === 'global';
-        const levelText = isGlobal ? 'global' : 'repository';
+        const levelText = isGlobal ? 'global level' : `repository ${repository?.name}`;
 
         return [
             {
@@ -358,13 +358,16 @@ export class KodyRulesLogHandler {
                 displayName: 'Kody Rule Deleted',
                 previousValue: {
                     title: oldRule.title,
-                    severity: oldRule.severity,
                     scope: oldRule.scope,
-                    repositoryLevel: !isGlobal,
+                    path: oldRule.path,
+                    instructions: oldRule.rule,
+                    severity: oldRule.severity,
+                    examples: oldRule.examples,
+                    origin: oldRule.origin,
                 },
                 currentValue: null,
                 fieldConfig: { valueType: 'kody_rule_action' },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} deleted Kody Rule "${title}" from ${levelText} level`,
+                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} deleted Kody Rule "${title}" from ${levelText}`,
             },
         ];
     }
@@ -386,9 +389,11 @@ export class KodyRulesLogHandler {
                 previousValue: null,
                 currentValue: {
                     title: newRule.title,
-                    severity: newRule.severity,
                     scope: newRule.scope,
-                    repositoryLevel: !isGlobal,
+                    path: newRule?.path ?? '',
+                    instructions: newRule.rule,
+                    severity: newRule.severity,
+                    examples: newRule?.examples ?? [],
                     origin: newRule.origin,
                 },
                 fieldConfig: { valueType: 'kody_rule_action' },

@@ -1,3 +1,8 @@
+import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
+import {
+    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+    ICodeReviewSettingsLogService,
+} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import {
     KODY_RULES_SERVICE_TOKEN,
     IKodyRulesService,
@@ -11,11 +16,14 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
     constructor(
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string } };
+            user: { organization: { uuid: string }; uuid: string };
         },
 
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
+
+        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
+        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
 
         private readonly logger: PinoLoggerService,
     ) {}
@@ -38,10 +46,28 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
                 return false;
             }
 
-            return await this.kodyRulesService.deleteRuleLogically(
+            const rule = await this.kodyRulesService.deleteRuleLogically(
                 existing.uuid,
                 ruleId,
             );
+
+            const deletedRule = existing.rules.find(
+                (rule) => rule.uuid === ruleId,
+            );
+
+            this.codeReviewSettingsLogService.registerKodyRulesLog({
+                organizationAndTeamData: {
+                    organizationId: this.request.user.organization.uuid,
+                },
+                userId: this.request.user.uuid,
+                actionType: ActionType.DELETE,
+                repositoryId: deletedRule?.repositoryId,
+                oldRule: deletedRule,
+                newRule: undefined,
+                ruleTitle: deletedRule?.title,
+            });
+
+            return rule;
         } catch (error) {
             this.logger.error({
                 message: 'Error deleting Kody Rule in organization by ID',
