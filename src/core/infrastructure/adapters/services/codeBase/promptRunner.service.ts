@@ -1,7 +1,7 @@
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
-import { StringOutputParser } from '@langchain/core/output_parsers';
+import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { PinoLoggerService } from '../logger/pino.service';
 import { Inject, Injectable } from '@nestjs/common';
@@ -225,7 +225,7 @@ export class PromptRunnerService {
                     ];
                 },
                 llm,
-                new StringOutputParser(),
+                new CustomStringOutputParser(),
             ]);
 
             return chain;

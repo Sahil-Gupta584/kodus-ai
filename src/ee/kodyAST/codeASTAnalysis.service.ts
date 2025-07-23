@@ -7,7 +7,7 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { IASTAnalysisService } from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { StringOutputParser } from '@langchain/core/output_parsers';
+import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { prompt_detectBreakingChanges } from '@/shared/utils/langchainCommon/prompts/detectBreakingChanges';
@@ -432,7 +432,7 @@ export class CodeAstAnalysisService
                     ];
                 },
                 llm,
-                new StringOutputParser(),
+                new CustomStringOutputParser(),
             ]);
 
             return chain;

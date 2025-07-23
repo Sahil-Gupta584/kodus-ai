@@ -1,5 +1,6 @@
 import {
     AnalysisContext,
+    AutomaticReviewStatus,
     CodeReviewConfig,
     CodeSuggestion,
     CommentResult,
@@ -31,6 +32,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     platformType: PlatformType;
 
     codeReviewConfig?: CodeReviewConfig;
+    automaticReviewStatus?: AutomaticReviewStatus;
 
     changedFiles?: FileChange[];
     lastExecution?: {

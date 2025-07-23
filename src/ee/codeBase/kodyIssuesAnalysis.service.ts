@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { RunnableSequence } from '@langchain/core/runnables';
-import { StringOutputParser } from '@langchain/core/output_parsers';
+import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
@@ -214,7 +214,7 @@ export class KodyIssuesAnalysisService {
                     ];
                 },
                 llm,
-                new StringOutputParser(),
+                new CustomStringOutputParser(),
             ]).withConfig({
                 tags: this.buildTags(provider, 'primary'),
                 metadata: {

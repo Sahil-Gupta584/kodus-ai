@@ -19,7 +19,7 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
-import { StringOutputParser } from '@langchain/core/output_parsers';
+import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import { RunnableSequence } from '@langchain/core/runnables';
 import {
     KodyRulesPrLevelPayload,
@@ -356,7 +356,7 @@ export class KodyRulesPrLevelAnalysisService
                     ];
                 },
                 llm,
-                new StringOutputParser(),
+                new CustomStringOutputParser(),
             ]).withConfig({ tags });
 
             return chain;
@@ -1502,7 +1502,7 @@ export class KodyRulesPrLevelAnalysisService
                     ];
                 },
                 llm,
-                new StringOutputParser(),
+                new CustomStringOutputParser(),
             ]).withConfig({ tags });
 
             return chain;

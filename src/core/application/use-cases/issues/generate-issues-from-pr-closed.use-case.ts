@@ -5,7 +5,10 @@ import {
     INTEGRATION_CONFIG_SERVICE_TOKEN,
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { stripCurlyBracesFromUUIDs } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-bitbucket.type';
-import { IMappedPullRequest, IMappedRepository } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-common.type';
+import {
+    IMappedPullRequest,
+    IMappedRepository,
+} from '@/core/domain/platformIntegrations/types/webhooks/webhooks-common.type';
 import {
     IPullRequestsService,
     PULL_REQUESTS_SERVICE_TOKEN,
@@ -80,9 +83,8 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
             });
 
             await this.kodyIssuesManagementService.clearIssuesCache(
-                prData.context.organizationAndTeamData.organizationId,
+                prData.context?.organizationAndTeamData?.organizationId,
             );
-
         } catch (error) {
             this.logger.error({
                 context: GenerateIssuesFromPrClosedUseCase.name,
@@ -92,7 +94,7 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
                     prNumber: prData.context.pullRequest.number,
                     repositoryId: prData.context.repository.id,
                     organizationId:
-                        prData.context.organizationAndTeamData.organizationId,
+                        prData.context?.organizationAndTeamData?.organizationId,
                 },
                 error,
             });

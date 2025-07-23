@@ -1,7 +1,7 @@
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatNovitaAI } from '@langchain/community/chat_models/novita';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
-import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { ChatGoogle } from '@langchain/google-gauth';
 import { ChatVertexAI } from '@langchain/google-vertexai';
 import { ChatOpenAI } from '@langchain/openai';
 
@@ -106,13 +106,15 @@ const getChatGemini = (
         streaming: false,
         callbacks: [],
         json: false,
+        maxReasoningTokens:
+            MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO].maxReasoningTokens,
     };
 
     const finalOptions = options
         ? { ...defaultOptions, ...options }
         : defaultOptions;
 
-    return new ChatGoogleGenerativeAI({
+    return new ChatGoogle({
         model: finalOptions.model,
         apiKey: process.env.API_GOOGLE_AI_API_KEY,
         temperature: finalOptions.temperature,
@@ -120,7 +122,7 @@ const getChatGemini = (
         maxOutputTokens: finalOptions.maxTokens,
         verbose: finalOptions.verbose,
         callbacks: finalOptions.callbacks,
-        json: finalOptions.json,
+        maxReasoningTokens: finalOptions.maxReasoningTokens,
     });
 };
 
@@ -214,6 +216,7 @@ export type FactoryInput = {
     baseURL?: string;
     apiKey?: string;
     json?: boolean;
+    maxReasoningTokens?: number;
 };
 
 export enum LLMModelProvider {
@@ -249,6 +252,7 @@ export interface ModelStrategy {
     readonly defaultMaxTokens: number;
     readonly baseURL?: string;
     readonly inputMaxTokens?: number;
+    readonly maxReasoningTokens?: number;
 }
 
 export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
@@ -292,6 +296,7 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
         factory: getChatGemini,
         modelName: 'gemini-2.0-flash',
         defaultMaxTokens: 8000,
+        maxReasoningTokens: 15000,
     },
     [LLMModelProvider.GEMINI_2_5_PRO]: {
         provider: 'google',
@@ -299,12 +304,14 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
         modelName: 'gemini-2.5-pro',
         defaultMaxTokens: 60000,
         inputMaxTokens: 1000000,
+        maxReasoningTokens: 15000,
     },
     [LLMModelProvider.GEMINI_2_5_FLASH]: {
         provider: 'google',
         factory: getChatGemini,
         modelName: 'gemini-2.5-flash',
         defaultMaxTokens: 60000,
+        maxReasoningTokens: 15000,
     },
 
     // Vertex AI
@@ -313,18 +320,21 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
         factory: getChatVertexAI,
         modelName: 'gemini-2.0-flash',
         defaultMaxTokens: 8000,
+        maxReasoningTokens: 15000,
     },
     [LLMModelProvider.VERTEX_GEMINI_2_5_PRO]: {
         provider: 'vertex',
         factory: getChatVertexAI,
         modelName: 'gemini-2.5-pro',
         defaultMaxTokens: 60000,
+        maxReasoningTokens: 15000,
     },
     [LLMModelProvider.VERTEX_GEMINI_2_5_FLASH]: {
         provider: 'vertex',
         factory: getChatVertexAI,
         modelName: 'gemini-2.5-flash',
         defaultMaxTokens: 60000,
+        maxReasoningTokens: 15000,
     },
 
     [LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET]: {
@@ -333,6 +343,7 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
         modelName: 'claude-3-5-sonnet-v2@20241022',
         defaultMaxTokens: 4000,
         inputMaxTokens: 200000,
+        maxReasoningTokens: 15000,
     },
 
     // Deepseek

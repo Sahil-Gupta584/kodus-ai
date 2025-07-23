@@ -13,8 +13,7 @@ import {
     CodeSuggestion,
     ClusteringType,
 } from '@/config/types/general/codeReview.type';
-
-import { StringOutputParser } from '@langchain/core/output_parsers';
+import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { prompt_repeated_suggestion_clustering_system } from '@/shared/utils/langchainCommon/prompts/repeatedCodeReviewSuggestionClustering';
 import { LLMResponseProcessor } from './utils/transforms/llmResponseProcessor.transform';
@@ -881,7 +880,7 @@ ${reviewOptionsMarkdown}
                     ];
                 },
                 llm,
-                new StringOutputParser(),
+                new CustomStringOutputParser(),
             ]);
 
             return chain;
