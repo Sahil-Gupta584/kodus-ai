@@ -10,6 +10,7 @@ export interface IKodyRulesService extends IKodyRulesRepository {
     createOrUpdate(
         organizationAndTeamData: OrganizationAndTeamData,
         kodyRule: CreateKodyRuleDto,
+        userId?: string,
     ): Promise<Partial<IKodyRule> | IKodyRule | null>;
 
     getLibraryKodyRules(filters?: KodyRuleFilters): Promise<any | null>;

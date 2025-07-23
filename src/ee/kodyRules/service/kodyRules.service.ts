@@ -22,12 +22,17 @@ import {
     LibraryKodyRule,
 } from '@/config/types/kodyRules.type';
 import { ProgrammingLanguage } from '@/shared/domain/enums/programming-language.enum';
+import { CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN, ICodeReviewSettingsLogService } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 
 @Injectable()
 export class KodyRulesService implements IKodyRulesService {
     constructor(
         @Inject(KODY_RULES_REPOSITORY_TOKEN)
         private readonly kodyRulesRepository: IKodyRulesRepository,
+
+        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
+        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
     ) {}
 
     getNativeCollection() {
@@ -98,6 +103,7 @@ export class KodyRulesService implements IKodyRulesService {
     async createOrUpdate(
         organizationAndTeamData: OrganizationAndTeamData,
         kodyRule: CreateKodyRuleDto,
+        userId: string,
     ): Promise<Partial<IKodyRule> | IKodyRule | null> {
         const existing = await this.findByOrganizationId(
             organizationAndTeamData.organizationId,
@@ -160,6 +166,17 @@ export class KodyRulesService implements IKodyRulesService {
             if (!updatedKodyRules) {
                 throw new Error('Could not add new rule');
             }
+
+            this.codeReviewSettingsLogService.registerKodyRulesLog({
+                organizationAndTeamData,
+                userId,
+                actionType: ActionType.CREATE,
+                repositoryId: newRule.repositoryId,
+                repositoryName: 'Global',
+                oldRule: undefined,
+                newRule: newRule,
+                ruleTitle: newRule.title,
+            });
 
             return updatedKodyRules.rules.find(
                 (rule) => rule.uuid === newRule.uuid,
