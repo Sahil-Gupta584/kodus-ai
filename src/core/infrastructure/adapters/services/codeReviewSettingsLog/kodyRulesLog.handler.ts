@@ -218,7 +218,11 @@ export class KodyRulesLogHandler {
                 );
 
             case ActionType.CLONE:
-                return this.generateCloneChangedData(newRule!, userInfo);
+                return this.generateCloneChangedData(
+                    newRule!,
+                    userInfo,
+                    repository,
+                );
 
             default:
                 return [];
@@ -368,9 +372,12 @@ export class KodyRulesLogHandler {
     private generateCloneChangedData(
         newRule: Partial<IKodyRule>,
         userInfo: any,
+        repository?: { id: string; name: string },
     ): ChangedDataToExport[] {
         const isGlobal = newRule.repositoryId === 'global';
-        const levelText = isGlobal ? 'global' : 'repository';
+        const levelText = isGlobal
+        ? 'global level'
+        : `repository ${repository?.name}`;
 
         return [
             {
@@ -385,7 +392,7 @@ export class KodyRulesLogHandler {
                     origin: newRule.origin,
                 },
                 fieldConfig: { valueType: 'kody_rule_action' },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} cloned Kody Rule "${newRule.title}" from library to ${levelText} level`,
+                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} cloned Kody Rule "${newRule.title}" from library to ${levelText}`,
             },
         ];
     }
