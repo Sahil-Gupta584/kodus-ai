@@ -26,6 +26,13 @@ export interface RepositoriesLogParams {
     removedRepositories?: IRepository[];
 }
 
+export interface RepositoryCopyLogParams {
+    organizationAndTeamData: OrganizationAndTeamData;
+    userId: string;
+    sourceRepository: IRepository | { id: string; name: string };
+    targetRepository: IRepository;
+}
+
 @Injectable()
 export class RepositoriesLogHandler {
     constructor(
@@ -87,6 +94,68 @@ export class RepositoriesLogHandler {
             },
             changedData: allChangedData,
         });
+    }
+
+    async logRepositoryCopyAction(params: RepositoryCopyLogParams): Promise<void> {
+        const {
+            organizationAndTeamData,
+            userId,
+            sourceRepository,
+            targetRepository,
+        } = params;
+
+        const userInfo = await this.getUserInfo(userId);
+
+        const changedData = this.generateCopyChangedData(
+            sourceRepository,
+            targetRepository,
+            userInfo,
+        );
+
+        await this.codeReviewSettingsLogRepository.create({
+            organizationId: organizationAndTeamData.organizationId,
+            teamId: organizationAndTeamData.teamId,
+            action: ActionType.ADD, // ADD porque está adicionando configuração individual para o target
+            userInfo,
+            changeMetadata: {
+                configLevel: ConfigLevel.REPOSITORY, // Agora é level repository pois o target terá configs próprias
+                repository: {
+                    id: targetRepository.id,
+                    name: targetRepository.name,
+                },
+            },
+            changedData,
+        });
+    }
+
+    private generateCopyChangedData(
+        sourceRepository: IRepository | { id: string; name: string },
+        targetRepository: IRepository,
+        userInfo: any,
+    ): ChangedDataToExport[] {
+        const isSourceGlobal = sourceRepository.id === 'global';
+        const sourceName = isSourceGlobal ? 'Global Settings' : sourceRepository.name;
+
+        return [
+            {
+                key: 'repositories.copy',
+                displayName: 'Repository Configuration Copied',
+                previousValue: null,
+                currentValue: {
+                    sourceRepository: {
+                        id: sourceRepository.id,
+                        name: sourceName,
+                        isGlobal: isSourceGlobal,
+                    },
+                    targetRepository: {
+                        id: targetRepository.id,
+                        name: targetRepository.name,
+                    },
+                },
+                fieldConfig: { valueType: 'repository_copy_action' },
+                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} copied code review configuration from ${isSourceGlobal ? 'Global Settings' : `"${sourceName}"`} to repository "${targetRepository.name}"`,
+            },
+        ];
     }
 
     private generateAddChangedData(

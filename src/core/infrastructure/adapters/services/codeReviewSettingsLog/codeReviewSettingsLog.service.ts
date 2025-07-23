@@ -14,6 +14,7 @@ import {
 import {
     RepositoriesLogHandler,
     RepositoriesLogParams,
+    RepositoryCopyLogParams,
 } from './repositoriesLog.handler';
 
 export type ChangedDataToExport = {
@@ -70,5 +71,11 @@ export class CodeReviewSettingsLogService
         params: RepositoriesLogParams,
     ): Promise<void> {
         await this.repositoriesLogHandler.logRepositoriesAction(params);
+    }
+
+    public async registerRepositoryCopyLog(
+        params: RepositoryCopyLogParams,
+    ): Promise<void> {
+        await this.repositoriesLogHandler.logRepositoryCopyAction(params);
     }
 }
