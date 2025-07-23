@@ -30,17 +30,11 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
     private collection: Collection | null = null;
 
     constructor(config: StorageAdapterConfig) {
-        this.config = {
-            ...config,
-            maxItems: config.maxItems ?? 1000,
-            enableCompression: config.enableCompression ?? true,
-            cleanupInterval: config.cleanupInterval ?? 300000,
-            timeout: config.timeout ?? 10000,
-            retries: config.retries ?? 3,
-        };
+        this.config = config;
     }
 
     async initialize(): Promise<void> {
+        debugger;
         if (this.isInitialized) return;
 
         try {
@@ -53,17 +47,17 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
             const options = this.config.options || {};
 
             this.client = new mongoClient(connectionString, {
-                maxPoolSize: (options.maxPoolSize as number) || 10,
+                maxPoolSize: (options.maxPoolSize as number) ?? 10,
                 serverSelectionTimeoutMS:
-                    (options.serverSelectionTimeoutMS as number) || 5000,
-                connectTimeoutMS: (options.connectTimeoutMS as number) || 10000,
-                socketTimeoutMS: (options.socketTimeoutMS as number) || 45000,
+                    (options.serverSelectionTimeoutMS as number) ?? 5000,
+                connectTimeoutMS: (options.connectTimeoutMS as number) ?? 10000,
+                socketTimeoutMS: (options.socketTimeoutMS as number) ?? 45000,
             });
 
             await this.client.connect();
 
-            const database = (options.database as string) || 'kodus';
-            const collection = (options.collection as string) || 'storage';
+            const database = (options.database as string) ?? 'kodus';
+            const collection = (options.collection as string) ?? 'storage';
 
             this.db = this.client.db(database);
             this.collection = this.db.collection(collection);

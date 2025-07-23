@@ -29,6 +29,75 @@ export interface StorageAdapterConfig extends BaseStorageConfig {
 }
 
 /**
+ * Default storage configuration
+ */
+export interface StorageDefaultConfig {
+    maxItems: number;
+    enableCompression: boolean;
+    cleanupInterval: number;
+    timeout: number;
+    retries: number;
+    enableObservability: boolean;
+    enableHealthChecks: boolean;
+    enableMetrics: boolean;
+    options?: Record<string, unknown>;
+}
+
+/**
+ * Default configurations for each storage type
+ */
+export const STORAGE_DEFAULTS: Record<StorageType, StorageDefaultConfig> = {
+    memory: {
+        maxItems: 1000,
+        enableCompression: true,
+        cleanupInterval: 300000,
+        timeout: 5000,
+        retries: 3,
+        enableObservability: true,
+        enableHealthChecks: true,
+        enableMetrics: true,
+    },
+    mongodb: {
+        maxItems: 1000,
+        enableCompression: true,
+        cleanupInterval: 300000,
+        timeout: 10000,
+        retries: 3,
+        enableObservability: true,
+        enableHealthChecks: true,
+        enableMetrics: true,
+        options: {
+            maxPoolSize: 10,
+            serverSelectionTimeoutMS: 5000,
+            connectTimeoutMS: 10000,
+            socketTimeoutMS: 45000,
+            database: 'kodus',
+            collection: 'storage',
+        },
+    },
+    redis: {
+        maxItems: 1000,
+        enableCompression: true,
+        cleanupInterval: 300000,
+        timeout: 5000,
+        retries: 3,
+        enableObservability: true,
+        enableHealthChecks: true,
+        enableMetrics: true,
+    },
+    temporal: {
+        maxItems: 1000,
+        enableCompression: true,
+        cleanupInterval: 300000,
+        timeout: 5000,
+        retries: 3,
+        enableObservability: true,
+        enableHealthChecks: true,
+        enableMetrics: true,
+    },
+};
+
+/**
  * Storage adapter factory
  * Unified factory for creating storage adapters
  */
@@ -51,16 +120,28 @@ export class StorageAdapterFactory {
             return this.adapters.get(adapterKey) as T;
         }
 
+        // Merge with defaults
+        const defaults =
+            STORAGE_DEFAULTS[config.type] || STORAGE_DEFAULTS.memory;
+        const mergedConfig = {
+            ...defaults,
+            ...config,
+            options: {
+                ...defaults.options,
+                ...config.options,
+            },
+        };
+
         let adapter: BaseStorage<BaseStorageItem>;
 
         try {
             switch (config.type) {
                 case 'memory':
-                    adapter = new InMemoryStorageAdapter(config);
+                    adapter = new InMemoryStorageAdapter(mergedConfig);
                     break;
 
                 case 'mongodb':
-                    adapter = new MongoDBStorageAdapter(config);
+                    adapter = new MongoDBStorageAdapter(mergedConfig);
                     break;
 
                 case 'redis':
@@ -68,7 +149,7 @@ export class StorageAdapterFactory {
                         'Redis adapter not yet implemented, using memory',
                         { type: 'redis' },
                     );
-                    adapter = new InMemoryStorageAdapter(config);
+                    adapter = new InMemoryStorageAdapter(mergedConfig);
                     break;
 
                 case 'temporal':
@@ -76,7 +157,7 @@ export class StorageAdapterFactory {
                         'Temporal adapter not yet implemented, using memory',
                         { type: 'temporal' },
                     );
-                    adapter = new InMemoryStorageAdapter(config);
+                    adapter = new InMemoryStorageAdapter(mergedConfig);
                     break;
 
                 default:

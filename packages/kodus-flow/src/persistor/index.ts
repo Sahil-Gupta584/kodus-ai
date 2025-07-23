@@ -85,12 +85,6 @@ export type {
     TemporalPersistorConfig,
 } from './config.js';
 
-export {
-    createPersistorConfig,
-    validatePersistorConfig,
-    defaultPersistorConfigs,
-} from './config.js';
-
 // Export factory
 export {
     createPersistorFromConfig,

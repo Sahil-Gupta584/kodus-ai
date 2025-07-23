@@ -630,6 +630,7 @@ export class MultiKernelHandler {
             }>;
         };
     }> {
+        debugger;
         if (!this.isInitialized()) {
             // Safe to access these without locks as they're read-only
             const eventCountsCopy = await this.eventCountsMutex.withLock(
@@ -675,7 +676,7 @@ export class MultiKernelHandler {
             this.loopProtectionMutex.withLock(async () => {
                 const now = Date.now();
                 const cutoffTime = now - this.loopProtection.windowSize;
-                const recentEvents = this.loopProtection.eventHistory
+                const recentEvents = (this.loopProtection.eventHistory || [])
                     .filter((e) => e.timestamp > cutoffTime)
                     .map((e) => ({ ...e })); // Create copies
 
@@ -921,6 +922,7 @@ export class MultiKernelHandler {
             correlationId?: string;
         } = {},
     ): Promise<TResponse> {
+        debugger;
         this.ensureInitialized();
 
         const correlationId =
@@ -969,6 +971,7 @@ export class MultiKernelHandler {
         });
 
         return new Promise<TResponse>((resolve, reject) => {
+            debugger;
             let responseReceived = false;
             let timeoutId: NodeJS.Timeout | null = null;
 
@@ -1030,6 +1033,7 @@ export class MultiKernelHandler {
 
             // ✅ Register response handler using existing patterns
             const responseHandler = (event: AnyEvent) => {
+                debugger;
                 // ✅ ADD: Log detalhado para debug
                 this.logger.info('📨 RESPONSE HANDLER EXECUTED', {
                     eventId: event.id,
@@ -1169,10 +1173,12 @@ export class MultiKernelHandler {
                     responseKernelId,
                     responseEventType,
                     correlationId,
-                    availableKernels:
-                        this.multiKernelManager
-                            ?.getStatus()
-                            ?.kernels?.map((k) => k.kernelId) || [],
+                    availableKernels: (() => {
+                        const status = this.multiKernelManager?.getStatus();
+                        return Array.isArray(status?.kernels)
+                            ? status.kernels.map((k) => k.kernelId)
+                            : [];
+                    })(),
                 });
                 cleanup();
                 reject(error);
@@ -1293,6 +1299,7 @@ export class MultiKernelHandler {
         input: unknown,
         options?: { timeout?: number; correlationId?: string },
     ): Promise<unknown> {
+        debugger;
         return this.request(
             'tool.execute.request',
             'tool.execute.response',

@@ -271,14 +271,30 @@ export function validateWithZod<T>(
     if (result.success) {
         return { success: true, data: result.data };
     } else {
-        const message = (
-            result.error as unknown as {
-                errors: Array<{ path: string[]; message: string }>;
-            }
-        ).errors
-            .map((err) => `${err.path.join('.')}: ${err.message}`)
-            .join(', ');
-        return { success: false, error: message };
+        // ✅ MELHORADO: Tratamento de erro mais robusto
+        try {
+            const errors = (
+                result.error as unknown as {
+                    errors?: Array<{ path: string[]; message: string }>;
+                }
+            ).errors;
+
+            const message =
+                Array.isArray(errors) && errors.length > 0
+                    ? errors
+                          .map((err) => `${err.path.join('.')}: ${err.message}`)
+                          .join(', ')
+                    : result.error?.message ||
+                      'Validation failed with unknown error structure';
+
+            return { success: false, error: message };
+        } catch {
+            // ✅ FALLBACK: Se não conseguir extrair erros, usar mensagem genérica
+            return {
+                success: false,
+                error: `Validation failed: ${result.error?.message || 'Unknown validation error'}`,
+            };
+        }
     }
 }
 
@@ -295,13 +311,28 @@ export function validateToolInput<T>(
     if (result.success) {
         return result.data;
     } else {
-        const message = (
-            result.error as unknown as {
-                errors: Array<{ path: string[]; message: string }>;
-            }
-        ).errors
-            .map((err) => `${err.path.join('.')}: ${err.message}`)
-            .join(', ');
-        throw new Error(`Tool input validation failed: ${message}`);
+        // ✅ MELHORADO: Tratamento de erro mais robusto
+        try {
+            const errors = (
+                result.error as unknown as {
+                    errors?: Array<{ path: string[]; message: string }>;
+                }
+            ).errors;
+
+            const message =
+                Array.isArray(errors) && errors.length > 0
+                    ? errors
+                          .map((err) => `${err.path.join('.')}: ${err.message}`)
+                          .join(', ')
+                    : result.error?.message ||
+                      'Tool input validation failed with unknown error structure';
+
+            throw new Error(`Tool input validation failed: ${message}`);
+        } catch {
+            // ✅ FALLBACK: Se não conseguir extrair erros, usar mensagem genérica
+            throw new Error(
+                `Tool input validation failed: ${result.error?.message || 'Unknown validation error'}`,
+            );
+        }
     }
 }

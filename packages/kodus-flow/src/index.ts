@@ -86,6 +86,22 @@ export type { Thread } from './core/types/common-types.js';
 
 // ✅ ADAPTERS
 export { createMCPAdapter } from './adapters/index.js';
+export type {
+    MCPServerConfig,
+    MCPAdapterConfig,
+    MCPAdapter,
+    MCPTool,
+} from './adapters/mcp/types.js';
+
+// ✅ PERSISTOR TYPES
+export type {
+    PersistorType,
+    PersistorConfig,
+    MemoryPersistorConfig,
+    MongoDBPersistorConfig,
+    RedisPersistorConfig,
+    TemporalPersistorConfig,
+} from './persistor/config.js';
 
 // ✅ CONFIGURAÇÃO AUTOMÁTICA
 export const config = {

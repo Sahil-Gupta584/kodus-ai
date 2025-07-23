@@ -13,6 +13,32 @@ import { PlanAndExecutePlanner } from './strategies/plan-execute-planner.js';
 import { Thread } from '../../core/types/common-types.js';
 import { AgentIdentity } from '@/core/types/agent-definition.js';
 
+// Import comprehensive action types from agent-types
+import type {
+    AgentAction as CoreAgentAction,
+    AgentActionType as CoreAgentActionType,
+    FinalAnswerAction as CoreFinalAnswerAction,
+    ToolCallAction as CoreToolCallAction,
+    ParallelToolsAction,
+    SequentialToolsAction,
+    ConditionalToolsAction,
+    MixedToolsAction,
+    DependencyToolsAction,
+    NeedMoreInfoAction,
+    DelegateToAgentAction,
+} from '../../core/types/agent-types.js';
+
+// Import type guards from agent-types for consistency
+import {
+    isToolCallAction as coreIsToolCallAction,
+    isFinalAnswerAction as coreIsFinalAnswerAction,
+    isParallelToolsAction,
+    isSequentialToolsAction,
+    isConditionalToolsAction,
+    isMixedToolsAction,
+    isDependencyToolsAction,
+} from '../../core/types/agent-types.js';
+
 export type PlannerType = 'react' | 'tot' | 'reflexion' | 'plan-execute';
 
 export interface Planner<
@@ -37,24 +63,27 @@ export interface AgentThoughtMetadata {
 
 export interface AgentThought {
     reasoning: string;
-    action?: AgentAction;
+    action: AgentAction; // Make action required to fix compatibility
     confidence?: number;
     metadata?: AgentThoughtMetadata;
 }
 
-// Discriminated union types for better type safety
-export type AgentAction = ToolCallAction | FinalAnswerAction;
+// Re-export core action types for planner compatibility
+export type AgentAction = CoreAgentAction;
+export type AgentActionType = CoreAgentActionType;
 
-export interface ToolCallAction {
-    type: 'tool_call';
-    tool: string;
-    arguments: Record<string, unknown>;
-}
-
-export interface FinalAnswerAction {
-    type: 'final_answer';
-    content: string;
-}
+// Re-export specific action interfaces
+export type FinalAnswerAction = CoreFinalAnswerAction;
+export type ToolCallAction = CoreToolCallAction;
+export type {
+    ParallelToolsAction,
+    SequentialToolsAction,
+    ConditionalToolsAction,
+    MixedToolsAction,
+    DependencyToolsAction,
+    NeedMoreInfoAction,
+    DelegateToAgentAction,
+};
 
 // Specific metadata types for action results
 export interface ActionResultMetadata {
@@ -66,7 +95,22 @@ export interface ActionResultMetadata {
     [key: string]: unknown;
 }
 
-export type ActionResult = ToolResult | FinalAnswerResult | ErrorResult;
+export type ActionResult =
+    | ToolResult
+    | FinalAnswerResult
+    | ErrorResult
+    | ToolResultsArray;
+
+// Tool results array for multiple tool execution
+export interface ToolResultsArray {
+    type: 'tool_results';
+    content: Array<{
+        toolName: string;
+        result?: unknown;
+        error?: string;
+    }>;
+    metadata?: ActionResultMetadata;
+}
 
 export interface ToolResult {
     type: 'tool_result';
@@ -222,7 +266,7 @@ export function generateExecutionHints(
     if (lastSuccessfulEntry) {
         hints.lastSuccessfulAction = `${lastSuccessfulEntry.action.type}: ${
             isToolCallAction(lastSuccessfulEntry.action)
-                ? lastSuccessfulEntry.action.tool
+                ? lastSuccessfulEntry.action.toolName
                 : 'completed successfully'
         }`;
     }
@@ -302,7 +346,7 @@ export function generateLearningContext(
     const toolUsage = new Map<string, { total: number; successful: number }>();
     history.forEach((entry) => {
         if (entry.action.type === 'tool_call') {
-            const toolName = (entry.action as ToolCallAction).tool;
+            const toolName = (entry.action as ToolCallAction).toolName;
             const current = toolUsage.get(toolName) || {
                 total: 0,
                 successful: 0,
@@ -376,7 +420,7 @@ export function generateLearningContext(
 //         const toolUsageFromHistory = history.filter(
 //             (entry) =>
 //                 entry.action.type === 'tool_call' &&
-//                 (entry.action as ToolCallAction).tool === tool.name,
+//                 (entry.action as ToolCallAction).toolName === tool.name,
 //         );
 
 //         const baseEnhancedTool: EnhancedToolInfo = {
@@ -502,18 +546,16 @@ export interface AgentExecutionResult {
     metadata?: ExecutionResultMetadata;
 }
 
-// Type guards for discriminated unions
-export function isToolCallAction(
-    action: AgentAction,
-): action is ToolCallAction {
-    return action.type === 'tool_call';
-}
-
-export function isFinalAnswerAction(
-    action: AgentAction,
-): action is FinalAnswerAction {
-    return action.type === 'final_answer';
-}
+// Re-export type guards for planner compatibility
+export const isToolCallAction = coreIsToolCallAction;
+export const isFinalAnswerAction = coreIsFinalAnswerAction;
+export {
+    isParallelToolsAction,
+    isSequentialToolsAction,
+    isConditionalToolsAction,
+    isMixedToolsAction,
+    isDependencyToolsAction,
+};
 
 export function isToolResult(result: ActionResult): result is ToolResult {
     return result.type === 'tool_result';
@@ -527,6 +569,40 @@ export function isFinalAnswerResult(
 
 export function isErrorResult(result: ActionResult): result is ErrorResult {
     return result.type === 'error';
+}
+
+export function isToolResultsArray(
+    result: ActionResult,
+): result is ToolResultsArray {
+    return result.type === 'tool_results';
+}
+
+// ===== ACTION BUILDERS =====
+
+/**
+ * Create a proper ToolCallAction
+ */
+export function createToolCallAction(
+    toolName: string,
+    input: unknown,
+    reasoning?: string,
+): ToolCallAction {
+    return {
+        type: 'tool_call',
+        toolName,
+        input,
+        reasoning,
+    };
+}
+
+/**
+ * Create a proper FinalAnswerAction
+ */
+export function createFinalAnswerAction(content: string): FinalAnswerAction {
+    return {
+        type: 'final_answer',
+        content,
+    };
 }
 
 // Helper function to get error from any result type
@@ -543,6 +619,9 @@ export function getResultContent(result: ActionResult): unknown {
         return result.content;
     }
     if (isFinalAnswerResult(result)) {
+        return result.content;
+    }
+    if (isToolResultsArray(result)) {
         return result.content;
     }
     return undefined;

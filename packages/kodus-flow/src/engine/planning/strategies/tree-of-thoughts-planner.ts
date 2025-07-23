@@ -18,7 +18,12 @@ import type {
     ResultAnalysis,
     PlannerExecutionContext,
 } from '../planner-factory.js';
-import { isErrorResult, getResultError } from '../planner-factory.js';
+import {
+    isErrorResult,
+    getResultError,
+    createToolCallAction,
+    createFinalAnswerAction,
+} from '../planner-factory.js';
 
 export interface ThoughtNode {
     id: string;
@@ -214,17 +219,14 @@ Approach 3: [reasoning] | Action: [action_type:tool_name:arguments] | Rationale:
         const parts = actionString.split(':');
 
         if (parts.length >= 2 && parts[0] === 'tool_call') {
-            return {
-                type: 'tool_call',
-                tool: parts[1] || 'unknown',
-                arguments: parts[2] ? this.parseArguments(parts[2]) : {},
-            };
+            return createToolCallAction(
+                parts[1] || 'unknown',
+                parts[2] ? this.parseArguments(parts[2]) : {},
+                'Tool call action',
+            );
         }
 
-        return {
-            type: 'final_answer',
-            content: actionString || 'Explore this approach',
-        };
+        return createFinalAnswerAction(actionString || 'Explore this approach');
     }
 
     private parseArguments(argString: string): Record<string, unknown> {
@@ -294,11 +296,11 @@ Approach 3: [reasoning] | Action: [action_type:tool_name:arguments] | Rationale:
             thoughts.push({
                 id: 'fallback-2',
                 content: 'Tool-based approach',
-                action: {
-                    type: 'tool_call',
-                    tool: availableToolNames[0] || 'unknown',
-                    arguments: { query: input },
-                },
+                action: createToolCallAction(
+                    availableToolNames[0] || 'unknown',
+                    { query: input },
+                    'Tool-based approach',
+                ),
                 depth: 1,
                 score: 0.7,
                 parentId: 'root',

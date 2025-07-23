@@ -179,10 +179,10 @@ export class KernelHandler implements KernelHandlerInterface {
                 failureThreshold:
                     loopConfig.circuitBreakerConfig?.failureThreshold ?? 5,
                 recoveryTimeout:
-                    loopConfig.circuitBreakerConfig?.resetTimeout ?? 30000,
+                    loopConfig.circuitBreakerConfig?.resetTimeout ?? 150000, // ✅ 2.5 minutes
                 successThreshold: 3,
                 operationTimeout:
-                    loopConfig.circuitBreakerConfig?.timeout ?? 10000,
+                    loopConfig.circuitBreakerConfig?.timeout ?? 60000, // ✅ 60s timeout
             }),
         };
 
@@ -720,8 +720,8 @@ export function createKernelHandlerWithLoopProtection(
         windowSize: 5000,
         circuitBreakerConfig: {
             failureThreshold: 5,
-            timeout: 10000,
-            resetTimeout: 30000,
+            timeout: 60000, // ✅ 60s timeout
+            resetTimeout: 150000, // ✅ 2.5 minutes
         },
     };
 

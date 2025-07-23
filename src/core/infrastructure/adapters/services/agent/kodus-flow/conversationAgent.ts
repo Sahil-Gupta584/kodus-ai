@@ -4,13 +4,16 @@ import {
     createMCPAdapter,
     createOrchestration,
     Thread,
+    MCPServerConfig,
+    PersistorType,
+    MongoDBPersistorConfig,
 } from '@kodus/flow';
 import { LLMProviderService } from '../../llmProviders/llmProvider.service';
 import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { LLMModelProvider } from '../../llmProviders/llmModelProvider.helper';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
-import { MCPServerConfig } from '@kodus/flow/dist/adapters/mcp';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ConversationAgentProvider {
@@ -21,6 +24,8 @@ export class ConversationAgentProvider {
     private isInitialized = false;
 
     constructor(
+        private configService: ConfigService,
+
         @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
@@ -33,7 +38,7 @@ export class ConversationAgentProvider {
         const llm = this.llmProviderService.getLLMProvider({
             model: LLMModelProvider.OPENAI_GPT_4O_MINI,
             temperature: 0.1,
-            maxTokens: 500,
+            maxTokens: 1500,
         });
 
         // ✅ WRAPPER para compatibilizar com nossa interface
@@ -99,10 +104,23 @@ export class ConversationAgentProvider {
     }
 
     private createOrchestration() {
+        const persistorConfig = {
+            type: 'mongodb' as any,
+            connectionString: this.configService.get('mongoDB.uri'),
+            database: this.configService.get('mongoDB.database'),
+            collection: 'kodus-snapshots',
+        };
+
+        console.log(
+            'Persistor Config:',
+            JSON.stringify(persistorConfig, null, 2),
+        );
+
         this.orchestration = createOrchestration({
-            tenantId: 'conversation-agent',
+            tenantId: 'kodus-agent-conversation',
             llmAdapter: this.llmAdapter,
             mcpAdapter: this.mcpAdapter,
+            // persistorConfig,
         });
     }
 
@@ -127,7 +145,7 @@ export class ConversationAgentProvider {
         );
         await this.orchestration.createAgent({
             name: 'conversational-agent',
-            planner: 'react',
+            planner: 'plan-execute',
             identity: {
                 description:
                     'Agente de conversação para interações com usuários.',

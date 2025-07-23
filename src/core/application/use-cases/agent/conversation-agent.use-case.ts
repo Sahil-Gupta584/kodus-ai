@@ -1,8 +1,8 @@
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { Injectable } from '@nestjs/common';
-import { ConversationAgentProvider } from '@/core/infrastructure/adapters/services/agent/agents/conversationAgent';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { Thread } from '@kodus/flow';
+import { ConversationAgentProvider } from '@/core/infrastructure/adapters/services/agent/kodus-flow/conversationAgent';
 
 @Injectable()
 export class ConversationAgentUseCase implements IUseCase {

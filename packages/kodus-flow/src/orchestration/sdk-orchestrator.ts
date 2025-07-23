@@ -45,6 +45,7 @@ import { safeJsonSchemaToZod } from '../core/utils/json-schema-to-zod.js';
 import { AgentIdentity } from '@/core/types/agent-definition.js';
 import { SessionId, UserContext } from '@/core/types/base-types.js';
 import { Thread } from '@/core/types/common-types.js';
+import type { PersistorType } from '../persistor/config.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🏗️ CLEAN ORCHESTRATOR INTERFACES
@@ -70,7 +71,7 @@ export interface OrchestrationConfig {
 
     // Persistence configuration
     persistorConfig?: {
-        type: 'memory' | 'mongodb' | 'redis' | 'temporal';
+        type: PersistorType;
         connectionString?: string;
         database?: string;
         collection?: string;
@@ -166,8 +167,8 @@ const orchestrator = new SDKOrchestrator({
             mcpAdapter: config.mcpAdapter || null,
             enableObservability: config.enableObservability ?? true,
             defaultTimeout: config.defaultTimeout || 60000, // ✅ UNIFIED: 60s timeout
-            defaultPlanner: config.defaultPlanner || 'react',
-            defaultMaxIterations: config.defaultMaxIterations || 1,
+            defaultPlanner: config.defaultPlanner || 'plan-execute',
+            defaultMaxIterations: config.defaultMaxIterations || 15,
             persistorConfig: config.persistorConfig || {
                 type: 'memory',
                 maxSnapshots: 1000,
@@ -753,23 +754,51 @@ const orchestrator = new SDKOrchestrator({
             console.log('mcpTools', mcpTools);
 
             for (const mcpTool of mcpTools) {
+                // ✅ IMPROVED: Better schema conversion with validation
                 const zodSchema = safeJsonSchemaToZod(mcpTool.inputSchema);
 
                 this.logger.debug('Processing MCP tool', {
                     name: mcpTool.name,
                     description: mcpTool.description,
+                    hasInputSchema: !!mcpTool.inputSchema,
+                    schemaType: mcpTool.inputSchema
+                        ? typeof mcpTool.inputSchema
+                        : 'none',
+                    // ✅ ADDED: Log schema details for debugging
+                    schemaProperties:
+                        mcpTool.inputSchema &&
+                        typeof mcpTool.inputSchema === 'object'
+                            ? Object.keys(
+                                  mcpTool.inputSchema as Record<
+                                      string,
+                                      unknown
+                                  >,
+                              )
+                            : [],
+                    requiredFields:
+                        mcpTool.inputSchema &&
+                        typeof mcpTool.inputSchema === 'object'
+                            ? (mcpTool.inputSchema as Record<string, unknown>)
+                                  .required
+                            : [],
                 });
 
-                // Usar o schema original do MCP (JSON Schema) diretamente
+                // ✅ IMPROVED: Preserve original JSON Schema for LLMs
                 this.createTool({
                     name: mcpTool.name,
                     description:
                         mcpTool.description || `MCP Tool: ${mcpTool.name}`,
-                    inputSchema: zodSchema, // Manter schema original
+                    inputSchema: zodSchema,
                     execute: async (input: unknown) => {
                         this.logger.debug('Executing MCP tool', {
                             toolName: mcpTool.name,
                             input,
+                            inputKeys:
+                                input && typeof input === 'object'
+                                    ? Object.keys(
+                                          input as Record<string, unknown>,
+                                      )
+                                    : [],
                         });
 
                         const result = await this.mcpAdapter!.executeTool(

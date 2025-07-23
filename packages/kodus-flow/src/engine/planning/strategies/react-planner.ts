@@ -21,15 +21,22 @@ import {
     getResultError,
     isToolResult,
     isFinalAnswerResult,
+    createToolCallAction,
 } from '../planner-factory.js';
 // ReAct schemas removed - now using PlanningResult from DirectLLMAdapter
 // import { AgentContext } from '@/core/types/agent-types.js';
 import { Thread } from '../../../core/types/common-types.js';
 import { ToolMetadataForLLM } from '@/core/types/tool-types.js';
 import type { ToolCallAction } from '../planner-factory.js';
+// import {
+//     createParameterExtractor,
+//     type ExtractionContext,
+//     type ParameterExtractionResult,
+// } from '../../../core/utils/parameter-extraction.js';
 
 export class ReActPlanner implements Planner {
     private logger = createLogger('react-planner');
+    // private parameterExtractor = createParameterExtractor();
 
     /**
      * Confidence Score Guidelines:
@@ -93,7 +100,7 @@ export class ReActPlanner implements Planner {
                 iteration: context.iterations,
                 lastTool:
                     lastAction?.type === 'tool_call'
-                        ? (lastAction as ToolCallAction).tool
+                        ? (lastAction as ToolCallAction).toolName
                         : undefined,
                 availableTools: this.getAvailableToolsForContext(
                     context.plannerMetadata.thread!,
@@ -116,10 +123,11 @@ export class ReActPlanner implements Planner {
         input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
+        debugger;
+
         // Cache resources once at the beginning
         const thread = context.plannerMetadata.thread!;
         const availableTools = this.getAvailableToolsForContext(thread);
-        const availableToolNames = availableTools.map((tool) => tool.name);
 
         // ✅ SMART: Handle no tools available - but can still think!
         if (availableTools.length === 0) {
@@ -147,6 +155,8 @@ Let me provide what I can based on available information and logical reasoning.`
             };
         }
 
+        debugger;
+
         const executionRuntime = this.getExecutionRuntime(thread);
         const agentIdentity = executionRuntime?.getAgentIdentity();
         const userContext = executionRuntime?.getUserContext();
@@ -160,6 +170,20 @@ Let me provide what I can based on available information and logical reasoning.`
         // ✅ Build enhanced tools context for ReAct
         const toolsContext = this.buildToolsContextForReAct(availableTools);
 
+        // 🐛 DEBUG LOG: Tools available and context
+        this.logger.info('🔍 [DEBUG] ReAct Tools Available', {
+            toolCount: availableTools.length,
+            toolNames: availableTools.map((t) => t.name),
+            hasBatchTools: availableTools.some(
+                (t) =>
+                    t.name.includes('get_kody_rules') ||
+                    t.name.includes('all') ||
+                    t.name.includes('bulk') ||
+                    t.name.includes('list'),
+            ),
+            toolsContextLength: toolsContext.length,
+        });
+
         // ✅ Build proper agent_scratchpad for ReAct format
         const agentScratchpad = this.buildAgentScratchpad(context);
 
@@ -170,12 +194,27 @@ Let me provide what I can based on available information and logical reasoning.`
 - Expertise: ${agentIdentity?.expertise?.join(', ') || 'General knowledge'}`
             : '';
 
-        // ✅ Use createPlan with proper context engineering
+        debugger;
+        // ✅ Use createPlan with enhanced context engineering
         if (!this.llmAdapter.createPlan) {
             throw new Error(
                 'LLM adapter must support createPlan for ReAct planner',
             );
         }
+
+        // 🐛 DEBUG LOG: Prompt being sent to LLM
+        this.logger.info('🔍 [DEBUG] ReAct Sending Plan to LLM', {
+            input: input.substring(0, 200),
+            availableToolsCount: availableTools.length,
+            hasToolsContext: !!toolsContext,
+            hasScratchpad: !!agentScratchpad,
+            scratchpadLength: agentScratchpad.length,
+            promptIncludes: {
+                batchInstructions: true,
+                efficiencyCheck: true,
+                toolValidation: true,
+            },
+        });
 
         const plan = await this.llmAdapter.createPlan(input, 'react', {
             availableTools: availableTools,
@@ -185,9 +224,9 @@ Let me provide what I can based on available information and logical reasoning.`
             identityContext,
             userContext,
             memoryContext, // ✅ ADD MEMORY CONTEXT
-            // ✅ BEST PRACTICE: Analysis happens in think phase
+            // ✅ ENHANCED: Added parallel execution and efficiency guidance
             sequentialInstructions: `
-You are a ReAct agent. Follow this intelligent process:
+You are an intelligent ReAct agent. Follow this strategic process:
 
 1. ANALYZE the current situation:
    - Review the original question/goal
@@ -195,44 +234,90 @@ You are a ReAct agent. Follow this intelligent process:
    - Analyze the results from previous actions
    - Determine if the goal has been FULLY achieved
 
-2. DECIDE your approach:
-   - If goal is complete → Final Answer with comprehensive response
-   - If partial progress → Continue with next logical step
-   - If error occurred → Try alternative approach
-   - If need more info → Use appropriate tool
+2. 🚨 CRITICAL EFFICIENCY CHECK - BEFORE ANY ACTION:
+   Ask yourself:
+   - Am I about to iterate through multiple items individually?
+   - Is there a tool that can get ALL the data I need in ONE call?
+   - Can I achieve the same result with fewer, broader operations?
 
-3. BE SMART about multi-part goals:
-   - "Do X and Y" requires BOTH X and Y to be complete
+   EFFICIENCY PATTERNS TO RECOGNIZE:
+   - Tools with "all", "list", "bulk", "batch" in the name often handle multiple items
+   - Tools with "summary", "overview", "aggregate" provide comprehensive data
+   - Tools that mention "multiple", "collection", or "set" in their description
+   - If you need data about N items, look for a tool that returns N items at once
+
+3. TOOL SELECTION STRATEGY:
+   Evaluate tools in this order:
+   a) Comprehensive tools that return complete datasets
+   b) Aggregate or summary tools that provide overview information
+   c) Batch operations that can process multiple items
+   d) Individual item tools ONLY when you need ONE specific thing
+
+4. ITERATION PREVENTION:
+   - If you find yourself thinking "for each item", "loop through", or "one by one" - STOP
+   - Re-examine available tools for batch alternatives
+   - Check tool descriptions for keywords indicating bulk capabilities
+   - Consider if the data you need can be obtained in a single comprehensive query
+
+5. SMART EXECUTION:
+   - Read tool descriptions carefully - they often indicate bulk capabilities
+   - When a tool returns a collection, process it entirely before making another call
+   - Avoid making similar calls with different parameters - find the unified approach
+   - If a tool can accept multiple IDs or filters, use that instead of individual calls
+
+6. GOAL COMPLETION:
+   - Ensure ALL parts of multi-part goals are addressed
    - Don't stop at partial completion
-   - Track which parts are done vs pending
+   - Verify that the entire original request has been fulfilled
 
-4. TOOL USAGE:
-   - Use tools when you need: external data, search, calculations
-   - Answer directly when you have: sufficient knowledge from previous results
-   - Don't repeat successful tool calls unnecessarily
+7. EFFICIENCY PRINCIPLES:
+   - ONE comprehensive call is better than N individual calls
+   - Broader queries that might return extra data are often more efficient
+   - Tools that aggregate or summarize can eliminate the need for detail queries
+   - Always optimize for fewer total operations
 
-Available tools: ${availableToolNames.join(', ')}
-
-CRITICAL: After each tool result, ask yourself:
-- Have I achieved ALL parts of the original goal?
-- What specific information am I still missing?
-- Should I continue with more actions or provide the final answer?`,
+FINAL VALIDATION before each action:
+"Is this the most efficient way to get the information I need, or am I about to make multiple calls when one would suffice?"`,
         });
 
-        return this.convertPlanToReActThought(
+        // 🐛 DEBUG LOG: LLM Response received
+        this.logger.info('🔍 [DEBUG] ReAct LLM Plan Response', {
+            planReceived: !!plan,
+            planKeys: plan ? Object.keys(plan as Record<string, unknown>) : [],
+            reasoning: (plan as Record<string, unknown>)?.reasoning,
+            steps: (plan as Record<string, unknown>)?.steps,
+            firstStepTool: Array.isArray(
+                (plan as Record<string, unknown>)?.steps,
+            )
+                ? (
+                      (plan as Record<string, unknown>)?.steps as Array<
+                          Record<string, unknown>
+                      >
+                  )[0]?.toolName
+                : 'no-steps',
+        });
+
+        return await this.convertPlanToReActThoughtWithExtraction(
             plan as Record<string, unknown>,
             thread,
+            input,
+            context,
         );
     }
 
     /**
-     * ✅ Build enhanced tools context for ReAct format
+     * ✅ Build enhanced tools context for ReAct format with efficiency hints
      */
     private buildToolsContextForReAct(tools: ToolMetadataForLLM[]): string {
+        debugger;
+
         if (tools.length === 0) return 'No tools available.';
 
-        // ✅ BETTER: Clearer formatting with types and examples
-        return tools
+        // ✅ ENHANCED: Add efficiency analysis and grouping
+        const toolAnalysis = this.analyzeToolEfficiencyPatterns(tools);
+
+        // ✅ BETTER: Clearer formatting with types, examples, and efficiency hints
+        const toolDescriptions = tools
             .map((tool) => {
                 const params = tool.parameters?.properties
                     ? Object.entries(tool.parameters.properties)
@@ -258,9 +343,119 @@ CRITICAL: After each tool result, ask yourself:
                           .join('\n')
                     : '  No parameters';
 
-                return `${tool.name}: ${tool.description || 'No description'}\n${params}`;
+                // Add efficiency hints for this tool
+                const efficiencyHint = toolAnalysis.hints[tool.name] || '';
+                const hintSection = efficiencyHint
+                    ? `\n  ⚡ Efficiency: ${efficiencyHint}`
+                    : '';
+
+                return `${tool.name}: ${tool.description || 'No description'}\n${params}${hintSection}`;
             })
             .join('\n\n');
+
+        // Add general efficiency guidance
+        const efficiencySection =
+            toolAnalysis.patterns.length > 0
+                ? `\n\n⚡ EFFICIENCY PATTERNS DETECTED:\n${toolAnalysis.patterns.join('\n')}`
+                : '';
+
+        return toolDescriptions + efficiencySection;
+    }
+
+    /**
+     * ✅ NEW: Analyze tools for efficiency patterns and alternatives
+     */
+    private analyzeToolEfficiencyPatterns(tools: ToolMetadataForLLM[]): {
+        patterns: string[];
+        hints: Record<string, string>;
+    } {
+        const patterns: string[] = [];
+        const hints: Record<string, string> = {};
+        const toolNames = tools.map((t) => t.name);
+
+        // Pattern 1: Detect bulk vs individual operations
+        const bulkPatterns = [
+            {
+                individual: /get_.*_repository$/i,
+                bulk: /get_.*_rules$/i,
+                context: 'repository rules',
+            },
+            {
+                individual: /get_.*_info$/i,
+                bulk: /get_all_.*$/i,
+                context: 'information gathering',
+            },
+            {
+                individual: /search_.*_item$/i,
+                bulk: /search_.*$/i,
+                context: 'search operations',
+            },
+            {
+                individual: /list_.*_item$/i,
+                bulk: /list_.*$/i,
+                context: 'listing operations',
+            },
+        ];
+
+        for (const pattern of bulkPatterns) {
+            const individualTools = toolNames.filter((name) =>
+                pattern.individual.test(name),
+            );
+            const bulkTools = toolNames.filter((name) =>
+                pattern.bulk.test(name),
+            );
+
+            if (individualTools.length > 0 && bulkTools.length > 0) {
+                patterns.push(
+                    `- For ${pattern.context}: Prefer ${bulkTools.join(', ')} over multiple calls to ${individualTools.join(', ')}`,
+                );
+
+                // Add hints to individual tools
+                individualTools.forEach((tool) => {
+                    hints[tool] =
+                        `Consider using ${bulkTools.join(' or ')} instead of multiple calls to this tool`;
+                });
+
+                // Add hints to bulk tools
+                bulkTools.forEach((tool) => {
+                    hints[tool] =
+                        `Efficient choice - gets comprehensive data in one call`;
+                });
+            }
+        }
+
+        // Pattern 2: Detect search vs specific lookup
+        const hasSearch = toolNames.some((name) => /search/i.test(name));
+        const hasSpecificLookup = toolNames.some((name) =>
+            /get_.*_by_id|find_.*_by/i.test(name),
+        );
+
+        if (hasSearch && hasSpecificLookup) {
+            patterns.push(
+                '- Use specific lookup tools when you know exact identifiers, search tools for discovery',
+            );
+        }
+
+        // Pattern 3: Detect aggregate vs detailed operations
+        const aggregateTools = toolNames.filter((name) =>
+            /summary|aggregate|overview|stats/i.test(name),
+        );
+        const detailedTools = toolNames.filter((name) =>
+            /details?|full|complete/i.test(name),
+        );
+
+        if (aggregateTools.length > 0 && detailedTools.length > 0) {
+            patterns.push(
+                '- Use aggregate/summary tools first, then detailed tools only if needed',
+            );
+
+            aggregateTools.forEach((tool) => {
+                hints[tool] =
+                    'Efficient for overview - use before detailed operations';
+            });
+        }
+
+        return { patterns, hints };
     }
 
     /**
@@ -328,7 +523,7 @@ CRITICAL: After each tool result, ask yourself:
             let action: string;
             if (entry.action.type === 'tool_call') {
                 const toolAction = entry.action as ToolCallAction;
-                action = `Action: ${toolAction.tool}\nAction Input: ${JSON.stringify(toolAction.arguments || {}, null, 2)}`;
+                action = `Action: ${toolAction.toolName}\nAction Input: ${JSON.stringify(toolAction.input || {}, null, 2)}`;
             } else {
                 action = `Action: Final Answer\nAction Input: ${entry.action.content}`;
             }
@@ -437,12 +632,16 @@ CRITICAL: After each tool result, ask yourself:
     }
 
     /**
-     * ✅ ENHANCED: Convert PlanningResult to AgentThought for ReAct with smart validation
+     * ✅ ENHANCED: Convert PlanningResult to AgentThought with Parameter Extraction
      */
-    private convertPlanToReActThought(
+    private async convertPlanToReActThoughtWithExtraction(
         plan: Record<string, unknown>,
         thread: Thread,
-    ): AgentThought {
+        _input: string,
+        _context: PlannerExecutionContext,
+    ): Promise<AgentThought> {
+        debugger;
+
         const availableTools = this.getAvailableToolsForContext(thread);
         const availableToolNames = availableTools.map((tool) => tool.name);
 
@@ -501,7 +700,26 @@ CRITICAL: After each tool result, ask yourself:
         const firstStep = steps[0];
 
         // Validate tool if it's a tool_call
-        const toolName = firstStep?.tool as string;
+        const toolName = firstStep?.toolName as string;
+
+        // 🐛 DEBUG LOG: Tool selection in convertPlanToReActThought
+        this.logger.info(
+            '🔍 [DEBUG] ReAct Tool Selection with Parameter Extraction',
+            {
+                hasSteps: !!steps && steps.length > 0,
+                firstStepTool: toolName,
+                toolNameNone: toolName === 'none',
+                availableToolNames,
+                toolValidation: {
+                    toolRequested: toolName,
+                    isToolAvailable: toolName
+                        ? availableToolNames.includes(toolName)
+                        : false,
+                    availableCount: availableToolNames.length,
+                },
+                firstStepArguments: firstStep?.arguments,
+            },
+        );
 
         if (toolName && toolName !== 'none') {
             if (!availableToolNames.includes(toolName)) {
@@ -519,21 +737,32 @@ CRITICAL: After each tool result, ask yourself:
                 };
             }
 
+            // 🧠 USE PARAMETER EXTRACTION for enhanced tool arguments
+            // const enhancedArguments =
+            //     await this.validateAndFixToolArgumentsWithExtraction(
+            //         toolName,
+            //         (firstStep?.arguments as Record<string, unknown>) || {},
+            //         availableTools,
+            //         input,
+            //         context,
+            //     );
+
             return {
                 reasoning:
                     (plan.reasoning as string) ||
                     (firstStep?.description as string) ||
-                    'Planned action',
-                action: {
-                    type: 'tool_call',
-                    tool: toolName,
-                    arguments:
-                        (firstStep?.arguments as Record<string, unknown>) || {},
-                },
-                confidence: 0.85, // High - found matching tool with clear plan
+                    'Planned action with auto-extracted parameters',
+                action: createToolCallAction(
+                    toolName,
+                    //enhancedArguments,
+                    (firstStep?.description as string) ||
+                        'Planned action with enhanced parameters',
+                ),
+                confidence: 0.9, // Very high - enhanced with parameter extraction
                 metadata: {
                     fromPlan: true,
                     planStrategy: plan.strategy as string,
+                    parameterExtractionUsed: true,
                 },
             };
         }
@@ -558,6 +787,150 @@ CRITICAL: After each tool result, ask yourself:
             },
         };
     }
+
+    /**
+     * ✅ LEGACY: Convert PlanningResult to AgentThought for ReAct with smart validation
+     */
+    // private _convertPlanToReActThought(
+    //     plan: Record<string, unknown>,
+    //     thread: Thread,
+    // ): AgentThought {
+    //     debugger;
+
+    //     const availableTools = this.getAvailableToolsForContext(thread);
+    //     const availableToolNames = availableTools.map((tool) => tool.name);
+
+    //     // Extract steps from plan
+    //     const steps = plan.steps as Array<Record<string, unknown>> | undefined;
+    //     const reasoning = plan.reasoning as string;
+
+    //     // ✅ SMART: Handle direct answers (no tools needed)
+    //     if (!steps || steps.length === 0) {
+    //         // Check if this is a direct answer scenario
+    //         if (
+    //             reasoning &&
+    //             (reasoning.toLowerCase().includes('direct answer') ||
+    //                 reasoning.toLowerCase().includes('no tools needed') ||
+    //                 reasoning.toLowerCase().includes('can answer directly') ||
+    //                 plan.directAnswer)
+    //         ) {
+    //             return {
+    //                 reasoning:
+    //                     reasoning ||
+    //                     'Providing direct answer based on available knowledge',
+    //                 action: {
+    //                     type: 'final_answer',
+    //                     content:
+    //                         (plan.answer as string) ||
+    //                         (plan.directAnswer as string) ||
+    //                         reasoning,
+    //                 },
+    //                 confidence: 0.9, // Very high - direct answer with full context
+    //                 metadata: {
+    //                     fromPlan: true,
+    //                     planStrategy: plan.strategy as string,
+    //                     approachType: 'direct_answer',
+    //                 },
+    //             };
+    //         }
+
+    //         // Fallback for unclear plans without steps
+    //         return {
+    //             reasoning: reasoning || 'No clear action steps found in plan',
+    //             action: {
+    //                 type: 'final_answer',
+    //                 content:
+    //                     reasoning ||
+    //                     'Unable to determine next action from the plan',
+    //             },
+    //             confidence: 0.3,
+    //             metadata: {
+    //                 fromPlan: true,
+    //                 fallbackReason: 'no_steps_found',
+    //             },
+    //         };
+    //     }
+
+    //     // Extract first step from plan
+    //     const firstStep = steps[0];
+
+    //     // Validate tool if it's a tool_call
+    //     const toolName = firstStep?.toolName as string;
+
+    //     // 🐛 DEBUG LOG: Tool selection in convertPlanToReActThought
+    //     this.logger.info('🔍 [DEBUG] ReAct Tool Selection', {
+    //         hasSteps: !!steps && steps.length > 0,
+    //         firstStepTool: toolName,
+    //         toolNameNone: toolName === 'none',
+    //         availableToolNames,
+    //         toolValidation: {
+    //             toolRequested: toolName,
+    //             isToolAvailable: toolName
+    //                 ? availableToolNames.includes(toolName)
+    //                 : false,
+    //             availableCount: availableToolNames.length,
+    //         },
+    //         firstStepArguments: firstStep?.arguments,
+    //     });
+
+    //     if (toolName && toolName !== 'none') {
+    //         if (!availableToolNames.includes(toolName)) {
+    //             return {
+    //                 reasoning: `Tool "${toolName}" is not available. Available tools: ${availableToolNames.join(', ')}`,
+    //                 action: {
+    //                     type: 'final_answer',
+    //                     content: `I don't have access to the "${toolName}" tool. Available tools are: ${availableToolNames.join(', ')}. How can I help you with the available tools?`,
+    //                 },
+    //                 confidence: 0.3, // Low - requested tool not available
+    //                 metadata: {
+    //                     originalPlan: plan,
+    //                     fallbackReason: 'tool_not_available',
+    //                 },
+    //             };
+    //         }
+
+    //         return {
+    //             reasoning:
+    //                 (plan.reasoning as string) ||
+    //                 (firstStep?.description as string) ||
+    //                 'Planned action',
+    //             action: createToolCallAction(
+    //                 toolName,
+    //                 this.validateAndFixToolArguments(
+    //                     toolName,
+    //                     (firstStep?.arguments as Record<string, unknown>) || {},
+    //                     availableTools,
+    //                 ),
+    //                 (firstStep?.description as string) || 'Planned action',
+    //             ),
+    //             confidence: 0.85, // High - found matching tool with clear plan
+    //             metadata: {
+    //                 fromPlan: true,
+    //                 planStrategy: plan.strategy as string,
+    //             },
+    //         };
+    //     }
+
+    //     // Default to final answer
+    //     return {
+    //         reasoning:
+    //             (plan.reasoning as string) ||
+    //             (firstStep?.description as string) ||
+    //             'Planned response',
+    //         action: {
+    //             type: 'final_answer',
+    //             content:
+    //                 (firstStep?.description as string) ||
+    //                 (plan.reasoning as string) ||
+    //                 'Plan completed',
+    //         },
+    //         confidence: 0.7,
+    //         metadata: {
+    //             fromPlan: true,
+    //             planStrategy: plan.strategy as string,
+    //         },
+    //     };
+    // }
 
     // private extractPreviousPlans(context: PlannerExecutionContext): unknown[] {
     //     return context.history.map((h) => ({
@@ -632,12 +1005,240 @@ CRITICAL: After each tool result, ask yourself:
     }
 
     /**
+     * ✅ ENHANCED: Validate and fix tool arguments using Parameter Extractor
+     */
+    // private async validateAndFixToolArgumentsWithExtraction(
+    //     toolName: string,
+    //     providedArgs: Record<string, unknown>,
+    //     availableTools: ToolMetadataForLLM[],
+    //     input: string,
+    //     context: PlannerExecutionContext,
+    // ): Promise<Record<string, unknown>> {
+    //     const tool = availableTools.find((t) => t.name === toolName);
+    //     if (!tool) {
+    //         this.logger.warn('Tool not found for argument validation', {
+    //             toolName,
+    //         });
+    //         return providedArgs;
+    //     }
+
+    //     // 🧠 AUTO-EXTRACT parameters if needed
+    //     // const extraction = await this.autoExtractParameters(
+    //     //     input,
+    //     //     tool,
+    //     //     context,
+    //     // );
+
+    //     // Merge extracted parameters with provided ones (provided takes precedence)
+    //     const enhancedArgs = {
+    //         ...extraction.parameters,
+    //         ...providedArgs,
+    //     };
+
+    //     this.logger.info(
+    //         '🔧 Enhanced tool arguments with parameter extraction',
+    //         {
+    //             toolName,
+    //             originalArgs: Object.keys(providedArgs),
+    //             extractedArgs: Object.keys(extraction.parameters),
+    //             finalArgs: Object.keys(enhancedArgs),
+    //             extractionConfidence: extraction.confidence,
+    //         },
+    //     );
+
+    //     // Continue with normal validation
+    //     return this.validateAndFixToolArguments(
+    //         toolName,
+    //         enhancedArgs,
+    //         availableTools,
+    //     );
+    // }
+
+    /**
+     * ✅ Validate and fix tool arguments to prevent validation errors (legacy method)
+     */
+    // private validateAndFixToolArguments(
+    //     toolName: string,
+    //     providedArgs: Record<string, unknown>,
+    //     availableTools: ToolMetadataForLLM[],
+    // ): Record<string, unknown> {
+    //     // 🐛 DEBUG LOG: Tool arguments validation
+    //     const tool = availableTools.find((t) => t.name === toolName);
+    //     this.logger.info('🔧 [DEBUG] ReAct Tool Arguments Validation', {
+    //         toolName,
+    //         toolFound: !!tool,
+    //         providedArgs,
+    //         requiredFields: tool?.parameters?.required || [],
+    //         hasRequiredFields: !!(tool?.parameters?.required as string[])
+    //             ?.length,
+    //     });
+
+    //     if (!tool?.parameters?.required) {
+    //         return providedArgs;
+    //     }
+
+    //     const fixedArgs = { ...providedArgs };
+    //     const requiredFields = tool.parameters.required as string[];
+
+    //     // Add missing required fields with sensible defaults
+    //     for (const field of requiredFields) {
+    //         if (!(field in fixedArgs) || fixedArgs[field] === undefined) {
+    //             const properties = tool.parameters.properties as
+    //                 | Record<string, unknown>
+    //                 | undefined;
+    //             const fieldInfo = properties?.[field] as
+    //                 | Record<string, unknown>
+    //                 | undefined;
+
+    //             // Try to provide sensible defaults based on field name and type
+    //             if (fieldInfo?.default !== undefined) {
+    //                 fixedArgs[field] = fieldInfo.default;
+    //             } else if (fieldInfo?.type === 'string') {
+    //                 // Common field name patterns
+    //                 if (field.includes('context') || field.includes('query')) {
+    //                     fixedArgs[field] = 'all'; // Get all data
+    //                 } else if (field.includes('format')) {
+    //                     fixedArgs[field] = 'json';
+    //                 } else if (
+    //                     field.includes('scope') ||
+    //                     field.includes('category')
+    //                 ) {
+    //                     fixedArgs[field] = 'all';
+    //                 } else {
+    //                     fixedArgs[field] = '';
+    //                 }
+    //             } else if (fieldInfo?.type === 'boolean') {
+    //                 fixedArgs[field] = true;
+    //             } else if (fieldInfo?.type === 'number') {
+    //                 fixedArgs[field] = 0;
+    //             } else {
+    //                 // Generic fallback
+    //                 fixedArgs[field] = null;
+    //             }
+
+    //             this.logger.warn('Added missing required field for tool', {
+    //                 toolName,
+    //                 field,
+    //                 value: fixedArgs[field],
+    //                 fieldType: fieldInfo?.type,
+    //             });
+    //         }
+    //     }
+
+    //     // 🐛 DEBUG LOG: Final arguments after validation
+    //     this.logger.info('🔧 [DEBUG] ReAct Final Tool Arguments', {
+    //         toolName,
+    //         originalArgs: providedArgs,
+    //         finalArgs: fixedArgs,
+    //         argsModified:
+    //             JSON.stringify(providedArgs) !== JSON.stringify(fixedArgs),
+    //     });
+
+    //     return fixedArgs;
+    // }
+
+    /**
+     * ✅ NEW: Create extraction context from planner execution context
+     */
+    // private createExtractionContext(
+    //     context: PlannerExecutionContext,
+    // ): ExtractionContext {
+    //     return {
+    //         conversationHistory: context.history.map((h) => ({
+    //             input: context.input,
+    //             action: h.action,
+    //             result: h.result,
+    //         })),
+    //         previousParameters:
+    //             context.history.length > 0
+    //                 ? this.extractPreviousParameters(
+    //                       context.history[context.history.length - 1]?.action,
+    //                   )
+    //                 : undefined,
+    //         sessionMetadata: {
+    //             iteration: context.iterations,
+    //             historyLength: context.history.length,
+    //         },
+    //     };
+    // }
+
+    /**
+     * ✅ NEW: Extract parameters from previous action for context
+     */
+    // private extractPreviousParameters(
+    //     action: unknown,
+    // ): Record<string, unknown> | undefined {
+    //     if (typeof action === 'object' && action !== null && 'type' in action) {
+    //         const typedAction = action as {
+    //             type: string;
+    //             [key: string]: unknown;
+    //         };
+    //         if (typedAction.type === 'tool_call' && 'input' in typedAction) {
+    //             return (typedAction.input as Record<string, unknown>) || {};
+    //         }
+    //     }
+    //     return undefined;
+    // }
+
+    /**
+     * ✅ NEW: Auto-extract parameters for a tool using Parameter Extractor
+     */
+    // private async autoExtractParameters(
+    //     input: string,
+    //     toolMetadata: ToolMetadataForLLM,
+    //     context: PlannerExecutionContext,
+    // ): Promise<ParameterExtractionResult> {
+    //     const extractionContext = this.createExtractionContext(context);
+
+    //     try {
+    //         const result = await this.parameterExtractor.extractParameters(
+    //             input,
+    //             toolMetadata,
+    //             extractionContext,
+    //         );
+
+    //         this.logger.info('🧠 Parameter extraction completed', {
+    //             toolName: toolMetadata.name,
+    //             parametersExtracted: Object.keys(result.parameters).length,
+    //             confidence: result.confidence,
+    //             warnings: result.warnings.length,
+    //             sources: result.extractedParams.map(
+    //                 (p: { source: string }) => p.source,
+    //             ),
+    //         });
+
+    //         return result;
+    //     } catch (error) {
+    //         this.logger.warn('Parameter extraction failed, using fallback', {
+    //             toolName: toolMetadata.name,
+    //             error: (error as Error).message,
+    //         });
+
+    //         // Fallback to empty result
+    //         return {
+    //             parameters: {},
+    //             extractedParams: [],
+    //             confidence: 0.1,
+    //             warnings: ['Parameter extraction failed'],
+    //             metadata: {
+    //                 inputAnalysis: 'fallback',
+    //                 patternsDetected: [],
+    //                 contextUsed: false,
+    //                 defaultsApplied: [],
+    //             },
+    //         };
+    //     }
+    // }
+
+    /**
      * ✅ Get relevant memory context for better ReAct reasoning
      */
     private async getMemoryContext(
         executionRuntime: ExecutionRuntime | null,
         _currentInput: string,
     ): Promise<string> {
+        debugger;
+
         if (!executionRuntime) {
             return '';
         }

@@ -693,7 +693,7 @@ export const toolExecutionSchema = z
         input: toolInputSchema,
         config: z
             .object({
-                timeout: z.number().positive().default(30000),
+                timeout: z.number().positive().default(60000), // ✅ 60s timeout
                 retries: z.number().nonnegative().default(3),
                 enableCaching: z.boolean().default(false),
             })
@@ -705,7 +705,7 @@ export const toolExecutionSchema = z
         return {
             ...data,
             config: {
-                timeout: 30000,
+                timeout: 60000, // ✅ 60s timeout
                 retries: 3,
                 enableCaching: false,
                 ...data.config,
@@ -826,7 +826,7 @@ export function defineTool<TInput = unknown, TOutput = unknown>(config: {
         outputSchema: config.outputSchema,
         jsonSchema,
         config: {
-            timeout: 30000,
+            timeout: 60000, // ✅ 60s timeout
             requiresAuth: false,
             allowParallel: true,
             maxConcurrentCalls: 10,

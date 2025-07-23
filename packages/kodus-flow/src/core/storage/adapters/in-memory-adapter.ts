@@ -25,14 +25,7 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
     private isInitialized = false;
 
     constructor(config: StorageAdapterConfig) {
-        this.config = {
-            ...config,
-            maxItems: config.maxItems ?? 1000,
-            enableCompression: config.enableCompression ?? true,
-            cleanupInterval: config.cleanupInterval ?? 300000,
-            timeout: config.timeout ?? 5000,
-            retries: config.retries ?? 3,
-        };
+        this.config = config;
     }
 
     /**

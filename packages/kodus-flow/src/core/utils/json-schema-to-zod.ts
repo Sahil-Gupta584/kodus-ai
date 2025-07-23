@@ -256,7 +256,58 @@ function jsonSchemaTypeToZod(schema: Record<string, unknown>): z.ZodSchema {
 export function safeJsonSchemaToZod(jsonSchema: unknown): z.ZodSchema {
     try {
         return jsonSchemaToZod(jsonSchema);
-    } catch {
+    } catch (error) {
+        // ✅ IMPROVED: Better fallback with logging
+        console.warn(
+            'Failed to convert JSON Schema to Zod, using object fallback:',
+            {
+                error: error instanceof Error ? error.message : String(error),
+                schema: jsonSchema,
+            },
+        );
+
+        // Try to create a basic object schema if possible
+        if (jsonSchema && typeof jsonSchema === 'object') {
+            const schema = jsonSchema as Record<string, unknown>;
+            if (schema.properties && typeof schema.properties === 'object') {
+                const properties = schema.properties as Record<string, unknown>;
+                const required = (schema.required as string[]) || [];
+
+                const shape: Record<string, z.ZodSchema> = {};
+                for (const [key, prop] of Object.entries(properties)) {
+                    const propSchema = prop as Record<string, unknown>;
+
+                    // ✅ IMPROVED: Better type detection
+                    let zodProp: z.ZodSchema;
+                    if (propSchema.type === 'string') {
+                        zodProp = z.string();
+                    } else if (
+                        propSchema.type === 'number' ||
+                        propSchema.type === 'integer'
+                    ) {
+                        zodProp = z.number();
+                    } else if (propSchema.type === 'boolean') {
+                        zodProp = z.boolean();
+                    } else if (propSchema.type === 'array') {
+                        zodProp = z.array(z.unknown());
+                    } else if (propSchema.type === 'object') {
+                        zodProp = z.record(z.string(), z.unknown());
+                    } else {
+                        zodProp = z.unknown();
+                    }
+
+                    // ✅ IMPROVED: Handle required fields properly
+                    if (required.includes(key)) {
+                        shape[key] = zodProp;
+                    } else {
+                        shape[key] = zodProp.optional();
+                    }
+                }
+
+                return z.object(shape);
+            }
+        }
+
         return z.unknown(); // ✅ Zod v4: Mais type-safe que z.any()
     }
 }

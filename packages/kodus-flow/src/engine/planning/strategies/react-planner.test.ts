@@ -38,7 +38,7 @@ const createMockLLMAdapter = (options: {
                         id: 'step_1',
                         description: 'test step',
                         tool: 'test_tool',
-                        arguments: { query: 'test' },
+                        input: { query: 'test' },
                         type: 'action',
                     },
                 ],
@@ -93,7 +93,7 @@ describe('ReActPlanner with Structured Output', () => {
             action: {
                 type: 'tool_call',
                 tool: 'search_tool',
-                arguments: { query: 'test query' },
+                input: { query: 'test query' },
             },
             confidence: 0.9,
         };
@@ -137,7 +137,7 @@ describe('ReActPlanner with Structured Output', () => {
             action: {
                 type: 'tool_call',
                 tool: 'invalid_tool',
-                arguments: { query: 'test' },
+                input: { query: 'test' },
             },
             confidence: 0.8,
         };
@@ -208,13 +208,13 @@ describe('ReActPlanner with Structured Output', () => {
                         action: {
                             type: 'tool_call' as const,
                             tool: 'search_tool',
-                            arguments: {},
+                            input: {},
                         },
                     },
                     action: {
                         type: 'tool_call' as const,
                         tool: 'search_tool',
-                        arguments: {},
+                        input: {},
                     },
                     result: {
                         type: 'tool_result' as const,

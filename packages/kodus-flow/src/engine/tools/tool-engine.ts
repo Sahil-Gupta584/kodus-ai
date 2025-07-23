@@ -377,7 +377,7 @@ export class ToolEngine {
                 },
 
                 config: {
-                    timeout: 30000,
+                    timeout: 60000, // ✅ 60s timeout
                     requiresAuth: false,
                     allowParallel: true,
                     maxConcurrentCalls: 5,
@@ -2077,29 +2077,158 @@ export class ToolEngine {
             return;
         }
 
+        // ✅ ADD: Log detalhado para debug de validação
+        this.logger.debug('🔍 Validating tool input', {
+            toolName: tool.name,
+            inputType: typeof input,
+            hasInputSchema: !!tool.inputSchema,
+            inputValue:
+                typeof input === 'object'
+                    ? JSON.stringify(input)
+                    : String(input),
+        });
+
         // Validate input using Zod schema if available
         if (tool.inputSchema) {
-            const validation = validateWithZod(tool.inputSchema, input);
-            if (!validation.success) {
-                throw createToolError(
-                    `Tool input validation failed: ${validation.error}`,
-                    {
+            try {
+                const validation = validateWithZod(tool.inputSchema, input);
+                if (!validation.success) {
+                    // ✅ ADD: Log detalhado do erro de validação
+                    this.logger.error(
+                        `Tool input validation failed: ${validation.error}`,
+                        new Error(
+                            `Tool input validation failed: ${validation.error}`,
+                        ),
+                        {
+                            toolName: tool.name,
+                            validationError: validation.error,
+                            inputType: typeof input,
+                            inputValue:
+                                typeof input === 'object'
+                                    ? JSON.stringify(input)
+                                    : String(input),
+                            schemaType: tool.inputSchema.constructor.name,
+                        },
+                    );
+
+                    // ✅ IMPROVED: Better error messages with parameter hints
+                    const missingParams = this.extractMissingParameters(
+                        validation.error,
+                    );
+
+                    throw createToolError(validation.error, {
                         severity: 'low',
                         domain: 'business',
                         userImpact: 'degraded',
                         retryable: false,
                         recoverable: true,
                         context: { toolName: tool.name, input, validation },
-                        userMessage:
-                            'The input provided to the tool is invalid. Please check the parameters and try again.',
+                        userMessage: `Tool '${tool.name}' requires specific parameters. ${missingParams.length > 0 ? `Missing: ${missingParams.join(', ')}` : 'Invalid parameters provided.'}`,
                         recoveryHints: [
                             'Check the tool documentation for correct input format',
-                            'Validate input parameters before calling the tool',
+                            'Ensure all required parameters are provided',
+                            'For GitHub tools, you may need organizationId and teamId parameters',
+                        ],
+                    });
+                }
+
+                // ✅ ADD: Log de sucesso na validação
+                this.logger.debug('✅ Tool input validation passed', {
+                    toolName: tool.name,
+                    inputType: typeof input,
+                });
+            } catch (validationError) {
+                // ✅ ADD: Log de erro inesperado na validação
+                this.logger.error(
+                    `Unexpected validation error: ${validationError instanceof Error ? validationError.message : String(validationError)}`,
+                    new Error(
+                        `Unexpected validation error: ${validationError instanceof Error ? validationError.message : String(validationError)}`,
+                    ),
+                    {
+                        toolName: tool.name,
+                        error:
+                            validationError instanceof Error
+                                ? validationError.message
+                                : String(validationError),
+                        inputType: typeof input,
+                        inputValue:
+                            typeof input === 'object'
+                                ? JSON.stringify(input)
+                                : String(input),
+                    },
+                );
+
+                throw createToolError(
+                    validationError instanceof Error
+                        ? validationError.message
+                        : String(validationError),
+                    {
+                        severity: 'medium',
+                        domain: 'business',
+                        userImpact: 'degraded',
+                        retryable: false,
+                        recoverable: true,
+                        context: {
+                            toolName: tool.name,
+                            input,
+                            validationError,
+                        },
+                        userMessage:
+                            'An unexpected error occurred during input validation.',
+                        recoveryHints: [
+                            'Check if the tool schema is properly defined',
+                            'Verify the input format matches the expected schema',
                         ],
                     },
                 );
             }
         }
+    }
+
+    /**
+     * Extract missing parameters from validation error
+     */
+    private extractMissingParameters(validationError: string): string[] {
+        try {
+            // Parse Zod error to extract missing parameters
+            const errorObj = JSON.parse(validationError);
+            if (Array.isArray(errorObj)) {
+                return errorObj
+                    .filter(
+                        (error: unknown) =>
+                            typeof error === 'object' &&
+                            error !== null &&
+                            'code' in error &&
+                            'message' in error &&
+                            error.code === 'invalid_type' &&
+                            typeof error.message === 'string' &&
+                            error.message.includes('received undefined'),
+                    )
+                    .map((error: unknown) => {
+                        if (
+                            typeof error === 'object' &&
+                            error !== null &&
+                            'path' in error
+                        ) {
+                            const path = (error as { path?: unknown }).path;
+                            if (
+                                Array.isArray(path) &&
+                                path.length > 0 &&
+                                typeof path[0] === 'string'
+                            ) {
+                                return path[0];
+                            }
+                        }
+                        return null;
+                    })
+                    .filter((param): param is string => param !== null);
+            }
+        } catch {
+            // If parsing fails, try to extract from error message
+            const match = validationError.match(/path":\s*\["([^"]+)"\]/);
+            return match && match[1] ? [match[1]] : [];
+        }
+        return [];
     }
 
     /**

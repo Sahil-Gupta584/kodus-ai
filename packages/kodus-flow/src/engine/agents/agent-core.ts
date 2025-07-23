@@ -91,8 +91,6 @@ import {
     PlannerFactory,
     type Planner,
     type PlannerType,
-    type AgentThought as NewAgentThought,
-    type AgentAction as NewAgentAction,
     type ActionResult,
     type ResultAnalysis,
     type PlannerExecutionContext,
@@ -246,9 +244,9 @@ export abstract class AgentCore<
         this.toolCircuitBreaker = new CircuitBreaker(observabilitySystem, {
             name: `tool-execution-${this.config.agentName || 'default'}`,
             failureThreshold: 3, // Open after 3 failures
-            recoveryTimeout: 30000, // Try to recover after 30s
+            recoveryTimeout: 150000, // ✅ Try to recover after 2.5 minutes
             successThreshold: 2, // Close after 2 successes
-            operationTimeout: this.config.toolTimeout || 30000,
+            operationTimeout: this.config.toolTimeout || 60000, // ✅ 60s timeout
             onStateChange: (newState, prevState) => {
                 this.logger.info('Tool circuit breaker state changed', {
                     agentName: this.config.agentName,
@@ -324,6 +322,9 @@ export abstract class AgentCore<
     protected llmAdapter?: LLMAdapter;
     protected executionContext?: PlannerExecutionContext;
 
+    // NEW: Current context for action processing
+    private currentAgentContext?: AgentContext;
+
     // Permitir injeção de factory customizada
     protected agentContextFactory: (
         config: AgentExecutionOptions,
@@ -338,7 +339,7 @@ export abstract class AgentCore<
     ) {
         super();
         this.logger = createLogger('agent-core');
-        this.thinkingTimeout = 30000;
+        this.thinkingTimeout = 60000; // ✅ 60s thinking timeout
         this.stateManager = new ContextStateService({});
         this.stateManager = new ContextStateService({}, {});
 
@@ -378,8 +379,8 @@ export abstract class AgentCore<
 
         // Apply defaults
         this.config = {
-            maxThinkingIterations: 2,
-            thinkingTimeout: 30000,
+            maxThinkingIterations: 15,
+            thinkingTimeout: 60000, // ✅ 60s thinking timeout
             timeout: 60000,
             enableFallback: true,
             maxConcurrentAgents: 10,
@@ -387,7 +388,7 @@ export abstract class AgentCore<
             enableTools: true,
             maxChainDepth: 5,
             enableDelegation: true,
-            toolTimeout: 30000,
+            toolTimeout: 60000, // ✅ 60s tool timeout
             maxToolRetries: 2,
             // Advanced multi-agent defaults
             enableAdvancedCoordination: true,
@@ -416,7 +417,7 @@ export abstract class AgentCore<
                 this.config.tenantId,
             );
         }
-        this.thinkingTimeout = this.config.thinkingTimeout || 30000;
+        this.thinkingTimeout = this.config.thinkingTimeout || 60000; // ✅ 60s thinking timeout
 
         // Setup memory leak prevention - cleanup expired executions every 5 minutes
         setInterval(() => {
@@ -756,7 +757,7 @@ export abstract class AgentCore<
     /**
      * Count tool calls in thoughts array
      */
-    private countToolCallsInThoughts(thoughts: NewAgentThought[]): number {
+    private countToolCallsInThoughts(thoughts: AgentThought[]): number {
         return thoughts.filter(
             (thought) => thought.action?.type === 'tool_call',
         ).length;
@@ -4198,7 +4199,7 @@ export abstract class AgentCore<
             this.llmAdapter = this.config.llmAdapter;
 
             try {
-                const plannerType = this.config.planner || 'react';
+                const plannerType = this.config.planner || 'plan-execute';
                 this.planner = PlannerFactory.create(
                     plannerType,
                     this.llmAdapter,
@@ -4235,6 +4236,19 @@ export abstract class AgentCore<
     }
 
     /**
+     * Get current agent context for action processing
+     */
+    private getCurrentAgentContext(): AgentContext {
+        if (!this.currentAgentContext) {
+            throw new EngineError(
+                'AGENT_ERROR',
+                'No current agent context available',
+            );
+        }
+        return this.currentAgentContext;
+    }
+
+    /**
      * Execute Think→Act→Observe loop - Main intelligence method
      * This is the primary method for agent intelligence processing
      */
@@ -4265,6 +4279,9 @@ export abstract class AgentCore<
 
         const inputString = String(input);
 
+        // Store context for use in action processing
+        this.currentAgentContext = context;
+
         // Create execution context
         this.executionContext = await this.createExecutionContext(
             inputString,
@@ -4278,7 +4295,7 @@ export abstract class AgentCore<
         });
 
         let iterations = 0;
-        const maxIterations = this.config.maxThinkingIterations || 10;
+        const maxIterations = this.config.maxThinkingIterations || 15;
 
         while (
             iterations < maxIterations &&
@@ -4532,7 +4549,7 @@ export abstract class AgentCore<
      */
     private async think(
         context: PlannerExecutionContext,
-    ): Promise<NewAgentThought> {
+    ): Promise<AgentThought> {
         if (!this.planner) {
             throw new EngineError('AGENT_ERROR', 'Planner not initialized');
         }
@@ -4552,10 +4569,10 @@ export abstract class AgentCore<
      * ACT phase - Execute the decided action
      * ✅ UNIFIED: Uses processAction for consistent execution with all enterprise features
      */
-    private async act(action: NewAgentAction): Promise<ActionResult> {
+    private async act(action: AgentAction): Promise<ActionResult> {
         this.logger.debug('Act phase started', {
             actionType: action.type,
-            tool: isToolCallAction(action) ? action.tool : undefined,
+            tool: isToolCallAction(action) ? action.toolName : undefined,
             agentName: this.config.agentName,
         });
 
@@ -4568,7 +4585,7 @@ export abstract class AgentCore<
      * Incorporates all corrections: correlationId, circuit breaker, events, fallback
      */
     private async processActionUnified(
-        action: NewAgentAction,
+        action: AgentAction,
     ): Promise<ActionResult> {
         try {
             if (isToolCallAction(action)) {
@@ -4578,11 +4595,71 @@ export abstract class AgentCore<
             if (isFinalAnswerAction(action)) {
                 return {
                     type: 'final_answer',
-                    content: action.content,
+                    content: String(action.content),
                 };
             }
 
-            throw new Error(`Unknown action type`);
+            // NEW: Parallel tools action
+            if (action.type === 'parallel_tools') {
+                const results = await this.processParallelToolsAction(
+                    action as ParallelToolsAction,
+                    this.getCurrentAgentContext(),
+                );
+                return {
+                    type: 'tool_results',
+                    content: results,
+                };
+            }
+
+            // NEW: Sequential tools action
+            if (action.type === 'sequential_tools') {
+                const results = await this.processSequentialToolsAction(
+                    action as SequentialToolsAction,
+                    this.getCurrentAgentContext(),
+                );
+                return {
+                    type: 'tool_results',
+                    content: results,
+                };
+            }
+
+            // NEW: Conditional tools action
+            if (action.type === 'conditional_tools') {
+                const results = await this.processConditionalToolsAction(
+                    action as ConditionalToolsAction,
+                    this.getCurrentAgentContext(),
+                );
+                return {
+                    type: 'tool_results',
+                    content: results,
+                };
+            }
+
+            // NEW: Mixed tools action
+            if (action.type === 'mixed_tools') {
+                const results = await this.processMixedToolsAction(
+                    action as MixedToolsAction,
+                    this.getCurrentAgentContext(),
+                );
+                return {
+                    type: 'tool_results',
+                    content: results,
+                };
+            }
+
+            // NEW: Dependency tools action
+            if (action.type === 'dependency_tools') {
+                const results = await this.processDependencyToolsAction(
+                    action as DependencyToolsAction,
+                    this.getCurrentAgentContext(),
+                );
+                return {
+                    type: 'tool_results',
+                    content: results,
+                };
+            }
+
+            throw new Error(`Unknown action type: ${action.type}`);
         } catch (error) {
             return this.handleActionError(error, action);
         }
@@ -4592,7 +4669,7 @@ export abstract class AgentCore<
      * Execute tool action with all enterprise features
      */
     private async executeToolAction(
-        action: NewAgentAction,
+        action: AgentAction,
     ): Promise<ActionResult> {
         if (!this.toolEngine) {
             throw new Error('Tool engine not available');
@@ -4606,9 +4683,12 @@ export abstract class AgentCore<
         const correlationId = this.generateCorrelationId();
 
         this.logger.info('🤖 [AGENT] Requesting tool execution via kernel', {
-            toolName: action.tool,
+            toolName: action.toolName,
             hasArgs: !!(
-                action.arguments && Object.keys(action.arguments).length > 0
+                action.input &&
+                typeof action.input === 'object' &&
+                action.input !== null &&
+                Object.keys(action.input).length > 0
             ),
             agentName: this.config.agentName,
             correlationId,
@@ -4636,7 +4716,7 @@ export abstract class AgentCore<
             );
 
             this.logger.info('🤖 [AGENT] Tool execution completed via kernel', {
-                toolName: action.tool,
+                toolName: action.toolName,
                 hasResult: !!toolResult,
                 agentName: this.config.agentName,
                 correlationId,
@@ -4646,8 +4726,8 @@ export abstract class AgentCore<
                 type: 'tool_result',
                 content: toolResult,
                 metadata: {
-                    toolName: action.tool,
-                    arguments: action.arguments,
+                    toolName: action.toolName,
+                    arguments: action.input,
                     correlationId,
                 },
             };
@@ -4668,7 +4748,7 @@ export abstract class AgentCore<
      * Execute tool with circuit breaker protection
      */
     private async executeToolWithCircuitBreaker(
-        action: NewAgentAction,
+        action: AgentAction,
         correlationId: string,
     ): Promise<unknown> {
         if (!isToolCallAction(action)) {
@@ -4686,7 +4766,7 @@ export abstract class AgentCore<
      * Execute tool via kernel with circuit breaker
      */
     private async executeToolViaKernel(
-        action: NewAgentAction,
+        action: AgentAction,
         correlationId: string,
     ): Promise<unknown> {
         if (!isToolCallAction(action)) {
@@ -4698,15 +4778,15 @@ export abstract class AgentCore<
             const circuitResult = await this.toolCircuitBreaker.execute(
                 () =>
                     this.kernelHandler!.requestToolExecution(
-                        action.tool,
-                        action.arguments || {},
+                        action.toolName,
+                        action.input || {},
                         {
                             correlationId: correlationId, // ✅ FIX: Use same correlationId
                             timeout: 30000, // ✅ UNIFIED: 30s timeout
                         },
                     ),
                 {
-                    toolName: action.tool,
+                    toolName: action.toolName,
                     agentName: this.config.agentName,
                 },
             );
@@ -4719,8 +4799,8 @@ export abstract class AgentCore<
         } else {
             // Fallback without circuit breaker
             return await this.kernelHandler!.requestToolExecution(
-                action.tool,
-                action.arguments || {},
+                action.toolName,
+                action.input || {},
                 {
                     correlationId: correlationId, // ✅ FIX: Use same correlationId
                     timeout: 15000, // ✅ UNIFIED: 15s timeout
@@ -4733,7 +4813,7 @@ export abstract class AgentCore<
      * Execute tool directly (fallback)
      */
     private async executeToolDirectly(
-        action: NewAgentAction,
+        action: AgentAction,
         correlationId: string,
     ): Promise<unknown> {
         if (!isToolCallAction(action)) {
@@ -4741,7 +4821,7 @@ export abstract class AgentCore<
         }
 
         this.logger.info('🤖 [AGENT] Executing tool directly', {
-            toolName: action.tool,
+            toolName: action.toolName,
             agentName: this.config.agentName,
             correlationId,
         });
@@ -4755,11 +4835,11 @@ export abstract class AgentCore<
             const circuitResult = await this.toolCircuitBreaker.execute(
                 () =>
                     this.toolEngine!.executeCall(
-                        action.tool,
-                        action.arguments || {},
+                        action.toolName,
+                        action.input || {},
                     ),
                 {
-                    toolName: action.tool,
+                    toolName: action.toolName,
                     agentName: this.config.agentName,
                 },
             );
@@ -4771,8 +4851,8 @@ export abstract class AgentCore<
             return circuitResult.result;
         } else {
             return await this.toolEngine.executeCall(
-                action.tool,
-                action.arguments || {},
+                action.toolName,
+                action.input || {},
             );
         }
     }
@@ -4782,7 +4862,7 @@ export abstract class AgentCore<
      */
     private async handleToolExecutionError(
         error: unknown,
-        action: NewAgentAction,
+        action: AgentAction,
         correlationId: string,
     ): Promise<ActionResult> {
         if (!isToolCallAction(action)) {
@@ -4793,7 +4873,7 @@ export abstract class AgentCore<
 
         // ✅ SIMPLE: Let Runtime handle retry, AgentCore just logs and returns error
         this.logger.error('🤖 [AGENT] Tool execution failed', error as Error, {
-            toolName: action.tool,
+            toolName: action.toolName,
             agentName: this.config.agentName,
             correlationId,
             errorMessage,
@@ -4805,11 +4885,11 @@ export abstract class AgentCore<
             error: errorMessage,
             metadata: {
                 actionType: action.type,
-                tool: action.tool,
+                tool: action.toolName,
                 correlationId,
                 // ✅ Context for agent to understand what happened
                 errorContext: {
-                    toolName: action.tool,
+                    toolName: action.toolName,
                     errorMessage,
                     timestamp: Date.now(),
                 },
@@ -4821,7 +4901,7 @@ export abstract class AgentCore<
      * Emit action start event
      */
     private async emitActionStartEvent(
-        action: NewAgentAction,
+        action: AgentAction,
         correlationId: string,
     ): Promise<void> {
         if (!this.kernelHandler?.emitAsync) return;
@@ -4852,7 +4932,7 @@ export abstract class AgentCore<
      * Emit tool completion event
      */
     private async emitToolCompletionEvent(
-        action: NewAgentAction,
+        action: AgentAction,
         result: unknown,
         correlationId: string,
     ): Promise<void> {
@@ -4862,7 +4942,7 @@ export abstract class AgentCore<
             'agent.tool.completed',
             {
                 agentName: this.config.agentName,
-                toolName: action.tool,
+                toolName: action.toolName,
                 correlationId,
                 result,
             },
@@ -4884,7 +4964,7 @@ export abstract class AgentCore<
      * Emit tool error event
      */
     private async emitToolErrorEvent(
-        action: NewAgentAction,
+        action: AgentAction,
         error: unknown,
         correlationId: string,
     ): Promise<void> {
@@ -4894,7 +4974,7 @@ export abstract class AgentCore<
             'agent.tool.error',
             {
                 agentName: this.config.agentName,
-                toolName: action.tool,
+                toolName: action.toolName,
                 correlationId,
                 error: (error as Error).message,
             },
@@ -4917,11 +4997,11 @@ export abstract class AgentCore<
      */
     private handleActionError(
         error: unknown,
-        action: NewAgentAction,
+        action: AgentAction,
     ): ActionResult {
         this.logger.error('Action execution failed', error as Error, {
             actionType: action.type,
-            tool: isToolCallAction(action) ? action.tool : 'unknown',
+            tool: isToolCallAction(action) ? action.toolName : 'unknown',
             agentName: this.config.agentName,
         });
 
@@ -4930,7 +5010,7 @@ export abstract class AgentCore<
             error: error instanceof Error ? error.message : 'Unknown error',
             metadata: {
                 actionType: action.type,
-                tool: isToolCallAction(action) ? action.tool : 'unknown',
+                tool: isToolCallAction(action) ? action.toolName : 'unknown',
             },
         };
     }
@@ -4965,10 +5045,27 @@ export abstract class AgentCore<
 
         debugger;
 
-        // ✅ SIMPLE: Detect when tool gives substantial result
-        if (isToolResult(result) && result.content) {
-            const content = String(result.content);
-            if (content.length > 500 && !content.includes('Error')) {
+        // ✅ ENHANCED: Use smart tool result parser
+        if (isToolResult(result)) {
+            const { parseToolResult } = await import(
+                '../../core/utils/tool-result-parser.js'
+            );
+            const parsed = parseToolResult(result.content);
+
+            this.logger.debug('Tool result parsed', {
+                isSubstantial: parsed.isSubstantial,
+                isError: parsed.isError,
+                textLength: parsed.metadata.textLength,
+                source: parsed.metadata.source,
+                hasStructuredData: parsed.metadata.hasStructuredData,
+                trace: {
+                    source: 'agent-core',
+                    step: 'tool-result-analysis',
+                    timestamp: Date.now(),
+                },
+            });
+
+            if (parsed.isSubstantial && !parsed.isError) {
                 // Tool gave substantial response, might be sufficient
                 const analysis = await this.planner.analyzeResult(
                     result,
@@ -4976,7 +5073,7 @@ export abstract class AgentCore<
                 );
                 return {
                     ...analysis,
-                    feedback: `Received substantial tool result: ${analysis.feedback}`,
+                    feedback: `Received substantial tool result (${parsed.metadata.textLength} chars, source: ${parsed.metadata.source}): ${analysis.feedback}`,
                     suggestedNextAction:
                         'Consider if this result answers the user question',
                 };
@@ -5056,8 +5153,8 @@ export abstract class AgentCore<
 
         // Fallback to simple execution context for backward compatibility
         const history: Array<{
-            thought: NewAgentThought;
-            action: NewAgentAction;
+            thought: AgentThought;
+            action: AgentAction;
             result: ActionResult;
             observation: ResultAnalysis;
         }> = [];
@@ -5067,7 +5164,7 @@ export abstract class AgentCore<
             input,
             history,
             iterations: 0,
-            maxIterations: this.config.maxThinkingIterations || 10,
+            maxIterations: this.config.maxThinkingIterations || 15,
             plannerMetadata: {
                 agentName: agentContext.agentName,
                 correlationId: agentContext.correlationId,
@@ -5119,7 +5216,6 @@ export abstract class AgentCore<
                     totalTime: Date.now(),
                     thoughts: history.map((h) => h.thought),
                     metadata: {
-                        plannerType: 'react',
                         toolCallsCount: history.filter(
                             (h) => h.action.type === 'tool_call',
                         ).length,

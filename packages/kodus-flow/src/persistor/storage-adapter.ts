@@ -31,6 +31,12 @@ export class StoragePersistorAdapter implements Persistor {
             connectionString?: string;
             options?: Record<string, unknown>;
         } = { type: 'memory' },
+        private persistorConfig?: {
+            maxSnapshots?: number;
+            enableCompression?: boolean;
+            enableDeltaCompression?: boolean;
+            cleanupInterval?: number;
+        },
     ) {}
 
     async initialize(): Promise<void> {
@@ -40,9 +46,9 @@ export class StoragePersistorAdapter implements Persistor {
             type: this.config.type,
             connectionString: this.config.connectionString,
             options: this.config.options,
-            maxItems: 1000,
-            enableCompression: true,
-            cleanupInterval: 300000,
+            maxItems: this.persistorConfig?.maxSnapshots ?? 1000,
+            enableCompression: this.persistorConfig?.enableCompression ?? true,
+            cleanupInterval: this.persistorConfig?.cleanupInterval ?? 300000,
             timeout: 10000,
             retries: 3,
             enableObservability: true,

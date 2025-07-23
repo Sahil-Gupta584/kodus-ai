@@ -20,28 +20,61 @@ export function createPersistorFromConfig(config: PersistorConfig): Persistor {
 
     switch (type) {
         case 'memory':
-            return new StoragePersistorAdapter({ type: 'memory' });
+            return new StoragePersistorAdapter(
+                { type: 'memory' },
+                {
+                    maxSnapshots: config.maxSnapshots,
+                    enableCompression: config.enableCompression,
+                    enableDeltaCompression: config.enableDeltaCompression,
+                    cleanupInterval: config.cleanupInterval,
+                },
+            );
 
         case 'mongodb':
-            return new StoragePersistorAdapter({
-                type: 'mongodb',
-                connectionString: config.connectionString,
-                options: {
-                    database: config.database,
-                    collection: config.collection,
-                    maxPoolSize: config.maxPoolSize,
-                    serverSelectionTimeoutMS: config.serverSelectionTimeoutMS,
-                    connectTimeoutMS: config.connectTimeoutMS,
-                    socketTimeoutMS: config.socketTimeoutMS,
-                    ttl: config.ttl,
+            return new StoragePersistorAdapter(
+                {
+                    type: 'mongodb',
+                    connectionString: config.connectionString,
+                    options: {
+                        database: config.database,
+                        collection: config.collection,
+                        maxPoolSize: config.maxPoolSize,
+                        serverSelectionTimeoutMS:
+                            config.serverSelectionTimeoutMS,
+                        connectTimeoutMS: config.connectTimeoutMS,
+                        socketTimeoutMS: config.socketTimeoutMS,
+                        ttl: config.ttl,
+                    },
                 },
-            });
+                {
+                    maxSnapshots: config.maxSnapshots,
+                    enableCompression: config.enableCompression,
+                    enableDeltaCompression: config.enableDeltaCompression,
+                    cleanupInterval: config.cleanupInterval,
+                },
+            );
 
         case 'redis':
-            return new StoragePersistorAdapter({ type: 'redis' });
+            return new StoragePersistorAdapter(
+                { type: 'redis' },
+                {
+                    maxSnapshots: config.maxSnapshots,
+                    enableCompression: config.enableCompression,
+                    enableDeltaCompression: config.enableDeltaCompression,
+                    cleanupInterval: config.cleanupInterval,
+                },
+            );
 
         case 'temporal':
-            return new StoragePersistorAdapter({ type: 'temporal' });
+            return new StoragePersistorAdapter(
+                { type: 'temporal' },
+                {
+                    maxSnapshots: config.maxSnapshots,
+                    enableCompression: config.enableCompression,
+                    enableDeltaCompression: config.enableDeltaCompression,
+                    cleanupInterval: config.cleanupInterval,
+                },
+            );
 
         default:
             throw new Error(`Unknown persistor type: ${type}`);

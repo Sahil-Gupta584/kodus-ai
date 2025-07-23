@@ -5,4 +5,9 @@
 
 // MCP Adapter
 export { createMCPAdapter } from './mcp/index.js';
-export type { MCPAdapterConfig, MCPAdapter } from './mcp/index.js';
+export type {
+    MCPServerConfig,
+    MCPAdapterConfig,
+    MCPAdapter,
+    MCPTool,
+} from './mcp/types.js';

@@ -25,7 +25,7 @@ export const DEFAULT_LLM_SETTINGS = {
     temperature: 0.1, // Very focused for agent tasks (0.0-0.2 recommended for tools)
 
     // Max tokens: Sufficient for reasoning + action without waste
-    maxTokens: 1500, // Covers 99% of agent responses without truncation
+    maxTokens: 2500, // Increased for complex tool metadata and enhanced ReAct prompts
 
     // Universal stop tokens to prevent hallucination and maintain control
     stop: [
@@ -64,9 +64,12 @@ export const TEMPERATURE_PRESETS = {
  */
 export const TOKEN_PRESETS = {
     QUICK: 500, // Quick responses, tool calls
-    STANDARD: 1500, // Standard agent reasoning (DEFAULT)
-    EXTENDED: 3000, // Complex multi-step reasoning
-    MAXIMUM: 4000, // Maximum context (use sparingly)
+    STANDARD: 2500, // Standard agent reasoning (INCREASED for enhanced metadata)
+    EXTENDED: 3500, // Complex multi-step reasoning
+    MAXIMUM: 4500, // Maximum context (use sparingly)
+    // ReAct-specific presets
+    REACT_SIMPLE: 2000, // Simple ReAct with few tools
+    REACT_COMPLEX: 3000, // Complex ReAct with many tools and rich metadata
 } as const;
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -225,6 +228,8 @@ export class DirectLLMAdapter {
             userContext?: Record<string, unknown>; // User context for personalization
             memoryContext?: string; // Memory context from conversation and knowledge
             sequentialInstructions?: string; // Custom instructions for sequential planning
+            planningInstructions?: string; // Detailed planning instructions from planner
+            planningHistory?: string; // History of previous planning attempts
         },
     ): Promise<PlanningResult> {
         // ✅ Standard technique-based planning
@@ -280,12 +285,15 @@ export class DirectLLMAdapter {
                 planningTechnique.options,
             );
 
+            debugger;
+
             // Handle both string and object responses from LangChain
             const content =
                 typeof response === 'string' ? response : response.content;
 
             // ✅ Always use the technique's official parser
             const result = planningTechnique.responseParser(content);
+            debugger;
 
             this.logger.debug('Plan created successfully', {
                 strategy: result.strategy,
@@ -509,7 +517,101 @@ Begin!
 Question: {goal}
 {agentScratchpad}`,
             responseParser: this.parseReActResponse.bind(this),
-            options: DEFAULT_LLM_SETTINGS, // ✅ Uses standardized settings with all stop tokens
+            options: {
+                ...DEFAULT_LLM_SETTINGS,
+                maxTokens: TOKEN_PRESETS.REACT_COMPLEX, // ✅ Increased for complex tool metadata
+            },
+        });
+
+        // Plan-and-Execute
+        this.planningTechniques.set('plan-execute', {
+            name: 'Plan-and-Execute',
+            description:
+                'Creates detailed plan first, then executes step by step',
+            systemPrompt: `You are an expert planning assistant that uses Plan-and-Execute methodology.
+Your job is to create detailed, step-by-step execution plans that can be followed sequentially.
+
+CORE PRINCIPLES:
+1. ANALYZE: Understand the goal and requirements thoroughly
+2. BREAK DOWN: Decompose into specific, actionable steps
+3. SEQUENCE: Order steps logically with clear dependencies
+4. SPECIFY: Include tool usage, parameters, and success criteria
+5. VALIDATE: Ensure plan is complete and executable
+6. ADAPT: Plan for error handling and alternative approaches
+
+🚨 CRITICAL PARAMETER REQUIREMENTS:
+- ALWAYS provide ALL required parameters for tools
+- Required parameters are marked with [REQUIRED] in tool descriptions
+- If a tool requires parameters you don't have, either:
+  a) Ask the user for the missing information
+  b) Use a different tool that doesn't require those parameters
+  c) Skip the step and explain why
+- NEVER call a tool without providing its required parameters
+- Always use concrete values, not placeholders
+
+PLANNING GUIDELINES:
+- Each step should be atomic and testable
+- Include clear success criteria for each step
+- Specify tool parameters with concrete values
+- Plan for potential failures and alternatives
+- Consider resource constraints and time estimates
+- Ensure steps build upon each other logically
+
+ERROR HANDLING:
+- Include fallback steps for critical operations
+- Plan for tool unavailability
+- Consider partial success scenarios
+- Include validation steps
+
+Always respond in VALID JSON format with the following structure:
+{
+  "strategy": "plan-execute",
+  "goal": "original goal",
+  "steps": [
+    {
+      "id": "step_1",
+      "description": "Detailed step description with success criteria",
+      "tool": "tool_name",
+      "arguments": {"param1": "value1", "param2": "value2"},
+      "dependencies": [],
+      "type": "analysis|action|decision|observation",
+      "expectedOutcome": "What success looks like",
+      "fallback": "What to do if this step fails"
+    }
+  ],
+  "reasoning": "your detailed planning reasoning",
+  "complexity": "simple|medium|complex",
+  "estimatedTime": "time estimate in minutes"
+}
+
+🚨 CRITICAL:
+- NO comments in JSON (no // or /* */)
+- NO trailing commas
+- Use concrete values, not placeholders like "REPOSITORY_ID_AQUI"
+- All values must be valid JSON (strings, numbers, booleans, null, objects, arrays)`,
+            userPromptTemplate: `🎯 GOAL: {goal}
+
+{planningInstructions}
+
+📋 AVAILABLE TOOLS:
+{toolsContext}
+
+🧠 MEMORY & CONTEXT:
+{memoryContext}
+
+{identityContext}
+
+{userContext}
+
+📈 PLANNING HISTORY:
+{planningHistory}
+
+🔥 CREATE YOUR EXECUTION PLAN:
+Focus on creating a plan with concrete step references. Use the {{step-X.result}} pattern when steps depend on previous results. The system will automatically handle parallel execution for array results.
+
+Remember: Be specific, use real values, and leverage the template resolution system for step dependencies.`,
+            responseParser: this.parseStandardPlanningResponse.bind(this),
+            options: DEFAULT_LLM_SETTINGS,
         });
 
         // OODA Loop (Observe, Orient, Decide, Act)
@@ -669,6 +771,9 @@ Please analyze semantic similarity and select the most appropriate tool.`,
             sequentialInstructions: String(
                 context?.sequentialInstructions || '',
             ),
+            planningInstructions: String(context?.planningInstructions || ''),
+            planningHistory: String(context?.planningHistory || ''),
+            toolsContext: String(context?.toolsContext || ''),
         });
     }
 
@@ -824,8 +929,23 @@ ${memoryContext}
             cleaned = cleaned.substring(0, cleaned.length - 3);
         }
 
-        // Final trim
-        cleaned = cleaned.trim();
+        // ✅ IMPROVED: Remove JSON comments and fix common issues
+        cleaned = cleaned
+            // Remove single-line comments (// ...)
+            .replace(/\/\/.*$/gm, '')
+            // Remove multi-line comments (/* ... */)
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            // Remove trailing commas before closing braces/brackets
+            .replace(/,(\s*[}\]])/g, '$1')
+            // Remove trailing commas in objects
+            .replace(/,(\s*})/g, '$1')
+            // Fix common LLM mistakes: replace "undefined" with null
+            .replace(/"undefined"/g, 'null')
+            // Fix common LLM mistakes: replace undefined without quotes
+            .replace(/:\s*undefined\s*([,}])/g, ': null$1')
+            // Remove extra whitespace
+            .replace(/\s+/g, ' ')
+            .trim();
 
         return cleaned;
     }
@@ -991,9 +1111,23 @@ ${memoryContext}
 
     private parseStandardPlanningResponse(response: string): PlanningResult {
         try {
-            // Clean response from markdown code blocks
+            // Clean response from markdown code blocks and comments
             const cleanedResponse = this.cleanJsonResponse(response);
+
+            // ✅ IMPROVED: Better error logging
+            this.logger.debug('Attempting to parse JSON response', {
+                originalLength: response.length,
+                cleanedLength: cleanedResponse.length,
+                cleanedPreview: cleanedResponse.substring(0, 200),
+            });
+
             const parsed = JSON.parse(cleanedResponse);
+
+            // ✅ IMPROVED: Validate parsed structure
+            if (!parsed || typeof parsed !== 'object') {
+                throw new Error('Parsed response is not an object');
+            }
+
             return {
                 strategy: parsed.strategy || 'unknown',
                 goal: parsed.goal || '',
@@ -1005,6 +1139,13 @@ ${memoryContext}
             this.logger.error(
                 'Failed to parse planning response',
                 error instanceof Error ? error : new Error('Unknown error'),
+                {
+                    responsePreview: response.substring(0, 500),
+                    errorPosition:
+                        error instanceof SyntaxError
+                            ? error.message
+                            : 'unknown',
+                },
             );
             return {
                 strategy: 'fallback',

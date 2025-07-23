@@ -17,8 +17,14 @@ import type {
     ActionResult,
     ResultAnalysis,
     PlannerExecutionContext,
+    ToolCallAction,
 } from '../planner-factory.js';
-import { isErrorResult, getResultError } from '../planner-factory.js';
+import {
+    isErrorResult,
+    getResultError,
+    createToolCallAction,
+    createFinalAnswerAction,
+} from '../planner-factory.js';
 
 export interface ReflectionEntry {
     id: string;
@@ -373,7 +379,7 @@ Be specific about your approach and reasoning.
             const actionType = entry.originalAction.type;
             const tool =
                 entry.originalAction.type === 'tool_call'
-                    ? entry.originalAction.tool
+                    ? (entry.originalAction as ToolCallAction).toolName
                     : 'final_answer';
             const pattern = `${actionType}:${tool}`;
 
@@ -434,15 +440,14 @@ Be specific about your approach and reasoning.
 
         const action: AgentAction =
             nextStep.tool && nextStep.tool !== 'none'
-                ? {
-                      type: 'tool_call',
-                      tool: nextStep.tool,
-                      arguments: nextStep.arguments || {},
-                  }
-                : {
-                      type: 'final_answer',
-                      content: nextStep.description || 'Reflexive response',
-                  };
+                ? createToolCallAction(
+                      nextStep.tool,
+                      nextStep.arguments || {},
+                      nextStep.description,
+                  )
+                : createFinalAnswerAction(
+                      nextStep.description || 'Reflexive response',
+                  );
 
         return {
             reasoning:
@@ -513,7 +518,7 @@ Be specific about your approach and reasoning.
         // Higher confidence if we have patterns that support this action
         const actionPattern =
             action.type === 'tool_call'
-                ? `tool_call:${action.tool}`
+                ? `tool_call:${(action as ToolCallAction).toolName}`
                 : 'final_answer:final_answer';
 
         const pattern = this.memory.patterns.find(
