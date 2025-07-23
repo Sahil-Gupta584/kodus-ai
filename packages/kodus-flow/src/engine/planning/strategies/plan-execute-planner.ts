@@ -1338,18 +1338,31 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
     ): Record<string, unknown> {
         const argsStr = JSON.stringify(args);
 
-        // Pattern to match {{step-X.result...}} references
+        // Pattern to match {{step-X.result...}} references (supports both numbers and IDs)
         const resolvedStr = argsStr.replace(
-            /\{\{step-(\d+)\.result([\w\[\]\.]*)\}\}/g,
-            (match, stepNum, path) => {
-                const stepIndex = parseInt(stepNum) - 1;
-                const step = allSteps[stepIndex];
+            /\{\{([^.}]+)\.result([\w\[\]\.]*)\}\}/g,
+            (match, stepIdentifier, path) => {
+                let step: PlanStep | undefined;
+
+                // Try to find step by number (step-1, step-2, etc.)
+                if (stepIdentifier.startsWith('step-')) {
+                    const stepNum = parseInt(stepIdentifier.substring(5));
+                    const stepIndex = stepNum - 1;
+                    step = allSteps[stepIndex];
+                } else {
+                    // Try to find step by ID
+                    step = allSteps.find((s) => s.id === stepIdentifier);
+                }
 
                 if (!step || !step.result) {
                     this.logger.warn('Step reference not found or no result', {
                         reference: match,
-                        stepIndex,
+                        stepIdentifier,
                         hasResult: !!step?.result,
+                        availableSteps: allSteps.map((s) => ({
+                            id: s.id,
+                            hasResult: !!s.result,
+                        })),
                     });
                     return match; // Keep original if can't resolve
                 }
@@ -1424,8 +1437,8 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
 
         const argsStr = JSON.stringify(currentStep.arguments);
 
-        // Check if arguments contain array references like {{step-1.result}}
-        const arrayRefPattern = /\{\{step-(\d+)\.result\}\}/;
+        // Check if arguments contain array references like {{step-1.result}} or {{stepId.result}}
+        const arrayRefPattern = /\{\{([^.}]+)\.result\}\}/;
         const match = argsStr.match(arrayRefPattern);
 
         if (!match) {
@@ -1433,8 +1446,22 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
         }
 
         // Check if the referenced step result is an array
-        const stepNum = parseInt(match[1] || '0');
-        const referencedStep = allSteps[stepNum - 1];
+        const stepIdentifier = match[1];
+        if (!stepIdentifier) {
+            return false;
+        }
+
+        let referencedStep: PlanStep | undefined;
+
+        // Try to find step by number (step-1, step-2, etc.)
+        if (stepIdentifier.startsWith('step-')) {
+            const stepNum = parseInt(stepIdentifier.substring(5));
+            const stepIndex = stepNum - 1;
+            referencedStep = allSteps[stepIndex];
+        } else {
+            // Try to find step by ID
+            referencedStep = allSteps.find((s) => s.id === stepIdentifier);
+        }
 
         if (!referencedStep?.result) return false;
 
@@ -1452,14 +1479,31 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
         _context: PlannerExecutionContext,
     ): AgentThought {
         const argsStr = JSON.stringify(currentStep.arguments);
-        const match = argsStr.match(/\{\{step-(\d+)\.result\}\}/);
+        const match = argsStr.match(/\{\{([^.}]+)\.result\}\}/);
 
         if (!match || !this.currentPlan) {
             throw new Error('Invalid state for parallel expansion');
         }
 
-        const stepNum = parseInt(match[1] || '0');
-        const referencedStep = this.currentPlan.steps[stepNum - 1];
+        const stepIdentifier = match[1];
+        if (!stepIdentifier) {
+            throw new Error('Step identifier not found in reference');
+        }
+
+        let referencedStep: PlanStep | undefined;
+
+        // Try to find step by number (step-1, step-2, etc.)
+        if (stepIdentifier.startsWith('step-')) {
+            const stepNum = parseInt(stepIdentifier.substring(5));
+            const stepIndex = stepNum - 1;
+            referencedStep = this.currentPlan.steps[stepIndex];
+        } else {
+            // Try to find step by ID
+            referencedStep = this.currentPlan.steps.find(
+                (s) => s.id === stepIdentifier,
+            );
+        }
+
         if (!referencedStep?.result) {
             throw new Error('Referenced step not found or has no result');
         }
@@ -1473,12 +1517,9 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
 
         // Create parallel tools action for each item in array
         const parallelTools = arrayResult.map((item, index) => {
-            // Replace {{step-X.result}} with the actual item
+            // Replace {{step-X.result}} or {{stepId.result}} with the actual item
             const itemArgs = JSON.parse(
-                argsStr.replace(
-                    /\{\{step-\d+\.result\}\}/,
-                    JSON.stringify(item),
-                ),
+                argsStr.replace(/\{\{[^.}]+\.result\}\}/, JSON.stringify(item)),
             );
 
             return {
@@ -1561,9 +1602,11 @@ IDENTIFY PARALLEL OPPORTUNITIES:
 - Examples of FORBIDDEN placeholders: "REPOSITORY_ID_AQUI", "TODO", "FILL_IN", "\${id}", "<repositoryId>"
 
 📋 REFERENCING PREVIOUS STEP RESULTS:
-When you need to use data from a previous step, use the {{step-X.result}} pattern:
-- {{step-1.result}} - Use the entire result from step-1
+When you need to use data from a previous step, you can use either pattern:
+- {{step-1.result}} - Use the entire result from step-1 (by number)
+- {{stepId.result}} - Use the entire result from stepId (by ID)
 - {{step-1.result[0].id}} - Access first item's id from an array result
+- {{stepId.result[0].id}} - Access first item's id using step ID
 - {{step-2.result.repositories[0].name}} - Access nested properties
 
 🚀 AUTOMATIC PARALLEL EXPANSION:
@@ -1599,9 +1642,14 @@ Step 2:
   "description": "Get Kody rules for each repository",
   "tool": "getKodyRules",
   "arguments": {
-    "repositoryId": "{{step-1.result}}"
+    "repositoryId": "{{list_repos.result}}"
   },
   "dependencies": ["list_repos"]
+}
+
+Alternative using step numbers:
+{
+  "repositoryId": "{{step-1.result}}"
 }
 
 The system will automatically:

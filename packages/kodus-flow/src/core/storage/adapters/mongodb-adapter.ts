@@ -57,7 +57,15 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
             await this.client.connect();
 
             const database = (options.database as string) ?? 'kodus';
-            const collection = (options.collection as string) ?? 'storage';
+
+            // ✅ NOVO: Determinar collection baseado no tipo de dados
+            const defaultCollection =
+                (options.collection as string) ?? 'storage';
+            const dataType = this.determineDataType();
+            const collection = this.getCollectionName(
+                defaultCollection,
+                dataType,
+            );
 
             this.db = this.client.db(database);
             this.collection = this.db.collection(collection);
@@ -109,6 +117,7 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
             logger.info('MongoDBStorageAdapter initialized', {
                 database,
                 collection,
+                dataType,
                 maxItems: this.config.maxItems,
                 enableCompression: this.config.enableCompression,
                 timeout: this.config.timeout,
@@ -122,6 +131,37 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
         }
     }
 
+    // ✅ NOVO: Determinar tipo de dados baseado no item
+    private determineDataType(): string {
+        // Se não temos dados de exemplo, usar padrão
+        return 'storage';
+    }
+
+    // ✅ NOVO: Gerar nome da collection baseado no tipo
+    private getCollectionName(
+        defaultCollection: string,
+        dataType: string,
+    ): string {
+        // Se a collection já tem prefixo kodus-, usar como está
+        if (defaultCollection.startsWith('kodus-')) {
+            return defaultCollection;
+        }
+
+        // Caso contrário, adicionar prefixo baseado no tipo
+        switch (dataType) {
+            case 'snapshots':
+                return 'kodus-snapshots';
+            case 'memory':
+                return 'kodus-memory';
+            case 'sessions':
+                return 'kodus-sessions';
+            case 'state':
+                return 'kodus-state';
+            default:
+                return `kodus-${defaultCollection}`;
+        }
+    }
+
     async store(item: T): Promise<void> {
         await this.ensureInitialized();
 
@@ -130,11 +170,9 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
                 throw new Error('Collection not initialized');
             }
 
+            // ✅ CORRIGIDO: Estrutura limpa sem duplicação
             const document = {
-                id: item.id,
-                timestamp: item.timestamp,
-                metadata: item.metadata,
-                data: item,
+                ...item,
                 createdAt: new Date(),
             };
 
@@ -145,10 +183,12 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
             logger.debug('Item stored in MongoDB', {
                 id: item.id,
                 timestamp: item.timestamp,
+                collection: this.collection.collectionName,
             });
         } catch (error) {
             logger.error('Failed to store item in MongoDB', error as Error, {
                 id: item.id,
+                collection: this.collection?.collectionName,
             });
             throw error;
         }
@@ -161,22 +201,18 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
             const document = await this.collection!.findOne({ id });
 
             if (!document) {
-                logger.debug('Item not found in MongoDB', { id });
                 return null;
             }
 
-            logger.debug('Item retrieved from MongoDB', {
-                id,
-                timestamp: document.timestamp,
-            });
-
-            return document.data as T;
+            // ✅ CORRIGIDO: Retornar documento completo (sem campo data)
+            return document as unknown as T;
         } catch (error) {
             logger.error(
                 'Failed to retrieve item from MongoDB',
                 error as Error,
                 {
                     id,
+                    collection: this.collection?.collectionName,
                 },
             );
             throw error;
@@ -188,17 +224,18 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
 
         try {
             const result = await this.collection!.deleteOne({ id });
-            const deleted = result.deletedCount > 0;
 
             logger.debug('Item deleted from MongoDB', {
                 id,
-                deleted,
+                deletedCount: result.deletedCount,
+                collection: this.collection?.collectionName,
             });
 
-            return deleted;
+            return result.deletedCount > 0;
         } catch (error) {
             logger.error('Failed to delete item from MongoDB', error as Error, {
                 id,
+                collection: this.collection?.collectionName,
             });
             throw error;
         }
@@ -209,9 +246,14 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
 
         try {
             await this.collection!.deleteMany({});
-            logger.info('All items cleared from MongoDB');
+
+            logger.info('Collection cleared', {
+                collection: this.collection?.collectionName,
+            });
         } catch (error) {
-            logger.error('Failed to clear MongoDB collection', error as Error);
+            logger.error('Failed to clear collection', error as Error, {
+                collection: this.collection?.collectionName,
+            });
             throw error;
         }
     }
@@ -220,47 +262,63 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
         await this.ensureInitialized();
 
         try {
-            const itemCount = await this.collection!.countDocuments();
-            const stats = await this.db!.stats();
+            const count = await this.collection!.countDocuments();
+            const stats = await this.collection!.aggregate([
+                {
+                    $group: {
+                        _id: null, // eslint-disable-line @typescript-eslint/naming-convention
+                        totalSize: { $sum: { $bsonSize: '$$ROOT' } },
+                        avgSize: { $avg: { $bsonSize: '$$ROOT' } },
+                    },
+                },
+            ]).toArray();
 
-            const result: BaseStorageStats = {
-                itemCount,
-                totalSize: stats.dataSize || 0,
-                averageItemSize:
-                    itemCount > 0 ? (stats.dataSize || 0) / itemCount : 0,
+            const result = stats[0] || { totalSize: 0, avgSize: 0 };
+
+            return {
+                itemCount: count,
+                totalSize: result.totalSize,
+                averageItemSize: Math.round(result.avgSize),
                 adapterType: 'mongodb',
             };
-
-            logger.debug('MongoDB stats retrieved', result);
-            return result;
         } catch (error) {
-            logger.error('Failed to get MongoDB stats', error as Error);
+            logger.error('Failed to get stats from MongoDB', error as Error, {
+                collection: this.collection?.collectionName,
+            });
             throw error;
         }
     }
 
     async isHealthy(): Promise<boolean> {
-        if (!this.isInitialized) return false;
-
         try {
-            await this.db!.admin().ping();
+            if (!this.client) {
+                return false;
+            }
+
+            // Ping the database
+            await this.client.db().admin().ping();
             return true;
         } catch (error) {
-            logger.error('MongoDB health check failed', error as Error);
+            logger.error('Health check failed', error as Error);
             return false;
         }
     }
 
     async cleanup(): Promise<void> {
-        if (this.client) {
-            await this.client.close();
-            this.client = null;
-            this.db = null;
-            this.collection = null;
-        }
+        try {
+            if (this.client) {
+                await this.client.close();
+                this.client = null;
+                this.db = null;
+                this.collection = null;
+                this.isInitialized = false;
 
-        this.isInitialized = false;
-        logger.info('MongoDBStorageAdapter cleaned up');
+                logger.info('MongoDB adapter cleaned up');
+            }
+        } catch (error) {
+            logger.error('Failed to cleanup MongoDB adapter', error as Error);
+            throw error;
+        }
     }
 
     private async ensureInitialized(): Promise<void> {

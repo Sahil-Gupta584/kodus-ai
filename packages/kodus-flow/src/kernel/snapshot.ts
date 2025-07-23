@@ -17,6 +17,7 @@ import {
     getGlobalPersistor as getGlobalPersistorFromFactory,
     setGlobalPersistor as setGlobalPersistorFromFactory,
 } from '../persistor/factory.js';
+import { IdGenerator } from '../utils/id-generator.js';
 
 // Re-export Snapshot type for convenience
 export type { Snapshot, DeltaSnapshot } from '../core/types/common-types.js';
@@ -108,8 +109,12 @@ export function createSnapshot(
 ): Snapshot {
     const payload = { events, state };
 
+    // ✅ CORRIGIDO: Usar formato tenantId:jobId como o kernel
+    const jobId = (context as any).jobId || IdGenerator.executionId();
+    const xcId = `${context.tenantId}:${jobId}`;
+
     return {
-        xcId: context.tenantId,
+        xcId,
         ts: Date.now(),
         events,
         state,

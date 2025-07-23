@@ -14,9 +14,13 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { LLMModelProvider } from '../../llmProviders/llmModelProvider.helper';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
 import { ConfigService } from '@nestjs/config';
+import { DatabaseConnection } from '@/config/types';
+import { ConnectionString } from 'connection-string';
 
 @Injectable()
 export class ConversationAgentProvider {
+    protected config: DatabaseConnection;
+
     private orchestration: ReturnType<typeof createOrchestration>;
     private mcpAdapter: ReturnType<typeof createMCPAdapter>;
 
@@ -24,13 +28,14 @@ export class ConversationAgentProvider {
     private isInitialized = false;
 
     constructor(
-        private configService: ConfigService,
+        private readonly configService: ConfigService,
 
         @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         private readonly mcpManagerService: MCPManagerService,
     ) {
+        this.config = configService.get<DatabaseConnection>('mongoDatabase');
         this.llmAdapter = this.createLLMAdapter();
     }
 
@@ -104,10 +109,17 @@ export class ConversationAgentProvider {
     }
 
     private createOrchestration() {
+        let uri = new ConnectionString('', {
+            user: this.config.username,
+            password: this.config.password,
+            protocol: this.config.port ? 'mongodb' : 'mongodb+srv',
+            hosts: [{ name: this.config.host, port: this.config.port }],
+        }).toString();
+
         const persistorConfig = {
             type: 'mongodb' as any,
-            connectionString: this.configService.get('mongoDB.uri'),
-            database: this.configService.get('mongoDB.database'),
+            connectionString: uri,
+            database: this.config.database,
             collection: 'kodus-snapshots',
         };
 
@@ -120,7 +132,7 @@ export class ConversationAgentProvider {
             tenantId: 'kodus-agent-conversation',
             llmAdapter: this.llmAdapter,
             mcpAdapter: this.mcpAdapter,
-            // persistorConfig,
+            persistorConfig,
         });
     }
 
