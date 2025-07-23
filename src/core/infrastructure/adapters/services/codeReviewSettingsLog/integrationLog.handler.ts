@@ -108,7 +108,6 @@ export class IntegrationLogHandler {
                     accountType: integration.authIntegration?.authDetails?.accountType,
                     authMode: integration.authIntegration?.authDetails?.authMode,
                 },
-                fieldConfig: { valueType: 'integration_action' },
                 description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} added ${this.formatPlatformName(integration.platform)} integration${integration.authIntegration?.authDetails?.org ? ` for organization "${integration.authIntegration.authDetails.org}"` : ''}`,
             },
         ];
@@ -130,7 +129,6 @@ export class IntegrationLogHandler {
                     authMode: integration.authIntegration?.authDetails?.authMode,
                 },
                 currentValue: null,
-                fieldConfig: { valueType: 'integration_action' },
                 description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} removed ${this.formatPlatformName(integration.platform)} integration${integration.authIntegration?.authDetails?.org ? ` for organization "${integration.authIntegration.authDetails.org}"` : ''}`,
             },
         ];

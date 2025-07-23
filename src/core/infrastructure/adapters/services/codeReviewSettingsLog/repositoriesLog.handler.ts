@@ -152,8 +152,7 @@ export class RepositoriesLogHandler {
                         name: targetRepository.name,
                     },
                 },
-                fieldConfig: { valueType: 'repository_copy_action' },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} copied code review configuration from ${isSourceGlobal ? 'Global Settings' : `"${sourceName}"`} to repository "${targetRepository.name}"`,
+                description: `User ${userInfo.userEmail} copied code review configuration from ${isSourceGlobal ? 'Global Settings' : `"${sourceName}"`} to repository "${targetRepository.name}"`,
             },
         ];
     }
@@ -171,8 +170,7 @@ export class RepositoriesLogHandler {
                     id: repository.id,
                     name: repository.name,
                 },
-                fieldConfig: { valueType: 'repository_action' },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} added repository "${repository.name}" to code review settings`,
+                description: `User ${userInfo.userEmail} added repository "${repository.name}" to code review settings`,
             },
         ];
     }
@@ -190,8 +188,7 @@ export class RepositoriesLogHandler {
                     name: repository.name,
                 },
                 currentValue: null,
-                fieldConfig: { valueType: 'repository_action' },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} removed repository "${repository.name}" from code review settings`,
+                description: `User ${userInfo.userEmail} removed repository "${repository.name}" from code review settings`,
             },
         ];
     }

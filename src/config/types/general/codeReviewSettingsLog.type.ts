@@ -17,14 +17,12 @@ export type ChangedData = {
     displayName: string;
     previousValue: any;
     currentValue: any;
-    fieldConfig: Record<string, unknown>;
     description: string;
 };
 
 export interface PropertyConfig {
     key: string;
     displayName: string;
-    fieldConfig: Record<string, unknown>;
     templateDescription: string;
     formatter?: (value: any) => string;
     isSpecialCase?: boolean;
@@ -32,7 +30,6 @@ export interface PropertyConfig {
 
 export interface UserInfo {
     userId: string;
-    userName: string;
     userEmail: string;
 }
 

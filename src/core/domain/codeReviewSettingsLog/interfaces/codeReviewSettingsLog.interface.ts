@@ -7,7 +7,6 @@ export interface ICodeReviewSettingsLog {
     action: ActionType;
     userInfo: {
         userId: string;
-        userName: string;
         userEmail: string;
     };
     changeMetadata: {

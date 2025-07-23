@@ -67,7 +67,6 @@ export class CodeReviewConfigLogHandler {
             action: actionType,
             userInfo: {
                 userId: userId,
-                userName: userInfo.userName,
                 userEmail: userInfo.userEmail,
             },
             changeMetadata: {
@@ -86,7 +85,6 @@ export class CodeReviewConfigLogHandler {
         const user = await this.userService.findOne({ uuid: userId });
         return {
             userId: user.uuid,
-            userName: user?.teamMember?.[0]?.name,
             userEmail: user.email,
         };
     }
@@ -140,7 +138,6 @@ export class CodeReviewConfigLogHandler {
             displayName: config.displayName,
             previousValue: oldValue,
             currentValue: newValue,
-            fieldConfig: config.fieldConfig,
             description: this.generateDescription(
                 config,
                 oldValue,
@@ -170,10 +167,6 @@ export class CodeReviewConfigLogHandler {
         const action = this.getActionForToggle(oldValue, newValue);
 
         // Replace placeholders
-        template = template.replace(
-            '{{userName}}',
-            userInfo.userName ? ` (${userInfo.userName}) ` : ' ',
-        );
         template = template.replace('{{userEmail}}', userInfo.userEmail);
         template = template.replace('{{displayName}}', config.displayName);
         template = template.replace('{{oldValue}}', formattedOldValue);
@@ -276,8 +269,7 @@ export class CodeReviewConfigLogHandler {
                         behaviour:
                             newConfig.summary.behaviourForExistingDescription,
                     },
-                    fieldConfig: { valueType: 'toggle_with_radio_button' },
-                    description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} enabled Generate PR Summary with ${this.formatBehaviour(newConfig.summary.behaviourForExistingDescription)} behavior`,
+                    description: `User ${userInfo.userEmail} enabled Generate PR Summary with ${this.formatBehaviour(newConfig.summary.behaviourForExistingDescription)} behavior`,
                 });
             }
         }
@@ -318,7 +310,7 @@ export class CodeReviewConfigLogHandler {
             return '';
         }
 
-        let description = `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} changed Enable Automated Code Review `;
+        let description = `User ${userInfo.userEmail} changed Enable Automated Code Review `;
 
         if (oldPrimary !== newPrimary) {
             description += `from ${oldPrimary} to ${newPrimary}`;

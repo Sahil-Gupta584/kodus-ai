@@ -15,7 +15,6 @@ export class CodeReviewSettingsLogEntity
     private readonly _action: ActionType;
     private readonly _userInfo: {
         userId: string;
-        userName: string;
         userEmail: string;
     };
     private readonly _changeMetadata: {
@@ -79,7 +78,6 @@ export class CodeReviewSettingsLogEntity
 
     get userInfo(): {
         userId: string;
-        userName: string;
         userEmail: string;
     } {
         return this._userInfo;

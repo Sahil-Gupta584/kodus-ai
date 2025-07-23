@@ -24,7 +24,6 @@ export class CodeReviewSettingsLogModel extends CoreDocument {
     @Prop({ type: Object, required: true })
     userInfo: {
         userId: string;
-        userName: string;
         userEmail: string;
     };
 

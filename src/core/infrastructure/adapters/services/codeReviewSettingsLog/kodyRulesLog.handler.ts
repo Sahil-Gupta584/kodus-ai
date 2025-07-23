@@ -253,7 +253,6 @@ export class KodyRulesLogHandler {
                     examples: newRule?.examples ?? [],
                     origin: newRule.origin,
                 },
-                fieldConfig: { valueType: 'kody_rule_action' },
                 description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} created Kody Rule "${newRule.title}" with ${newRule.severity} severity at ${levelText}`,
             },
         ];
@@ -326,7 +325,6 @@ export class KodyRulesLogHandler {
                     examples: newRule.examples,
                     origin: newRule.origin,
                 },
-                fieldConfig: { valueType: 'kody_rule_action' },
                 description: fullDescription,
             },
         ];
@@ -356,7 +354,6 @@ export class KodyRulesLogHandler {
                     origin: oldRule.origin,
                 },
                 currentValue: null,
-                fieldConfig: { valueType: 'kody_rule_action' },
                 description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} deleted Kody Rule "${title}" from ${levelText}`,
             },
         ];
@@ -386,7 +383,6 @@ export class KodyRulesLogHandler {
                     examples: newRule?.examples ?? [],
                     origin: newRule.origin,
                 },
-                fieldConfig: { valueType: 'kody_rule_action' },
                 description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} cloned Kody Rule "${newRule.title}" from library to ${levelText}`,
             },
         ];

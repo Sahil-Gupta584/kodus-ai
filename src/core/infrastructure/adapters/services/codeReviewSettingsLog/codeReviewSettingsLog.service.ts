@@ -26,7 +26,6 @@ export type ChangedDataToExport = {
     displayName: string;
     previousValue: any;
     currentValue: any;
-    fieldConfig: Record<string, any>;
     description: string;
 };
 
