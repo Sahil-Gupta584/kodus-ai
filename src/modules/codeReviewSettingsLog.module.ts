@@ -8,11 +8,15 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { forwardRef, Module } from '@nestjs/common';
 import { UsersModule } from './user.module';
 import { CodeReviewConfigLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/codeReviewConfigLog.handler';
+import { IntegrationConfigModule } from './integrationConfig.module';
+import { TeamsModule } from './team.module';
 
 @Module({
     imports: [
         MongooseModule.forFeature([CodeReviewSettingsLogModelInstance]),
         forwardRef(() => UsersModule),
+        forwardRef(() => IntegrationConfigModule),
+        forwardRef(() => TeamsModule),
     ],
     providers: [
         {

@@ -6,15 +6,6 @@ import {
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
 import { CodeReviewSettingsLogEntity } from '@/core/domain/codeReviewSettingsLog/entities/codeReviewSettingsLog.entity';
 import { ICodeReviewSettingsLog } from '@/core/domain/codeReviewSettingsLog/interfaces/codeReviewSettingsLog.interface';
-import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import {
-    ActionType,
-    ConfigLevel,
-} from '@/config/types/general/codeReviewSettingsLog.type';
-import {
-    IUsersService,
-    USER_SERVICE_TOKEN,
-} from '@/core/domain/user/contracts/user.service.contract';
 import { KodyRuleLogParams, KodyRulesLogHandler } from './kodyRulesLog.handler';
 import {
     CodeReviewConfigLogHandler,
