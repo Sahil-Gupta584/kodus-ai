@@ -22,8 +22,12 @@ import {
     LibraryKodyRule,
 } from '@/config/types/kodyRules.type';
 import { ProgrammingLanguage } from '@/shared/domain/enums/programming-language.enum';
-import { CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN, ICodeReviewSettingsLogService } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import {
+    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+    ICodeReviewSettingsLogService,
+} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 @Injectable()
 export class KodyRulesService implements IKodyRulesService {
@@ -33,6 +37,8 @@ export class KodyRulesService implements IKodyRulesService {
 
         @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
         private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
+        private readonly logger: PinoLoggerService,
     ) {}
 
     getNativeCollection() {
@@ -141,6 +147,29 @@ export class KodyRulesService implements IKodyRulesService {
                 );
             }
 
+            //Register log for kody rules cloning
+            try {
+                this.codeReviewSettingsLogService.registerKodyRulesLog({
+                    organizationAndTeamData,
+                    userId,
+                    actionType: ActionType.CLONE,
+                    repositoryId: newRule.repositoryId,
+                    oldRule: undefined,
+                    newRule: newRule,
+                    ruleTitle: newRule.title,
+                });
+            } catch (error) {
+                this.logger.warn({
+                    message: 'Error in registerKodyRulesLog',
+                    error: error,
+                    context: KodyRulesService.name,
+                    metadata: {
+                        organizationAndTeamData: organizationAndTeamData,
+                        repositoryId: newRule.repositoryId,
+                    },
+                });
+            }
+
             return newKodyRules.rules[0];
         }
 
@@ -167,16 +196,31 @@ export class KodyRulesService implements IKodyRulesService {
                 throw new Error('Could not add new rule');
             }
 
-            this.codeReviewSettingsLogService.registerKodyRulesLog({
-                organizationAndTeamData,
-                userId,
-                actionType: ActionType.CREATE,
-                repositoryId: newRule.repositoryId,
-                repositoryName: 'Global',
-                oldRule: undefined,
-                newRule: newRule,
-                ruleTitle: newRule.title,
-            });
+            //Register log for kody rules creation
+            try {
+                this.codeReviewSettingsLogService.registerKodyRulesLog({
+                    organizationAndTeamData,
+                    userId,
+                    actionType:
+                        newRule.origin === KodyRulesOrigin.LIBRARY
+                            ? ActionType.CLONE
+                            : ActionType.CREATE,
+                    repositoryId: newRule.repositoryId,
+                    oldRule: undefined,
+                    newRule: newRule,
+                    ruleTitle: newRule.title,
+                });
+            } catch (error) {
+                this.logger.warn({
+                    message: 'Error in registerKodyRulesLog',
+                    error: error,
+                    context: KodyRulesService.name,
+                    metadata: {
+                        organizationAndTeamData: organizationAndTeamData,
+                        repositoryId: newRule.repositoryId,
+                    },
+                });
+            }
 
             return updatedKodyRules.rules.find(
                 (rule) => rule.uuid === newRule.uuid,
