@@ -19,6 +19,8 @@ import {
     IUsersService,
     USER_SERVICE_TOKEN,
 } from '@/core/domain/user/contracts/user.service.contract';
+import { KodyRuleLogParams } from './kodyRulesLog.handler';
+import { IKodyRulesLogHandler, KODY_RULES_LOG_HANDLER_TOKEN } from '@/core/domain/codeReviewSettingsLog/contracts/kodyRulesLog.handler.contract';
 
 export type ChangedDataToExport = {
     key: string;
@@ -39,6 +41,9 @@ export class CodeReviewSettingsLogService
 
         @Inject(USER_SERVICE_TOKEN)
         private readonly userService: IUsersService,
+
+        @Inject(KODY_RULES_LOG_HANDLER_TOKEN)
+        private readonly kodyRulesLogHandler: IKodyRulesLogHandler,
     ) {}
 
     async create(
@@ -53,6 +58,23 @@ export class CodeReviewSettingsLogService
         filter?: Partial<ICodeReviewSettingsLog>,
     ): Promise<CodeReviewSettingsLogEntity[]> {
         return this.codeReviewSettingsLogRepository.find(filter);
+    }
+
+    public async registerKodyRulesLog(
+        params: KodyRuleLogParams,
+    ): Promise<void> {
+        const kodyRuleLogParams: KodyRuleLogParams = {
+            organizationAndTeamData: params.organizationAndTeamData,
+            userId: params.userId,
+            actionType: params.actionType,
+            repositoryId: params.repositoryId,
+            repositoryName: params.repositoryName,
+            oldRule: params.oldRule,
+            newRule: params.newRule,
+            ruleTitle: params.ruleTitle,
+        };
+
+        await this.kodyRulesLogHandler.logKodyRuleAction(kodyRuleLogParams);
     }
 
     public async saveCodeReviewSettingsLog(

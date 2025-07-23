@@ -1,6 +1,10 @@
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { ICodeReviewSettingsLogRepository } from './codeReviewSettingsLog.repository.contract';
-import { ActionType, ConfigLevel } from '@/config/types/general/codeReviewSettingsLog.type';
+import {
+    ActionType,
+    ConfigLevel,
+} from '@/config/types/general/codeReviewSettingsLog.type';
+import { KodyRuleLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/kodyRulesLog.handler';
 
 export const CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN = Symbol(
     'CodeReviewSettingsLogService',
@@ -20,4 +24,6 @@ export interface ICodeReviewSettingsLogService
             name: string;
         },
     ): Promise<void>;
+
+    registerKodyRulesLog(params: KodyRuleLogParams): Promise<void>;
 }

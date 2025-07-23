@@ -3,7 +3,7 @@ export enum ActionType {
     CREATE = 'create',
     EDIT = 'edit',
     DELETE = 'delete',
-    CLONE = 'clone', // Para quando uma rule é clonada da biblioteca
+    CLONE = 'clone',
 }
 
 export enum ConfigLevel {

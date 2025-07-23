@@ -1,27 +1,26 @@
 import { Injectable, Inject } from '@nestjs/common';
-import {
-    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
-    ICodeReviewSettingsLogService
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { IKodyRulesLogHandler } from '@/core/domain/codeReviewSettingsLog/contracts/kodyRulesLog.handler.contract';
+import {
+    CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,
+    ICodeReviewSettingsLogRepository,
+} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import {
     ActionType,
     ConfigLevel,
-    KodyRuleLogData,
     KodyRuleActionType
 } from '@/config/types/general/codeReviewSettingsLog.type';
-import { ChangedDataToExport } from './codeReviewSettingsLog.service';
 import {
     IUsersService,
     USER_SERVICE_TOKEN
 } from '@/core/domain/user/contracts/user.service.contract';
 import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
+import { ChangedDataToExport } from './codeReviewSettingsLog.service';
 
 export interface KodyRuleLogParams {
     organizationAndTeamData: OrganizationAndTeamData;
     userId: string;
-    actionType: KodyRuleActionType;
+    actionType: ActionType;
     repositoryId?: string;
     repositoryName?: string;
     oldRule?: Partial<IKodyRule>;
@@ -32,8 +31,8 @@ export interface KodyRuleLogParams {
 @Injectable()
 export class KodyRulesLogHandler implements IKodyRulesLogHandler {
     constructor(
-        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
-        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+        @Inject(CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN)
+        private readonly codeReviewSettingsLogRepository: ICodeReviewSettingsLogRepository,
 
         @Inject(USER_SERVICE_TOKEN)
         private readonly userService: IUsersService,
@@ -66,14 +65,11 @@ export class KodyRulesLogHandler implements IKodyRulesLogHandler {
             userId
         );
 
-        // Converter actionType para ActionType compatível
-        const actionTypeConverted = this.convertActionType(actionType);
-
-        // Salvar no log
-        await this.codeReviewSettingsLogService.create({
+        // Salvar no log usando o repository diretamente
+        await this.codeReviewSettingsLogRepository.create({
             organizationId: organizationAndTeamData.organizationId,
             teamId: organizationAndTeamData.teamId,
-            action: actionTypeConverted,
+            action: actionType,
             userInfo: await this.getUserInfo(userId),
             changeMetadata: {
                 configLevel,
@@ -105,7 +101,7 @@ export class KodyRulesLogHandler implements IKodyRulesLogHandler {
     }
 
     private async generateChangedDataByAction(
-        actionType: KodyRuleActionType,
+        actionType: ActionType,
         oldRule?: Partial<IKodyRule>,
         newRule?: Partial<IKodyRule>,
         ruleTitle?: string,
@@ -114,16 +110,16 @@ export class KodyRulesLogHandler implements IKodyRulesLogHandler {
         const userInfo = await this.getUserInfo(userId);
 
         switch (actionType) {
-            case KodyRuleActionType.CREATE:
+            case ActionType.CREATE:
                 return this.generateCreateChangedData(newRule!, userInfo);
 
-            case KodyRuleActionType.UPDATE:
+            case ActionType.EDIT:
                 return this.generateUpdateChangedData(oldRule!, newRule!, userInfo);
 
-            case KodyRuleActionType.DELETE:
+            case ActionType.DELETE:
                 return this.generateDeleteChangedData(oldRule!, ruleTitle, userInfo);
 
-            case KodyRuleActionType.CLONE:
+            case ActionType.CLONE:
                 return this.generateCloneChangedData(newRule!, userInfo);
 
             default:
@@ -278,21 +274,6 @@ export class KodyRulesLogHandler implements IKodyRulesLogHandler {
             fieldConfig: { valueType: 'kody_rule_action' },
             description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} cloned Kody Rule "${newRule.title}" from library to ${levelText} level`,
         }];
-    }
-
-    private convertActionType(kodyRuleActionType: KodyRuleActionType): ActionType {
-        switch (kodyRuleActionType) {
-            case KodyRuleActionType.CREATE:
-                return ActionType.CREATE;
-            case KodyRuleActionType.UPDATE:
-                return ActionType.EDIT;
-            case KodyRuleActionType.DELETE:
-                return ActionType.DELETE;
-            case KodyRuleActionType.CLONE:
-                return ActionType.CLONE;
-            default:
-                return ActionType.EDIT;
-        }
     }
 
     private async getUserInfo(userId: string): Promise<any> {
