@@ -248,6 +248,28 @@ export class KodyRulesService implements IKodyRulesService {
             updatedRule,
         );
 
+        try {
+            this.codeReviewSettingsLogService.registerKodyRulesLog({
+                organizationAndTeamData,
+                userId,
+                actionType: ActionType.EDIT,
+                repositoryId: updatedRule.repositoryId,
+                oldRule: existingRule,
+                newRule: updatedRule,
+                ruleTitle: updatedRule.title,
+            });
+        } catch (error) {
+            this.logger.warn({
+                message: 'Error in registerKodyRulesLog',
+                error: error,
+                context: KodyRulesService.name,
+                metadata: {
+                    organizationAndTeamData: organizationAndTeamData,
+                    repositoryId: updatedRule.repositoryId,
+                },
+            });
+        }
+
         if (!updatedKodyRules) {
             throw new Error('Could not update rule');
         }

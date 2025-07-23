@@ -264,82 +264,72 @@ export class KodyRulesLogHandler {
         newRule: Partial<IKodyRule>,
         userInfo: any,
     ): ChangedDataToExport[] {
-        const changes: ChangedDataToExport[] = [];
         const isGlobal = newRule.repositoryId === 'global';
-        const levelText = isGlobal ? 'global' : 'repository';
+        const levelText = isGlobal ? 'global level' : 'repository';
 
-        // Verificar mudanças nos campos principais
+        // Verificar quais campos foram alterados
+        const changedFields: string[] = [];
+
         if (oldRule.title !== newRule.title) {
-            changes.push({
-                key: 'kodyRules.title',
-                displayName: 'Kody Rule Title',
-                previousValue: oldRule.title,
-                currentValue: newRule.title,
-                fieldConfig: { valueType: 'text' },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} changed Kody Rule title from "${oldRule.title}" to "${newRule.title}"`,
-            });
+            changedFields.push(`title from "${oldRule.title}" to "${newRule.title}"`);
         }
 
         if (oldRule.severity !== newRule.severity) {
-            changes.push({
-                key: 'kodyRules.severity',
-                displayName: 'Kody Rule Severity',
-                previousValue: oldRule.severity,
-                currentValue: newRule.severity,
-                fieldConfig: { valueType: 'slider' },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} changed Kody Rule "${newRule.title}" severity from ${oldRule.severity} to ${newRule.severity}`,
-            });
+            changedFields.push(`severity from "${oldRule.severity}" to "${newRule.severity}"`);
         }
 
         if (oldRule.scope !== newRule.scope) {
-            changes.push({
-                key: 'kodyRules.scope',
-                displayName: 'Kody Rule Scope',
-                previousValue: oldRule.scope,
-                currentValue: newRule.scope,
-                fieldConfig: { valueType: 'radio_button' },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} changed Kody Rule "${newRule.title}" scope from ${oldRule.scope} to ${newRule.scope}`,
-            });
+            changedFields.push(`scope from "${oldRule.scope}" to "${newRule.scope}"`);
         }
 
         if (oldRule.rule !== newRule.rule) {
-            changes.push({
-                key: 'kodyRules.rule',
-                displayName: 'Kody Rule Instructions',
-                previousValue: oldRule.rule,
-                currentValue: newRule.rule,
-                fieldConfig: { valueType: 'text' },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} updated instructions for Kody Rule "${newRule.title}"`,
-            });
+            changedFields.push(`instructions from "${oldRule.rule}" to "${newRule.rule}"`);
         }
 
         if (oldRule.path !== newRule.path) {
-            changes.push({
-                key: 'kodyRules.path',
-                displayName: 'Kody Rule Path',
-                previousValue: oldRule.path || '',
-                currentValue: newRule.path || '',
-                fieldConfig: { valueType: 'text' },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} changed Kody Rule "${newRule.title}" path from "${oldRule.path || 'none'}" to "${newRule.path || 'none'}"`,
-            });
+            changedFields.push(`path from "${oldRule.path || 'none'}" to "${newRule.path || 'none'}"`);
         }
 
-        // Verificar mudanças nos examples
-        if (
-            JSON.stringify(oldRule.examples) !==
-            JSON.stringify(newRule.examples)
-        ) {
-            changes.push({
-                key: 'kodyRules.examples',
-                displayName: 'Kody Rule Examples',
-                previousValue: oldRule.examples,
-                currentValue: newRule.examples,
-                fieldConfig: { valueType: 'text' },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} updated examples for Kody Rule "${newRule.title}"`,
-            });
+        if (JSON.stringify(oldRule.examples) !== JSON.stringify(newRule.examples)) {
+            changedFields.push(`examples from "${JSON.stringify(oldRule.examples)}" to "${JSON.stringify(newRule.examples)}"`);
         }
 
-        return changes;
+        // Se não houve mudanças, retorna array vazio
+        if (changedFields.length === 0) {
+            return [];
+        }
+
+        // Criar descrição consolidada
+        const baseDescription = `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} edited Kody Rule "${newRule.title}" at ${levelText}:`;
+        const changesDescription = changedFields.map(change => `- ${change}`).join('\n');
+        const fullDescription = `${baseDescription}\n${changesDescription}`;
+
+        return [
+            {
+                key: 'kodyRules.edit',
+                displayName: 'Kody Rule Edited',
+                previousValue: {
+                    title: oldRule.title,
+                    scope: oldRule.scope,
+                    path: oldRule.path,
+                    instructions: oldRule.rule,
+                    severity: oldRule.severity,
+                    examples: oldRule.examples,
+                    origin: oldRule.origin,
+                },
+                currentValue: {
+                    title: newRule.title,
+                    scope: newRule.scope,
+                    path: newRule.path,
+                    instructions: newRule.rule,
+                    severity: newRule.severity,
+                    examples: newRule.examples,
+                    origin: newRule.origin,
+                },
+                fieldConfig: { valueType: 'kody_rule_action' },
+                description: fullDescription,
+            },
+        ];
     }
 
     private generateDeleteChangedData(
