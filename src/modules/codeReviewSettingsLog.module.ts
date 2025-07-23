@@ -8,6 +8,7 @@ import { KODY_RULES_LOG_HANDLER_TOKEN } from '@/core/domain/codeReviewSettingsLo
 import { MongooseModule } from '@nestjs/mongoose';
 import { forwardRef, Module } from '@nestjs/common';
 import { UsersModule } from './user.module';
+import { CodeReviewConfigLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/codeReviewConfigLog.handler';
 
 @Module({
     imports: [
@@ -27,11 +28,13 @@ import { UsersModule } from './user.module';
             provide: KODY_RULES_LOG_HANDLER_TOKEN,
             useClass: KodyRulesLogHandler,
         },
+        CodeReviewConfigLogHandler,
     ],
     exports: [
         CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,
         CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
         KODY_RULES_LOG_HANDLER_TOKEN,
+        CodeReviewConfigLogHandler,
     ],
 })
 export class CodeReviewSettingsLogModule {}

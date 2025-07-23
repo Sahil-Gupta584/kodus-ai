@@ -12,7 +12,7 @@ export const CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN = Symbol(
 
 export interface ICodeReviewSettingsLogService
     extends ICodeReviewSettingsLogRepository {
-    saveCodeReviewSettingsLog(
+    registerCodeReviewConfigLog(
         organizationAndTeamData: OrganizationAndTeamData,
         userId: string,
         oldConfig: any,

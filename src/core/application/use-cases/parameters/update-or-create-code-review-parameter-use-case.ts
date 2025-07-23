@@ -307,7 +307,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             organizationAndTeamData,
         );
 
-        this.codeReviewSettingsLogService.saveCodeReviewSettingsLog(
+        this.codeReviewSettingsLogService.registerCodeReviewConfigLog(
             organizationAndTeamData,
             this.request.user.uuid,
             codeReviewConfigs.global,
@@ -371,7 +371,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             );
 
             if (currentRepositoryConfig && newRepositoryConfig) {
-                await this.codeReviewSettingsLogService.saveCodeReviewSettingsLog(
+                await this.codeReviewSettingsLogService.registerCodeReviewConfigLog(
                     organizationAndTeamData,
                     this.request.user.uuid,
                     currentRepositoryConfig,
