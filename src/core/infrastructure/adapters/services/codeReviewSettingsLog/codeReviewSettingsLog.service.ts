@@ -11,6 +11,10 @@ import {
     CodeReviewConfigLogHandler,
     CodeReviewConfigLogParams,
 } from './codeReviewConfigLog.handler';
+import {
+    RepositoriesLogHandler,
+    RepositoriesLogParams,
+} from './repositoriesLog.handler';
 
 export type ChangedDataToExport = {
     key: string;
@@ -32,6 +36,8 @@ export class CodeReviewSettingsLogService
         private readonly kodyRulesLogHandler: KodyRulesLogHandler,
 
         private readonly codeReviewConfigLogHandler: CodeReviewConfigLogHandler,
+
+        private readonly repositoriesLogHandler: RepositoriesLogHandler,
     ) {}
 
     async create(
@@ -58,5 +64,11 @@ export class CodeReviewSettingsLogService
         params: CodeReviewConfigLogParams,
     ): Promise<void> {
         await this.codeReviewConfigLogHandler.logCodeReviewConfig(params);
+    }
+
+    public async registerRepositoriesLog(
+        params: RepositoriesLogParams,
+    ): Promise<void> {
+        await this.repositoriesLogHandler.logRepositoriesAction(params);
     }
 }

@@ -12,11 +12,11 @@ import {
     INTEGRATION_CONFIG_SERVICE_TOKEN,
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
-
-interface Body {
-    organizationAndTeamData: OrganizationAndTeamData;
-}
-
+import {
+    ICodeReviewSettingsLogService,
+    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { REQUEST } from '@nestjs/core';
 interface ICodeRepository {
     avatar_url?: string;
     default_branch: string;
@@ -38,10 +38,20 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
 
+        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
+        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: { organization: { uuid: string }; uuid: string };
+        },
+
         private readonly logger: PinoLoggerService,
     ) {}
 
-    async execute(body: Body): Promise<ParametersEntity | boolean> {
+    async execute(body: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<ParametersEntity | boolean> {
         try {
             const { organizationAndTeamData } = body;
 
@@ -98,11 +108,40 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
                 repositories: updatedRepositories,
             };
 
-            return await this.parametersService.createOrUpdateConfig(
+            const result = await this.parametersService.createOrUpdateConfig(
                 ParametersKey.CODE_REVIEW_CONFIG,
                 updatedCodeReviewConfigValue,
                 organizationAndTeamData,
             );
+
+            // Identificar repositories adicionados e removidos para o log
+            const addedRepositories = newRepositories;
+            const removedRepositories = codeReviewRepositories.filter(
+                (repository) =>
+                    !commonRepositories.some(
+                        (commonRepo) => commonRepo.id === repository.id,
+                    ),
+            );
+
+            // Registrar logs apenas se houver mudanças
+            if (
+                addedRepositories.length > 0 ||
+                removedRepositories.length > 0
+            ) {
+                await this.codeReviewSettingsLogService.registerRepositoriesLog(
+                    {
+                        organizationAndTeamData: {
+                            ...body.organizationAndTeamData,
+                            organizationId: this.request.user.organization.uuid,
+                        },
+                        userId: this.request.user.uuid,
+                        addedRepositories,
+                        removedRepositories,
+                    },
+                );
+            }
+
+            return result;
         } catch (error) {
             this.logger.error({
                 message:
