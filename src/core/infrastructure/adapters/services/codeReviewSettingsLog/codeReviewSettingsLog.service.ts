@@ -15,11 +15,7 @@ import {
     IUsersService,
     USER_SERVICE_TOKEN,
 } from '@/core/domain/user/contracts/user.service.contract';
-import { KodyRuleLogParams } from './kodyRulesLog.handler';
-import {
-    IKodyRulesLogHandler,
-    KODY_RULES_LOG_HANDLER_TOKEN,
-} from '@/core/domain/codeReviewSettingsLog/contracts/kodyRulesLog.handler.contract';
+import { KodyRuleLogParams, KodyRulesLogHandler } from './kodyRulesLog.handler';
 import {
     CodeReviewConfigLogHandler,
     CodeReviewConfigLogParams,
@@ -42,11 +38,7 @@ export class CodeReviewSettingsLogService
         @Inject(CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN)
         private readonly codeReviewSettingsLogRepository: ICodeReviewSettingsLogRepository,
 
-        @Inject(USER_SERVICE_TOKEN)
-        private readonly userService: IUsersService,
-
-        @Inject(KODY_RULES_LOG_HANDLER_TOKEN)
-        private readonly kodyRulesLogHandler: IKodyRulesLogHandler,
+        private readonly kodyRulesLogHandler: KodyRulesLogHandler,
 
         private readonly codeReviewConfigLogHandler: CodeReviewConfigLogHandler,
     ) {}

@@ -1,5 +1,4 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { IKodyRulesLogHandler } from '@/core/domain/codeReviewSettingsLog/contracts/kodyRulesLog.handler.contract';
 import {
     CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,
     ICodeReviewSettingsLogRepository,
@@ -8,7 +7,6 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import {
     ActionType,
     ConfigLevel,
-    KodyRuleActionType
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import {
     IUsersService,
@@ -29,7 +27,7 @@ export interface KodyRuleLogParams {
 }
 
 @Injectable()
-export class KodyRulesLogHandler implements IKodyRulesLogHandler {
+export class KodyRulesLogHandler {
     constructor(
         @Inject(CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN)
         private readonly codeReviewSettingsLogRepository: ICodeReviewSettingsLogRepository,
