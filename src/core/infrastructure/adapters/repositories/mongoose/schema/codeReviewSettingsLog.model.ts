@@ -15,7 +15,7 @@ export class CodeReviewSettingsLogModel extends CoreDocument {
     @Prop({ type: String, required: true })
     organizationId: string;
 
-    @Prop({ type: String, required: true })
+    @Prop({ type: String, required: false })
     teamId: string;
 
     @Prop({ type: String, required: true, enum: ActionType })
