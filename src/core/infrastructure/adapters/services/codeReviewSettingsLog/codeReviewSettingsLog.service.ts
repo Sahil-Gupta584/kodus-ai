@@ -16,6 +16,10 @@ import {
     RepositoriesLogParams,
     RepositoryCopyLogParams,
 } from './repositoriesLog.handler';
+import {
+    IntegrationLogHandler,
+    IntegrationLogParams,
+} from './integrationLog.handler';
 
 export type ChangedDataToExport = {
     key: string;
@@ -39,6 +43,8 @@ export class CodeReviewSettingsLogService
         private readonly codeReviewConfigLogHandler: CodeReviewConfigLogHandler,
 
         private readonly repositoriesLogHandler: RepositoriesLogHandler,
+
+        private readonly integrationLogHandler: IntegrationLogHandler,
     ) {}
 
     async create(
@@ -77,5 +83,11 @@ export class CodeReviewSettingsLogService
         params: RepositoryCopyLogParams,
     ): Promise<void> {
         await this.repositoriesLogHandler.logRepositoryCopyAction(params);
+    }
+
+    public async registerIntegrationLog(
+        params: IntegrationLogParams,
+    ): Promise<void> {
+        await this.integrationLogHandler.logIntegrationAction(params);
     }
 }

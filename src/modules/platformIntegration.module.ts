@@ -45,14 +45,13 @@ import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { PullRequestsModule } from './pullRequests.module';
 import { CodebaseModule } from './codeBase.module';
 import { KodyRulesModule } from './kodyRules.module';
-import { BitbucketService } from '@/core/infrastructure/adapters/services/bitbucket/bitbucket.service';
 import { AzureReposModule } from './azureRepos.module';
 import { GitHubPullRequestHandler } from '@/core/infrastructure/adapters/webhooks/github/githubPullRequest.handler';
 import { GitLabMergeRequestHandler } from '@/core/infrastructure/adapters/webhooks/gitlab/gitlabPullRequest.handler';
 import { BitbucketPullRequestHandler } from '@/core/infrastructure/adapters/webhooks/bitbucket/bitbucketPullRequest.handler';
 import { AzureReposPullRequestHandler } from '@/core/infrastructure/adapters/webhooks/azureRepos/azureReposPullRequest.handler';
-import { IWebhookEventHandler } from '@/core/domain/platformIntegrations/interfaces/webhook-event-handler.interface';
 import { IssuesModule } from './issues.module';
+import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 @Module({
     imports: [
         forwardRef(() => IntegrationModule),
@@ -81,6 +80,7 @@ import { IssuesModule } from './issues.module';
         forwardRef(() => AzureReposModule),
         forwardRef(() => BitbucketModule),
         forwardRef(() => IssuesModule),
+        forwardRef(() => CodeReviewSettingsLogModule),
         PullRequestsModule,
     ],
     providers: [

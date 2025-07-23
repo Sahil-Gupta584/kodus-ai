@@ -2,6 +2,7 @@ import { ICodeReviewSettingsLogRepository } from './codeReviewSettingsLog.reposi
 import { KodyRuleLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/kodyRulesLog.handler';
 import { CodeReviewConfigLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/codeReviewConfigLog.handler';
 import { RepositoriesLogParams, RepositoryCopyLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/repositoriesLog.handler';
+import { IntegrationLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/integrationLog.handler';
 
 export const CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN = Symbol(
     'CodeReviewSettingsLogService',
@@ -18,4 +19,6 @@ export interface ICodeReviewSettingsLogService
     registerRepositoriesLog(params: RepositoriesLogParams): Promise<void>;
 
     registerRepositoryCopyLog(params: RepositoryCopyLogParams): Promise<void>;
+
+    registerIntegrationLog(params: IntegrationLogParams): Promise<void>;
 }

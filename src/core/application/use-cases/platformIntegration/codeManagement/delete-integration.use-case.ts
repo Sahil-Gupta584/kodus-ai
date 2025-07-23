@@ -8,6 +8,9 @@ import { IntegrationService } from '@/core/infrastructure/adapters/services/inte
 import { AUTH_INTEGRATION_SERVICE_TOKEN } from '@/core/domain/authIntegrations/contracts/auth-integration.service.contracts';
 import { INTEGRATION_CONFIG_SERVICE_TOKEN } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
+import { REQUEST } from '@nestjs/core';
+import { CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN, ICodeReviewSettingsLogService } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 
 @Injectable()
 export class DeleteIntegrationUseCase {
@@ -22,6 +25,14 @@ export class DeleteIntegrationUseCase {
 
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IntegrationConfigService,
+
+        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
+        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: { organization: { uuid: string }; uuid: string };
+        },
     ) {}
 
     async execute(params: {
@@ -55,6 +66,26 @@ export class DeleteIntegrationUseCase {
         if (integrationConfig) {
             await this.integrationConfigService.delete(integrationConfig.uuid);
         }
+
+        // Registrar log da remoção da integração antes de deletar
+        await this.codeReviewSettingsLogService.registerIntegrationLog({
+            organizationAndTeamData: {
+                organizationId: this.request.user.organization.uuid,
+                teamId: params.teamId,
+            },
+            userId: this.request.user.uuid,
+            integration: {
+                uuid: integration.uuid,
+                platform: integration.platform,
+                integrationCategory: integration.integrationCategory,
+                status: integration.status,
+                authIntegration: {
+                    uuid: integration.authIntegration.uuid,
+                    authDetails: integration.authIntegration.authDetails,
+                },
+            },
+            actionType: ActionType.DELETE,
+        });
 
         await this.integrationService.delete(integration.uuid);
 
