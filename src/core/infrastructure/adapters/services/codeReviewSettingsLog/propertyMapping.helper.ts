@@ -108,7 +108,7 @@ export const PROPERTY_CONFIGS: Record<string, PropertyConfig> = {
         key: 'languageResultPrompt',
         displayName: 'Language Result Prompt',
         templateDescription:
-            'User   ({{userEmail}}) changed {{displayName}} from {{oldValue}} to {{newValue}}',
+            'User {{userEmail}} changed {{displayName}} from {{oldValue}} to {{newValue}}',
     },
     //#endregion
 
@@ -117,25 +117,25 @@ export const PROPERTY_CONFIGS: Record<string, PropertyConfig> = {
         key: 'suggestionControl.groupingMode',
         displayName: 'Grouping Mode',
         templateDescription:
-            'User   ({{userEmail}}) changed {{displayName}} from {{oldValue}} to {{newValue}}',
+            'User {{userEmail}} changed {{displayName}} from {{oldValue}} to {{newValue}}',
     },
     'suggestionControl.limitationType': {
         key: 'suggestionControl.limitationType',
         displayName: 'Limitation Type',
         templateDescription:
-            'User   ({{userEmail}}) changed {{displayName}} from {{oldValue}} to {{newValue}}',
+            'User {{userEmail}} changed {{displayName}} from {{oldValue}} to {{newValue}}',
     },
     'suggestionControl.maxSuggestions': {
         key: 'suggestionControl.maxSuggestions',
         displayName: 'Max Suggestions',
         templateDescription:
-            'User   ({{userEmail}}) changed {{displayName}} from {{oldValue}} to {{newValue}}',
+            'User {{userEmail}} changed {{displayName}} from {{oldValue}} to {{newValue}}',
     },
     'suggestionControl.severityLevelFilter': {
         key: 'suggestionControl.severityLevelFilter',
         displayName: 'Severity Level Filter',
         templateDescription:
-            'User   ({{userEmail}}) changed {{displayName}} from {{oldValue}} to {{newValue}}',
+            'User {{userEmail}} changed {{displayName}} from {{oldValue}} to {{newValue}}',
     },
     'suggestionControl.applyFiltersToKodyRules': {
         key: 'suggestionControl.applyFiltersToKodyRules',
@@ -150,13 +150,13 @@ export const PROPERTY_CONFIGS: Record<string, PropertyConfig> = {
         key: 'summary.generatePRSummary',
         displayName: 'Generate PR Summary',
         templateDescription:
-            'User   ({{userEmail}}) changed {{displayName}} from {{oldValue}} to {{newValue}}',
+            'User {{userEmail}} changed {{displayName}} from {{oldValue}} to {{newValue}}',
     },
     'summary.behaviourForExistingDescription': {
         key: 'summary.behaviourForExistingDescription',
         displayName: 'Behaviour for Existing Description',
         templateDescription:
-            'User   ({{userEmail}}) changed {{displayName}} from {{oldValue}} to {{newValue}}',
+            'User {{userEmail}} changed {{displayName}} from {{oldValue}} to {{newValue}}',
         formatter: (value: string) => {
             const labels = {
                 concatenate: 'Concatenate',
@@ -170,7 +170,7 @@ export const PROPERTY_CONFIGS: Record<string, PropertyConfig> = {
         key: 'summary.customInstructions',
         displayName: 'Custom Instructions',
         templateDescription:
-            'User   ({{userEmail}}) updated {{displayName}}',
+            'User {{userEmail}} updated {{displayName}}',
     },
     //#endregion
 
