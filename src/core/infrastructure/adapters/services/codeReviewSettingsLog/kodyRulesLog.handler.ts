@@ -7,6 +7,7 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import {
     ActionType,
     ConfigLevel,
+    UserInfo,
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import {
     IUsersService,
@@ -26,7 +27,7 @@ import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-k
 
 export interface KodyRuleLogParams {
     organizationAndTeamData: OrganizationAndTeamData;
-    userId: string;
+    userInfo: UserInfo;
     actionType: ActionType;
     repositoryId?: string;
     oldRule?: Partial<IKodyRule>;
@@ -53,7 +54,7 @@ export class KodyRulesLogHandler {
     async logKodyRuleAction(params: KodyRuleLogParams): Promise<void> {
         const {
             organizationAndTeamData,
-            userId,
+            userInfo,
             actionType,
             repositoryId,
             oldRule,
@@ -75,10 +76,10 @@ export class KodyRulesLogHandler {
         // Gerar dados de mudança baseado no tipo de ação
         const changedData = await this.generateChangedDataByAction(
             actionType,
+            userInfo,
             oldRule,
             newRule,
             ruleTitle,
-            userId,
             repository,
         );
 
@@ -87,7 +88,7 @@ export class KodyRulesLogHandler {
             organizationId: organizationAndTeamData.organizationId,
             teamId: organizationAndTeamData.teamId,
             action: actionType,
-            userInfo: await this.getUserInfo(userId),
+            userInfo,
             changeMetadata: {
                 configLevel,
                 repository,
@@ -186,14 +187,12 @@ export class KodyRulesLogHandler {
 
     private async generateChangedDataByAction(
         actionType: ActionType,
+        userInfo: UserInfo,
         oldRule?: Partial<IKodyRule>,
         newRule?: Partial<IKodyRule>,
         ruleTitle?: string,
-        userId?: string,
         repository?: { id: string; name: string },
     ): Promise<ChangedDataToExport[]> {
-        const userInfo = await this.getUserInfo(userId);
-
         switch (actionType) {
             case ActionType.CREATE:
                 return this.generateCreateChangedData(
@@ -253,7 +252,7 @@ export class KodyRulesLogHandler {
                     examples: newRule?.examples ?? [],
                     origin: newRule.origin,
                 },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} created Kody Rule "${newRule.title}" with ${newRule.severity} severity at ${levelText}`,
+                description: `User ${userInfo.userEmail} created Kody Rule "${newRule.title}" with ${newRule.severity} severity at ${levelText}`,
             },
         ];
     }
@@ -299,7 +298,7 @@ export class KodyRulesLogHandler {
         }
 
         // Criar descrição consolidada
-        const baseDescription = `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} edited Kody Rule "${newRule.title}" at ${levelText}:`;
+        const baseDescription = `User ${userInfo.userEmail} edited Kody Rule "${newRule.title}" at ${levelText}:`;
         const changesDescription = changedFields.map(change => `- ${change}`).join('\n');
         const fullDescription = `${baseDescription}\n${changesDescription}`;
 
@@ -354,7 +353,7 @@ export class KodyRulesLogHandler {
                     origin: oldRule.origin,
                 },
                 currentValue: null,
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} deleted Kody Rule "${title}" from ${levelText}`,
+                description: `User ${userInfo.userEmail} deleted Kody Rule "${title}" from ${levelText}`,
             },
         ];
     }
@@ -383,17 +382,8 @@ export class KodyRulesLogHandler {
                     examples: newRule?.examples ?? [],
                     origin: newRule.origin,
                 },
-                description: `User ${userInfo.userEmail}${userInfo.userName ? ` (${userInfo.userName})` : ''} cloned Kody Rule "${newRule.title}" from library to ${levelText}`,
+                description: `User ${userInfo.userEmail} cloned Kody Rule "${newRule.title}" from library to ${levelText}`,
             },
         ];
-    }
-
-    private async getUserInfo(userId: string): Promise<any> {
-        const user = await this.userService.findOne({ uuid: userId });
-        return {
-            userId: user.uuid,
-            userName: user?.teamMember?.[0]?.name,
-            userEmail: user.email,
-        };
     }
 }

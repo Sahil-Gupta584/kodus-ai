@@ -79,7 +79,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string }; uuid: string };
+            user: { organization: { uuid: string }; uuid: string; email: string };
         },
 
         private readonly logger: PinoLoggerService,
@@ -309,7 +309,10 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
         this.codeReviewSettingsLogService.registerCodeReviewConfigLog({
             organizationAndTeamData,
-            userId: this.request.user.uuid,
+            userInfo: {
+                userId: this.request.user.uuid,
+                userEmail: this.request.user.email,
+            },
             oldConfig: codeReviewConfigs.global,
             newConfig: newGlobalInfo,
             actionType: ActionType.EDIT,
@@ -374,7 +377,10 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 await this.codeReviewSettingsLogService.registerCodeReviewConfigLog(
                     {
                         organizationAndTeamData,
-                        userId: this.request.user.uuid,
+                        userInfo: {
+                            userId: this.request.user.uuid,
+                            userEmail: this.request.user.email,
+                        },
                         oldConfig: currentRepositoryConfig,
                         newConfig: newRepositoryConfig,
                         actionType: ActionType.EDIT,

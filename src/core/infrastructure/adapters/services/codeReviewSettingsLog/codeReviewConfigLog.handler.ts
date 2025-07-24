@@ -11,17 +11,13 @@ import {
     CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,
     ICodeReviewSettingsLogRepository,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
-import {
-    IUsersService,
-    USER_SERVICE_TOKEN,
-} from '@/core/domain/user/contracts/user.service.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { CodeReviewSettingsLogEntity } from '@/core/domain/codeReviewSettingsLog/entities/codeReviewSettingsLog.entity';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CodeReviewConfigLogParams {
     organizationAndTeamData: OrganizationAndTeamData;
-    userId: string;
+    userInfo: UserInfo;
     oldConfig: any;
     newConfig: any;
     actionType: ActionType;
@@ -34,9 +30,6 @@ export class CodeReviewConfigLogHandler {
     constructor(
         @Inject(CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN)
         private readonly codeReviewSettingsLogRepository: ICodeReviewSettingsLogRepository,
-
-        @Inject(USER_SERVICE_TOKEN)
-        private readonly userService: IUsersService,
     ) {}
 
     public async logCodeReviewConfig(
@@ -44,15 +37,13 @@ export class CodeReviewConfigLogHandler {
     ) {
         const {
             organizationAndTeamData,
-            userId,
+            userInfo,
             oldConfig,
             newConfig,
             actionType,
             configLevel,
             repository,
         } = params;
-
-        const userInfo = await this.getUserInfo(userId);
 
         const changes = await this.generateChangedData(
             oldConfig,
@@ -66,7 +57,7 @@ export class CodeReviewConfigLogHandler {
             teamId: organizationAndTeamData.teamId,
             action: actionType,
             userInfo: {
-                userId: userId,
+                userId: userInfo.userId,
                 userEmail: userInfo.userEmail,
             },
             changeMetadata: {
@@ -79,14 +70,6 @@ export class CodeReviewConfigLogHandler {
         await this.codeReviewSettingsLogRepository.create(
             codeReviewSettingsLog.toObject(),
         );
-    }
-
-    private async getUserInfo(userId: string): Promise<UserInfo> {
-        const user = await this.userService.findOne({ uuid: userId });
-        return {
-            userId: user.uuid,
-            userEmail: user.email,
-        };
     }
 
     private async generateChangedData(

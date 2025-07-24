@@ -16,7 +16,11 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
     constructor(
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string }; uuid: string };
+            user: {
+                organization: { uuid: string };
+                uuid: string;
+                email: string;
+            };
         },
 
         @Inject(KODY_RULES_SERVICE_TOKEN)
@@ -59,7 +63,10 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
                 organizationAndTeamData: {
                     organizationId: this.request.user.organization.uuid,
                 },
-                userId: this.request.user.uuid,
+                userInfo: {
+                    userId: this.request.user.uuid,
+                    userEmail: this.request.user.email,
+                },
                 actionType: ActionType.DELETE,
                 repositoryId: deletedRule?.repositoryId,
                 oldRule: deletedRule,

@@ -16,7 +16,11 @@ export class CreateOrUpdateKodyRulesUseCase {
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string }; uuid: string };
+            user: {
+                organization: { uuid: string };
+                uuid: string;
+                email: string;
+            };
         },
     ) {}
 
@@ -29,7 +33,10 @@ export class CreateOrUpdateKodyRulesUseCase {
             const result = await this.kodyRulesService.createOrUpdate(
                 organizationAndTeamData,
                 kodyRule,
-                this.request.user.uuid,
+                {
+                    userId: this.request.user.uuid,
+                    userEmail: this.request.user.email,
+                },
             );
 
             if (!result) {

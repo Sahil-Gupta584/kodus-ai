@@ -26,7 +26,7 @@ import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ICodeReviewSettingsLogService,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
-import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
+import { ActionType, UserInfo } from '@/config/types/general/codeReviewSettingsLog.type';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 @Injectable()
@@ -109,7 +109,7 @@ export class KodyRulesService implements IKodyRulesService {
     async createOrUpdate(
         organizationAndTeamData: OrganizationAndTeamData,
         kodyRule: CreateKodyRuleDto,
-        userId: string,
+        userInfo: UserInfo,
     ): Promise<Partial<IKodyRule> | IKodyRule | null> {
         const existing = await this.findByOrganizationId(
             organizationAndTeamData.organizationId,
@@ -151,7 +151,7 @@ export class KodyRulesService implements IKodyRulesService {
             try {
                 this.codeReviewSettingsLogService.registerKodyRulesLog({
                     organizationAndTeamData,
-                    userId,
+                    userInfo,
                     actionType: ActionType.CLONE,
                     repositoryId: newRule.repositoryId,
                     oldRule: undefined,
@@ -200,7 +200,7 @@ export class KodyRulesService implements IKodyRulesService {
             try {
                 this.codeReviewSettingsLogService.registerKodyRulesLog({
                     organizationAndTeamData,
-                    userId,
+                    userInfo,
                     actionType:
                         newRule.origin === KodyRulesOrigin.LIBRARY
                             ? ActionType.CLONE
@@ -251,7 +251,7 @@ export class KodyRulesService implements IKodyRulesService {
         try {
             this.codeReviewSettingsLogService.registerKodyRulesLog({
                 organizationAndTeamData,
-                userId,
+                userInfo,
                 actionType: ActionType.EDIT,
                 repositoryId: updatedRule.repositoryId,
                 oldRule: existingRule,
