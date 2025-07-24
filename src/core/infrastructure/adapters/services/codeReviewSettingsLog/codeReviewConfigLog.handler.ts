@@ -78,20 +78,28 @@ export class CodeReviewConfigLogHandler {
         newConfig: any,
         userInfo: UserInfo,
     ): Promise<ChangedDataToExport[]> {
-        // Collect all changes (basic + special cases)
-        const basicChanges = this.collectBasicChanges(oldConfig, newConfig);
-        const specialChanges = this.handleSpecialCases(oldConfig, newConfig, userInfo);
+        // Collect special changes first to know what to exclude from basic changes
+        const specialChanges = this.collectSpecialChanges(oldConfig, newConfig);
 
-        // If we have basic changes, group them intelligently
-        if (basicChanges.length > 0) {
-            const groupedChange = this.createGroupedChangedData(basicChanges, userInfo);
-            return [groupedChange, ...specialChanges];
+        // Collect basic changes, excluding properties handled by special cases
+        const excludeFromBasic = this.getPropertiesHandledBySpecialCases(specialChanges);
+        const basicChanges = this.collectBasicChanges(oldConfig, newConfig, excludeFromBasic);
+
+        // Combine all changes into one unified changedData
+        const allChanges = [...basicChanges, ...specialChanges];
+
+        if (allChanges.length > 0) {
+            return [this.createUnifiedChangedData(allChanges, userInfo, oldConfig, newConfig)];
         }
 
-        return specialChanges;
+        return [];
     }
 
-    private collectBasicChanges(oldConfig: any, newConfig: any): Array<{
+    private collectBasicChanges(
+        oldConfig: any,
+        newConfig: any,
+        excludeKeys: string[] = []
+    ): Array<{
         key: string;
         oldValue: any;
         newValue: any;
@@ -113,6 +121,7 @@ export class CodeReviewConfigLogHandler {
         for (const key of Object.keys(flatNew)) {
             if (
                 PROPERTY_CONFIGS[key] &&
+                !excludeKeys.includes(key) && // ✅ Excluir propriedades tratadas em special cases
                 UnifiedLogHandler.hasChanged(flatOld[key], flatNew[key])
             ) {
                 const config = PROPERTY_CONFIGS[key];
@@ -129,22 +138,141 @@ export class CodeReviewConfigLogHandler {
         return changes;
     }
 
-    private createGroupedChangedData(
-        changes: Array<{
-            key: string;
-            oldValue: any;
-            newValue: any;
-            displayName: string;
-            path: string[];
-        }>,
-        userInfo: UserInfo,
-    ): ChangedDataToExport {
-        // Build nested structure for previousValue/currentValue
-        const previousValue = this.buildNestedStructure(changes, 'oldValue');
-        const currentValue = this.buildNestedStructure(changes, 'newValue');
+    private getPropertiesHandledBySpecialCases(specialChanges: Array<any>): string[] {
+        const excludeKeys: string[] = [];
 
-        // Generate smart description
-        const description = this.generateSmartDescription(changes, userInfo.userEmail);
+        specialChanges.forEach(change => {
+            if (change.key === 'automatedReviewActive') {
+                // Excluir propriedades relacionadas ao automated review
+                excludeKeys.push('automatedReviewActive');
+                excludeKeys.push('reviewCadence.type');
+                excludeKeys.push('reviewCadence.pushesToTrigger');
+                excludeKeys.push('reviewCadence.timeWindow');
+            }
+
+            if (change.key === 'summary.generatePRSummary') {
+                // ✅ Excluir propriedades relacionadas ao PR summary
+                excludeKeys.push('summary.generatePRSummary');
+                excludeKeys.push('summary.behaviourForExistingDescription');
+            }
+        });
+
+        return excludeKeys;
+    }
+
+    private collectSpecialChanges(oldConfig: any, newConfig: any): Array<{
+        key: string;
+        displayName: string;
+        customDescription: string;
+        isSpecial: true;
+    }> {
+        const changes: Array<{
+            key: string;
+            displayName: string;
+            customDescription: string;
+            isSpecial: true;
+        }> = [];
+
+        // ✅ Handle automatedReviewActive + reviewCadence combo
+        const automatedChanged = UnifiedLogHandler.hasChanged(
+            oldConfig.automatedReviewActive,
+            newConfig.automatedReviewActive,
+        );
+        const cadenceChanged = UnifiedLogHandler.hasChanged(
+            oldConfig.reviewCadence,
+            newConfig.reviewCadence,
+        );
+
+        if (automatedChanged || cadenceChanged) {
+            // ✅ Validar se realmente houve mudança significativa antes de adicionar
+            const hasSignificantChange = this.hasSignificantAutomatedReviewChange(oldConfig, newConfig);
+            if (hasSignificantChange) {
+                changes.push({
+                    key: 'automatedReviewActive',
+                    displayName: 'Automated Code Review',
+                    customDescription: this.getAutomatedReviewCustomDescription(oldConfig, newConfig),
+                    isSpecial: true,
+                });
+            }
+        }
+
+        // ✅ Handle summary toggle with behavior
+        const summaryToggleChanged = UnifiedLogHandler.hasChanged(
+            oldConfig.summary?.generatePRSummary,
+            newConfig.summary?.generatePRSummary,
+        );
+        const summaryBehaviourChanged = UnifiedLogHandler.hasChanged(
+            oldConfig.summary?.behaviourForExistingDescription,
+            newConfig.summary?.behaviourForExistingDescription,
+        );
+
+        if (summaryToggleChanged || summaryBehaviourChanged) {
+            // ✅ Validar se realmente houve mudança significativa antes de adicionar
+            const hasSignificantChange = this.hasSignificantSummaryChange(oldConfig, newConfig);
+            if (hasSignificantChange) {
+                changes.push({
+                    key: 'summary.generatePRSummary',
+                    displayName: 'Generate PR Summary',
+                    customDescription: this.getSummaryCustomDescription(oldConfig, newConfig),
+                    isSpecial: true,
+                });
+            }
+        }
+
+        return changes;
+    }
+
+    private hasSignificantAutomatedReviewChange(oldConfig: any, newConfig: any): boolean {
+        // Toggle mudou?
+        if (oldConfig.automatedReviewActive !== newConfig.automatedReviewActive) {
+            return true;
+        }
+
+        // Tipo de cadence mudou?
+        const oldType = oldConfig.reviewCadence?.type;
+        const newType = newConfig.reviewCadence?.type;
+        if (oldType !== newType) {
+            return true;
+        }
+
+        // Se é auto_pause, parâmetros mudaram?
+        if (oldType === 'auto_pause' && newType === 'auto_pause') {
+            const oldPushes = oldConfig.reviewCadence?.pushesToTrigger;
+            const newPushes = newConfig.reviewCadence?.pushesToTrigger;
+            const oldTime = oldConfig.reviewCadence?.timeWindow;
+            const newTime = newConfig.reviewCadence?.timeWindow;
+
+            return oldPushes !== newPushes || oldTime !== newTime;
+        }
+
+        // Se chegou aqui, não há mudança significativa
+        return false;
+    }
+
+    private hasSignificantSummaryChange(oldConfig: any, newConfig: any): boolean {
+        // Toggle mudou?
+        if (oldConfig.summary?.generatePRSummary !== newConfig.summary?.generatePRSummary) {
+            return true;
+        }
+
+        // Behavior mudou?
+        const oldBehavior = oldConfig.summary?.behaviourForExistingDescription;
+        const newBehavior = newConfig.summary?.behaviourForExistingDescription;
+        return oldBehavior !== newBehavior;
+    }
+
+    private createUnifiedChangedData(
+        allChanges: Array<any>,
+        userInfo: UserInfo,
+        oldConfig: any,
+        newConfig: any,
+    ): ChangedDataToExport {
+        // Build complete nested structure for previousValue/currentValue
+        const previousValue = this.buildCompleteNestedStructure(allChanges, oldConfig, newConfig, 'oldValue');
+        const currentValue = this.buildCompleteNestedStructure(allChanges, oldConfig, newConfig, 'newValue');
+
+        // Generate rich description using PROPERTY_CONFIGS + custom logic
+        const description = this.generateRichDescription(allChanges, userInfo.userEmail);
 
         return {
             key: 'config.update',
@@ -155,18 +283,101 @@ export class CodeReviewConfigLogHandler {
         };
     }
 
-    private buildNestedStructure(
-        changes: Array<{
-            key: string;
-            oldValue: any;
-            newValue: any;
-            path: string[];
-        }>,
+    // ✅ Removed old methods - using new unified approach
+
+    private getAutomatedReviewCustomDescription(oldConfig: any, newConfig: any): string {
+        const wasEnabled = oldConfig.automatedReviewActive;
+        const isEnabled = newConfig.automatedReviewActive;
+
+        // Primeiro verificar se o toggle principal mudou
+        if (!wasEnabled && isEnabled) {
+            // Enabled - mostrar tipo específico se for auto_pause
+            if (newConfig.reviewCadence?.type === 'auto_pause') {
+                const params = newConfig.reviewCadence;
+                return `Automated Code Review: enabled with auto_pause (${params?.pushesToTrigger} pushes, ${params?.timeWindow} minutes)`;
+            } else {
+                return `Automated Code Review: enabled`;
+            }
+        }
+
+        if (wasEnabled && !isEnabled) {
+            return `Automated Code Review: disabled`;
+        }
+
+        // Se chegou aqui, o toggle não mudou, então deve ser só cadence
+        const oldCadence = oldConfig.reviewCadence?.type || 'none';
+        const newCadence = newConfig.reviewCadence?.type || 'none';
+
+        // ✅ Validar se o tipo da cadence realmente mudou
+        if (oldCadence !== newCadence) {
+            // Para mudanças de tipo, mostrar claramente o que mudou
+            if (newCadence === 'auto_pause') {
+                const params = newConfig.reviewCadence;
+                return `Automated Code Review: changed to auto_pause (${params?.pushesToTrigger} pushes, ${params?.timeWindow} minutes)`;
+            } else {
+                return `Automated Code Review: changed to ${newCadence}`;
+            }
+        }
+
+        // ✅ Se o tipo não mudou, verificar mudanças internas (auto_pause params)
+        if (oldCadence === 'auto_pause' && newCadence === 'auto_pause') {
+            const oldPushes = oldConfig.reviewCadence?.pushesToTrigger;
+            const newPushes = newConfig.reviewCadence?.pushesToTrigger;
+            const oldTime = oldConfig.reviewCadence?.timeWindow;
+            const newTime = newConfig.reviewCadence?.timeWindow;
+
+            if (oldPushes !== newPushes || oldTime !== newTime) {
+                return `Automated Code Review: updated auto_pause parameters (${newPushes} pushes, ${newTime} minutes)`;
+            }
+        }
+
+        // ✅ Se chegou aqui, houve mudança mas não é significativa
+        return `Automated Code Review: configuration updated`;
+    }
+
+    private getSummaryCustomDescription(oldConfig: any, newConfig: any): string {
+        const wasEnabled = oldConfig.summary?.generatePRSummary;
+        const isEnabled = newConfig.summary?.generatePRSummary;
+
+        // Primeiro verificar se o toggle principal mudou
+        if (!wasEnabled && isEnabled) {
+            // Enabled - show behavior
+            const behavior = this.formatBehaviour(newConfig.summary?.behaviourForExistingDescription);
+            return `Generate PR Summary: enabled with ${behavior} behavior`;
+        }
+
+        if (wasEnabled && !isEnabled) {
+            return `Generate PR Summary: disabled`;
+        }
+
+        // Se chegou aqui, o toggle não mudou, então deve ser só behavior
+        const oldBehavior = oldConfig.summary?.behaviourForExistingDescription;
+        const newBehavior = newConfig.summary?.behaviourForExistingDescription;
+
+        // ✅ Validar se o behavior realmente mudou
+        if (oldBehavior !== newBehavior) {
+            const formattedOldBehavior = this.formatBehaviour(oldBehavior);
+            const formattedNewBehavior = this.formatBehaviour(newBehavior);
+            return `Generate PR Summary: behavior changed from ${formattedOldBehavior} to ${formattedNewBehavior}`;
+        }
+
+        // ✅ Se chegou aqui, houve mudança mas não é significativa
+        return `Generate PR Summary: configuration updated`;
+    }
+
+    // ✅ Removido formatCadenceDetails - lógica específica em cada contexto
+
+    private buildCompleteNestedStructure(
+        allChanges: Array<any>,
+        oldConfig: any,
+        newConfig: any,
         valueType: 'oldValue' | 'newValue'
     ): any {
         const result = {};
 
-        changes.forEach(change => {
+        // Add basic changes with nested structure
+        const basicChanges = allChanges.filter(change => !change.isSpecial);
+        basicChanges.forEach(change => {
             const value = change[valueType];
             const path = change.path;
 
@@ -183,33 +394,65 @@ export class CodeReviewConfigLogHandler {
             current[path[path.length - 1]] = value;
         });
 
+        // Add special cases to nested structure
+        const specialChanges = allChanges.filter(change => change.isSpecial);
+        specialChanges.forEach(change => {
+            if (change.key === 'automatedReviewActive') {
+                // Use correct config based on valueType
+                const sourceConfig = valueType === 'oldValue' ? oldConfig : newConfig;
+                result['automatedReviewActive'] = sourceConfig.automatedReviewActive;
+                result['reviewCadence'] = sourceConfig.reviewCadence;
+            }
+
+            if (change.key === 'summary.generatePRSummary') {
+                if (!result['summary']) result['summary'] = {};
+                const sourceConfig = valueType === 'oldValue' ? oldConfig : newConfig;
+                result['summary']['generatePRSummary'] = sourceConfig.summary?.generatePRSummary;
+                result['summary']['behaviourForExistingDescription'] = sourceConfig.summary?.behaviourForExistingDescription;
+            }
+        });
+
         return result;
     }
 
-    private generateSmartDescription(
-        changes: Array<{
-            key: string;
-            oldValue: any;
-            newValue: any;
-            displayName: string;
-        }>,
-        userEmail: string
-    ): string {
-        if (changes.length === 1) {
-            // Single change: simple sentence
-            const change = changes[0];
-            const formattedOld = UnifiedLogHandler.formatValue(change.oldValue);
-            const formattedNew = UnifiedLogHandler.formatValue(change.newValue);
+    private generateRichDescription(allChanges: Array<any>, userEmail: string): string {
+        if (allChanges.length === 1) {
+            // Single change: extract description
+            const change = allChanges[0];
 
-            return `User ${userEmail} changed ${change.displayName} from ${formattedOld} to ${formattedNew}`;
+            if (change.isSpecial) {
+                return `User ${userEmail} changed ${change.customDescription}`;
+            } else {
+                // Use PROPERTY_CONFIGS formatter
+                const config = PROPERTY_CONFIGS[change.key];
+                const formattedOld = config.formatter
+                    ? config.formatter(change.oldValue)
+                    : UnifiedLogHandler.formatValue(change.oldValue);
+                const formattedNew = config.formatter
+                    ? config.formatter(change.newValue)
+                    : UnifiedLogHandler.formatValue(change.newValue);
+
+                return `User ${userEmail} changed ${config.displayName} from ${formattedOld} to ${formattedNew}`;
+            }
         }
 
-        // Multiple changes: bullet list
+        // Multiple changes: bullet list with rich descriptions
         const header = `User ${userEmail} changed code review configuration`;
-        const bullets = changes.map(change => {
-            const formattedOld = UnifiedLogHandler.formatValue(change.oldValue);
-            const formattedNew = UnifiedLogHandler.formatValue(change.newValue);
-            return `- ${change.displayName}: from ${formattedOld} to ${formattedNew}`;
+        const bullets = allChanges.map(change => {
+            if (change.isSpecial) {
+                return `- ${change.customDescription}`;
+            } else {
+                // Use PROPERTY_CONFIGS formatter for basic changes
+                const config = PROPERTY_CONFIGS[change.key];
+                const formattedOld = config.formatter
+                    ? config.formatter(change.oldValue)
+                    : UnifiedLogHandler.formatValue(change.oldValue);
+                const formattedNew = config.formatter
+                    ? config.formatter(change.newValue)
+                    : UnifiedLogHandler.formatValue(change.newValue);
+
+                return `- ${config.displayName}: from ${formattedOld} to ${formattedNew}`;
+            }
         }).join('\n');
 
         return `${header}\n${bullets}`;
@@ -217,95 +460,7 @@ export class CodeReviewConfigLogHandler {
 
     // ✅ Removed createChangedData - using grouped approach
 
-    // ✅ Removed generateDescription and getActionForToggle - using smart description logic
-
-    private handleSpecialCases(
-        oldConfig: any,
-        newConfig: any,
-        userInfo: UserInfo,
-    ): ChangedDataToExport[] {
-        const changes: ChangedDataToExport[] = [];
-
-        // ✅ Handle automatedReviewActive + reviewCadence combo (simplified)
-        const automatedChanged = UnifiedLogHandler.hasChanged(
-            oldConfig.automatedReviewActive,
-            newConfig.automatedReviewActive,
-        );
-        const cadenceChanged = UnifiedLogHandler.hasChanged(
-            oldConfig.reviewCadence,
-            newConfig.reviewCadence,
-        );
-
-        if (automatedChanged || cadenceChanged) {
-            let description: string;
-
-            if (automatedChanged) {
-                // Main toggle changed
-                description = newConfig.automatedReviewActive
-                    ? `User ${userInfo.userEmail} enabled Automated Code Review`
-                    : `User ${userInfo.userEmail} disabled Automated Code Review`;
-            } else {
-                // Only cadence changed
-                description = `User ${userInfo.userEmail} changed Automated Code Review cadence from ${oldConfig.reviewCadence?.type || 'none'} to ${newConfig.reviewCadence?.type || 'none'}`;
-            }
-
-            changes.push({
-                key: 'automatedReviewActive',
-                displayName: 'Automated Code Review',
-                previousValue: {
-                    automatedReviewActive: oldConfig.automatedReviewActive,
-                    reviewCadence: oldConfig.reviewCadence,
-                },
-                currentValue: {
-                    automatedReviewActive: newConfig.automatedReviewActive,
-                    reviewCadence: newConfig.reviewCadence,
-                },
-                description,
-            });
-        }
-
-        // ✅ Handle summary toggle with behavior (simplified)
-        const summaryToggleChanged = UnifiedLogHandler.hasChanged(
-            oldConfig.summary?.generatePRSummary,
-            newConfig.summary?.generatePRSummary,
-        );
-        const summaryBehaviourChanged = UnifiedLogHandler.hasChanged(
-            oldConfig.summary?.behaviourForExistingDescription,
-            newConfig.summary?.behaviourForExistingDescription,
-        );
-
-        if (summaryToggleChanged || summaryBehaviourChanged) {
-            let description: string;
-
-            if (summaryToggleChanged) {
-                // Main toggle changed
-                description = newConfig.summary?.generatePRSummary
-                    ? `User ${userInfo.userEmail} enabled Generate PR Summary`
-                    : `User ${userInfo.userEmail} disabled Generate PR Summary`;
-            } else {
-                // Only behavior changed
-                description = `User ${userInfo.userEmail} changed Generate PR Summary behavior from ${this.formatBehaviour(oldConfig.summary?.behaviourForExistingDescription)} to ${this.formatBehaviour(newConfig.summary?.behaviourForExistingDescription)}`;
-            }
-
-            changes.push({
-                key: 'summary.generatePRSummary',
-                displayName: 'Generate PR Summary',
-                previousValue: {
-                    generatePRSummary: oldConfig.summary?.generatePRSummary,
-                    behaviourForExistingDescription:
-                        oldConfig.summary?.behaviourForExistingDescription,
-                },
-                currentValue: {
-                    generatePRSummary: newConfig.summary?.generatePRSummary,
-                    behaviourForExistingDescription:
-                        newConfig.summary?.behaviourForExistingDescription,
-                },
-                description,
-            });
-        }
-
-        return changes;
-    }
+    // ✅ Removed old handleSpecialCases - using new unified approach
 
     private formatBehaviour(behaviour: string): string {
         const behaviourLabels = {
