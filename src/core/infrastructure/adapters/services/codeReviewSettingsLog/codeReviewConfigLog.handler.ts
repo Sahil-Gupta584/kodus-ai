@@ -14,6 +14,9 @@ import {
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { CodeReviewSettingsLogEntity } from '@/core/domain/codeReviewSettingsLog/entities/codeReviewSettingsLog.entity';
 import { v4 as uuidv4 } from 'uuid';
+import {
+    UnifiedLogHandler,
+} from './unifiedLog.handler';
 
 export interface CodeReviewConfigLogParams {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -32,9 +35,7 @@ export class CodeReviewConfigLogHandler {
         private readonly codeReviewSettingsLogRepository: ICodeReviewSettingsLogRepository,
     ) {}
 
-    public async logCodeReviewConfig(
-        params: CodeReviewConfigLogParams,
-    ) {
+    public async logCodeReviewConfig(params: CodeReviewConfigLogParams) {
         const {
             organizationAndTeamData,
             userInfo,
@@ -87,7 +88,7 @@ export class CodeReviewConfigLogHandler {
             // Skip if this key has a config and values are different
             if (
                 PROPERTY_CONFIGS[key] &&
-                !this.isEqual(flatOld[key], flatNew[key])
+                UnifiedLogHandler.hasChanged(flatOld[key], flatNew[key])
             ) {
                 changes.push(
                     this.createChangedData(
@@ -141,10 +142,10 @@ export class CodeReviewConfigLogHandler {
         // Apply formatter if exists
         const formattedOldValue = config.formatter
             ? config.formatter(oldValue)
-            : this.formatValue(oldValue);
+            : UnifiedLogHandler.formatValue(oldValue);
         const formattedNewValue = config.formatter
             ? config.formatter(newValue)
-            : this.formatValue(newValue);
+            : UnifiedLogHandler.formatValue(newValue);
 
         // Determine action for toggles
         const action = this.getActionForToggle(oldValue, newValue);
@@ -167,19 +168,6 @@ export class CodeReviewConfigLogHandler {
         return 'changed';
     }
 
-    private formatValue(value: any): string {
-        if (typeof value === 'boolean') {
-            return value ? 'enabled' : 'disabled';
-        }
-        if (Array.isArray(value)) {
-            return value.join(', ') || 'none';
-        }
-        if (value === null || value === undefined) {
-            return 'none';
-        }
-        return String(value);
-    }
-
     private handleSpecialCases(
         oldConfig: any,
         newConfig: any,
@@ -187,121 +175,85 @@ export class CodeReviewConfigLogHandler {
     ): ChangedDataToExport[] {
         const changes: ChangedDataToExport[] = [];
 
-        // Handle automatedReviewActive + reviewCadence combo
-        const automatedChanged =
-            oldConfig.automatedReviewActive !== newConfig.automatedReviewActive;
-        const cadenceChanged = !this.isEqual(
+        // ✅ Handle automatedReviewActive + reviewCadence combo (simplified)
+        const automatedChanged = UnifiedLogHandler.hasChanged(
+            oldConfig.automatedReviewActive,
+            newConfig.automatedReviewActive,
+        );
+        const cadenceChanged = UnifiedLogHandler.hasChanged(
             oldConfig.reviewCadence,
             newConfig.reviewCadence,
         );
 
         if (automatedChanged || cadenceChanged) {
-            const automaticCodeReviewChanges = {
+            let description: string;
+
+            if (automatedChanged) {
+                // Main toggle changed
+                description = newConfig.automatedReviewActive
+                    ? `User ${userInfo.userEmail} enabled Automated Code Review`
+                    : `User ${userInfo.userEmail} disabled Automated Code Review`;
+            } else {
+                // Only cadence changed
+                description = `User ${userInfo.userEmail} changed Automated Code Review cadence from ${oldConfig.reviewCadence?.type || 'none'} to ${newConfig.reviewCadence?.type || 'none'}`;
+            }
+
+            changes.push({
                 key: 'automatedReviewActive',
-                displayName: 'Enable Automated Code Review',
+                displayName: 'Automated Code Review',
                 previousValue: {
-                    primaryValue: oldConfig.automatedReviewActive,
-                    secondaryValue: oldConfig.reviewCadence?.type,
-                    tertiaryValue:
-                        oldConfig.reviewCadence?.type === 'auto_pause'
-                            ? `${oldConfig.reviewCadence.pushes} pushes and ${oldConfig.reviewCadence.timeWindow} minutes`
-                            : undefined,
+                    automatedReviewActive: oldConfig.automatedReviewActive,
+                    reviewCadence: oldConfig.reviewCadence,
                 },
                 currentValue: {
-                    primaryValue: newConfig.automatedReviewActive,
-                    secondaryValue: newConfig.reviewCadence?.type,
-                    tertiaryValue:
-                        newConfig.reviewCadence?.type === 'auto_pause'
-                            ? `${newConfig.reviewCadence.pushesToTrigger} pushes and ${newConfig.reviewCadence.timeWindow} minutes`
-                            : undefined,
+                    automatedReviewActive: newConfig.automatedReviewActive,
+                    reviewCadence: newConfig.reviewCadence,
                 },
-                fieldConfig: { valueType: 'toggle_with_select' },
-                description: this.generateAutomatedReviewDescription(
-                    oldConfig,
-                    newConfig,
-                    userInfo,
-                ),
-            };
-
-            if (automaticCodeReviewChanges?.description?.length > 0) {
-                changes.push(automaticCodeReviewChanges);
-            }
+                description,
+            });
         }
 
-        // Handle summary toggle with radio buttons
-        const summaryToggleChanged =
-            oldConfig.summary?.generatePRSummary !==
-            newConfig.summary?.generatePRSummary;
-        const summaryBehaviourChanged =
-            oldConfig.summary?.behaviourForExistingDescription !==
-            newConfig.summary?.behaviourForExistingDescription;
+        // ✅ Handle summary toggle with behavior (simplified)
+        const summaryToggleChanged = UnifiedLogHandler.hasChanged(
+            oldConfig.summary?.generatePRSummary,
+            newConfig.summary?.generatePRSummary,
+        );
+        const summaryBehaviourChanged = UnifiedLogHandler.hasChanged(
+            oldConfig.summary?.behaviourForExistingDescription,
+            newConfig.summary?.behaviourForExistingDescription,
+        );
 
-        if (summaryToggleChanged && summaryBehaviourChanged) {
-            // If both changed, create a special case
-            const wasEnabled = oldConfig.summary?.generatePRSummary;
-            const isEnabled = newConfig.summary?.generatePRSummary;
+        if (summaryToggleChanged || summaryBehaviourChanged) {
+            let description: string;
 
-            if (!wasEnabled && isEnabled) {
-                // Enabled with a specific behavior
-                changes.push({
-                    key: 'summary.generatePRSummary',
-                    displayName: 'Generate PR Summary',
-                    previousValue: false,
-                    currentValue: {
-                        enabled: true,
-                        behaviour:
-                            newConfig.summary.behaviourForExistingDescription,
-                    },
-                    description: `User ${userInfo.userEmail} enabled Generate PR Summary with ${this.formatBehaviour(newConfig.summary.behaviourForExistingDescription)} behavior`,
-                });
+            if (summaryToggleChanged) {
+                // Main toggle changed
+                description = newConfig.summary?.generatePRSummary
+                    ? `User ${userInfo.userEmail} enabled Generate PR Summary`
+                    : `User ${userInfo.userEmail} disabled Generate PR Summary`;
+            } else {
+                // Only behavior changed
+                description = `User ${userInfo.userEmail} changed Generate PR Summary behavior from ${this.formatBehaviour(oldConfig.summary?.behaviourForExistingDescription)} to ${this.formatBehaviour(newConfig.summary?.behaviourForExistingDescription)}`;
             }
+
+            changes.push({
+                key: 'summary.generatePRSummary',
+                displayName: 'Generate PR Summary',
+                previousValue: {
+                    generatePRSummary: oldConfig.summary?.generatePRSummary,
+                    behaviourForExistingDescription:
+                        oldConfig.summary?.behaviourForExistingDescription,
+                },
+                currentValue: {
+                    generatePRSummary: newConfig.summary?.generatePRSummary,
+                    behaviourForExistingDescription:
+                        newConfig.summary?.behaviourForExistingDescription,
+                },
+                description,
+            });
         }
 
         return changes;
-    }
-
-    private generateAutomatedReviewDescription(
-        oldConfig: any,
-        newConfig: any,
-        userInfo: UserInfo,
-    ): string {
-        const oldPrimary = oldConfig.automatedReviewActive
-            ? 'enabled'
-            : 'disabled';
-        const newPrimary = newConfig.automatedReviewActive
-            ? 'enabled'
-            : 'disabled';
-
-        const oldSecondary = oldConfig.reviewCadence?.type || 'none';
-        const newSecondary = newConfig.reviewCadence?.type || 'none';
-
-        const oldTertiary =
-            oldConfig.reviewCadence?.type === 'auto_pause'
-                ? `${oldConfig.reviewCadence.pushes} pushes and ${oldConfig.reviewCadence.timeWindow} minutes`
-                : undefined;
-
-        const newTertiary =
-            newConfig.reviewCadence?.type === 'auto_pause'
-                ? `${newConfig.reviewCadence.pushesToTrigger} pushes and ${newConfig.reviewCadence.timeWindow} minutes`
-                : undefined;
-
-        if (
-            oldPrimary === newPrimary &&
-            oldSecondary === newSecondary &&
-            oldTertiary === newTertiary
-        ) {
-            return '';
-        }
-
-        let description = `User ${userInfo.userEmail} changed Enable Automated Code Review `;
-
-        if (oldPrimary !== newPrimary) {
-            description += `from ${oldPrimary} to ${newPrimary}`;
-        } else {
-            description += `from ${oldSecondary}${oldTertiary ? `, ${oldTertiary}` : ''} to ${newSecondary}${newTertiary ? `, ${newTertiary}` : ''}`;
-        }
-
-        return description;
     }
 
     private formatBehaviour(behaviour: string): string {
@@ -336,25 +288,5 @@ export class CodeReviewConfigLogHandler {
         }
 
         return flattened;
-    }
-
-    private isEqual(a: any, b: any): boolean {
-        if (a === b) return true;
-
-        if (Array.isArray(a) && Array.isArray(b)) {
-            if (a.length !== b.length) return false;
-            return a.every((item, index) => this.isEqual(item, b[index]));
-        }
-
-        if (a && b && typeof a === 'object' && typeof b === 'object') {
-            const keysA = Object.keys(a);
-            const keysB = Object.keys(b);
-
-            if (keysA.length !== keysB.length) return false;
-
-            return keysA.every((key) => this.isEqual(a[key], b[key]));
-        }
-
-        return false;
     }
 }
