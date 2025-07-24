@@ -24,7 +24,11 @@ export class CreateIntegrationUseCase implements IUseCase {
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string }; uuid: string };
+            user: {
+                organization: { uuid: string };
+                uuid: string;
+                email: string;
+            };
         },
 
         @Inject(AUTH_INTEGRATION_SERVICE_TOKEN)
@@ -67,7 +71,10 @@ export class CreateIntegrationUseCase implements IUseCase {
                     organizationId: this.request.user.organization.uuid,
                     teamId: organizationAndTeamData.teamId,
                 },
-                userId: this.request.user.uuid,
+                userInfo: {
+                    userId: this.request.user.uuid,
+                    userEmail: this.request.user.email,
+                },
                 integration: {
                     uuid: 'temp-uuid',
                     platform:

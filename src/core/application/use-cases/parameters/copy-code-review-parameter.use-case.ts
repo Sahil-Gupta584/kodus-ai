@@ -12,6 +12,7 @@ import {
     ICodeReviewSettingsLogService,
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 
 @Injectable()
 export class CopyCodeReviewParameterUseCase {
@@ -26,7 +27,11 @@ export class CopyCodeReviewParameterUseCase {
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string }; uuid: string };
+            user: {
+                organization: { uuid: string };
+                uuid: string;
+                email: string;
+            };
         },
     ) {}
 
@@ -95,13 +100,17 @@ export class CopyCodeReviewParameterUseCase {
             );
 
             try {
-                this.codeReviewSettingsLogService.registerRepositoryCopyLog(
+                this.codeReviewSettingsLogService.registerRepositoriesLog(
                     {
                         organizationAndTeamData: {
                             ...organizationAndTeamData,
                             organizationId: this.request.user.organization.uuid,
                         },
-                        userId: this.request.user.uuid,
+                        userInfo: {
+                            userId: this.request.user.uuid,
+                            userEmail: this.request.user.email,
+                        },
+                        actionType: ActionType.ADD,
                         sourceRepository:
                             sourceRepositoryId === 'global'
                                 ? { id: 'global', name: 'Global Settings' }

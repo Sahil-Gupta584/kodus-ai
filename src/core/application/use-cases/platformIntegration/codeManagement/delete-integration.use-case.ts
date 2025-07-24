@@ -37,7 +37,11 @@ export class DeleteIntegrationUseCase {
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string }; uuid: string };
+            user: {
+                organization: { uuid: string };
+                uuid: string;
+                email: string;
+            };
         },
     ) {}
 
@@ -79,7 +83,10 @@ export class DeleteIntegrationUseCase {
                     organizationId: this.request.user.organization.uuid,
                     teamId: params.teamId,
                 },
-                userId: this.request.user.uuid,
+                userInfo: {
+                    userId: this.request.user.uuid,
+                    userEmail: this.request.user.email,
+                },
                 integration: {
                     uuid: integration.uuid,
                     platform: integration.platform,

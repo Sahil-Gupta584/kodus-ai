@@ -17,6 +17,7 @@ import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { REQUEST } from '@nestjs/core';
+import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 interface ICodeRepository {
     avatar_url?: string;
     default_branch: string;
@@ -43,7 +44,11 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string }; uuid: string };
+            user: {
+                organization: { uuid: string };
+                uuid: string;
+                email: string;
+            };
         },
 
         private readonly logger: PinoLoggerService,
@@ -128,18 +133,20 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
                     addedRepositories.length > 0 ||
                     removedRepositories.length > 0
                 ) {
-                    this.codeReviewSettingsLogService.registerRepositoriesLog(
-                        {
-                            organizationAndTeamData: {
-                                ...body.organizationAndTeamData,
-                                organizationId:
-                                    this.request.user.organization.uuid,
-                            },
-                            userId: this.request.user.uuid,
-                            addedRepositories,
-                            removedRepositories,
+                    this.codeReviewSettingsLogService.registerRepositoriesLog({
+                        organizationAndTeamData: {
+                            ...body.organizationAndTeamData,
+                            organizationId:
+                                this.request.user.organization.uuid,
                         },
-                    );
+                        userInfo: {
+                            userId: this.request.user.uuid,
+                            userEmail: this.request.user.email,
+                        },
+                        actionType: ActionType.EDIT,
+                        addedRepositories,
+                        removedRepositories,
+                    });
                 }
             } catch (error) {
                 this.logger.error({
