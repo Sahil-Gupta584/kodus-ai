@@ -13,7 +13,7 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": ".",
-    "rootDir": ".",
+    "rootDir": "./src",
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
@@ -29,10 +29,10 @@
   },
   "include": [
     "src/**/*",
-    "test/**/*",
   ],
   "exclude": [
     "node_modules",
     "dist",
+    "test",
   ],
 }

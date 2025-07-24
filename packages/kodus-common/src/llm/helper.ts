@@ -1,18 +1,18 @@
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatNovitaAI } from '@langchain/community/chat_models/novita';
-import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { Runnable } from '@langchain/core/runnables';
 import { ChatVertexAI } from '@langchain/google-vertexai';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatGoogle } from '@langchain/google-gauth';
+import { Callbacks } from '@langchain/core/callbacks/manager';
 
 export const getChatGPT = (options?: {
     model?: string;
     temperature?: number;
     maxTokens?: number;
     verbose?: boolean;
-    callbacks?: BaseCallbackHandler[];
+    callbacks?: Callbacks;
     baseURL?: string;
     apiKey?: string;
 }) => {
@@ -58,7 +58,7 @@ const getChatAnthropic = (
         temperature?: number;
         maxTokens?: number;
         verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
+        callbacks?: Callbacks;
         json?: boolean;
     } | null,
 ) => {
@@ -94,7 +94,7 @@ const getChatGemini = (
         topP?: number;
         maxTokens?: number;
         verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
+        callbacks?: Callbacks;
         json?: boolean;
     } | null,
 ) => {
@@ -135,7 +135,7 @@ const getChatVertexAI = (
         temperature?: number;
         maxTokens?: number;
         verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
+        callbacks?: Callbacks;
         json?: boolean;
     } | null,
 ) => {
@@ -182,7 +182,7 @@ const getDeepseekByNovitaAI = (
         temperature?: number;
         maxTokens?: number;
         verbose?: boolean;
-        callbacks?: BaseCallbackHandler[];
+        callbacks?: Callbacks;
     } | null,
 ) => {
     const defaultOptions = {

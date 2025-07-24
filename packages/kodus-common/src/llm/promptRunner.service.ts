@@ -1,175 +1,59 @@
 import { Inject, Injectable, LoggerService } from '@nestjs/common';
-import { LLMProviderService } from './llmModelProvider.service';
-import { LLMModelProvider } from './helper';
 import {
-    RunnableSequence,
-    RunnableWithFallbacks,
-} from '@langchain/core/runnables';
-import {
-    JsonOutputParser,
-    StringOutputParser,
-} from '@langchain/core/output_parsers';
+    LLMProviderOptions,
+    LLMProviderService,
+} from './llmModelProvider.service';
+import { RunnableConfig, RunnableSequence } from '@langchain/core/runnables';
 import { handleError } from '../utils/error';
+import { PromptBuilder } from './builder';
+import { LLMModelProvider } from './helper';
+import { BaseTransformOutputParser } from '@langchain/core/output_parsers';
+import {
+    BaseMessage,
+    BaseMessageLike,
+    isBaseMessage,
+} from '@langchain/core/messages';
 
-export type PromptFn<T> = (input?: T) => string;
+export type PromptFn<Payload> = (input?: Payload) => string;
 
 export enum PromptRole {
     SYSTEM = 'system',
     USER = 'user',
     AI = 'ai',
+    CUSTOM = 'custom',
 }
 
-export type RunPromptParams<T> = {
-    payload?: T;
-    provider: LLMModelProvider;
-    fallbackProvider?: LLMModelProvider;
-    systemPromptFn?: PromptFn<T>;
-    userPromptFn?: PromptFn<T>;
-    runName?: string;
-    metadata?: Record<string, any>;
-    temperature?: number;
-    jsonMode?: boolean;
+export enum PromptScope {
+    GLOBAL = 'global',
+    MAIN = 'main',
+    FALLBACK = 'fallback',
+}
+
+export type PromptConfig<Payload> = {
+    role?: PromptRole;
+    roleName?: string;
+    prompt: PromptFn<Payload> | string | BaseMessage;
+    type?: string;
+    scope?: PromptScope;
 };
 
-class PromptBuilder<OutputType, Payload = any> {
-    private params: Partial<RunPromptParams<Payload>> = {};
+export type PromptRunnerParams<Payload, OutputType = any> = {
+    provider: LLMModelProvider;
+    fallbackProvider?: LLMModelProvider;
+    parser: BaseTransformOutputParser<OutputType>;
+    prompts: PromptConfig<Payload>[];
+    payload?: Payload;
+} & Partial<Omit<LLMProviderOptions, 'model'>> &
+    /** Options passed to the `withConfig` langchain method */
+    Partial<RunnableConfig>;
 
-    constructor(
-        private readonly runner: PromptRunnerService,
-        jsonMode: boolean,
-        initialParams: Partial<RunPromptParams<any>> = {},
-    ) {
-        this.params = {
-            jsonMode,
-            temperature: 0,
-            metadata: {},
-            ...initialParams,
-        };
-    }
-
-    /**
-     * Adds a payload to the prompt configuration.
-     * This payload will be used in the prompt functions defined in `addPrompt`.
-     * @param payload The payload to be added.
-     * @returns The PromptBuilder instance for chaining.
-     */
-    addPayload<P>(payload: P) {
-        return new PromptBuilder<OutputType, P>(
-            this.runner,
-            this.params.jsonMode,
-            {
-                ...this.params,
-                payload,
-            },
-        );
-    }
-
-    /**
-     * Sets the main and optional fallback LLM providers.
-     * @param config The configuration object containing the main and optional fallback providers.
-     * - `main`: The main LLM provider to use.
-     * - `fallback`: An optional fallback LLM provider.
-     * @returns The PromptBuilder instance for chaining.
-     */
-    addProviders(config: {
-        main: LLMModelProvider;
-        fallback?: LLMModelProvider;
-    }) {
-        const { main, fallback } = config;
-
-        this.params.provider = main;
-
-        if (fallback) {
-            this.params.fallbackProvider = fallback;
-        }
-
-        return this;
-    }
-
-    /**
-     * Adds a system or user prompt to the configuration.
-     * **Note:** The `payload` from the last `addPrompt` call will be used for the entire execution.
-     * If adding multiple prompts (e.g., system and user), ensure they use the same payload object.
-     * @param config The configuration object containing the role and prompt function.
-     * - `role`: The role of the prompt (system or user).
-     * - `prompt`: The function that generates the prompt content based on the payload.
-     * @returns The PromptBuilder instance for chaining.
-     */
-    addPrompt(config: { role: PromptRole; prompt: PromptFn<Payload> }) {
-        const { role, prompt } = config;
-
-        if (role === PromptRole.SYSTEM) {
-            this.params.systemPromptFn = prompt;
-        } else if (role === PromptRole.USER) {
-            this.params.userPromptFn = prompt;
-        }
-
-        return this;
-    }
-
-    /**
-     * Adds metadata for logging and tracing.
-     * @param metadata A record of key-value pairs.
-     * @returns The PromptBuilder instance for chaining.
-     */
-    addMetadata(metadata: Record<string, any>) {
-        this.params.metadata = { ...this.params.metadata, ...metadata };
-        return this;
-    }
-
-    /**
-     * Sets the temperature for the LLM. Defaults to 0.
-     * @param temperature The creativity/randomness of the output.
-     * @returns The PromptBuilder instance for chaining.
-     */
-    setTemperature(temperature: number) {
-        this.params.temperature = temperature;
-        return this;
-    }
-
-    /**
-     * Sets a name for the run, useful for tracing.
-     * @param runName The name of the run.
-     * @returns The PromptBuilder instance for chaining.
-     */
-    setRunName(runName: string) {
-        this.params.runName = runName;
-        return this;
-    }
-
-    /**
-     * Executes the prompt request with the configured parameters.
-     * @returns A promise that resolves to the LLM response or null if an error occurs.
-     */
-    async execute(): Promise<OutputType | null> {
-        if (!this.params.provider) {
-            throw new Error(
-                'LLM provider not set. Please call "addProviders()" before executing.',
-            );
-        }
-        if (!this.params.systemPromptFn && !this.params.userPromptFn) {
-            throw new Error(
-                'No prompt function set. Please call "addPrompt()" before executing.',
-            );
-        }
-
-        if (this.params.jsonMode) {
-            return this.runner.runPrompt<Payload, OutputType>({
-                ...this.params,
-                provider: this.params.provider,
-                jsonMode: true,
-            });
-        } else {
-            const result = await this.runner.runPrompt<Payload>({
-                ...this.params,
-                provider: this.params.provider,
-                jsonMode: false,
-            });
-            return result as OutputType;
-        }
-    }
-}
-
+/**
+ * A service for running prompts with a language model provider.
+ *
+ * This service allows you to run prompts with a specified provider,
+ * fallback provider, and parser. It supports various configurations
+ * such as temperature, JSON mode, and callbacks.
+ */
 @Injectable()
 export class PromptRunnerService {
     constructor(
@@ -179,37 +63,53 @@ export class PromptRunnerService {
         private readonly llmProvider: LLMProviderService,
     ) {}
 
-    jsonMode<JRES>() {
-        return new PromptBuilder<JRES, void>(this, true);
+    /**
+     * Creates a new instance of PromptBuilder.
+     *
+     * @returns A new PromptBuilder instance.
+     */
+    builder(): PromptBuilder {
+        return new PromptBuilder(this);
     }
 
-    stringMode() {
-        return new PromptBuilder<string, void>(this, false);
-    }
-
-    async runPrompt<PLD, JRES>(
-        params: RunPromptParams<PLD> & {
+    /**
+     * Runs a prompt with the provided parameters.
+     *
+     * If `jsonMode` is set to `true`, the output will be parsed as JSON.
+     * If `jsonMode` is `false` or not set, the output will be returned as a string.
+     *
+     * @param params The parameters for running the prompt.
+     * @template Payload The type of the payload that will be passed to the prompt functions.
+     * @template OutputType The expected response type, which can be a string or JSON object.
+     * @returns A promise that resolves to the output of the prompt execution. If the prompt fails, it returns `null`.
+     */
+    async runPrompt<Payload = void, OutputType = any>(
+        params: PromptRunnerParams<Payload, OutputType> & {
             jsonMode: true;
         },
-    ): Promise<JRES | null>;
+    ): Promise<OutputType | null>;
 
-    async runPrompt<PLD>(
-        params: Omit<RunPromptParams<PLD>, 'jsonMode'>,
-    ): Promise<string | null>;
+    async runPrompt<Payload = void, OutputType = string>(
+        params: Omit<PromptRunnerParams<Payload, OutputType>, 'jsonMode'>,
+    ): Promise<OutputType | null>;
 
-    async runPrompt<PLD>(
-        params: RunPromptParams<PLD> & {
+    async runPrompt<Payload = void, OutputType = string>(
+        params: PromptRunnerParams<Payload, OutputType> & {
             jsonMode?: false | undefined;
         },
-    ): Promise<string | null>;
+    ): Promise<OutputType | null>;
 
-    async runPrompt<PLD, JRES>(
-        params: RunPromptParams<PLD>,
-    ): Promise<JRES | string | null> {
+    async runPrompt<Payload = void, OutputType = any>(
+        params: PromptRunnerParams<Payload, OutputType>,
+    ): Promise<OutputType | null> {
         try {
-            const chain = this.createChain<PLD, JRES>(params);
+            this.validateParams(params);
 
-            const response = await chain.invoke(params.payload);
+            const chain = this.createChain<Payload, OutputType>(params);
+
+            const response = await chain.invoke(
+                params.payload ?? ({} as Payload),
+            );
 
             return response;
         } catch (error) {
@@ -223,71 +123,49 @@ export class PromptRunnerService {
         }
     }
 
-    createChain<PLD, JRES>(params: RunPromptParams<PLD>) {
+    /**
+     * Creates a chain of prompts with the specified parameters.
+     *
+     * @param params The parameters for creating the chain.
+     * @template Payload The type of the payload that will be passed to the prompt functions.
+     * @template OutputType The expected response type, which can be a string or JSON object
+     * @returns A chain that can be invoked with a payload.
+     * @throws Will throw an error if the parameters are invalid or if the chain creation fails
+     */
+    createChain<Payload, OutputType>(
+        params: PromptRunnerParams<Payload, OutputType>,
+    ) {
         try {
-            const {
-                provider,
-                fallbackProvider,
-                systemPromptFn,
-                userPromptFn,
-                runName,
-                metadata = {},
-                jsonMode = false,
-                temperature = 0,
-            } = params;
+            this.validateParams(params);
 
-            const mainChain = this.createProviderChain<PLD, JRES>({
-                provider,
-                systemPromptFn: systemPromptFn,
-                userPromptFn: userPromptFn,
-                jsonMode,
-                temperature,
-            });
+            const { fallbackProvider } = params;
+
+            const mainChain = this.createProviderChain<Payload, OutputType>(
+                params,
+            );
 
             if (!mainChain) {
                 throw new Error('Main chain could not be created');
             }
 
             if (!fallbackProvider) {
-                return mainChain.withConfig({
-                    runName,
-                    metadata,
-                });
+                return mainChain.withConfig(params);
             }
 
-            const fallbackChain = this.createProviderChain<PLD, JRES>({
-                provider: fallbackProvider,
-                systemPromptFn: systemPromptFn,
-                userPromptFn: userPromptFn,
-                jsonMode,
-                temperature,
-            });
+            const fallbackChain = this.createProviderChain<Payload, OutputType>(
+                params,
+                true,
+            );
 
             if (!fallbackChain) {
                 throw new Error('Fallback chain could not be created');
             }
 
-            let withFallbacks:
-                | RunnableWithFallbacks<PLD, JRES>
-                | RunnableWithFallbacks<PLD, string>;
-            if (jsonMode) {
-                withFallbacks = (
-                    mainChain as RunnableSequence<PLD, JRES>
-                ).withFallbacks({
-                    fallbacks: [fallbackChain as RunnableSequence<PLD, JRES>],
-                });
-            } else {
-                withFallbacks = (
-                    mainChain as RunnableSequence<PLD, string>
-                ).withFallbacks({
-                    fallbacks: [fallbackChain as RunnableSequence<PLD, string>],
-                });
-            }
-
-            return withFallbacks.withConfig({
-                runName,
-                metadata,
+            const withFallbacks = mainChain.withFallbacks({
+                fallbacks: [fallbackChain],
             });
+
+            return withFallbacks.withConfig(params);
         } catch (error) {
             this.logger.error({
                 message: 'Error creating chain',
@@ -299,56 +177,96 @@ export class PromptRunnerService {
         }
     }
 
-    createProviderChain<PLD, JRES>(
-        params: Omit<RunPromptParams<PLD>, 'payload' | 'fallbackProvider'>,
+    /**
+     * Creates a provider chain with the specified parameters.
+     *
+     * @param params The parameters for creating the provider chain.
+     * @template Payload The type of the payload that will be passed to the prompt functions.
+     * @template OutputType The expected response type, which can be a string or JSON object
+     * @returns A chain that can be invoked with a payload.
+     * @throws Will throw an error if the parameters are invalid or if the chain creation fails
+     */
+    createProviderChain<Payload, OutputType>(
+        params: PromptRunnerParams<Payload, OutputType>,
+        fallback?: boolean,
     ) {
         try {
+            this.validateParams(params);
+
             const {
                 provider,
-                systemPromptFn,
-                userPromptFn,
-                jsonMode = false,
+                fallbackProvider,
+                prompts = [],
                 temperature = 0,
+                parser,
             } = params;
 
+            const providerToUse =
+                fallback && fallbackProvider ? fallbackProvider : provider;
+
             const llm = this.llmProvider.getLLMProvider({
-                model: provider,
+                ...params,
+                model: providerToUse,
                 temperature,
-                jsonMode,
             });
 
-            const promptFn = (input: PLD) => {
-                const systemPrompt = systemPromptFn
-                    ? systemPromptFn(input)
-                    : null;
-                const humanPrompt = userPromptFn ? userPromptFn(input) : null;
+            const promptFn = (input: Payload) => {
+                const result: BaseMessageLike[] = [];
 
-                type ResultType = {
-                    role: PromptRole;
-                    content: { type: 'text'; text: string }[];
-                };
+                for (const prompt of prompts) {
+                    const {
+                        role: promptRole = PromptRole.USER,
+                        roleName: promptRoleName,
+                        prompt: promptContent,
+                        type = 'text',
+                        scope = PromptScope.GLOBAL,
+                    } = prompt;
 
-                const result: ResultType[] = [];
+                    if (scope === PromptScope.FALLBACK && !fallback) {
+                        continue; // Skip fallback prompts if not in fallback mode
+                    }
 
-                if (systemPrompt) {
+                    if (scope === PromptScope.MAIN && fallback) {
+                        continue; // Skip main prompts if in fallback mode
+                    }
+
+                    let role: string;
+                    if (promptRole === PromptRole.CUSTOM) {
+                        if (!promptRoleName) {
+                            throw new Error(
+                                'Custom prompt roles must have a roleName defined.',
+                            );
+                        }
+                        role = promptRoleName;
+                    } else {
+                        role = promptRole;
+                    }
+
+                    let text: string;
+                    switch (typeof promptContent) {
+                        case 'function':
+                            text = promptContent(input);
+                            break;
+                        case 'string':
+                            text = promptContent;
+                            break;
+                        default:
+                            if (isBaseMessage(promptContent)) {
+                                result.push(promptContent);
+                                continue; // Skip to next prompt
+                            }
+
+                            throw new Error(
+                                'Prompt must be a string or a function returning a string.',
+                            );
+                    }
+
                     result.push({
-                        role: PromptRole.SYSTEM,
+                        role,
                         content: [
                             {
-                                type: 'text',
-                                text: systemPrompt,
-                            },
-                        ],
-                    });
-                }
-
-                if (humanPrompt) {
-                    result.push({
-                        role: PromptRole.USER,
-                        content: [
-                            {
-                                type: 'text',
-                                text: humanPrompt,
+                                type,
+                                text,
                             },
                         ],
                     });
@@ -361,22 +279,7 @@ export class PromptRunnerService {
                 return result;
             };
 
-            let chain:
-                | RunnableSequence<any, JRES>
-                | RunnableSequence<any, string>;
-            if (jsonMode) {
-                chain = RunnableSequence.from([
-                    promptFn,
-                    llm,
-                    new JsonOutputParser<JRES>(),
-                ]);
-            } else {
-                chain = RunnableSequence.from([
-                    promptFn,
-                    llm,
-                    new StringOutputParser(),
-                ]);
-            }
+            const chain = RunnableSequence.from([promptFn, llm, parser]);
 
             return chain;
         } catch (error) {
@@ -387,6 +290,28 @@ export class PromptRunnerService {
                 metadata: params,
             });
             throw error;
+        }
+    }
+
+    /**
+     * Validates the parameters for running a prompt.
+     *
+     * @param params The parameters to validate.
+     * @template Payload The type of the payload that will be passed to the prompt functions.
+     * @throws Will throw an error if any required parameter is missing or invalid.
+     * @returns void
+     */
+    private validateParams<Payload>(
+        params: PromptRunnerParams<Payload>,
+    ): asserts params is PromptRunnerParams<Payload> {
+        if (!params.provider) {
+            throw new Error('Provider must be defined in the parameters.');
+        }
+        if (!params.parser) {
+            throw new Error('Parser must be defined in the parameters.');
+        }
+        if (!params.prompts || params.prompts.length === 0) {
+            throw new Error('No prompts defined.');
         }
     }
 }
