@@ -94,21 +94,37 @@ export class CopyCodeReviewParameterUseCase {
                 organizationAndTeamData,
             );
 
-            // Registrar log da cópia
-            await this.codeReviewSettingsLogService.registerRepositoryCopyLog({
-                organizationAndTeamData: {
-                    ...organizationAndTeamData,
-                    organizationId: this.request.user.organization.uuid,
-                },
-                userId: this.request.user.uuid,
-                sourceRepository: sourceRepositoryId === 'global'
-                    ? { id: 'global', name: 'Global Settings' }
-                    : { id: sourceRepository.id, name: sourceRepository.name },
-                targetRepository: {
-                    id: targetRepository.id,
-                    name: targetRepository.name,
-                },
-            });
+            try {
+                this.codeReviewSettingsLogService.registerRepositoryCopyLog(
+                    {
+                        organizationAndTeamData: {
+                            ...organizationAndTeamData,
+                            organizationId: this.request.user.organization.uuid,
+                        },
+                        userId: this.request.user.uuid,
+                        sourceRepository:
+                            sourceRepositoryId === 'global'
+                                ? { id: 'global', name: 'Global Settings' }
+                                : {
+                                      id: sourceRepository.id,
+                                      name: sourceRepository.name,
+                                  },
+                        targetRepository: {
+                            id: targetRepository.id,
+                            name: targetRepository.name,
+                        },
+                    },
+                );
+            } catch (error) {
+                this.logger.error({
+                    message: 'Error saving code review settings log',
+                    error: error,
+                    context: CopyCodeReviewParameterUseCase.name,
+                    metadata: {
+                        organizationAndTeamData: organizationAndTeamData,
+                    },
+                });
+            }
 
             this.logger.log({
                 message: 'Code review parameter copied successfully',

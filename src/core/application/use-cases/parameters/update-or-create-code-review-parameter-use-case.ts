@@ -79,7 +79,11 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string }; uuid: string; email: string };
+            user: {
+                organization: { uuid: string };
+                uuid: string;
+                email: string;
+            };
         },
 
         private readonly logger: PinoLoggerService,
@@ -307,17 +311,29 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             organizationAndTeamData,
         );
 
-        this.codeReviewSettingsLogService.registerCodeReviewConfigLog({
-            organizationAndTeamData,
-            userInfo: {
-                userId: this.request.user.uuid,
-                userEmail: this.request.user.email,
-            },
-            oldConfig: codeReviewConfigs.global,
-            newConfig: newGlobalInfo,
-            actionType: ActionType.EDIT,
-            configLevel: ConfigLevel.GLOBAL,
-        });
+        try {
+            this.codeReviewSettingsLogService.registerCodeReviewConfigLog({
+                organizationAndTeamData,
+                userInfo: {
+                    userId: this.request.user.uuid,
+                    userEmail: this.request.user.email,
+                },
+                oldConfig: codeReviewConfigs.global,
+                newConfig: newGlobalInfo,
+                actionType: ActionType.EDIT,
+                configLevel: ConfigLevel.GLOBAL,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: 'Error saving code review settings log',
+                error: error,
+                context: UpdateOrCreateCodeReviewParameterUseCase.name,
+                metadata: {
+                    organizationAndTeamData: organizationAndTeamData,
+                    functionName: 'updateGlobalConfig',
+                },
+            });
+        }
 
         return true;
     }
@@ -374,23 +390,21 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             );
 
             if (currentRepositoryConfig && newRepositoryConfig) {
-                await this.codeReviewSettingsLogService.registerCodeReviewConfigLog(
-                    {
-                        organizationAndTeamData,
-                        userInfo: {
-                            userId: this.request.user.uuid,
-                            userEmail: this.request.user.email,
-                        },
-                        oldConfig: currentRepositoryConfig,
-                        newConfig: newRepositoryConfig,
-                        actionType: ActionType.EDIT,
-                        configLevel: ConfigLevel.REPOSITORY,
-                        repository: {
-                            id: newRepositoryConfig.id,
-                            name: newRepositoryConfig.name,
-                        },
+                this.codeReviewSettingsLogService.registerCodeReviewConfigLog({
+                    organizationAndTeamData,
+                    userInfo: {
+                        userId: this.request.user.uuid,
+                        userEmail: this.request.user.email,
                     },
-                );
+                    oldConfig: currentRepositoryConfig,
+                    newConfig: newRepositoryConfig,
+                    actionType: ActionType.EDIT,
+                    configLevel: ConfigLevel.REPOSITORY,
+                    repository: {
+                        id: newRepositoryConfig.id,
+                        name: newRepositoryConfig.name,
+                    },
+                });
             }
         } catch (error) {
             this.logger.error({
@@ -400,6 +414,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 metadata: {
                     organizationAndTeamData: organizationAndTeamData,
                     repositoryId: repositoryId,
+                    functionName: 'updateSpecificRepositoryConfig',
                 },
             });
         }

@@ -86,12 +86,14 @@ export class CreateIntegrationUseCase implements IUseCase {
                 },
                 actionType: ActionType.CREATE,
             });
-        } catch (logError) {
-            // Log do erro mas não interrompe o fluxo principal
+        } catch (error) {
             this.logger.error({
-                message: 'Error logging integration creation',
+                message: 'Error saving code review settings log',
+                error: error,
                 context: CreateIntegrationUseCase.name,
-                error: logError,
+                metadata: {
+                    organizationAndTeamData: organizationAndTeamData,
+                },
             });
         }
 

@@ -59,20 +59,31 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
                 (rule) => rule.uuid === ruleId,
             );
 
-            this.codeReviewSettingsLogService.registerKodyRulesLog({
-                organizationAndTeamData: {
-                    organizationId: this.request.user.organization.uuid,
-                },
-                userInfo: {
-                    userId: this.request.user.uuid,
-                    userEmail: this.request.user.email,
-                },
-                actionType: ActionType.DELETE,
-                repositoryId: deletedRule?.repositoryId,
-                oldRule: deletedRule,
-                newRule: undefined,
-                ruleTitle: deletedRule?.title,
-            });
+            try {
+                this.codeReviewSettingsLogService.registerKodyRulesLog({
+                    organizationAndTeamData: {
+                        organizationId: this.request.user.organization.uuid,
+                    },
+                    userInfo: {
+                        userId: this.request.user.uuid,
+                        userEmail: this.request.user.email,
+                    },
+                    actionType: ActionType.DELETE,
+                    repositoryId: deletedRule?.repositoryId,
+                    oldRule: deletedRule,
+                    newRule: undefined,
+                    ruleTitle: deletedRule?.title,
+                });
+            } catch (error) {
+                this.logger.error({
+                    message: 'Error saving code review settings log',
+                    error: error,
+                    context: DeleteRuleInOrganizationByIdKodyRulesUseCase.name,
+                    metadata: {
+                        organizationId: this.request.user.organization.uuid,
+                    },
+                });
+            }
 
             return rule;
         } catch (error) {

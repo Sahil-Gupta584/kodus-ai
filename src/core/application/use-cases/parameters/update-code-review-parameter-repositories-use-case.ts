@@ -123,22 +123,33 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
                     ),
             );
 
-            // Registrar logs apenas se houver mudanças
-            if (
-                addedRepositories.length > 0 ||
-                removedRepositories.length > 0
-            ) {
-                await this.codeReviewSettingsLogService.registerRepositoriesLog(
-                    {
-                        organizationAndTeamData: {
-                            ...body.organizationAndTeamData,
-                            organizationId: this.request.user.organization.uuid,
+            try {
+                if (
+                    addedRepositories.length > 0 ||
+                    removedRepositories.length > 0
+                ) {
+                    this.codeReviewSettingsLogService.registerRepositoriesLog(
+                        {
+                            organizationAndTeamData: {
+                                ...body.organizationAndTeamData,
+                                organizationId:
+                                    this.request.user.organization.uuid,
+                            },
+                            userId: this.request.user.uuid,
+                            addedRepositories,
+                            removedRepositories,
                         },
-                        userId: this.request.user.uuid,
-                        addedRepositories,
-                        removedRepositories,
+                    );
+                }
+            } catch (error) {
+                this.logger.error({
+                    message: 'Error saving code review settings log',
+                    error: error,
+                    context: UpdateCodeReviewParameterRepositoriesUseCase.name,
+                    metadata: {
+                        organizationAndTeamData: organizationAndTeamData,
                     },
-                );
+                });
             }
 
             return result;

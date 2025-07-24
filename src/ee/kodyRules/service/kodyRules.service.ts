@@ -147,7 +147,6 @@ export class KodyRulesService implements IKodyRulesService {
                 );
             }
 
-            //Register log for kody rules cloning
             try {
                 this.codeReviewSettingsLogService.registerKodyRulesLog({
                     organizationAndTeamData,
@@ -159,7 +158,7 @@ export class KodyRulesService implements IKodyRulesService {
                     ruleTitle: newRule.title,
                 });
             } catch (error) {
-                this.logger.warn({
+                this.logger.error({
                     message: 'Error in registerKodyRulesLog',
                     error: error,
                     context: KodyRulesService.name,
@@ -196,7 +195,6 @@ export class KodyRulesService implements IKodyRulesService {
                 throw new Error('Could not add new rule');
             }
 
-            //Register log for kody rules creation
             try {
                 this.codeReviewSettingsLogService.registerKodyRulesLog({
                     organizationAndTeamData,
@@ -211,7 +209,7 @@ export class KodyRulesService implements IKodyRulesService {
                     ruleTitle: newRule.title,
                 });
             } catch (error) {
-                this.logger.warn({
+                this.logger.error({
                     message: 'Error in registerKodyRulesLog',
                     error: error,
                     context: KodyRulesService.name,
@@ -259,7 +257,7 @@ export class KodyRulesService implements IKodyRulesService {
                 ruleTitle: updatedRule.title,
             });
         } catch (error) {
-            this.logger.warn({
+            this.logger.error({
                 message: 'Error in registerKodyRulesLog',
                 error: error,
                 context: KodyRulesService.name,
