@@ -13,8 +13,8 @@ export enum ConfigLevel {
 }
 
 export type ChangedData = {
-    key: string;
-    displayName: string;
+    key?: string;
+    displayName?: string;
     previousValue: any;
     currentValue: any;
     description: string;
