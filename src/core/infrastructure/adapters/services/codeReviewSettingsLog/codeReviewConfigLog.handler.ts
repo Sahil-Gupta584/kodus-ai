@@ -78,95 +78,146 @@ export class CodeReviewConfigLogHandler {
         newConfig: any,
         userInfo: UserInfo,
     ): Promise<ChangedDataToExport[]> {
-        const changes: ChangedDataToExport[] = [];
+        // Collect all changes (basic + special cases)
+        const basicChanges = this.collectBasicChanges(oldConfig, newConfig);
+        const specialChanges = this.handleSpecialCases(oldConfig, newConfig, userInfo);
+
+        // If we have basic changes, group them intelligently
+        if (basicChanges.length > 0) {
+            const groupedChange = this.createGroupedChangedData(basicChanges, userInfo);
+            return [groupedChange, ...specialChanges];
+        }
+
+        return specialChanges;
+    }
+
+    private collectBasicChanges(oldConfig: any, newConfig: any): Array<{
+        key: string;
+        oldValue: any;
+        newValue: any;
+        displayName: string;
+        path: string[];
+    }> {
+        const changes: Array<{
+            key: string;
+            oldValue: any;
+            newValue: any;
+            displayName: string;
+            path: string[];
+        }> = [];
 
         // Flatten objects for comparison
         const flatOld = this.flattenObject(oldConfig);
         const flatNew = this.flattenObject(newConfig);
 
         for (const key of Object.keys(flatNew)) {
-            // Skip if this key has a config and values are different
             if (
                 PROPERTY_CONFIGS[key] &&
                 UnifiedLogHandler.hasChanged(flatOld[key], flatNew[key])
             ) {
-                changes.push(
-                    this.createChangedData(
-                        key,
-                        flatOld[key],
-                        flatNew[key],
-                        userInfo,
-                    ),
-                );
+                const config = PROPERTY_CONFIGS[key];
+                changes.push({
+                    key,
+                    oldValue: flatOld[key],
+                    newValue: flatNew[key],
+                    displayName: config.displayName,
+                    path: key.split('.')
+                });
             }
         }
-
-        // Handle special cases
-        changes.push(
-            ...this.handleSpecialCases(oldConfig, newConfig, userInfo),
-        );
 
         return changes;
     }
 
-    private createChangedData(
-        key: string,
-        oldValue: any,
-        newValue: any,
+    private createGroupedChangedData(
+        changes: Array<{
+            key: string;
+            oldValue: any;
+            newValue: any;
+            displayName: string;
+            path: string[];
+        }>,
         userInfo: UserInfo,
     ): ChangedDataToExport {
-        const config = PROPERTY_CONFIGS[key];
+        // Build nested structure for previousValue/currentValue
+        const previousValue = this.buildNestedStructure(changes, 'oldValue');
+        const currentValue = this.buildNestedStructure(changes, 'newValue');
+
+        // Generate smart description
+        const description = this.generateSmartDescription(changes, userInfo.userEmail);
 
         return {
-            key,
-            displayName: config.displayName,
-            previousValue: oldValue,
-            currentValue: newValue,
-            description: this.generateDescription(
-                config,
-                oldValue,
-                newValue,
-                userInfo,
-            ),
+            key: 'config.update',
+            displayName: 'Configuration Updated',
+            previousValue,
+            currentValue,
+            description,
         };
     }
 
-    private generateDescription(
-        config: PropertyConfig,
-        oldValue: any,
-        newValue: any,
-        userInfo: UserInfo,
+    private buildNestedStructure(
+        changes: Array<{
+            key: string;
+            oldValue: any;
+            newValue: any;
+            path: string[];
+        }>,
+        valueType: 'oldValue' | 'newValue'
+    ): any {
+        const result = {};
+
+        changes.forEach(change => {
+            const value = change[valueType];
+            const path = change.path;
+
+            // Create nested structure
+            let current = result;
+            for (let i = 0; i < path.length - 1; i++) {
+                if (!current[path[i]]) {
+                    current[path[i]] = {};
+                }
+                current = current[path[i]];
+            }
+
+            // Set the final value
+            current[path[path.length - 1]] = value;
+        });
+
+        return result;
+    }
+
+    private generateSmartDescription(
+        changes: Array<{
+            key: string;
+            oldValue: any;
+            newValue: any;
+            displayName: string;
+        }>,
+        userEmail: string
     ): string {
-        let template = config.templateDescription;
+        if (changes.length === 1) {
+            // Single change: simple sentence
+            const change = changes[0];
+            const formattedOld = UnifiedLogHandler.formatValue(change.oldValue);
+            const formattedNew = UnifiedLogHandler.formatValue(change.newValue);
 
-        // Apply formatter if exists
-        const formattedOldValue = config.formatter
-            ? config.formatter(oldValue)
-            : UnifiedLogHandler.formatValue(oldValue);
-        const formattedNewValue = config.formatter
-            ? config.formatter(newValue)
-            : UnifiedLogHandler.formatValue(newValue);
-
-        // Determine action for toggles
-        const action = this.getActionForToggle(oldValue, newValue);
-
-        // Replace placeholders
-        template = template.replace('{{userEmail}}', userInfo.userEmail);
-        template = template.replace('{{displayName}}', config.displayName);
-        template = template.replace('{{oldValue}}', formattedOldValue);
-        template = template.replace('{{newValue}}', formattedNewValue);
-        template = template.replace('{{action}}', action);
-
-        return template;
-    }
-
-    private getActionForToggle(oldValue: any, newValue: any): string {
-        if (typeof oldValue === 'boolean' && typeof newValue === 'boolean') {
-            if (!oldValue && newValue) return 'enabled';
-            if (oldValue && !newValue) return 'disabled';
+            return `User ${userEmail} changed ${change.displayName} from ${formattedOld} to ${formattedNew}`;
         }
-        return 'changed';
+
+        // Multiple changes: bullet list
+        const header = `User ${userEmail} changed code review configuration`;
+        const bullets = changes.map(change => {
+            const formattedOld = UnifiedLogHandler.formatValue(change.oldValue);
+            const formattedNew = UnifiedLogHandler.formatValue(change.newValue);
+            return `- ${change.displayName}: from ${formattedOld} to ${formattedNew}`;
+        }).join('\n');
+
+        return `${header}\n${bullets}`;
     }
+
+    // ✅ Removed createChangedData - using grouped approach
+
+    // ✅ Removed generateDescription and getActionForToggle - using smart description logic
 
     private handleSpecialCases(
         oldConfig: any,
