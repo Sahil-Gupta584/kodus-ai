@@ -140,6 +140,7 @@ export type CodeSuggestion = {
     type?: SuggestionType;
     createdAt?: string;
     updatedAt?: string;
+    action?: string;
 };
 
 export type FileChange = {
