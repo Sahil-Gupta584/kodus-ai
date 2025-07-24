@@ -34,7 +34,13 @@ import {
     TokenTrackingService,
     TokenTrackingSession,
 } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
-import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
+import {
+    LLMProviderService,
+    LLMModelProvider,
+    PromptRunnerService,
+    PromptRole,
+    ParserType,
+} from '@kodus/kodus-common/llm';
 
 //#region Interfaces
 // Interface for token tracking
@@ -120,6 +126,8 @@ export class KodyRulesPrLevelAnalysisService
         private readonly logger: PinoLoggerService,
 
         private readonly tokenChunkingService: TokenChunkingService,
+
+        private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.tokenTracker = new TokenTrackingSession(
             uuidv4(),
@@ -253,118 +261,6 @@ export class KodyRulesPrLevelAnalysisService
             return {
                 codeSuggestions: [],
             };
-        }
-    }
-
-    //#region Create and Process Analyzer Chain
-    private async createAnalyzerChain(
-        provider: LLMModelProvider,
-        payload: KodyRulesPrLevelPayload,
-        prNumber: number,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ) {
-        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
-
-        try {
-            const mainChain = await this.createProviderChain(
-                provider,
-                payload,
-                prNumber,
-                organizationAndTeamData,
-            );
-            const fallbackChain = await this.createProviderChain(
-                fallbackProvider,
-                payload,
-                prNumber,
-                organizationAndTeamData,
-            );
-
-            return mainChain
-                .withFallbacks({
-                    fallbacks: [fallbackChain],
-                })
-                .withConfig({
-                    tags: this.buildTags(provider, 'primary'),
-                    runName: 'prLevelKodyRulesAnalyzer',
-                    metadata: {
-                        organizationAndTeamData,
-                        prNumber,
-                        provider: provider,
-                        fallbackProvider: fallbackProvider,
-                    },
-                });
-        } catch (error) {
-            this.logger.error({
-                message: 'Error creating analyzer chain with fallback',
-                error,
-                context: KodyRulesPrLevelAnalysisService.name,
-                metadata: {
-                    provider,
-                    fallbackProvider,
-                    prNumber,
-                    organizationAndTeamData,
-                },
-            });
-            throw error;
-        }
-    }
-
-    private async createProviderChain(
-        provider: LLMModelProvider,
-        payload: KodyRulesPrLevelPayload,
-        prNumber: number,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ) {
-        try {
-            let llm = this.llmProviderService.getLLMProvider({
-                model: provider,
-                temperature: 0,
-                jsonMode: true,
-                callbacks: [this.tokenTracker.createCallbackHandler()],
-            });
-
-            const tags = this.buildTags(provider, 'primary');
-
-            // Create the chain using the correct provider
-            const chain = RunnableSequence.from([
-                async (input: any) => {
-                    const systemPrompt =
-                        prompt_kodyrules_prlevel_analyzer(payload);
-
-                    return [
-                        {
-                            role: 'system',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: systemPrompt,
-                                },
-                            ],
-                        },
-                        {
-                            role: 'user',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: 'Please analyze the provided information and return the response in the specified format.',
-                                },
-                            ],
-                        },
-                    ];
-                },
-                llm,
-                new CustomStringOutputParser(),
-            ]).withConfig({ tags });
-
-            return chain;
-        } catch (error) {
-            this.logger.error({
-                message: 'Error creating provider chain',
-                error,
-                context: KodyRulesPrLevelAnalysisService.name,
-                metadata: { provider, prNumber, organizationAndTeamData },
-            });
-            throw error;
         }
     }
 
@@ -1034,24 +930,78 @@ export class KodyRulesPrLevelAnalysisService
             language,
         };
 
-        // Criar e invocar chain para este chunk
-        const analyzerChain = await this.createAnalyzerChain(
-            provider,
-            analyzerPayload,
-            prNumber,
-            organizationAndTeamData,
-        );
+        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
 
-        const analyzerResult = await analyzerChain.invoke(analyzerPayload);
+        try {
+            const analysis = await this.promptRunnerService
+                .builder()
+                .setProviders({
+                    main: provider,
+                    fallback: fallbackProvider,
+                })
+                .setParser(ParserType.STRING)
+                .setLLMJsonMode(true)
+                .setPayload(analyzerPayload)
+                .addPrompt({
+                    prompt: prompt_kodyrules_prlevel_analyzer,
+                    role: PromptRole.SYSTEM,
+                })
+                .addPrompt({
+                    prompt: `Please analyze the provided information and return the response in the specified format`,
+                    role: PromptRole.USER,
+                })
+                .addMetadata({
+                    organizationAndTeamData,
+                    prNumber,
+                    provider: provider,
+                    fallbackProvider,
+                })
+                .addTags([
+                    ...this.buildTags(provider, 'primary'),
+                    ...this.buildTags(fallbackProvider, 'fallback'),
+                ])
+                .addCallbacks([this.tokenTracker.createCallbackHandler()])
+                .setRunName('prLevelKodyRulesAnalyzer')
+                .setTemperature(0)
+                .execute();
 
-        // Processar resposta deste chunk
-        return this.processAnalyzerResponse(
-            kodyRulesPrLevel,
-            analyzerResult,
-            filesChunk,
-            prNumber,
-            organizationAndTeamData,
-        );
+            if (!analysis) {
+                const message = `No response from LLM for chunk ${chunkIndex + 1} for PR#${prNumber}`;
+                this.logger.warn({
+                    message,
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    metadata: {
+                        chunkIndex,
+                        prNumber,
+                        organizationAndTeamData,
+                        filesCount: filesChunk.length,
+                    },
+                });
+                throw new Error(message);
+            }
+
+            // Processar resposta deste chunk
+            return this.processAnalyzerResponse(
+                kodyRulesPrLevel,
+                analysis,
+                filesChunk,
+                prNumber,
+                organizationAndTeamData,
+            );
+        } catch (error) {
+            this.logger.error({
+                message: `Error processing chunk ${chunkIndex + 1} for PR#${prNumber}`,
+                context: KodyRulesPrLevelAnalysisService.name,
+                error,
+                metadata: {
+                    chunkIndex,
+                    prNumber,
+                    organizationAndTeamData,
+                    filesCount: filesChunk.length,
+                },
+            });
+            throw error;
+        }
     }
 
     private async combineChunkResults(
@@ -1307,18 +1257,54 @@ export class KodyRulesPrLevelAnalysisService
         };
 
         try {
-            // Criar chain com fallback
-            const groupingChain = await this.createGroupingChain(
-                provider,
-                groupingPayload,
-                prNumber,
-                organizationAndTeamData,
-            );
+            const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
 
-            // Executar agrupamento
-            const response = await groupingChain.invoke(groupingPayload);
+            const grouping = await this.promptRunnerService
+                .builder()
+                .setProviders({
+                    main: provider,
+                    fallback: fallbackProvider,
+                })
+                .setParser(ParserType.STRING)
+                .setLLMJsonMode(true)
+                .setPayload(groupingPayload)
+                .addPrompt({
+                    prompt: prompt_kodyrules_prlevel_group_rules,
+                    role: PromptRole.SYSTEM,
+                })
+                .addPrompt({
+                    prompt: 'Please consolidate the provided violations into a single coherent comment following the instructions.',
+                    role: PromptRole.USER,
+                })
+                .addMetadata({
+                    organizationId: organizationAndTeamData.organizationId,
+                    provider: provider,
+                    fallbackProvider: fallbackProvider,
+                })
+                .setRunName('prLevelKodyRulesGrouper')
+                .setTemperature(0)
+                .addCallbacks([this.tokenTracker.createCallbackHandler()])
+                .addTags([
+                    ...this.buildTags(provider, 'primary'),
+                    ...this.buildTags(fallbackProvider, 'fallback'),
+                ])
+                .execute();
 
-            const groupedContent = this.processLLMResponse(response);
+            if (!grouping) {
+                const message = 'No response from LLM for grouping suggestions';
+                this.logger.warn({
+                    message,
+                    context: KodyRulesPrLevelAnalysisService.name,
+                    metadata: {
+                        ruleId: rule?.uuid,
+                        prNumber,
+                        organizationAndTeamData,
+                    },
+                });
+                throw new Error(message);
+            }
+
+            const groupedContent = this.processLLMResponse(grouping);
 
             // Validação de segurança do resultado
             if (!groupedContent?.violations?.[0]) {
@@ -1401,116 +1387,6 @@ export class KodyRulesPrLevelAnalysisService
                     relatedFileSha: [],
                 },
             };
-        }
-    }
-
-    private async createGroupingChain(
-        provider: LLMModelProvider,
-        payload: any,
-        prNumber: number,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ) {
-        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
-
-        try {
-            const mainChain = await this.createGroupingProviderChain(
-                provider,
-                payload,
-                prNumber,
-                organizationAndTeamData,
-            );
-            const fallbackChain = await this.createGroupingProviderChain(
-                fallbackProvider,
-                payload,
-                prNumber,
-                organizationAndTeamData,
-            );
-
-            return mainChain
-                .withFallbacks({
-                    fallbacks: [fallbackChain],
-                })
-                .withConfig({
-                    tags: this.buildTags(provider, 'primary'),
-                    runName: 'prLevelKodyRulesGrouper',
-                    metadata: {
-                        organizationId: organizationAndTeamData.organizationId,
-                        provider: provider,
-                        fallbackProvider: fallbackProvider,
-                    },
-                });
-        } catch (error) {
-            this.logger.error({
-                message: 'Error creating grouping chain with fallback',
-                error,
-                context: KodyRulesPrLevelAnalysisService.name,
-                metadata: {
-                    provider,
-                    fallbackProvider,
-                    prNumber,
-                    organizationAndTeamData,
-                },
-            });
-            throw error;
-        }
-    }
-
-    private async createGroupingProviderChain(
-        provider: LLMModelProvider,
-        payload: any,
-        prNumber: number,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ) {
-        try {
-            let llm = this.llmProviderService.getLLMProvider({
-                model: provider,
-                temperature: 0,
-                jsonMode: true,
-                callbacks: [this.tokenTracker.createCallbackHandler()],
-            });
-
-            const tags = this.buildTags(provider, 'primary');
-
-            // Criar chain para agrupamento
-            const chain = RunnableSequence.from([
-                async (input: any) => {
-                    const systemPrompt =
-                        prompt_kodyrules_prlevel_group_rules(payload);
-
-                    return [
-                        {
-                            role: 'system',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: systemPrompt,
-                                },
-                            ],
-                        },
-                        {
-                            role: 'user',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: 'Please consolidate the provided violations into a single coherent comment following the instructions.',
-                                },
-                            ],
-                        },
-                    ];
-                },
-                llm,
-                new CustomStringOutputParser(),
-            ]).withConfig({ tags });
-
-            return chain;
-        } catch (error) {
-            this.logger.error({
-                message: 'Error creating grouping provider chain',
-                error,
-                context: KodyRulesPrLevelAnalysisService.name,
-                metadata: { provider, prNumber, organizationAndTeamData },
-            });
-            throw error;
         }
     }
     //#endregion

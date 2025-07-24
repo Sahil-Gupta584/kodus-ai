@@ -7,6 +7,7 @@ import {
 } from './types/commentAnalysis.type';
 import {
     LLMModelProvider,
+    ParserType,
     PromptRole,
     PromptRunnerService,
 } from '@kodus/kodus-common/llm';
@@ -74,12 +75,14 @@ export class CommentAnalysisService {
             }
 
             const categorizedComments = await this.promptRunnerService
-                .jsonMode<CategorizedComment[]>()
-                .addProviders({
+                .builder()
+                .setProviders({
                     main: LLMModelProvider.GEMINI_2_5_PRO,
                     fallback: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                 })
-                .addPayload({
+                .setParser<CategorizedComment[]>(ParserType.JSON)
+                .setLLMJsonMode(true)
+                .setPayload({
                     comments: filteredComments,
                 })
                 .addPrompt({
@@ -169,12 +172,14 @@ export class CommentAnalysisService {
             }
 
             const generated = await this.promptRunnerService
-                .jsonMode<Array<Partial<IKodyRule>>>()
-                .addProviders({
+                .builder()
+                .setProviders({
                     main: LLMModelProvider.GEMINI_2_5_PRO,
                     fallback: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                 })
-                .addPayload({
+                .setParser<Array<Partial<IKodyRule>>>(ParserType.JSON)
+                .setLLMJsonMode(true)
+                .setPayload({
                     comments: filteredComments,
                     rules: filteredLibraryKodyRules,
                 })
@@ -210,12 +215,14 @@ export class CommentAnalysisService {
             let deduplicatedRules = generatedWithUuids;
             if (existingRules && existingRules.length > 0) {
                 const deduplicatedRulesUuids = await this.promptRunnerService
-                    .jsonMode<string[]>()
-                    .addProviders({
+                    .builder()
+                    .setProviders({
                         main: LLMModelProvider.GEMINI_2_5_PRO,
                         fallback: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     })
-                    .addPayload({
+                    .setParser<string[]>(ParserType.JSON)
+                    .setLLMJsonMode(true)
+                    .setPayload({
                         existingRules,
                         newRules: generatedWithUuids,
                     })
@@ -253,12 +260,14 @@ export class CommentAnalysisService {
             }
 
             const filteredRulesUuids = await this.promptRunnerService
-                .jsonMode<string[]>()
-                .addProviders({
+                .builder()
+                .setProviders({
                     main: LLMModelProvider.GEMINI_2_5_PRO,
                     fallback: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                 })
-                .addPayload({
+                .setParser<string[]>(ParserType.JSON)
+                .setLLMJsonMode(true)
+                .setPayload({
                     rules: deduplicatedRules,
                 })
                 .addPrompt({
@@ -357,12 +366,14 @@ export class CommentAnalysisService {
             const { comments } = params;
 
             const filteredCommentsIds = await this.promptRunnerService
-                .jsonMode<string[]>()
-                .addProviders({
+                .builder()
+                .setProviders({
                     main: LLMModelProvider.GEMINI_2_5_PRO,
                     fallback: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                 })
-                .addPayload({
+                .setParser<string[]>(ParserType.JSON)
+                .setLLMJsonMode(true)
+                .setPayload({
                     comments,
                 })
                 .addPrompt({

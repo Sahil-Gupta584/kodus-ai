@@ -19,6 +19,7 @@ import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { prompt_generate_conversation_title } from '@/shared/utils/langchainCommon/prompts';
 import {
     LLMModelProvider,
+    ParserType,
     PromptRole,
     PromptRunnerService,
 } from '@kodus/kodus-common/llm';
@@ -126,11 +127,13 @@ export class CreateConversationUseCase implements IUseCase {
                 )?.configValue;
 
                 const content = await this.promptRunnerService
-                    .stringMode()
-                    .addProviders({
+                    .builder()
+                    .setProviders({
                         main: LLMModelProvider.VERTEX_GEMINI_2_5_FLASH,
                     })
-                    .addPayload({
+                    .setParser(ParserType.STRING)
+                    .setLLMJsonMode(true)
+                    .setPayload({
                         userMessage: prompt,
                         language,
                     })

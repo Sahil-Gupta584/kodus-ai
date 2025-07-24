@@ -24,12 +24,6 @@ export interface IAIAnalysisService {
         question: string,
         parameters: any,
     );
-    createSeverityAnalysisChainWithFallback(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        provider: LLMModelProvider,
-        codeSuggestions: CodeSuggestion[],
-    ): Promise<any>;
     filterSuggestionsSafeGuard(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,

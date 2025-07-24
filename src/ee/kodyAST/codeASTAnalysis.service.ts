@@ -7,8 +7,6 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { IASTAnalysisService } from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
-import { RunnableSequence } from '@langchain/core/runnables';
 import { prompt_detectBreakingChanges } from '@/shared/utils/langchainCommon/prompts/detectBreakingChanges';
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
@@ -44,7 +42,12 @@ import {
     circuitBreaker,
 } from '@/shared/utils/rxjs/circuit-breaker';
 import { Metadata } from '@grpc/grpc-js';
-import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
+import {
+    LLMModelProvider,
+    PromptRunnerService,
+    PromptRole,
+    ParserType,
+} from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -64,7 +67,7 @@ export class CodeAstAnalysisService
         @Inject('TASK_MICROSERVICE')
         private readonly taskMicroserviceClient: ClientGrpc,
 
-        private readonly llmProviderService: LLMProviderService,
+        private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
     }
@@ -87,22 +90,52 @@ export class CodeAstAnalysisService
     ): Promise<AIAnalysisResult> {
         try {
             const provider = LLMModelProvider.NOVITA_DEEPSEEK_V3_0324;
+            const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
 
-            const baseContext = await this.prepareAnalysisContext(context);
+            const payload = await this.prepareAnalysisContext(context);
 
-            const chain = await this.createAnalysisChainWithFallback(
-                provider,
-                context,
-            );
+            const analysis = await this.promptRunnerService
+                .builder()
+                .setProviders({
+                    main: provider,
+                    fallback: fallbackProvider,
+                })
+                .setParser(ParserType.STRING)
+                .setLLMJsonMode(true)
+                .setPayload(payload)
+                .addPrompt({
+                    role: PromptRole.USER,
+                    prompt: prompt_detectBreakingChanges,
+                })
+                .addMetadata({
+                    organizationId:
+                        context?.organizationAndTeamData?.organizationId,
+                    teamId: context?.organizationAndTeamData?.teamId,
+                    pullRequestId: context?.pullRequest?.number,
+                })
+                .setTemperature(0)
+                .setRunName('CodeASTAnalysisAI')
+                .execute();
 
-            // Execute analysis
-            const result = await chain.invoke(baseContext);
+            if (!analysis) {
+                const message = `No response from LLM for PR#${context.pullRequest.number}`;
+                this.logger.warn({
+                    message,
+                    context: CodeAstAnalysisService.name,
+                    metadata: {
+                        organizationAndTeamData:
+                            context.organizationAndTeamData,
+                        prNumber: context.pullRequest.number,
+                    },
+                });
+                throw new Error(message);
+            }
 
             // Process result and tokens
             const analysisResult = this.llmResponseProcessor.processResponse(
                 context.organizationAndTeamData,
                 context.pullRequest.number,
-                result,
+                analysis,
             );
 
             analysisResult.codeReviewModelUsed = {
@@ -365,83 +398,6 @@ export class CodeAstAnalysisService
                     },
                 });
         });
-    }
-
-    private async createAnalysisChainWithFallback(
-        provider: LLMModelProvider,
-        context: AnalysisContext,
-    ) {
-        const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
-
-        try {
-            const mainChain = await this.createAnalysisProviderChain(provider);
-            const fallbackChain =
-                await this.createAnalysisProviderChain(fallbackProvider);
-
-            // Usar withFallbacks para configurar o fallback corretamente
-            return mainChain
-                .withFallbacks({
-                    fallbacks: [fallbackChain],
-                })
-                .withConfig({
-                    runName: 'CodeASTAnalysisAI',
-                    metadata: {
-                        organizationId:
-                            context?.organizationAndTeamData?.organizationId,
-                        teamId: context?.organizationAndTeamData?.teamId,
-                        pullRequestId: context?.pullRequest?.number,
-                    },
-                });
-        } catch (error) {
-            this.logger.error({
-                message: 'Error creating analysis chain with fallback',
-                error,
-                context: CodeAstAnalysisService.name,
-                metadata: {
-                    provider,
-                    fallbackProvider,
-                },
-            });
-            throw error;
-        }
-    }
-
-    private async createAnalysisProviderChain(provider: LLMModelProvider) {
-        try {
-            let llm = this.llmProviderService.getLLMProvider({
-                model: provider,
-                temperature: 0,
-                jsonMode: true,
-            });
-
-            const chain = RunnableSequence.from([
-                async (input: any) => {
-                    return [
-                        {
-                            role: 'user',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: prompt_detectBreakingChanges(input),
-                                },
-                            ],
-                        },
-                    ];
-                },
-                llm,
-                new CustomStringOutputParser(),
-            ]);
-
-            return chain;
-        } catch (error) {
-            this.logger.error({
-                message: 'Error creating analysis code chain',
-                error,
-                context: CodeAstAnalysisService.name,
-                metadata: { provider },
-            });
-            throw error;
-        }
     }
 
     private async prepareAnalysisContext(context: AnalysisContext) {

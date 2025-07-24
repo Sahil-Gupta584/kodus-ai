@@ -29,7 +29,13 @@ import {
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
-import { LLMModelProvider, LLMProviderService } from '@kodus/kodus-common/llm';
+import {
+    LLMModelProvider,
+    LLMProviderService,
+    ParserType,
+    PromptRole,
+    PromptRunnerService,
+} from '@kodus/kodus-common/llm';
 
 interface ClusteredSuggestion {
     id: string;
@@ -48,6 +54,8 @@ export class CommentManagerService implements ICommentManagerService {
         private readonly llmProviderService: LLMProviderService,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
+
+        private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
     }
@@ -713,24 +721,72 @@ ${reviewOptionsMarkdown}
         provider: LLMModelProvider,
         codeSuggestions: any[],
     ) {
-        const baseContext = {
-            organizationAndTeamData,
-            prNumber,
-            codeSuggestions,
-        };
-
-        const chain =
-            await this.createRepeatedCodeReviewSuggestionClusteringChainWithFallback(
+        const language = (
+            await this.parametersService.findByKey(
+                ParametersKey.LANGUAGE_CONFIG,
                 organizationAndTeamData,
-                prNumber,
-                provider,
-                baseContext,
-            );
+            )
+        )?.configValue;
+
+        const baseContext = {
+            codeSuggestions,
+            language,
+        };
 
         let repeteadSuggetionsClustered;
 
         try {
-            const result = await chain.invoke(baseContext);
+            const fallbackProvider =
+                provider === LLMModelProvider.OPENAI_GPT_4O
+                    ? LLMModelProvider.NOVITA_DEEPSEEK_V3
+                    : LLMModelProvider.OPENAI_GPT_4O;
+
+            const userPrompt = `<codeSuggestionsContext>${JSON.stringify(baseContext?.codeSuggestions, null, 2) || 'No code suggestions provided'}</codeSuggestionsContext>`;
+
+            const result = await this.promptRunnerService
+                .builder()
+                .setProviders({
+                    main: provider,
+                    fallback: fallbackProvider,
+                })
+                .setParser(ParserType.STRING)
+                .setLLMJsonMode(true)
+                .setPayload(baseContext)
+                .addPrompt({
+                    prompt: prompt_repeated_suggestion_clustering_system,
+                    role: PromptRole.SYSTEM,
+                })
+                .addPrompt({
+                    prompt: userPrompt,
+                    role: PromptRole.USER,
+                })
+                .addMetadata({
+                    organizationId: organizationAndTeamData?.organizationId,
+                    teamId: organizationAndTeamData?.teamId,
+                    pullRequestId: prNumber,
+                    provider,
+                    fallbackProvider,
+                })
+                .setRunName('repeatedCodeReviewSuggestionClustering')
+                .setTemperature(0)
+                .execute();
+
+            if (!result) {
+                const message =
+                    'No result returned from repeated code review suggestion clustering';
+                this.logger.error({
+                    message,
+                    context: CommentManagerService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        prNumber,
+                        provider,
+                        fallbackProvider,
+                    },
+                });
+                throw new Error(message);
+            }
+
             repeteadSuggetionsClustered =
                 this.llmResponseProcessor.processResponse(
                     organizationAndTeamData,
@@ -763,132 +819,6 @@ ${reviewOptionsMarkdown}
                 codeSuggestions,
                 repeteadSuggetionsClustered,
             );
-        }
-    }
-
-    private async createRepeatedCodeReviewSuggestionClusteringChainWithFallback(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        provider: LLMModelProvider,
-        context: any,
-    ) {
-        const fallbackProvider =
-            provider === LLMModelProvider.OPENAI_GPT_4O
-                ? LLMModelProvider.NOVITA_DEEPSEEK_V3
-                : LLMModelProvider.OPENAI_GPT_4O;
-
-        try {
-            // Main chain
-            const mainChain =
-                await this.createRepeatedCodeReviewSuggestionClusteringChain(
-                    organizationAndTeamData,
-                    prNumber,
-                    provider,
-                    context,
-                );
-
-            // Fallback chain
-            const fallbackChain =
-                await this.createRepeatedCodeReviewSuggestionClusteringChain(
-                    organizationAndTeamData,
-                    prNumber,
-                    fallbackProvider,
-                    context,
-                );
-
-            // Configure chain with fallback
-            return mainChain
-                .withFallbacks({
-                    fallbacks: [fallbackChain],
-                })
-                .withConfig({
-                    runName: 'repeatedCodeReviewSuggestionClustering',
-                    metadata: {
-                        organizationId: organizationAndTeamData?.organizationId,
-                        teamId: organizationAndTeamData?.teamId,
-                        pullRequestId: prNumber,
-                        provider,
-                        fallbackProvider,
-                    },
-                });
-        } catch (error) {
-            this.logger.error({
-                message: 'Error creating clustering chain with fallback',
-                error,
-                context: CommentManagerService.name,
-                metadata: {
-                    provider,
-                    fallbackProvider,
-                    organizationAndTeamData: organizationAndTeamData,
-                    prNumber: prNumber,
-                },
-            });
-            throw error;
-        }
-    }
-
-    private async createRepeatedCodeReviewSuggestionClusteringChain(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        provider: LLMModelProvider,
-        context: any,
-    ) {
-        try {
-            let llm = this.llmProviderService.getLLMProvider({
-                model: provider,
-                temperature: 0,
-                jsonMode: true,
-            });
-
-            const language = (
-                await this.parametersService.findByKey(
-                    ParametersKey.LANGUAGE_CONFIG,
-                    organizationAndTeamData,
-                )
-            )?.configValue;
-
-            const chain = RunnableSequence.from([
-                async (input: any) => {
-                    const systemPrompt =
-                        prompt_repeated_suggestion_clustering_system(language);
-
-                    return [
-                        {
-                            role: 'system',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: systemPrompt,
-                                },
-                            ],
-                        },
-                        {
-                            role: 'user',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: `<codeSuggestionsContext>${JSON.stringify(input?.codeSuggestions, null, 2) || 'No code suggestions provided'}</codeSuggestionsContext>`,
-                                },
-                            ],
-                        },
-                    ];
-                },
-                llm,
-                new CustomStringOutputParser(),
-            ]);
-
-            return chain;
-        } catch (error) {
-            this.logger.error({
-                message: `Error creating repeated code review suggestion clustering chain for PR#${prNumber}`,
-                error,
-                context: CommentManagerService.name,
-                metadata: {
-                    organizationAndTeamData: organizationAndTeamData,
-                    prNumber: prNumber,
-                    provider,
-                },
-            });
         }
     }
 

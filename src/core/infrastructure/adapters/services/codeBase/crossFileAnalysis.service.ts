@@ -20,7 +20,13 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { v4 as uuidv4 } from 'uuid';
 import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
-import { LLMModelProvider, LLMProviderService } from '@kodus/kodus-common/llm';
+import {
+    LLMModelProvider,
+    LLMProviderService,
+    ParserType,
+    PromptRole,
+    PromptRunnerService,
+} from '@kodus/kodus-common/llm';
 
 //#region Interfaces
 interface TokenUsage {
@@ -75,6 +81,8 @@ export class CrossFileAnalysisService {
         private readonly tokenChunkingService: TokenChunkingService,
         @Inject(TOKEN_TRACKING_SERVICE_TOKEN)
         private readonly tokenTrackingService: TokenTrackingService,
+
+        private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.tokenTracker = new TokenTrackingSession(
             uuidv4(),
@@ -577,18 +585,60 @@ export class CrossFileAnalysisService {
             payload = preparedFilesChunk;
         }
 
-        const analysisChain = await this.createGenericAnalysisChain(
-            provider,
-            analysisType,
-            payload,
-            prNumber,
-            organizationAndTeamData,
-        );
+        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
 
-        const result = await analysisChain.invoke(payload);
+        const runName = `crossFile${analysisType.charAt(0).toUpperCase() + analysisType.slice(1)}`;
+
+        const analysis = await this.promptRunnerService
+            .builder()
+            .setProviders({
+                main: provider,
+                fallback: fallbackProvider,
+            })
+            .setParser(ParserType.STRING)
+            .setLLMJsonMode(true)
+            .setPayload(payload)
+            .addPrompt({
+                prompt: prompt_codereview_cross_file_analysis,
+                role: PromptRole.SYSTEM,
+            })
+            .addPrompt({
+                prompt: 'Please analyze the provided information and return the response in the specified format.',
+                role: PromptRole.USER,
+            })
+            .setTemperature(0)
+            .addTags([
+                ...this.buildTags(provider, 'primary', analysisType),
+                ...this.buildTags(fallbackProvider, 'fallback', analysisType),
+            ])
+            .addCallbacks([this.tokenTracker.createCallbackHandler()])
+            .setRunName(runName)
+            .addMetadata({
+                organizationAndTeamData,
+                prNumber,
+                provider: provider,
+                fallbackProvider: fallbackProvider,
+                analysisType,
+            })
+            .execute();
+
+        if (!analysis) {
+            const message = `Empty response from LLM for ${analysisType} on chunk ${chunkIndex + 1}`;
+            this.logger.error({
+                message,
+                context: CrossFileAnalysisService.name,
+                metadata: {
+                    chunkIndex,
+                    prNumber,
+                    organizationAndTeamData,
+                    analysisType,
+                },
+            });
+            throw new Error(message);
+        }
 
         return this.processLLMResponse(
-            result,
+            analysis,
             analysisType,
             prNumber,
             organizationAndTeamData,
