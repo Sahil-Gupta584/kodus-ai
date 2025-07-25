@@ -7,7 +7,7 @@ import { RunnableConfig, RunnableSequence } from '@langchain/core/runnables';
 import { handleError } from '../utils/error';
 import { PromptBuilder } from './builder';
 import { LLMModelProvider } from './helper';
-import { BaseTransformOutputParser } from '@langchain/core/output_parsers';
+import { BaseOutputParser } from '@langchain/core/output_parsers';
 import {
     BaseMessage,
     BaseMessageLike,
@@ -40,7 +40,7 @@ export type PromptConfig<Payload> = {
 export type PromptRunnerParams<Payload, OutputType = any> = {
     provider: LLMModelProvider;
     fallbackProvider?: LLMModelProvider;
-    parser: BaseTransformOutputParser<OutputType>;
+    parser: BaseOutputParser<OutputType>;
     prompts: PromptConfig<Payload>[];
     payload?: Payload;
 } & Partial<Omit<LLMProviderOptions, 'model'>> &
