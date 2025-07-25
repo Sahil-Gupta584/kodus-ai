@@ -57,9 +57,10 @@ export class CreateIntegrationUseCase implements IUseCase {
         );
 
         try {
+            // Buscar a auth integration criada com os dados corretos de organização/team
             const authIntegration = await this.authIntegrationService.findOne({
                 organization: {
-                    uuid: this.request.user.organization.uuid,
+                    uuid: organizationAndTeamData.organizationId,
                 },
                 team: {
                     uuid: organizationAndTeamData.teamId,
@@ -68,21 +69,20 @@ export class CreateIntegrationUseCase implements IUseCase {
 
             await this.codeReviewSettingsLogService.registerIntegrationLog({
                 organizationAndTeamData: {
-                    organizationId: this.request.user.organization.uuid,
+                    organizationId: organizationAndTeamData.organizationId,
                     teamId: organizationAndTeamData.teamId,
                 },
                 userInfo: {
-                    userId: this.request.user.uuid,
-                    userEmail: this.request.user.email,
+                    userId: this.request.user?.uuid,
+                    userEmail: this.request.user?.email,
                 },
                 integration: {
-                    uuid: 'temp-uuid',
                     platform:
                         params.integrationType?.toUpperCase() || 'UNKNOWN',
                     integrationCategory: 'CODE_MANAGEMENT',
                     status: true,
                     authIntegration: {
-                        uuid: 'temp-auth-uuid',
+                        uuid: authIntegration?.uuid || 'unknown-auth-uuid',
                         authDetails: {
                             org: authIntegration?.authDetails?.org,
                             authMode: authMode,

@@ -15,18 +15,10 @@ export interface IntegrationLogParams {
     organizationAndTeamData: OrganizationAndTeamData;
     userInfo: UserInfo;
     integration: {
-        uuid: string;
         platform: string;
         integrationCategory: string;
         status: boolean;
-        authIntegration: {
-            uuid: string;
-            authDetails: {
-                org?: string;
-                authMode?: string;
-                accountType?: string;
-            };
-        };
+        authIntegration: any;
     };
     actionType: ActionType;
 }
@@ -34,6 +26,7 @@ export interface IntegrationLogParams {
 export interface UserStatusLogParams {
     organizationAndTeamData: OrganizationAndTeamData;
     userInfo: UserInfo;
+    actionType: ActionType;
     userStatusChanges: Array<{
         gitId: string;
         gitTool: string;

@@ -80,7 +80,7 @@ export class DeleteIntegrationUseCase {
         try {
             this.codeReviewSettingsLogService.registerIntegrationLog({
                 organizationAndTeamData: {
-                    organizationId: this.request.user.organization.uuid,
+                    organizationId: params.organizationId,
                     teamId: params.teamId,
                 },
                 userInfo: {
@@ -88,14 +88,10 @@ export class DeleteIntegrationUseCase {
                     userEmail: this.request.user.email,
                 },
                 integration: {
-                    uuid: integration.uuid,
                     platform: integration.platform,
                     integrationCategory: integration.integrationCategory,
                     status: integration.status,
-                    authIntegration: {
-                        uuid: integration.authIntegration.uuid,
-                        authDetails: integration.authIntegration.authDetails,
-                    },
+                    authIntegration: integration.authIntegration,
                 },
                 actionType: ActionType.DELETE,
             });

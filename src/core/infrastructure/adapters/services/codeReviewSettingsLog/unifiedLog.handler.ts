@@ -118,13 +118,11 @@ export class UnifiedLogHandler {
     }): ChangedDataToExport[] {
         const { actionType, entityType, entityName, oldData, newData, userInfo } = params;
 
-        const key = `${entityType}.${actionType.toLowerCase()}`;
-        const displayName = this.generateDisplayName(entityType, actionType);
+        const actionDescription = this.generateDisplayName(entityType, actionType);
         const description = this.generateDescription(actionType, entityType, entityName, userInfo.userEmail);
 
         return [{
-            key,
-            displayName,
+            actionDescription: actionDescription,
             previousValue: oldData || null,
             currentValue: newData || null,
             description

@@ -121,7 +121,7 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
 
             // Identificar repositories adicionados e removidos para o log
             const addedRepositories = newRepositories;
-            const removedRepositories = codeReviewRepositories.filter(
+            let removedRepositories = codeReviewRepositories.filter(
                 (repository) =>
                     !commonRepositories.some(
                         (commonRepo) => commonRepo.id === repository.id,
@@ -133,17 +133,24 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
                     addedRepositories.length > 0 ||
                     removedRepositories.length > 0
                 ) {
+                    const actionType =
+                        addedRepositories.length > 0 &&
+                        removedRepositories.length > 0
+                            ? ActionType.EDIT
+                            : addedRepositories.length > 0
+                              ? ActionType.ADD
+                              : ActionType.DELETE;
+
                     this.codeReviewSettingsLogService.registerRepositoriesLog({
                         organizationAndTeamData: {
                             ...body.organizationAndTeamData,
-                            organizationId:
-                                this.request.user.organization.uuid,
+                            organizationId: this.request.user.organization.uuid,
                         },
                         userInfo: {
                             userId: this.request.user.uuid,
                             userEmail: this.request.user.email,
                         },
-                        actionType: ActionType.EDIT,
+                        actionType: actionType,
                         addedRepositories,
                         removedRepositories,
                     });

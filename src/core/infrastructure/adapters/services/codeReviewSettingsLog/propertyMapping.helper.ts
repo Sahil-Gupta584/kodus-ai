@@ -129,19 +129,6 @@ export const PROPERTY_CONFIGS: Record<string, PropertyConfig> = {
         templateDescription:
             'User {{userEmail}} changed {{displayName}} from {{oldValue}} to {{newValue}}',
     },
-    'summary.behaviourForExistingDescription': {
-        actionDescription: 'Behaviour for Existing Description',
-        templateDescription:
-            'User {{userEmail}} changed {{displayName}} from {{oldValue}} to {{newValue}}',
-        formatter: (value: string) => {
-            const labels = {
-                concatenate: 'Concatenate',
-                complement: 'Complement',
-                replace: 'Replace',
-            };
-            return labels[value] || value;
-        },
-    },
     'summary.customInstructions': {
         actionDescription: 'Custom Instructions',
         templateDescription:

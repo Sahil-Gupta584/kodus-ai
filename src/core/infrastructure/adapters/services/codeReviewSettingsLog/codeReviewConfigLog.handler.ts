@@ -270,8 +270,7 @@ export class CodeReviewConfigLogHandler {
         const description = this.generateRichDescription(allChanges, userInfo.userEmail);
 
         return {
-            key: 'config.update',
-            displayName: 'Configuration Updated',
+            actionDescription: 'Configuration Updated',
             previousValue,
             currentValue,
             description,

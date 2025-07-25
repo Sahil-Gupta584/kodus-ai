@@ -14,6 +14,7 @@ import {
     ITeamService,
     TEAM_SERVICE_TOKEN,
 } from '@/core/domain/team/contracts/team.service.contract';
+import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 
 @Injectable()
 export class RegisterUserStatusLogUseCase implements IUseCase {
@@ -50,6 +51,7 @@ export class RegisterUserStatusLogUseCase implements IUseCase {
                 userEmail: userStatusDto.editedBy.email || '',
             },
             userStatusChanges: [userStatusDto],
+            actionType: ActionType.EDIT,
         });
     }
 }

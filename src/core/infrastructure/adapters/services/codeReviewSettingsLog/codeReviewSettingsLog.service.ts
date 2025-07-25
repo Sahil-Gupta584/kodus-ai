@@ -23,8 +23,7 @@ import {
 } from './types/logParams.types';
 
 export type ChangedDataToExport = {
-    key: string;
-    displayName: string;
+    actionDescription: string;
     previousValue: any;
     currentValue: any;
     description: string;
@@ -103,8 +102,7 @@ export class CodeReviewSettingsLogService
 
             changedData = [
                 {
-                    key: 'repository.copy',
-                    displayName: 'Repository Configuration Copied',
+                    actionDescription: 'Repository Configuration Copied',
                     previousValue: null,
                     currentValue: {
                         sourceRepository: {
@@ -121,14 +119,13 @@ export class CodeReviewSettingsLogService
                 },
             ];
 
-            finalActionType = ActionType.ADD; // ✅ COPY fica ADD
+            finalActionType = ActionType.ADD;
             configLevel = ConfigLevel.REPOSITORY;
             repository = {
                 id: targetRepository.id,
                 name: targetRepository.name,
             };
         } else {
-            // ✅ ADD/REMOVE múltiplos sempre é EDIT
             if (
                 addedRepositories.length === 0 &&
                 removedRepositories.length === 0
@@ -141,8 +138,7 @@ export class CodeReviewSettingsLogService
             // Adicionar changedData para cada repo adicionado
             addedRepositories.forEach((repo) => {
                 allChangedData.push({
-                    key: 'repository.add',
-                    displayName: 'Repository Added',
+                    actionDescription: 'Repository Added',
                     previousValue: null,
                     currentValue: {
                         id: repo.id,
@@ -155,8 +151,7 @@ export class CodeReviewSettingsLogService
             // Adicionar changedData para cada repo removido
             removedRepositories.forEach((repo) => {
                 allChangedData.push({
-                    key: 'repository.remove',
-                    displayName: 'Repository Removed',
+                    actionDescription: 'Repository Removed',
                     previousValue: {
                         id: repo.id,
                         name: repo.name,
@@ -168,8 +163,7 @@ export class CodeReviewSettingsLogService
 
             changedData = allChangedData;
 
-            // ✅ Sempre EDIT para múltiplos
-            finalActionType = ActionType.EDIT;
+            finalActionType = actionType;
             configLevel = ConfigLevel.GLOBAL;
             repository = undefined;
         }
@@ -259,8 +253,7 @@ export class CodeReviewSettingsLogService
             const statusText = userChange.licenseStatus ? 'active' : 'inactive';
 
             changedData.push({
-                key: `user.status.${statusText}`,
-                displayName: `User ${userChange.licenseStatus ? 'Enabled' : 'Disabled'}`,
+                actionDescription: `User ${userChange.licenseStatus ? 'Enabled' : 'Disabled'}`,
                 previousValue: '',
                 currentValue: {
                     gitId: userChange.gitId,
