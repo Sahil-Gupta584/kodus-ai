@@ -1,14 +1,19 @@
-import { JsonOutputParser } from '@langchain/core/output_parsers';
-import { CustomStringOutputParser } from './parser';
+import {
+    BaseOutputParser,
+    JsonOutputParser,
+} from '@langchain/core/output_parsers';
+import { CustomStringOutputParser, ZodOutputParser } from './parser';
 import {
     PromptRole,
     PromptRunnerParams,
     PromptRunnerService,
 } from './promptRunner.service';
+import z, { AnyZodObject } from 'zod';
 
 export enum ParserType {
     STRING = 'string',
     JSON = 'json',
+    ZOD = 'zod',
     CUSTOM = 'custom',
 }
 
@@ -103,9 +108,17 @@ class PromptBuilderWithProviders {
         type: ParserType.JSON,
     ): ConfigurablePromptBuilderWithoutPayload<NewOutputType, ParserType.JSON>;
 
+    setParser<NewOutputType extends AnyZodObject>(
+        type: ParserType.ZOD,
+        parserOrSchema: NewOutputType,
+    ): ConfigurablePromptBuilderWithoutPayload<
+        z.infer<NewOutputType>,
+        ParserType.ZOD
+    >;
+
     setParser<NewOutputType>(
         type: ParserType.CUSTOM,
-        parser: PromptRunnerParams<void, NewOutputType>['parser'],
+        parserOrSchema: PromptRunnerParams<void, NewOutputType>['parser'],
     ): ConfigurablePromptBuilderWithoutPayload<
         NewOutputType,
         ParserType.CUSTOM
@@ -113,13 +126,19 @@ class PromptBuilderWithProviders {
 
     setParser<NewOutputType>(
         type: ParserType,
-        parser?: PromptRunnerParams<void, NewOutputType>['parser'],
+        parserOrSchema?:
+            | PromptRunnerParams<void, NewOutputType>['parser']
+            | AnyZodObject,
+        config?: Pick<
+            PromptRunnerParams<void, NewOutputType>,
+            'provider' | 'fallbackProvider'
+        >,
     ): ConfigurablePromptBuilderWithoutPayload<
-        NewOutputType | string,
+        NewOutputType | string | z.infer<AnyZodObject>,
         ParserType
     > {
         switch (type) {
-            case ParserType.STRING:
+            case ParserType.STRING: {
                 return new ConfigurablePromptBuilderWithoutPayload<
                     string,
                     ParserType.STRING
@@ -131,8 +150,8 @@ class PromptBuilderWithProviders {
                     },
                     ParserType.STRING,
                 );
-
-            case ParserType.JSON:
+            }
+            case ParserType.JSON: {
                 return new ConfigurablePromptBuilderWithoutPayload<
                     NewOutputType,
                     ParserType.JSON
@@ -146,11 +165,14 @@ class PromptBuilderWithProviders {
                     },
                     ParserType.JSON,
                 );
-
-            case ParserType.CUSTOM:
-                if (!parser) {
+            }
+            case ParserType.CUSTOM: {
+                if (
+                    !parserOrSchema ||
+                    !(parserOrSchema instanceof BaseOutputParser)
+                ) {
                     throw new Error(
-                        'Custom parser must be provided for CUSTOM type',
+                        'Custom parser must be provided for CUSTOM type, and it must be an instance of BaseOutputParser',
                     );
                 }
 
@@ -161,10 +183,35 @@ class PromptBuilderWithProviders {
                     this.runner,
                     {
                         ...this.params,
-                        parser,
+                        parser: parserOrSchema,
                     },
                     ParserType.CUSTOM,
                 );
+            }
+            case ParserType.ZOD: {
+                if (!parserOrSchema || !(parserOrSchema instanceof z.ZodType)) {
+                    throw new Error(
+                        'Zod schema must be provided for ZOD type, and it must be a valid Zod schema',
+                    );
+                }
+
+                return new ConfigurablePromptBuilderWithoutPayload<
+                    z.infer<typeof parserOrSchema>,
+                    ParserType.ZOD
+                >(
+                    this.runner,
+                    {
+                        ...this.params,
+                        parser: new ZodOutputParser({
+                            schema: parserOrSchema,
+                            promptRunnerService: this.runner,
+                            provider: config?.provider,
+                            fallbackProvider: config?.fallbackProvider,
+                        }),
+                    },
+                    ParserType.ZOD,
+                );
+            }
             default: {
                 throw new Error(`Unsupported parser type`);
             }

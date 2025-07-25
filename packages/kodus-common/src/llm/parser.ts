@@ -1,5 +1,14 @@
 import { MessageContentComplex } from '@langchain/core/messages';
-import { StringOutputParser } from '@langchain/core/output_parsers';
+import {
+    BaseOutputParser,
+    FormatInstructionsOptions,
+    StringOutputParser,
+    StructuredOutputParser,
+} from '@langchain/core/output_parsers';
+import { PromptRunnerService } from './promptRunner.service';
+import z, { AnyZodObject } from 'zod';
+import { LLMModelProvider } from './helper';
+import { ParserType } from './builder';
 
 export class CustomStringOutputParser extends StringOutputParser {
     protected _messageContentComplexToString(
@@ -9,5 +18,110 @@ export class CustomStringOutputParser extends StringOutputParser {
             return '';
         }
         return super._messageContentComplexToString(content);
+    }
+}
+
+export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
+    lc_namespace: string[] = [];
+
+    constructor(
+        private readonly config: {
+            schema: T;
+            // We pass the runner service to the parser to allow it to run its own "fix-it" chain
+            promptRunnerService: PromptRunnerService;
+            provider?: LLMModelProvider;
+            fallbackProvider?: LLMModelProvider;
+        },
+    ) {
+        super();
+    }
+
+    getFormatInstructions(options?: FormatInstructionsOptions): string {
+        const parser = StructuredOutputParser.fromZodSchema(
+            this.config.schema as any,
+        ) as BaseOutputParser<z.infer<T>>;
+
+        return parser.getFormatInstructions(options);
+    }
+
+    /**
+     * Parses the raw string output from the LLM.
+     * It attempts to extract and parse JSON, and if it fails,
+     * it uses another LLM call to correct the format.
+     */
+    async parse(text: string): Promise<z.infer<T>> {
+        const parseJsonPreprocessor = (
+            value: unknown,
+            ctx: z.RefinementCtx,
+        ): unknown => {
+            if (typeof value === 'string') {
+                try {
+                    return JSON.parse(value) as unknown;
+                } catch {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        message: 'Invalid JSON string',
+                    });
+                    return z.NEVER;
+                }
+            }
+
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Input must be a string',
+            });
+            return z.NEVER;
+        };
+
+        try {
+            // Attempt to find and extract JSON from markdown code blocks
+            const rgx = /```json\s*([\s\S]*?)```/g;
+            const match = rgx.exec(text);
+            const jsonString = match ? match[1].trim() : text.trim();
+
+            const preprocessorSchema = z.preprocess(
+                parseJsonPreprocessor,
+                this.config.schema,
+            );
+
+            return preprocessorSchema.parse(jsonString);
+        } catch {
+            // If parsing fails, use the LLM to fix the JSON
+            return this._runCorrectionChain(text);
+        }
+    }
+
+    /**
+     * Internal method to run a new prompt chain to fix malformed JSON.
+     */
+    private async _runCorrectionChain(
+        malformedOutput: string,
+    ): Promise<z.infer<T>> {
+        const correctionParser = StructuredOutputParser.fromZodSchema(
+            this.config.schema as any,
+        ) as BaseOutputParser<z.infer<T>>;
+
+        const prompt = `${malformedOutput}\n\n${correctionParser.getFormatInstructions()}`;
+
+        const result = await this.config.promptRunnerService
+            .builder()
+            .setProviders({
+                main: this.config.provider || LLMModelProvider.OPENAI_GPT_4O,
+                fallback:
+                    this.config.fallbackProvider ||
+                    LLMModelProvider.OPENAI_GPT_4O,
+            })
+            .setParser(ParserType.CUSTOM, correctionParser)
+            .addPrompt({ prompt })
+            .setTemperature(0)
+            .setLLMJsonMode(true)
+            .setRunName('fixAndExtractJson')
+            .execute();
+
+        if (!result || !this.config.schema.safeParse(result).success) {
+            throw new Error('Failed to correct JSON even after LLM fallback.');
+        }
+
+        return result;
     }
 }
