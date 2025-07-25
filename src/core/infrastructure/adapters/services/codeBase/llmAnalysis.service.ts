@@ -14,12 +14,13 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { PinoLoggerService } from '../logger/pino.service';
 import { RunnableSequence } from '@langchain/core/runnables';
 import {
+    BaseOutputParser,
     StringOutputParser,
     StructuredOutputParser,
 } from '@langchain/core/output_parsers';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { HumanMessage } from '@langchain/core/messages';
-import { z } from 'zod';
+import { AnyZodObject, z } from 'zod';
 import { LLMResponseProcessor } from './utils/transforms/llmResponseProcessor.transform';
 import { prompt_validateImplementedSuggestions } from '@/shared/utils/langchainCommon/prompts/validateImplementedSuggestions';
 import { prompt_selectorLightOrHeavyMode_system } from '@/shared/utils/langchainCommon/prompts/seletorLightOrHeavyMode';
@@ -538,13 +539,43 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 reviewMode,
             };
 
-            const response = await this.promptRunnerService
+            const schema = z.object({
+                codeSuggestions: z.array(
+                    z
+                        .object({
+                            id: z.string(),
+                            suggestionContent: z.string(),
+                            existingCode: z.string(),
+                            improvedCode: z.string(),
+                            oneSentenceSummary: z.string(),
+                            relevantLinesStart: z.string(),
+                            relevantLinesEnd: z.string(),
+                            label: z.string().optional(),
+                            action: z.string(),
+                            reason: z.string().optional(),
+                        })
+                        .refine(
+                            (data) =>
+                                data.suggestionContent &&
+                                data.existingCode &&
+                                data.oneSentenceSummary &&
+                                data.relevantLinesStart &&
+                                data.relevantLinesEnd &&
+                                data.action,
+                            {
+                                message: 'All fields are required',
+                            },
+                        ),
+                ),
+            });
+
+            const filteredSuggestions = await this.promptRunnerService
                 .builder()
                 .setProviders({
                     main: provider,
                     fallback: fallbackProvider,
                 })
-                .setParser(ParserType.STRING)
+                .setParser(ParserType.ZOD, schema)
                 .setLLMJsonMode(true)
                 .setPayload(payload)
                 .addPrompt({
@@ -568,7 +599,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setRunName('filterSuggestionsSafeGuard')
                 .execute();
 
-            if (!response) {
+            if (!filteredSuggestions) {
                 const message = `No response from safeguard for PR#${prNumber}`;
                 this.logger.warn({
                     message,
@@ -584,19 +615,13 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
 
             const tokenUsages = this.tokenTracker.getTokenUsages();
 
-            const filteredSuggestions =
-                await this.extractSuggestionsFromCodeReviewSafeguard(
-                    organizationAndTeamData,
-                    prNumber,
-                    response,
-                );
-
             // Filter and update suggestions
-            const suggestionsToUpdate = filteredSuggestions?.filter(
-                (s) => s.action === 'update',
-            );
+            const suggestionsToUpdate =
+                filteredSuggestions?.codeSuggestions?.filter(
+                    (s) => s.action === 'update',
+                );
             const suggestionsToDiscard = new Set(
-                filteredSuggestions
+                filteredSuggestions?.codeSuggestions
                     ?.filter((s) => s.action === 'discard')
                     .map((s) => s.id),
             );
@@ -740,7 +765,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                         main: provider,
                         fallback: fallbackProvider,
                     })
-                    .setParser<OutputType>(ParserType.CUSTOM, parser)
+                    .setParser(ParserType.CUSTOM, parser)
                     .setLLMJsonMode(true)
                     .addPrompt({
                         prompt,

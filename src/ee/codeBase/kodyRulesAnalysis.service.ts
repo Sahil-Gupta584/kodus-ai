@@ -14,6 +14,8 @@ import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import Anthropic from '@anthropic-ai/sdk';
 import { getKodyRulesForFile } from '@/shared/utils/glob-utils';
 import {
+    KodyRulesClassifierSchema,
+    kodyRulesClassifierSchema,
     prompt_kodyrules_classifier_system,
     prompt_kodyrules_classifier_user,
     prompt_kodyrules_extract_id_system,
@@ -44,6 +46,7 @@ import {
     ParserType,
     PromptRole,
 } from '@kodus/kodus-common/llm';
+import { z } from 'zod';
 
 // Interface for extended context used in Kody Rules analysis
 interface KodyRulesExtendedContext {
@@ -431,6 +434,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             suggestions?.codeSuggestions?.length > 0;
 
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
+        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
         // Reset token tracking for new analysis
         this.tokenTracker.reset();
 
@@ -467,40 +471,21 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         };
 
         try {
-            const classifier = this.getBasePromptBuilder(provider, baseContext)
-                .setPayload(baseContext)
-                .addPrompt({
-                    prompt: prompt_kodyrules_classifier_system,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: prompt_kodyrules_classifier_user,
-                    role: PromptRole.USER,
-                })
-                .setRunName('classifierKodyRulesAnalyzeCodeWithAI');
-
-            const updater = this.getBasePromptBuilder(provider, baseContext)
-                .setPayload(extendedContext)
-                .addPrompt({
-                    prompt: prompt_kodyrules_updatestdsuggestions_system,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: prompt_kodyrules_updatestdsuggestions_user,
-                    role: PromptRole.USER,
-                })
-                .setRunName('updateStandardSuggestionsAnalyzeCodeWithAI');
-
-            const guardian = this.getBasePromptBuilder(provider, baseContext)
-                .addPrompt({
-                    prompt: prompt_kodyrules_guardian_system,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: prompt_kodyrules_guardian_user,
-                    role: PromptRole.USER,
-                })
-                .setRunName('guardianKodyRulesAnalyzeCodeWithAI');
+            const classifier = this.getClassifier(
+                provider,
+                fallbackProvider,
+                extendedContext,
+            );
+            const updater = this.getUpdater(
+                provider,
+                fallbackProvider,
+                extendedContext,
+            );
+            const guardian = this.getGuardian(
+                provider,
+                fallbackProvider,
+                extendedContext,
+            );
 
             // These chains do not depend on each other, so we can run them in parallel
             const [classifiedRulesResult, updateStandardSuggestionsResult] =
@@ -547,17 +532,11 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                     : undefined,
             };
 
-            const generator = this.getBasePromptBuilder(provider, baseContext)
-                .setPayload(extendedContext)
-                .addPrompt({
-                    prompt: prompt_kodyrules_suggestiongeneration_system,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: prompt_kodyrules_suggestiongeneration_user,
-                    role: PromptRole.USER,
-                })
-                .setRunName('generateKodyRulesSuggestionsAnalyzeCodeWithAI');
+            const generator = this.getGenerator(
+                provider,
+                fallbackProvider,
+                extendedContext,
+            );
 
             const generatedKodyRulesSuggestionsResult =
                 await generator.execute();
@@ -610,6 +589,170 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             });
             throw error;
         }
+    }
+
+    private getClassifier(
+        provider: LLMModelProvider,
+        fallbackProvider: LLMModelProvider,
+        context: KodyRulesExtendedContext,
+    ) {
+        return this.promptRunnerService
+            .builder()
+            .setProviders({
+                main: provider,
+                fallback: fallbackProvider,
+            })
+            .setParser(ParserType.ZOD, kodyRulesClassifierSchema)
+            .setLLMJsonMode(true)
+            .setTemperature(0)
+            .setPayload(context)
+            .addPrompt({
+                prompt: prompt_kodyrules_classifier_system,
+                role: PromptRole.SYSTEM,
+            })
+            .addPrompt({
+                prompt: prompt_kodyrules_classifier_user,
+                role: PromptRole.USER,
+            })
+            .addMetadata({
+                metadata: {
+                    organizationId:
+                        context?.organizationAndTeamData?.organizationId,
+                    teamId: context?.organizationAndTeamData?.teamId,
+                    pullRequestId: context?.pullRequest?.number,
+                    provider,
+                    fallbackProvider,
+                },
+            })
+            .addCallbacks([this.tokenTracker])
+            .addTags([
+                ...this.buildTags(provider, 'primary'),
+                ...this.buildTags(fallbackProvider, 'fallback'),
+            ])
+            .setRunName('classifierKodyRulesAnalyzeCodeWithAI');
+    }
+
+    private getUpdater(
+        provider: LLMModelProvider,
+        fallbackProvider: LLMModelProvider,
+        context: KodyRulesExtendedContext,
+    ) {
+        return this.promptRunnerService
+            .builder()
+            .setProviders({
+                main: provider,
+                fallback: fallbackProvider,
+            })
+            .setParser(ParserType.STRING)
+            .setLLMJsonMode(true)
+            .setTemperature(0)
+            .setPayload(context)
+            .addPrompt({
+                prompt: prompt_kodyrules_updatestdsuggestions_system,
+                role: PromptRole.SYSTEM,
+            })
+            .addPrompt({
+                prompt: prompt_kodyrules_updatestdsuggestions_user,
+                role: PromptRole.USER,
+            })
+            .addMetadata({
+                metadata: {
+                    organizationId:
+                        context?.organizationAndTeamData?.organizationId,
+                    teamId: context?.organizationAndTeamData?.teamId,
+                    pullRequestId: context?.pullRequest?.number,
+                    provider,
+                    fallbackProvider,
+                },
+            })
+            .addCallbacks([this.tokenTracker])
+            .addTags([
+                ...this.buildTags(provider, 'primary'),
+                ...this.buildTags(fallbackProvider, 'fallback'),
+            ])
+            .setRunName('updateStandardSuggestionsAnalyzeCodeWithAI');
+    }
+
+    private getGuardian(
+        provider: LLMModelProvider,
+        fallbackProvider: LLMModelProvider,
+        context: KodyRulesExtendedContext,
+    ) {
+        return this.promptRunnerService
+            .builder()
+            .setProviders({
+                main: provider,
+                fallback: fallbackProvider,
+            })
+            .setParser(ParserType.STRING)
+            .setLLMJsonMode(true)
+            .setTemperature(0)
+            .setPayload(context)
+            .addPrompt({
+                prompt: prompt_kodyrules_guardian_system,
+                role: PromptRole.SYSTEM,
+            })
+            .addPrompt({
+                prompt: prompt_kodyrules_guardian_user,
+                role: PromptRole.USER,
+            })
+            .addMetadata({
+                metadata: {
+                    organizationId:
+                        context?.organizationAndTeamData?.organizationId,
+                    teamId: context?.organizationAndTeamData?.teamId,
+                    pullRequestId: context?.pullRequest?.number,
+                    provider,
+                    fallbackProvider,
+                },
+            })
+            .addCallbacks([this.tokenTracker])
+            .addTags([
+                ...this.buildTags(provider, 'primary'),
+                ...this.buildTags(fallbackProvider, 'fallback'),
+            ])
+            .setRunName('guardianKodyRulesAnalyzeCodeWithAI');
+    }
+
+    private getGenerator(
+        provider: LLMModelProvider,
+        fallbackProvider: LLMModelProvider,
+        context: KodyRulesExtendedContext,
+    ) {
+        return this.promptRunnerService
+            .builder()
+            .setProviders({
+                main: provider,
+                fallback: fallbackProvider,
+            })
+            .setParser(ParserType.STRING)
+            .setLLMJsonMode(true)
+            .setTemperature(0)
+            .setPayload(context)
+            .addPrompt({
+                prompt: prompt_kodyrules_suggestiongeneration_system,
+                role: PromptRole.SYSTEM,
+            })
+            .addPrompt({
+                prompt: prompt_kodyrules_suggestiongeneration_user,
+                role: PromptRole.USER,
+            })
+            .addMetadata({
+                metadata: {
+                    organizationId:
+                        context?.organizationAndTeamData?.organizationId,
+                    teamId: context?.organizationAndTeamData?.teamId,
+                    pullRequestId: context?.pullRequest?.number,
+                    provider,
+                    fallbackProvider,
+                },
+            })
+            .addCallbacks([this.tokenTracker])
+            .addTags([
+                ...this.buildTags(provider, 'primary'),
+                ...this.buildTags(fallbackProvider, 'fallback'),
+            ])
+            .setRunName('generateKodyRulesSuggestionsAnalyzeCodeWithAI');
     }
 
     private addSeverityToSuggestions(
@@ -751,39 +894,11 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
 
     private processClassifierResponse(
         allRules: Array<Partial<IKodyRule> | IKodyRule>,
-        response: string,
+        response: KodyRulesClassifierSchema,
     ): Array<Partial<IKodyRule> | IKodyRule> | null {
         try {
-            if (!response) {
-                return null;
-            }
-
-            let cleanResponse = response;
-
-            if (response?.startsWith('```')) {
-                cleanResponse = response
-                    .replace(/^```json\n/, '')
-                    .replace(/\n```(\n)?$/, '')
-                    .trim();
-            }
-
-            const parsedResponse = tryParseJSONObject(cleanResponse);
-
-            if (!parsedResponse?.length) {
-                this.logger.warn({
-                    message:
-                        'Failed to parse classifier response OR not response',
-                    context: KodyRulesAnalysisService.name,
-                    metadata: {
-                        originalResponse: response,
-                        cleanResponse,
-                    },
-                });
-                return null;
-            }
-
             const responseMap = new Map(
-                parsedResponse.map((rule) => [rule.uuid, rule.reason]),
+                response.rules.map((rule) => [rule.uuid, rule.reason]),
             );
 
             return allRules
