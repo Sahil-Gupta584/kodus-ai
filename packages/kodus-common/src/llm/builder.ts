@@ -95,12 +95,9 @@ class PromptBuilderWithProviders {
      * @template NewOutputType The expected output type of the parser.
      * @returns The ConfigurablePromptBuilder instance for chaining.
      */
-    setParser<NewOutputType extends string = string>(
+    setParser(
         type: ParserType.STRING,
-    ): ConfigurablePromptBuilderWithoutPayload<
-        NewOutputType,
-        ParserType.STRING
-    >;
+    ): ConfigurablePromptBuilderWithoutPayload<string, ParserType.STRING>;
 
     setParser<NewOutputType extends object>(
         type: ParserType.JSON,
