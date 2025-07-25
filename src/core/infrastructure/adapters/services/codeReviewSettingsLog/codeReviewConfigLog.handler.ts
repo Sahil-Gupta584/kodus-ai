@@ -3,7 +3,6 @@ import { ChangedDataToExport } from './codeReviewSettingsLog.service';
 import {
     ActionType,
     ConfigLevel,
-    PropertyConfig,
     UserInfo,
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import { PROPERTY_CONFIGS } from './propertyMapping.helper';
@@ -121,7 +120,7 @@ export class CodeReviewConfigLogHandler {
         for (const key of Object.keys(flatNew)) {
             if (
                 PROPERTY_CONFIGS[key] &&
-                !excludeKeys.includes(key) && // ✅ Excluir propriedades tratadas em special cases
+                !excludeKeys.includes(key) &&
                 UnifiedLogHandler.hasChanged(flatOld[key], flatNew[key])
             ) {
                 const config = PROPERTY_CONFIGS[key];
@@ -129,7 +128,7 @@ export class CodeReviewConfigLogHandler {
                     key,
                     oldValue: flatOld[key],
                     newValue: flatNew[key],
-                    displayName: config.displayName,
+                    displayName: config.actionDescription,
                     path: key.split('.')
                 });
             }
@@ -161,13 +160,11 @@ export class CodeReviewConfigLogHandler {
     }
 
     private collectSpecialChanges(oldConfig: any, newConfig: any): Array<{
-        key: string;
         displayName: string;
         customDescription: string;
         isSpecial: true;
     }> {
         const changes: Array<{
-            key: string;
             displayName: string;
             customDescription: string;
             isSpecial: true;
@@ -188,7 +185,6 @@ export class CodeReviewConfigLogHandler {
             const hasSignificantChange = this.hasSignificantAutomatedReviewChange(oldConfig, newConfig);
             if (hasSignificantChange) {
                 changes.push({
-                    key: 'automatedReviewActive',
                     displayName: 'Automated Code Review',
                     customDescription: this.getAutomatedReviewCustomDescription(oldConfig, newConfig),
                     isSpecial: true,
@@ -211,7 +207,6 @@ export class CodeReviewConfigLogHandler {
             const hasSignificantChange = this.hasSignificantSummaryChange(oldConfig, newConfig);
             if (hasSignificantChange) {
                 changes.push({
-                    key: 'summary.generatePRSummary',
                     displayName: 'Generate PR Summary',
                     customDescription: this.getSummaryCustomDescription(oldConfig, newConfig),
                     isSpecial: true,
@@ -432,7 +427,7 @@ export class CodeReviewConfigLogHandler {
                     ? config.formatter(change.newValue)
                     : UnifiedLogHandler.formatValue(change.newValue);
 
-                return `User ${userEmail} changed ${config.displayName} from ${formattedOld} to ${formattedNew}`;
+                return `User ${userEmail} changed ${config.actionDescription} from ${formattedOld} to ${formattedNew}`;
             }
         }
 
@@ -451,16 +446,12 @@ export class CodeReviewConfigLogHandler {
                     ? config.formatter(change.newValue)
                     : UnifiedLogHandler.formatValue(change.newValue);
 
-                return `- ${config.displayName}: from ${formattedOld} to ${formattedNew}`;
+                return `- ${config.actionDescription}: from ${formattedOld} to ${formattedNew}`;
             }
         }).join('\n');
 
         return `${header}\n${bullets}`;
     }
-
-    // ✅ Removed createChangedData - using grouped approach
-
-    // ✅ Removed old handleSpecialCases - using new unified approach
 
     private formatBehaviour(behaviour: string): string {
         const behaviourLabels = {

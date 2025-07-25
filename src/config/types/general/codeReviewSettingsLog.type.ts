@@ -13,16 +13,14 @@ export enum ConfigLevel {
 }
 
 export type ChangedData = {
-    key?: string;
-    displayName?: string;
+    actionDescription?: string;
     previousValue: any;
     currentValue: any;
     description: string;
 };
 
 export interface PropertyConfig {
-    key: string;
-    displayName: string;
+    actionDescription: string;
     templateDescription: string;
     formatter?: (value: any) => string;
     isSpecialCase?: boolean;
