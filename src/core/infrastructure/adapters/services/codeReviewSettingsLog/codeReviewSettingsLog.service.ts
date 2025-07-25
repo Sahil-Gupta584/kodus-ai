@@ -19,7 +19,9 @@ import { UnifiedLogHandler } from './unifiedLog.handler';
 import {
     ActionType,
     ConfigLevel,
+    UserInfo,
 } from '@/config/types/general/codeReviewSettingsLog.type';
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import {
     IntegrationLogParams,
     UserStatusLogParams,
@@ -79,6 +81,14 @@ export class CodeReviewSettingsLogService
         params: RepositoriesLogParams,
     ): Promise<void> {
         await this.repositoriesLogHandler.logRepositoriesAction(params);
+    }
+
+    public async registerRepositoryConfigurationRemoval(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        userInfo: UserInfo;
+        repository: { id: string; name: string };
+    }): Promise<void> {
+        await this.repositoriesLogHandler.logRepositoryConfigurationRemoval(params);
     }
 
     public async registerIntegrationLog(

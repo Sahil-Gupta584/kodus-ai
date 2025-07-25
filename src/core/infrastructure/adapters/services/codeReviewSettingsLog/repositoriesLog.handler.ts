@@ -142,4 +142,47 @@ export class RepositoriesLogHandler {
             changedData,
         });
     }
+
+    public async logRepositoryConfigurationRemoval(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        userInfo: UserInfo;
+        repository: { id: string; name: string };
+    }): Promise<void> {
+        const { organizationAndTeamData, userInfo, repository } = params;
+
+        const changedData: ChangedDataToExport[] = [
+            {
+                actionDescription: 'Repository Configuration Removed',
+                previousValue: {
+                    id: repository.id,
+                    name: repository.name,
+                    configType: 'specific',
+                },
+                currentValue: {
+                    id: repository.id,
+                    name: repository.name,
+                    configType: 'global',
+                },
+                description: `User ${userInfo.userEmail} removed configuration for repository "${repository.name}", now this repository will be reviewed according to global settings`,
+            },
+        ];
+
+        await this.codeReviewSettingsLogRepository.create({
+            organizationId: organizationAndTeamData.organizationId,
+            teamId: organizationAndTeamData.teamId,
+            action: ActionType.DELETE,
+            userInfo: {
+                userId: userInfo.userId,
+                userEmail: userInfo.userEmail,
+            },
+            changeMetadata: {
+                configLevel: ConfigLevel.REPOSITORY,
+                repository: {
+                    id: repository.id,
+                    name: repository.name,
+                },
+            },
+            changedData,
+        });
+    }
 }
