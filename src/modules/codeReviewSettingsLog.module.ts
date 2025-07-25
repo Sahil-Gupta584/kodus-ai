@@ -8,6 +8,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { forwardRef, Module } from '@nestjs/common';
 import { UsersModule } from './user.module';
 import { CodeReviewConfigLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/codeReviewConfigLog.handler';
+import { RepositoriesLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/repositoriesLog.handler';
 import { UnifiedLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/unifiedLog.handler';
 import { IntegrationConfigModule } from './integrationConfig.module';
 import { TeamsModule } from './team.module';
@@ -33,6 +34,7 @@ import { RegisterUserStatusLogUseCase } from '@/core/application/use-cases/user/
         RegisterUserStatusLogUseCase,
         UnifiedLogHandler,
         CodeReviewConfigLogHandler,
+        RepositoriesLogHandler,
         KodyRulesLogHandler,
     ],
     exports: [
@@ -40,6 +42,7 @@ import { RegisterUserStatusLogUseCase } from '@/core/application/use-cases/user/
         CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
         UnifiedLogHandler,
         CodeReviewConfigLogHandler,
+        RepositoriesLogHandler,
         KodyRulesLogHandler,
         RegisterUserStatusLogUseCase
     ],
