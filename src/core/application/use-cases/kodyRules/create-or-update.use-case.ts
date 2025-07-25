@@ -4,6 +4,7 @@ import { IKodyRulesService } from '@/core/domain/kodyRules/contracts/kodyRules.s
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { CreateKodyRuleDto } from '@/core/infrastructure/http/dtos/create-kody-rule.dto';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
 
 @Injectable()
 export class CreateOrUpdateKodyRulesUseCase {
@@ -12,7 +13,16 @@ export class CreateOrUpdateKodyRulesUseCase {
         private readonly kodyRulesService: IKodyRulesService,
 
         private readonly logger: PinoLoggerService,
-    ) { }
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: {
+                organization: { uuid: string };
+                uuid: string;
+                email: string;
+            };
+        },
+    ) {}
 
     async execute(kodyRule: CreateKodyRuleDto, organizationId: string) {
         try {
@@ -23,6 +33,10 @@ export class CreateOrUpdateKodyRulesUseCase {
             const result = await this.kodyRulesService.createOrUpdate(
                 organizationAndTeamData,
                 kodyRule,
+                {
+                    userId: this.request.user.uuid,
+                    userEmail: this.request.user.email,
+                },
             );
 
             if (!result) {

@@ -72,6 +72,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
             '/gitlab/webhook',
             '/bitbucket/webhook',
             '/azure-repos/webhook',
+            '/user-log/status-change',
         ];
 
         // Allow access to public routes

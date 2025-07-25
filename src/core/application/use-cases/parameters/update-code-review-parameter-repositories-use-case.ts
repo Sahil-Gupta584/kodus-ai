@@ -12,11 +12,12 @@ import {
     INTEGRATION_CONFIG_SERVICE_TOKEN,
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
-
-interface Body {
-    organizationAndTeamData: OrganizationAndTeamData;
-}
-
+import {
+    ICodeReviewSettingsLogService,
+    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { REQUEST } from '@nestjs/core';
+import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 interface ICodeRepository {
     avatar_url?: string;
     default_branch: string;
@@ -38,10 +39,24 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
 
+        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
+        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: {
+                organization: { uuid: string };
+                uuid: string;
+                email: string;
+            };
+        },
+
         private readonly logger: PinoLoggerService,
     ) {}
 
-    async execute(body: Body): Promise<ParametersEntity | boolean> {
+    async execute(body: {
+        organizationAndTeamData: OrganizationAndTeamData;
+    }): Promise<ParametersEntity | boolean> {
         try {
             const { organizationAndTeamData } = body;
 
@@ -98,11 +113,60 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
                 repositories: updatedRepositories,
             };
 
-            return await this.parametersService.createOrUpdateConfig(
+            const result = await this.parametersService.createOrUpdateConfig(
                 ParametersKey.CODE_REVIEW_CONFIG,
                 updatedCodeReviewConfigValue,
                 organizationAndTeamData,
             );
+
+            // Identificar repositories adicionados e removidos para o log
+            const addedRepositories = newRepositories;
+            let removedRepositories = codeReviewRepositories.filter(
+                (repository) =>
+                    !commonRepositories.some(
+                        (commonRepo) => commonRepo.id === repository.id,
+                    ),
+            );
+
+            try {
+                if (
+                    addedRepositories.length > 0 ||
+                    removedRepositories.length > 0
+                ) {
+                    const actionType =
+                        addedRepositories.length > 0 &&
+                        removedRepositories.length > 0
+                            ? ActionType.EDIT
+                            : addedRepositories.length > 0
+                              ? ActionType.ADD
+                              : ActionType.DELETE;
+
+                    this.codeReviewSettingsLogService.registerRepositoriesLog({
+                        organizationAndTeamData: {
+                            ...body.organizationAndTeamData,
+                            organizationId: this.request.user.organization.uuid,
+                        },
+                        userInfo: {
+                            userId: this.request.user.uuid,
+                            userEmail: this.request.user.email,
+                        },
+                        actionType: actionType,
+                        addedRepositories,
+                        removedRepositories,
+                    });
+                }
+            } catch (error) {
+                this.logger.error({
+                    message: 'Error saving code review settings log',
+                    error: error,
+                    context: UpdateCodeReviewParameterRepositoriesUseCase.name,
+                    metadata: {
+                        organizationAndTeamData: organizationAndTeamData,
+                    },
+                });
+            }
+
+            return result;
         } catch (error) {
             this.logger.error({
                 message:

@@ -1,0 +1,102 @@
+import { Entity } from '@/shared/domain/interfaces/entity';
+import { ICodeReviewSettingsLog } from '../interfaces/codeReviewSettingsLog.interface';
+import {
+    ActionType,
+    ChangedData,
+    ConfigLevel,
+} from '@/config/types/general/codeReviewSettingsLog.type';
+
+export class CodeReviewSettingsLogEntity
+    implements Entity<ICodeReviewSettingsLog>
+{
+    private readonly _uuid: string;
+    private readonly _organizationId: string;
+    private readonly _teamId: string;
+    private readonly _action: ActionType;
+    private readonly _userInfo: {
+        userId: string;
+        userEmail: string;
+    };
+    private readonly _changeMetadata: {
+        configLevel: ConfigLevel;
+        repository?: {
+            id: string;
+            name: string;
+        };
+    };
+    private readonly _changedData: ChangedData[];
+
+    constructor(codeReviewSettingsLog: ICodeReviewSettingsLog) {
+        this._uuid = codeReviewSettingsLog.uuid;
+        this._organizationId = codeReviewSettingsLog.organizationId;
+        this._teamId = codeReviewSettingsLog.teamId;
+        this._action = codeReviewSettingsLog.action;
+        this._userInfo = codeReviewSettingsLog.userInfo;
+        this._changeMetadata = codeReviewSettingsLog.changeMetadata;
+        this._changedData = codeReviewSettingsLog.changedData;
+    }
+
+    toJson(): ICodeReviewSettingsLog {
+        return {
+            uuid: this._uuid,
+            organizationId: this._organizationId,
+            teamId: this._teamId,
+            action: this._action,
+            userInfo: this._userInfo,
+            changeMetadata: this._changeMetadata,
+            changedData: this._changedData,
+        };
+    }
+
+    toObject(): ICodeReviewSettingsLog {
+        return {
+            uuid: this._uuid,
+            organizationId: this._organizationId,
+            teamId: this._teamId,
+            action: this._action,
+            userInfo: this._userInfo,
+            changeMetadata: this._changeMetadata,
+            changedData: this._changedData,
+        };
+    }
+
+    get uuid(): string {
+        return this._uuid;
+    }
+
+    get organizationId(): string {
+        return this._organizationId;
+    }
+
+    get teamId(): string {
+        return this._teamId;
+    }
+
+    get action(): ActionType {
+        return this._action;
+    }
+
+    get userInfo(): {
+        userId: string;
+        userEmail: string;
+    } {
+        return this._userInfo;
+    }
+
+    get changeMetadata(): {
+        configLevel: ConfigLevel;
+        repositoryId?: string;
+    } {
+        return this._changeMetadata;
+    }
+
+    get changedData(): ChangedData[] {
+        return this._changedData;
+    }
+
+    public static create(
+        codeReviewSettingsLog: ICodeReviewSettingsLog,
+    ): CodeReviewSettingsLogEntity {
+        return new CodeReviewSettingsLogEntity(codeReviewSettingsLog);
+    }
+}
