@@ -9,6 +9,7 @@ import { PromptRunnerService } from './promptRunner.service';
 import z, { AnyZodObject } from 'zod';
 import { LLMModelProvider } from './helper';
 import { ParserType } from './builder';
+import { tryParseJSONObject } from '@/utils/json';
 
 export class CustomStringOutputParser extends StringOutputParser {
     protected _messageContentComplexToString(
@@ -50,13 +51,34 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
      * it uses another LLM call to correct the format.
      */
     async parse(text: string): Promise<z.infer<T>> {
+        if (!text) {
+            throw new Error('Input text is empty or undefined');
+        }
+
         const parseJsonPreprocessor = (
             value: unknown,
             ctx: z.RefinementCtx,
         ): unknown => {
             if (typeof value === 'string') {
                 try {
-                    return JSON.parse(value) as unknown;
+                    let cleanResponse = value;
+
+                    if (value.startsWith('```')) {
+                        cleanResponse = value
+                            .replace(/^```json\n/, '')
+                            .replace(/\n```(\n)?$/, '')
+                            .trim();
+                    }
+
+                    const parsedResponse = tryParseJSONObject(cleanResponse);
+
+                    if (parsedResponse) {
+                        return parsedResponse;
+                    }
+
+                    throw new Error(
+                        'Failed to parse JSON from the provided string',
+                    );
                 } catch {
                     ctx.addIssue({
                         code: z.ZodIssueCode.custom,
@@ -74,17 +96,12 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
         };
 
         try {
-            // Attempt to find and extract JSON from markdown code blocks
-            const rgx = /```json\s*([\s\S]*?)```/g;
-            const match = rgx.exec(text);
-            const jsonString = match ? match[1].trim() : text.trim();
-
             const preprocessorSchema = z.preprocess(
                 parseJsonPreprocessor,
                 this.config.schema,
             );
 
-            return preprocessorSchema.parse(jsonString);
+            return preprocessorSchema.parse(text);
         } catch {
             // If parsing fails, use the LLM to fix the JSON
             return this._runCorrectionChain(text);
@@ -97,6 +114,14 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
     private async _runCorrectionChain(
         malformedOutput: string,
     ): Promise<z.infer<T>> {
+        if (!this.config.schema) {
+            throw new Error('Schema is required for JSON correction');
+        }
+
+        if (!malformedOutput) {
+            throw new Error('Malformed output is empty or undefined');
+        }
+
         const correctionParser = StructuredOutputParser.fromZodSchema(
             this.config.schema as any,
         ) as BaseOutputParser<z.infer<T>>;
