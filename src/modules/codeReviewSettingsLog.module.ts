@@ -8,10 +8,11 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { forwardRef, Module } from '@nestjs/common';
 import { UsersModule } from './user.module';
 import { CodeReviewConfigLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/codeReviewConfigLog.handler';
-
 import { UnifiedLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/unifiedLog.handler';
 import { IntegrationConfigModule } from './integrationConfig.module';
 import { TeamsModule } from './team.module';
+import { CodeReviewSettingLogController } from '@/core/infrastructure/http/controllers/codeReviewSettingLog.controller';
+import { RegisterUserStatusLogUseCase } from '@/core/application/use-cases/user/register-user-status-log.use-case';
 
 @Module({
     imports: [
@@ -29,6 +30,7 @@ import { TeamsModule } from './team.module';
             provide: CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
             useClass: CodeReviewSettingsLogService,
         },
+        RegisterUserStatusLogUseCase,
         UnifiedLogHandler,
         CodeReviewConfigLogHandler,
         KodyRulesLogHandler,
@@ -39,6 +41,8 @@ import { TeamsModule } from './team.module';
         UnifiedLogHandler,
         CodeReviewConfigLogHandler,
         KodyRulesLogHandler,
+        RegisterUserStatusLogUseCase
     ],
+    controllers: [CodeReviewSettingLogController],
 })
 export class CodeReviewSettingsLogModule {}
