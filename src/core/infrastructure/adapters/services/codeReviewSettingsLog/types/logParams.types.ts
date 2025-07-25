@@ -30,3 +30,13 @@ export interface IntegrationLogParams {
     };
     actionType: ActionType;
 }
+
+export interface UserStatusLogParams {
+    organizationAndTeamData: OrganizationAndTeamData;
+    userInfo: UserInfo;
+    userStatusChanges: Array<{
+        gitId: string;
+        gitTool: string;
+        licenseStatus: "active" | "inactive";
+    }>;
+}

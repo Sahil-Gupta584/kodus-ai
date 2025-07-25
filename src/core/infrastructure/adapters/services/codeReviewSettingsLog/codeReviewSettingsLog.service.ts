@@ -12,8 +12,15 @@ import {
     CodeReviewConfigLogParams,
 } from './codeReviewConfigLog.handler';
 import { UnifiedLogHandler } from './unifiedLog.handler';
-import { ActionType, ConfigLevel } from '@/config/types/general/codeReviewSettingsLog.type';
-import { RepositoriesLogParams, IntegrationLogParams } from './types/logParams.types';
+import {
+    ActionType,
+    ConfigLevel,
+} from '@/config/types/general/codeReviewSettingsLog.type';
+import {
+    RepositoriesLogParams,
+    IntegrationLogParams,
+    UserStatusLogParams,
+} from './types/logParams.types';
 
 export type ChangedDataToExport = {
     key: string;
@@ -83,28 +90,36 @@ export class CodeReviewSettingsLogService
         let repository: { id: string; name: string } | undefined;
 
         // ✅ Decidir pela action type
-        if (actionType === ActionType.ADD && sourceRepository && targetRepository) {
+        if (
+            actionType === ActionType.ADD &&
+            sourceRepository &&
+            targetRepository
+        ) {
             // COPY operation (individual)
             const isSourceGlobal = sourceRepository.id === 'global';
-            const sourceName = isSourceGlobal ? 'Global Settings' : sourceRepository.name;
+            const sourceName = isSourceGlobal
+                ? 'Global Settings'
+                : sourceRepository.name;
 
-            changedData = [{
-                key: 'repository.copy',
-                displayName: 'Repository Configuration Copied',
-                previousValue: null,
-                currentValue: {
-                    sourceRepository: {
-                        id: sourceRepository.id,
-                        name: sourceName,
-                        isGlobal: isSourceGlobal,
+            changedData = [
+                {
+                    key: 'repository.copy',
+                    displayName: 'Repository Configuration Copied',
+                    previousValue: null,
+                    currentValue: {
+                        sourceRepository: {
+                            id: sourceRepository.id,
+                            name: sourceName,
+                            isGlobal: isSourceGlobal,
+                        },
+                        targetRepository: {
+                            id: targetRepository.id,
+                            name: targetRepository.name,
+                        },
                     },
-                    targetRepository: {
-                        id: targetRepository.id,
-                        name: targetRepository.name,
-                    },
+                    description: `User ${userInfo.userEmail} copied code review configuration from ${isSourceGlobal ? 'Global Settings' : `"${sourceName}"`} to repository "${targetRepository.name}"`,
                 },
-                description: `User ${userInfo.userEmail} copied code review configuration from ${isSourceGlobal ? 'Global Settings' : `"${sourceName}"`} to repository "${targetRepository.name}"`,
-            }];
+            ];
 
             finalActionType = ActionType.ADD; // ✅ COPY fica ADD
             configLevel = ConfigLevel.REPOSITORY;
@@ -114,14 +129,17 @@ export class CodeReviewSettingsLogService
             };
         } else {
             // ✅ ADD/REMOVE múltiplos sempre é EDIT
-            if (addedRepositories.length === 0 && removedRepositories.length === 0) {
+            if (
+                addedRepositories.length === 0 &&
+                removedRepositories.length === 0
+            ) {
                 return;
             }
 
             const allChangedData: ChangedDataToExport[] = [];
 
             // Adicionar changedData para cada repo adicionado
-            addedRepositories.forEach(repo => {
+            addedRepositories.forEach((repo) => {
                 allChangedData.push({
                     key: 'repository.add',
                     displayName: 'Repository Added',
@@ -135,7 +153,7 @@ export class CodeReviewSettingsLogService
             });
 
             // Adicionar changedData para cada repo removido
-            removedRepositories.forEach(repo => {
+            removedRepositories.forEach((repo) => {
                 allChangedData.push({
                     key: 'repository.remove',
                     displayName: 'Repository Removed',
@@ -176,12 +194,8 @@ export class CodeReviewSettingsLogService
     public async registerIntegrationLog(
         params: IntegrationLogParams,
     ): Promise<void> {
-        const {
-            organizationAndTeamData,
-            userInfo,
-            integration,
-            actionType,
-        } = params;
+        const { organizationAndTeamData, userInfo, integration, actionType } =
+            params;
 
         const platformName = this.formatPlatformName(integration.platform);
 
@@ -191,23 +205,90 @@ export class CodeReviewSettingsLogService
             actionType,
             configLevel: ConfigLevel.GLOBAL,
             entityType: 'integration',
-            entityName: platformName + (integration.authIntegration?.authDetails?.org
-                ? ` (${integration.authIntegration.authDetails.org})`
-                : ''),
-            oldData: actionType === ActionType.DELETE ? {
-                platform: integration.platform,
-                integrationCategory: integration.integrationCategory,
-                organizationName: integration.authIntegration?.authDetails?.org,
-                accountType: integration.authIntegration?.authDetails?.accountType,
-                authMode: integration.authIntegration?.authDetails?.authMode,
-            } : null,
-            newData: actionType === ActionType.CREATE ? {
-                platform: integration.platform,
-                integrationCategory: integration.integrationCategory,
-                organizationName: integration.authIntegration?.authDetails?.org,
-                accountType: integration.authIntegration?.authDetails?.accountType,
-                authMode: integration.authIntegration?.authDetails?.authMode,
-            } : null,
+            entityName:
+                platformName +
+                (integration.authIntegration?.authDetails?.org
+                    ? ` (${integration.authIntegration.authDetails.org})`
+                    : ''),
+            oldData:
+                actionType === ActionType.DELETE
+                    ? {
+                          platform: integration.platform,
+                          integrationCategory: integration.integrationCategory,
+                          organizationName:
+                              integration.authIntegration?.authDetails?.org,
+                          accountType:
+                              integration.authIntegration?.authDetails
+                                  ?.accountType,
+                          authMode:
+                              integration.authIntegration?.authDetails
+                                  ?.authMode,
+                      }
+                    : null,
+            newData:
+                actionType === ActionType.CREATE
+                    ? {
+                          platform: integration.platform,
+                          integrationCategory: integration.integrationCategory,
+                          organizationName:
+                              integration.authIntegration?.authDetails?.org,
+                          accountType:
+                              integration.authIntegration?.authDetails
+                                  ?.accountType,
+                          authMode:
+                              integration.authIntegration?.authDetails
+                                  ?.authMode,
+                      }
+                    : null,
+        });
+    }
+
+    public async registerUserStatusLog(
+        params: UserStatusLogParams,
+    ): Promise<void> {
+        const { organizationAndTeamData, userInfo, userStatusChanges } = params;
+
+        if (userStatusChanges.length === 0) {
+            return;
+        }
+
+        const changedData: ChangedDataToExport[] = [];
+
+        // Criar changedData para cada usuário alterado
+        userStatusChanges.forEach((userChange) => {
+            const statusText = userChange.licenseStatus ? 'active' : 'inactive';
+
+            changedData.push({
+                key: `user.status.${statusText}`,
+                displayName: `User ${userChange.licenseStatus ? 'Enabled' : 'Disabled'}`,
+                previousValue: '',
+                currentValue: {
+                    gitId: userChange.gitId,
+                    gitTool: userChange.gitTool,
+                    status: statusText,
+                },
+                description: `User ${userInfo.userEmail} ${userChange.licenseStatus ? 'enabled' : 'disabled'} user "${userChange.gitId}"`,
+            });
+        });
+
+        // Determinar actionType baseado na quantidade de mudanças
+        const finalActionType =
+            userStatusChanges.length === 1 ? ActionType.EDIT : ActionType.EDIT;
+
+        // Salvar um registro com todos os changedData
+        await this.codeReviewSettingsLogRepository.create({
+            organizationId: organizationAndTeamData.organizationId,
+            teamId: organizationAndTeamData.teamId,
+            action: finalActionType,
+            userInfo: {
+                userId: userInfo.userId,
+                userEmail: userInfo.userEmail,
+            },
+            changeMetadata: {
+                configLevel: ConfigLevel.GLOBAL,
+                repository: undefined,
+            },
+            changedData,
         });
     }
 
