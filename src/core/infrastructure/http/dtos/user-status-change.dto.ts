@@ -1,5 +1,4 @@
-import { IsArray, IsBoolean, IsString, ValidateNested } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsObject, IsString } from 'class-validator';
 
 export class UserStatusDto {
     @IsString()
@@ -16,11 +15,13 @@ export class UserStatusDto {
 
     @IsString()
     public organizationId: string;
-}
 
-export class UserStatusChangeDto {
-    @IsArray()
-    @ValidateNested({ each: true })
-    @Type(() => UserStatusDto)
-    public userStatusChanges: UserStatusDto[];
+    @IsObject()
+    public editedBy: {
+        userId: string;
+        email: string;
+    };
+
+    @IsString()
+    public userName: string;
 }

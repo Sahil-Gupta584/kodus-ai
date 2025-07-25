@@ -266,8 +266,9 @@ export class CodeReviewSettingsLogService
                     gitId: userChange.gitId,
                     gitTool: userChange.gitTool,
                     status: statusText,
+                    userName: userChange.userName,
                 },
-                description: `User ${userInfo.userEmail} ${userChange.licenseStatus ? 'enabled' : 'disabled'} user "${userChange.gitId}"`,
+                description: `User ${userInfo.userEmail} ${userChange.licenseStatus === 'active' ? 'enabled' : 'disabled'} license for user "${userChange.userName}" (${userChange.gitId})`,
             });
         });
 

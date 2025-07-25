@@ -38,5 +38,6 @@ export interface UserStatusLogParams {
         gitId: string;
         gitTool: string;
         licenseStatus: "active" | "inactive";
+        userName: string;
     }>;
 }
