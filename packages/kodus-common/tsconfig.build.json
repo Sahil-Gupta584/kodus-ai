@@ -1,38 +1,10 @@
 {
-  "compilerOptions": {
-    "declaration": true,
-    "removeComments": false,
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
-    "allowSyntheticDefaultImports": true,
-    "lib": [
-      "es2022"
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+      "rootDir": "./src",
+    },
+    "exclude": ["node_modules", "test", "dist", "**/*spec.ts"],
+    "include": [
+        "src/**/*",
     ],
-    "module": "commonjs",
-    "target": "es2022",
-    "sourceMap": true,
-    "outDir": "./dist",
-    "baseUrl": ".",
-    "rootDir": "./src",
-    "incremental": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noFallthroughCasesInSwitch": false,
-    "importHelpers": true,
-    "inlineSources": true,
-    "paths": {
-        "@/*": ["src/*"]
-    }
-  },
-  "watchOptions": {
-    "watchFile": "useFsEventsOnParentDirectory"
-  },
-  "include": [
-    "src/**/*",
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "test",
-  ],
 }
