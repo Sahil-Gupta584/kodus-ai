@@ -734,19 +734,17 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 const prompt = `${safeGuardResponse}\n\n${formatInstructions}`;
                 type OutputType = z.infer<typeof parser.schema>;
 
-                const result = await this.promptRunnerService
+                const result = (await this.promptRunnerService
                     .builder()
                     .setProviders({
                         main: provider,
                         fallback: fallbackProvider,
                     })
-                    .setParser<OutputType>(
-                        ParserType.CUSTOM,
-                        parser.parse.bind(parser),
-                    )
+                    .setParser<OutputType>(ParserType.CUSTOM, parser)
                     .setLLMJsonMode(true)
                     .addPrompt({
-                        prompt: new HumanMessage({ content: prompt }),
+                        prompt,
+                        role: PromptRole.USER,
                     })
                     .addMetadata({
                         organizationId: organizationAndTeamData?.organizationId,
@@ -758,7 +756,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                     .setRunName('extractSuggestionsFromCodeReviewSafeguard')
                     .setTemperature(0)
                     .addCallbacks([this.tokenTracker])
-                    .execute();
+                    .execute()) as OutputType;
 
                 if (!result || !result.codeSuggestions) {
                     const message = `No code suggestions found in the safeguard response for PR#${prNumber}`;
