@@ -63,6 +63,7 @@ import { RuleLikeModule } from './ruleLike.module';
 import { IssuesModule } from './issues.module';
 import { KodyASTModule } from '@/ee/kodyAST/kodyAST.module';
 import { TokenChunkingModule } from './tokenChunking.module';
+import { PullRequestMessagesModule } from './pullRequestMessages.module';
 
 @Module({
     imports: [
@@ -128,6 +129,7 @@ import { TokenChunkingModule } from './tokenChunking.module';
         RuleLikeModule,
         IssuesModule,
         TokenChunkingModule,
+        PullRequestMessagesModule,
     ],
     providers: [
         {
