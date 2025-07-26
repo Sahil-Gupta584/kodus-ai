@@ -9,12 +9,10 @@ export interface ICodeReviewSettingsLog {
         userId: string;
         userEmail: string;
     };
-    changeMetadata: {
-        configLevel: ConfigLevel;
-        repository?: {
-            id: string;
-            name: string;
-        };
+    configLevel?: ConfigLevel;
+    repository?: {
+        id: string;
+        name?: string;
     };
     changedData: ChangedData[];
 }

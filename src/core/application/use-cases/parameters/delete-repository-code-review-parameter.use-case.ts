@@ -103,6 +103,7 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
                             id: repositoryToRemove.id,
                             name: repositoryToRemove.name,
                         },
+                        actionType: ActionType.DELETE,
                     },
                 );
             } catch (error) {
