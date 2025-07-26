@@ -897,6 +897,18 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         response: KodyRulesClassifierSchema,
     ): Array<Partial<IKodyRule> | IKodyRule> | null {
         try {
+            if (!response || !response.rules?.length) {
+                this.logger.warn({
+                    message: 'No rules found in classifier response',
+                    context: KodyRulesAnalysisService.name,
+                    metadata: {
+                        allRules,
+                        response,
+                    },
+                });
+                return null;
+            }
+
             const responseMap = new Map(
                 response.rules.map((rule) => [rule.uuid, rule.reason]),
             );

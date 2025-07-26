@@ -34,11 +34,6 @@ export interface IAIAnalysisService {
         languageResultPrompt: string,
         reviewMode: ReviewModeResponse,
     ): Promise<any>;
-    extractSuggestionsFromCodeReviewSafeguard(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        safeGuardResponse: any,
-    ): Promise<any>;
     validateImplementedSuggestions(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
