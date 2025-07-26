@@ -17,12 +17,10 @@ export class CodeReviewSettingsLogEntity
         userId: string;
         userEmail: string;
     };
-    private readonly _changeMetadata: {
-        configLevel: ConfigLevel;
-        repository?: {
-            id: string;
-            name: string;
-        };
+    private readonly _configLevel?: ConfigLevel;
+    private readonly _repository?: {
+        id: string;
+        name?: string;
     };
     private readonly _changedData: ChangedData[];
 
@@ -32,7 +30,8 @@ export class CodeReviewSettingsLogEntity
         this._teamId = codeReviewSettingsLog.teamId;
         this._action = codeReviewSettingsLog.action;
         this._userInfo = codeReviewSettingsLog.userInfo;
-        this._changeMetadata = codeReviewSettingsLog.changeMetadata;
+        this._configLevel = codeReviewSettingsLog.configLevel;
+        this._repository = codeReviewSettingsLog.repository;
         this._changedData = codeReviewSettingsLog.changedData;
     }
 
@@ -43,7 +42,8 @@ export class CodeReviewSettingsLogEntity
             teamId: this._teamId,
             action: this._action,
             userInfo: this._userInfo,
-            changeMetadata: this._changeMetadata,
+            configLevel: this._configLevel,
+            repository: this._repository,
             changedData: this._changedData,
         };
     }
@@ -55,7 +55,8 @@ export class CodeReviewSettingsLogEntity
             teamId: this._teamId,
             action: this._action,
             userInfo: this._userInfo,
-            changeMetadata: this._changeMetadata,
+            configLevel: this._configLevel,
+            repository: this._repository,
             changedData: this._changedData,
         };
     }
@@ -83,11 +84,15 @@ export class CodeReviewSettingsLogEntity
         return this._userInfo;
     }
 
-    get changeMetadata(): {
-        configLevel: ConfigLevel;
-        repositoryId?: string;
+    get configLevel(): ConfigLevel {
+        return this._configLevel;
+    }
+
+    get repository(): {
+        id: string;
+        name?: string;
     } {
-        return this._changeMetadata;
+        return this._repository;
     }
 
     get changedData(): ChangedData[] {

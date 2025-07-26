@@ -1,18 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import {
+    UnifiedLogHandler,
+    BaseLogParams
+} from './unifiedLog.handler';
 import {
     ActionType,
     ConfigLevel,
-    UserInfo,
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
-import { UnifiedLogHandler, UnifiedLogParams } from './unifiedLog.handler';
 
-export interface KodyRuleLogParams {
-    organizationAndTeamData: OrganizationAndTeamData;
-    userInfo: UserInfo;
-    actionType: ActionType;
-    repositoryId?: string;
+export interface KodyRuleLogParams extends BaseLogParams {
     oldRule?: Partial<IKodyRule>;
     newRule?: Partial<IKodyRule>;
     ruleTitle?: string;
@@ -24,42 +21,79 @@ export class KodyRulesLogHandler {
         private readonly unifiedLogHandler: UnifiedLogHandler,
     ) {}
 
-    async logKodyRuleAction(params: KodyRuleLogParams): Promise<void> {
+    public async logKodyRuleAction(params: KodyRuleLogParams): Promise<void> {
         const {
             organizationAndTeamData,
             userInfo,
             actionType,
-            repositoryId,
+            repository,
             oldRule,
             newRule,
             ruleTitle,
         } = params;
 
-        // Determinar o nível de configuração baseado no repositoryId
-        const configLevel = this.determineConfigLevel(
-            newRule?.repositoryId || oldRule?.repositoryId,
-        );
+        const entityName = this.getRuleName(newRule, oldRule, ruleTitle);
+        const { oldData, newData } = this.prepareRuleData(oldRule, newRule, actionType);
 
-        // Preparar dados do repositório se aplicável
-        const repository = {
-            id: repositoryId,
-            name: '',
-        };
+        const configLevel = this.determineConfigLevel(repository?.id);
 
-        // Usar o handler unificado com dados simplificados
-        const unifiedParams: UnifiedLogParams = {
+        await this.unifiedLogHandler.logAction({
             organizationAndTeamData,
             userInfo,
             actionType,
             configLevel,
             repository,
-            entityType: 'Kody Rule',
-            entityName: newRule?.title || oldRule?.title || ruleTitle,
-            oldData: oldRule || null,
-            newData: newRule || null,
-        };
+            entityType: 'kodyRule',
+            entityName,
+            oldData,
+            newData,
+        });
+    }
 
-        await this.unifiedLogHandler.logAction(unifiedParams);
+    private getRuleName(
+        newRule?: Partial<IKodyRule>,
+        oldRule?: Partial<IKodyRule>,
+        ruleTitle?: string
+    ): string {
+        return newRule?.title || oldRule?.title || ruleTitle || 'Unnamed Rule';
+    }
+
+    private prepareRuleData(
+        oldRule?: Partial<IKodyRule>,
+        newRule?: Partial<IKodyRule>,
+        actionType?: ActionType
+    ): { oldData: any; newData: any } {
+        switch (actionType) {
+            case ActionType.CREATE:
+                return {
+                    oldData: null,
+                    newData: newRule,
+                };
+
+            case ActionType.DELETE:
+                return {
+                    oldData: oldRule,
+                    newData: null,
+                };
+
+            case ActionType.EDIT:
+                return {
+                    oldData: oldRule,
+                    newData: newRule,
+                };
+
+            case ActionType.ADD:
+                return {
+                    oldData: null,
+                    newData: newRule,
+                };
+
+            default:
+                return {
+                    oldData: oldRule,
+                    newData: newRule,
+                };
+        }
     }
 
     private determineConfigLevel(repositoryId?: string): ConfigLevel {

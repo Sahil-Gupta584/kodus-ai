@@ -27,13 +27,13 @@ export class CodeReviewSettingsLogModel extends CoreDocument {
         userEmail: string;
     };
 
-    @Prop({ type: Object, required: true })
-    changeMetadata: {
-        configLevel: ConfigLevel;
-        repository?: {
-            id: string;
-            name: string;
-        };
+    @Prop({ type: String, required: false, enum: ConfigLevel })
+    configLevel: ConfigLevel;
+
+    @Prop({ type: Object, required: false })
+    repository: {
+        id: string;
+        name?: string;
     };
 
     @Prop({ type: [Object], required: true })
