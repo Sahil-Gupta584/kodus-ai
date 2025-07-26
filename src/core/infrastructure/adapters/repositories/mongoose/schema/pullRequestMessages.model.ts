@@ -27,3 +27,7 @@ export class PullRequestMessagesModel extends CoreDocument {
     @Prop({ type: String, required: true })
     repository: Pick<IRepository, 'id' | 'fullName'>;
 }
+
+export const PullRequestMessagesSchema = SchemaFactory.createForClass(
+    PullRequestMessagesModel,
+);
