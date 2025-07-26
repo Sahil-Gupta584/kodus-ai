@@ -28,13 +28,24 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
     constructor(
         private readonly config: {
             schema: T;
-            // We pass the runner service to the parser to allow it to run its own "fix-it" chain
             promptRunnerService: PromptRunnerService;
             provider?: LLMModelProvider;
             fallbackProvider?: LLMModelProvider;
         },
     ) {
         super();
+    }
+
+    _baseMessageContentToString(content: MessageContentComplex[]): string {
+        const noReasoningContent = content.filter(
+            (c) => c.type !== 'reasoning',
+        );
+        const text = noReasoningContent.map((c) =>
+            c.type === 'text' && c.text && typeof c.text === 'string'
+                ? c.text
+                : '',
+        );
+        return text.join('\n').trim();
     }
 
     getFormatInstructions(options?: FormatInstructionsOptions): string {
@@ -126,7 +137,8 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
             this.config.schema as any,
         ) as BaseOutputParser<z.infer<T>>;
 
-        const prompt = `${malformedOutput}\n\n${correctionParser.getFormatInstructions()}`;
+        const prompt = (input: string) =>
+            `${input}\n\n${correctionParser.getFormatInstructions()}`;
 
         const result = await this.config.promptRunnerService
             .builder()
@@ -137,6 +149,7 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
                     LLMModelProvider.OPENAI_GPT_4O,
             })
             .setParser(ParserType.CUSTOM, correctionParser)
+            .setPayload(malformedOutput)
             .addPrompt({ prompt })
             .setTemperature(0)
             .setLLMJsonMode(true)

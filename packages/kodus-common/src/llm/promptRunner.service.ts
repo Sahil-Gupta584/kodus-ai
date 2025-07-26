@@ -14,7 +14,7 @@ import {
     isBaseMessage,
 } from '@langchain/core/messages';
 
-export type PromptFn<Payload> = (input?: Payload) => string;
+export type PromptFn<Payload> = (input: Payload) => string;
 
 export enum PromptRole {
     SYSTEM = 'system',
