@@ -26,7 +26,7 @@ import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ICodeReviewSettingsLogService,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
-import { ActionType, UserInfo } from '@/config/types/general/codeReviewSettingsLog.type';
+import { ActionType, ConfigLevel, UserInfo } from '@/config/types/general/codeReviewSettingsLog.type';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 @Injectable()
@@ -152,7 +152,7 @@ export class KodyRulesService implements IKodyRulesService {
                     organizationAndTeamData,
                     userInfo,
                     actionType: ActionType.CLONE,
-                    repositoryId: newRule.repositoryId,
+                    repository: { id: newRule.repositoryId },
                     oldRule: undefined,
                     newRule: newRule,
                     ruleTitle: newRule.title,
@@ -203,7 +203,7 @@ export class KodyRulesService implements IKodyRulesService {
                         newRule.origin === KodyRulesOrigin.LIBRARY
                             ? ActionType.CLONE
                             : ActionType.CREATE,
-                    repositoryId: newRule.repositoryId,
+                    repository: { id: newRule.repositoryId },
                     oldRule: undefined,
                     newRule: newRule,
                     ruleTitle: newRule.title,
@@ -251,7 +251,7 @@ export class KodyRulesService implements IKodyRulesService {
                 organizationAndTeamData,
                 userInfo,
                 actionType: ActionType.EDIT,
-                repositoryId: updatedRule.repositoryId,
+                repository: { id: updatedRule.repositoryId },
                 oldRule: existingRule,
                 newRule: updatedRule,
                 ruleTitle: updatedRule.title,

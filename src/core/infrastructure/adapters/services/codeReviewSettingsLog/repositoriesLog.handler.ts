@@ -1,32 +1,28 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { Injectable } from '@nestjs/common';
+import {
+    UnifiedLogHandler,
+    BaseLogParams,
+    ChangedDataToExport,
+} from './unifiedLog.handler';
 import {
     ActionType,
     ConfigLevel,
-    UserInfo,
 } from '@/config/types/general/codeReviewSettingsLog.type';
-import {
-    CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,
-    ICodeReviewSettingsLogRepository,
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
-import { ChangedDataToExport } from './codeReviewSettingsLog.service';
 
-export interface RepositoriesLogParams {
-    organizationAndTeamData: OrganizationAndTeamData;
-    userInfo: UserInfo;
-    actionType: ActionType;
+export interface RepositoriesLogParams extends BaseLogParams {
     addedRepositories?: Array<{ id: string; name: string }>;
     removedRepositories?: Array<{ id: string; name: string }>;
     sourceRepository?: { id: string; name: string };
     targetRepository?: { id: string; name: string };
 }
 
+export interface RepositoryConfigRemovalParams extends BaseLogParams {
+    repository: { id: string; name: string };
+}
+
 @Injectable()
 export class RepositoriesLogHandler {
-    constructor(
-        @Inject(CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN)
-        private readonly codeReviewSettingsLogRepository: ICodeReviewSettingsLogRepository,
-    ) {}
+    constructor(private readonly unifiedLogHandler: UnifiedLogHandler) {}
 
     public async logRepositoriesAction(
         params: RepositoriesLogParams,
@@ -41,113 +37,48 @@ export class RepositoriesLogHandler {
             targetRepository,
         } = params;
 
-        let changedData: ChangedDataToExport[] = [];
-        let finalActionType: ActionType;
-        let configLevel: ConfigLevel;
-        let repository: { id: string; name: string } | undefined;
-
-        // ✅ Decidir pela action type
+        // Handle copy operation
         if (
             actionType === ActionType.ADD &&
             sourceRepository &&
             targetRepository
         ) {
-            // COPY operation (individual)
-            const isSourceGlobal = sourceRepository.id === 'global';
-            const sourceName = isSourceGlobal
-                ? 'Global Settings'
-                : sourceRepository.name;
-
-            changedData = [
-                {
-                    actionDescription: 'Repository Configuration Copied',
-                    previousValue: null,
-                    currentValue: {
-                        sourceRepository: {
-                            id: sourceRepository.id,
-                            name: sourceName,
-                            isGlobal: isSourceGlobal,
-                        },
-                        targetRepository: {
-                            id: targetRepository.id,
-                            name: targetRepository.name,
-                        },
-                    },
-                    description: `User ${userInfo.userEmail} copied code review configuration from ${isSourceGlobal ? 'Global Settings' : `"${sourceName}"`} to repository "${targetRepository.name}"`,
-                },
-            ];
-
-            finalActionType = ActionType.ADD;
-            configLevel = ConfigLevel.REPOSITORY;
-            repository = {
-                id: targetRepository.id,
-                name: targetRepository.name,
-            };
-        } else {
-            if (
-                addedRepositories.length === 0 &&
-                removedRepositories.length === 0
-            ) {
-                return;
-            }
-
-            const allChangedData: ChangedDataToExport[] = [];
-
-            // Adicionar changedData para cada repo adicionado
-            addedRepositories.forEach((repo) => {
-                allChangedData.push({
-                    actionDescription: 'Repository Added',
-                    previousValue: null,
-                    currentValue: {
-                        id: repo.id,
-                        name: repo.name,
-                    },
-                    description: `User ${userInfo.userEmail} added repository "${repo.name}" to code review settings`,
-                });
+            await this.logCopyOperation({
+                organizationAndTeamData,
+                userInfo,
+                sourceRepository,
+                targetRepository,
             });
-
-            // Adicionar changedData para cada repo removido
-            removedRepositories.forEach((repo) => {
-                allChangedData.push({
-                    actionDescription: 'Repository Removed',
-                    previousValue: {
-                        id: repo.id,
-                        name: repo.name,
-                    },
-                    currentValue: null,
-                    description: `User ${userInfo.userEmail} removed repository "${repo.name}" from code review settings`,
-                });
-            });
-
-            changedData = allChangedData;
-
-            finalActionType = actionType;
-            configLevel = ConfigLevel.GLOBAL;
-            repository = undefined;
+            return;
         }
 
-        // Salvar um registro só com todos os changedData
-        await this.codeReviewSettingsLogRepository.create({
-            organizationId: organizationAndTeamData.organizationId,
-            teamId: organizationAndTeamData.teamId,
-            action: finalActionType,
-            userInfo: {
-                userId: userInfo.userId,
-                userEmail: userInfo.userEmail,
-            },
-            changeMetadata: {
-                configLevel,
-                repository,
-            },
+        // Handle add/remove operations
+        if (
+            addedRepositories.length === 0 &&
+            removedRepositories.length === 0
+        ) {
+            return;
+        }
+
+        const changedData = this.generateRepositoryChangedData(
+            addedRepositories,
+            removedRepositories,
+            userInfo.userEmail,
+        );
+
+        await this.unifiedLogHandler.saveLogEntry({
+            organizationAndTeamData,
+            userInfo,
+            actionType,
+            configLevel: ConfigLevel.GLOBAL,
+            repository: undefined,
             changedData,
         });
     }
 
-    public async logRepositoryConfigurationRemoval(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        userInfo: UserInfo;
-        repository: { id: string; name: string };
-    }): Promise<void> {
+    public async logRepositoryConfigurationRemoval(
+        params: RepositoryConfigRemovalParams,
+    ): Promise<void> {
         const { organizationAndTeamData, userInfo, repository } = params;
 
         const changedData: ChangedDataToExport[] = [
@@ -167,22 +98,94 @@ export class RepositoriesLogHandler {
             },
         ];
 
-        await this.codeReviewSettingsLogRepository.create({
-            organizationId: organizationAndTeamData.organizationId,
-            teamId: organizationAndTeamData.teamId,
-            action: ActionType.DELETE,
-            userInfo: {
-                userId: userInfo.userId,
-                userEmail: userInfo.userEmail,
-            },
-            changeMetadata: {
-                configLevel: ConfigLevel.REPOSITORY,
-                repository: {
-                    id: repository.id,
-                    name: repository.name,
-                },
-            },
+        await this.unifiedLogHandler.saveLogEntry({
+            organizationAndTeamData,
+            userInfo,
+            actionType: ActionType.DELETE,
+            configLevel: ConfigLevel.REPOSITORY,
+            repository,
             changedData,
         });
+    }
+
+    private async logCopyOperation(params: {
+        organizationAndTeamData: any;
+        userInfo: any;
+        sourceRepository: { id: string; name: string };
+        targetRepository: { id: string; name: string };
+    }): Promise<void> {
+        const {
+            organizationAndTeamData,
+            userInfo,
+            sourceRepository,
+            targetRepository,
+        } = params;
+
+        const isSourceGlobal = sourceRepository.id === 'global';
+        const sourceName = isSourceGlobal
+            ? 'Global Settings'
+            : sourceRepository.name;
+
+        const changedData: ChangedDataToExport[] = [
+            {
+                actionDescription: 'Repository Configuration Copied',
+                previousValue: null,
+                currentValue: {
+                    sourceRepository: {
+                        id: sourceRepository.id,
+                        name: sourceName,
+                        isGlobal: isSourceGlobal,
+                    },
+                    targetRepository: {
+                        id: targetRepository.id,
+                        name: targetRepository.name,
+                    },
+                },
+                description: `User ${userInfo.userEmail} copied code review configuration from ${isSourceGlobal ? 'Global Settings' : `"${sourceName}"`} to repository "${targetRepository.name}"`,
+            },
+        ];
+
+        await this.unifiedLogHandler.saveLogEntry({
+            organizationAndTeamData,
+            userInfo,
+            actionType: ActionType.ADD,
+            configLevel: ConfigLevel.REPOSITORY,
+            repository: targetRepository,
+            changedData,
+        });
+    }
+
+    private generateRepositoryChangedData(
+        addedRepositories: Array<{ id: string; name: string }>,
+        removedRepositories: Array<{ id: string; name: string }>,
+        userEmail: string,
+    ): ChangedDataToExport[] {
+        const changedData: ChangedDataToExport[] = [];
+
+        addedRepositories.forEach((repo) => {
+            changedData.push({
+                actionDescription: 'Repository Added',
+                previousValue: null,
+                currentValue: {
+                    id: repo.id,
+                    name: repo.name,
+                },
+                description: `User ${userEmail} added repository "${repo.name}" to code review settings`,
+            });
+        });
+
+        removedRepositories.forEach((repo) => {
+            changedData.push({
+                actionDescription: 'Repository Removed',
+                previousValue: {
+                    id: repo.id,
+                    name: repo.name,
+                },
+                currentValue: null,
+                description: `User ${userEmail} removed repository "${repo.name}" from code review settings`,
+            });
+        });
+
+        return changedData;
     }
 }

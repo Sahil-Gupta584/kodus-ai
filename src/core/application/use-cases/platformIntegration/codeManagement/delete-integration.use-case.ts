@@ -87,12 +87,7 @@ export class DeleteIntegrationUseCase {
                     userId: this.request.user.uuid,
                     userEmail: this.request.user.email,
                 },
-                integration: {
-                    platform: integration.platform,
-                    integrationCategory: integration.integrationCategory,
-                    status: integration.status,
-                    authIntegration: integration.authIntegration,
-                },
+                integration,
                 actionType: ActionType.DELETE,
             });
         } catch (error) {

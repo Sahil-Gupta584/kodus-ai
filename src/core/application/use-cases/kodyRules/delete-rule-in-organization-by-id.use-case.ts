@@ -69,7 +69,7 @@ export class DeleteRuleInOrganizationByIdKodyRulesUseCase {
                         userEmail: this.request.user.email,
                     },
                     actionType: ActionType.DELETE,
-                    repositoryId: deletedRule?.repositoryId,
+                    repository: { id: deletedRule?.repositoryId },
                     oldRule: deletedRule,
                     newRule: undefined,
                     ruleTitle: deletedRule?.title,

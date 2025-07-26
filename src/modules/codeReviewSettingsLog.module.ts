@@ -14,6 +14,8 @@ import { IntegrationConfigModule } from './integrationConfig.module';
 import { TeamsModule } from './team.module';
 import { CodeReviewSettingLogController } from '@/core/infrastructure/http/controllers/codeReviewSettingLog.controller';
 import { RegisterUserStatusLogUseCase } from '@/core/application/use-cases/user/register-user-status-log.use-case';
+import { UserStatusLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/userStatusLog.handler';
+import { IntegrationLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/integrationLog.handler';
 
 @Module({
     imports: [
@@ -36,6 +38,8 @@ import { RegisterUserStatusLogUseCase } from '@/core/application/use-cases/user/
         CodeReviewConfigLogHandler,
         RepositoriesLogHandler,
         KodyRulesLogHandler,
+        IntegrationLogHandler,
+        UserStatusLogHandler,
     ],
     exports: [
         CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,
@@ -44,7 +48,9 @@ import { RegisterUserStatusLogUseCase } from '@/core/application/use-cases/user/
         CodeReviewConfigLogHandler,
         RepositoriesLogHandler,
         KodyRulesLogHandler,
-        RegisterUserStatusLogUseCase
+        RegisterUserStatusLogUseCase,
+        IntegrationLogHandler,
+        UserStatusLogHandler,
     ],
     controllers: [CodeReviewSettingLogController],
 })

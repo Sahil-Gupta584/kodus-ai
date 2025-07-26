@@ -29,7 +29,7 @@ export class CreateIntegrationUseCase implements IUseCase {
                 uuid: string;
                 email: string;
             };
-        },
+    },
 
         @Inject(AUTH_INTEGRATION_SERVICE_TOKEN)
         private readonly authIntegrationService: IAuthIntegrationService,
@@ -80,16 +80,7 @@ export class CreateIntegrationUseCase implements IUseCase {
                     platform:
                         params.integrationType?.toUpperCase() || 'UNKNOWN',
                     integrationCategory: 'CODE_MANAGEMENT',
-                    status: true,
-                    authIntegration: {
-                        uuid: authIntegration?.uuid || 'unknown-auth-uuid',
-                        authDetails: {
-                            org: authIntegration?.authDetails?.org,
-                            authMode: authMode,
-                            accountType:
-                                authIntegration?.authDetails?.accountType,
-                        },
-                    },
+                    authIntegration: authIntegration,
                 },
                 actionType: ActionType.CREATE,
             });

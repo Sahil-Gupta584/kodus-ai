@@ -4,54 +4,28 @@ import {
     ICodeReviewSettingsLogRepository,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
 import {
-    IUsersService,
-    USER_SERVICE_TOKEN,
-} from '@/core/domain/user/contracts/user.service.contract';
-import {
     ActionType,
     ConfigLevel,
     UserInfo,
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { ChangedDataToExport } from './codeReviewSettingsLog.service';
 
-// Formatters por tipo de dado
-export const TYPE_FORMATTERS = {
-    boolean: (value: boolean) => value ? 'enabled' : 'disabled',
-    array: (value: any[]) => value?.join(', ') || 'none',
-    string: (value: string) => value || 'none',
-    object: (value: any) => value ? JSON.stringify(value) : 'none',
-    number: (value: number) => value?.toString() || '0'
-};
+export interface ChangedDataToExport {
+    actionDescription: string;
+    previousValue: any;
+    currentValue: any;
+    description: string;
+}
 
-// Templates genéricos para descriptions
-export const DESCRIPTION_TEMPLATES = {
-    create: (userEmail: string, entityType: string, entityName?: string) =>
-        `User ${userEmail} created ${entityType}${entityName ? ` "${entityName}"` : ''}`,
-    edit: (userEmail: string, entityType: string, entityName?: string) =>
-        `User ${userEmail} edited ${entityType}${entityName ? ` "${entityName}"` : ''}`,
-    delete: (userEmail: string, entityType: string, entityName?: string) =>
-        `User ${userEmail} deleted ${entityType}${entityName ? ` "${entityName}"` : ''}`,
-    clone: (userEmail: string, entityType: string, entityName?: string) =>
-        `User ${userEmail} cloned ${entityType}${entityName ? ` "${entityName}"` : ''}`,
-    add: (userEmail: string, entityType: string, entityName?: string) =>
-        `User ${userEmail} added ${entityType}${entityName ? ` "${entityName}"` : ''}`,
-    remove: (userEmail: string, entityType: string, entityName?: string) =>
-        `User ${userEmail} removed ${entityType}${entityName ? ` "${entityName}"` : ''}`,
-    toggle: (userEmail: string, fieldName: string, action: string) =>
-        `User ${userEmail} ${action} ${fieldName}`,
-    update: (userEmail: string, fieldName: string) =>
-        `User ${userEmail} updated ${fieldName}`,
-    change: (userEmail: string, fieldName: string) =>
-        `User ${userEmail} changed ${fieldName}`
-};
-
-export interface UnifiedLogParams {
+export interface BaseLogParams {
     organizationAndTeamData: OrganizationAndTeamData;
     userInfo: UserInfo;
     actionType: ActionType;
-    configLevel: ConfigLevel;
-    repository?: { id: string; name: string };
+    configLevel?: ConfigLevel;
+    repository?: { id: string; name?: string };
+}
+
+export interface UnifiedLogParams extends BaseLogParams {
     entityType: string;
     entityName?: string;
     oldData?: any;
@@ -64,12 +38,9 @@ export class UnifiedLogHandler {
     constructor(
         @Inject(CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN)
         private readonly codeReviewSettingsLogRepository: ICodeReviewSettingsLogRepository,
-
-        @Inject(USER_SERVICE_TOKEN)
-        private readonly userService: IUsersService,
     ) {}
 
-    async logAction(params: UnifiedLogParams): Promise<void> {
+    public async logAction(params: UnifiedLogParams): Promise<void> {
         const {
             organizationAndTeamData,
             userInfo,
@@ -80,17 +51,19 @@ export class UnifiedLogHandler {
             entityName,
             oldData,
             newData,
-            customChangedData
+            customChangedData,
         } = params;
 
-        const changedData = customChangedData || this.generateChangedData({
-            actionType,
-            entityType,
-            entityName,
-            oldData,
-            newData,
-            userInfo
-        });
+        const changedData =
+            customChangedData ||
+            this.generateChangedData({
+                actionType,
+                entityType,
+                entityName,
+                oldData,
+                newData,
+                userInfo,
+            });
 
         await this.codeReviewSettingsLogRepository.create({
             organizationId: organizationAndTeamData.organizationId,
@@ -100,10 +73,34 @@ export class UnifiedLogHandler {
                 userId: userInfo.userId,
                 userEmail: userInfo.userEmail,
             },
-            changeMetadata: {
-                configLevel,
-                repository,
+            configLevel,
+            repository,
+            changedData,
+        });
+    }
+
+    public async saveLogEntry(
+        params: BaseLogParams & { changedData: ChangedDataToExport[] },
+    ): Promise<void> {
+        const {
+            organizationAndTeamData,
+            userInfo,
+            actionType,
+            configLevel,
+            repository,
+            changedData,
+        } = params;
+
+        await this.codeReviewSettingsLogRepository.create({
+            organizationId: organizationAndTeamData.organizationId,
+            teamId: organizationAndTeamData.teamId,
+            action: actionType,
+            userInfo: {
+                userId: userInfo.userId,
+                userEmail: userInfo.userEmail,
             },
+            configLevel,
+            repository,
             changedData,
         });
     }
@@ -116,36 +113,58 @@ export class UnifiedLogHandler {
         newData?: any;
         userInfo: UserInfo;
     }): ChangedDataToExport[] {
-        const { actionType, entityType, entityName, oldData, newData, userInfo } = params;
+        const {
+            actionType,
+            entityType,
+            entityName,
+            oldData,
+            newData,
+            userInfo,
+        } = params;
 
-        const actionDescription = this.generateDisplayName(entityType, actionType);
-        const description = this.generateDescription(actionType, entityType, entityName, userInfo.userEmail);
+        const actionDescription = this.generateActionDescription(
+            entityType,
+            actionType,
+        );
+        const description = this.generateDescription(
+            actionType,
+            entityType,
+            entityName,
+            userInfo.userEmail,
+        );
 
-        return [{
-            actionDescription: actionDescription,
-            previousValue: oldData || null,
-            currentValue: newData || null,
-            description
-        }];
+        return [
+            {
+                actionDescription,
+                previousValue: oldData || null,
+                currentValue: newData || null,
+                description,
+            },
+        ];
     }
 
-    private generateDisplayName(entityType: string, actionType: ActionType): string {
+    private generateActionDescription(
+        entityType: string,
+        actionType: ActionType,
+    ): string {
         const entityDisplayNames = {
-            'kodyRule': 'Kody Rule',
-            'config': 'Configuration',
-            'repository': 'Repository',
-            'integration': 'Integration'
+            kodyRule: 'Kody Rule',
+            config: 'Configuration',
+            repository: 'Repository',
+            integration: 'Integration',
+            user: 'User',
         };
 
         const actionDisplayNames = {
             [ActionType.CREATE]: 'Created',
             [ActionType.EDIT]: 'Edited',
             [ActionType.DELETE]: 'Deleted',
-            [ActionType.CLONE]: 'Cloned',
             [ActionType.ADD]: 'Added',
         };
 
-        const entityDisplay = entityDisplayNames[entityType] || entityType;
+        const entityDisplay =
+            entityDisplayNames[entityType] ||
+            this.capitalizeFirstLetter(entityType);
         const actionDisplay = actionDisplayNames[actionType] || actionType;
 
         return `${entityDisplay} ${actionDisplay}`;
@@ -155,34 +174,49 @@ export class UnifiedLogHandler {
         actionType: ActionType,
         entityType: string,
         entityName: string | undefined,
-        userEmail: string
+        userEmail: string,
     ): string {
-        const template = DESCRIPTION_TEMPLATES[actionType.toLowerCase()];
+        const actionVerbs = {
+            [ActionType.CREATE]: 'created',
+            [ActionType.EDIT]: 'edited',
+            [ActionType.DELETE]: 'deleted',
+            [ActionType.ADD]: 'added',
+        };
 
-        if (template) {
-            return template(userEmail, entityType, entityName);
-        }
+        const verb = actionVerbs[actionType] || actionType.toLowerCase();
+        const entityDisplay = entityName ? `"${entityName}"` : entityType;
 
-        // Fallback genérico
-        return `User ${userEmail} performed ${actionType} on ${entityType}`;
+        return `User ${userEmail} ${verb} ${entityDisplay}`;
     }
 
-    // Método utilitário para comparar valores e determinar se mudou
+    private capitalizeFirstLetter(string: string): string {
+        return string.charAt(0).toUpperCase() + string.slice(1);
+    }
+
+    // Utility methods for value comparison and formatting
     public static hasChanged(oldValue: any, newValue: any): boolean {
         if (oldValue === newValue) return false;
 
         if (Array.isArray(oldValue) && Array.isArray(newValue)) {
             if (oldValue.length !== newValue.length) return true;
-            return oldValue.some((item, index) => !this.isEqual(item, newValue[index]));
+            return oldValue.some(
+                (item, index) => !this.isEqual(item, newValue[index]),
+            );
         }
 
-        if (oldValue && newValue && typeof oldValue === 'object' && typeof newValue === 'object') {
+        if (
+            oldValue &&
+            newValue &&
+            typeof oldValue === 'object' &&
+            typeof newValue === 'object'
+        ) {
             const keysOld = Object.keys(oldValue);
             const keysNew = Object.keys(newValue);
 
             if (keysOld.length !== keysNew.length) return true;
-
-            return keysOld.some((key) => !this.isEqual(oldValue[key], newValue[key]));
+            return keysOld.some(
+                (key) => !this.isEqual(oldValue[key], newValue[key]),
+            );
         }
 
         return true;
@@ -201,22 +235,36 @@ export class UnifiedLogHandler {
             const keysB = Object.keys(b);
 
             if (keysA.length !== keysB.length) return false;
-
             return keysA.every((key) => this.isEqual(a[key], b[key]));
         }
 
         return false;
     }
 
-    // Método para formatar valor baseado no tipo
     public static formatValue(value: any): string {
         if (value === null || value === undefined) {
             return 'none';
         }
 
-        const type = Array.isArray(value) ? 'array' : typeof value;
-        const formatter = TYPE_FORMATTERS[type];
+        if (typeof value === 'boolean') {
+            return value ? 'enabled' : 'disabled';
+        }
 
-        return formatter ? formatter(value) : String(value);
+        if (Array.isArray(value)) {
+            return value.join(', ') || 'none';
+        }
+
+        if (typeof value === 'object') {
+            return JSON.stringify(value);
+        }
+
+        return String(value);
+    }
+
+    public static determineConfigLevel(repositoryId?: string): ConfigLevel {
+        if (!repositoryId || repositoryId === 'global') {
+            return ConfigLevel.GLOBAL;
+        }
+        return ConfigLevel.REPOSITORY;
     }
 }

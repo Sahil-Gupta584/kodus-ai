@@ -17,7 +17,7 @@ import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { REQUEST } from '@nestjs/core';
-import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
+import { ActionType, ConfigLevel } from '@/config/types/general/codeReviewSettingsLog.type';
 interface ICodeRepository {
     avatar_url?: string;
     default_branch: string;
@@ -153,6 +153,7 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
                         actionType: actionType,
                         addedRepositories,
                         removedRepositories,
+                        configLevel: ConfigLevel.GLOBAL,
                     });
                 }
             } catch (error) {
