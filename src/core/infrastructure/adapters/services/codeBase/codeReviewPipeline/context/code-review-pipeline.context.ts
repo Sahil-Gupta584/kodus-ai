@@ -14,6 +14,7 @@ import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { PipelineContext } from '../../../pipeline/interfaces/pipeline-context.interface';
 import { TaskStatus } from '@kodus/kodus-proto/task';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 
 export interface CodeReviewPipelineContext extends PipelineContext {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -50,6 +51,9 @@ export interface CodeReviewPipelineContext extends PipelineContext {
         noteId: number;
         threadId?: number;
     };
+
+    startReviewMessage?: IPullRequestMessages | null;
+    endReviewMessage?: IPullRequestMessages | null;
 
     batches: FileChange[][];
 

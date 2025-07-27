@@ -95,6 +95,7 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
 
         return this.updateContext(context, (draft) => {
             draft.initialCommentData = result;
+            draft.startReviewMessage = startReviewMessage;
         });
     }
 
@@ -119,9 +120,7 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
                 );
             }
 
-            if (startReviewMessage.status === PullRequestMessageStatus.ACTIVE) {
-                return startReviewMessage;
-            }
+            return startReviewMessage;
         }
 
         return null;
