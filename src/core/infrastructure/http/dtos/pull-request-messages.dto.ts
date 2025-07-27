@@ -3,7 +3,7 @@ import { IsObject, IsString } from 'class-validator';
 
 export class PullRequestMessagesDto {
     @IsString()
-    public organizationId: string;
+    public organizationId?: string;
 
     @IsString()
     public teamId: string;
