@@ -7,3 +7,8 @@ export enum PullRequestMessageStatus {
     ACTIVE = 'active',
     INACTIVE = 'inactive',
 }
+
+export enum ConfigLevel {
+    GLOBAL = 'global',
+    REPOSITORY = 'repository',
+}

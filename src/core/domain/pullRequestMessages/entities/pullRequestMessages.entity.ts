@@ -1,6 +1,7 @@
 import { Entity } from '@/shared/domain/interfaces/entity';
 import { IPullRequestMessages } from '../interfaces/pullRequestMessages.interface';
 import {
+    ConfigLevel,
     PullRequestMessageStatus,
     PullRequestMessageType,
 } from '@/config/types/general/pullRequestMessages.type';
@@ -12,6 +13,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
     private readonly _pullRequestMessageType: PullRequestMessageType;
     private readonly _content: string;
     private readonly _status: PullRequestMessageStatus;
+    private readonly _configLevel: ConfigLevel;
     private readonly _repository: { id: string; name: string };
 
     constructor(pullRequestMessages: IPullRequestMessages) {
@@ -22,6 +24,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
             pullRequestMessages.pullRequestMessageType;
         this._content = pullRequestMessages.content;
         this._status = pullRequestMessages.status;
+        this._configLevel = pullRequestMessages.configLevel;
         this._repository = pullRequestMessages.repository;
     }
 
@@ -33,6 +36,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
             pullRequestMessageType: this._pullRequestMessageType,
             content: this._content,
             status: this._status,
+            configLevel: this._configLevel,
             repository: this._repository,
         };
     }
@@ -45,6 +49,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
             pullRequestMessageType: this._pullRequestMessageType,
             content: this._content,
             status: this._status,
+            configLevel: this._configLevel,
             repository: this._repository,
         };
     }
@@ -73,7 +78,11 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
         return this._status;
     }
 
-    get repository(): { id: string; name: string } {
+    get configLevel(): ConfigLevel {
+        return this._configLevel;
+    }
+
+    get repository(): { id: string; name: string } | undefined {
         return this._repository;
     }
 

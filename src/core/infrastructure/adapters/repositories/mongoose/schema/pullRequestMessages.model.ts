@@ -1,4 +1,5 @@
 import {
+    ConfigLevel,
     PullRequestMessageStatus,
     PullRequestMessageType,
 } from '@/config/types/general/pullRequestMessages.type';
@@ -24,7 +25,10 @@ export class PullRequestMessagesModel extends CoreDocument {
     @Prop({ type: String, required: true, enum: PullRequestMessageStatus })
     status: PullRequestMessageStatus;
 
-    @Prop({ type: String, required: true })
+    @Prop({ type: String, required: true, enum: ConfigLevel })
+    configLevel: ConfigLevel;
+
+    @Prop({ type: String, required: false })
     repository: Pick<IRepository, 'id' | 'fullName'>;
 }
 

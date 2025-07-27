@@ -1,4 +1,5 @@
 import {
+    ConfigLevel,
     PullRequestMessageStatus,
     PullRequestMessageType,
 } from '@/config/types/general/pullRequestMessages.type';
@@ -10,5 +11,6 @@ export interface IPullRequestMessages {
     pullRequestMessageType: PullRequestMessageType;
     content: string;
     status: PullRequestMessageStatus;
-    repository: { id: string; name: string };
+    configLevel: ConfigLevel;
+    repository?: { id: string; name: string };
 }
