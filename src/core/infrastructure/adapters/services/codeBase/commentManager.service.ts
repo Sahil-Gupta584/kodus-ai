@@ -263,18 +263,25 @@ Avoid making assumptions or including inferred details not present in the provid
         changedFiles: FileChange[],
         language: string,
         platformType: PlatformType,
+        startReviewMessage?: string,
     ): Promise<{ commentId: number; noteId: number; threadId?: number }> {
         try {
-            let commentBody = await this.generatePullRequestSummaryMarkdown(
-                changedFiles,
-                language,
-                platformType,
-            );
+            let commentBody;
 
-            commentBody = this.sanitizeBitbucketMarkdown(
-                commentBody,
-                platformType,
-            );
+            if (startReviewMessage?.length > 0) {
+                commentBody = startReviewMessage;
+            } else {
+                commentBody = await this.generatePullRequestSummaryMarkdown(
+                    changedFiles,
+                    language,
+                    platformType,
+                );
+
+                commentBody = this.sanitizeBitbucketMarkdown(
+                    commentBody,
+                    platformType,
+                );
+            }
 
             const comment = await this.codeManagementService.createIssueComment(
                 {
@@ -1095,7 +1102,7 @@ ${reviewOptionsMarkdown}
         repository: { name: string; id: string; language: string },
         prLevelSuggestions: ISuggestionByPR[],
         language: string,
-    ): Promise<{ commentResults: Array<CommentResult>; }> {
+    ): Promise<{ commentResults: Array<CommentResult> }> {
         try {
             if (!prLevelSuggestions?.length) {
                 this.logger.log({
@@ -1126,25 +1133,29 @@ ${reviewOptionsMarkdown}
             for (const suggestion of prLevelSuggestions) {
                 try {
                     // Usar o método de formatação padronizado
-                    const commentBody = await this.codeManagementService.formatReviewCommentBody({
-                        suggestion,
-                        repository,
-                        includeHeader: true,  // PR-level sempre inclui header com badges
-                        includeFooter: false, // PR-level NÃO inclui footer de interação
-                        language,
-                        organizationAndTeamData,
-                    });
+                    const commentBody =
+                        await this.codeManagementService.formatReviewCommentBody(
+                            {
+                                suggestion,
+                                repository,
+                                includeHeader: true, // PR-level sempre inclui header com badges
+                                includeFooter: false, // PR-level NÃO inclui footer de interação
+                                language,
+                                organizationAndTeamData,
+                            },
+                        );
 
                     // Criar comentário geral
-                    const createdComment = await this.codeManagementService.createIssueComment({
-                        organizationAndTeamData,
-                        repository: {
-                            name: repository.name,
-                            id: repository.id,
-                        },
-                        prNumber,
-                        body: commentBody,
-                    });
+                    const createdComment =
+                        await this.codeManagementService.createIssueComment({
+                            organizationAndTeamData,
+                            repository: {
+                                name: repository.name,
+                                id: repository.id,
+                            },
+                            prNumber,
+                            body: commentBody,
+                        });
 
                     if (createdComment?.id) {
                         commentResults.push({
@@ -1190,7 +1201,8 @@ ${reviewOptionsMarkdown}
                         metadata: {
                             suggestionId: suggestion.id,
                             pullRequestNumber: prNumber,
-                            organizationId: organizationAndTeamData.organizationId,
+                            organizationId:
+                                organizationAndTeamData.organizationId,
                             repository,
                         },
                     });
@@ -1238,11 +1250,12 @@ ${reviewOptionsMarkdown}
                 return null;
             }
 
-            const comments = await this.codeManagementService.getAllCommentsInPullRequest({
-                organizationAndTeamData,
-                repository,
-                prNumber,
-            });
+            const comments =
+                await this.codeManagementService.getAllCommentsInPullRequest({
+                    organizationAndTeamData,
+                    repository,
+                    prNumber,
+                });
 
             if (!comments?.length) {
                 return null;
@@ -1254,7 +1267,11 @@ ${reviewOptionsMarkdown}
                     const body = comment.body || '';
                     return body.includes('<!-- kody-codereview-completed-');
                 })
-                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                .sort(
+                    (a, b) =>
+                        new Date(b.created_at).getTime() -
+                        new Date(a.created_at).getTime(),
+                );
 
             if (!completedReviewComments.length) {
                 return null;
@@ -1292,7 +1309,11 @@ ${reviewOptionsMarkdown}
                 this.logger.log({
                     message: `Skipping minimize comment for PR#${prNumber} - platform ${platformType} not supported`,
                     context: CommentManagerService.name,
-                    metadata: { organizationAndTeamData, platformType, prNumber },
+                    metadata: {
+                        organizationAndTeamData,
+                        platformType,
+                        prNumber,
+                    },
                 });
                 return false;
             }
@@ -1309,13 +1330,18 @@ ${reviewOptionsMarkdown}
                 this.logger.log({
                     message: `No previous review comment found to minimize for PR#${prNumber}`,
                     context: CommentManagerService.name,
-                    metadata: { organizationAndTeamData, prNumber, repository: repository.name },
+                    metadata: {
+                        organizationAndTeamData,
+                        prNumber,
+                        repository: repository.name,
+                    },
                 });
                 return false;
             }
 
             // Minimizar o comentário usando o nodeId (GraphQL ID) se disponível, senão usar o commentId
-            const commentIdToMinimize = lastReviewComment.nodeId || lastReviewComment.commentId;
+            const commentIdToMinimize =
+                lastReviewComment.nodeId || lastReviewComment.commentId;
 
             await this.codeManagementService.minimizeComment({
                 organizationAndTeamData,

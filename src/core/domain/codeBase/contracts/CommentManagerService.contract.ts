@@ -21,6 +21,7 @@ export interface ICommentManagerService {
         changedFiles: FileChange[],
         language: string,
         platformType: string,
+        startReviewMessage?: string,
     ): Promise<{ commentId: number; noteId: number; threadId?: number }>;
 
     generateSummaryPR(
