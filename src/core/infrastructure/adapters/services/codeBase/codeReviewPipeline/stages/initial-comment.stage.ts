@@ -80,7 +80,9 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
             startReviewMessage &&
             startReviewMessage.status === PullRequestMessageStatus.INACTIVE
         ) {
-            return context;
+            return this.updateContext(context, (draft) => {
+                draft.startReviewMessage = startReviewMessage;
+            });
         }
 
         const result = await this.commentManagerService.createInitialComment(

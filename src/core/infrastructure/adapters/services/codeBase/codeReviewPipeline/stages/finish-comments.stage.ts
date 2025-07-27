@@ -34,7 +34,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             lineComments,
         } = context;
 
-        if (!initialCommentData) {
+        if (!initialCommentData && !context.startReviewMessage) {
             this.logger.warn({
                 message: `Missing initialCommentData for PR#${pullRequest.number}`,
                 context: this.stageName,
