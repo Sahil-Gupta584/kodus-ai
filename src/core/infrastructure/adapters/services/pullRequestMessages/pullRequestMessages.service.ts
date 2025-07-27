@@ -1,12 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { IPullRequestMessagesService } from '@/core/domain/pullRequestMessages/contracts/pullRequestMessages.service.contract';
-import { IPullRequestMessagesRepository } from '@/core/domain/pullRequestMessages/contracts/pullRequestMessages.repository.contract';
+import { IPullRequestMessagesRepository, PULL_REQUEST_MESSAGES_REPOSITORY_TOKEN } from '@/core/domain/pullRequestMessages/contracts/pullRequestMessages.repository.contract';
 import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { PullRequestMessagesEntity } from '@/core/domain/pullRequestMessages/entities/pullRequestMessages.entity';
 
 @Injectable()
 export class PullRequestMessagesService implements IPullRequestMessagesService {
     constructor(
+        @Inject(PULL_REQUEST_MESSAGES_REPOSITORY_TOKEN)
         private readonly pullRequestMessagesRepository: IPullRequestMessagesRepository,
     ) {}
 
