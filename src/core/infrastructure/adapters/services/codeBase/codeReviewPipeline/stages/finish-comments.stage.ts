@@ -66,17 +66,28 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             );
         }
 
-        await this.commentManagerService.updateOverallComment(
-            organizationAndTeamData,
-            pullRequest.number,
-            repository,
-            initialCommentData.commentId,
-            initialCommentData.noteId,
-            platformType,
-            lineComments,
-            codeReviewConfig,
-            initialCommentData.threadId,
-        );
+        if (!context.startReviewMessage) {
+            await this.commentManagerService.updateOverallComment(
+                organizationAndTeamData,
+                pullRequest.number,
+                repository,
+                initialCommentData.commentId,
+                initialCommentData.noteId,
+                platformType,
+                lineComments,
+                codeReviewConfig,
+                initialCommentData.threadId,
+            );
+        } else {
+            await this.commentManagerService.createComment(
+                organizationAndTeamData,
+                pullRequest.number,
+                repository,
+                platformType,
+                lineComments,
+                codeReviewConfig,
+            );
+        }
 
         return context;
     }

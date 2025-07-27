@@ -101,4 +101,13 @@ export interface ICommentManagerService {
         repository: { name: string; id: string },
         platformType: PlatformType,
     ): Promise<boolean>;
+
+    createComment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string },
+        platformType: PlatformType,
+        codeSuggestions?: Array<CommentResult>,
+        codeReviewConfig?: CodeReviewConfig,
+    ): Promise<void>;
 }

@@ -355,17 +355,12 @@ Avoid making assumptions or including inferred details not present in the provid
         threadId?: number,
     ): Promise<void> {
         try {
-            let commentBody =
-                await this.generatePullRequestFinishSummaryMarkdown(
-                    organizationAndTeamData,
-                    prNumber,
-                    codeSuggestions,
-                    codeReviewConfig,
-                );
-
-            commentBody = this.sanitizeBitbucketMarkdown(
-                commentBody,
+            const commentBody = await this.generateLastReviewCommenBody(
+                organizationAndTeamData,
+                prNumber,
                 platformType,
+                codeSuggestions,
+                codeReviewConfig,
             );
 
             await this.codeManagementService.updateIssueComment({
@@ -403,6 +398,25 @@ Avoid making assumptions or including inferred details not present in the provid
             });
             throw error;
         }
+    }
+
+    private async generateLastReviewCommenBody(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        platformType: PlatformType,
+        codeSuggestions?: Array<CommentResult>,
+        codeReviewConfig?: CodeReviewConfig,
+    ): Promise<string> {
+        let commentBody = await this.generatePullRequestFinishSummaryMarkdown(
+            organizationAndTeamData,
+            prNumber,
+            codeSuggestions,
+            codeReviewConfig,
+        );
+
+        commentBody = this.sanitizeBitbucketMarkdown(commentBody, platformType);
+
+        return commentBody;
     }
 
     async createLineComments(
@@ -1375,5 +1389,29 @@ ${reviewOptionsMarkdown}
             });
             return false;
         }
+    }
+
+    async createComment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string },
+        platformType: PlatformType,
+        codeSuggestions?: Array<CommentResult>,
+        codeReviewConfig?: CodeReviewConfig,
+    ): Promise<void> {
+        const commentBody = await this.generateLastReviewCommenBody(
+            organizationAndTeamData,
+            prNumber,
+            platformType,
+            codeSuggestions,
+            codeReviewConfig,
+        );
+
+        await this.codeManagementService.createIssueComment({
+            organizationAndTeamData,
+            repository,
+            prNumber,
+            body: commentBody,
+        });
     }
 }
