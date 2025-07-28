@@ -16,7 +16,8 @@
         "prepack": "rm -rf dist && yarn generate-barrels && yarn types",
         "generate-barrels": "barrelsby --delete -c barrelsby.json",
         "types": "tsc -b --force tsconfig.build.json && tsc-alias tsconfig.build.json",
-        "test": "jest --runInBand --detectOpenHandles --forceExit"
+        "test": "jest --runInBand --detectOpenHandles --forceExit",
+        "publish": "TOKEN=$(gcloud auth print-access-token) && npm config set //us-central1-npm.pkg.dev/kodus-infra-prod/kodus-common/:_authToken $TOKEN && npm publish && unset TOKEN"
     },
     "files": [
         "dist/**/*"
