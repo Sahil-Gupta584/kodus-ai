@@ -67,6 +67,7 @@ import { TokenChunkingModule } from './tokenChunking.module';
 
 @Module({
     imports: [
+        McpModule.forRoot(),
         GlobalCacheModule,
         RabbitMQWrapperModule.register(),
         ScheduleModule.forRoot(),
@@ -128,7 +129,6 @@ import { TokenChunkingModule } from './tokenChunking.module';
         LicenseModule,
         RuleLikeModule,
         IssuesModule,
-        McpModule.forRoot(),
         TokenChunkingModule,
     ],
     providers: [

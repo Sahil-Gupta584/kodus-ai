@@ -1,4 +1,4 @@
-import { Module, DynamicModule, Provider } from '@nestjs/common';
+import { Module, DynamicModule, Provider, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { McpController } from './controllers/mcp.controller';
 import { McpServerService } from './services/mcp-server.service';
@@ -22,7 +22,11 @@ export class McpModule {
             configService?.get<boolean>('API_MCP_SERVER_ENABLED', false);
 
         if (isEnabled) {
-            imports.push(PlatformIntegrationModule, JwtModule, KodyRulesModule);
+            imports.push(
+                forwardRef(() => PlatformIntegrationModule),
+                JwtModule,
+                forwardRef(() => KodyRulesModule),
+            );
 
             controllers.push(McpController);
 

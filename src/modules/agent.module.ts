@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { MemoryModule } from './memory.module';
 import { TeamAutomationModule } from './teamAutomation.module';
 import { PromptRouter } from '@/core/infrastructure/adapters/services/agent/config/promptRouter';
@@ -34,8 +35,7 @@ import { CheckinHistoryOrganizationModule } from './checkInHistoryOrganization.m
 import { ParametersModule } from './parameters.module';
 import { CodeReviewAgentProvider } from '@/core/infrastructure/adapters/services/agent/agents/codeReview';
 import { OrganizationParametersModule } from './organizationParameters.module';
-import { ConversationAgentUseCase } from '@/core/application/use-cases/agent/conversation-agent.use-case';
-import { ConversationAgentProvider } from '@/core/infrastructure/adapters/services/agent/kodus-flow/conversationAgent';
+import { McpAgentModule } from './mcpAgent.module';
 
 @Module({
     imports: [
@@ -59,13 +59,13 @@ import { ConversationAgentProvider } from '@/core/infrastructure/adapters/servic
         forwardRef(() => S3Module),
         forwardRef(() => ParametersModule),
         forwardRef(() => OrganizationParametersModule),
+        McpAgentModule,
     ],
     providers: [
         ...UseCases,
         DefaultAgentProvider,
         CodeReviewAgentProvider,
         GenericQueryAgentProvider,
-        ConversationAgentProvider,
         PromptService,
         S3Service,
         {
@@ -105,7 +105,6 @@ import { ConversationAgentProvider } from '@/core/infrastructure/adapters/servic
         AGENT_SERVICE_TOKEN,
         AGENT_EXECUTION_SERVICE_TOKEN,
         AGENT_EXECUTION_REPOSITORY_TOKEN,
-        ConversationAgentUseCase,
     ],
 })
 export class AgentModule {}
