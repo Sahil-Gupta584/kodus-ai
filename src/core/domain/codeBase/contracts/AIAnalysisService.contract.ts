@@ -7,7 +7,7 @@ import {
     ReviewModeResponse,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
+import { LLMModelProvider } from '@kodus/kodus-common/llm';
 
 export interface IAIAnalysisService {
     analyzeCodeWithAI(
@@ -24,12 +24,6 @@ export interface IAIAnalysisService {
         question: string,
         parameters: any,
     );
-    createSeverityAnalysisChainWithFallback(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        provider: LLMModelProvider,
-        codeSuggestions: CodeSuggestion[],
-    ): Promise<any>;
     filterSuggestionsSafeGuard(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
@@ -39,11 +33,6 @@ export interface IAIAnalysisService {
         suggestions: any[],
         languageResultPrompt: string,
         reviewMode: ReviewModeResponse,
-    ): Promise<any>;
-    extractSuggestionsFromCodeReviewSafeguard(
-        organizationAndTeamData: OrganizationAndTeamData,
-        prNumber: number,
-        safeGuardResponse: any,
     ): Promise<any>;
     validateImplementedSuggestions(
         organizationAndTeamData: OrganizationAndTeamData,

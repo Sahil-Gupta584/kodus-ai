@@ -16,9 +16,8 @@ import {
 import {
     MODEL_STRATEGIES,
     LLMModelProvider,
-} from '../llmProviders/llmModelProvider.helper';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '../llmProviders/llmProvider.service';
+    LLMProviderService,
+} from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class CheckinInsightsService implements ICheckinInsightsService {
@@ -28,7 +27,6 @@ export class CheckinInsightsService implements ICheckinInsightsService {
         @Inject(METRICS_FACTORY_TOKEN)
         private readonly metricsFactory: IMetricsFactory,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
     ) {}
 
@@ -63,17 +61,20 @@ export class CheckinInsightsService implements ICheckinInsightsService {
 
         const insights = await safelyParseMessageContent(
             (
-                await llm.invoke(await promptInsights.format({
-                    organizationAndTeamData,
-                    promptIsForChat: false,
-                    payload: payload,
-                }), {
-                    metadata: {
-                        submodule: 'GenerateInsightsForCheckin',
-                        module: 'AutomationTeamProgress',
-                        teamId: organizationAndTeamData.teamId,
+                await llm.invoke(
+                    await promptInsights.format({
+                        organizationAndTeamData,
+                        promptIsForChat: false,
+                        payload: payload,
+                    }),
+                    {
+                        metadata: {
+                            submodule: 'GenerateInsightsForCheckin',
+                            module: 'AutomationTeamProgress',
+                            teamId: organizationAndTeamData.teamId,
+                        },
                     },
-                })
+                )
             ).content,
         ).insights;
 

@@ -151,7 +151,7 @@ Your output must be surrounded by \`\`\`json\`\`\` tags.
 
 export const prompt_KodyRulesGeneratorDuplicateFilterUser = (payload: {
     existingRules: LibraryKodyRule[];
-    newRules: Array<IKodyRule & { comments: UncategorizedComment[] }>;
+    newRules: Array<Partial<IKodyRule>>;
 }) => `
 existing rules:
 
@@ -160,18 +160,18 @@ ${payload.existingRules
     .map(
         (rule) => `
     {
-        "uuid": "${rule.uuid}",
-        "title": "${rule.title}",
-        "rule": "${rule.rule}",
-        "why_is_this_important": "${rule.why_is_this_important}",
-        "severity": "${rule.severity}",
-        "tags": "${rule.tags}",
+        "uuid": "${rule?.uuid || ''}",
+        "title": "${rule?.title || ''}",
+        "rule": "${rule?.rule || ''}",
+        ${rule?.why_is_this_important ? `"why_is_this_important": "${rule.why_is_this_important}",` : ''}
+        "severity": "${rule?.severity || ''}",
+        "tags": "${rule?.tags || ''}",
         "examples": [
-        ${rule.examples.map(
+        ${rule?.examples?.map(
             (example) => `
             {
-                "snippet": "${example.snippet}",
-                "isCorrect": ${example.isCorrect}
+                "snippet": "${example?.snippet || ''}",
+                "isCorrect": ${example?.isCorrect || false}
             },
         `,
         )}
@@ -249,7 +249,7 @@ Your output must be surrounded by \`\`\`json\`\`\` tags.
 `;
 
 export const prompt_KodyRulesGeneratorQualityFilterUser = (payload: {
-    rules: Array<IKodyRule & { comments: UncategorizedComment[] }>;
+    rules: Array<Partial<IKodyRule>>;
 }) => `
 rules:
 
@@ -259,15 +259,15 @@ ${payload.rules
         (rule) => `
     {
         ${rule.uuid ? `"uuid": "${rule.uuid}",` : ''}
-        "title": "${rule.title}",
-        "rule": "${rule.rule}",
-        "severity": "${rule.severity}",
+        "title": "${rule?.title || ''}",
+        "rule": "${rule?.rule || ''}",
+        "severity": "${rule?.severity || ''}",
         "examples": [
-        ${rule.examples.map(
+        ${rule?.examples?.map(
             (example) => `
             {
-                "snippet": "${example.snippet}",
-                "isCorrect": ${example.isCorrect}
+                "snippet": "${example?.snippet || ''}",
+                "isCorrect": ${example?.isCorrect || false}
             },
         `,
         )}

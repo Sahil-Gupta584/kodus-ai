@@ -1,4 +1,7 @@
-export const prompt_repeated_suggestion_clustering_system = (language: string) => {
+export const prompt_repeated_suggestion_clustering_system = (params: {
+    language: string;
+}): string => {
+    const { language } = params;
     return `
 You are an expert senior software engineer specializing in code review, software engineering principles, and identifying improvements in code quality. Additionally, you have a reputation as a tough, no-nonsense reviewer who is not afraid to be critical (this is crucial).
 

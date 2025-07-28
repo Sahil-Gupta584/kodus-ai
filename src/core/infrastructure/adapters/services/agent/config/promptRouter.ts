@@ -42,10 +42,9 @@ import { getGemini } from '@/shared/utils/googleGenAI';
 import {
     MODEL_STRATEGIES,
     LLMModelProvider,
-} from '../../llmProviders/llmModelProvider.helper';
+    LLMProviderService,
+} from '@kodus/kodus-common/llm';
 import { traceCustomLLMCall } from '@/shared/utils/langchainCommon/document';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '../../llmProviders/llmProvider.service';
 
 export class PromptRouter {
     constructor(
@@ -64,7 +63,6 @@ export class PromptRouter {
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         private readonly promptService: PromptService,
@@ -203,7 +201,7 @@ export class PromptRouter {
 
             const outputParser = new JsonOutputFunctionsParser();
 
-            const functionCallingModel = llm.bind({
+            const functionCallingModel = llm.withConfig({
                 functions: [
                     {
                         name: 'output_formatter',
@@ -292,9 +290,8 @@ export class PromptRouter {
             );
 
         const gemini = await getGemini({
-            model: MODEL_STRATEGIES[
-                LLMModelProvider.GEMINI_2_5_FLASH
-            ].modelName,
+            model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_FLASH]
+                .modelName,
             temperature: 0,
         });
         let response = '';
@@ -308,9 +305,7 @@ export class PromptRouter {
                 promptFormatter,
                 response,
                 'FormatterMessage',
-                MODEL_STRATEGIES[
-                    LLMModelProvider.GEMINI_2_5_FLASH
-                ].modelName,
+                MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_FLASH].modelName,
             );
         } catch (error) {
             response = message;

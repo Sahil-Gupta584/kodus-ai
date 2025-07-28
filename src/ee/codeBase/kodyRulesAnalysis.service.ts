@@ -5,19 +5,17 @@ import {
     AIAnalysisResult,
     CodeSuggestion,
     ReviewModeResponse,
-    FileChange,
     ReviewOptions,
     SuggestionControlConfig,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { RunnableSequence } from '@langchain/core/runnables';
-import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import Anthropic from '@anthropic-ai/sdk';
 import { getKodyRulesForFile } from '@/shared/utils/glob-utils';
 import {
+    KodyRulesClassifierSchema,
+    kodyRulesClassifierSchema,
     prompt_kodyrules_classifier_system,
     prompt_kodyrules_classifier_user,
     prompt_kodyrules_extract_id_system,
@@ -36,13 +34,19 @@ import {
 import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisService.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
-import { LLMProviderService } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { IKodyRulesAnalysisService } from '@/core/domain/codeBase/contracts/KodyRulesAnalysisService.contract';
+import {
+    LLMProviderService,
+    LLMModelProvider,
+    PromptRunnerService,
+    ParserType,
+    PromptRole,
+} from '@kodus/kodus-common/llm';
+import { z } from 'zod';
 
 // Interface for extended context used in Kody Rules analysis
 interface KodyRulesExtendedContext {
@@ -156,8 +160,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
 
     constructor(
         private readonly logger: PinoLoggerService,
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
-        private readonly llmProviderService: LLMProviderService,
+        private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.anthropic = new Anthropic({
             apiKey: process.env.API_ANTHROPIC_API_KEY,
@@ -341,24 +344,60 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         suggestion: Partial<CodeSuggestion>,
     ): Promise<string[]> {
         try {
-            const extractionChain = await this.createAnalysisChainWithFallback(
-                LLMModelProvider.GEMINI_2_5_FLASH,
-                { suggestionContent: updatedContent },
-                prompt_kodyrules_extract_id_system,
-                prompt_kodyrules_extract_id_user,
-                'extractKodyRuleIdsFromContent',
-                LLMModelProvider.GEMINI_2_5_PRO,
-            );
+            const provider = LLMModelProvider.GEMINI_2_5_FLASH;
+            const fallbackProvider = LLMModelProvider.GEMINI_2_5_PRO;
 
-            const extractionResult = await extractionChain.invoke({
-                suggestionContent: updatedContent,
-            });
+            const extraction = await this.promptRunnerService
+                .builder()
+                .setProviders({
+                    main: provider,
+                    fallback: fallbackProvider,
+                })
+                .setParser(ParserType.STRING)
+                .setLLMJsonMode(true)
+                .setPayload({
+                    suggestionContent: updatedContent,
+                })
+                .addPrompt({
+                    prompt: prompt_kodyrules_extract_id_system,
+                    role: PromptRole.SYSTEM,
+                })
+                .addPrompt({
+                    prompt: prompt_kodyrules_extract_id_user,
+                    role: PromptRole.USER,
+                })
+                .addMetadata({
+                    organizationId: organizationAndTeamData?.organizationId,
+                    teamId: organizationAndTeamData?.teamId,
+                    pullRequestId: prNumber,
+                    provider: provider,
+                    fallbackProvider: fallbackProvider,
+                })
+                .addCallbacks([this.tokenTracker])
+                .addTags([
+                    ...this.buildTags(provider, 'primary'),
+                    ...this.buildTags(fallbackProvider, 'fallback'),
+                ])
+                .setRunName('extractKodyRuleIdsFromContent')
+                .setTemperature(0)
+                .execute();
 
-            if (extractionResult) {
-                const cleanResponse = extractionResult.replace(
-                    /```json\n|```/g,
-                    '',
-                );
+            if (!extraction) {
+                const message = `No Kody Rule IDs extracted from content for PR#${prNumber}`;
+                this.logger.warn({
+                    message,
+                    context: KodyRulesAnalysisService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        prNumber,
+                        suggestionId: suggestion.id,
+                    },
+                });
+                throw new Error(message);
+            }
+
+            if (extraction) {
+                const cleanResponse = extraction.replace(/```json\n|```/g, '');
                 const parsedIds = tryParseJSONObject(cleanResponse);
 
                 if (parsedIds?.ids?.length) {
@@ -395,6 +434,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             suggestions?.codeSuggestions?.length > 0;
 
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
+        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
         // Reset token tracking for new analysis
         this.tokenTracker.reset();
 
@@ -431,51 +471,28 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         };
 
         try {
-            // Create all the chains needed for the analysis
-            const [
-                classifiedKodyRulesChain,
-                updateStandardSuggestionsChain,
-                generateKodyRulesSuggestionsChain,
-                guardianKodyRulesChain,
-            ] = await Promise.all([
-                this.createAnalysisChainWithFallback(
-                    provider,
-                    baseContext,
-                    prompt_kodyrules_classifier_system,
-                    prompt_kodyrules_classifier_user,
-                    'classifierKodyRulesAnalyzeCodeWithAI',
-                ),
-                this.createAnalysisChainWithFallback(
-                    provider,
-                    baseContext,
-                    prompt_kodyrules_updatestdsuggestions_system,
-                    prompt_kodyrules_updatestdsuggestions_user,
-                    'updateStandardSuggestionsAnalyzeCodeWithAI',
-                ),
-                this.createAnalysisChainWithFallback(
-                    provider,
-                    baseContext,
-                    prompt_kodyrules_suggestiongeneration_system,
-                    prompt_kodyrules_suggestiongeneration_user,
-                    'generateKodyRulesSuggestionsAnalyzeCodeWithAI',
-                ),
-                this.createAnalysisChainWithFallback(
-                    provider,
-                    baseContext,
-                    prompt_kodyrules_guardian_system,
-                    prompt_kodyrules_guardian_user,
-                    'guardianKodyRulesAnalyzeCodeWithAI',
-                ),
-            ]);
+            const classifier = this.getClassifier(
+                provider,
+                fallbackProvider,
+                extendedContext,
+            );
+            const updater = this.getUpdater(
+                provider,
+                fallbackProvider,
+                extendedContext,
+            );
+            const guardian = this.getGuardian(
+                provider,
+                fallbackProvider,
+                extendedContext,
+            );
 
             // These chains do not depend on each other, so we can run them in parallel
             const [classifiedRulesResult, updateStandardSuggestionsResult] =
                 await Promise.all([
-                    classifiedKodyRulesChain.invoke(baseContext),
+                    classifier.execute(),
                     hasCodeSuggestions
-                        ? updateStandardSuggestionsChain?.invoke(
-                              extendedContext,
-                          )
+                        ? updater?.execute()
                         : Promise.resolve(undefined),
                 ]);
 
@@ -515,8 +532,14 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                     : undefined,
             };
 
+            const generator = this.getGenerator(
+                provider,
+                fallbackProvider,
+                extendedContext,
+            );
+
             const generatedKodyRulesSuggestionsResult =
-                await generateKodyRulesSuggestionsChain.invoke(extendedContext);
+                await generator.execute();
 
             const generatedKodyRulesSuggestions = this.processLLMResponse(
                 organizationAndTeamData,
@@ -566,6 +589,168 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             });
             throw error;
         }
+    }
+
+    private getClassifier(
+        provider: LLMModelProvider,
+        fallbackProvider: LLMModelProvider,
+        context: KodyRulesExtendedContext,
+    ) {
+        return this.promptRunnerService
+            .builder()
+            .setProviders({
+                main: provider,
+                fallback: fallbackProvider,
+            })
+            .setParser(ParserType.ZOD, kodyRulesClassifierSchema)
+            .setLLMJsonMode(true)
+            .setTemperature(0)
+            .setPayload(context)
+            .addPrompt({
+                prompt: prompt_kodyrules_classifier_system,
+                role: PromptRole.SYSTEM,
+            })
+            .addPrompt({
+                prompt: prompt_kodyrules_classifier_user,
+                role: PromptRole.USER,
+            })
+            .addMetadata({
+                organizationId:
+                    context?.organizationAndTeamData?.organizationId,
+                teamId: context?.organizationAndTeamData?.teamId,
+                pullRequestId: context?.pullRequest?.number,
+                provider,
+                fallbackProvider,
+            })
+            .addCallbacks([this.tokenTracker])
+            .addTags([
+                ...this.buildTags(provider, 'primary'),
+                ...this.buildTags(fallbackProvider, 'fallback'),
+            ])
+            .setRunName('classifierKodyRulesAnalyzeCodeWithAI');
+    }
+
+    private getUpdater(
+        provider: LLMModelProvider,
+        fallbackProvider: LLMModelProvider,
+        context: KodyRulesExtendedContext,
+    ) {
+        return this.promptRunnerService
+            .builder()
+            .setProviders({
+                main: provider,
+                fallback: fallbackProvider,
+            })
+            .setParser(ParserType.STRING)
+            .setLLMJsonMode(true)
+            .setTemperature(0)
+            .setPayload(context)
+            .addPrompt({
+                prompt: prompt_kodyrules_updatestdsuggestions_system,
+                role: PromptRole.SYSTEM,
+            })
+            .addPrompt({
+                prompt: prompt_kodyrules_updatestdsuggestions_user,
+                role: PromptRole.USER,
+            })
+            .addMetadata({
+                metadata: {
+                    organizationId:
+                        context?.organizationAndTeamData?.organizationId,
+                    teamId: context?.organizationAndTeamData?.teamId,
+                    pullRequestId: context?.pullRequest?.number,
+                    provider,
+                    fallbackProvider,
+                },
+            })
+            .addCallbacks([this.tokenTracker])
+            .addTags([
+                ...this.buildTags(provider, 'primary'),
+                ...this.buildTags(fallbackProvider, 'fallback'),
+            ])
+            .setRunName('updateStandardSuggestionsAnalyzeCodeWithAI');
+    }
+
+    private getGuardian(
+        provider: LLMModelProvider,
+        fallbackProvider: LLMModelProvider,
+        context: KodyRulesExtendedContext,
+    ) {
+        return this.promptRunnerService
+            .builder()
+            .setProviders({
+                main: provider,
+                fallback: fallbackProvider,
+            })
+            .setParser(ParserType.STRING)
+            .setLLMJsonMode(true)
+            .setTemperature(0)
+            .setPayload(context)
+            .addPrompt({
+                prompt: prompt_kodyrules_guardian_system,
+                role: PromptRole.SYSTEM,
+            })
+            .addPrompt({
+                prompt: prompt_kodyrules_guardian_user,
+                role: PromptRole.USER,
+            })
+            .addMetadata({
+                metadata: {
+                    organizationId:
+                        context?.organizationAndTeamData?.organizationId,
+                    teamId: context?.organizationAndTeamData?.teamId,
+                    pullRequestId: context?.pullRequest?.number,
+                    provider,
+                    fallbackProvider,
+                },
+            })
+            .addCallbacks([this.tokenTracker])
+            .addTags([
+                ...this.buildTags(provider, 'primary'),
+                ...this.buildTags(fallbackProvider, 'fallback'),
+            ])
+            .setRunName('guardianKodyRulesAnalyzeCodeWithAI');
+    }
+
+    private getGenerator(
+        provider: LLMModelProvider,
+        fallbackProvider: LLMModelProvider,
+        context: KodyRulesExtendedContext,
+    ) {
+        return this.promptRunnerService
+            .builder()
+            .setProviders({
+                main: provider,
+                fallback: fallbackProvider,
+            })
+            .setParser(ParserType.STRING)
+            .setLLMJsonMode(true)
+            .setTemperature(0)
+            .setPayload(context)
+            .addPrompt({
+                prompt: prompt_kodyrules_suggestiongeneration_system,
+                role: PromptRole.SYSTEM,
+            })
+            .addPrompt({
+                prompt: prompt_kodyrules_suggestiongeneration_user,
+                role: PromptRole.USER,
+            })
+            .addMetadata({
+                metadata: {
+                    organizationId:
+                        context?.organizationAndTeamData?.organizationId,
+                    teamId: context?.organizationAndTeamData?.teamId,
+                    pullRequestId: context?.pullRequest?.number,
+                    provider,
+                    fallbackProvider,
+                },
+            })
+            .addCallbacks([this.tokenTracker])
+            .addTags([
+                ...this.buildTags(provider, 'primary'),
+                ...this.buildTags(fallbackProvider, 'fallback'),
+            ])
+            .setRunName('generateKodyRulesSuggestionsAnalyzeCodeWithAI');
     }
 
     private addSeverityToSuggestions(
@@ -640,8 +825,11 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             limitationType:
                 context?.codeReviewConfig?.suggestionControl?.limitationType,
             // ✨ MODIFICAÇÃO: só passa severityLevelFilter se deve aplicar filtros
-            severityLevelFilter: this.shouldPassSeverityFilter(context?.codeReviewConfig?.suggestionControl)
-                ? context?.codeReviewConfig?.suggestionControl?.severityLevelFilter
+            severityLevelFilter: this.shouldPassSeverityFilter(
+                context?.codeReviewConfig?.suggestionControl,
+            )
+                ? context?.codeReviewConfig?.suggestionControl
+                      ?.severityLevelFilter
                 : undefined,
             organizationAndTeamData: context?.organizationAndTeamData,
             kodyRules: kodyRulesFiltered,
@@ -653,7 +841,9 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
     /**
      * ✨ SIMPLIFICADO: Determina se deve passar severityLevelFilter para análise de Kody Rules
      */
-    private shouldPassSeverityFilter(suggestionControl?: SuggestionControlConfig): boolean {
+    private shouldPassSeverityFilter(
+        suggestionControl?: SuggestionControlConfig,
+    ): boolean {
         if (!suggestionControl) {
             return false;
         }
@@ -662,165 +852,63 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         return suggestionControl.applyFiltersToKodyRules === true;
     }
 
-    private async createAnalysisChainWithFallback(
+    private getBasePromptBuilder(
         provider: LLMModelProvider,
-        context: any,
-        systemPromptFn: SystemPromptFn,
-        userPromptFn: UserPromptFn,
-        runName?: string,
+        baseContext: KodyRulesExtendedContext,
         fallbackProvider?: LLMModelProvider,
     ) {
-        let fallbackProviderToExecute = fallbackProvider;
-
-        if (!fallbackProvider) {
-            fallbackProviderToExecute =
+        let fallbackProviderToUse = fallbackProvider;
+        if (!fallbackProviderToUse)
+            fallbackProviderToUse =
                 provider === LLMModelProvider.GEMINI_2_5_PRO
                     ? LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET
                     : LLMModelProvider.GEMINI_2_5_FLASH;
-        }
 
-        try {
-            const mainChain = await this.createProviderChain(
-                provider,
-                context,
-                systemPromptFn,
-                userPromptFn,
-                'primary',
-            );
-            const fallbackChain = await this.createProviderChain(
-                fallbackProviderToExecute,
-                context,
-                systemPromptFn,
-                userPromptFn,
-                'fallback',
-            );
-
-            // Used withFallbacks to configure the fallback correctly
-            return mainChain
-                .withFallbacks({
-                    fallbacks: [fallbackChain],
-                })
-                .withConfig({
-                    tags: this.buildTags(provider, 'primary'),
-                    runName,
-                    metadata: {
-                        organizationId:
-                            context?.organizationAndTeamData?.organizationId,
-                        teamId: context?.organizationAndTeamData?.teamId,
-                        pullRequestId: context?.pullRequest?.number,
-                        provider: provider,
-                        fallbackProvider: fallbackProviderToExecute,
-                    },
-                });
-        } catch (error) {
-            this.logger.error({
-                message: 'Error creating analysis chain with fallback',
-                error,
-                context: KodyRulesAnalysisService.name,
+        return this.promptRunnerService
+            .builder()
+            .setProviders({
+                main: provider,
+                fallback: fallbackProvider,
+            })
+            .setParser(ParserType.STRING)
+            .setLLMJsonMode(true)
+            .addMetadata({
                 metadata: {
-                    provider,
-                    fallbackProvider: fallbackProviderToExecute,
+                    organizationId:
+                        baseContext?.organizationAndTeamData?.organizationId,
+                    teamId: baseContext?.organizationAndTeamData?.teamId,
+                    pullRequestId: baseContext?.pullRequest?.number,
+                    provider: provider,
+                    fallbackProvider: fallbackProvider,
                 },
-            });
-            throw error;
-        }
-    }
-
-    private async createProviderChain(
-        provider: LLMModelProvider,
-        context: any,
-        systemPromptFn: SystemPromptFn,
-        userPromptFn: UserPromptFn,
-        tier: 'primary' | 'fallback',
-    ) {
-        try {
-            let llm = this.llmProviderService.getLLMProvider({
-                model: provider,
-                temperature: 0,
-                jsonMode: true,
-                callbacks: [this.tokenTracker],
-            });
-
-            const tags = this.buildTags(provider, 'primary');
-
-            // Create the chain using the correct provider
-            const chain = RunnableSequence.from([
-                async (input: any) => {
-                    const systemPrompt = systemPromptFn();
-                    const humanPrompt = userPromptFn(input);
-
-                    return [
-                        {
-                            role: 'system',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: systemPrompt,
-                                },
-                            ],
-                        },
-                        {
-                            role: 'user',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: humanPrompt,
-                                },
-                            ],
-                        },
-                    ];
-                },
-                llm,
-                new CustomStringOutputParser(),
-            ]).withConfig({ tags });
-
-            return chain;
-        } catch (error) {
-            this.logger.error({
-                message: 'Error creating provider chain',
-                error,
-                context: KodyRulesAnalysisService.name,
-                metadata: { provider },
-            });
-            throw error;
-        }
+            })
+            .addCallbacks([this.tokenTracker])
+            .addTags([
+                ...this.buildTags(provider, 'primary'),
+                ...this.buildTags(fallbackProvider, 'fallback'),
+            ])
+            .setTemperature(0);
     }
 
     private processClassifierResponse(
         allRules: Array<Partial<IKodyRule> | IKodyRule>,
-        response: string,
+        response: KodyRulesClassifierSchema,
     ): Array<Partial<IKodyRule> | IKodyRule> | null {
         try {
-            if (!response) {
-                return null;
-            }
-
-            let cleanResponse = response;
-
-            if (response?.startsWith('```')) {
-                cleanResponse = response
-                    .replace(/^```json\n/, '')
-                    .replace(/\n```(\n)?$/, '')
-                    .trim();
-            }
-
-            const parsedResponse = tryParseJSONObject(cleanResponse);
-
-            if (!parsedResponse?.length) {
+            if (!response || !response.rules?.length) {
                 this.logger.warn({
-                    message:
-                        'Failed to parse classifier response OR not response',
+                    message: 'No rules found in classifier response',
                     context: KodyRulesAnalysisService.name,
                     metadata: {
-                        originalResponse: response,
-                        cleanResponse,
+                        allRules,
+                        response,
                     },
                 });
                 return null;
             }
 
             const responseMap = new Map(
-                parsedResponse.map((rule) => [rule.uuid, rule.reason]),
+                response.rules.map((rule) => [rule.uuid, rule.reason]),
             );
 
             return allRules
@@ -1120,4 +1208,3 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         });
     }
 }
-
