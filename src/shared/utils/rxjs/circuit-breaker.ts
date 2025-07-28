@@ -8,6 +8,7 @@ import {
     MonoTypeOperatorFunction,
 } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
+import { status as Status } from '@grpc/grpc-js';
 
 /**
  * Custom error type to signify that the circuit breaker is open.
@@ -45,7 +46,7 @@ export interface CircuitBreakerOptions {
     /**
      * The minimum number of calls within the rolling window before the
      * error percentage is calculated.
-     * @default 10
+     * @default 50
      */
     volumeThreshold?: number;
     /**
@@ -67,6 +68,8 @@ export interface CircuitBreakerOptions {
      */
     halfOpenObserver?: Partial<Observer<void>>;
 }
+
+const grpcConnectionErrorCodes = [Status.UNAVAILABLE, Status.UNAUTHENTICATED];
 
 /**
  * Represents a single Circuit Breaker instance with its own state.
@@ -101,7 +104,7 @@ class CircuitBreaker {
         // Set default options
         this.options = {
             errorThresholdPercentage: options?.errorThresholdPercentage ?? 50,
-            volumeThreshold: options?.volumeThreshold ?? 10,
+            volumeThreshold: options?.volumeThreshold ?? 50,
             resetTimeout: options?.resetTimeout ?? 60000,
             openObserver: options?.openObserver ?? {
                 next: () => logMethod('Circuit opened'),
@@ -195,7 +198,12 @@ class CircuitBreaker {
                         },
                     }),
                     catchError((err) => {
-                        this.recordCall(false);
+                        if (grpcConnectionErrorCodes.includes(err?.code)) {
+                            this.recordCall(false); // only record as failure if it's a connection error
+                        } else {
+                            this.recordCall(true);
+                        }
+
                         return throwError(() => err);
                     }),
                 );
