@@ -19,7 +19,7 @@ export class PullRequestMessagesController {
         );
     }
 
-    @Get('/find-by-repository-id')
+    @Get('/find-by-organization-id')
     public async findByRepositoryIdAndOrganizationId(
         @Query('repositoryId') repositoryId: string,
         @Query('organizationId') organizationId: string,
