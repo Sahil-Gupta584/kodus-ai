@@ -44,6 +44,10 @@ import {
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { PullRequestMessageStatus } from '@/config/types/general/pullRequestMessages.type';
+import {
+    MessageTemplateProcessor,
+    PlaceholderContext,
+} from './utils/services/messageTemplateProcessor.service';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
@@ -56,6 +60,7 @@ export class CommentManagerService implements ICommentManagerService {
         private readonly llmProviderService: LLMProviderService,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
+        private readonly messageProcessor: MessageTemplateProcessor,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
     }
@@ -582,11 +587,11 @@ Avoid making assumptions or including inferred details not present in the provid
     /**
      * Generates the Pull Request summary markdown based on the changed files.
      */
-    private generatePullRequestSummaryMarkdown(
+    private async generatePullRequestSummaryMarkdown(
         changedFiles: FileChange[],
         language: string,
         platformType: PlatformType,
-    ): string {
+    ): Promise<string> {
         try {
             const translation = getTranslationsForLanguageByCategory(
                 language as LanguageValue,
@@ -599,28 +604,23 @@ Avoid making assumptions or including inferred details not present in the provid
                 );
             }
 
-            const filesTable = changedFiles
-                ?.map(
-                    (file) =>
-                        `| [${file.filename}](${file.blob_url}) | ${file.status} | ${file.additions} | ${file.deletions} | ${file.changes} |`,
-                )
-                .join('\n');
+            // Usar o processor para gerar as partes dinâmicas
+            const context: PlaceholderContext = {
+                changedFiles,
+                language,
+                platformType,
+            };
 
-            const totalFilesModified = changedFiles.length;
-            const totalAdditions = changedFiles.reduce(
-                (acc, file) => acc + file.additions,
-                0,
-            );
-            const totalDeletions = changedFiles.reduce(
-                (acc, file) => acc + file.deletions,
-                0,
-            );
-            const totalChanges = changedFiles.reduce(
-                (acc, file) => acc + file.changes,
-                0,
+            const filesTableContent =
+                await this.messageProcessor.processTemplate(
+                    '@changedFiles',
+                    context,
+                );
+            const summaryContent = await this.messageProcessor.processTemplate(
+                '@changeSummary',
+                context,
             );
 
-            //Do not touch this formatting, there cannot be spaces
             return `
 # ${translation.title}
 
@@ -628,22 +628,9 @@ Avoid making assumptions or including inferred details not present in the provid
 
 ${translation.description}
 
-<details>
-<summary>${translation.changedFiles}</summary>
+${filesTableContent}
 
-| ${translation.filesTable.join(' | ')} |
-|------|--------|-------------|-------------|------------|
-${filesTable}
-</details>
-
-<details>
-<summary>${translation.summary}</summary>
-
-- **${translation.totalFiles}**: ${totalFilesModified}
-- **${translation.totalAdditions}**: ${totalAdditions}
-- **${translation.totalDeletions}**: ${totalDeletions}
-- **${translation.totalChanges}**: ${totalChanges}
-</details>
+${summaryContent}
 
 <!-- kody-codereview -->\n&#8203;`.trim();
         } catch (error) {
@@ -654,7 +641,7 @@ ${filesTable}
                 metadata: { changedFiles, language },
             });
 
-            return ''; // Returns an empty string to ensure something is sent
+            return '';
         }
     }
 
@@ -678,16 +665,17 @@ ${filesTable}
             }
 
             // Generate review options
-            const reviewOptionsMarkdown = Object.entries(
-                codeReviewConfig.reviewOptions,
-            )
-                .map(
-                    ([key, value]) =>
-                        `| **${key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())}** | ${
-                            value ? translation.enabled : translation.disabled
-                        } |`,
-                )
-                .join('\n');
+            const context: PlaceholderContext = {
+                codeReviewConfig,
+                language,
+                organizationAndTeamData,
+                prNumber,
+            };
+
+            const reviewOptions = this.messageProcessor.processTemplate(
+                '@reviewOptions',
+                context,
+            );
 
             return `
 <details>
@@ -705,16 +693,7 @@ ${filesTable}
 <details>
 <summary>${translation.configurationTitle}</summary>
 
-<details>
-<summary>${translation.reviewOptionsTitle}</summary>
-
-${translation.reviewOptionsDesc}
-
-| ${translation.tableOptions}                        | ${translation.tableEnabled} |
-|-------------------------------|---------|
-${reviewOptionsMarkdown}
-
-</details>
+${reviewOptions}
 
 **[${translation.configurationLink}](https://app.kodus.io/settings/code-review/global/general)**
 

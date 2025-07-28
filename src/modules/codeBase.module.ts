@@ -47,6 +47,7 @@ import { KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN, KodyRulesPrLevelAnalysisSer
 import { CROSS_FILE_ANALYSIS_SERVICE_TOKEN, CrossFileAnalysisService } from '@/core/infrastructure/adapters/services/codeBase/crossFileAnalysis.service';
 import { TokenChunkingModule } from './tokenChunking.module';
 import { TOKEN_TRACKING_SERVICE_TOKEN, TokenTrackingService } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
+import { MessageTemplateProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/services/messageTemplateProcessor.service';
 
 @Module({
     imports: [
@@ -114,6 +115,7 @@ import { TOKEN_TRACKING_SERVICE_TOKEN, TokenTrackingService } from '@/shared/inf
         KodyFineTuningService,
         PromptRunnerService,
         CommentAnalysisService,
+        MessageTemplateProcessor,
     ],
     exports: [
         PULL_REQUEST_MANAGER_SERVICE_TOKEN,
@@ -130,6 +132,7 @@ import { TOKEN_TRACKING_SERVICE_TOKEN, TokenTrackingService } from '@/shared/inf
         KodyFineTuningService,
         CodeReviewHandlerService,
         CommentAnalysisService,
+        MessageTemplateProcessor,
     ],
     controllers: [CodeBaseController],
 })
