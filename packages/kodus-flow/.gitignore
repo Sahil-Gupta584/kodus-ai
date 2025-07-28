@@ -53,3 +53,7 @@ kodus.config.json
 
 # TypeScript
 *.tsbuildinfo
+
+# Google Artifact Registry
+.npmrc.bak
+.npmrc

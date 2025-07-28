@@ -24,7 +24,7 @@ import {
     getResultContent,
 } from '../planner-factory.js';
 import { Thread } from '../../../core/types/common-types.js';
-import { ToolMetadataForLLM } from '@/core/types/tool-types.js';
+import { ToolMetadataForLLM } from '../../../core/types/tool-types.js';
 // import { getGlobalPersistor } from '../../../persistor/factory.js';
 import {
     createResponseSynthesizer,
@@ -42,6 +42,7 @@ export interface PlanStep {
     result?: unknown;
     reasoning?: string;
     retry?: number;
+    parallel?: boolean; // 🆕 NEW: Explicit parallel execution flag from LLM
 }
 
 export interface ExecutionPlan {
@@ -55,7 +56,24 @@ export interface ExecutionPlan {
     metadata?: Record<string, unknown>;
 }
 
+interface Memory {
+    value?: unknown;
+    content?: unknown;
+}
+
+interface ConversationEntry {
+    input?: unknown;
+    output?: unknown;
+}
+
+interface SuccessfulPlan {
+    goal: string;
+    strategy: string;
+    steps?: Array<{ description: string; type: string; tool?: string }>;
+}
+
 export class PlanAndExecutePlanner implements Planner {
+    readonly name = 'Plan-and-Execute';
     private logger = createLogger('plan-execute-planner');
     private currentPlan: ExecutionPlan | null = null;
     // private persistor = getGlobalPersistor();
@@ -285,16 +303,8 @@ export class PlanAndExecutePlanner implements Planner {
         return executionRuntime?.getAvailableToolsForLLM() || [];
     }
 
-    async think(
-        input: string,
-        context: PlannerExecutionContext,
-    ): Promise<AgentThought> {
+    async think(context: PlannerExecutionContext): Promise<AgentThought> {
         debugger; // 🔍 DEBUG: Monitor thinking process
-        this.logger.debug('Plan-and-Execute thinking started', {
-            input: input.substring(0, 100),
-            iteration: context.iterations,
-            hasCurrentPlan: !!this.currentPlan,
-        });
 
         try {
             // const thread = context.plannerMetadata.thread!;
@@ -306,10 +316,13 @@ export class PlanAndExecutePlanner implements Planner {
 
             // Se não temos plano ou precisamos replanejamento
             if (!this.currentPlan || this.shouldReplan(context)) {
-                return await this.createPlan(input, context);
+                this.logger.info('📋 CREATING NEW PLAN', {
+                    reason: !this.currentPlan ? 'no_plan' : 'should_replan',
+                    iteration: context.iterations,
+                });
+                return await this.createPlan(context);
             }
 
-            // Executar próximo step do plano
             return await this.executeNextStep(context);
         } catch (error) {
             this.logger.error(
@@ -328,28 +341,16 @@ export class PlanAndExecutePlanner implements Planner {
     }
 
     private async createPlan(
-        input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
         debugger; // 🔍 DEBUG: Monitor plan creation
         const thread = context.plannerMetadata.thread!;
         const availableTools = this.getAvailableToolsForContext(thread);
 
-        // ✅ SMART: Handle no tools available - but can still plan!
-        if (availableTools.length === 0) {
-            this.logger.info('No tools available, creating simple plan', {
-                input: input.substring(0, 100),
-                iteration: context.iterations,
-            });
-
-            const fallbackPlan = this.createFallbackPlan(input);
-            this.currentPlan = fallbackPlan;
-            return this.executeNextStep(context);
-        }
-
         const executionRuntime = this.getExecutionRuntime(thread);
         const agentIdentity = executionRuntime?.getAgentIdentity();
         const userContext = executionRuntime?.getUserContext();
+        const input = context.input;
 
         // ✅ GET MEMORY CONTEXT for better planning
         const memoryContext = await this.getMemoryContext(
@@ -379,21 +380,42 @@ export class PlanAndExecutePlanner implements Planner {
             hasHistory: planningHistory.length > 0,
         });
 
-        // Use LLM to create detailed plan with full context engineering
-        const plan = await this.llmAdapter.createPlan?.(input, 'plan-execute', {
-            availableTools: availableTools,
-            // ✅ Enhanced context engineering for Plan-Execute
-            toolsContext,
-            planningHistory,
-            identityContext,
-            userContext,
-            memoryContext,
-            planningInstructions: this.buildPlanningInstructions(
-                input,
-                context,
-                availableTools,
-            ),
-        });
+        // Use createPlan method with prompts from this planner
+        if (!this.llmAdapter.createPlan) {
+            throw new Error('LLM adapter must support createPlan method');
+        }
+
+        const planResult = await this.llmAdapter.createPlan(
+            input,
+            'plan-execute',
+            {
+                availableTools: availableTools,
+                toolsContext: toolsContext || '',
+                identityContext: identityContext || '',
+                userContext:
+                    typeof userContext === 'string'
+                        ? userContext
+                        : JSON.stringify(userContext || {}),
+                memoryContext: memoryContext || '',
+                planningHistory: planningHistory || '',
+                // Provide prompts from this planner to the adapter
+                systemPrompt: this.getSystemPrompt(),
+                userPromptTemplate: this.getUserPrompt({
+                    goal: input,
+                    availableTools: availableTools,
+                    toolsContext: toolsContext || '',
+                    identityContext: identityContext || '',
+                    userContext:
+                        typeof userContext === 'string'
+                            ? userContext
+                            : JSON.stringify(userContext || {}),
+                    memoryContext: memoryContext || '',
+                    planningHistory: planningHistory || '',
+                }),
+            },
+        );
+
+        const plan = planResult;
 
         // Convert LLM plan to execution plan
         const steps = this.convertLLMResponseToSteps(plan);
@@ -436,12 +458,25 @@ export class PlanAndExecutePlanner implements Planner {
             throw new Error('No execution plan available');
         }
 
+        this.logger.info('🚀 EXECUTING NEXT STEP', {
+            planId: this.currentPlan.id,
+            currentStepIndex: this.currentPlan.currentStepIndex,
+            totalSteps: this.currentPlan.steps.length,
+            planStatus: this.currentPlan.status,
+            iteration: context.iterations,
+            historyLength: context.history.length,
+        });
+
         const currentStep =
             this.currentPlan.steps[this.currentPlan.currentStepIndex];
 
         if (!currentStep) {
             // Plan completed
             this.currentPlan.status = 'completed';
+
+            // Store successful plan for future reference
+            await this.storePlanExecution(this.currentPlan, 'success');
+
             return {
                 reasoning: 'All plan steps completed successfully',
                 action: {
@@ -457,12 +492,31 @@ export class PlanAndExecutePlanner implements Planner {
             };
         }
 
+        this.logger.info('📋 CURRENT STEP DETAILS', {
+            stepId: currentStep.id,
+            stepIndex: this.currentPlan.currentStepIndex,
+            stepStatus: currentStep.status,
+            tool: currentStep.tool,
+            originalArguments: currentStep.arguments,
+            hasArguments: !!currentStep.arguments,
+        });
+
         // 🔄 RESOLVE DYNAMIC ARGUMENTS: Replace references to previous step results
         if (currentStep.arguments) {
+            this.logger.info('🔧 RESOLVING STEP ARGUMENTS - BEFORE', {
+                stepId: currentStep.id,
+                originalArguments: currentStep.arguments,
+            });
+
             currentStep.arguments = this.resolveStepArguments(
                 currentStep.arguments,
                 this.currentPlan.steps,
             );
+
+            this.logger.info('🔧 RESOLVING STEP ARGUMENTS - AFTER', {
+                stepId: currentStep.id,
+                resolvedArguments: currentStep.arguments,
+            });
         }
 
         // 🚀 DYNAMIC PARALLEL EXPANSION: Check if step needs to be expanded for arrays
@@ -572,6 +626,7 @@ export class PlanAndExecutePlanner implements Planner {
         result: ActionResult,
         context: PlannerExecutionContext,
     ): Promise<ResultAnalysis> {
+        debugger;
         this.logger.debug('Analyzing step result', {
             resultType: result.type,
             hasError: isErrorResult(result),
@@ -598,6 +653,8 @@ export class PlanAndExecutePlanner implements Planner {
                 shouldContinue: false,
             };
         }
+
+        debugger;
 
         // Handle step result
         if (isErrorResult(result)) {
@@ -678,8 +735,24 @@ export class PlanAndExecutePlanner implements Planner {
             });
         } else {
             // Handle single step execution
+            const stepResult = getResultContent(result);
             currentStep.status = 'completed';
-            currentStep.result = getResultContent(result);
+            currentStep.result = stepResult;
+
+            this.logger.info('💾 STEP RESULT SAVED', {
+                stepId: currentStep.id,
+                stepStatus: currentStep.status,
+                resultType: typeof stepResult,
+                resultIsArray: Array.isArray(stepResult),
+                resultLength: Array.isArray(stepResult)
+                    ? stepResult.length
+                    : 'not array',
+                resultPreview: stepResult
+                    ? JSON.stringify(stepResult).substring(0, 500)
+                    : 'no result',
+                originalActionResult: result,
+            });
+
             this.currentPlan.currentStepIndex++;
         }
 
@@ -1035,55 +1108,98 @@ export class PlanAndExecutePlanner implements Planner {
     }
 
     /**
-     * Create fallback plan when no LLM or tools available
-     */
-    private createFallbackPlan(input: string): ExecutionPlan {
-        return {
-            id: `fallback-plan-${Date.now()}`,
-            goal: input,
-            strategy: 'plan-execute-fallback',
-            steps: [
-                {
-                    id: 'step-1',
-                    description: `Provide response for: ${input}`,
-                    type: 'decision',
-                    status: 'pending',
-                },
-            ],
-            currentStepIndex: 0,
-            status: 'executing',
-            reasoning: 'Simple fallback plan - no tools available',
-        };
-    }
-
-    /**
      * Get memory context for better planning
      */
     private async getMemoryContext(
-        executionRuntime: any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        _currentInput: string,
+        executionRuntime: ExecutionRuntime | null,
+        currentInput: string,
     ): Promise<string> {
         if (!executionRuntime) {
             return '';
         }
 
+        const contextParts: string[] = [];
+
         try {
+            // 1. MEMORY MANAGER: Recent stored memories
             const memoryManager = executionRuntime.getMemoryManager?.();
-            if (!memoryManager) {
-                return '';
+            if (memoryManager) {
+                const memories = await memoryManager.getRecentMemories?.(3);
+                if (memories && memories.length > 0) {
+                    contextParts.push('\n📚 Recent knowledge:');
+                    memories.forEach((memory: unknown, i: number) => {
+                        const memoryObj = memory as Memory;
+                        const content =
+                            memoryObj.value ||
+                            memoryObj.content ||
+                            'Memory entry';
+                        const contentStr =
+                            typeof content === 'string'
+                                ? content
+                                : JSON.stringify(content);
+                        contextParts.push(
+                            `${i + 1}. ${contentStr.substring(0, 100)}...`,
+                        );
+                    });
+                }
             }
 
-            const memories = await memoryManager.getRecentMemories?.(5);
-            if (!memories || memories.length === 0) {
-                return '';
+            // 2. SESSION SERVICE: Conversation history
+            const sessionService = executionRuntime.getSessionService?.();
+            if (sessionService) {
+                // Get current session from execution runtime
+                const sessionHistory = executionRuntime.getSessionHistory?.();
+                if (sessionHistory && sessionHistory.length > 0) {
+                    contextParts.push('\n💬 Recent conversation:');
+                    sessionHistory
+                        .slice(-2)
+                        .forEach((conv: unknown, i: number) => {
+                            const convObj = conv as ConversationEntry;
+                            const input = convObj.input
+                                ? String(convObj.input).substring(0, 50)
+                                : 'unknown';
+                            const output = convObj.output
+                                ? String(convObj.output).substring(0, 50)
+                                : 'no response';
+                            contextParts.push(
+                                `${i + 1}. "${input}" → "${output}"`,
+                            );
+                        });
+                }
             }
 
-            return `\nRecent memory context:
-${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join('\n')}`; // eslint-disable-line @typescript-eslint/no-explicit-any
+            // 3. STATE SERVICE: Current execution state
+            const stateService = executionRuntime.getStateService?.();
+            if (stateService) {
+                // Check for previous successful plans
+                const successfulPlans = await stateService.get?.(
+                    'planner',
+                    'successfulPlans',
+                );
+                if (
+                    successfulPlans &&
+                    Array.isArray(successfulPlans) &&
+                    successfulPlans.length > 0
+                ) {
+                    contextParts.push('\n✅ Previous successful strategies:');
+                    successfulPlans
+                        .slice(-2)
+                        .forEach((plan: unknown, i: number) => {
+                            const planObj = plan as SuccessfulPlan;
+                            contextParts.push(
+                                `${i + 1}. "${planObj.goal}" → ${planObj.strategy} (${planObj.steps?.length || 0} steps)`,
+                            );
+                        });
+                }
+            }
         } catch (error) {
-            this.logger.debug('Could not retrieve memory context', { error });
-            return '';
+            this.logger.debug('Could not retrieve enhanced memory context', {
+                error: error instanceof Error ? error.message : 'Unknown error',
+                currentInput: currentInput.substring(0, 50),
+            });
         }
+
+        return contextParts.length > 0 ? contextParts.join('\n') : '';
     }
 
     /**
@@ -1092,19 +1208,33 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
     private buildToolsContextForPlanExecute(
         tools: ToolMetadataForLLM[],
     ): string {
+        debugger;
         if (tools.length === 0) return 'No tools available.';
 
-        // Group tools by capability for better planning
-        const toolsByType = this.groupToolsByCapability(tools);
+        // Group tools by MCP prefix for clean organization
+        const toolsByPrefix = new Map<string, ToolMetadataForLLM[]>();
 
-        let context = '\nAvailable tools for planning:\n';
+        tools.forEach((tool) => {
+            const prefix = tool.name.split('.')[0] || 'other';
+            if (!toolsByPrefix.has(prefix)) {
+                toolsByPrefix.set(prefix, []);
+            }
+            toolsByPrefix.get(prefix)!.push(tool);
+        });
 
-        for (const [category, categoryTools] of Object.entries(toolsByType)) {
-            context += `\n${category.toUpperCase()} TOOLS:\n`;
-            categoryTools.forEach((tool) => {
+        let context = '';
+        const sortedPrefixes = Array.from(toolsByPrefix.keys()).sort();
+
+        sortedPrefixes.forEach((prefix, index) => {
+            if (index > 0) {
+                context += '\n---\n\n'; // Separator between MCP groups
+            }
+
+            const prefixTools = toolsByPrefix.get(prefix)!;
+            prefixTools.forEach((tool) => {
                 context += `- ${tool.name}: ${tool.description}\n`;
 
-                // ✅ IMPROVED: Include parameter information for better planning
+                // Include parameter information
                 if (tool.parameters && typeof tool.parameters === 'object') {
                     const params = tool.parameters as Record<string, unknown>;
                     const properties = params.properties as Record<
@@ -1132,64 +1262,9 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
                     }
                 }
             });
-        }
-
-        return context;
-    }
-
-    /**
-     * Group tools by their capability for better planning
-     */
-    private groupToolsByCapability(
-        tools: ToolMetadataForLLM[],
-    ): Record<string, ToolMetadataForLLM[]> {
-        const groups: Record<string, ToolMetadataForLLM[]> = {
-            DATA_INFORMATION: [],
-            COMMUNICATION: [],
-            FILE_CONTENT: [],
-            ANALYSIS: [],
-            OTHER: [],
-        };
-
-        tools.forEach((tool) => {
-            const name = tool.name.toLowerCase();
-            const desc = tool.description.toLowerCase();
-
-            if (
-                name.includes('search') ||
-                name.includes('get') ||
-                name.includes('fetch') ||
-                desc.includes('retrieve')
-            ) {
-                groups.DATA_INFORMATION?.push(tool);
-            } else if (
-                name.includes('send') ||
-                name.includes('notify') ||
-                desc.includes('message')
-            ) {
-                groups.COMMUNICATION?.push(tool);
-            } else if (
-                name.includes('file') ||
-                name.includes('write') ||
-                name.includes('read') ||
-                desc.includes('document')
-            ) {
-                groups.FILE_CONTENT?.push(tool);
-            } else if (
-                name.includes('analyze') ||
-                name.includes('process') ||
-                desc.includes('analysis')
-            ) {
-                groups.ANALYSIS?.push(tool);
-            } else {
-                groups.OTHER?.push(tool);
-            }
         });
 
-        // Remove empty groups
-        return Object.fromEntries(
-            Object.entries(groups).filter(([_, tools]) => tools.length > 0),
-        );
+        return context;
     }
 
     /**
@@ -1338,10 +1413,30 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
     ): Record<string, unknown> {
         const argsStr = JSON.stringify(args);
 
+        this.logger.info('🔧 RESOLVING STEP ARGUMENTS', {
+            originalArgs: args,
+            argsStr,
+            availableSteps: allSteps.map((s) => ({
+                id: s.id,
+                status: s.status,
+                hasResult: !!s.result,
+                resultType: typeof s.result,
+                resultPreview: s.result
+                    ? JSON.stringify(s.result).substring(0, 200)
+                    : 'no result',
+            })),
+        });
+
         // Pattern to match {{step-X.result...}} references (supports both numbers and IDs)
         const resolvedStr = argsStr.replace(
             /\{\{([^.}]+)\.result([\w\[\]\.]*)\}\}/g,
             (match, stepIdentifier, path) => {
+                this.logger.info('🔍 TEMPLATE MATCH FOUND', {
+                    match,
+                    stepIdentifier,
+                    path,
+                });
+
                 let step: PlanStep | undefined;
 
                 // Try to find step by number (step-1, step-2, etc.)
@@ -1349,18 +1444,30 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
                     const stepNum = parseInt(stepIdentifier.substring(5));
                     const stepIndex = stepNum - 1;
                     step = allSteps[stepIndex];
+                    this.logger.info('🔢 STEP BY NUMBER', {
+                        stepNum,
+                        stepIndex,
+                        found: !!step,
+                    });
                 } else {
                     // Try to find step by ID
                     step = allSteps.find((s) => s.id === stepIdentifier);
+                    this.logger.info('🆔 STEP BY ID', {
+                        stepIdentifier,
+                        found: !!step,
+                    });
                 }
 
                 if (!step || !step.result) {
-                    this.logger.warn('Step reference not found or no result', {
+                    this.logger.warn('❌ STEP REFERENCE NOT RESOLVED', {
                         reference: match,
                         stepIdentifier,
+                        stepFound: !!step,
                         hasResult: !!step?.result,
+                        stepResult: step?.result,
                         availableSteps: allSteps.map((s) => ({
                             id: s.id,
+                            status: s.status,
                             hasResult: !!s.result,
                         })),
                     });
@@ -1370,10 +1477,20 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
                 try {
                     // Evaluate the path to get the value
                     const result = this.evaluatePath(step.result, path);
+                    this.logger.info('✅ STEP REFERENCE RESOLVED', {
+                        reference: match,
+                        stepIdentifier,
+                        path,
+                        resultType: typeof result,
+                        resultValue: JSON.stringify(result).substring(0, 500),
+                    });
                     return JSON.stringify(result);
                 } catch (error) {
-                    this.logger.warn('Failed to resolve step reference', {
+                    this.logger.warn('❌ FAILED TO RESOLVE STEP REFERENCE', {
                         reference: match,
+                        stepIdentifier,
+                        path,
+                        stepResult: step.result,
                         error: (error as Error).message,
                     });
                     return match;
@@ -1382,12 +1499,22 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
         );
 
         try {
-            return JSON.parse(resolvedStr);
+            const resolvedArgs = JSON.parse(resolvedStr);
+            this.logger.info('🎯 STEP ARGUMENTS RESOLVED SUCCESSFULLY', {
+                originalArgs: args,
+                resolvedArgs,
+                resolvedStr,
+            });
+            return resolvedArgs;
         } catch (error) {
             this.logger.error(
                 'Failed to parse resolved arguments',
                 error as Error,
             );
+            this.logger.warn('❌ FAILED TO PARSE RESOLVED ARGUMENTS', {
+                originalArgs: args,
+                resolvedStr,
+            });
             return args; // Return original if parsing fails
         }
     }
@@ -1433,6 +1560,14 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
     ): boolean {
         if (!currentStep.arguments || !currentStep.tool) {
             return false;
+        }
+
+        // 🆕 NEW: Check if step explicitly marked as parallel by LLM
+        if ('parallel' in currentStep && currentStep.parallel === true) {
+            this.logger.info('🚀 STEP MARKED FOR PARALLEL EXECUTION', {
+                stepId: currentStep.id,
+                explicitParallel: true,
+            });
         }
 
         const argsStr = JSON.stringify(currentStep.arguments);
@@ -1552,136 +1687,184 @@ ${memories.map((m: any) => `- ${m.content || m.summary || 'Memory entry'}`).join
         };
     }
 
+    // ──────────────────────────────────────────────────────────────────────────────
+    // 🎯 Prompt Generation Helpers
+    // ──────────────────────────────────────────────────────────────────────────────
+
+    private getSystemPrompt(): string {
+        return `You are an expert planning agent that creates executable DAGs
+following the Plan-and-Execute methodology.
+
+=== CORE PRINCIPLES ===
+1. ANALYZE   • 2. DECOMPOSE • 3. SEQUENCE
+4. SPECIFY   • 5. VALIDATE  • 6. ADAPT
+
+=== CRITICAL RULES ===
+• Allowed placeholders: {{stepId.result}} or {{step-X.result[…]}}, any other format is forbidden.
+• IDs: all \`"id"\` values must be in **kebab-case** (lowercase, words joined by hyphens) and **action-agnostic** (e.g. \`action-name\`, \`validate-data\`, \`process-items\`).
+• Wildcard syntax: when referring to arrays, use \`{{stepId.result[*].field}}\` (e.g. \`{{fetch-data.result[*].id}}\`).
+• Fixed context fields (e.g. organizationId, teamId) MUST be concrete values inside \`argsTemplate\`; never placeholders.
+• Use \`parallel:true\` only for steps that can run in independent batches; otherwise use \`parallel:false\`.
+• The final reply must be pure JSON – no comments, no trailing commas.
+
+=== NODE FORMAT ===
+{
+  "id"           : "kebab-case-string",
+  "description"  : "Short description",
+  "tool"         : "exact_tool_name_from_catalog",
+  "argsTemplate" : { "param": "value | {{stepId.result}}" },
+  "parallel"     : true|false,
+  "dependsOn"    : ["previous_step_ids"],
+  "expectedOutcome": "Your success criterion",
+}
+
+=== COMPLETE FORMAT ===
+{
+  "strategy" : "plan-execute",
+  "goal"     : "original user goal",
+  "plan"     : [ <array of nodes> ],
+  "reasoning": [
+     "Step 1: ...",
+     "Step 2: ...",
+     "..."
+  ]
+}`;
+    }
+
+    private getUserPrompt(context: {
+        goal: string;
+        availableTools?: unknown[];
+        toolsContext?: string;
+        identityContext?: string;
+        userContext?: string;
+        memoryContext?: string;
+        planningHistory?: string;
+    }): string {
+        return `## DYNAMIC CONTEXT
+${context.identityContext || 'Agent identity not specified'}
+
+Additional context provided by caller (JSON)
+${context.userContext || '{}'}
+
+${context.memoryContext || 'Recent Memory: '}
+${context.planningHistory || 'Planning History: '}
+Current Iteration: {iteration} / {maxIterations}
+
+## RELEVANT MCP TOOLS
+${context.toolsContext || 'No tools available'}
+
+## USER GOAL
+"${context.goal}"
+
+Create an executable DAG using the template system and parallel execution optimization.`;
+    }
+
     /**
-     * Build comprehensive planning instructions
+     * Store successful plan execution for future learning
      */
-    private buildPlanningInstructions(
-        input: string,
-        context: PlannerExecutionContext,
-        availableTools: ToolMetadataForLLM[],
-    ): string {
-        return `🎯 CLAUDE CODE CLI STYLE PLANNING FOR: "${input}"
+    private async storePlanExecution(
+        plan: ExecutionPlan,
+        outcome: 'success' | 'failure',
+    ): Promise<void> {
+        try {
+            const executionRuntime = this.getExecutionRuntimeForStorage();
+            if (!executionRuntime) {
+                this.logger.debug(
+                    'No execution runtime available for plan storage',
+                );
+                return;
+            }
 
-You are an intelligent planning agent similar to Claude Code CLI. Create a comprehensive execution plan that demonstrates expert-level software engineering thinking.
+            // 1. STATE SERVICE: Store for immediate reuse
+            const stateService = executionRuntime.getStateService?.();
+            if (stateService && outcome === 'success') {
+                const successfulPlans =
+                    (await stateService.get('planner', 'successfulPlans')) ||
+                    [];
 
-🎯 GOAL: ${input}
-📊 CONTEXT: Iteration ${context.iterations} | Tools Available: ${availableTools.length} | Previous Attempts: ${context.history.length}
+                // Add current plan
+                const planSummary = {
+                    goal: plan.goal,
+                    strategy: plan.strategy,
+                    steps: plan.steps.map((step) => ({
+                        description: step.description,
+                        type: step.type,
+                        tool: step.tool,
+                    })),
+                    stepCount: plan.steps.length,
+                    timestamp: Date.now(),
+                };
 
-📋 CORE PLANNING PHILOSOPHY (CLAUDE CODE STYLE):
-1. 🔍 ANALYSIS FIRST: Always start by understanding the current state and context
-2. 🎯 GOAL DECOMPOSITION: Break complex goals into clear, measurable steps
-3. 🚀 EXECUTION OPTIMIZATION: Plan for maximum efficiency and parallel execution
-4. 🔄 ADAPTIVE STRATEGY: Include decision points and error recovery paths
-5. ✅ VERIFICATION BUILT-IN: Each step should have clear success criteria
+                (successfulPlans as SuccessfulPlan[]).push(planSummary);
 
-🧠 CLAUDE CODE INTELLIGENCE PATTERNS:
--- Think like a senior developer with deep contextual understanding
--- Consider edge cases and alternative approaches upfront
--- Plan for incremental progress with meaningful checkpoints
--- Optimize for user experience and clear progress communication
--- Integrate exploration, execution, and validation seamlessly
+                // Keep only last 10 successful plans
+                const limitedPlans = Array.isArray(successfulPlans)
+                    ? successfulPlans.slice(-10)
+                    : [planSummary];
 
-⚡ PARALLEL EXECUTION MASTERY:
-IDENTIFY PARALLEL OPPORTUNITIES:
-• File operations that don't conflict (read multiple files simultaneously)
-• API calls to different services (fetch data from multiple sources)
-• Independent validation and processing steps
-• Search operations across different domains/scopes
-• Batch operations on similar resources that can run concurrently
+                await stateService.set(
+                    'planner',
+                    'successfulPlans',
+                    limitedPlans,
+                );
 
-🚨 CRITICAL PARAMETER REQUIREMENTS:
-- ALWAYS provide ALL required parameters for tools with CONCRETE VALUES
-- Required parameters are marked with [REQUIRED] in tool descriptions
-- NEVER use placeholders like "REPOSITORY_ID_AQUI", "USER_ID_HERE", "\${variable}", "<value>"
-- NEVER use template strings or variables that need to be replaced later
-- If a tool requires parameters you don't have from user input, you can:
-  a) Reference previous step results using: {{step-X.result}} pattern
-  b) Use a different tool that doesn't require those parameters
-  c) Ask the user for the missing information
-- NEVER call a tool without providing its required parameters
-- Examples of FORBIDDEN placeholders: "REPOSITORY_ID_AQUI", "TODO", "FILL_IN", "\${id}", "<repositoryId>"
+                this.logger.debug('Successful plan stored in state service', {
+                    planId: plan.id,
+                    goal: plan.goal.substring(0, 50),
+                    stepCount: plan.steps.length,
+                });
+            }
 
-📋 REFERENCING PREVIOUS STEP RESULTS:
-When you need to use data from a previous step, you can use either pattern:
-- {{step-1.result}} - Use the entire result from step-1 (by number)
-- {{stepId.result}} - Use the entire result from stepId (by ID)
-- {{step-1.result[0].id}} - Access first item's id from an array result
-- {{stepId.result[0].id}} - Access first item's id using step ID
-- {{step-2.result.repositories[0].name}} - Access nested properties
+            // 2. MEMORY MANAGER: Store for long-term learning
+            const memoryManager = executionRuntime.getMemoryManager?.();
+            if (memoryManager) {
+                const planContent = `Task: ${plan.goal}. Strategy: ${plan.strategy}. Steps: ${plan.steps.map((s) => s.description).join(', ')}. Outcome: ${outcome}`;
 
-🚀 AUTOMATIC PARALLEL EXPANSION:
-When a step references an ARRAY result, the system AUTOMATICALLY expands to parallel execution!
-Instead of manually creating multiple steps, just reference the array:
+                await memoryManager.store({
+                    content: planContent,
+                    type: 'plan_execution',
+                    metadata: {
+                        outcome,
+                        stepCount: plan.steps.length,
+                        strategy: plan.strategy,
+                        planId: plan.id,
+                    },
+                });
 
-Example:
-Step 1: List repositories → returns [{id: "123", name: "repo1"}, {id: "456", name: "repo2"}]
-Step 2: Get rules for ALL repos → use repositoryId: "{{step-1.result}}"
-        → System will AUTOMATICALLY execute in parallel for each repository!
+                this.logger.debug('Plan execution stored in memory manager', {
+                    planId: plan.id,
+                    outcome,
+                    contentLength: planContent.length,
+                });
+            }
+        } catch (error) {
+            this.logger.warn('Failed to store plan execution', {
+                planId: plan.id,
+                outcome,
+                error: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
+    }
 
-Benefits:
-- No need to know array size in advance
-- Automatic parallel execution for better performance
-- Works with any array result from previous steps
-- Smart concurrency limits to avoid overload
+    /**
+     * Get execution runtime from thread in store context
+     */
+    private getExecutionRuntimeForStorage(): ExecutionRuntime | null {
+        try {
+            // Try to get threadId from current planner metadata or context
+            // This will be available during execution
+            const threadId = this.currentPlan?.metadata?.thread;
+            if (threadId && typeof threadId === 'string') {
+                return RuntimeRegistry.getByThread(threadId);
+            }
 
-💡 COMPLETE WORKING EXAMPLE:
-Input: "List all repositories and get Kody rules for each one"
-
-Step 1:
-{
-  "id": "list_repos",
-  "description": "List all available repositories",
-  "tool": "listRepositories", 
-  "arguments": {},
-  "dependencies": []
-}
-
-Step 2:
-{
-  "id": "get_rules",
-  "description": "Get Kody rules for each repository",
-  "tool": "getKodyRules",
-  "arguments": {
-    "repositoryId": "{{list_repos.result}}"
-  },
-  "dependencies": ["list_repos"]
-}
-
-Alternative using step numbers:
-{
-  "repositoryId": "{{step-1.result}}"
-}
-
-The system will automatically:
-1. Execute step 1 to get repositories array
-2. Expand step 2 to run in parallel for each repository ID
-3. Combine all results efficiently
-
-EXECUTION CONTEXT:
-- Iteration: ${context.iterations}
-- Available tools: ${availableTools.length}
-- Previous attempts: ${context.history.length}
-
-TOOL EFFICIENCY GUIDELINES:
-- Prefer tools that can handle multiple items at once
-- Look for tools with "all", "bulk", "list" capabilities
-- Avoid iterating through items individually when possible
-- Use comprehensive queries over multiple specific ones
-- PARALLEL EXECUTION OPPORTUNITIES:
-  * When you need data from multiple independent sources
-  * When performing similar operations on different resources
-  * When validation and processing can happen simultaneously
-  * When different aspects of a problem can be explored concurrently
-
-PLAN FORMAT:
-Each step should specify:
-- Clear description of what to do
-- Which tool to use (if any)
-- ALL required parameters with concrete values
-- Optional parameters when helpful
-- Success criteria
-- What to do if it fails
-
-Create a robust plan that can handle errors and adapt as needed.`;
+            this.logger.debug('No threadId available for runtime access');
+            return null;
+        } catch (error) {
+            this.logger.debug('Could not get execution runtime', {
+                error: error instanceof Error ? error.message : 'Unknown error',
+            });
+            return null;
+        }
     }
 }

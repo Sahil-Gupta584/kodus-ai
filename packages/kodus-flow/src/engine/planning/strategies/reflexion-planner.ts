@@ -68,16 +68,7 @@ export class ReflexionPlanner implements Planner {
         });
     }
 
-    async think(
-        input: string,
-        context: PlannerExecutionContext,
-    ): Promise<AgentThought> {
-        this.logger.debug('Reflexion thinking started', {
-            input: input.substring(0, 100),
-            iteration: context.iterations,
-            memoryEntries: this.memory.entries.length,
-        });
-
+    async think(context: PlannerExecutionContext): Promise<AgentThought> {
         try {
             // Primeiro, refletir sobre contexto passado se houver
             if (context.history.length > 0) {
@@ -85,7 +76,7 @@ export class ReflexionPlanner implements Planner {
             }
 
             // Gerar ação baseada em reflexões anteriores
-            return await this.generateActionWithReflection(input, context);
+            return await this.generateActionWithReflection(context);
         } catch (error) {
             this.logger.error('Reflexion thinking failed', error as Error);
 
@@ -184,10 +175,10 @@ Improvements: [improvement 1]; [improvement 2]; [improvement 3]
     }
 
     private async generateActionWithReflection(
-        input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        // Extrair lições relevantes das reflexões passadas
+        const input = context.input;
+
         const relevantLessons = this.extractRelevantLessons(input, context);
         const relevantPatterns = this.getRelevantPatterns(input);
 

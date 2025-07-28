@@ -62,20 +62,11 @@ export class TreeOfThoughtsPlanner implements Planner {
         });
     }
 
-    async think(
-        input: string,
-        context: PlannerExecutionContext,
-    ): Promise<AgentThought> {
-        this.logger.debug('Tree of Thoughts thinking started', {
-            input: input.substring(0, 100),
-            iteration: context.iterations,
-            hasTree: !!this.tree,
-        });
-
+    async think(context: PlannerExecutionContext): Promise<AgentThought> {
         try {
             // Inicializar árvore se necessário
             if (!this.tree || this.shouldRebuildTree(context)) {
-                await this.initializeTree(input, context);
+                await this.initializeTree(context);
             }
 
             // Explorar próximo nó promissor
@@ -97,11 +88,9 @@ export class TreeOfThoughtsPlanner implements Planner {
     }
 
     private async initializeTree(
-        input: string,
         context: PlannerExecutionContext,
     ): Promise<void> {
-        this.logger.debug('Initializing thought tree');
-
+        const input = context.input;
         // Gerar pensamentos iniciais (nós raiz)
         const initialThoughts = await this.generateInitialThoughts(
             input,

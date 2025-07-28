@@ -4,7 +4,7 @@
  */
 
 import { ExecutionKernel, createKernel, type KernelConfig } from './kernel.js';
-import { createPersistor } from './persistor.js';
+import { createPersistor } from '../persistor/factory.js';
 import { createLogger } from '../observability/index.js';
 import type {
     EventType,

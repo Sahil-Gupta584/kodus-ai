@@ -22,7 +22,6 @@
  * ❌ Snapshot management (responsabilidade do executor)
  */
 
-import { EventEmitter } from 'events';
 import { createLogger } from '../../observability/index.js';
 import { CircuitBreaker } from '../../runtime/core/circuit-breaker.js';
 import { EngineError } from '../../core/errors.js';
@@ -79,7 +78,8 @@ import type {
     // DelegationResult,
 } from './multi-agent-types.js';
 
-import { ContextStateService } from '../../core/context/services/state-service.js';
+// ✅ REMOVER: Import não utilizado após remoção do stateManager duplicado
+// import { ContextStateService } from '../../core/context/services/state-service.js';
 import { sessionService } from '../../core/context/services/session-service.js';
 import { ToolId } from '../../core/types/tool-types.js';
 import type { Router } from '../routing/router.js';
@@ -165,12 +165,13 @@ export abstract class AgentCore<
     TInput = unknown,
     TOutput = unknown,
     TContent = unknown,
-> extends EventEmitter {
+> {
     protected logger: ReturnType<typeof createLogger>;
     protected readonly thinkingTimeout: number;
     protected config: AgentCoreConfig;
     protected eventHistory: AnyEvent[] = [];
-    protected stateManager: ContextStateService;
+    // ✅ REMOVER: StateManager duplicado - usar apenas do contexto
+    // protected stateManager: ContextStateService;
 
     // Single agent mode
     protected singleAgentDefinition?: AgentDefinition<
@@ -323,7 +324,8 @@ export abstract class AgentCore<
     protected executionContext?: PlannerExecutionContext;
 
     // NEW: Current context for action processing
-    private currentAgentContext?: AgentContext;
+    // ✅ REMOVER: Variável não utilizada
+    // private currentAgentContext?: AgentContext;
 
     // Permitir injeção de factory customizada
     protected agentContextFactory: (
@@ -337,11 +339,11 @@ export abstract class AgentCore<
         toolEngineOrConfig?: ToolEngine | AgentCoreConfig,
         config?: AgentCoreConfig,
     ) {
-        super();
         this.logger = createLogger('agent-core');
         this.thinkingTimeout = 60000; // ✅ 60s thinking timeout
-        this.stateManager = new ContextStateService({});
-        this.stateManager = new ContextStateService({}, {});
+        // ✅ REMOVER: StateManager duplicado - usar apenas do contexto
+        // this.stateManager = new ContextStateService({});
+        // this.stateManager = new ContextStateService({}, {});
 
         if (this.isAgentDefinition(definitionOrConfig)) {
             // Single agent mode
@@ -883,7 +885,7 @@ export abstract class AgentCore<
                           );
 
                     // Update context with tool result
-                    await context.stateManager.set(
+                    await context.executionRuntime.setState(
                         'main',
                         'lastToolResult',
                         toolResult,
@@ -1058,7 +1060,7 @@ export abstract class AgentCore<
                     );
 
                     // Update context with delegation result
-                    await context.stateManager.set(
+                    await context.executionRuntime.setState(
                         'main',
                         'delegationResult',
                         delegationResult,
@@ -1388,7 +1390,7 @@ export abstract class AgentCore<
             type: message.type,
         });
 
-        this.emit('messageQueued', trackedMessage);
+        // this.emit('messageQueued', trackedMessage);
 
         return trackedMessage.id;
     }
@@ -1445,7 +1447,7 @@ export abstract class AgentCore<
             agentId,
         });
 
-        this.emit('messageAcknowledged', message);
+        //this.emit('messageAcknowledged', message);
 
         return true;
     }
@@ -1701,30 +1703,8 @@ export abstract class AgentCore<
         return event;
     }
 
-    protected async executeAgentThink(
-        agent:
-            | AgentDefinition<TInput, TOutput, TContent>
-            | AgentDefinition<unknown, unknown, unknown>,
-        input: unknown,
-        context: AgentContext,
-    ): Promise<AgentThought<unknown>> {
-        this.logger.debug('Executing agent', {
-            agentName: agent.name,
-        });
-
-        // All agents use the same API - they all have access to:
-        // - session (via context.runtime.sessionId)
-        // - state (via context.stateManager)
-        // - memory (via context.memoryManager)
-        // - business context (via context.user.businessContext)
-        return await agent.think(input as TInput, context);
-    }
-
-    // ===== 🚀 NEW: PARALLEL TOOL EXECUTION METHODS =====
-
     /**
-     * Extract tools from action - handles both direct and content structure
-     * Similar to extractToolNames in orchestrator but returns full ToolCall objects
+     * Extract tools from action for processing
      */
     private extractToolsFromAction(action: {
         type?: string;
@@ -2778,14 +2758,15 @@ export abstract class AgentCore<
                 );
 
                 // ✅ ADD: Update context with error information
-                if (this.stateManager) {
-                    await this.stateManager.set('main', 'lastToolError', {
-                        toolName,
-                        error,
-                        timestamp: Date.now(),
-                        correlationId,
-                    });
-                }
+                // ✅ REMOVER: Usar stateManager do contexto quando disponível
+                // if (this.stateManager) {
+                //     await this.stateManager.set('main', 'lastToolError', {
+                //         toolName,
+                //         error,
+                //         timestamp: Date.now(),
+                //         correlationId,
+                //     });
+                // }
 
                 // ✅ ADD: Emit error event for observability
                 if (this.kernelHandler) {
@@ -3304,7 +3285,7 @@ export abstract class AgentCore<
                 toAgent: message.toAgent,
             });
 
-            this.emit('messageDelivered', message);
+            //this.emit('messageDelivered', message);
         } catch (error) {
             message.status = 'failed';
             message.error =
@@ -3317,7 +3298,7 @@ export abstract class AgentCore<
                 attempts: message.deliveryAttempts,
             });
 
-            this.emit('messageFailed', message);
+            //this.emit('messageFailed', message);
 
             // Recolocar na fila se ainda há tentativas
             if (message.deliveryAttempts < message.maxAttempts) {
@@ -4237,16 +4218,17 @@ export abstract class AgentCore<
 
     /**
      * Get current agent context for action processing
+     * ✅ REMOVER: Método não utilizado após remoção do currentAgentContext
      */
-    private getCurrentAgentContext(): AgentContext {
-        if (!this.currentAgentContext) {
-            throw new EngineError(
-                'AGENT_ERROR',
-                'No current agent context available',
-            );
-        }
-        return this.currentAgentContext;
-    }
+    // private getCurrentAgentContext(): AgentContext {
+    //     if (!this.currentAgentContext) {
+    //         throw new EngineError(
+    //             'AGENT_ERROR',
+    //             'No current agent context available',
+    //         );
+    //     }
+    //     return this.currentAgentContext;
+    // }
 
     /**
      * Execute Think→Act→Observe loop - Main intelligence method
@@ -4256,46 +4238,23 @@ export abstract class AgentCore<
         input: TInput,
         context: AgentContext,
     ): Promise<TOutput> {
-        // ✅ ADD: Log para confirmar que Think→Act→Observe está sendo usado
-        this.logger.info('🚀 Think→Act→Observe EXECUTION STARTED', {
-            agentName: this.config.agentName,
-            plannerType: this.config.planner,
-            hasPlanner: !!this.planner,
-            hasLLMAdapter: !!this.llmAdapter,
-            inputType: typeof input,
-            trace: {
-                source: 'agent-core',
-                step: 'think-act-observe-start',
-                timestamp: Date.now(),
-            },
-        });
-
+        debugger;
         if (!this.planner || !this.llmAdapter) {
             throw new EngineError(
                 'AGENT_ERROR',
                 'Think→Act→Observe requires planner and LLM adapter. Provide llmAdapter in config.',
             );
         }
-
+        let iterations = 0;
+        const maxIterations = this.config.maxThinkingIterations || 15;
         const inputString = String(input);
+        // ✅ REMOVER: Assignment desnecessário
+        // this.currentAgentContext = context;
 
-        // Store context for use in action processing
-        this.currentAgentContext = context;
-
-        // Create execution context
         this.executionContext = await this.createExecutionContext(
             inputString,
             context,
         );
-
-        this.logger.info('Starting Think→Act→Observe loop', {
-            agentName: this.config.agentName,
-            inputLength: inputString.length,
-            maxIterations: this.config.maxThinkingIterations,
-        });
-
-        let iterations = 0;
-        const maxIterations = this.config.maxThinkingIterations || 15;
 
         while (
             iterations < maxIterations &&
@@ -4307,14 +4266,6 @@ export abstract class AgentCore<
                     ?.getMultiKernelManager()
                     ?.getKernelByNamespace('agent');
                 const initialEventCount = kernel?.getState().eventCount || 0;
-
-                this.logger.debug('Think→Act→Observe iteration', {
-                    iteration: iterations + 1,
-                    maxIterations,
-                    agentName: this.config.agentName,
-                    contextHistory: this.executionContext.history.length,
-                    initialEventCount,
-                });
 
                 // 1. THINK - Planner decides next action
                 const thinkStartTime = Date.now();
@@ -4329,7 +4280,8 @@ export abstract class AgentCore<
                 const result = await this.act(thought.action);
                 const actDuration = Date.now() - actStartTime;
 
-                debugger;
+                // ✅ REMOVER: Debugger statement
+                // debugger;
                 // 3. OBSERVE - Analyze result and decide if continue
                 const observeStartTime = Date.now();
                 const observation = await this.observe(
@@ -4338,11 +4290,15 @@ export abstract class AgentCore<
                 );
                 const observeDuration = Date.now() - observeStartTime;
 
+                // ✅ REMOVER: Debugger statement
+                // debugger;
                 // 4. UPDATE - Update context for next iteration
                 this.executionContext.update(thought, result, observation);
 
                 iterations++;
 
+                // ✅ REMOVER: Debugger statement
+                // debugger;
                 // Get final event count from kernel
                 const finalEventCount = kernel?.getState().eventCount || 0;
                 const eventsGenerated = finalEventCount - initialEventCount;
@@ -4425,17 +4381,6 @@ export abstract class AgentCore<
                     break;
                 }
             } catch (error) {
-                debugger;
-                this.logger.error(
-                    'Think→Act→Observe iteration failed',
-                    error as Error,
-                    {
-                        iteration: iterations,
-                        agentName: this.config.agentName,
-                        contextHistory: this.executionContext.history.length,
-                    },
-                );
-
                 // Try to continue with error handling
                 if (iterations >= maxIterations - 1) {
                     throw error;
@@ -4445,35 +4390,21 @@ export abstract class AgentCore<
 
         const finalResult = this.executionContext.getFinalResult();
 
-        // ✅ Persist planner history to state service for next execution
-        if (this.executionContext && this.stateManager) {
-            try {
-                this.stateManager.set(
-                    'planner',
-                    'history',
-                    this.executionContext.history,
-                );
-                this.logger.debug(
-                    'Planner history persisted to state service',
-                    {
-                        agentName: this.config.agentName,
-                        historyLength: this.executionContext.history.length,
-                        iterations: iterations,
-                    },
-                );
-            } catch (error) {
-                this.logger.warn('Failed to persist planner history', {
-                    agentName: this.config.agentName,
-                    error: (error as Error).message,
-                });
-            }
-        }
-
         if (finalResult.success) {
+            // Extract the content from the result if it's a final_answer
+            const result = finalResult.result;
+            if (
+                result &&
+                typeof result === 'object' &&
+                'type' in result &&
+                'content' in result
+            ) {
+                if (result.type === 'final_answer') {
+                    return result.content as TOutput;
+                }
+            }
             return finalResult.result as TOutput;
         } else {
-            debugger;
-
             // ✅ ADD: Log detalhado para debug
             this.logger.debug('❌ THINK→ACT→OBSERVE FAILED', {
                 historyLength: this.executionContext?.history.length || 0,
@@ -4519,26 +4450,11 @@ export abstract class AgentCore<
 
             // ✅ IMPROVED: Return helpful partial result instead of throwing error
             if (lastUsefulResult) {
-                this.logger.info(
-                    '🔄 Returning partial result instead of failing completely',
-                    {
-                        hasUsefulResult: !!lastUsefulResult,
-                        agentName: this.config.agentName,
-                    },
-                );
-
-                // Return the last useful result we found
                 return lastUsefulResult as TOutput;
             }
 
             // ✅ IMPROVED: Generic helpful message instead of technical error
             const friendlyMessage = `Desculpe, tive algumas dificuldades para processar completamente sua solicitação. Tentei ${iterations} vezes, mas encontrei alguns problemas técnicos. Posso tentar de uma forma diferente se você quiser reformular sua pergunta?`;
-
-            this.logger.warn('Returning friendly error message to user', {
-                iterations,
-                agentName: this.config.agentName,
-                originalError: finalResult.error || 'Think→Act→Observe failed',
-            });
 
             return friendlyMessage as TOutput;
         }
@@ -4554,39 +4470,10 @@ export abstract class AgentCore<
             throw new EngineError('AGENT_ERROR', 'Planner not initialized');
         }
 
-        this.logger.debug('Think phase started', {
-            iteration: context.iterations,
-            agentName: this.config.agentName,
-        });
-
-        return this.planner.think(context.input, context);
+        return this.planner.think(context);
     }
 
-    /**
-     * ACT phase - Execute action via appropriate engine
-     */
-    /**
-     * ACT phase - Execute the decided action
-     * ✅ UNIFIED: Uses processAction for consistent execution with all enterprise features
-     */
     private async act(action: AgentAction): Promise<ActionResult> {
-        this.logger.debug('Act phase started', {
-            actionType: action.type,
-            tool: isToolCallAction(action) ? action.toolName : undefined,
-            agentName: this.config.agentName,
-        });
-
-        // ✅ UNIFIED: Use processActionUnified for consistent execution with all enterprise features
-        return await this.processActionUnified(action);
-    }
-
-    /**
-     * ✅ UNIFIED: Process action with all enterprise features
-     * Incorporates all corrections: correlationId, circuit breaker, events, fallback
-     */
-    private async processActionUnified(
-        action: AgentAction,
-    ): Promise<ActionResult> {
         try {
             if (isToolCallAction(action)) {
                 return await this.executeToolAction(action);
@@ -4599,65 +4486,66 @@ export abstract class AgentCore<
                 };
             }
 
+            // ✅ REMOVER: Chamadas que dependem de contexto não disponível
             // NEW: Parallel tools action
-            if (action.type === 'parallel_tools') {
-                const results = await this.processParallelToolsAction(
-                    action as ParallelToolsAction,
-                    this.getCurrentAgentContext(),
-                );
-                return {
-                    type: 'tool_results',
-                    content: results,
-                };
-            }
+            // if (action.type === 'parallel_tools') {
+            //     const results = await this.processParallelToolsAction(
+            //         action as ParallelToolsAction,
+            //         this.getCurrentAgentContext(),
+            //     );
+            //     return {
+            //         type: 'tool_results',
+            //         content: results,
+            //     };
+            // }
 
             // NEW: Sequential tools action
-            if (action.type === 'sequential_tools') {
-                const results = await this.processSequentialToolsAction(
-                    action as SequentialToolsAction,
-                    this.getCurrentAgentContext(),
-                );
-                return {
-                    type: 'tool_results',
-                    content: results,
-                };
-            }
+            // if (action.type === 'sequential_tools') {
+            //     const results = await this.processSequentialToolsAction(
+            //         action as SequentialToolsAction,
+            //         this.getCurrentAgentContext(),
+            //     );
+            //     return {
+            //         type: 'tool_results',
+            //         content: results,
+            //     };
+            // }
 
             // NEW: Conditional tools action
-            if (action.type === 'conditional_tools') {
-                const results = await this.processConditionalToolsAction(
-                    action as ConditionalToolsAction,
-                    this.getCurrentAgentContext(),
-                );
-                return {
-                    type: 'tool_results',
-                    content: results,
-                };
-            }
+            // if (action.type === 'conditional_tools') {
+            //     const results = await this.processConditionalToolsAction(
+            //         action as ConditionalToolsAction,
+            //         this.getCurrentAgentContext(),
+            //     );
+            //     return {
+            //         type: 'tool_results',
+            //         content: results,
+            //     };
+            // }
 
             // NEW: Mixed tools action
-            if (action.type === 'mixed_tools') {
-                const results = await this.processMixedToolsAction(
-                    action as MixedToolsAction,
-                    this.getCurrentAgentContext(),
-                );
-                return {
-                    type: 'tool_results',
-                    content: results,
-                };
-            }
+            // if (action.type === 'mixed_tools') {
+            //     const results = await this.processMixedToolsAction(
+            //         action as MixedToolsAction,
+            //         this.getCurrentAgentContext(),
+            //     );
+            //     return {
+            //         type: 'tool_results',
+            //         content: results,
+            //     };
+            // }
 
             // NEW: Dependency tools action
-            if (action.type === 'dependency_tools') {
-                const results = await this.processDependencyToolsAction(
-                    action as DependencyToolsAction,
-                    this.getCurrentAgentContext(),
-                );
-                return {
-                    type: 'tool_results',
-                    content: results,
-                };
-            }
+            // if (action.type === 'dependency_tools') {
+            //     const results = await this.processDependencyToolsAction(
+            //         action as DependencyToolsAction,
+            //         this.getCurrentAgentContext(),
+            //     );
+            //     return {
+            //         type: 'tool_results',
+            //         content: results,
+            //     };
+            // }
 
             throw new Error(`Unknown action type: ${action.type}`);
         } catch (error) {
@@ -4682,18 +4570,6 @@ export abstract class AgentCore<
         // ✅ FIX: Generate correlationId ONCE to prevent duplication
         const correlationId = this.generateCorrelationId();
 
-        this.logger.info('🤖 [AGENT] Requesting tool execution via kernel', {
-            toolName: action.toolName,
-            hasArgs: !!(
-                action.input &&
-                typeof action.input === 'object' &&
-                action.input !== null &&
-                Object.keys(action.input).length > 0
-            ),
-            agentName: this.config.agentName,
-            correlationId,
-        });
-
         // ✅ EMIT: Action start event with delivery guarantee
         await this.emitActionStartEvent(action, correlationId);
 
@@ -4706,21 +4582,12 @@ export abstract class AgentCore<
                 correlationId,
             );
 
-            console.log('@@@@ EIII', toolResult);
-
             // ✅ EMIT: Tool completion event
             await this.emitToolCompletionEvent(
                 action,
                 toolResult,
                 correlationId,
             );
-
-            this.logger.info('🤖 [AGENT] Tool execution completed via kernel', {
-                toolName: action.toolName,
-                hasResult: !!toolResult,
-                agentName: this.config.agentName,
-                correlationId,
-            });
 
             return {
                 type: 'tool_result',
@@ -5022,7 +4889,8 @@ export abstract class AgentCore<
         result: ActionResult,
         context: PlannerExecutionContext,
     ): Promise<ResultAnalysis> {
-        debugger;
+        // ✅ REMOVER: Debugger statement
+        // debugger;
         if (!this.planner) {
             throw new EngineError('AGENT_ERROR', 'Planner not initialized');
         }
@@ -5043,7 +4911,8 @@ export abstract class AgentCore<
             };
         }
 
-        debugger;
+        // ✅ REMOVER: Debugger statement
+        // debugger;
 
         // ✅ ENHANCED: Use smart tool result parser
         if (isToolResult(result)) {
@@ -5087,12 +4956,14 @@ export abstract class AgentCore<
      * Detect stagnation patterns in execution context
      */
     private detectStagnation(context: PlannerExecutionContext): boolean {
-        if (context.history.length < 3) return false;
+        if (context.history.length < 3) {
+            return false;
+        }
 
         const recent = context.history.slice(-3);
 
         // Check for repeated actions
-        const actionTypes = recent.map((h) => h.action.type);
+        const actionTypes = recent.map((history) => history.action.type);
         const uniqueActions = new Set(actionTypes);
 
         if (uniqueActions.size === 1 && actionTypes[0] !== 'final_answer') {
@@ -5143,14 +5014,6 @@ export abstract class AgentCore<
         input: string,
         agentContext: AgentContext,
     ): Promise<PlannerExecutionContext> {
-        // 🚀 Use ExecutionRuntime to build rich planner context if available
-        if (agentContext.executionRuntime) {
-            return await agentContext.executionRuntime.buildPlannerContext(
-                input,
-                agentContext, // Pass original context directly, no copying needed
-            );
-        }
-
         // Fallback to simple execution context for backward compatibility
         const history: Array<{
             thought: AgentThought;
@@ -5186,11 +5049,7 @@ export abstract class AgentCore<
                     observation,
                 };
 
-                // ✅ Add to in-memory history
                 history.push(historyEntry);
-
-                // ✅ Persist to state service for next execution
-                // Note: This will be handled by the AgentCore after execution
             },
             getCurrentSituation() {
                 const recentHistory = history.slice(-3);
@@ -5209,9 +5068,23 @@ export abstract class AgentCore<
             },
             getFinalResult() {
                 const lastEntry = history[history.length - 1];
+
+                // Check if the last observation has a synthesized response in feedback
+                let finalResult = lastEntry?.result;
+                if (
+                    lastEntry?.observation?.feedback &&
+                    lastEntry.observation.isComplete
+                ) {
+                    // Use the synthesized feedback as the final result
+                    finalResult = {
+                        type: 'final_answer',
+                        content: lastEntry.observation.feedback,
+                    };
+                }
+
                 return {
                     success: lastEntry?.observation.isComplete || false,
-                    result: lastEntry?.result,
+                    result: finalResult,
                     iterations: 0,
                     totalTime: Date.now(),
                     thoughts: history.map((h) => h.thought),

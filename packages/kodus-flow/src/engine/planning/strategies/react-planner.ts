@@ -77,19 +77,10 @@ export class ReActPlanner implements Planner {
         return executionRuntime?.getAvailableToolsForLLM() || [];
     }
 
-    async think(
-        input: string,
-        context: PlannerExecutionContext,
-    ): Promise<AgentThought> {
-        this.logger.info('🔍 ReAct thinking started', {
-            input: input.substring(0, 100),
-            iteration: context.iterations,
-            historyLength: context.history.length,
-        });
-
+    async think(context: PlannerExecutionContext): Promise<AgentThought> {
         try {
             // Try LLM-based ReAct (structured, createPlan, or basic call)
-            return await this.thinkWithLLMReAct(input, context);
+            return await this.thinkWithLLMReAct(context);
         } catch (error) {
             this.logger.error('ReAct thinking failed', error as Error);
 
@@ -120,14 +111,13 @@ export class ReActPlanner implements Planner {
     }
 
     private async thinkWithLLMReAct(
-        input: string,
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        debugger;
-
         // Cache resources once at the beginning
         const thread = context.plannerMetadata.thread!;
         const availableTools = this.getAvailableToolsForContext(thread);
+
+        const input = context.input;
 
         // ✅ SMART: Handle no tools available - but can still think!
         if (availableTools.length === 0) {
@@ -154,8 +144,6 @@ Let me provide what I can based on available information and logical reasoning.`
                 },
             };
         }
-
-        debugger;
 
         const executionRuntime = this.getExecutionRuntime(thread);
         const agentIdentity = executionRuntime?.getAgentIdentity();
@@ -194,7 +182,6 @@ Let me provide what I can based on available information and logical reasoning.`
 - Expertise: ${agentIdentity?.expertise?.join(', ') || 'General knowledge'}`
             : '';
 
-        debugger;
         // ✅ Use createPlan with enhanced context engineering
         if (!this.llmAdapter.createPlan) {
             throw new Error(
@@ -225,7 +212,20 @@ Let me provide what I can based on available information and logical reasoning.`
             userContext,
             memoryContext, // ✅ ADD MEMORY CONTEXT
             // ✅ ENHANCED: Added parallel execution and efficiency guidance
-            sequentialInstructions: `
+            sequentialInstructions: this.getSequentialInstructions(),
+            systemPrompt: this.getSystemPrompt(identityContext),
+            userPromptTemplate: this.getUserPromptTemplate(
+                input,
+                toolsContext,
+                memoryContext || '',
+                typeof userContext === 'string'
+                    ? userContext
+                    : JSON.stringify(userContext || {}),
+                this.getSequentialInstructions(),
+                agentScratchpad,
+            ),
+            // Legacy sequential instructions (will be replaced by prompts above)
+            legacySequentialInstructions: `
 You are an intelligent ReAct agent. Follow this strategic process:
 
 1. ANALYZE the current situation:
@@ -309,8 +309,6 @@ FINAL VALIDATION before each action:
      * ✅ Build enhanced tools context for ReAct format with efficiency hints
      */
     private buildToolsContextForReAct(tools: ToolMetadataForLLM[]): string {
-        debugger;
-
         if (tools.length === 0) return 'No tools available.';
 
         // ✅ ENHANCED: Add efficiency analysis and grouping
@@ -640,8 +638,6 @@ FINAL VALIDATION before each action:
         _input: string,
         _context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        debugger;
-
         const availableTools = this.getAvailableToolsForContext(thread);
         const availableToolNames = availableTools.map((tool) => tool.name);
 
@@ -953,7 +949,6 @@ FINAL VALIDATION before each action:
         result: ActionResult,
         context: PlannerExecutionContext,
     ): Promise<ResultAnalysis> {
-        debugger;
         this.logger.debug('Analyzing action result', {
             resultType: result.type,
             hasError: isErrorResult(result),
@@ -1237,8 +1232,6 @@ FINAL VALIDATION before each action:
         executionRuntime: ExecutionRuntime | null,
         _currentInput: string,
     ): Promise<string> {
-        debugger;
-
         if (!executionRuntime) {
             return '';
         }
@@ -1284,5 +1277,113 @@ FINAL VALIDATION before each action:
             });
             return '';
         }
+    }
+
+    /**
+     * Get system prompt for ReAct planner
+     */
+    private getSystemPrompt(identityContext: string): string {
+        return `You are an expert AI assistant that uses ReAct (Reasoning + Acting) methodology to solve problems step by step.${identityContext}
+
+Your approach:
+1. UNDERSTAND: Analyze what is being asked carefully
+2. ASSESS: Determine if you need tools or can answer directly
+3. PLAN: Think step by step about what you need to do
+4. EXECUTE: Use tools when you need external information or actions
+5. REASON: Provide clear reasoning for your decisions
+6. DELIVER: Give accurate, helpful answers
+
+Remember: Always think before you act, and explain your reasoning clearly.`;
+    }
+
+    /**
+     * Get user prompt template for ReAct planner
+     */
+    private getUserPromptTemplate(
+        input: string,
+        toolsContext: string,
+        memoryContext: string,
+        userContext: string,
+        sequentialInstructions: string,
+        agentScratchpad: string,
+    ): string {
+        return `You solve problems using the ReAct method: Reason → Act → Observe → Answer.
+
+RESOURCES:
+Available tools (use ONLY these):
+${toolsContext}
+
+${memoryContext}
+
+${userContext}
+
+CONSTRAINTS:
+- Use only the listed tools, never make up tools
+- JSON outputs must be valid and parseable
+- If you lack information, ask the user for clarification
+- Maximum iterations to prevent loops
+
+${sequentialInstructions}
+
+REQUIRED FORMAT:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, only one name of the available tools above, just the name, exactly as it's written
+Action Input: the input to the action, just a simple JSON object, enclosed in curly braces, using " to wrap keys and values
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin!
+
+Question: ${input}
+${agentScratchpad}`;
+    }
+
+    /**
+     * Get sequential instructions for ReAct
+     */
+    private getSequentialInstructions(): string {
+        return `
+You are an intelligent ReAct agent. Follow this strategic process:
+
+1. ANALYZE the current situation:
+   - Review the original question/goal
+   - Check what actions have been taken so far
+   - Analyze the results from previous actions
+   - Determine if the goal has been FULLY achieved
+
+2. 🚨 CRITICAL EFFICIENCY CHECK - BEFORE ANY ACTION:
+   Ask yourself:
+   - Am I about to iterate through multiple items individually?
+   - Is there a tool that can get ALL the data I need in ONE call?
+   - Can I achieve the same result with fewer, broader operations?
+
+   EFFICIENCY PATTERNS TO RECOGNIZE:
+   - Tools with "all", "list", "bulk", "batch" in the name often handle multiple items
+   - Tools with "summary", "overview", "aggregate" provide comprehensive data
+   - Tools that mention "multiple", "collection", or "set" in their description
+   - If you need data about N items, look for a tool that returns N items at once
+
+3. TOOL SELECTION STRATEGY:
+   Evaluate tools in this order:
+   a) Comprehensive tools that return complete datasets
+   b) Aggregate or summary tools that provide overview information
+   c) Batch operations that can process multiple items
+   d) Individual item tools ONLY when you need ONE specific thing
+
+4. ITERATION PREVENTION:
+   - If you find yourself thinking "for each item", "loop through", or "one by one" - STOP
+   - Re-examine available tools for batch alternatives
+
+5. IMPLEMENTATION STRATEGY:
+   - Broader queries that might return extra data are often more efficient
+   - Tools that aggregate or summarize can eliminate the need for detail queries
+   - Always optimize for fewer total operations
+
+FINAL VALIDATION before each action:
+"Is this the most efficient way to get the information I need, or am I about to make multiple calls when one would suffice?"`;
     }
 }

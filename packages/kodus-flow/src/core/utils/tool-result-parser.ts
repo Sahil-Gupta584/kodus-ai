@@ -404,6 +404,22 @@ function parseSimpleObject(obj: Record<string, unknown>): {
 function extractTextFromData(data: Record<string, unknown>): string {
     const parts: string[] = [];
 
+    // Handle JSON-RPC error structure
+    if (
+        data.jsonrpc === '2.0' &&
+        data.error &&
+        typeof data.error === 'object'
+    ) {
+        const error = data.error as Record<string, unknown>;
+        if (error.message && typeof error.message === 'string') {
+            parts.push(`Error: ${error.message}`);
+        }
+        if (error.code && typeof error.code === 'number') {
+            parts.push(`Code: ${error.code}`);
+        }
+        return parts.join(' - ');
+    }
+
     // Look for common meaningful fields
     const meaningfulFields = [
         'summary',
@@ -445,6 +461,11 @@ function extractTextFromData(data: Record<string, unknown>): string {
 function detectError(text: string, data?: Record<string, unknown>): boolean {
     // Check explicit error flags
     if (data?.isError === true || data?.error || data?.success === false) {
+        return true;
+    }
+
+    // Check for JSON-RPC error structure
+    if (data?.jsonrpc === '2.0' && data?.error) {
         return true;
     }
 

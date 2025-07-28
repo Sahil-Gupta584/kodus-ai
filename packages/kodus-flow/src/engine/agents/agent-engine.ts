@@ -15,6 +15,9 @@ import { EngineError } from '../../core/errors.js';
 // import { IdGenerator } from '../../utils/id-generator.js';
 import type { ToolEngine } from '../tools/tool-engine.js';
 
+// ✅ ADICIONAR: MemoryManager para Engine Layer
+import type { MemoryManager } from '../../core/memory/memory-manager.js';
+
 // Types do sistema
 import type {
     AgentDefinition,
@@ -47,16 +50,25 @@ export class AgentEngine<
 > extends AgentCore<TInput, TOutput, TContent> {
     protected readonly engineLogger = createLogger('agent-engine');
 
+    // ✅ ADICIONAR: MemoryManager para Engine Layer
+    private memoryManager?: MemoryManager;
+
     constructor(
         definition: AgentDefinition<TInput, TOutput, TContent>,
         toolEngine?: ToolEngine,
-        config?: AgentCoreConfig,
+        config?: AgentCoreConfig & {
+            memoryManager?: MemoryManager; // ✅ ADICIONAR: MemoryManager opcional
+        },
     ) {
         super(definition, toolEngine, config);
+
+        // ✅ ADICIONAR: Inicializar MemoryManager se fornecido
+        this.memoryManager = config?.memoryManager;
 
         this.engineLogger.info('AgentEngine created', {
             agentName: definition.name,
             mode: 'direct-execution',
+            hasMemoryManager: !!this.memoryManager,
         });
 
         // Initialize the core components

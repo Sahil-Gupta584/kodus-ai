@@ -40,7 +40,7 @@ import type {
     EventPayloads,
     AnyEvent,
 } from '../core/types/events.js';
-import { createPersistor } from './persistor.js';
+import { createPersistorFromConfig } from '../persistor/factory.js';
 import type { Snapshot } from './snapshot.js';
 import { stableHash } from './snapshot.js';
 import type { WorkflowContext } from '../core/types/workflow-types.js';
@@ -250,6 +250,9 @@ export class ExecutionKernel {
     private quotaTimers = new Set<NodeJS.Timeout>();
     private readonly maxQuotaTimers = 100;
 
+    // ✅ ADICIONAR: StateService para Kernel Layer
+    private stateService: ContextStateService;
+
     // Circuit breakers for critical operations
     // private circuitBreakerManager: CircuitBreakerManager;
 
@@ -278,7 +281,28 @@ export class ExecutionKernel {
     constructor(config: KernelConfig) {
         this.config = config;
         this.logger = createLogger(`kernel:${config.tenantId}`);
-        this.persistor = config.persistor || createPersistor('memory');
+        this.persistor =
+            config.persistor ||
+            createPersistorFromConfig({
+                type: 'memory',
+                maxSnapshots: 1000,
+                enableCompression: true,
+                enableDeltaCompression: true,
+                cleanupInterval: 300000,
+                maxMemoryUsage: 100 * 1024 * 1024,
+            });
+
+        // ✅ ADICIONAR: Inicializar StateService (Kernel Layer)
+        this.stateService = new ContextStateService(
+            {
+                tenantId: config.tenantId,
+                jobId: config.jobId || IdGenerator.executionId(),
+            },
+            {
+                maxNamespaceSize: 1000,
+                maxNamespaces: 100,
+            },
+        );
 
         // Initialize context factory
         this.contextFactory =
@@ -306,6 +330,7 @@ export class ExecutionKernel {
             id: this.state.id,
             quotas: config.quotas,
             performance: config.performance,
+            hasStateService: !!this.stateService,
         });
     }
 

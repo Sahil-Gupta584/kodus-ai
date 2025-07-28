@@ -378,6 +378,31 @@ export class MemoryManager {
     }
 
     /**
+     * Get recent memories ordered by timestamp
+     * Required by plan-execute-planner for memory context
+     */
+    async getRecentMemories(limit: number = 5): Promise<MemoryItem[]> {
+        await this.ensureInitialized();
+
+        try {
+            // Query recent memories with limit
+            const results = await this.query({
+                limit,
+                // Get all items without specific filters to get most recent across all scopes
+            });
+
+            // Sort by timestamp descending (most recent first)
+            return results.sort((a, b) => b.timestamp - a.timestamp);
+        } catch (error) {
+            logger.warn('Failed to get recent memories', {
+                error: error instanceof Error ? error.message : 'Unknown error',
+                limit,
+            });
+            return [];
+        }
+    }
+
+    /**
      * Get memory statistics
      */
     async getStats(): Promise<{

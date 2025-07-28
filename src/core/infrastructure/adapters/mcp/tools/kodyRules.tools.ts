@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PinoLoggerService } from '../../services/logger/pino.service';
-import { createToolResponse, wrapToolHandler } from '../utils';
+import { wrapToolHandler } from '../utils';
 import {
     IKodyRulesService,
     KODY_RULES_SERVICE_TOKEN,
@@ -42,14 +42,19 @@ export class KodyRulesTools {
 
     getKodyRules() {
         const inputSchema = z.object({
-            organizationId: z.string().describe('Organization UUID - unique identifier for the organization in the system to get all organization-level rules'),
+            organizationId: z
+                .string()
+                .describe(
+                    'Organization UUID - unique identifier for the organization in the system to get all organization-level rules',
+                ),
         });
 
         type InputType = z.infer<typeof inputSchema>;
 
         return {
             name: 'get_kody_rules',
-            description: 'Get all active Kody Rules at organization level. Use this to see organization-wide coding standards, global rules that apply across all repositories, or when you need a complete overview of all active rules. Returns only ACTIVE status rules.',
+            description:
+                'Get all active Kody Rules at organization level. Use this to see organization-wide coding standards, global rules that apply across all repositories, or when you need a complete overview of all active rules. Returns only ACTIVE status rules.',
             inputSchema,
             execute: wrapToolHandler(async (args: InputType) => {
                 const params = {
@@ -64,13 +69,12 @@ export class KodyRulesTools {
 
                 const allRules = entity.rules || [];
 
-                const rules = allRules.filter(
+                const rules = allRules?.filter(
                     (rule) => rule.status === KodyRulesStatus.ACTIVE,
                 );
 
                 return {
-                    success: true,
-                    count: rules.length,
+                    count: rules?.length,
                     data: rules,
                 };
             }),
@@ -79,15 +83,24 @@ export class KodyRulesTools {
 
     getKodyRulesRepository() {
         const inputSchema = z.object({
-            organizationId: z.string().describe('Organization UUID - unique identifier for the organization in the system'),
-            repositoryId: z.string().describe('Repository unique identifier to get rules specific to this repository only (not organization-wide rules)'),
+            organizationId: z
+                .string()
+                .describe(
+                    'Organization UUID - unique identifier for the organization in the system',
+                ),
+            repositoryId: z
+                .string()
+                .describe(
+                    'Repository unique identifier to get rules specific to this repository only (not organization-wide rules)',
+                ),
         });
 
         type InputType = z.infer<typeof inputSchema>;
 
         return {
             name: 'get_kody_rules_repository',
-            description: 'Get active Kody Rules specific to a particular repository. Use this to see repository-specific coding standards, rules that only apply to one codebase, or when analyzing rules for a specific project. More focused than get_kody_rules.',
+            description:
+                'Get active Kody Rules specific to a particular repository. Use this to see repository-specific coding standards, rules that only apply to one codebase, or when analyzing rules for a specific project. More focused than get_kody_rules.',
             inputSchema,
             execute: wrapToolHandler(async (args: InputType) => {
                 const params = {
@@ -103,7 +116,7 @@ export class KodyRulesTools {
 
                 const allRules = entity.rules || [];
 
-                const repositoryRules = allRules.filter(
+                const repositoryRules = allRules?.filter(
                     (rule) =>
                         rule.repositoryId &&
                         rule.repositoryId === params.repositoryId &&
@@ -111,8 +124,7 @@ export class KodyRulesTools {
                 );
 
                 return {
-                    success: true,
-                    count: repositoryRules.length,
+                    count: repositoryRules?.length,
                     data: repositoryRules,
                 };
             }),
@@ -121,30 +133,80 @@ export class KodyRulesTools {
 
     createKodyRule() {
         const inputSchema = z.object({
-            organizationId: z.string().describe('Organization UUID - unique identifier for the organization in the system where the rule will be created'),
-            kodyRule: z.object({
-                title: z.string().describe('Descriptive title for the rule (e.g., "Use arrow functions for components", "Avoid console.log in production")'),
-                rule: z.string().describe('Detailed description of the coding rule/standard to enforce (e.g., "All React components should use arrow function syntax")'),
-                severity: z.nativeEnum(KodyRuleSeverity).describe('Rule severity level: determines how violations are handled (ERROR, WARNING, INFO)'),
-                scope: z.nativeEnum(KodyRulesScope).describe('Rule scope: PULL_REQUEST (analyzes entire PR context), FILE (analyzes individual files one by one)'),
-                repositoryId: z.string().optional().describe('Repository unique identifier - can be used with both scopes to limit rule to specific repository'),
-                path: z.string().optional().describe('File path pattern - used with FILE scope to target specific files (e.g., "src/components/*.tsx")'),
-                examples: z
-                    .array(
-                        z.object({
-                            snippet: z.string().describe('Code example snippet demonstrating the rule'),
-                            isCorrect: z.boolean().describe('Whether this snippet follows the rule (true) or violates it (false)'),
-                        }).describe('Code example showing correct or incorrect usage of the rule'),
-                    )
-                    .optional().describe('Array of code examples to help understand and apply the rule'),
-            }).describe('Complete rule definition with title, description, scope, and examples'),
+            organizationId: z
+                .string()
+                .describe(
+                    'Organization UUID - unique identifier for the organization in the system where the rule will be created',
+                ),
+            kodyRule: z
+                .object({
+                    title: z
+                        .string()
+                        .describe(
+                            'Descriptive title for the rule (e.g., "Use arrow functions for components", "Avoid console.log in production")',
+                        ),
+                    rule: z
+                        .string()
+                        .describe(
+                            'Detailed description of the coding rule/standard to enforce (e.g., "All React components should use arrow function syntax")',
+                        ),
+                    severity: z
+                        .nativeEnum(KodyRuleSeverity)
+                        .describe(
+                            'Rule severity level: determines how violations are handled (ERROR, WARNING, INFO)',
+                        ),
+                    scope: z
+                        .nativeEnum(KodyRulesScope)
+                        .describe(
+                            'Rule scope: PULL_REQUEST (analyzes entire PR context), FILE (analyzes individual files one by one)',
+                        ),
+                    repositoryId: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Repository unique identifier - can be used with both scopes to limit rule to specific repository',
+                        ),
+                    path: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'File path pattern - used with FILE scope to target specific files (e.g., "src/components/*.tsx")',
+                        ),
+                    examples: z
+                        .array(
+                            z
+                                .object({
+                                    snippet: z
+                                        .string()
+                                        .describe(
+                                            'Code example snippet demonstrating the rule',
+                                        ),
+                                    isCorrect: z
+                                        .boolean()
+                                        .describe(
+                                            'Whether this snippet follows the rule (true) or violates it (false)',
+                                        ),
+                                })
+                                .describe(
+                                    'Code example showing correct or incorrect usage of the rule',
+                                ),
+                        )
+                        .optional()
+                        .describe(
+                            'Array of code examples to help understand and apply the rule',
+                        ),
+                })
+                .describe(
+                    'Complete rule definition with title, description, scope, and examples',
+                ),
         });
 
         type InputType = z.infer<typeof inputSchema>;
 
         return {
             name: 'create_kody_rule',
-            description: 'Create a new Kody Rule with custom scope and severity. PULL_REQUEST scope: analyzes entire PR context for PR-level rules. FILE scope: analyzes individual files one by one for file-level rules. Rule starts in PENDING status.',
+            description:
+                'Create a new Kody Rule with custom scope and severity. PULL_REQUEST scope: analyzes entire PR context for PR-level rules. FILE scope: analyzes individual files one by one for file-level rules. Rule starts in PENDING status.',
             inputSchema,
             execute: wrapToolHandler(async (args: InputType) => {
                 const params: {
@@ -177,10 +239,9 @@ export class KodyRulesTools {
                     params.kodyRule,
                 );
 
-                return createToolResponse({
-                    success: true,
+                return {
                     data: result,
-                });
+                };
             }),
         };
     }

@@ -32,7 +32,6 @@
         "seed:prod": "node dist/config/database/typeorm/seed/seed.js",
         "script": "ts-node -r tsconfig-paths/register src/config/scripts/main.script.ts",
         "docker:build": "docker compose -f docker-compose.dev.yml build",
-        "docker:build:fast": "DOCKER_BUILDKIT=1 docker compose -f docker-compose.dev.yml build --no-cache",
         "docker:up": "docker compose -f docker-compose.dev.yml up",
         "docker:down": "docker compose -f docker-compose.dev.yml down",
         "docker:start": "yarn docker:down && yarn docker:up",

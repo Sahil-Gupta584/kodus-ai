@@ -140,8 +140,6 @@ export interface LangChainLLM {
 export interface PlanningTechnique {
     name: string;
     description: string;
-    systemPrompt: string;
-    userPromptTemplate: string;
     responseParser: (response: string) => PlanningResult;
     options?: LangChainOptions;
 }
@@ -169,6 +167,21 @@ export interface PlanningResult {
     reasoning: string;
     complexity: 'simple' | 'medium' | 'complex';
     estimatedTime?: number;
+}
+
+// Interface for the new DAG format from LLM
+interface LLMPlanStep {
+    id: string;
+    description: string;
+    tool?: string;
+    arguments?: Record<string, unknown>;
+    argsTemplate?: Record<string, unknown>; // New format
+    dependencies?: string[];
+    dependsOn?: string[]; // New format
+    type?: 'analysis' | 'action' | 'decision' | 'observation';
+    parallel?: boolean;
+    expectedOutcome?: string;
+    fallback?: string;
 }
 
 export interface RoutingResult {
@@ -230,6 +243,8 @@ export class DirectLLMAdapter {
             sequentialInstructions?: string; // Custom instructions for sequential planning
             planningInstructions?: string; // Detailed planning instructions from planner
             planningHistory?: string; // History of previous planning attempts
+            systemPrompt?: string; // System prompt provided by planner
+            userPromptTemplate?: string; // User prompt template provided by planner
         },
     ): Promise<PlanningResult> {
         // ✅ Standard technique-based planning
@@ -241,10 +256,13 @@ export class DirectLLMAdapter {
             );
         }
 
-        // Format both system and user prompts
-        const formattedSystemPrompt = this.formatTemplate(
-            planningTechnique.systemPrompt,
-            {
+        // Use prompts from planner if provided, otherwise fallback to technique prompts
+        let systemPrompt: string;
+        let userPrompt: string;
+
+        if (context?.systemPrompt && context?.userPromptTemplate) {
+            // Planner provides prompts - use them directly
+            systemPrompt = this.formatTemplate(context.systemPrompt, {
                 identityContext: this.formatIdentityContext(
                     context?.identityContext,
                 ),
@@ -254,21 +272,26 @@ export class DirectLLMAdapter {
                         ? context.memoryContext
                         : '',
                 ),
-            },
-        );
+            });
+            userPrompt = this.formatUserPrompt(
+                context.userPromptTemplate,
+                goal,
+                context,
+            );
+        } else {
+            // Fallback: create simple prompts when planner doesn't provide them
+            systemPrompt = `You are an AI assistant using the ${technique} planning technique.`;
+            userPrompt = this.formatUserPrompt('Goal: {goal}', goal, context);
+        }
 
         const messages: LangChainMessage[] = [
             {
                 role: 'system',
-                content: formattedSystemPrompt,
+                content: systemPrompt,
             },
             {
                 role: 'user',
-                content: this.formatUserPrompt(
-                    planningTechnique.userPromptTemplate,
-                    goal,
-                    context,
-                ),
+                content: userPrompt,
             },
         ];
 
@@ -382,275 +405,38 @@ export class DirectLLMAdapter {
     }
 
     // ──────────────────────────────────────────────────────────────────────────────
-    // 🧠 PLANNING TECHNIQUES IMPLEMENTATION
+    // 🧠 PLANNING TECHNIQUES INITIALIZATION
     // ──────────────────────────────────────────────────────────────────────────────
 
     private initializePlanningTechniques() {
-        // Chain of Thought (CoT)
-        this.planningTechniques.set('cot', {
-            name: 'Chain of Thought',
-            description: 'Step-by-step reasoning with explicit thought process',
-            systemPrompt: `You are an expert planning assistant that uses Chain of Thought reasoning.
-Your job is to break down complex goals into logical, sequential steps.
-
-Instructions:
-1. Think through the problem step by step
-2. Identify the sequence of actions needed
-3. Consider dependencies between steps
-4. Provide clear reasoning for each step
-
-Always respond in JSON format with the following structure:
-{
-  "strategy": "cot",
-  "goal": "original goal",
-  "steps": [
-    {
-      "id": "step_1",
-      "description": "Step description",
-      "tool": "tool_name",
-      "arguments": {},
-      "dependencies": [],
-      "type": "analysis|action|decision|observation"
-    }
-  ],
-  "reasoning": "your step-by-step reasoning",
-  "complexity": "simple|medium|complex"
-}`,
-            userPromptTemplate: `Goal: {goal}
-
-Available tools: {availableTools}
-Context: {context}
-
-Please create a step-by-step plan using Chain of Thought reasoning.`,
-            responseParser: this.parseStandardPlanningResponse.bind(this),
-            options: DEFAULT_LLM_SETTINGS,
-        });
-
-        // Tree of Thoughts (ToT)
-        this.planningTechniques.set('tot', {
-            name: 'Tree of Thoughts',
+        // Plan-Execute technique
+        this.planningTechniques.set('plan-execute', {
+            name: 'Plan-Execute',
             description:
-                'Explores multiple reasoning paths and selects the best approach',
-            systemPrompt: `You are an expert planning assistant that uses Tree of Thoughts reasoning.
-Your job is to explore multiple possible approaches and select the best one.
-
-Instructions:
-1. Generate multiple possible approaches (branches)
-2. Evaluate each approach's merits
-3. Select the best approach based on criteria
-4. Provide detailed reasoning for your selection
-
-Always respond in JSON format with the following structure:
-{
-  "strategy": "tot",
-  "goal": "original goal",
-  "steps": [
-    {
-      "id": "step_1",
-      "description": "Step description",
-      "tool": "tool_name",
-      "arguments": {},
-      "dependencies": [],
-      "type": "analysis|action|decision|observation"
-    }
-  ],
-  "reasoning": "your reasoning including alternative approaches considered",
-  "complexity": "simple|medium|complex"
-}`,
-            userPromptTemplate: `Goal: {goal}
-
-Available tools: {availableTools}
-Context: {context}
-
-Please create a plan using Tree of Thoughts reasoning. Consider multiple approaches and select the best one.`,
+                'Creates a comprehensive plan and then executes it step by step',
             responseParser: this.parseStandardPlanningResponse.bind(this),
-            options: DEFAULT_LLM_SETTINGS,
+            options: {
+                ...DEFAULT_LLM_SETTINGS,
+                maxTokens: TOKEN_PRESETS.REACT_COMPLEX,
+            },
         });
 
-        // ReAct (Reasoning + Acting)
+        // ReAct technique
         this.planningTechniques.set('react', {
             name: 'ReAct',
             description:
                 'Combines reasoning with acting in an iterative process',
-            systemPrompt: `You are an expert AI assistant that uses ReAct (Reasoning + Acting) methodology to solve problems step by step.{identityContext}
-
-Your approach:
-1. UNDERSTAND: Analyze what is being asked carefully
-2. ASSESS: Determine if you need tools or can answer directly
-3. PLAN: Think step by step about what you need to do
-4. EXECUTE: Use tools when you need external information or actions
-5. REASON: Provide clear reasoning for your decisions
-6. DELIVER: Give accurate, helpful answers
-
-Remember: Always think before you act, and explain your reasoning clearly.`,
-            userPromptTemplate: `You solve problems using the ReAct method: Reason → Act → Observe → Answer.
-
-RESOURCES:
-Available tools (use ONLY these):
-{tools}
-
-{memoryContext}
-
-{userContext}
-
-CONSTRAINTS:
-- Use only the listed tools, never make up tools
-- JSON outputs must be valid and parseable
-- If you lack information, ask the user for clarification
-- Maximum iterations to prevent loops
-
-{sequentialInstructions}
-
-REQUIRED FORMAT:
-
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, only one name of the available tools above, just the name, exactly as it's written
-Action Input: the input to the action, just a simple JSON object, enclosed in curly braces, using " to wrap keys and values
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question
-
-Begin!
-
-Question: {goal}
-{agentScratchpad}`,
             responseParser: this.parseReActResponse.bind(this),
             options: {
                 ...DEFAULT_LLM_SETTINGS,
-                maxTokens: TOKEN_PRESETS.REACT_COMPLEX, // ✅ Increased for complex tool metadata
+                maxTokens: TOKEN_PRESETS.REACT_COMPLEX,
             },
         });
 
-        // Plan-and-Execute
-        this.planningTechniques.set('plan-execute', {
-            name: 'Plan-and-Execute',
-            description:
-                'Creates detailed plan first, then executes step by step',
-            systemPrompt: `You are an expert planning assistant that uses Plan-and-Execute methodology.
-Your job is to create detailed, step-by-step execution plans that can be followed sequentially.
-
-CORE PRINCIPLES:
-1. ANALYZE: Understand the goal and requirements thoroughly
-2. BREAK DOWN: Decompose into specific, actionable steps
-3. SEQUENCE: Order steps logically with clear dependencies
-4. SPECIFY: Include tool usage, parameters, and success criteria
-5. VALIDATE: Ensure plan is complete and executable
-6. ADAPT: Plan for error handling and alternative approaches
-
-🚨 CRITICAL PARAMETER REQUIREMENTS:
-- ALWAYS provide ALL required parameters for tools
-- Required parameters are marked with [REQUIRED] in tool descriptions
-- If a tool requires parameters you don't have, either:
-  a) Ask the user for the missing information
-  b) Use a different tool that doesn't require those parameters
-  c) Skip the step and explain why
-- NEVER call a tool without providing its required parameters
-- Always use concrete values, not placeholders
-
-PLANNING GUIDELINES:
-- Each step should be atomic and testable
-- Include clear success criteria for each step
-- Specify tool parameters with concrete values
-- Plan for potential failures and alternatives
-- Consider resource constraints and time estimates
-- Ensure steps build upon each other logically
-
-ERROR HANDLING:
-- Include fallback steps for critical operations
-- Plan for tool unavailability
-- Consider partial success scenarios
-- Include validation steps
-
-Always respond in VALID JSON format with the following structure:
-{
-  "strategy": "plan-execute",
-  "goal": "original goal",
-  "steps": [
-    {
-      "id": "step_1",
-      "description": "Detailed step description with success criteria",
-      "tool": "tool_name",
-      "arguments": {"param1": "value1", "param2": "value2"},
-      "dependencies": [],
-      "type": "analysis|action|decision|observation",
-      "expectedOutcome": "What success looks like",
-      "fallback": "What to do if this step fails"
-    }
-  ],
-  "reasoning": "your detailed planning reasoning",
-  "complexity": "simple|medium|complex",
-  "estimatedTime": "time estimate in minutes"
-}
-
-🚨 CRITICAL:
-- NO comments in JSON (no // or /* */)
-- NO trailing commas
-- Use concrete values, not placeholders like "REPOSITORY_ID_AQUI"
-- All values must be valid JSON (strings, numbers, booleans, null, objects, arrays)`,
-            userPromptTemplate: `🎯 GOAL: {goal}
-
-{planningInstructions}
-
-📋 AVAILABLE TOOLS:
-{toolsContext}
-
-🧠 MEMORY & CONTEXT:
-{memoryContext}
-
-{identityContext}
-
-{userContext}
-
-📈 PLANNING HISTORY:
-{planningHistory}
-
-🔥 CREATE YOUR EXECUTION PLAN:
-Focus on creating a plan with concrete step references. Use the {{step-X.result}} pattern when steps depend on previous results. The system will automatically handle parallel execution for array results.
-
-Remember: Be specific, use real values, and leverage the template resolution system for step dependencies.`,
-            responseParser: this.parseStandardPlanningResponse.bind(this),
-            options: DEFAULT_LLM_SETTINGS,
-        });
-
-        // OODA Loop (Observe, Orient, Decide, Act)
-        this.planningTechniques.set('ooda', {
-            name: 'OODA Loop',
-            description: 'Military-inspired decision making process',
-            systemPrompt: `You are an expert planning assistant that uses OODA Loop methodology.
-Your job is to create plans following the Observe, Orient, Decide, Act cycle.
-
-Instructions:
-1. OBSERVE: Gather information about the current situation
-2. ORIENT: Analyze and synthesize the information
-3. DECIDE: Choose the best course of action
-4. ACT: Execute the decision
-5. Loop back to OBSERVE for next iteration
-
-Always respond in JSON format with the following structure:
-{
-  "strategy": "ooda",
-  "goal": "original goal",
-  "steps": [
-    {
-      "id": "step_1",
-      "description": "Step description",
-      "tool": "tool_name",
-      "arguments": {},
-      "dependencies": [],
-      "type": "analysis|action|decision|observation"
-    }
-  ],
-  "reasoning": "your reasoning following OODA methodology",
-  "complexity": "simple|medium|complex"
-}`,
-            userPromptTemplate: `Goal: {goal}
-
-Available tools: {availableTools}
-Context: {context}
-
-Please create a plan using OODA Loop methodology. Follow the Observe, Orient, Decide, Act cycle.`,
+        // Chain of Thought technique
+        this.planningTechniques.set('cot', {
+            name: 'Chain of Thought',
+            description: 'Sequential reasoning approach',
             responseParser: this.parseStandardPlanningResponse.bind(this),
             options: DEFAULT_LLM_SETTINGS,
         });
@@ -774,6 +560,8 @@ Please analyze semantic similarity and select the most appropriate tool.`,
             planningInstructions: String(context?.planningInstructions || ''),
             planningHistory: String(context?.planningHistory || ''),
             toolsContext: String(context?.toolsContext || ''),
+            iteration: String(context?.iteration || '0'),
+            maxIterations: String(context?.maxIterations || '15'),
         });
     }
 
@@ -1128,10 +916,28 @@ ${memoryContext}
                 throw new Error('Parsed response is not an object');
             }
 
+            // Handle both old format (steps) and new format (plan)
+            const steps: LLMPlanStep[] = parsed.steps || parsed.plan || [];
+
+            // Convert new format to old format for backward compatibility
+            const convertedSteps = steps.map(
+                (step: LLMPlanStep, index: number) => ({
+                    id: step.id || `step_${index + 1}`,
+                    description: step.description || '',
+                    tool: step.tool,
+                    arguments: step.arguments || step.argsTemplate || {},
+                    dependencies: step.dependencies || step.dependsOn || [],
+                    type: step.type || 'action',
+                    parallel: step.parallel || false,
+                    expectedOutcome: step.expectedOutcome,
+                    fallback: step.fallback,
+                }),
+            );
+
             return {
-                strategy: parsed.strategy || 'unknown',
+                strategy: parsed.strategy || 'plan-execute',
                 goal: parsed.goal || '',
-                steps: parsed.steps || [],
+                steps: convertedSteps,
                 reasoning: parsed.reasoning || '',
                 complexity: parsed.complexity || 'medium',
             };

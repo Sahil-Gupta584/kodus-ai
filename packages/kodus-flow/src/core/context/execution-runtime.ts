@@ -14,7 +14,7 @@ import type { PlannerExecutionContext } from '../../engine/planning/planner-fact
 import type { MemoryManager } from '../memory/memory-manager.js';
 import type { SystemContext } from '../types/base-types.js';
 import { ContextStateService } from './services/state-service.js';
-import { sessionService } from './services/session-service.js';
+import { SessionService } from './services/session-service.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import type {
     ExecutionRuntime as IExecutionRuntime,
@@ -29,10 +29,9 @@ import type {
     FailurePattern,
     ExecutionStep,
     ExecutionResult,
-    HealthStatus,
-    ServiceHealth,
     ToolExecutionContext,
     ContextValueUpdate,
+    HealthStatus,
 } from './execution-runtime-types.js';
 import type { ExecutionHistoryEntry } from '../../engine/planning/planner-factory.js';
 import { ToolMetadataForLLM } from '../types/tool-types.js';
@@ -55,7 +54,24 @@ export class ExecutionRuntime implements IExecutionRuntime {
     >();
     private currentContext?: AgentContext;
 
-    constructor(private readonly memoryManager: MemoryManager) {}
+    // ✅ ADICIONAR: Componentes da Engine Layer
+    private readonly sessionService: SessionService;
+    private readonly memoryManager: MemoryManager;
+    private currentStateService?: ContextStateService;
+
+    constructor(memoryManager: MemoryManager) {
+        this.memoryManager = memoryManager;
+
+        // ✅ Inicializar SessionService (Engine Layer)
+        this.sessionService = new SessionService({
+            maxSessions: 1000,
+            sessionTimeout: 30 * 60 * 1000, // 30 min
+            enableAutoCleanup: true,
+        });
+    }
+    health(): Promise<HealthStatus> {
+        throw new Error('Method not implemented.');
+    }
     getSuccessPatterns(_component: string): Promise<Pattern[]> {
         throw new Error('Method not implemented.');
     }
@@ -80,21 +96,6 @@ export class ExecutionRuntime implements IExecutionRuntime {
         input: unknown,
         config: AgentExecutionOptions,
     ): Promise<AgentContext> {
-        // ✅ ADD: Log detalhado para debug
-        console.log('🔧 EXECUTION RUNTIME - INITIALIZE AGENT CONTEXT START', {
-            agentName: agent.name,
-            agentIdentity: !!agent.identity,
-            agentConfig: agent.config,
-            inputType: typeof input,
-            hasInput: !!input,
-            configKeys: Object.keys(config),
-            trace: {
-                source: 'execution-runtime',
-                step: 'initialize-agent-context-start',
-                timestamp: Date.now(),
-            },
-        });
-
         const {
             agentName,
             tenantId,
@@ -107,22 +108,6 @@ export class ExecutionRuntime implements IExecutionRuntime {
         // Agent configuration from AgentDefinition.config
         const enableSession = agent?.config?.enableSession ?? true;
         const enableMemory = agent?.config?.enableMemory ?? true;
-
-        // ✅ ADD: Log de configuração
-        console.log('🔧 EXECUTION RUNTIME - CONFIGURATION', {
-            agentName,
-            tenantId,
-            enableSession,
-            enableMemory,
-            hasThread: !!thread,
-            hasSessionId: !!sessionId,
-            hasCorrelationId: !!correlationId,
-            trace: {
-                source: 'execution-runtime',
-                step: 'configuration-check',
-                timestamp: Date.now(),
-            },
-        });
 
         this.logger.info('Initializing agent context via ExecutionRuntime', {
             agentName: agentName,
@@ -144,6 +129,9 @@ export class ExecutionRuntime implements IExecutionRuntime {
             maxNamespaces: 50,
         });
 
+        // Save reference for getStateService()
+        this.currentStateService = stateService;
+
         // 2. Create or get session if enabled
         let sessionContext: {
             id: string | undefined;
@@ -158,19 +146,19 @@ export class ExecutionRuntime implements IExecutionRuntime {
         };
 
         if (enableSession && thread) {
-            const foundSession = sessionService.findSessionByThread(
+            const foundSession = this.sessionService.findSessionByThread(
                 thread.id,
                 tenantId || 'default',
             );
 
             if (!foundSession) {
-                const session = sessionService.createSession(
+                const session = this.sessionService.createSession(
                     tenantId || 'default',
                     thread.id,
                     { agentName: agentName },
                 );
 
-                const newSessionContext = sessionService.getSessionContext(
+                const newSessionContext = this.sessionService.getSessionContext(
                     session.id,
                 );
 
@@ -226,9 +214,7 @@ export class ExecutionRuntime implements IExecutionRuntime {
             invocationId: IdGenerator.executionId(),
             user: userContext || {},
             system: systemContext,
-            stateManager: stateService,
-            memoryManager: this.memoryManager,
-            executionRuntime: this, // ✅ Add reference to ExecutionRuntime
+            executionRuntime: this, // ✅ SINGLE REFERENCE TO RUNTIME
             signal: new AbortController().signal,
             cleanup: async () => {
                 await stateService.clear();
@@ -237,7 +223,7 @@ export class ExecutionRuntime implements IExecutionRuntime {
 
         // 🚀 Add initial conversation entry if session exists and input provided
         if (sessionId && input) {
-            sessionService.addConversationEntry(
+            this.sessionService.addConversationEntry(
                 sessionId,
                 input,
                 null, // output será adicionado depois
@@ -373,10 +359,97 @@ export class ExecutionRuntime implements IExecutionRuntime {
     }
 
     /**
+     * Get memory manager instance
+     * Required by plan-execute-planner for memory context
+     */
+    getMemoryManager(): MemoryManager {
+        return this.memoryManager;
+    }
+
+    /**
+     * Get session service instance
+     * Required for session-based context
+     */
+    getSessionService(): SessionService {
+        return this.sessionService;
+    }
+
+    /**
+     * Get state service instance from current context
+     * Required for working memory access
+     */
+    getStateService(): ContextStateService {
+        if (!this.currentStateService) {
+            throw new Error(
+                'State service not available - context not initialized',
+            );
+        }
+        return this.currentStateService;
+    }
+
+    /**
      * Get session history from current context
      */
     getSessionHistory(): unknown[] {
         return this.currentContext?.system?.conversationHistory || [];
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────────
+    // 🚀 CONVENIENCE METHODS - Direct access to common operations
+    // ──────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Get value from memory by key
+     */
+    async getMemory(key: string): Promise<unknown> {
+        const memoryManager = this.getMemoryManager();
+        const item = await memoryManager.get(key);
+        return item?.value;
+    }
+
+    /**
+     * Store value in memory
+     */
+    async setMemory(
+        key: string,
+        value: unknown,
+        type: string = 'general',
+    ): Promise<void> {
+        const memoryManager = this.getMemoryManager();
+        await memoryManager.store({
+            key,
+            content: value,
+            type,
+            tenantId: this.currentContext?.tenantId,
+            sessionId: this.currentContext?.system?.sessionId,
+        });
+    }
+
+    /**
+     * Get value from state
+     */
+    async getState(namespace: string, key: string): Promise<unknown> {
+        const stateService = this.getStateService();
+        return stateService.get(namespace, key);
+    }
+
+    /**
+     * Set value in state
+     */
+    async setState(
+        namespace: string,
+        key: string,
+        value: unknown,
+    ): Promise<void> {
+        const stateService = this.getStateService();
+        await stateService.set(namespace, key, value);
+    }
+
+    /**
+     * Get conversation history from session
+     */
+    async getConversationHistory(): Promise<unknown[]> {
+        return this.getSessionHistory();
     }
 
     /**
@@ -387,10 +460,14 @@ export class ExecutionRuntime implements IExecutionRuntime {
         if (!this.currentContext) return [];
 
         // ✅ Try to get planner history from state service
-        const plannerHistory = this.currentContext.stateManager?.get(
-            'planner',
-            'history',
-        );
+        let plannerHistory: unknown;
+        try {
+            const stateService = this.getStateService();
+            plannerHistory = stateService.get('planner', 'history');
+        } catch {
+            // State service not available, continue to fallback
+            plannerHistory = null;
+        }
 
         if (Array.isArray(plannerHistory)) {
             return plannerHistory as ExecutionHistoryEntry[];
@@ -504,20 +581,14 @@ export class ExecutionRuntime implements IExecutionRuntime {
                 },
             );
 
-            // 🚀 Gather context values collected via addContextValue
-            const enrichedContext =
-                this.buildEnrichedContextFromValues(agentContext);
+            // // 🚀 Gather context values collected via addContextValue
+            // const enrichedContext =
+            //     this.buildEnrichedContextFromValues(agentContext);
 
-            // 📊 Get tool information with metadata
-            const enhancedTools = await this.enhanceToolsWithContext(
-                agentContext.availableTools || [],
-            );
-
-            // 🧠 Generate execution hints from collected context
-            const executionHints = this.generateExecutionHintsFromContext(
-                input,
-                enrichedContext,
-            );
+            // // 📊 Get tool information with metadata
+            // const enhancedTools = await this.enhanceToolsWithContext(
+            //     agentContext.availableTools || [],
+            // );
 
             // // 📚 Generate learning context from collected patterns
             // const learningContext =
@@ -525,6 +596,9 @@ export class ExecutionRuntime implements IExecutionRuntime {
 
             // ✅ CARREGAR HISTÓRICO REAL DO PLANNER (se disponível)
             const plannerHistory = this.getPlannerHistory() || [];
+
+            // ✅ CARREGAR CONTEXTO DA SESSÃO (se disponível)
+            const sessionContext = await this.getSessionContext(agentContext);
 
             const plannerContext: PlannerExecutionContext = {
                 // Base context
@@ -542,9 +616,9 @@ export class ExecutionRuntime implements IExecutionRuntime {
                     tenantId: agentContext.tenantId,
                     startTime: Date.now(),
                     plannerType: 'react', // Will be set properly by planner
+                    sessionContext, // ✅ ADICIONAR: Contexto da sessão
                 },
 
-                executionHints,
                 isComplete: false,
 
                 // Methods
@@ -594,14 +668,6 @@ export class ExecutionRuntime implements IExecutionRuntime {
                     };
                 },
             };
-
-            this.logger.debug('Rich planner context built', {
-                agentIdentity: !!enrichedContext.agentIdentity,
-                toolsEnhanced: enhancedTools.length,
-                contextTypesUsed: Object.keys(enrichedContext).length,
-                executionHints: Object.keys(executionHints).length,
-                // learningPatterns: learningContext.successPatterns.length,
-            });
 
             return plannerContext;
         } catch (error) {
@@ -793,34 +859,7 @@ export class ExecutionRuntime implements IExecutionRuntime {
 
     // ──────────────────────────────────────────────────────────────────────────────
     // 🏥 HEALTH & MONITORING
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    async health(): Promise<HealthStatus> {
-        const sessionHealth = await this.checkSessionHealth();
-        const stateHealth = await this.checkStateHealth();
-        const memoryHealth = await this.checkMemoryHealth();
-
-        const overall = this.determineOverallHealth([
-            sessionHealth,
-            stateHealth,
-            memoryHealth,
-        ]);
-
-        return {
-            overall,
-            services: {
-                session: sessionHealth,
-                state: stateHealth,
-                memory: memoryHealth,
-            },
-            metrics: {
-                activeExecutions: this.executions.size,
-                versionsStored: this.versions.size,
-                memoryUsage: process.memoryUsage().heapUsed,
-                averageResponseTime: 0, // TODO: implement
-            },
-        };
-    }
+    // ─────────────────────────────────────────────────────────────────────────────
 
     async cleanup(): Promise<void> {
         this.logger.info('Starting ExecutionRuntime cleanup');
@@ -863,7 +902,7 @@ export class ExecutionRuntime implements IExecutionRuntime {
      * Build enriched context from collected values
      */
     private buildEnrichedContextFromValues(_agentContext: AgentContext): {
-        agentIdentity?: AgentContext['agentIdentity'];
+        agentIdentity?: AgentIdentity;
         userPreferences?: unknown;
         toolResults?: unknown[];
         executionState?: unknown;
@@ -874,14 +913,15 @@ export class ExecutionRuntime implements IExecutionRuntime {
 
         // Get agent identity from collected values
         const agentValues = this.contextValues.get('agent');
+
         if (agentValues?.has('identity')) {
             const identityUpdate = agentValues.get('identity');
-            enriched.agentIdentity =
-                identityUpdate?.value as AgentContext['agentIdentity'];
+            enriched.agentIdentity = identityUpdate?.value as AgentIdentity;
         }
 
         // Get user preferences
         const userValues = this.contextValues.get('user');
+
         if (userValues?.has('preferences')) {
             const preferencesUpdate = userValues.get('preferences');
             enriched.userPreferences = preferencesUpdate?.value;
@@ -889,6 +929,7 @@ export class ExecutionRuntime implements IExecutionRuntime {
 
         // Get tool results
         const toolValues = this.contextValues.get('tools');
+
         if (toolValues) {
             enriched.toolResults = Array.from(toolValues.values()).map(
                 (update) => update.value,
@@ -897,6 +938,7 @@ export class ExecutionRuntime implements IExecutionRuntime {
 
         // Get execution state
         const executionValues = this.contextValues.get('execution');
+
         if (executionValues?.has('state')) {
             const stateUpdate = executionValues.get('state');
             enriched.executionState = stateUpdate?.value;
@@ -904,6 +946,7 @@ export class ExecutionRuntime implements IExecutionRuntime {
 
         // Get conversation history from session values
         const sessionValues = this.contextValues.get('session');
+
         if (sessionValues?.has('conversation')) {
             const conversationUpdate = sessionValues.get('conversation');
             enriched.conversationHistory =
@@ -916,198 +959,56 @@ export class ExecutionRuntime implements IExecutionRuntime {
     /**
      * Enhance tools with context and usage patterns
      */
-    private async enhanceToolsWithContext(
-        basicTools: AgentContext['availableTools'],
-    ): Promise<
-        import('../../engine/planning/planner-factory.js').EnhancedToolInfo[]
-    > {
-        if (!basicTools) return [];
+    // private async enhanceToolsWithContext(
+    //     basicTools: AgentContext['availableTools'],
+    // ): Promise<EnhancedToolInfo[]> {
+    //     if (!basicTools) return [];
 
-        return basicTools.map((tool) => {
-            // Get tool-specific context values
-            const toolTypeValues = this.contextValues.get(`tool:${tool.name}`);
+    //     return basicTools.map((tool) => {
+    //         // Get tool-specific context values
+    //         const toolTypeValues = this.contextValues.get(`tool:${tool.name}`);
 
-            const enhanced: import('../../engine/planning/planner-factory.js').EnhancedToolInfo =
-                {
-                    name: tool.name,
-                    description: tool.description,
-                    schema: tool.inputSchema,
-                    categories: tool.categories,
-                    dependencies: tool.dependencies,
+    //         const enhanced: EnhancedToolInfo = {
+    //             name: tool.name,
+    //             description: tool.description,
+    //             schema: tool.inputSchema,
+    //             categories: tool.categories,
+    //             dependencies: tool.dependencies,
 
-                    // Add usage analytics if available
-                    usageCount: 0,
-                    lastSuccess: undefined,
-                    errorRate: 0,
-                    avgResponseTime: 0,
-                    lastUsed: undefined,
-                };
-
-            // Enhance with collected tool values if available
-            if (toolTypeValues) {
-                for (const [key, update] of toolTypeValues) {
-                    switch (key) {
-                        case 'usage_count':
-                            enhanced.usageCount = update.value as number;
-                            break;
-                        case 'last_success':
-                            enhanced.lastSuccess = update.value as boolean;
-                            break;
-                        case 'error_rate':
-                            enhanced.errorRate = update.value as number;
-                            break;
-                        case 'avg_response_time':
-                            enhanced.avgResponseTime = update.value as number;
-                            break;
-                        case 'last_used':
-                            enhanced.lastUsed = update.value as number;
-                            break;
-                    }
-                }
-            }
-
-            return enhanced;
-        });
-    }
-
-    /**
-     * Generate execution hints from collected context
-     */
-    private generateExecutionHintsFromContext(
-        input: string,
-        enrichedContext: ReturnType<typeof this.buildEnrichedContextFromValues>,
-    ): import('../../engine/planning/planner-factory.js').ExecutionHints {
-        const hints: import('../../engine/planning/planner-factory.js').ExecutionHints =
-            {};
-
-        // Extract current goal from agent identity
-        if (enrichedContext.agentIdentity?.goal) {
-            hints.currentGoal = enrichedContext.agentIdentity.goal;
-        }
-
-        // Determine urgency based on input and context
-        if (
-            input.toLowerCase().includes('urgent') ||
-            input.toLowerCase().includes('quickly')
-        ) {
-            hints.userUrgency = 'high';
-        } else if (
-            input.toLowerCase().includes('when possible') ||
-            input.toLowerCase().includes('eventually')
-        ) {
-            hints.userUrgency = 'low';
-        } else {
-            hints.userUrgency = 'medium';
-        }
-
-        // Set user preferences based on agent identity and collected values
-        if (enrichedContext.agentIdentity || enrichedContext.userPreferences) {
-            hints.userPreferences = {
-                preferredStyle:
-                    enrichedContext.agentIdentity?.style === 'formal'
-                        ? 'formal'
-                        : enrichedContext.agentIdentity?.style === 'casual'
-                          ? 'casual'
-                          : 'technical',
-                verbosity: enrichedContext.agentIdentity?.personality?.includes(
-                    'concise',
-                )
-                    ? 'concise'
-                    : enrichedContext.agentIdentity?.personality?.includes(
-                            'detailed',
-                        )
-                      ? 'detailed'
-                      : 'verbose',
-                riskTolerance:
-                    enrichedContext.agentIdentity?.personality?.includes(
-                        'careful',
-                    )
-                        ? 'conservative'
-                        : enrichedContext.agentIdentity?.personality?.includes(
-                                'bold',
-                            )
-                          ? 'aggressive'
-                          : 'moderate',
-            };
-        }
-
-        // Add environment state from execution context
-        if (enrichedContext.executionState) {
-            hints.environmentState = enrichedContext.executionState as Record<
-                string,
-                unknown
-            >;
-        }
-
-        return hints;
-    }
-
-    /**
-     * Generate learning context from collected values
-     */
-    // private generateLearningContextFromValues(
-    //     enrichedContext: ReturnType<typeof this.buildEnrichedContextFromValues>,
-    // ): import('../../engine/planning/planner-factory.js').LearningContext {
-    //     const context: import('../../engine/planning/planner-factory.js').LearningContext =
-    //         {
-    //             commonMistakes: [],
-    //             successPatterns: [],
-    //             userFeedback: [],
-    //             preferredTools: [],
+    //             // Add usage analytics if available
+    //             usageCount: 0,
+    //             lastSuccess: undefined,
+    //             errorRate: 0,
+    //             avgResponseTime: 0,
+    //             lastUsed: undefined,
     //         };
 
-    //     // Extract patterns from tool results
-    //     if (
-    //         enrichedContext.toolResults &&
-    //         enrichedContext.toolResults.length > 0
-    //     ) {
-    //         // Analyze successful tool patterns
-    //         const successfulTools = enrichedContext.toolResults
-    //             .filter((result: any) => result?.success === true)
-    //             .map((result: any) => result?.toolName)
-    //             .filter(Boolean);
+    //         // Enhance with collected tool values if available
+    //         if (toolTypeValues) {
+    //             for (const [key, update] of toolTypeValues) {
+    //                 switch (key) {
+    //                     case 'usage_count':
+    //                         enhanced.usageCount = update.value as number;
+    //                         break;
+    //                     case 'last_success':
+    //                         enhanced.lastSuccess = update.value as boolean;
+    //                         break;
+    //                     case 'error_rate':
+    //                         enhanced.errorRate = update.value as number;
+    //                         break;
+    //                     case 'avg_response_time':
+    //                         enhanced.avgResponseTime = update.value as number;
+    //                         break;
+    //                     case 'last_used':
+    //                         enhanced.lastUsed = update.value as number;
+    //                         break;
+    //                 }
+    //             }
+    //         }
 
-    //         context.preferredTools = [...new Set(successfulTools)].slice(0, 5);
-
-    //         // Extract success patterns
-    //         context.successPatterns = enrichedContext.toolResults
-    //             .filter((result: any) => result?.success === true)
-    //             .map(
-    //                 (result: any) =>
-    //                     `${result?.toolName || 'tool'} succeeded with ${JSON.stringify(result?.parameters || {})}`,
-    //             )
-    //             .slice(0, 5);
-
-    //         // Extract common mistakes
-    //         const failedTools = enrichedContext.toolResults
-    //             .filter((result: unknown) => result?.success === false)
-    //             .map(
-    //                 (result: unknown) =>
-    //                     `${result?.toolName || 'tool'} failed: ${result?.error || 'unknown error'}`,
-    //             )
-    //             .slice(0, 5);
-
-    //         context.commonMistakes = [...new Set(failedTools)];
-    //     }
-
-    //     // Extract user feedback from conversation history
-    //     if (
-    //         enrichedContext.conversationHistory &&
-    //         enrichedContext.conversationHistory.length > 0
-    //     ) {
-    //         context.userFeedback = enrichedContext.conversationHistory
-    //             .filter((entry: unknown) => entry?.type === 'feedback')
-    //             .map((entry: unknown) => entry?.content || entry?.input)
-    //             .filter(Boolean)
-    //             .slice(0, 3);
-    //     }
-
-    //     return context;
+    //         return enhanced;
+    //     });
     // }
-
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 🔧 PRIVATE HELPER METHODS
-    // ──────────────────────────────────────────────────────────────────────────────
 
     private createVersion(
         source: ContextSource,
@@ -1128,63 +1029,6 @@ export class ExecutionRuntime implements IExecutionRuntime {
             links: {},
         };
     }
-
-    // private async routeToStorage(
-    //     version: ContextVersion,
-    //     data: ContextData,
-    // ): Promise<void> {
-    //     // Route to State if needed
-    //     if (this.routingStrategy.shouldStoreInState(version.source, data)) {
-    //         const namespace = this.routingStrategy.getStateNamespace(
-    //             version.source,
-    //             data,
-    //         );
-    //         const key = this.routingStrategy.getStateKey(version.source, data);
-
-    //         await this.stateService.set(namespace, key, data.data);
-    //         version.storage.state = { namespace, key };
-    //     }
-
-    //     // Route to Session if needed
-    //     if (this.routingStrategy.shouldStoreInSession(version.source, data)) {
-    //         // Add to conversation history
-    //         // const entry = {
-    //         //     timestamp: data.timestamp,
-    //         //     input: data.data.input || data.data,
-    //         //     output: data.data.output || null,
-    //         //     agentName: data.metadata?.agentName,
-    //         //     metadata: data.metadata,
-    //         // };
-    //         // This would need sessionId from context - for now, skip
-    //         // await this.sessionService.addConversationEntry(sessionId, entry);
-    //     }
-
-    //     // Route to Memory if needed
-    //     if (this.routingStrategy.shouldStoreInMemory(version.source, data)) {
-    //         const memoryType = this.routingStrategy.getMemoryType(
-    //             version.source,
-    //             data,
-    //         );
-    //         const memoryMetadata = this.routingStrategy.getMemoryMetadata(
-    //             version.source,
-    //             data,
-    //         );
-
-    //         const memoryItem = {
-    //             content: JSON.stringify(data.data),
-    //             type: memoryType,
-    //             entityId: data.executionId,
-    //             sessionId: data.metadata?.sessionId,
-    //             metadata: memoryMetadata,
-    //         };
-
-    //         const storedItem = await this.memoryManager.store(memoryItem);
-    //         version.storage.memory = {
-    //             itemId: storedItem.id,
-    //             type: memoryType,
-    //         };
-    //     }
-    // }
 
     private getNextVersionNumber(executionId: string): number {
         const executionVersions = Array.from(this.versions.values()).filter(
@@ -1214,194 +1058,45 @@ export class ExecutionRuntime implements IExecutionRuntime {
     }
 
     // Context building helpers
-    // private async getSessionContext(
-    //     agentContext: AgentContext,
-    // ): Promise<unknown> {
-    //     if (!agentContext.sessionId) {
-    //         return {
-    //             conversationHistory: [],
-    //             metadata: { lastActivity: new Date(), totalInteractions: 0 },
-    //         };
-    //     }
+    private async getSessionContext(
+        agentContext: AgentContext,
+    ): Promise<unknown> {
+        const sessionId = agentContext.system?.sessionId;
+        if (!sessionId) {
+            return {
+                conversationHistory: [],
+                metadata: { lastActivity: new Date(), totalInteractions: 0 },
+            };
+        }
 
-    //     try {
-    //         const sessionContext = this.sessionService.getSessionContext(
-    //             agentContext.sessionId,
-    //         );
-    //         return {
-    //             conversationHistory: sessionContext.conversationHistory || [],
-    //             metadata: sessionContext.metadata || {},
-    //         };
-    //     } catch (error) {
-    //         this.logger.warn('Failed to get session context', {
-    //             sessionId: agentContext.sessionId,
-    //             error: error instanceof Error ? error.message : String(error),
-    //         });
-    //         return {
-    //             conversationHistory: [],
-    //             metadata: { lastActivity: new Date(), totalInteractions: 0 },
-    //         };
-    //     }
-    // }
+        try {
+            const sessionContext =
+                this.sessionService.getSessionContext(sessionId);
+            if (!sessionContext) {
+                return {
+                    conversationHistory: [],
+                    metadata: {
+                        lastActivity: new Date(),
+                        totalInteractions: 0,
+                    },
+                };
+            }
 
-    // private async getWorkingMemory(
-    //     agentContext: AgentContext,
-    // ): Promise<unknown> {
-    //     try {
-    //         const executionSteps =
-    //             (await agentContext.stateManager.get('execution', 'steps')) ||
-    //             [];
-    //         const temporaryData =
-    //             (await agentContext.stateManager.getNamespace('temp')) || {};
-    //         const toolResults =
-    //             (await agentContext.stateManager.get('tools', 'results')) || [];
-
-    //         return {
-    //             executionSteps,
-    //             temporaryData,
-    //             toolResults,
-    //             currentState: {
-    //                 currentStep: 'planning',
-    //                 progress: 0,
-    //                 nextActions: [],
-    //                 blockers: [],
-    //             },
-    //         };
-    //     } catch (error) {
-    //         this.logger.warn('Failed to get working memory', {
-    //             error: error instanceof Error ? error.message : String(error),
-    //         });
-    //         return {
-    //             executionSteps: [],
-    //             temporaryData: {},
-    //             toolResults: [],
-    //             currentState: {
-    //                 currentStep: 'planning',
-    //                 progress: 0,
-    //                 nextActions: [],
-    //                 blockers: [],
-    //             },
-    //         };
-    //     }
-    // }
-
-    // private async getUserContext(agentContext: AgentContext): Promise<any> {
-    //     try {
-    //         const userMemoryItems = await this.memoryManager.query({
-    //             entityId: agentContext.user?.id || agentContext.tenantId,
-    //             type: 'user_preference',
-    //         });
-
-    //         const preferences: UserPreferences = {
-    //             language: 'en',
-    //             timezone: 'UTC',
-    //             outputFormat: 'text',
-    //             verbosity: 'normal',
-    //             tools: { preferred: [], blocked: [] },
-    //         };
-
-    //         const patterns: UserPattern[] = [];
-    //         const history: unknown[] = [];
-
-    //         // Extract preferences from memory items
-    //         for (const item of userMemoryItems) {
-    //             try {
-    //                 const data = JSON.parse(item.content);
-    //                 if (data.type === 'preference') {
-    //                     Object.assign(preferences, data.preferences);
-    //                 }
-    //             } catch (parseError) {
-    //                 // Skip invalid JSON
-    //             }
-    //         }
-
-    //         return { preferences, patterns, history };
-    //     } catch (error) {
-    //         this.logger.warn('Failed to get user context', {
-    //             error: error instanceof Error ? error.message : String(error),
-    //         });
-    //         return {
-    //             preferences: {
-    //                 language: 'en',
-    //                 timezone: 'UTC',
-    //                 outputFormat: 'text',
-    //                 verbosity: 'normal',
-    //                 tools: { preferred: [], blocked: [] },
-    //             },
-    //             patterns: [],
-    //             history: [],
-    //         };
-    //     }
-    // }
-
-    // private async getToolIntelligence(
-    //     agentContext: AgentContext,
-    // ): Promise<Record<string, unknown>> {
-    //     const intelligence: Record<string, unknown> = {};
-
-    //     for (const tool of agentContext.availableTools || []) {
-    //         try {
-    //             const patterns = await this.getSuccessPatterns(
-    //                 `tool:${tool.name}`,
-    //             );
-    //             const failures = await this.getFailureAnalysis(
-    //                 `tool:${tool.name}`,
-    //             );
-
-    //             intelligence[tool.name] = {
-    //                 successRate: patterns.length > 0 ? 0.8 : 0.5, // Default
-    //                 commonParameters: {},
-    //                 userPatterns: [],
-    //                 recentFailures: failures,
-    //             };
-    //         } catch {
-    //             intelligence[tool.name] = {
-    //                 successRate: 0.5,
-    //                 commonParameters: {},
-    //                 userPatterns: [],
-    //                 recentFailures: [],
-    //             };
-    //         }
-    //     }
-
-    //     return intelligence;
-    // }
-
-    // Query helpers
-    // private async getFromSession(
-    //     pathParts: string[],
-    //     path: ContextPath,
-    // ): Promise<unknown> {
-    //     // Implement session-specific path resolution
-    //     return null;
-    // }
-
-    // private async getFromState(
-    //     pathParts: string[],
-    //     path: ContextPath,
-    // ): Promise<unknown> {
-    //     // Implement state-specific path resolution
-    //     return null;
-    // }
-
-    // private async getFromMemory(
-    //     pathParts: string[],
-    //     path: ContextPath,
-    // ): Promise<unknown> {
-    //     // Implement memory-specific path resolution
-    //     return null;
-    // }
-
-    // private async getFromExecution(
-    //     pathParts: string[],
-    //     path: ContextPath,
-    // ): Promise<unknown> {
-    //     // Implement execution-specific path resolution
-    //     if (path.executionId) {
-    //         return this.executions.get(path.executionId);
-    //     }
-    //     return null;
-    // }
+            return {
+                conversationHistory: sessionContext.conversationHistory || [],
+                metadata: sessionContext.metadata || {},
+            };
+        } catch (error) {
+            this.logger.warn('Failed to get session context', {
+                sessionId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            return {
+                conversationHistory: [],
+                metadata: { lastActivity: new Date(), totalInteractions: 0 },
+            };
+        }
+    }
 
     private matchesQuery(
         version: ContextVersion,
@@ -1447,69 +1142,18 @@ export class ExecutionRuntime implements IExecutionRuntime {
         return relevance;
     }
 
-    // private extractPatterns(
-    //     versions: ContextVersion[],
-    //     type: string,
-    // ): Pattern[] {
-    //     // Simplified pattern extraction
-    //     return [];
+    // private determineOverallHealth(
+    //     serviceHealths: ServiceHealth[],
+    // ): 'healthy' | 'degraded' | 'unhealthy' {
+    //     const unhealthyCount = serviceHealths.filter(
+    //         (h) => h.status === 'unhealthy',
+    //     ).length;
+    //     const degradedCount = serviceHealths.filter(
+    //         (h) => h.status === 'degraded',
+    //     ).length;
+
+    //     if (unhealthyCount > 0) return 'unhealthy';
+    //     if (degradedCount > 0) return 'degraded';
+    //     return 'healthy';
     // }
-
-    // private extractFailurePatterns(
-    //     versions: ContextVersion[],
-    // ): FailurePattern[] {
-    //     // Simplified failure pattern extraction
-    //     return [];
-    // }
-
-    // private async getUserToolPreferences(
-    //     toolName: string,
-    //     agentContext: AgentContext,
-    // ): Promise<unknown> {
-    //     return {};
-    // }
-
-    // Health check helpers
-    private async checkSessionHealth(): Promise<ServiceHealth> {
-        return {
-            status: 'healthy',
-            responseTime: 0,
-            errorRate: 0,
-            lastCheck: new Date(),
-        };
-    }
-
-    private async checkStateHealth(): Promise<ServiceHealth> {
-        return {
-            status: 'healthy',
-            responseTime: 0,
-            errorRate: 0,
-            lastCheck: new Date(),
-        };
-    }
-
-    private async checkMemoryHealth(): Promise<ServiceHealth> {
-        const isHealthy = await this.memoryManager.isHealthy();
-        return {
-            status: isHealthy ? 'healthy' : 'unhealthy',
-            responseTime: 0,
-            errorRate: 0,
-            lastCheck: new Date(),
-        };
-    }
-
-    private determineOverallHealth(
-        serviceHealths: ServiceHealth[],
-    ): 'healthy' | 'degraded' | 'unhealthy' {
-        const unhealthyCount = serviceHealths.filter(
-            (h) => h.status === 'unhealthy',
-        ).length;
-        const degradedCount = serviceHealths.filter(
-            (h) => h.status === 'degraded',
-        ).length;
-
-        if (unhealthyCount > 0) return 'unhealthy';
-        if (degradedCount > 0) return 'degraded';
-        return 'healthy';
-    }
 }

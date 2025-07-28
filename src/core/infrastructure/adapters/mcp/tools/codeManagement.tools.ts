@@ -70,7 +70,7 @@ export class CodeManagementTools {
 
                 return {
                     success: true,
-                    count: repositories.length,
+                    count: repositories?.length,
                     data: repositories,
                 };
             }),
@@ -147,7 +147,7 @@ export class CodeManagementTools {
 
                 return {
                     success: true,
-                    count: pullRequests.length,
+                    count: pullRequests?.length,
                     data: pullRequests,
                 };
             }),

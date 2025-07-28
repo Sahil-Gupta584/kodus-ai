@@ -23,11 +23,7 @@ export class ConversationAgentUseCase implements IUseCase {
             // Usar o método flexível do provider
             let result: {
                 response: string;
-                reasoning: string;
-                agentType: string;
                 timestamp: string;
-                toolUsed?: string;
-                toolResult?: unknown;
             };
 
             result = await this.conversationAgentProvider.execute(prompt, {

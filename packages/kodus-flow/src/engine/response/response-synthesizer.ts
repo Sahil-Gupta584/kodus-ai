@@ -141,8 +141,14 @@ export class ResponseSynthesizer {
                 includesError: analysis.hasErrors,
                 metadata: {
                     synthesisStrategy: strategy,
-                    discoveryCount: analysis.discoveries.length,
-                    primaryFindings: analysis.discoveries.slice(0, 3),
+                    discoveryCount: analysis.rawResults.length,
+                    primaryFindings: analysis.rawResults
+                        .slice(0, 3)
+                        .map((r) =>
+                            typeof r === 'string'
+                                ? r
+                                : JSON.stringify(r).substring(0, 100),
+                        ),
                     synthesisTime: Date.now() - startTime,
                 },
             };
@@ -173,12 +179,12 @@ export class ResponseSynthesizer {
      * Analisa todos os resultados para extrair insights principais
      */
     private analyzeExecutionResults(context: ResponseSynthesisContext) {
-        const discoveries: string[] = [];
+        const rawResults: unknown[] = [];
         const errors: string[] = [];
         const warnings: string[] = [];
         let hasAmbiguousResults = false;
 
-        // Analisar cada resultado
+        // Coletar resultados brutos
         context.executionResults.forEach((result, resultIndex) => {
             if (isErrorResult(result)) {
                 const errorMsg = getResultError(result);
@@ -188,42 +194,30 @@ export class ResponseSynthesizer {
             } else {
                 const content = getResultContent(result);
                 if (content) {
-                    const discovery = this.extractDiscoveryFromResult(
-                        content,
-                        resultIndex + 1,
-                    );
-                    if (discovery) {
-                        discoveries.push(discovery);
-                    }
+                    rawResults.push(content);
                 }
             }
         });
 
-        // Analisar steps do plano (se disponível)
+        // Coletar resultados dos steps do plano
         if (context.planSteps) {
             context.planSteps.forEach((step) => {
                 if (step.status === 'failed') {
                     errors.push(`Failed: ${step.description}`);
                 } else if (step.status === 'completed' && step.result) {
-                    const discovery = this.extractDiscoveryFromResult(
-                        step.result,
-                        step.description,
-                    );
-                    if (discovery) {
-                        discoveries.push(discovery);
-                    }
+                    rawResults.push(step.result);
                 }
             });
         }
 
         // Detectar ambiguidade
-        if (discoveries.length === 0 && errors.length === 0) {
+        if (rawResults.length === 0 && errors.length === 0) {
             hasAmbiguousResults = true;
-            warnings.push('No clear results or discoveries found');
+            warnings.push('No clear results found');
         }
 
         return {
-            discoveries,
+            rawResults,
             errors,
             warnings,
             hasErrors: errors.length > 0,
@@ -231,51 +225,6 @@ export class ResponseSynthesizer {
             successRate:
                 context.metadata.completedSteps / context.metadata.totalSteps,
         };
-    }
-
-    /**
-     * Extrai descoberta relevante de um resultado
-     */
-    private extractDiscoveryFromResult(
-        result: unknown,
-        context: string | number,
-    ): string | null {
-        if (!result) return null;
-
-        // Se é string, usar diretamente (mas resumir se muito longo)
-        if (typeof result === 'string') {
-            return result.length > 200
-                ? `${result.substring(0, 200)}...`
-                : result;
-        }
-
-        // Se é objeto, tentar extrair informação útil
-        if (typeof result === 'object') {
-            const obj = result as Record<string, unknown>;
-
-            // Procurar por campos informativos comuns
-            const infoFields = [
-                'summary',
-                'result',
-                'data',
-                'content',
-                'message',
-                'output',
-            ];
-            for (const field of infoFields) {
-                if (obj[field] && typeof obj[field] === 'string') {
-                    return `${context}: ${obj[field]}`;
-                }
-            }
-
-            // Se tem múltiplas propriedades, criar resumo
-            const properties = Object.keys(obj);
-            if (properties.length > 0) {
-                return `${context}: Found ${properties.length} items (${properties.slice(0, 3).join(', ')})`;
-            }
-        }
-
-        return `${context}: Completed successfully`;
     }
 
     // ==================== SYNTHESIS STRATEGIES ====================
@@ -313,50 +262,22 @@ export class ResponseSynthesizer {
             typeof ResponseSynthesizer.prototype.analyzeExecutionResults
         >,
     ): Promise<string> {
-        const prompt = `Você é um assistente inteligente que ajuda usuários a entender resultados de análises.
+        const prompt = `Given the user's request and the execution results, provide a clear and helpful response.
 
-CONTEXTO DA CONVERSA:
-Pergunta Original: "${context.originalQuery}"
-Planner Usado: ${context.plannerType}
-Steps Executados: ${context.metadata.completedSteps} de ${context.metadata.totalSteps}
+USER REQUEST: "${context.originalQuery}"
 
-RESULTADOS DA ANÁLISE:
-${
-    analysis.discoveries.length > 0
-        ? `
-Descobertas Principais:
-${analysis.discoveries.map((d, i) => `${i + 1}. ${d}`).join('\n')}
-`
-        : ''
-}
+EXECUTION RESULTS:
+${analysis.rawResults.length > 0 ? JSON.stringify(analysis.rawResults, null, 2) : 'No data found.'}
+${analysis.errors.length > 0 ? `\nERRORS:\n${analysis.errors.join('\n')}` : ''}
 
-${
-    analysis.errors.length > 0
-        ? `
-Problemas Encontrados:
-${analysis.errors.map((e, i) => `${i + 1}. ${e}`).join('\n')}
-`
-        : ''
-}
+INSTRUCTIONS:
+- Answer in the same language as the user's request
+- Extract and present the relevant information from the results
+- Be direct and specific about what was found
+- If there are errors, explain them simply
+- Focus on answering the user's question with the actual data
 
-${
-    analysis.warnings.length > 0
-        ? `
-Avisos:
-${analysis.warnings.join(', ')}
-`
-        : ''
-}
-
-INSTRUÇÕES:
-1. Crie uma resposta conversacional e natural
-2. Conecte a pergunta original com os resultados encontrados
-3. Explique o que foi descoberto de forma clara e útil
-4. Se houve erros, explique de forma construtiva
-5. Use tom profissional mas amigável
-6. Foque no valor entregue para o usuário
-
-Responda de forma direta e útil, como se estivesse conversando com o usuário:`;
+Response:`;
 
         try {
             const response = await this.llmAdapter.call({
@@ -383,27 +304,24 @@ Responda de forma direta e útil, como se estivesse conversando com o usuário:`
             typeof ResponseSynthesizer.prototype.analyzeExecutionResults
         >,
     ): Promise<string> {
-        let response = `Baseado na sua pergunta "${context.originalQuery}", aqui está o resumo dos resultados:\n\n`;
+        let response = `Based on your question "${context.originalQuery}", here is the summary of results:\n\n`;
 
-        if (analysis.discoveries.length > 0) {
-            response += `## 🔍 Principais Descobertas:\n`;
-            analysis.discoveries.forEach((discovery, discoveryIndex) => {
-                response += `${discoveryIndex + 1}. ${discovery}\n`;
-            });
-            response += '\n';
+        if (analysis.rawResults.length > 0) {
+            response += `## 🔍 Results:\n`;
+            response += `\`\`\`json\n${JSON.stringify(analysis.rawResults, null, 2)}\n\`\`\`\n\n`;
         }
 
         if (analysis.errors.length > 0) {
-            response += `## ⚠️ Problemas Encontrados:\n`;
+            response += `## ⚠️ Issues Found:\n`;
             analysis.errors.forEach((error, errorIndex) => {
                 response += `${errorIndex + 1}. ${error}\n`;
             });
             response += '\n';
         }
 
-        response += `## 📊 Resumo da Execução:\n`;
-        response += `- Steps executados: ${context.metadata.completedSteps}/${context.metadata.totalSteps}\n`;
-        response += `- Taxa de sucesso: ${Math.round(analysis.successRate * 100)}%\n`;
+        response += `## 📊 Execution Summary:\n`;
+        response += `- Steps executed: ${context.metadata.completedSteps}/${context.metadata.totalSteps}\n`;
+        response += `- Success rate: ${Math.round(analysis.successRate * 100)}%\n`;
 
         return response;
     }
@@ -417,32 +335,29 @@ Responda de forma direta e útil, como se estivesse conversando com o usuário:`
             typeof ResponseSynthesizer.prototype.analyzeExecutionResults
         >,
     ): Promise<string> {
-        let response = `Analisando "${context.originalQuery}":\n\n`;
+        let response = `Analyzing "${context.originalQuery}":\n\n`;
 
         if (analysis.errors.length > 0) {
-            response += `## 🚨 Problemas Identificados:\n`;
+            response += `## 🚨 Issues Identified:\n`;
             analysis.errors.forEach((error, errorIdx) => {
                 response += `**${errorIdx + 1}.** ${error}\n`;
             });
             response += '\n';
         }
 
-        if (analysis.discoveries.length > 0) {
-            response += `## ✅ Soluções/Descobertas:\n`;
-            analysis.discoveries.forEach((discovery, discoveryIdx) => {
-                response += `**${discoveryIdx + 1}.** ${discovery}\n`;
-            });
-            response += '\n';
+        if (analysis.rawResults.length > 0) {
+            response += `## ✅ Results:\n`;
+            response += `\`\`\`json\n${JSON.stringify(analysis.rawResults, null, 2)}\n\`\`\`\n\n`;
         }
 
-        response += `## 🎯 Próximos Passos Recomendados:\n`;
+        response += `## 🎯 Recommended Next Steps:\n`;
         if (analysis.errors.length > 0) {
-            response += `- Resolver os problemas identificados acima\n`;
+            response += `- Resolve the issues identified above\n`;
         }
         if (analysis.successRate < 1) {
-            response += `- Verificar steps que não foram completados\n`;
+            response += `- Check steps that were not completed\n`;
         }
-        response += `- Aplicar as descobertas encontradas\n`;
+        response += `- Apply the discoveries found\n`;
 
         return response;
     }
@@ -475,12 +390,9 @@ Responda de forma direta e útil, como se estivesse conversando com o usuário:`
             response += '\n';
         }
 
-        if (analysis.discoveries.length > 0) {
+        if (analysis.rawResults.length > 0) {
             response += `### Results:\n`;
-            analysis.discoveries.forEach((discovery) => {
-                response += `- ${discovery}\n`;
-            });
-            response += '\n';
+            response += `\`\`\`json\n${JSON.stringify(analysis.rawResults, null, 2)}\n\`\`\`\n\n`;
         }
 
         if (analysis.errors.length > 0) {
@@ -504,23 +416,21 @@ Responda de forma direta e útil, como se estivesse conversando com o usuário:`
             typeof ResponseSynthesizer.prototype.analyzeExecutionResults
         >,
     ): string {
-        let response = `Sobre "${context.originalQuery}":\n\n`;
+        let response = `About "${context.originalQuery}":\n\n`;
 
-        if (analysis.discoveries.length > 0) {
-            response += `Principais resultados:\n`;
-            analysis.discoveries.forEach((discovery) => {
-                response += `• ${discovery}\n`;
-            });
+        if (analysis.rawResults.length > 0) {
+            response += `Results:\n`;
+            response += `\`\`\`json\n${JSON.stringify(analysis.rawResults, null, 2)}\n\`\`\`\n`;
         }
 
         if (analysis.errors.length > 0) {
-            response += `\nProblemas encontrados:\n`;
+            response += `\nIssues found:\n`;
             analysis.errors.forEach((error, _i) => {
                 response += `• ${error}\n`;
             });
         }
 
-        response += `\nExecução: ${context.metadata.completedSteps}/${context.metadata.totalSteps} steps completados.`;
+        response += `\nExecution: ${context.metadata.completedSteps}/${context.metadata.totalSteps} steps completed.`;
 
         return response;
     }
@@ -536,10 +446,12 @@ Responda de forma direta e útil, como se estivesse conversando com o usuário:`
     ): string[] {
         const suggestions: string[] = [];
 
-        // Sugestões baseadas em descobertas
-        if (analysis.discoveries.length > 0) {
-            suggestions.push('Posso explicar melhor algum desses pontos?');
-            suggestions.push('Quer que eu detalhe alguma dessas descobertas?');
+        // Sugestões baseadas em resultados
+        if (analysis.rawResults.length > 0) {
+            suggestions.push('Posso explicar melhor algum desses resultados?');
+            suggestions.push(
+                'Quer que eu detalhe alguma informação específica?',
+            );
         }
 
         // Sugestões baseadas em erros
@@ -581,8 +493,8 @@ Responda de forma direta e útil, como se estivesse conversando com o usuário:`
     ): number {
         let confidence = 0.5; // Base
 
-        // Bonus por descobertas
-        confidence += Math.min(analysis.discoveries.length * 0.1, 0.3);
+        // Bonus por resultados
+        confidence += Math.min(analysis.rawResults.length * 0.1, 0.3);
 
         // Bonus por alta taxa de sucesso
         confidence += analysis.successRate * 0.3;

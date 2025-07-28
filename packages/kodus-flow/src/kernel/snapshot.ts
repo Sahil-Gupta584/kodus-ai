@@ -13,6 +13,7 @@ import type {
     Persistor,
     SnapshotOptions,
 } from '../core/types/common-types.js';
+
 import {
     getGlobalPersistor as getGlobalPersistorFromFactory,
     setGlobalPersistor as setGlobalPersistorFromFactory,
@@ -38,6 +39,8 @@ const deltaSnapshotSchema = snapshotSchema.extend({
     eventsDelta: z.unknown().optional(),
     stateDelta: z.unknown().optional(),
 });
+
+type ExtendedContext = BaseContext & { jobId?: string };
 
 /**
  * Converts a JavaScript value to a deterministically serialized JSON string.
@@ -109,8 +112,8 @@ export function createSnapshot(
 ): Snapshot {
     const payload = { events, state };
 
-    // ✅ CORRIGIDO: Usar formato tenantId:jobId como o kernel
-    const jobId = (context as any).jobId || IdGenerator.executionId();
+    const jobId =
+        (context as ExtendedContext).jobId || IdGenerator.executionId();
     const xcId = `${context.tenantId}:${jobId}`;
 
     return {

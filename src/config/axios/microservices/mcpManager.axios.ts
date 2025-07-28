@@ -5,7 +5,7 @@ export class AxiosMCPManagerService {
 
     constructor() {
         this.axiosInstance = axios.create({
-            baseURL: process.env.KODUS_SERVICE_MCP_MANAGER,
+            baseURL: process.env.API_KODUS_SERVICE_MCP_MANAGER,
             headers: {
                 'Content-Type': 'application/json',
             },

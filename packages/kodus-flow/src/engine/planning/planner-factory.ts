@@ -42,10 +42,9 @@ import {
 export type PlannerType = 'react' | 'tot' | 'reflexion' | 'plan-execute';
 
 export interface Planner<
-    TInput extends string = string,
     TContext extends PlannerExecutionContext = PlannerExecutionContext,
 > {
-    think(input: TInput, context: TContext): Promise<AgentThought>;
+    think(context: TContext): Promise<AgentThought>;
     analyzeResult(
         result: ActionResult,
         context: TContext,

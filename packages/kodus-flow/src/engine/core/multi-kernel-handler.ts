@@ -630,7 +630,6 @@ export class MultiKernelHandler {
             }>;
         };
     }> {
-        debugger;
         if (!this.isInitialized()) {
             // Safe to access these without locks as they're read-only
             const eventCountsCopy = await this.eventCountsMutex.withLock(
@@ -922,7 +921,6 @@ export class MultiKernelHandler {
             correlationId?: string;
         } = {},
     ): Promise<TResponse> {
-        debugger;
         this.ensureInitialized();
 
         const correlationId =
@@ -971,7 +969,6 @@ export class MultiKernelHandler {
         });
 
         return new Promise<TResponse>((resolve, reject) => {
-            debugger;
             let responseReceived = false;
             let timeoutId: NodeJS.Timeout | null = null;
 
@@ -1033,7 +1030,6 @@ export class MultiKernelHandler {
 
             // ✅ Register response handler using existing patterns
             const responseHandler = (event: AnyEvent) => {
-                debugger;
                 // ✅ ADD: Log detalhado para debug
                 this.logger.info('📨 RESPONSE HANDLER EXECUTED', {
                     eventId: event.id,
@@ -1299,7 +1295,6 @@ export class MultiKernelHandler {
         input: unknown,
         options?: { timeout?: number; correlationId?: string },
     ): Promise<unknown> {
-        debugger;
         return this.request(
             'tool.execute.request',
             'tool.execute.response',

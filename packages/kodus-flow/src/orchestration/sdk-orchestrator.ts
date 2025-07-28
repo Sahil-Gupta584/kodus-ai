@@ -740,6 +740,7 @@ const orchestrator = new SDKOrchestrator({
      * Register MCP tools - APENAS delega para MCP adapter
      */
     async registerMCPTools(): Promise<void> {
+        debugger;
         if (!this.mcpAdapter) {
             this.logger.warn(
                 'MCP adapter not configured - cannot register tools',

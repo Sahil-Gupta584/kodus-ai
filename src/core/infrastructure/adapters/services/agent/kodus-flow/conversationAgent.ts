@@ -207,12 +207,7 @@ export class ConversationAgentProvider {
                 typeof result.result === 'string'
                     ? result.result
                     : JSON.stringify(result.result),
-            reasoning:
-                'Processado pelo agente de conversação (Router + Planner)',
-            agentType: 'conversation',
             timestamp: new Date().toISOString(),
-            toolUsed: result.context?.toolName as string,
-            toolResult: result.context?.toolResult,
         };
     }
 }

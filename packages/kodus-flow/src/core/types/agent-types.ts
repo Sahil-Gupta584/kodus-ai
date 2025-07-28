@@ -24,12 +24,11 @@ import type {
     ToolMetadataForLLM,
     ToolMetadataForPlanner,
 } from './tool-types.js';
-import { ContextStateService } from '../context/services/state-service.js';
-import { Persistor } from '../../persistor/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
-import type { MemoryManager } from '../memory/memory-manager.js';
 import { AgentIdentity } from './agent-definition.js';
 import type { ExecutionRuntime } from '../context/execution-runtime.js';
+import { ContextStateService } from '../context/services/state-service.js';
+import { Persistor } from '../../persistor/index.js';
 
 /**
  * Agent action types - what an agent can decide to do
@@ -296,11 +295,8 @@ export type AgentContext = BaseContext & {
     user: UserContext;
     system: SystemContext;
 
-    // === RUNTIME SERVICES ===
-    stateManager: ContextStateService;
-    persistorService?: Persistor;
-    memoryManager?: MemoryManager;
-    executionRuntime?: ExecutionRuntime;
+    // === SINGLE RUNTIME REFERENCE ===
+    executionRuntime: ExecutionRuntime;
 
     // === RESOURCES ===
     availableTools?: ToolMetadataForPlanner[];
@@ -769,6 +765,7 @@ export function isToolExecutionAction(
 
 /**
  * Create Agent Context with defaults
+ * @deprecated Use ExecutionRuntime.initializeAgentContext() instead
  */
 export function createAgentContext(
     agentName: string,
@@ -826,9 +823,8 @@ export function createAgentContext(
         user: options.userContext || {},
         system: systemContext,
 
-        // Runtime services
-        stateManager: stateManager,
-        persistorService: options.persistorService,
+        // Single runtime reference (mock for compatibility)
+        executionRuntime: null as unknown as ExecutionRuntime, // This should be set by proper factory
 
         // Resources
         availableTools: options.availableTools || [],

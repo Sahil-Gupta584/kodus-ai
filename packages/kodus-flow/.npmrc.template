@@ -1,0 +1,11 @@
+# Google Artifact Registry Configuration (Template)
+# Copie este arquivo para .npmrc e configure as variáveis de ambiente
+@kodus:registry=https://us-central1-npm.pkg.dev/${GAR_PROJECT_ID}/npm-repo/
+//us-central1-npm.pkg.dev/${GAR_PROJECT_ID}/npm-repo/:_authToken=$(gcloud auth print-access-token)
+
+# Fallback para npm público (para dependências)
+registry=https://registry.npmjs.org/
+
+# Configurações de segurança
+audit-level=moderate
+fund=false

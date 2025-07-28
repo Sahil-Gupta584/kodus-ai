@@ -1,6 +1,6 @@
 /**
  * MCP Protocol Helper Functions
- * 
+ *
  * This module provides utilities for creating MCP-compliant responses
  * according to the Model Context Protocol specification.
  */
@@ -11,28 +11,43 @@ import { PinoLoggerService } from '../../services/logger/pino.service';
 /**
  * Create a successful MCP tool response
  */
-export function createToolResponse(data: any, mimeType = 'application/json'): { content: Array<{ type: 'text'; text: string }> } {
+export function createToolResponse(
+    data: any,
+    mimeType = 'application/json',
+): { content: Array<{ type: 'text'; text: string }> } {
     return {
-        content: [{
-            type: 'text',
-            text: typeof data === 'string' ? data : JSON.stringify(data, null, 2),
-        }],
+        content: [
+            {
+                type: 'text',
+                text:
+                    typeof data === 'string'
+                        ? data
+                        : JSON.stringify(data, null, 2),
+            },
+        ],
     };
 }
 
 /**
  * Create an error response following JSON-RPC 2.0 error codes
  */
-export function createErrorResponse(code: number, message: string, data: any = null): never {
+export function createErrorResponse(
+    code: number,
+    message: string,
+    data: any = null,
+): never {
     const error: any = {
-        code,
-        message,
+        jsonrpc: '2.0',
+        error: {
+            code,
+            message: message || 'Unknown error',
+        },
     };
-    
-    if (data !== null) {
-        error.data = data;
+
+    if (data !== null && data !== undefined) {
+        error.error.data = data;
     }
-    
+
     throw error;
 }
 
@@ -46,7 +61,7 @@ export const ErrorCodes = {
     METHOD_NOT_FOUND: -32601,
     INVALID_PARAMS: -32602,
     INTERNAL_ERROR: -32603,
-    
+
     // MCP-specific errors (using implementation-defined range)
     RESOURCE_NOT_FOUND: -32002,
     RESOURCE_ACCESS_DENIED: -32003,
@@ -58,35 +73,43 @@ export const ErrorCodes = {
  * Create a paginated response with cursor support
  */
 export function createPaginatedResponse(
-    items: any[], 
-    options: { cursor?: string; limit?: number } = {}
+    items: any[],
+    options: { cursor?: string; limit?: number } = {},
 ): { content: Array<{ type: 'text'; text: string }> } {
     const { cursor, limit = 10 } = options;
-    
+
     let startIndex = 0;
     if (cursor) {
         // Decode cursor (base64 encoded index)
         try {
-            startIndex = parseInt(Buffer.from(cursor, 'base64').toString('utf8'), 10);
+            startIndex = parseInt(
+                Buffer.from(cursor, 'base64').toString('utf8'),
+                10,
+            );
         } catch (e) {
-            throw createErrorResponse(ErrorCodes.INVALID_PARAMS, 'Invalid cursor');
+            throw createErrorResponse(
+                ErrorCodes.INVALID_PARAMS,
+                'Invalid cursor',
+            );
         }
     }
-    
+
     const endIndex = startIndex + limit;
     const paginatedItems = items.slice(startIndex, endIndex);
     const hasMore = endIndex < items.length;
-    
+
     const response: any = {
         items: paginatedItems,
         total: items.length,
     };
-    
+
     if (hasMore) {
         // Create cursor for next page (base64 encoded index)
-        response.nextCursor = Buffer.from(endIndex.toString()).toString('base64');
+        response.nextCursor = Buffer.from(endIndex.toString()).toString(
+            'base64',
+        );
     }
-    
+
     return createToolResponse(response);
 }
 
@@ -95,51 +118,100 @@ export function createPaginatedResponse(
  * Returns the correct type expected by MCP SDK
  */
 export function wrapToolHandler<T = any>(
-    handler: (args: T, extra?: any) => Promise<any>
-): (args: T, extra?: any) => Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+    handler: (args: T, extra?: any) => Promise<any>,
+): (
+    args: T,
+    extra?: any,
+) => Promise<{ content: Array<{ type: 'text'; text: string }> }> {
     return async (args: T, extra?: any) => {
         try {
             const result = await handler(args, extra);
-            
+
             // Use createToolResponse to format the result
             return createToolResponse(result);
         } catch (error: any) {
-            // If it's already a JSON-RPC error, re-throw it
-            if (error.code && typeof error.code === 'number') {
-                throw error;
-            }
-            
-            // Handle specific error types
-            if (error.message?.includes('not found')) {
-                throw createErrorResponse(
-                    ErrorCodes.RESOURCE_NOT_FOUND,
-                    error.message,
-                    { resource: (args as any).id || (args as any).name }
-                );
-            }
-            
-            if (error.message?.includes('unauthorized') || error.message?.includes('forbidden')) {
-                throw createErrorResponse(
-                    ErrorCodes.RESOURCE_ACCESS_DENIED,
-                    'Access denied to resource'
-                );
-            }
-            
-            if (error.message?.includes('backend') || error.message?.includes('API')) {
-                throw createErrorResponse(
-                    ErrorCodes.BACKEND_ERROR,
-                    'Backend service unavailable',
-                    { service: error.service || 'unknown', originalError: error.message }
-                );
-            }
-            
-            // Default to internal error
-            throw createErrorResponse(
-                ErrorCodes.INTERNAL_ERROR,
-                'An internal error occurred',
-                { originalError: error.message }
-            );
+            // Ensure error is properly serialized as JSON
+            const errorResponse = serializeErrorToJSON(error);
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify(errorResponse, null, 2),
+                    },
+                ],
+                isError: true,
+            };
         }
+    };
+}
+
+/**
+ * Serialize any error to a proper JSON error response
+ */
+function serializeErrorToJSON(error: any): any {
+    // If it's already a JSON-RPC error, format it properly
+    if (error.jsonrpc === '2.0' && error.error) {
+        return error;
+    }
+
+    // If it has a code, it might be a JSON-RPC error without jsonrpc field
+    if (error.code && typeof error.code === 'number') {
+        return {
+            jsonrpc: '2.0',
+            error: {
+                code: error.code,
+                message: error.message || 'Unknown error',
+                data: error.data,
+            },
+        };
+    }
+
+    // Handle specific error types based on message content
+    const message = error.message || error.toString() || 'Unknown error';
+
+    if (message.includes('not found')) {
+        return {
+            jsonrpc: '2.0',
+            error: {
+                code: ErrorCodes.RESOURCE_NOT_FOUND,
+                message: message,
+                data: { resource: error.resource || 'unknown' },
+            },
+        };
+    }
+
+    if (message.includes('unauthorized') || message.includes('forbidden')) {
+        return {
+            jsonrpc: '2.0',
+            error: {
+                code: ErrorCodes.RESOURCE_ACCESS_DENIED,
+                message: 'Access denied to resource',
+            },
+        };
+    }
+
+    if (message.includes('backend') || message.includes('API')) {
+        return {
+            jsonrpc: '2.0',
+            error: {
+                code: ErrorCodes.BACKEND_ERROR,
+                message: 'Backend service unavailable',
+                data: {
+                    service: error.service || 'unknown',
+                    originalError: message,
+                },
+            },
+        };
+    }
+
+    // Default to internal error
+    return {
+        jsonrpc: '2.0',
+        error: {
+            code: ErrorCodes.INTERNAL_ERROR,
+            message: 'An internal error occurred',
+            data: { originalError: message },
+        },
     };
 }
 
@@ -147,8 +219,8 @@ export function wrapToolHandler<T = any>(
  * Validate tool arguments against a schema
  */
 export function validateArgs<T>(
-    args: any, 
-    schema: z.ZodSchema<T> | { validate: (args: any) => any }
+    args: any,
+    schema: z.ZodSchema<T> | { validate: (args: any) => any },
 ): T {
     try {
         if ('parse' in schema) {
@@ -167,7 +239,7 @@ export function validateArgs<T>(
         throw createErrorResponse(
             ErrorCodes.INVALID_PARAMS,
             'Invalid parameters',
-            { validation: error.errors || error.message }
+            { validation: error.errors || error.message },
         );
     }
 }
@@ -176,10 +248,10 @@ export function validateArgs<T>(
  * Log MCP tool invocation for monitoring
  */
 export function logToolInvocation(
-    toolName: string, 
-    args: any, 
+    toolName: string,
+    args: any,
     extra: any,
-    logger: PinoLoggerService
+    logger: PinoLoggerService,
 ): number {
     logger.log({
         message: 'MCP tool invoked',
@@ -190,7 +262,7 @@ export function logToolInvocation(
             requestId: extra?.requestId,
         },
     });
-    
+
     return Date.now(); // Return start time for duration tracking
 }
 
@@ -201,10 +273,10 @@ export function logToolCompletion(
     toolName: string,
     startTime: number,
     logger: PinoLoggerService,
-    error?: any
+    error?: any,
 ): void {
     const duration = Date.now() - startTime;
-    
+
     if (error) {
         logger.error({
             message: 'MCP tool failed',
