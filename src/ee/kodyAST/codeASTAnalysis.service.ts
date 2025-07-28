@@ -562,6 +562,12 @@ export class CodeAstAnalysisService
             }
 
             try {
+                this.logger.log({
+                    message: `Polling task ${taskId} status`,
+                    context: CodeAstAnalysisService.name,
+                    metadata: { taskId },
+                });
+
                 const taskStatus = await lastValueFrom(
                     this.taskMicroservice
                         .getTaskInfo({ taskId }, metadata)
