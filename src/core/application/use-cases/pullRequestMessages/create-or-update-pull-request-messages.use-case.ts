@@ -9,7 +9,7 @@ import { REQUEST } from '@nestjs/core';
 import { ConfigLevel } from '@/config/types/general/pullRequestMessages.type';
 
 @Injectable()
-export class CreatePullRequestMessagesUseCase implements IUseCase {
+export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
     constructor(
         @Inject(PULL_REQUEST_MESSAGES_SERVICE_TOKEN)
         private readonly pullRequestMessagesService: IPullRequestMessagesService,
@@ -28,7 +28,16 @@ export class CreatePullRequestMessagesUseCase implements IUseCase {
         }
 
         pullRequestMessages.organizationId =
-            this.request.user.organization.uuid;
+        this.request.user.organization.uuid;
+
+        const existingPullRequestMessage = await this.pullRequestMessagesService.findById(
+            pullRequestMessages.uuid,
+        );
+
+        if (existingPullRequestMessage) {
+            await this.pullRequestMessagesService.update(pullRequestMessages);
+            return;
+        }
 
         if (pullRequestMessages?.repository?.id) {
             pullRequestMessages.configLevel = ConfigLevel.REPOSITORY;

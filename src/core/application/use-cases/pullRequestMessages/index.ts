@@ -1,3 +1,3 @@
-import { CreatePullRequestMessagesUseCase } from './create-pull-request-messages.use-case';
+import { CreateOrUpdatePullRequestMessagesUseCase } from './create-or-update-pull-request-messages.use-case';
 
-export const PullRequestMessagesUseCases = [CreatePullRequestMessagesUseCase];
+export const PullRequestMessagesUseCases = [CreateOrUpdatePullRequestMessagesUseCase];
