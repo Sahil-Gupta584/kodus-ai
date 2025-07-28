@@ -1,6 +1,6 @@
 export enum PullRequestMessageType {
     START_REVIEW = 'start_review',
-    FINISH_REVIEW = 'finish_review',
+    END_REVIEW = 'end_review',
 }
 
 export enum PullRequestMessageStatus {

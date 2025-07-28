@@ -132,7 +132,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
     ): Promise<IPullRequestMessages> {
         const pullRequestMessages = await this.pullRequestMessagesService.find({
             organizationId: context.organizationAndTeamData.organizationId,
-            pullRequestMessageType: PullRequestMessageType.FINISH_REVIEW,
+            pullRequestMessageType: PullRequestMessageType.END_REVIEW,
         });
 
         if (pullRequestMessages.length > 0) {
