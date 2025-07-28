@@ -12,5 +12,5 @@ export interface IPullRequestMessages {
     content: string;
     status: PullRequestMessageStatus;
     configLevel: ConfigLevel;
-    repository?: { id: string; name: string };
+    repositoryId?: string;
 }

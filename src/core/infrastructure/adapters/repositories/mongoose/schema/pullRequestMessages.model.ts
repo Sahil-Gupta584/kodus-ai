@@ -3,7 +3,6 @@ import {
     PullRequestMessageStatus,
     PullRequestMessageType,
 } from '@/config/types/general/pullRequestMessages.type';
-import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { CoreDocument } from '@/shared/infrastructure/repositories/model/mongodb';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
@@ -29,7 +28,7 @@ export class PullRequestMessagesModel extends CoreDocument {
     configLevel: ConfigLevel;
 
     @Prop({ type: String, required: false })
-    repository: Pick<IRepository, 'id' | 'fullName'>;
+    repositoryId: string;
 }
 
 export const PullRequestMessagesSchema = SchemaFactory.createForClass(

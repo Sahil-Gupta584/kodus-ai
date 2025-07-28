@@ -14,7 +14,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
     private readonly _content: string;
     private readonly _status: PullRequestMessageStatus;
     private readonly _configLevel: ConfigLevel;
-    private readonly _repository: { id: string; name: string };
+    private readonly _repositoryId: string;
 
     constructor(pullRequestMessages: IPullRequestMessages) {
         this._uuid = pullRequestMessages.uuid;
@@ -25,7 +25,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
         this._content = pullRequestMessages.content;
         this._status = pullRequestMessages.status;
         this._configLevel = pullRequestMessages.configLevel;
-        this._repository = pullRequestMessages.repository;
+        this._repositoryId = pullRequestMessages.repositoryId;
     }
 
     toJson(): IPullRequestMessages {
@@ -37,7 +37,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
             content: this._content,
             status: this._status,
             configLevel: this._configLevel,
-            repository: this._repository,
+            repositoryId: this._repositoryId,
         };
     }
 
@@ -50,7 +50,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
             content: this._content,
             status: this._status,
             configLevel: this._configLevel,
-            repository: this._repository,
+            repositoryId: this._repositoryId,
         };
     }
 
@@ -82,8 +82,8 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
         return this._configLevel;
     }
 
-    get repository(): { id: string; name: string } | undefined {
-        return this._repository;
+    get repositoryId(): string {
+        return this._repositoryId;
     }
 
     public static create(
