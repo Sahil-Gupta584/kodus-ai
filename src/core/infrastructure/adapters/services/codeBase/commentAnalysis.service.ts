@@ -215,8 +215,8 @@ export class CommentAnalysisService {
             const existingRulesAsLibrary = existingRules.map((rule) => ({
                 ...rule,
                 why_is_this_important:
-                    (rule as unknown as LibraryKodyRule)
-                        ?.why_is_this_important || '',
+                    (rule as Partial<LibraryKodyRule>)?.why_is_this_important ||
+                    '',
             })) as LibraryKodyRule[];
 
             let deduplicatedRules = generatedWithUuids;

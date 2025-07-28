@@ -163,7 +163,7 @@ ${payload.existingRules
         "uuid": "${rule?.uuid || ''}",
         "title": "${rule?.title || ''}",
         "rule": "${rule?.rule || ''}",
-        ${rule.why_is_this_important ? `"why_is_this_important": "${rule.why_is_this_important}",` : ''}
+        ${rule?.why_is_this_important ? `"why_is_this_important": "${rule.why_is_this_important}",` : ''}
         "severity": "${rule?.severity || ''}",
         "tags": "${rule?.tags || ''}",
         "examples": [
