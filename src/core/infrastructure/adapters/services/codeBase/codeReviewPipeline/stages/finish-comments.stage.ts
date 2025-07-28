@@ -139,7 +139,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             const repositoryId = context.repository.id;
 
             let finishReviewMessage = pullRequestMessages.find(
-                (message) => message.repository?.id === repositoryId,
+                (message) => message.repositoryId === repositoryId,
             );
 
             if (!finishReviewMessage) {

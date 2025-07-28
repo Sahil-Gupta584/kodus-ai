@@ -124,7 +124,7 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
             const repositoryId = context.repository.id;
 
             let startReviewMessage = pullRequestMessages.find(
-                (message) => message.repository?.id === repositoryId,
+                (message) => message.repositoryId === repositoryId,
             );
 
             if (!startReviewMessage) {

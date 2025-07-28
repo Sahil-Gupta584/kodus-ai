@@ -39,7 +39,7 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
             return;
         }
 
-        if (pullRequestMessages?.repository?.id) {
+        if (pullRequestMessages?.repositoryId) {
             pullRequestMessages.configLevel = ConfigLevel.REPOSITORY;
         } else {
             pullRequestMessages.configLevel = ConfigLevel.GLOBAL;
