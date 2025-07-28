@@ -298,22 +298,8 @@ export type AgentContext = BaseContext & {
     // === SINGLE RUNTIME REFERENCE ===
     executionRuntime: ExecutionRuntime;
 
-    // === RESOURCES ===
-    availableTools?: ToolMetadataForPlanner[];
     availableToolsForLLM?: ToolMetadataForLLM[];
     signal: AbortSignal;
-
-    // === OBSERVABILITY ===
-    logger?: {
-        debug: (message: string, meta?: Record<string, unknown>) => void;
-        info: (message: string, meta?: Record<string, unknown>) => void;
-        warn: (message: string, meta?: Record<string, unknown>) => void;
-        error: (
-            message: string,
-            error?: Error,
-            meta?: Record<string, unknown>,
-        ) => void;
-    };
 
     // === CLEANUP ===
     cleanup(): Promise<void>;
@@ -827,7 +813,6 @@ export function createAgentContext(
         executionRuntime: null as unknown as ExecutionRuntime, // This should be set by proper factory
 
         // Resources
-        availableTools: options.availableTools || [],
         signal: new AbortController().signal,
 
         cleanup: async () => {

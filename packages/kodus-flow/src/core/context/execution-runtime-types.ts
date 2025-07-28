@@ -175,6 +175,7 @@ export interface ContextPath {
     path: string;
     version?: string; // Specific version
     executionId?: string; // Specific execution
+    context?: string; // Additional context for semantic search
 }
 
 export interface ContextQuery {

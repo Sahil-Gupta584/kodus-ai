@@ -386,7 +386,7 @@ export class Router<TSchema extends z.ZodType = z.ZodType> {
                 executionId,
                 correlationId:
                     context?.correlationId || IdGenerator.correlationId(),
-                availableTools: context?.availableTools || [],
+                availableToolsForLLM: context?.availableToolsForLLM || [],
                 executionRuntime: context?.executionRuntime,
                 logger: this.logger,
                 routerId: this.config.name,
@@ -1066,7 +1066,7 @@ export class Router<TSchema extends z.ZodType = z.ZodType> {
             executionId,
             correlationId:
                 context?.correlationId || IdGenerator.correlationId(),
-            availableTools: context?.availableTools || [],
+            availableToolsForLLM: context?.availableToolsForLLM || [],
             executionRuntime: context?.executionRuntime,
             logger: this.logger,
             routerId: this.config.name,

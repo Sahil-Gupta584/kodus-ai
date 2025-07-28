@@ -739,20 +739,6 @@ export class PlanAndExecutePlanner implements Planner {
             currentStep.status = 'completed';
             currentStep.result = stepResult;
 
-            this.logger.info('💾 STEP RESULT SAVED', {
-                stepId: currentStep.id,
-                stepStatus: currentStep.status,
-                resultType: typeof stepResult,
-                resultIsArray: Array.isArray(stepResult),
-                resultLength: Array.isArray(stepResult)
-                    ? stepResult.length
-                    : 'not array',
-                resultPreview: stepResult
-                    ? JSON.stringify(stepResult).substring(0, 500)
-                    : 'no result',
-                originalActionResult: result,
-            });
-
             this.currentPlan.currentStepIndex++;
         }
 

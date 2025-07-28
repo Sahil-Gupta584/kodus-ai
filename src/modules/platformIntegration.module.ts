@@ -52,6 +52,7 @@ import { BitbucketPullRequestHandler } from '@/core/infrastructure/adapters/webh
 import { AzureReposPullRequestHandler } from '@/core/infrastructure/adapters/webhooks/azureRepos/azureReposPullRequest.handler';
 import { IssuesModule } from './issues.module';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
+import { McpAgentModule } from './mcpAgent.module';
 @Module({
     imports: [
         forwardRef(() => IntegrationModule),
@@ -82,6 +83,7 @@ import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
         forwardRef(() => IssuesModule),
         forwardRef(() => CodeReviewSettingsLogModule),
         PullRequestsModule,
+        McpAgentModule,
     ],
     providers: [
         ...UseCases,

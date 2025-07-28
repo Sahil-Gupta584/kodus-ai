@@ -93,35 +93,8 @@ export class AgentEngine<
     ): Promise<AgentExecutionResult<TOutput>> {
         const { correlationId, sessionId } = agentExecutionOptions || {};
 
-        this.engineLogger.info('🚀 AGENT ENGINE - Execution started', {
-            agentName: this.getDefinition()?.name,
-            correlationId,
-            sessionId,
-            inputType: typeof input,
-            hasAgentExecutionOptions: !!agentExecutionOptions,
-            trace: {
-                source: 'agent-engine',
-                step: 'execute-start',
-                timestamp: Date.now(),
-            },
-        });
-
         try {
             const definition = this.getDefinition();
-
-            this.engineLogger.debug(
-                '🔍 AGENT ENGINE - Getting agent definition',
-                {
-                    agentName: definition?.name,
-                    correlationId,
-                    hasDefinition: !!definition,
-                    trace: {
-                        source: 'agent-engine',
-                        step: 'get-definition',
-                        timestamp: Date.now(),
-                    },
-                },
-            );
 
             if (!definition) {
                 this.engineLogger.error(
@@ -141,20 +114,6 @@ export class AgentEngine<
                     'Agent definition not found',
                 );
             }
-
-            // Execute using shared core logic
-            this.engineLogger.info(
-                '⚡ AGENT ENGINE - Delegating to core executeAgent',
-                {
-                    agentName: definition.name,
-                    correlationId,
-                    trace: {
-                        source: 'agent-engine',
-                        step: 'delegate-to-core',
-                        timestamp: Date.now(),
-                    },
-                },
-            );
 
             const result = await this.executeAgent(
                 definition,

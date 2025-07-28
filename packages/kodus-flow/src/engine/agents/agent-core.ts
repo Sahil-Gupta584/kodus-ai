@@ -341,12 +341,8 @@ export abstract class AgentCore<
     ) {
         this.logger = createLogger('agent-core');
         this.thinkingTimeout = 60000; // ✅ 60s thinking timeout
-        // ✅ REMOVER: StateManager duplicado - usar apenas do contexto
-        // this.stateManager = new ContextStateService({});
-        // this.stateManager = new ContextStateService({}, {});
 
         if (this.isAgentDefinition(definitionOrConfig)) {
-            // Single agent mode
             this.singleAgentDefinition = definitionOrConfig;
             this.toolEngine = toolEngineOrConfig as ToolEngine;
             this.config = config || { tenantId: 'default' };
@@ -463,6 +459,7 @@ export abstract class AgentCore<
         input: unknown,
         agentExecutionOptions?: AgentExecutionOptions,
     ): Promise<AgentExecutionResult<unknown>> {
+        debugger;
         const startTime = Date.now();
         const executionId = IdGenerator.executionId();
         const { correlationId, sessionId } = agentExecutionOptions || {};
@@ -697,45 +694,6 @@ export abstract class AgentCore<
             );
         }
 
-        // ✅ ADD: Log para verificar se está entrando no Think→Act→Observe
-        this.logger.info('🔍 AGENT CORE - About to use Think→Act→Observe', {
-            agentName: agent.name,
-            hasPlanner: !!this.planner,
-            hasLLMAdapter: !!this.llmAdapter,
-            plannerType: this.config.planner,
-            trace: {
-                source: 'agent-core',
-                step: 'before-think-act-observe',
-                timestamp: Date.now(),
-            },
-        });
-
-        // ✅ ADD: Log para verificar se está entrando no executeThinkActObserve
-        this.logger.info('🚀 AGENT CORE - EXECUTE THINK ACT OBSERVE CALLED', {
-            agentName: agent.name,
-            hasPlanner: !!this.planner,
-            hasLLMAdapter: !!this.llmAdapter,
-            plannerType: this.config.planner,
-            trace: {
-                source: 'agent-core',
-                step: 'execute-think-act-observe-called',
-                timestamp: Date.now(),
-            },
-        });
-
-        // ✅ ADD: Log para verificar se está entrando no executeThinkActObserve
-        this.logger.info('🚀 AGENT CORE - EXECUTE THINK ACT OBSERVE CALLED', {
-            agentName: agent.name,
-            hasPlanner: !!this.planner,
-            hasLLMAdapter: !!this.llmAdapter,
-            plannerType: this.config.planner,
-            trace: {
-                source: 'agent-core',
-                step: 'execute-think-act-observe-called',
-                timestamp: Date.now(),
-            },
-        });
-
         // Use Think→Act→Observe pattern - the ONLY way
         const result = await this.executeThinkActObserve(input, context);
 
@@ -833,6 +791,7 @@ export abstract class AgentCore<
                 this.toolEngine
             ) {
                 const toolAction = thought.action as ToolCallAction;
+                const toolStartTime = Date.now();
 
                 // Extract toolName and input from both possible structures
                 let toolName: string = '';
@@ -889,6 +848,28 @@ export abstract class AgentCore<
                         'main',
                         'lastToolResult',
                         toolResult,
+                    );
+
+                    // Store more detailed tool context in state
+                    await context.executionRuntime.setState(
+                        'tools',
+                        `${toolName}_history`,
+                        {
+                            lastUsed: Date.now(),
+                            input: toolInput,
+                            output: toolResult,
+                            success: true,
+                            duration: Date.now() - toolStartTime,
+                        },
+                    );
+
+                    // Store tool usage pattern in memory for learning
+                    await context.executionRuntime.storeToolUsagePattern(
+                        toolName,
+                        toolInput,
+                        toolResult,
+                        true, // success
+                        Date.now() - toolStartTime,
                     );
                     toolUsed = true;
 
@@ -1673,15 +1654,14 @@ export abstract class AgentCore<
         executionId: string,
         agentExecutionOptions?: AgentExecutionOptions,
     ): Promise<AgentContext> {
+        debugger;
         const config: AgentExecutionOptions = {
             agentName,
             thread: agentExecutionOptions?.thread || {
                 id: executionId,
                 metadata: { description: 'Default agent thread' },
             },
-            // Optional overrides from user
             ...agentExecutionOptions,
-            // Force some values
             tenantId: agentExecutionOptions?.tenantId || this.config.tenantId,
         };
 

@@ -422,6 +422,95 @@ export class ExecutionRuntime implements IExecutionRuntime {
             type,
             tenantId: this.currentContext?.tenantId,
             sessionId: this.currentContext?.system?.sessionId,
+            contextId: this.currentContext?.system?.executionId,
+            metadata: {
+                source: 'execution-runtime',
+                agentName: this.currentContext?.agentName,
+                timestamp: Date.now(),
+            },
+        });
+    }
+
+    /**
+     * Store execution pattern in memory for learning
+     */
+    async storeExecutionPattern(
+        patternType: 'success' | 'failure',
+        action: string,
+        result: unknown,
+        context: string = '',
+    ): Promise<void> {
+        const memoryManager = this.getMemoryManager();
+
+        const patternKey = `pattern_${patternType}_${action}_${Date.now()}`;
+
+        await memoryManager.store({
+            key: patternKey,
+            content: {
+                type: patternType,
+                action,
+                result,
+                context,
+                timestamp: Date.now(),
+                agentName: this.currentContext?.agentName,
+                sessionId: this.currentContext?.system?.sessionId,
+                success: patternType === 'success',
+            },
+            type: 'execution_pattern',
+            tenantId: this.currentContext?.tenantId,
+            sessionId: this.currentContext?.system?.sessionId,
+            contextId: this.currentContext?.system?.executionId,
+            metadata: {
+                patternType,
+                action,
+                source: 'execution-pattern-learning',
+            },
+        });
+
+        this.logger.debug('Execution pattern stored', {
+            patternType,
+            action,
+            patternKey,
+            agentName: this.currentContext?.agentName,
+        });
+    }
+
+    /**
+     * Store tool usage pattern for optimization
+     */
+    async storeToolUsagePattern(
+        toolName: string,
+        input: unknown,
+        output: unknown,
+        success: boolean,
+        duration: number,
+    ): Promise<void> {
+        const memoryManager = this.getMemoryManager();
+
+        const usageKey = `tool_usage_${toolName}_${Date.now()}`;
+
+        await memoryManager.store({
+            key: usageKey,
+            content: {
+                toolName,
+                input,
+                output,
+                success,
+                duration,
+                timestamp: Date.now(),
+                agentName: this.currentContext?.agentName,
+                sessionId: this.currentContext?.system?.sessionId,
+            },
+            type: 'tool_usage',
+            tenantId: this.currentContext?.tenantId,
+            sessionId: this.currentContext?.system?.sessionId,
+            contextId: this.currentContext?.system?.executionId,
+            metadata: {
+                toolName,
+                success,
+                duration,
+                source: 'tool-usage-tracking',
+            },
         });
     }
 
@@ -713,19 +802,19 @@ export class ExecutionRuntime implements IExecutionRuntime {
 
         try {
             switch (rootComponent) {
-                // case 'session':
-                //     return await this.getFromSession(pathParts.slice(1), path);
-                // case 'state':
-                // case 'working':
-                //     return await this.getFromState(pathParts.slice(1), path);
-                // case 'memory':
-                // case 'user':
-                //     return await this.getFromMemory(pathParts.slice(1), path);
-                // case 'execution':
-                //     return await this.getFromExecution(
-                //         pathParts.slice(1),
-                //         path,
-                //     );
+                case 'session':
+                    return await this.getFromSession(pathParts.slice(1), path);
+                case 'state':
+                case 'working':
+                    return await this.getFromState(pathParts.slice(1), path);
+                case 'memory':
+                case 'user':
+                    return await this.getFromMemory(pathParts.slice(1), path);
+                case 'execution':
+                    return await this.getFromExecution(
+                        pathParts.slice(1),
+                        path,
+                    );
                 default:
                     throw new Error(
                         `Unknown context path root: ${rootComponent}`,
@@ -1140,6 +1229,133 @@ export class ExecutionRuntime implements IExecutionRuntime {
         if (filter.agentName === version.metadata?.agentName) relevance *= 1.5;
 
         return relevance;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────────
+    // 🔍 PATH-BASED ACCESS METHODS
+    // ──────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Get data from session service
+     */
+    private async getFromSession(
+        pathParts: string[],
+        _path: ContextPath,
+    ): Promise<unknown> {
+        const sessionService = this.getSessionService();
+
+        if (pathParts.length === 0 || pathParts[0] === 'recent') {
+            // Return recent conversation history
+            const history = this.getSessionHistory();
+            return history.slice(-5); // Last 5 entries
+        }
+
+        if (pathParts[0] === 'history') {
+            return this.getSessionHistory();
+        }
+
+        if (
+            pathParts[0] === 'context' &&
+            this.currentContext?.system?.sessionId
+        ) {
+            const sessionContext = sessionService.getSessionContext(
+                this.currentContext.system.sessionId,
+            );
+            return sessionContext?.metadata || {};
+        }
+
+        return undefined;
+    }
+
+    /**
+     * Get data from state service
+     */
+    private async getFromState(
+        pathParts: string[],
+        _path: ContextPath,
+    ): Promise<unknown> {
+        const stateService = this.getStateService();
+
+        if (pathParts.length < 2) {
+            // Return all namespaces
+            return stateService.getAllNamespaces();
+        }
+
+        const namespace = pathParts[0];
+        const key = pathParts[1];
+
+        if (key && namespace) {
+            return await stateService.get(namespace, key);
+        } else if (namespace) {
+            return stateService.getNamespace(namespace);
+        }
+
+        return undefined;
+    }
+
+    /**
+     * Get data from memory manager
+     */
+    private async getFromMemory(
+        pathParts: string[],
+        path: ContextPath,
+    ): Promise<unknown> {
+        const memoryManager = this.getMemoryManager();
+
+        if (pathParts.length === 0 || pathParts[0] === 'recent') {
+            return await memoryManager.getRecentMemories(5);
+        }
+
+        if (pathParts[0] === 'relevant' && path.context) {
+            // Try to find relevant memories based on context
+            const query = String(path.context).toLowerCase();
+            return await memoryManager.search(query, {
+                topK: 5,
+                minScore: 0.6,
+            });
+        }
+
+        if (pathParts[0] === 'patterns') {
+            // Return success patterns if available
+            return await this.getSuccessPatterns('general');
+        }
+
+        return undefined;
+    }
+
+    /**
+     * Get data from execution context
+     */
+    private async getFromExecution(
+        pathParts: string[],
+        _path: ContextPath,
+    ): Promise<unknown> {
+        if (pathParts.length === 0 || pathParts[0] === 'current') {
+            return {
+                contextValues: Object.fromEntries(this.contextValues.entries()),
+                executions: this.executions.size,
+                versions: this.versions.size,
+            };
+        }
+
+        if (
+            pathParts[0] === 'trace' &&
+            this.currentContext?.system?.executionId
+        ) {
+            return await this.getExecutionTrace(
+                this.currentContext.system.executionId,
+            );
+        }
+
+        if (pathParts[0] === 'stats') {
+            return {
+                totalContextValues: this.contextValues.size,
+                totalExecutions: this.executions.size,
+                totalVersions: this.versions.size,
+            };
+        }
+
+        return undefined;
     }
 
     // private determineOverallHealth(
