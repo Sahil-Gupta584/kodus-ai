@@ -48,6 +48,7 @@ import {
     PromptRole,
     ParserType,
 } from '@kodus/kodus-common/llm';
+import { status as Status } from '@grpc/grpc-js';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -589,6 +590,17 @@ export class CodeAstAnalysisService
                         metadata: { taskId },
                     });
                     throw error;
+                }
+
+                if (error?.code === Status.NOT_FOUND) {
+                    this.logger.warn({
+                        message: `Task ${taskId} not found`,
+                        context: CodeAstAnalysisService.name,
+                        error,
+                        metadata: { taskId },
+                    });
+
+                    throw new Error(`Task ${taskId} not found`);
                 }
 
                 this.logger.warn({
