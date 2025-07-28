@@ -1,0 +1,191 @@
+import { Injectable } from '@nestjs/common';
+import {
+    UnifiedLogHandler,
+    BaseLogParams,
+    ChangedDataToExport,
+} from './unifiedLog.handler';
+import {
+    ActionType,
+    ConfigLevel,
+} from '@/config/types/general/codeReviewSettingsLog.type';
+
+export interface RepositoriesLogParams extends BaseLogParams {
+    addedRepositories?: Array<{ id: string; name: string }>;
+    removedRepositories?: Array<{ id: string; name: string }>;
+    sourceRepository?: { id: string; name: string };
+    targetRepository?: { id: string; name: string };
+}
+
+export interface RepositoryConfigRemovalParams extends BaseLogParams {
+    repository: { id: string; name: string };
+}
+
+@Injectable()
+export class RepositoriesLogHandler {
+    constructor(private readonly unifiedLogHandler: UnifiedLogHandler) {}
+
+    public async logRepositoriesAction(
+        params: RepositoriesLogParams,
+    ): Promise<void> {
+        const {
+            organizationAndTeamData,
+            userInfo,
+            actionType,
+            addedRepositories = [],
+            removedRepositories = [],
+            sourceRepository,
+            targetRepository,
+        } = params;
+
+        // Handle copy operation
+        if (
+            actionType === ActionType.ADD &&
+            sourceRepository &&
+            targetRepository
+        ) {
+            await this.logCopyOperation({
+                organizationAndTeamData,
+                userInfo,
+                sourceRepository,
+                targetRepository,
+            });
+            return;
+        }
+
+        // Handle add/remove operations
+        if (
+            addedRepositories.length === 0 &&
+            removedRepositories.length === 0
+        ) {
+            return;
+        }
+
+        const changedData = this.generateRepositoryChangedData(
+            addedRepositories,
+            removedRepositories,
+            userInfo.userEmail,
+        );
+
+        await this.unifiedLogHandler.saveLogEntry({
+            organizationAndTeamData,
+            userInfo,
+            actionType,
+            configLevel: ConfigLevel.GLOBAL,
+            repository: undefined,
+            changedData,
+        });
+    }
+
+    public async logRepositoryConfigurationRemoval(
+        params: RepositoryConfigRemovalParams,
+    ): Promise<void> {
+        const { organizationAndTeamData, userInfo, repository } = params;
+
+        const changedData: ChangedDataToExport[] = [
+            {
+                actionDescription: 'Repository Configuration Removed',
+                previousValue: {
+                    id: repository.id,
+                    name: repository.name,
+                    configType: 'specific',
+                },
+                currentValue: {
+                    id: repository.id,
+                    name: repository.name,
+                    configType: 'global',
+                },
+                description: `User ${userInfo.userEmail} removed configuration for repository "${repository.name}", now this repository will be reviewed according to global settings`,
+            },
+        ];
+
+        await this.unifiedLogHandler.saveLogEntry({
+            organizationAndTeamData,
+            userInfo,
+            actionType: ActionType.DELETE,
+            configLevel: ConfigLevel.REPOSITORY,
+            repository,
+            changedData,
+        });
+    }
+
+    private async logCopyOperation(params: {
+        organizationAndTeamData: any;
+        userInfo: any;
+        sourceRepository: { id: string; name: string };
+        targetRepository: { id: string; name: string };
+    }): Promise<void> {
+        const {
+            organizationAndTeamData,
+            userInfo,
+            sourceRepository,
+            targetRepository,
+        } = params;
+
+        const isSourceGlobal = sourceRepository.id === 'global';
+        const sourceName = isSourceGlobal
+            ? 'Global Settings'
+            : sourceRepository.name;
+
+        const changedData: ChangedDataToExport[] = [
+            {
+                actionDescription: 'Repository Configuration Copied',
+                previousValue: null,
+                currentValue: {
+                    sourceRepository: {
+                        id: sourceRepository.id,
+                        name: sourceName,
+                        isGlobal: isSourceGlobal,
+                    },
+                    targetRepository: {
+                        id: targetRepository.id,
+                        name: targetRepository.name,
+                    },
+                },
+                description: `User ${userInfo.userEmail} copied code review configuration from ${isSourceGlobal ? 'Global Settings' : `"${sourceName}"`} to repository "${targetRepository.name}"`,
+            },
+        ];
+
+        await this.unifiedLogHandler.saveLogEntry({
+            organizationAndTeamData,
+            userInfo,
+            actionType: ActionType.ADD,
+            configLevel: ConfigLevel.REPOSITORY,
+            repository: targetRepository,
+            changedData,
+        });
+    }
+
+    private generateRepositoryChangedData(
+        addedRepositories: Array<{ id: string; name: string }>,
+        removedRepositories: Array<{ id: string; name: string }>,
+        userEmail: string,
+    ): ChangedDataToExport[] {
+        const changedData: ChangedDataToExport[] = [];
+
+        addedRepositories.forEach((repo) => {
+            changedData.push({
+                actionDescription: 'Repository Added',
+                previousValue: null,
+                currentValue: {
+                    id: repo.id,
+                    name: repo.name,
+                },
+                description: `User ${userEmail} added repository "${repo.name}" to code review settings`,
+            });
+        });
+
+        removedRepositories.forEach((repo) => {
+            changedData.push({
+                actionDescription: 'Repository Removed',
+                previousValue: {
+                    id: repo.id,
+                    name: repo.name,
+                },
+                currentValue: null,
+                description: `User ${userEmail} removed repository "${repo.name}" from code review settings`,
+            });
+        });
+
+        return changedData;
+    }
+}

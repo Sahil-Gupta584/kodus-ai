@@ -8,17 +8,30 @@ import { CopyCodeReviewParameterDTO } from '@/core/infrastructure/http/dtos/copy
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
+import {
+    ICodeReviewSettingsLogService,
+    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 
 @Injectable()
 export class CopyCodeReviewParameterUseCase {
     constructor(
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
+
+        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
+        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
         private readonly logger: PinoLoggerService,
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string } };
+            user: {
+                organization: { uuid: string };
+                uuid: string;
+                email: string;
+            };
         },
     ) {}
 
@@ -85,6 +98,42 @@ export class CopyCodeReviewParameterUseCase {
                 updatedConfigValue,
                 organizationAndTeamData,
             );
+
+            try {
+                this.codeReviewSettingsLogService.registerRepositoriesLog(
+                    {
+                        organizationAndTeamData: {
+                            ...organizationAndTeamData,
+                            organizationId: this.request.user.organization.uuid,
+                        },
+                        userInfo: {
+                            userId: this.request.user.uuid,
+                            userEmail: this.request.user.email,
+                        },
+                        actionType: ActionType.ADD,
+                        sourceRepository:
+                            sourceRepositoryId === 'global'
+                                ? { id: 'global', name: 'Global Settings' }
+                                : {
+                                      id: sourceRepository.id,
+                                      name: sourceRepository.name,
+                                  },
+                        targetRepository: {
+                            id: targetRepository.id,
+                            name: targetRepository.name,
+                        },
+                    },
+                );
+            } catch (error) {
+                this.logger.error({
+                    message: 'Error saving code review settings log',
+                    error: error,
+                    context: CopyCodeReviewParameterUseCase.name,
+                    metadata: {
+                        organizationAndTeamData: organizationAndTeamData,
+                    },
+                });
+            }
 
             this.logger.log({
                 message: 'Code review parameter copied successfully',

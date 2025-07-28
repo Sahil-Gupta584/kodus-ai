@@ -13,6 +13,7 @@ import { CodebaseModule } from './codeBase.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
 import { IntegrationModule } from './integration.module';
 import { GenerateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/generate-code-review-paremeter.use-case';
+import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 
 @Module({
     imports: [
@@ -21,6 +22,7 @@ import { GenerateCodeReviewParameterUseCase } from '@/core/application/use-cases
         forwardRef(() => CodebaseModule),
         forwardRef(() => PlatformIntegrationModule),
         forwardRef(() => IntegrationModule),
+        forwardRef(() => CodeReviewSettingsLogModule),
     ],
     providers: [
         ...UseCases,

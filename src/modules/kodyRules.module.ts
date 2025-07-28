@@ -24,6 +24,7 @@ import { KodyRulesValidationService } from '@/ee/kodyRules/service/kody-rules-va
 import { SendRulesNotificationUseCase } from '@/core/application/use-cases/kodyRules/send-rules-notification.use-case';
 import { UsersModule } from './user.module';
 import { OrganizationModule } from './organization.module';
+import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 
 @Module({
     imports: [
@@ -40,6 +41,7 @@ import { OrganizationModule } from './organization.module';
         forwardRef(() => ParametersModule),
         forwardRef(() => UsersModule),
         forwardRef(() => OrganizationModule),
+        forwardRef(() => CodeReviewSettingsLogModule),
         KodyRulesValidationModule,
     ],
     providers: [

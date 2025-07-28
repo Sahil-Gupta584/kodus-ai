@@ -8,6 +8,13 @@ import { IntegrationService } from '@/core/infrastructure/adapters/services/inte
 import { AUTH_INTEGRATION_SERVICE_TOKEN } from '@/core/domain/authIntegrations/contracts/auth-integration.service.contracts';
 import { INTEGRATION_CONFIG_SERVICE_TOKEN } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
+import { REQUEST } from '@nestjs/core';
+import {
+    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+    ICodeReviewSettingsLogService,
+} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 @Injectable()
 export class DeleteIntegrationUseCase {
@@ -22,6 +29,20 @@ export class DeleteIntegrationUseCase {
 
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IntegrationConfigService,
+
+        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
+        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
+        private readonly logger: PinoLoggerService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: {
+                organization: { uuid: string };
+                uuid: string;
+                email: string;
+            };
+        },
     ) {}
 
     async execute(params: {
@@ -54,6 +75,33 @@ export class DeleteIntegrationUseCase {
 
         if (integrationConfig) {
             await this.integrationConfigService.delete(integrationConfig.uuid);
+        }
+
+        try {
+            this.codeReviewSettingsLogService.registerIntegrationLog({
+                organizationAndTeamData: {
+                    organizationId: params.organizationId,
+                    teamId: params.teamId,
+                },
+                userInfo: {
+                    userId: this.request.user.uuid,
+                    userEmail: this.request.user.email,
+                },
+                integration,
+                actionType: ActionType.DELETE,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: 'Error saving code review settings log',
+                error: error,
+                context: DeleteIntegrationUseCase.name,
+                metadata: {
+                    organizationAndTeamData: {
+                        organizationId: this.request.user.organization.uuid,
+                        teamId: params.teamId,
+                    },
+                },
+            });
         }
 
         await this.integrationService.delete(integration.uuid);
