@@ -80,6 +80,16 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
             startReviewMessage &&
             startReviewMessage.status === PullRequestMessageStatus.INACTIVE
         ) {
+            this.logger.log({
+                message: `Skipping initial comment for PR#${context.pullRequest.number} with start review message because it is inactive`,
+                context: this.stageName,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                    repository: context.repository.name,
+                },
+            });
+
             return this.updateContext(context, (draft) => {
                 draft.startReviewMessage = startReviewMessage;
             });

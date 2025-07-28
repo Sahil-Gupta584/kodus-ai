@@ -42,6 +42,8 @@ import {
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
+import { PullRequestMessageStatus } from '@/config/types/general/pullRequestMessages.type';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
@@ -1398,14 +1400,21 @@ ${reviewOptionsMarkdown}
         platformType: PlatformType,
         codeSuggestions?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
+        finishReviewMessage?: IPullRequestMessages,
     ): Promise<void> {
-        const commentBody = await this.generateLastReviewCommenBody(
-            organizationAndTeamData,
-            prNumber,
-            platformType,
-            codeSuggestions,
-            codeReviewConfig,
-        );
+        let commentBody;
+
+        if (finishReviewMessage) {
+            commentBody = finishReviewMessage.content;
+        } else {
+            commentBody = await this.generateLastReviewCommenBody(
+                organizationAndTeamData,
+                prNumber,
+                platformType,
+                codeSuggestions,
+                codeReviewConfig,
+            );
+        }
 
         await this.codeManagementService.createIssueComment({
             organizationAndTeamData,

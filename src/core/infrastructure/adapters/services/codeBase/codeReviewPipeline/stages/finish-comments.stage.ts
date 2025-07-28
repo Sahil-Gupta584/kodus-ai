@@ -6,6 +6,16 @@ import {
 } from '@/core/domain/codeBase/contracts/CommentManagerService.contract';
 import { PinoLoggerService } from '../../../logger/pino.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
+import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
+import {
+    IPullRequestMessagesService,
+    PULL_REQUEST_MESSAGES_SERVICE_TOKEN,
+} from '@/core/domain/pullRequestMessages/contracts/pullRequestMessages.service.contract';
+import {
+    ConfigLevel,
+    PullRequestMessageStatus,
+    PullRequestMessageType,
+} from '@/config/types/general/pullRequestMessages.type';
 
 @Injectable()
 export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -14,6 +24,10 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
     constructor(
         @Inject(COMMENT_MANAGER_SERVICE_TOKEN)
         private readonly commentManagerService: ICommentManagerService,
+
+        @Inject(PULL_REQUEST_MESSAGES_SERVICE_TOKEN)
+        private readonly pullRequestMessagesService: IPullRequestMessagesService,
+
         private readonly logger: PinoLoggerService,
     ) {
         super();
@@ -66,7 +80,9 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             );
         }
 
-        if (!context.startReviewMessage) {
+        const finishReviewMessage = await this.setFinishReviewMessage(context);
+
+        if (!context.startReviewMessage && !finishReviewMessage) {
             await this.commentManagerService.updateOverallComment(
                 organizationAndTeamData,
                 pullRequest.number,
@@ -79,6 +95,22 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 initialCommentData.threadId,
             );
         } else {
+            if (
+                finishReviewMessage &&
+                finishReviewMessage.status === PullRequestMessageStatus.INACTIVE
+            ) {
+                this.logger.log({
+                    message: `Skipping comment for PR#${context.pullRequest.number} with finish review message because it is inactive`,
+                    context: UpdateCommentsAndGenerateSummaryStage.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        prNumber: context.pullRequest.number,
+                        repository: context.repository,
+                    },
+                });
+                return context;
+            }
+
             await this.commentManagerService.createComment(
                 organizationAndTeamData,
                 pullRequest.number,
@@ -86,9 +118,37 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 platformType,
                 lineComments,
                 codeReviewConfig,
+                finishReviewMessage,
             );
         }
 
         return context;
+    }
+
+    private async setFinishReviewMessage(
+        context: CodeReviewPipelineContext,
+    ): Promise<IPullRequestMessages> {
+        const pullRequestMessages = await this.pullRequestMessagesService.find({
+            organizationId: context.organizationAndTeamData.organizationId,
+            pullRequestMessageType: PullRequestMessageType.FINISH_REVIEW,
+        });
+
+        if (pullRequestMessages.length > 0) {
+            const repositoryId = context.repository.id;
+
+            let finishReviewMessage = pullRequestMessages.find(
+                (message) => message.repository?.id === repositoryId,
+            );
+
+            if (!finishReviewMessage) {
+                finishReviewMessage = pullRequestMessages.find(
+                    (message) => message.configLevel === ConfigLevel.GLOBAL,
+                );
+            }
+
+            return finishReviewMessage;
+        }
+
+        return null;
     }
 }
