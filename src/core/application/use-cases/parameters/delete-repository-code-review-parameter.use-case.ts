@@ -9,6 +9,11 @@ import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { DeleteRepositoryCodeReviewParameterDto } from '@/core/infrastructure/http/dtos/delete-repository-code-review-parameter.dto';
+import {
+    ICodeReviewSettingsLogService,
+    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 import { Request } from 'express';
 
 @Injectable()
@@ -17,15 +22,24 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
 
+        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
+        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
         private readonly logger: PinoLoggerService,
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string } };
+            user: {
+                uuid: string;
+                email: string;
+                organization: { uuid: string };
+            };
         },
     ) {}
 
-    async execute(body: DeleteRepositoryCodeReviewParameterDto): Promise<ParametersEntity | boolean> {
+    async execute(
+        body: DeleteRepositoryCodeReviewParameterDto,
+    ): Promise<ParametersEntity | boolean> {
         const { repositoryId, teamId } = body;
 
         try {
@@ -50,19 +64,20 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
 
             const codeReviewConfigValue = codeReviewConfig.configValue;
 
-            // Verificar se o repositório existe na configuração
-            const repositoryExists = codeReviewConfigValue.repositories?.some(
+            // Verificar se o repositório existe na configuração e capturar suas informações
+            const repositoryToRemove = codeReviewConfigValue.repositories?.find(
                 (repository: any) => repository.id === repositoryId,
             );
 
-            if (!repositoryExists) {
+            if (!repositoryToRemove) {
                 throw new Error('Repository not found in configuration');
             }
 
             // Remover o repositório específico do array
-            const updatedRepositories = codeReviewConfigValue.repositories.filter(
-                (repository: any) => repository.id !== repositoryId,
-            );
+            const updatedRepositories =
+                codeReviewConfigValue.repositories.filter(
+                    (repository: any) => repository.id !== repositoryId,
+                );
 
             // Atualizar a configuração com os repositórios filtrados
             const updatedConfigValue = {
@@ -76,8 +91,37 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
                 organizationAndTeamData,
             );
 
+            try {
+                this.codeReviewSettingsLogService.registerRepositoryConfigurationRemoval(
+                    {
+                        organizationAndTeamData,
+                        userInfo: {
+                            userId: this.request.user.uuid,
+                            userEmail: this.request.user.email,
+                        },
+                        repository: {
+                            id: repositoryToRemove.id,
+                            name: repositoryToRemove.name,
+                        },
+                        actionType: ActionType.DELETE,
+                    },
+                );
+            } catch (error) {
+                this.logger.error({
+                    message:
+                        'Could not delete repository from code review configuration',
+                    context: DeleteRepositoryCodeReviewParameterUseCase.name,
+                    serviceName: 'DeleteRepositoryCodeReviewParameterUseCase',
+                    error: error,
+                    metadata: {
+                        organizationAndTeamData,
+                    },
+                });
+            }
+
             this.logger.log({
-                message: 'Repository removed from code review configuration successfully',
+                message:
+                    'Repository removed from code review configuration successfully',
                 context: DeleteRepositoryCodeReviewParameterUseCase.name,
                 serviceName: 'DeleteRepositoryCodeReviewParameterUseCase',
                 metadata: {
@@ -91,7 +135,8 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
             return updated;
         } catch (error) {
             this.logger.error({
-                message: 'Could not delete repository from code review configuration',
+                message:
+                    'Could not delete repository from code review configuration',
                 context: DeleteRepositoryCodeReviewParameterUseCase.name,
                 serviceName: 'DeleteRepositoryCodeReviewParameterUseCase',
                 error: error,

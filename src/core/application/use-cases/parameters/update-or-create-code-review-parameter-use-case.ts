@@ -21,6 +21,15 @@ import {
     SummaryConfig,
 } from '@/config/types/general/codeReview.type';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import {
+    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+    ICodeReviewSettingsLogService,
+} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { REQUEST } from '@nestjs/core';
+import {
+    ActionType,
+    ConfigLevel,
+} from '@/config/types/general/codeReviewSettingsLog.type';
 
 interface Body {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -65,12 +74,29 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
 
+        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
+        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: {
+                organization: { uuid: string };
+                uuid: string;
+                email: string;
+            };
+        },
+
         private readonly logger: PinoLoggerService,
     ) {}
 
     async execute(body: Body): Promise<ParametersEntity | boolean> {
         try {
             const { organizationAndTeamData, configValue, repositoryId } = body;
+
+            if (!organizationAndTeamData.organizationId) {
+                organizationAndTeamData.organizationId =
+                    this.request.user.organization.uuid;
+            }
 
             const codeReviewConfigs: ICodeReviewParameter =
                 await this.getCodeReviewConfigs(organizationAndTeamData);
@@ -279,11 +305,37 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             repositories: codeReviewConfigs.repositories,
         };
 
-        return await this.parametersService.createOrUpdateConfig(
+        await this.parametersService.createOrUpdateConfig(
             ParametersKey.CODE_REVIEW_CONFIG,
             updatedCodeReviewConfigValue,
             organizationAndTeamData,
         );
+
+        try {
+            this.codeReviewSettingsLogService.registerCodeReviewConfigLog({
+                organizationAndTeamData,
+                userInfo: {
+                    userId: this.request.user.uuid,
+                    userEmail: this.request.user.email,
+                },
+                oldConfig: codeReviewConfigs.global,
+                newConfig: newGlobalInfo,
+                actionType: ActionType.EDIT,
+                configLevel: ConfigLevel.GLOBAL,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: 'Error saving code review settings log',
+                error: error,
+                context: UpdateOrCreateCodeReviewParameterUseCase.name,
+                metadata: {
+                    organizationAndTeamData: organizationAndTeamData,
+                    functionName: 'updateGlobalConfig',
+                },
+            });
+        }
+
+        return true;
     }
 
     private async updateSpecificRepositoryConfig(
@@ -292,6 +344,10 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         repositoryId: string,
         configValue: CodeReviewConfigWithoutLLMProvider,
     ) {
+        const currentRepositoryConfig = codeReviewConfigs.repositories.find(
+            (repository: any) => repository.id === repositoryId,
+        );
+
         const updatedRepositories = codeReviewConfigs.repositories.map(
             (repository: any) => {
                 if (repository.id === repositoryId) {
@@ -322,11 +378,48 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             global: codeReviewConfigs.global,
         };
 
-        return await this.parametersService.createOrUpdateConfig(
+        await this.parametersService.createOrUpdateConfig(
             ParametersKey.CODE_REVIEW_CONFIG,
             updatedCodeReviewConfigValue,
             organizationAndTeamData,
         );
+
+        try {
+            const newRepositoryConfig = updatedRepositories.find(
+                (repository: any) => repository.id === repositoryId,
+            );
+
+            if (currentRepositoryConfig && newRepositoryConfig) {
+                this.codeReviewSettingsLogService.registerCodeReviewConfigLog({
+                    organizationAndTeamData,
+                    userInfo: {
+                        userId: this.request.user.uuid,
+                        userEmail: this.request.user.email,
+                    },
+                    oldConfig: currentRepositoryConfig,
+                    newConfig: newRepositoryConfig,
+                    actionType: ActionType.EDIT,
+                    configLevel: ConfigLevel.REPOSITORY,
+                    repository: {
+                        id: newRepositoryConfig.id,
+                        name: newRepositoryConfig.name,
+                    },
+                });
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error saving code review settings log',
+                error: error,
+                context: UpdateOrCreateCodeReviewParameterUseCase.name,
+                metadata: {
+                    organizationAndTeamData: organizationAndTeamData,
+                    repositoryId: repositoryId,
+                    functionName: 'updateSpecificRepositoryConfig',
+                },
+            });
+        }
+
+        return true;
     }
 
     private handleError(error: any, body: Body) {

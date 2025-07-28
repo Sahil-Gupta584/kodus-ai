@@ -22,12 +22,23 @@ import {
     LibraryKodyRule,
 } from '@/config/types/kodyRules.type';
 import { ProgrammingLanguage } from '@/shared/domain/enums/programming-language.enum';
+import {
+    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+    ICodeReviewSettingsLogService,
+} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { ActionType, ConfigLevel, UserInfo } from '@/config/types/general/codeReviewSettingsLog.type';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 @Injectable()
 export class KodyRulesService implements IKodyRulesService {
     constructor(
         @Inject(KODY_RULES_REPOSITORY_TOKEN)
         private readonly kodyRulesRepository: IKodyRulesRepository,
+
+        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
+        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
+        private readonly logger: PinoLoggerService,
     ) {}
 
     getNativeCollection() {
@@ -98,6 +109,7 @@ export class KodyRulesService implements IKodyRulesService {
     async createOrUpdate(
         organizationAndTeamData: OrganizationAndTeamData,
         kodyRule: CreateKodyRuleDto,
+        userInfo: UserInfo,
     ): Promise<Partial<IKodyRule> | IKodyRule | null> {
         const existing = await this.findByOrganizationId(
             organizationAndTeamData.organizationId,
@@ -135,6 +147,28 @@ export class KodyRulesService implements IKodyRulesService {
                 );
             }
 
+            try {
+                this.codeReviewSettingsLogService.registerKodyRulesLog({
+                    organizationAndTeamData,
+                    userInfo,
+                    actionType: ActionType.CLONE,
+                    repository: { id: newRule.repositoryId },
+                    oldRule: undefined,
+                    newRule: newRule,
+                    ruleTitle: newRule.title,
+                });
+            } catch (error) {
+                this.logger.error({
+                    message: 'Error in registerKodyRulesLog',
+                    error: error,
+                    context: KodyRulesService.name,
+                    metadata: {
+                        organizationAndTeamData: organizationAndTeamData,
+                        repositoryId: newRule.repositoryId,
+                    },
+                });
+            }
+
             return newKodyRules.rules[0];
         }
 
@@ -159,6 +193,31 @@ export class KodyRulesService implements IKodyRulesService {
 
             if (!updatedKodyRules) {
                 throw new Error('Could not add new rule');
+            }
+
+            try {
+                this.codeReviewSettingsLogService.registerKodyRulesLog({
+                    organizationAndTeamData,
+                    userInfo,
+                    actionType:
+                        newRule.origin === KodyRulesOrigin.LIBRARY
+                            ? ActionType.CLONE
+                            : ActionType.CREATE,
+                    repository: { id: newRule.repositoryId },
+                    oldRule: undefined,
+                    newRule: newRule,
+                    ruleTitle: newRule.title,
+                });
+            } catch (error) {
+                this.logger.error({
+                    message: 'Error in registerKodyRulesLog',
+                    error: error,
+                    context: KodyRulesService.name,
+                    metadata: {
+                        organizationAndTeamData: organizationAndTeamData,
+                        repositoryId: newRule.repositoryId,
+                    },
+                });
             }
 
             return updatedKodyRules.rules.find(
@@ -186,6 +245,28 @@ export class KodyRulesService implements IKodyRulesService {
             kodyRule.uuid,
             updatedRule,
         );
+
+        try {
+            this.codeReviewSettingsLogService.registerKodyRulesLog({
+                organizationAndTeamData,
+                userInfo,
+                actionType: ActionType.EDIT,
+                repository: { id: updatedRule.repositoryId },
+                oldRule: existingRule,
+                newRule: updatedRule,
+                ruleTitle: updatedRule.title,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: 'Error in registerKodyRulesLog',
+                error: error,
+                context: KodyRulesService.name,
+                metadata: {
+                    organizationAndTeamData: organizationAndTeamData,
+                    repositoryId: updatedRule.repositoryId,
+                },
+            });
+        }
 
         if (!updatedKodyRules) {
             throw new Error('Could not update rule');

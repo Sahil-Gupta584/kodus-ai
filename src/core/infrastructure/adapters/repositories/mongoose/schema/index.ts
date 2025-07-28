@@ -25,6 +25,7 @@ import {
     CodeReviewFeedbackModel,
     CodeReviewFeedbackSchema,
 } from './codeReviewFeedback.model';
+import { CodeReviewSettingsLogModel, CodeReviewSettingsLogSchema } from './codeReviewSettingsLog.model';
 
 export const MemoryModelInstance = {
     name: MemoryModel.name,
@@ -64,6 +65,11 @@ export const CheckinHistoryOrganizationModelInstance = {
 export const CodeReviewFeedbackModelInstance = {
     name: CodeReviewFeedbackModel.name,
     schema: CodeReviewFeedbackSchema,
+};
+
+export const CodeReviewSettingsLogModelInstance = {
+    name: CodeReviewSettingsLogModel.name,
+    schema: CodeReviewSettingsLogSchema,
 };
 
 export const InteractionModelInstance = {
