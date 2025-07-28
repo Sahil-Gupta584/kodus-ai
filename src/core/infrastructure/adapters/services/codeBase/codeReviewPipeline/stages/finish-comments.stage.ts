@@ -116,6 +116,8 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 pullRequest.number,
                 repository,
                 platformType,
+                context.changedFiles,
+                context.codeReviewConfig?.languageResultPrompt ?? 'en-US',
                 lineComments,
                 codeReviewConfig,
                 finishReviewMessage,

@@ -270,13 +270,26 @@ Avoid making assumptions or including inferred details not present in the provid
         changedFiles: FileChange[],
         language: string,
         platformType: PlatformType,
+        codeReviewConfig?: CodeReviewConfig,
         startReviewMessage?: string,
     ): Promise<{ commentId: number; noteId: number; threadId?: number }> {
         try {
             let commentBody;
 
             if (startReviewMessage?.length > 0) {
-                commentBody = startReviewMessage;
+                const placeholderContext = await this.getTemplateContext(
+                    changedFiles,
+                    organizationAndTeamData,
+                    prNumber,
+                    codeReviewConfig,
+                    language,
+                    platformType,
+                );
+
+                commentBody = await this.messageProcessor.processTemplate(
+                    startReviewMessage,
+                    placeholderContext,
+                );
             } else {
                 commentBody = await this.generatePullRequestSummaryMarkdown(
                     changedFiles,
@@ -533,12 +546,12 @@ Avoid making assumptions or including inferred details not present in the provid
         }
     }
 
-    private generatePullRequestFinishSummaryMarkdown(
+    private async generatePullRequestFinishSummaryMarkdown(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         commentResults?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
-    ): string {
+    ): Promise<string> {
         try {
             const language =
                 codeReviewConfig?.languageResultPrompt ?? LanguageValue.ENGLISH;
@@ -567,7 +580,7 @@ Avoid making assumptions or including inferred details not present in the provid
             // Adicionar tag única com timestamp para identificar este comentário como finalizado
             const uniqueId = `completed-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-            return `${resultText}\n\n${this.generateConfigReviewMarkdown(organizationAndTeamData, prNumber, codeReviewConfig)}\n\n<!-- kody-codereview-${uniqueId} -->\n<!-- kody-codereview -->\n&#8203;`;
+            return `${resultText}\n\n${await this.generateConfigReviewMarkdown(organizationAndTeamData, prNumber, codeReviewConfig)}\n\n<!-- kody-codereview-${uniqueId} -->\n<!-- kody-codereview -->\n&#8203;`;
         } catch (error) {
             this.logger.error({
                 message:
@@ -645,11 +658,11 @@ ${summaryContent}
         }
     }
 
-    private generateConfigReviewMarkdown(
+    private async generateConfigReviewMarkdown(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         codeReviewConfig: CodeReviewConfig,
-    ): string {
+    ): Promise<string> {
         try {
             const language =
                 codeReviewConfig?.languageResultPrompt ?? LanguageValue.ENGLISH;
@@ -672,7 +685,7 @@ ${summaryContent}
                 prNumber,
             };
 
-            const reviewOptions = this.messageProcessor.processTemplate(
+            const reviewOptions = await this.messageProcessor.processTemplate(
                 '@reviewOptions',
                 context,
             );
@@ -1377,6 +1390,8 @@ ${reviewOptions}
         prNumber: number,
         repository: { name: string; id: string },
         platformType: PlatformType,
+        changedFiles?: FileChange[],
+        language?: string,
         codeSuggestions?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
         finishReviewMessage?: IPullRequestMessages,
@@ -1384,7 +1399,22 @@ ${reviewOptions}
         let commentBody;
 
         if (finishReviewMessage) {
+
             commentBody = finishReviewMessage.content;
+
+            const placeholderContext = await this.getTemplateContext(
+                changedFiles,
+                organizationAndTeamData,
+                prNumber,
+                codeReviewConfig,
+                language,
+                platformType,
+            );
+
+            commentBody = await this.messageProcessor.processTemplate(
+                finishReviewMessage.content,
+                placeholderContext,
+            );
         } else {
             commentBody = await this.generateLastReviewCommenBody(
                 organizationAndTeamData,
@@ -1401,5 +1431,23 @@ ${reviewOptions}
             prNumber,
             body: commentBody,
         });
+    }
+
+    private async getTemplateContext(
+        changedFiles?: FileChange[],
+        organizationAndTeamData?: OrganizationAndTeamData,
+        prNumber?: number,
+        codeReviewConfig?: CodeReviewConfig,
+        language?: string,
+        platformType?: PlatformType,
+    ): Promise<PlaceholderContext> {
+        return {
+            changedFiles,
+            organizationAndTeamData,
+            prNumber,
+            codeReviewConfig,
+            language,
+            platformType,
+        };
     }
 }

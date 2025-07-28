@@ -22,6 +22,7 @@ export interface ICommentManagerService {
         changedFiles: FileChange[],
         language: string,
         platformType: string,
+        codeReviewConfig?: CodeReviewConfig,
         startReviewMessage?: string,
     ): Promise<{ commentId: number; noteId: number; threadId?: number }>;
 
@@ -108,6 +109,8 @@ export interface ICommentManagerService {
         prNumber: number,
         repository: { name: string; id: string },
         platformType: PlatformType,
+        changedFiles?: FileChange[],
+        language?: string,
         codeSuggestions?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
         finishReviewMessage?: IPullRequestMessages,

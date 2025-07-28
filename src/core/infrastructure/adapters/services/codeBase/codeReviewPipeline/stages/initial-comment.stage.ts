@@ -102,6 +102,7 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
             context.changedFiles,
             context.codeReviewConfig?.languageResultPrompt ?? 'en-US',
             context.platformType,
+            context.codeReviewConfig,
             startReviewMessage?.content,
         );
 
