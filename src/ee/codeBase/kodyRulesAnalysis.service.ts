@@ -615,14 +615,12 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 role: PromptRole.USER,
             })
             .addMetadata({
-                metadata: {
-                    organizationId:
-                        context?.organizationAndTeamData?.organizationId,
-                    teamId: context?.organizationAndTeamData?.teamId,
-                    pullRequestId: context?.pullRequest?.number,
-                    provider,
-                    fallbackProvider,
-                },
+                organizationId:
+                    context?.organizationAndTeamData?.organizationId,
+                teamId: context?.organizationAndTeamData?.teamId,
+                pullRequestId: context?.pullRequest?.number,
+                provider,
+                fallbackProvider,
             })
             .addCallbacks([this.tokenTracker])
             .addTags([

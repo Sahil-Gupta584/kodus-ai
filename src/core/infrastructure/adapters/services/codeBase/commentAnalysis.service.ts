@@ -154,7 +154,7 @@ export class CommentAnalysisService {
 
     async generateKodyRules(params: {
         comments: UncategorizedComment[];
-        existingRules: LibraryKodyRule[];
+        existingRules: IKodyRule[];
     }): Promise<IKodyRule[]> {
         try {
             const { comments, existingRules } = params;
@@ -212,6 +212,13 @@ export class CommentAnalysisService {
                 uuid: rule.uuid || v4(),
             }));
 
+            const existingRulesAsLibrary = existingRules.map((rule) => ({
+                ...rule,
+                why_is_this_important:
+                    (rule as unknown as LibraryKodyRule)
+                        ?.why_is_this_important || '',
+            })) as LibraryKodyRule[];
+
             let deduplicatedRules = generatedWithUuids;
             if (existingRules && existingRules.length > 0) {
                 const deduplicatedRulesUuids = await this.promptRunnerService
@@ -223,7 +230,7 @@ export class CommentAnalysisService {
                     .setParser<string[]>(ParserType.JSON)
                     .setLLMJsonMode(true)
                     .setPayload({
-                        existingRules,
+                        existingRules: existingRulesAsLibrary,
                         newRules: generatedWithUuids,
                     })
                     .addPrompt({

@@ -955,6 +955,7 @@ export class KodyRulesPrLevelAnalysisService
                     prNumber,
                     provider: provider,
                     fallbackProvider,
+                    chunkIndex,
                 })
                 .addTags([
                     ...this.buildTags(provider, 'primary'),
@@ -1277,7 +1278,9 @@ export class KodyRulesPrLevelAnalysisService
                     role: PromptRole.USER,
                 })
                 .addMetadata({
-                    organizationId: organizationAndTeamData.organizationId,
+                    organizationAndTeamData,
+                    prNumber,
+                    ruleId: rule?.uuid,
                     provider: provider,
                     fallbackProvider: fallbackProvider,
                 })
