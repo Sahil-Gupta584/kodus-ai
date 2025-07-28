@@ -9,11 +9,11 @@ import { getTranslationsForLanguageByCategory, TranslationsCategory } from '@/sh
 
 export interface PlaceholderContext {
     changedFiles?: FileChange[];
-    organizationAndTeamData?: OrganizationAndTeamData;
-    prNumber?: number;
     codeReviewConfig?: CodeReviewConfig;
     language?: string;
     platformType?: PlatformType;
+    organizationAndTeamData?: OrganizationAndTeamData;
+    prNumber?: number;
 }
 
 export type PlaceholderHandler = (context: PlaceholderContext) => Promise<string> | string;
