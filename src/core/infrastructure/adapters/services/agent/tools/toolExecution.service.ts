@@ -33,12 +33,7 @@ import {
 } from '@langchain/core/messages';
 
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
-import {
-    MODEL_STRATEGIES,
-    LLMModelProvider,
-} from '../../llmProviders/llmModelProvider.helper';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '../../llmProviders/llmProvider.service';
+import { LLMModelProvider, LLMProviderService } from '@kodus/kodus-common/llm';
 
 type Action = {
     id: number;
@@ -60,7 +55,6 @@ export class ToolExecutionService implements IToolExecutionService {
         @Inject(TOOL_MANAGER_SERVICE_TOKEN)
         private readonly toolManagerService: IToolManagerService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
     ) {}
 

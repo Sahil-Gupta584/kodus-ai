@@ -1,11 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import {
-    LLMModelProvider,
-    MODEL_STRATEGIES
-} from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { estimateTokenCount } from '@/shared/utils/langchainCommon/document';
 import { encoding_for_model, TiktokenModel } from 'tiktoken';
+import { LLMModelProvider, MODEL_STRATEGIES } from '@kodus/kodus-common/llm';
 
 export interface TokenChunkingOptions {
     model?: LLMModelProvider | string;
@@ -33,23 +30,26 @@ export class TokenChunkingService {
      * @param options Configurações para o chunking
      * @returns Resultado com os chunks divididos e metadados
      */
-    public chunkDataByTokens(options: TokenChunkingOptions): TokenChunkingResult {
+    public chunkDataByTokens(
+        options: TokenChunkingOptions,
+    ): TokenChunkingResult {
         const {
             model,
             data,
             usagePercentage = 60,
-            defaultMaxTokens = 64000
+            defaultMaxTokens = 64000,
         } = options;
 
         // Validações de entrada
         if (!data || !Array.isArray(data)) {
             this.logger.error({
-                message: 'Invalid data provided for token chunking - not an array',
+                message:
+                    'Invalid data provided for token chunking - not an array',
                 context: TokenChunkingService.name,
                 metadata: {
                     dataType: typeof data,
                     model: model || 'default',
-                }
+                },
             });
 
             return {
@@ -58,7 +58,7 @@ export class TokenChunkingService {
                 totalChunks: 0,
                 tokensPerChunk: [],
                 tokenLimit: 0,
-                modelUsed: model || 'default'
+                modelUsed: model || 'default',
             };
         }
 
@@ -66,7 +66,7 @@ export class TokenChunkingService {
             this.logger.warn({
                 message: 'Empty data array provided for token chunking',
                 context: TokenChunkingService.name,
-                metadata: { model: model || 'default' }
+                metadata: { model: model || 'default' },
             });
 
             return {
@@ -75,13 +75,16 @@ export class TokenChunkingService {
                 totalChunks: 0,
                 tokensPerChunk: [],
                 tokenLimit: 0,
-                modelUsed: model || 'default'
+                modelUsed: model || 'default',
             };
         }
 
         try {
             // 1. Determinar limite de tokens
-            const maxTokens = this.getMaxTokensForModel(model, defaultMaxTokens);
+            const maxTokens = this.getMaxTokensForModel(
+                model,
+                defaultMaxTokens,
+            );
             const tokenLimit = Math.floor(maxTokens * (usagePercentage / 100));
 
             this.logger.log({
@@ -92,8 +95,8 @@ export class TokenChunkingService {
                     maxTokens,
                     usagePercentage,
                     tokenLimit,
-                    totalItems: data.length
-                }
+                    totalItems: data.length,
+                },
             });
 
             // 2. Dividir dados em chunks
@@ -111,7 +114,7 @@ export class TokenChunkingService {
                     this.logger.warn({
                         message: 'Null or undefined item found, skipping',
                         context: TokenChunkingService.name,
-                        metadata: { itemIndex: i, model: model || 'default' }
+                        metadata: { itemIndex: i, model: model || 'default' },
                     });
                     continue;
                 }
@@ -127,8 +130,11 @@ export class TokenChunkingService {
                             itemIndex: i,
                             itemTokens,
                             tokenLimit,
-                            item: typeof item === 'string' ? item.substring(0, 100) + '...' : 'complex object'
-                        }
+                            item:
+                                typeof item === 'string'
+                                    ? item.substring(0, 100) + '...'
+                                    : 'complex object',
+                        },
                     });
 
                     // Se chunk atual não está vazio, finaliza ele
@@ -146,7 +152,10 @@ export class TokenChunkingService {
                 }
 
                 // Verifica se adicionar o item excederia o limite
-                if (currentChunkTokens + itemTokens > tokenLimit && currentChunk.length > 0) {
+                if (
+                    currentChunkTokens + itemTokens > tokenLimit &&
+                    currentChunk.length > 0
+                ) {
                     // Finaliza chunk atual
                     chunks.push([...currentChunk]);
                     tokensPerChunk.push(currentChunkTokens);
@@ -173,7 +182,7 @@ export class TokenChunkingService {
                 totalChunks: chunks.length,
                 tokensPerChunk,
                 tokenLimit,
-                modelUsed: model || 'default'
+                modelUsed: model || 'default',
             };
 
             this.logger.log({
@@ -183,12 +192,11 @@ export class TokenChunkingService {
                     totalItems: result.totalItems,
                     totalChunks: result.totalChunks,
                     tokenLimit: result.tokenLimit,
-                    modelUsed: result.modelUsed
-                }
+                    modelUsed: result.modelUsed,
+                },
             });
 
             return result;
-
         } catch (error) {
             this.logger.error({
                 message: 'Error during token chunking process',
@@ -198,8 +206,8 @@ export class TokenChunkingService {
                     model,
                     dataLength: data?.length || 0,
                     usagePercentage,
-                    defaultMaxTokens
-                }
+                    defaultMaxTokens,
+                },
             });
 
             // Retornar resultado vazio em caso de erro
@@ -209,7 +217,7 @@ export class TokenChunkingService {
                 totalChunks: 0,
                 tokensPerChunk: [],
                 tokenLimit: 0,
-                modelUsed: model || 'default'
+                modelUsed: model || 'default',
             };
         }
     }
@@ -217,7 +225,10 @@ export class TokenChunkingService {
     /**
      * Obtém o limite máximo de tokens para um modelo
      */
-    private getMaxTokensForModel(model?: LLMModelProvider | string, inputMaxTokens: number = 64000): number {
+    private getMaxTokensForModel(
+        model?: LLMModelProvider | string,
+        inputMaxTokens: number = 64000,
+    ): number {
         if (!model) {
             return inputMaxTokens;
         }
@@ -238,7 +249,10 @@ export class TokenChunkingService {
     /**
      * Conta tokens para um item específico
      */
-    private countTokensForItem(item: any, model?: LLMModelProvider | string): number {
+    private countTokensForItem(
+        item: any,
+        model?: LLMModelProvider | string,
+    ): number {
         try {
             // Converte item para string para contagem
             const text = this.serializeItem(item);
@@ -246,7 +260,9 @@ export class TokenChunkingService {
             // Para modelos OpenAI, tenta usar tiktoken para contagem precisa
             if (model && this.isOpenAIModel(model)) {
                 try {
-                    const encoder = encoding_for_model(this.getOpenAIModelName(model) as TiktokenModel);
+                    const encoder = encoding_for_model(
+                        this.getOpenAIModelName(model) as TiktokenModel,
+                    );
                     return encoder.encode(text).length;
                 } catch (error) {
                     // Se falhar, usa estimativa
@@ -256,16 +272,16 @@ export class TokenChunkingService {
 
             // Para outros modelos, usa estimativa
             return estimateTokenCount(text);
-
         } catch (error) {
             this.logger.warn({
-                message: 'Error counting tokens for item, using fallback estimation',
+                message:
+                    'Error counting tokens for item, using fallback estimation',
                 error,
                 context: TokenChunkingService.name,
                 metadata: {
                     itemType: typeof item,
-                    model
-                }
+                    model,
+                },
             });
 
             // Fallback: estimativa básica baseada no tamanho da string
@@ -292,12 +308,13 @@ export class TokenChunkingService {
                     return JSON.stringify(item, this.getCircularReplacer());
                 } catch (fallbackError) {
                     this.logger.warn({
-                        message: 'Failed to serialize object, using fallback string conversion',
+                        message:
+                            'Failed to serialize object, using fallback string conversion',
                         context: TokenChunkingService.name,
                         metadata: {
                             itemType: typeof item,
                             error: fallbackError.message,
-                        }
+                        },
                     });
                     // Último fallback: toString seguro
                     return String(item);
@@ -314,9 +331,9 @@ export class TokenChunkingService {
     private getCircularReplacer() {
         const seen = new WeakSet();
         return (key: string, value: any) => {
-            if (typeof value === "object" && value !== null) {
+            if (typeof value === 'object' && value !== null) {
                 if (seen.has(value)) {
-                    return "[Circular]";
+                    return '[Circular]';
                 }
                 seen.add(value);
             }
@@ -332,7 +349,7 @@ export class TokenChunkingService {
             LLMModelProvider.OPENAI_GPT_4O,
             LLMModelProvider.OPENAI_GPT_4O_MINI,
             LLMModelProvider.OPENAI_GPT_4_1,
-            LLMModelProvider.OPENAI_GPT_O4_MINI
+            LLMModelProvider.OPENAI_GPT_O4_MINI,
         ];
 
         return openaiModels.includes(model as LLMModelProvider);

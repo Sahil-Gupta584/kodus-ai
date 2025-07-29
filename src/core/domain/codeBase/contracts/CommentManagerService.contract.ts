@@ -7,7 +7,7 @@ import {
     SummaryConfig,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
+import { LLMModelProvider } from '@kodus/kodus-common/llm';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { ISuggestionByPR } from '../../pullRequests/interfaces/pullRequests.interface';
 import { IPullRequestMessageContent, IPullRequestMessages } from '../../pullRequestMessages/interfaces/pullRequestMessages.interface';

@@ -1,5 +1,7 @@
+import { LimitationType } from '@/config/types/general/codeReview.type';
+
 export interface CodeReviewPayload {
-    limitationType?: 'file' | 'pr';
+    limitationType?: LimitationType;
     maxSuggestionsParams?: number;
     languageResultPrompt?: string;
     fileContent?: string;

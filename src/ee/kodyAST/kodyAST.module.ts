@@ -1,7 +1,6 @@
 import { DynamicModule, Global, Module } from '@nestjs/common';
 import { AST_ANALYSIS_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
 import { CodeAstAnalysisService } from '@/ee/kodyAST/codeASTAnalysis.service';
-import { LLMProviderModule } from '@/modules/llmProvider.module';
 import { LogModule } from '@/modules/log.module';
 import { PlatformIntegrationModule } from '@/modules/platformIntegration.module';
 import {
@@ -13,7 +12,7 @@ import { AST_MICROSERVICE_OPTIONS } from '../configs/microservices/ast-options';
 import { environment } from '../configs/environment';
 import { TASK_MICROSERVICE_OPTIONS } from '../configs/microservices/task-options';
 
-const staticImports = [LLMProviderModule, LogModule, PlatformIntegrationModule];
+const staticImports = [LogModule, PlatformIntegrationModule];
 const dynamicImports =
     environment.API_CLOUD_MODE && process.env.API_ENABLE_CODE_REVIEW_AST
         ? [

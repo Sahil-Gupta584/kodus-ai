@@ -1,0 +1,12 @@
+ARG API_CLOUD_MODE=false
+
+FROM --platform=linux/amd64 node:22.14.0-slim AS deps
+
+ARG API_CLOUD_MODE
+ENV API_CLOUD_MODE=${API_CLOUD_MODE}
+
+WORKDIR /usr/src/app
+
+EXPOSE 3001
+
+CMD ["yarn", "start:dev"]

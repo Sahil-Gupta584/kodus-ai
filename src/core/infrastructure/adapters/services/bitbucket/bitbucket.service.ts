@@ -66,9 +66,8 @@ import {
 import {
     MODEL_STRATEGIES,
     LLMModelProvider,
-} from '../llmProviders/llmModelProvider.helper';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '../llmProviders/llmProvider.service';
+    LLMProviderService,
+} from '@kodus/kodus-common/llm';
 import { ConfigService } from '@nestjs/config';
 import { AuthorContribution } from '@/core/domain/pullRequests/interfaces/authorContributor.interface';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
@@ -104,7 +103,6 @@ export class BitbucketService
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parameterService: IParametersService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         private readonly promptService: PromptService,
@@ -3810,7 +3808,12 @@ export class BitbucketService
         language?: string;
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<string> {
-        const { suggestion, repository, includeHeader = true, includeFooter = true } = params;
+        const {
+            suggestion,
+            repository,
+            includeHeader = true,
+            includeFooter = true,
+        } = params;
 
         let commentBody = '';
 
@@ -3838,7 +3841,8 @@ export class BitbucketService
 
         // FOOTER - Interação/Feedback (formato Bitbucket)
         if (includeFooter) {
-            commentBody += 'Was this suggestion helpful? reply with 👍 or 👎 to help Kody learn from this interaction.\n\n';
+            commentBody +=
+                'Was this suggestion helpful? reply with 👍 or 👎 to help Kody learn from this interaction.\n\n';
             commentBody += `\`\`\`\n👍\n\`\`\`\n\n\`\`\`\n👎\n\`\`\``;
         }
 

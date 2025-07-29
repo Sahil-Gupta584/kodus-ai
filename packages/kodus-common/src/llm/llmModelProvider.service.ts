@@ -1,26 +1,26 @@
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { Inject, Injectable, LoggerService } from '@nestjs/common';
-import {
-    LLMModelProvider,
-    MODEL_STRATEGIES,
-    ModelStrategy,
-    getChatGPT,
-} from './helper';
+import { LLMModelProvider, MODEL_STRATEGIES, getChatGPT } from './helper';
 import { ChatOpenAI } from '@langchain/openai';
 import { Runnable } from '@langchain/core/runnables';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatVertexAI } from '@langchain/google-vertexai';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 
-type LLMProviderOptions = {
+export type LLMProviderOptions = {
     model: LLMModelProvider | string;
     temperature: number;
     callbacks?: BaseCallbackHandler[];
     maxTokens?: number;
     jsonMode?: boolean;
+    maxReasoningTokens?: number;
 };
 
-type LLMProviderReturn = ChatOpenAI | ChatAnthropic | ChatVertexAI | Runnable;
+export type LLMProviderReturn =
+    | ChatOpenAI
+    | ChatAnthropic
+    | ChatVertexAI
+    | Runnable;
 
 @Injectable()
 export class LLMProviderService {
@@ -52,7 +52,8 @@ export class LLMProviderService {
             }
 
             /** Cloud mode – follows the strategy table */
-            const strategy = MODEL_STRATEGIES[options.model] as ModelStrategy;
+            const strategy =
+                MODEL_STRATEGIES[options.model as LLMModelProvider];
             if (!strategy) {
                 this.logger.error({
                     message: `Unsupported provider: ${options.model}`,
@@ -62,6 +63,7 @@ export class LLMProviderService {
                         temperature: options.temperature,
                         maxTokens: options.maxTokens,
                         jsonMode: options.jsonMode,
+                        maxReasoningTokens: options.maxReasoningTokens,
                     },
                     context: LLMProviderService.name,
                 });
@@ -90,6 +92,8 @@ export class LLMProviderService {
                 callbacks: options.callbacks,
                 baseURL,
                 json: options.jsonMode,
+                maxReasoningTokens:
+                    options.maxReasoningTokens ?? strategy.maxReasoningTokens,
             });
 
             if (options.jsonMode && this.isOpenAI(llm, strategy.provider)) {

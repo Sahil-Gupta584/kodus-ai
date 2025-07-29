@@ -2377,6 +2377,11 @@
   dependencies:
     buffer "^6.0.3"
 
+"@kodus/kodus-common@^1.2.0":
+  version "1.2.0"
+  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-common/@kodus/kodus-common/-/@kodus/kodus-common-1.2.0.tgz#54700bc5be062e98843a72ba0f6bc7c587f5afac"
+  integrity sha512-plkiBmRtzGrGpKYB/wsQmvwBElgCD3/DN4TxMRnrAGipgMHJ9EzXBMvPzfreycbw1dMGI2PoN2lG6J0aOdb62A==
+
 "@kodus/kodus-proto@https://registry.npmjs.org/@kodus/kodus-proto/-/kodus-proto-3.1.2.tgz":
   version "3.1.2"
   resolved "https://registry.npmjs.org/@kodus/kodus-proto/-/kodus-proto-3.1.2.tgz#a3f057987563fa93e50c35908f835aee06d211d6"

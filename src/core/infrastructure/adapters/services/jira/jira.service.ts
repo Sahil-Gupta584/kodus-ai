@@ -85,11 +85,10 @@ import {
     ValidateProjectManagementIntegration,
 } from '@/shared/utils/decorators/validate-project-management-integration.decorator';
 import {
-    MODEL_STRATEGIES,
+    LLMProviderService,
     LLMModelProvider,
-} from '../llmProviders/llmModelProvider.helper';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '../llmProviders/llmProvider.service';
+    MODEL_STRATEGIES,
+} from '@kodus/kodus-common/llm';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.JIRA, 'projectManagement')
@@ -122,7 +121,6 @@ export class JiraService
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         private readonly projectManagementService: ProjectManagementService,

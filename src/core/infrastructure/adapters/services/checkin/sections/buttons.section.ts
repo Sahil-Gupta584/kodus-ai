@@ -6,14 +6,12 @@ import { PromptService } from '../../prompt.service';
 import {
     MODEL_STRATEGIES,
     LLMModelProvider,
-} from '../../llmProviders/llmModelProvider.helper';
-import { LLMProviderService } from '../../llmProviders/llmProvider.service';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
+    LLMProviderService,
+} from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class ButtonsSection {
     constructor(
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         private readonly logger: PinoLoggerService,
@@ -80,17 +78,20 @@ export class ButtonsSection {
 
         const { buttons } = safelyParseMessageContent(
             (
-                await llm.invoke(await promptGenerateWeekResume.format({
-                    organizationAndTeamData,
-                    payload: JSON.stringify(sections),
-                    promptIsForChat: false,
-                }), {
-                    metadata: {
-                        module: 'CheckinSections',
-                        teamId: organizationAndTeamData.teamId,
-                        submodule: 'GenerateDynamicButtons',
+                await llm.invoke(
+                    await promptGenerateWeekResume.format({
+                        organizationAndTeamData,
+                        payload: JSON.stringify(sections),
+                        promptIsForChat: false,
+                    }),
+                    {
+                        metadata: {
+                            module: 'CheckinSections',
+                            teamId: organizationAndTeamData.teamId,
+                            submodule: 'GenerateDynamicButtons',
+                        },
                     },
-                })
+                )
             ).content,
         );
 
