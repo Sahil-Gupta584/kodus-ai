@@ -6,9 +6,6 @@ export class PullRequestMessagesDto {
     public organizationId?: string;
 
     @IsString()
-    public teamId: string;
-
-    @IsString()
     public pullRequestMessageType: PullRequestMessageType;
 
     @IsString()

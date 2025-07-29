@@ -30,10 +30,10 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
         pullRequestMessages.organizationId =
             this.request.user.organization.uuid;
 
-        if (pullRequestMessages?.repositoryId) {
-            pullRequestMessages.configLevel = ConfigLevel.REPOSITORY;
-        } else {
+        if (pullRequestMessages?.repositoryId === 'global') {
             pullRequestMessages.configLevel = ConfigLevel.GLOBAL;
+        } else {
+            pullRequestMessages.configLevel = ConfigLevel.REPOSITORY;
         }
 
         const existingPullRequestMessage = await this.findExistingConfiguration(

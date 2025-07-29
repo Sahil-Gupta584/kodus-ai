@@ -12,7 +12,6 @@ export interface IPullRequestMessageContent {
 export interface IPullRequestMessages {
     uuid?: string;
     organizationId: string;
-    teamId: string;
     configLevel: ConfigLevel;
     repositoryId?: string;
     startReviewMessage?: IPullRequestMessageContent;

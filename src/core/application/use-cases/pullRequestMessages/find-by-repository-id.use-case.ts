@@ -32,12 +32,10 @@ export class FindByRepositoryIdPullRequestMessagesUseCase implements IUseCase {
             });
         }
 
-        // Se não encontrou resultado, retorna null
         if (!result) {
-            return null;
+            return;
         }
 
-        // Converte para objeto sem os prefixos _
         return result.toJson();
     }
 }
