@@ -55,6 +55,7 @@ import {
     TOKEN_TRACKING_SERVICE_TOKEN,
     TokenTrackingService,
 } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
+import { MessageTemplateProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/services/messageTemplateProcessor.service';
 
 @Module({
     imports: [
@@ -121,6 +122,7 @@ import {
         CodeReviewHandlerService,
         KodyFineTuningService,
         CommentAnalysisService,
+        MessageTemplateProcessor,
     ],
     exports: [
         PULL_REQUEST_MANAGER_SERVICE_TOKEN,
@@ -137,6 +139,7 @@ import {
         KodyFineTuningService,
         CodeReviewHandlerService,
         CommentAnalysisService,
+        MessageTemplateProcessor,
     ],
     controllers: [CodeBaseController],
 })

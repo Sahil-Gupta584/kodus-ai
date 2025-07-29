@@ -7,6 +7,17 @@ import {
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
+import {
+    ConfigLevel,
+    PullRequestMessageStatus,
+    PullRequestMessageType,
+} from '@/config/types/general/pullRequestMessages.type';
+import {
+    PULL_REQUEST_MESSAGES_SERVICE_TOKEN,
+    IPullRequestMessagesService,
+} from '@/core/domain/pullRequestMessages/contracts/pullRequestMessages.service.contract';
+import { GLOBAL_MODULE_METADATA } from '@nestjs/common/constants';
+import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 
 @Injectable()
 export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -15,6 +26,10 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
     constructor(
         @Inject(COMMENT_MANAGER_SERVICE_TOKEN)
         private commentManagerService: ICommentManagerService,
+
+        @Inject(PULL_REQUEST_MESSAGES_SERVICE_TOKEN)
+        private readonly pullRequestMessagesService: IPullRequestMessagesService,
+
         private readonly logger: PinoLoggerService,
     ) {
         super();
@@ -23,7 +38,13 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
     protected async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
-        if (context.lastExecution && context.platformType === PlatformType.GITHUB) {
+        const pullRequestMessagesConfig =
+            await this.setPullRequestMessagesConfig(context);
+
+        if (
+            context.lastExecution &&
+            context.platformType === PlatformType.GITHUB
+        ) {
             this.logger.log({
                 message: `Minimizing previous review comment for subsequent review on PR#${context.pullRequest.number}`,
                 context: this.stageName,
@@ -48,11 +69,34 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
                     context: this.stageName,
                     error: error.message,
                     metadata: {
-                        organizationAndTeamData: context.organizationAndTeamData,
+                        organizationAndTeamData:
+                            context.organizationAndTeamData,
                         prNumber: context.pullRequest.number,
                     },
                 });
             }
+        }
+
+        const startReviewMessage =
+            pullRequestMessagesConfig?.startReviewMessage;
+
+        if (
+            startReviewMessage &&
+            startReviewMessage.status === PullRequestMessageStatus.INACTIVE
+        ) {
+            this.logger.log({
+                message: `Skipping initial comment for PR#${context.pullRequest.number} with start review message because it is inactive`,
+                context: this.stageName,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                    repository: context.repository.name,
+                },
+            });
+
+            return this.updateContext(context, (draft) => {
+                draft.pullRequestMessagesConfig = pullRequestMessagesConfig;
+            });
         }
 
         const result = await this.commentManagerService.createInitialComment(
@@ -62,10 +106,39 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
             context.changedFiles,
             context.codeReviewConfig?.languageResultPrompt ?? 'en-US',
             context.platformType,
+            context.codeReviewConfig,
+            startReviewMessage?.content,
         );
 
         return this.updateContext(context, (draft) => {
             draft.initialCommentData = result;
+            draft.pullRequestMessagesConfig = pullRequestMessagesConfig;
         });
+    }
+
+    private async setPullRequestMessagesConfig(
+        context: CodeReviewPipelineContext,
+    ): Promise<IPullRequestMessages | null> {
+        const repositoryId = context.repository.id;
+        const organizationId = context.organizationAndTeamData.organizationId;
+
+        // Busca primeiro por configuração específica do repositório
+        let pullRequestMessagesConfig =
+            await this.pullRequestMessagesService.findOne({
+                organizationId,
+                repositoryId,
+                configLevel: ConfigLevel.REPOSITORY,
+            });
+
+        // Se não encontrar, busca por configuração global
+        if (!pullRequestMessagesConfig) {
+            pullRequestMessagesConfig =
+                await this.pullRequestMessagesService.findOne({
+                    organizationId,
+                    configLevel: ConfigLevel.GLOBAL,
+                });
+        }
+
+        return pullRequestMessagesConfig;
     }
 }

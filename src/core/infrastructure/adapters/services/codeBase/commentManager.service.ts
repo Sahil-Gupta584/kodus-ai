@@ -43,6 +43,15 @@ interface ClusteredSuggestion {
     problemDescription?: string;
     actionStatement?: string;
 }
+import {
+    IPullRequestMessageContent,
+    IPullRequestMessages,
+} from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
+import { PullRequestMessageStatus } from '@/config/types/general/pullRequestMessages.type';
+import {
+    MessageTemplateProcessor,
+    PlaceholderContext,
+} from './utils/services/messageTemplateProcessor.service';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
@@ -54,6 +63,7 @@ export class CommentManagerService implements ICommentManagerService {
         private readonly llmProviderService: LLMProviderService,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
+        private readonly messageProcessor: MessageTemplateProcessor,
 
         private readonly promptRunnerService: PromptRunnerService,
     ) {
@@ -265,18 +275,39 @@ Avoid making assumptions or including inferred details not present in the provid
         changedFiles: FileChange[],
         language: string,
         platformType: PlatformType,
+        codeReviewConfig?: CodeReviewConfig,
+        startReviewMessage?: string,
     ): Promise<{ commentId: number; noteId: number; threadId?: number }> {
         try {
-            let commentBody = await this.generatePullRequestSummaryMarkdown(
-                changedFiles,
-                language,
-                platformType,
-            );
+            let commentBody;
 
-            commentBody = this.sanitizeBitbucketMarkdown(
-                commentBody,
-                platformType,
-            );
+            if (startReviewMessage?.length > 0) {
+                const placeholderContext = await this.getTemplateContext(
+                    changedFiles,
+                    organizationAndTeamData,
+                    prNumber,
+                    codeReviewConfig,
+                    language,
+                    platformType,
+                );
+
+                const rawBody = await this.messageProcessor.processTemplate(
+                    startReviewMessage,
+                    placeholderContext,
+                );
+                commentBody = this.sanitizeBitbucketMarkdown(rawBody, platformType);
+            } else {
+                commentBody = await this.generatePullRequestSummaryMarkdown(
+                    changedFiles,
+                    language,
+                    platformType,
+                );
+
+                commentBody = this.sanitizeBitbucketMarkdown(
+                    commentBody,
+                    platformType,
+                );
+            }
 
             const comment = await this.codeManagementService.createIssueComment(
                 {
@@ -350,17 +381,12 @@ Avoid making assumptions or including inferred details not present in the provid
         threadId?: number,
     ): Promise<void> {
         try {
-            let commentBody =
-                await this.generatePullRequestFinishSummaryMarkdown(
-                    organizationAndTeamData,
-                    prNumber,
-                    codeSuggestions,
-                    codeReviewConfig,
-                );
-
-            commentBody = this.sanitizeBitbucketMarkdown(
-                commentBody,
+            const commentBody = await this.generateLastReviewCommenBody(
+                organizationAndTeamData,
+                prNumber,
                 platformType,
+                codeSuggestions,
+                codeReviewConfig,
             );
 
             await this.codeManagementService.updateIssueComment({
@@ -398,6 +424,25 @@ Avoid making assumptions or including inferred details not present in the provid
             });
             throw error;
         }
+    }
+
+    private async generateLastReviewCommenBody(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        platformType: PlatformType,
+        codeSuggestions?: Array<CommentResult>,
+        codeReviewConfig?: CodeReviewConfig,
+    ): Promise<string> {
+        let commentBody = await this.generatePullRequestFinishSummaryMarkdown(
+            organizationAndTeamData,
+            prNumber,
+            codeSuggestions,
+            codeReviewConfig,
+        );
+
+        commentBody = this.sanitizeBitbucketMarkdown(commentBody, platformType);
+
+        return commentBody;
     }
 
     async createLineComments(
@@ -507,12 +552,12 @@ Avoid making assumptions or including inferred details not present in the provid
         }
     }
 
-    private generatePullRequestFinishSummaryMarkdown(
+    private async generatePullRequestFinishSummaryMarkdown(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         commentResults?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
-    ): string {
+    ): Promise<string> {
         try {
             const language =
                 codeReviewConfig?.languageResultPrompt ?? LanguageValue.ENGLISH;
@@ -541,7 +586,7 @@ Avoid making assumptions or including inferred details not present in the provid
             // Adicionar tag única com timestamp para identificar este comentário como finalizado
             const uniqueId = `completed-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-            return `${resultText}\n\n${this.generateConfigReviewMarkdown(organizationAndTeamData, prNumber, codeReviewConfig)}\n\n<!-- kody-codereview-${uniqueId} -->\n<!-- kody-codereview -->\n&#8203;`;
+            return `${resultText}\n\n${await this.generateConfigReviewMarkdown(organizationAndTeamData, prNumber, codeReviewConfig)}\n\n<!-- kody-codereview-${uniqueId} -->\n<!-- kody-codereview -->\n&#8203;`;
         } catch (error) {
             this.logger.error({
                 message:
@@ -561,11 +606,11 @@ Avoid making assumptions or including inferred details not present in the provid
     /**
      * Generates the Pull Request summary markdown based on the changed files.
      */
-    private generatePullRequestSummaryMarkdown(
+    private async generatePullRequestSummaryMarkdown(
         changedFiles: FileChange[],
         language: string,
         platformType: PlatformType,
-    ): string {
+    ): Promise<string> {
         try {
             const translation = getTranslationsForLanguageByCategory(
                 language as LanguageValue,
@@ -578,28 +623,23 @@ Avoid making assumptions or including inferred details not present in the provid
                 );
             }
 
-            const filesTable = changedFiles
-                ?.map(
-                    (file) =>
-                        `| [${file.filename}](${file.blob_url}) | ${file.status} | ${file.additions} | ${file.deletions} | ${file.changes} |`,
-                )
-                .join('\n');
+            // Usar o processor para gerar as partes dinâmicas
+            const context: PlaceholderContext = {
+                changedFiles,
+                language,
+                platformType,
+            };
 
-            const totalFilesModified = changedFiles.length;
-            const totalAdditions = changedFiles.reduce(
-                (acc, file) => acc + file.additions,
-                0,
-            );
-            const totalDeletions = changedFiles.reduce(
-                (acc, file) => acc + file.deletions,
-                0,
-            );
-            const totalChanges = changedFiles.reduce(
-                (acc, file) => acc + file.changes,
-                0,
+            const filesTableContent =
+                await this.messageProcessor.processTemplate(
+                    '@changedFiles',
+                    context,
+                );
+            const summaryContent = await this.messageProcessor.processTemplate(
+                '@changeSummary',
+                context,
             );
 
-            //Do not touch this formatting, there cannot be spaces
             return `
 # ${translation.title}
 
@@ -607,22 +647,9 @@ Avoid making assumptions or including inferred details not present in the provid
 
 ${translation.description}
 
-<details>
-<summary>${translation.changedFiles}</summary>
+${filesTableContent}
 
-| ${translation.filesTable.join(' | ')} |
-|------|--------|-------------|-------------|------------|
-${filesTable}
-</details>
-
-<details>
-<summary>${translation.summary}</summary>
-
-- **${translation.totalFiles}**: ${totalFilesModified}
-- **${translation.totalAdditions}**: ${totalAdditions}
-- **${translation.totalDeletions}**: ${totalDeletions}
-- **${translation.totalChanges}**: ${totalChanges}
-</details>
+${summaryContent}
 
 <!-- kody-codereview -->\n&#8203;`.trim();
         } catch (error) {
@@ -633,15 +660,15 @@ ${filesTable}
                 metadata: { changedFiles, language },
             });
 
-            return ''; // Returns an empty string to ensure something is sent
+            return '';
         }
     }
 
-    private generateConfigReviewMarkdown(
+    private async generateConfigReviewMarkdown(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         codeReviewConfig: CodeReviewConfig,
-    ): string {
+    ): Promise<string> {
         try {
             const language =
                 codeReviewConfig?.languageResultPrompt ?? LanguageValue.ENGLISH;
@@ -657,16 +684,17 @@ ${filesTable}
             }
 
             // Generate review options
-            const reviewOptionsMarkdown = Object.entries(
-                codeReviewConfig.reviewOptions,
-            )
-                .map(
-                    ([key, value]) =>
-                        `| **${key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())}** | ${
-                            value ? translation.enabled : translation.disabled
-                        } |`,
-                )
-                .join('\n');
+            const context: PlaceholderContext = {
+                codeReviewConfig,
+                language,
+                organizationAndTeamData,
+                prNumber,
+            };
+
+            const reviewOptions = await this.messageProcessor.processTemplate(
+                '@reviewOptions',
+                context,
+            );
 
             return `
 <details>
@@ -684,16 +712,7 @@ ${filesTable}
 <details>
 <summary>${translation.configurationTitle}</summary>
 
-<details>
-<summary>${translation.reviewOptionsTitle}</summary>
-
-${translation.reviewOptionsDesc}
-
-| ${translation.tableOptions}                        | ${translation.tableEnabled} |
-|-------------------------------|---------|
-${reviewOptionsMarkdown}
-
-</details>
+${reviewOptions}
 
 **[${translation.configurationLink}](https://app.kodus.io/settings/code-review/global/general)**
 
@@ -1292,5 +1311,72 @@ ${reviewOptionsMarkdown}
             });
             return false;
         }
+    }
+
+    async createComment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string },
+        platformType: PlatformType,
+        changedFiles?: FileChange[],
+        language?: string,
+        codeSuggestions?: Array<CommentResult>,
+        codeReviewConfig?: CodeReviewConfig,
+        endReviewMessage?: IPullRequestMessageContent,
+    ): Promise<void> {
+        let commentBody;
+
+        if (endReviewMessage) {
+            commentBody = endReviewMessage.content;
+
+            const placeholderContext = await this.getTemplateContext(
+                changedFiles,
+                organizationAndTeamData,
+                prNumber,
+                codeReviewConfig,
+                language,
+                platformType,
+            );
+
+            const rawBody = await this.messageProcessor.processTemplate(
+                endReviewMessage.content,
+                placeholderContext,
+            );
+
+            commentBody = this.sanitizeBitbucketMarkdown(rawBody, platformType);
+        } else {
+            commentBody = await this.generateLastReviewCommenBody(
+                organizationAndTeamData,
+                prNumber,
+                platformType,
+                codeSuggestions,
+                codeReviewConfig,
+            );
+        }
+
+        await this.codeManagementService.createIssueComment({
+            organizationAndTeamData,
+            repository,
+            prNumber,
+            body: commentBody,
+        });
+    }
+
+    private async getTemplateContext(
+        changedFiles?: FileChange[],
+        organizationAndTeamData?: OrganizationAndTeamData,
+        prNumber?: number,
+        codeReviewConfig?: CodeReviewConfig,
+        language?: string,
+        platformType?: PlatformType,
+    ): Promise<PlaceholderContext> {
+        return {
+            changedFiles,
+            organizationAndTeamData,
+            prNumber,
+            codeReviewConfig,
+            language,
+            platformType,
+        };
     }
 }

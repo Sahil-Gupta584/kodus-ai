@@ -34,6 +34,7 @@ import { CreatePrLevelCommentsStage } from '@/core/infrastructure/adapters/servi
 import { CreateFileCommentsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/create-file-comments.stage';
 import { CodeAnalysisASTCleanupStage } from '@/ee/codeReview/stages/code-analysis-ast-cleanup.stage';
 import { TeamAutomationModule } from './teamAutomation.module';
+import { PullRequestMessagesModule } from './pullRequestMessages.module';
 
 @Module({
     imports: [
@@ -49,6 +50,7 @@ import { TeamAutomationModule } from './teamAutomation.module';
         forwardRef(() => FileReviewModule),
         forwardRef(() => KodyFineTuningContextModule),
         forwardRef(() => KodyASTAnalyzeContextModule),
+        forwardRef(() => PullRequestMessagesModule),
     ],
     providers: [
         PipelineExecutor,

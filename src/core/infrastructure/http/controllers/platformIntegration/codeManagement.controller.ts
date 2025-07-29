@@ -40,7 +40,7 @@ export class CodeManagementController {
 
     @Get('/repositories/org')
     public async getRepositories(
-        @Query() query: { teamId: string; organizationSelected: any },
+        @Query() query: { teamId: string; organizationSelected: any; isSelected?: boolean },
     ) {
         return this.getRepositoriesUseCase.execute(query);
     }
