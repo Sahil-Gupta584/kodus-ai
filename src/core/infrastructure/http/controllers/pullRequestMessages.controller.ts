@@ -1,5 +1,6 @@
 import { CreateOrUpdatePullRequestMessagesUseCase } from '@/core/application/use-cases/pullRequestMessages/create-or-update-pull-request-messages.use-case';
 import { FindByRepositoryIdPullRequestMessagesUseCase } from '@/core/application/use-cases/pullRequestMessages/find-by-repository-id.use-case';
+import { FindByIdPullRequestMessagesUseCase } from '@/core/application/use-cases/pullRequestMessages/find-by-id.use-case';
 import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 
@@ -8,6 +9,7 @@ export class PullRequestMessagesController {
     constructor(
         private readonly createOrUpdatePullRequestMessagesUseCase: CreateOrUpdatePullRequestMessagesUseCase,
         private readonly findByRepositoryIdPullRequestMessagesUseCase: FindByRepositoryIdPullRequestMessagesUseCase,
+        private readonly findByIdPullRequestMessagesUseCase: FindByIdPullRequestMessagesUseCase,
     ) {}
 
     @Post('/')
@@ -28,5 +30,10 @@ export class PullRequestMessagesController {
             repositoryId,
             organizationId,
         );
+    }
+
+    @Get('/:id')
+    public async findById(@Param('id') id: string) {
+        return await this.findByIdPullRequestMessagesUseCase.execute(id);
     }
 }
