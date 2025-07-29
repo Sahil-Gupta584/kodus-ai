@@ -19,6 +19,7 @@ import {
     convertToHunksWithLinesNumbers,
     handlePatchDeletions,
 } from '@/shared/utils/patch';
+import { TaskStatus } from '@kodus/kodus-proto/task';
 
 /**
  * Abstract base class for file review context preparation
@@ -119,10 +120,8 @@ export abstract class BaseFileReviewContextPreparation
 
         const relevantContentProm = this.getRelevantFileContent(file, context);
 
-        const [reviewModeResponse, relevantContent] = await Promise.all([
-            reviewModeProm,
-            relevantContentProm,
-        ]);
+        const [reviewModeResponse, { relevantContent, taskStatus }] =
+            await Promise.all([reviewModeProm, relevantContentProm]);
 
         const updatedContext: AnalysisContext = {
             ...context,
@@ -132,6 +131,13 @@ export abstract class BaseFileReviewContextPreparation
                 relevantContent,
                 patchWithLinesStr,
             },
+            tasks: {
+                ...context?.tasks,
+                astAnalysis: {
+                    ...context?.tasks?.astAnalysis,
+                    status: taskStatus || TaskStatus.TASK_STATUS_FAILED,
+                },
+            },
         };
 
         return { fileContext: updatedContext };
@@ -140,5 +146,5 @@ export abstract class BaseFileReviewContextPreparation
     protected abstract getRelevantFileContent(
         file: FileChange,
         context: AnalysisContext,
-    ): Promise<string | null>;
+    ): Promise<{ relevantContent: string | null; taskStatus?: TaskStatus }>;
 }
