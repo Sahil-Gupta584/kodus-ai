@@ -1109,6 +1109,7 @@ export class GithubService
             return repos.map((repo) => ({
                 id: repo.id.toString(),
                 name: repo.name,
+                full_name: repo.full_name,
                 http_url: repo.html_url,
                 avatar_url: repo.owner.avatar_url,
                 organizationName: repo.owner.login,
