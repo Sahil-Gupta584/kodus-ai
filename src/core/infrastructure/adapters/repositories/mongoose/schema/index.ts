@@ -26,6 +26,7 @@ import {
     CodeReviewFeedbackSchema,
 } from './codeReviewFeedback.model';
 import { CodeReviewSettingsLogModel, CodeReviewSettingsLogSchema } from './codeReviewSettingsLog.model';
+import { PullRequestMessagesModel, PullRequestMessagesSchema } from './pullRequestMessages.model';
 
 export const MemoryModelInstance = {
     name: MemoryModel.name,
@@ -90,4 +91,9 @@ export const SnoozedItemsModelInstance = {
 export const ConversationModelInstance = {
     name: ConversationModel.name,
     schema: ConversationSchema,
+};
+
+export const PullRequestMessagesModelInstance = {
+    name: PullRequestMessagesModel.name,
+    schema: PullRequestMessagesSchema,
 };

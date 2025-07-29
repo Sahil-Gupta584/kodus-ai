@@ -63,6 +63,7 @@ import { RuleLikeModule } from './ruleLike.module';
 import { IssuesModule } from './issues.module';
 import { KodyASTModule } from '@/ee/kodyAST/kodyAST.module';
 import { TokenChunkingModule } from './tokenChunking.module';
+import { PullRequestMessagesModule } from './pullRequestMessages.module';
 import { LLMModule } from '@kodus/kodus-common/llm';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
@@ -130,6 +131,7 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
         RuleLikeModule,
         IssuesModule,
         TokenChunkingModule,
+        PullRequestMessagesModule,
         LLMModule.forRoot({
             logger: PinoLoggerService,
             global: true,

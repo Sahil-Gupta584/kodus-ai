@@ -10,6 +10,7 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { LLMModelProvider } from '@kodus/kodus-common/llm';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { ISuggestionByPR } from '../../pullRequests/interfaces/pullRequests.interface';
+import { IPullRequestMessageContent, IPullRequestMessages } from '../../pullRequestMessages/interfaces/pullRequestMessages.interface';
 
 export const COMMENT_MANAGER_SERVICE_TOKEN = Symbol('CommentManagerService');
 
@@ -21,6 +22,8 @@ export interface ICommentManagerService {
         changedFiles: FileChange[],
         language: string,
         platformType: string,
+        codeReviewConfig?: CodeReviewConfig,
+        startReviewMessage?: string,
     ): Promise<{ commentId: number; noteId: number; threadId?: number }>;
 
     generateSummaryPR(
@@ -100,4 +103,16 @@ export interface ICommentManagerService {
         repository: { name: string; id: string },
         platformType: PlatformType,
     ): Promise<boolean>;
+
+    createComment(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        repository: { name: string; id: string },
+        platformType: PlatformType,
+        changedFiles?: FileChange[],
+        language?: string,
+        codeSuggestions?: Array<CommentResult>,
+        codeReviewConfig?: CodeReviewConfig,
+        endReviewMessage?: IPullRequestMessageContent,
+    ): Promise<void>;
 }
