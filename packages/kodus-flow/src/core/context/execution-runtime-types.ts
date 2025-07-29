@@ -3,7 +3,10 @@
  * @description Types and interfaces for the unified ExecutionRuntime
  */
 
-import type { AgentContext } from '../types/agent-types.js';
+import type {
+    AgentContext,
+    AgentExecutionContext,
+} from '../types/agent-types.js';
 import type { PlannerExecutionContext } from '../../engine/planning/planner-factory.js';
 import type { AgentExecutionOptions } from '../types/common-types.js';
 import { AgentIdentity } from '../types/agent-definition.js';
@@ -39,10 +42,18 @@ export interface ContextValueUpdate {
 export interface ExecutionRuntime {
     // 🚀 Agent Context Initialization (NEW - main responsibility)
     initializeAgentContext(
-        agent: { name: string; identity?: AgentIdentity },
+        agent: {
+            name: string;
+            identity?: AgentIdentity;
+            config?: {
+                enableSession?: boolean;
+                enableState?: boolean;
+                enableMemory?: boolean;
+            };
+        },
         input: unknown,
         config: AgentExecutionOptions,
-    ): Promise<AgentContext>;
+    ): Promise<AgentExecutionContext>;
 
     // 🔧 Dynamic Context Updates (NEW - agent communication)
     addContextValue(update: ContextValueUpdate): Promise<void>;
@@ -69,7 +80,7 @@ export interface ExecutionRuntime {
     // 🔄 Lifecycle Management
     startExecution(
         executionId: string,
-        agentContext: AgentContext,
+        agentContext: AgentExecutionContext,
     ): Promise<void>;
     endExecution(executionId: string, result: ExecutionResult): Promise<void>;
 

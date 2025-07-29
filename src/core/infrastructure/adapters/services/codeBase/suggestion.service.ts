@@ -25,7 +25,6 @@ import {
     PULL_REQUESTS_SERVICE_TOKEN,
 } from '@/core/domain/pullRequests/contracts/pullRequests.service.contracts';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
-import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { PinoLoggerService } from '../logger/pino.service';
 import {
     COMMENT_MANAGER_SERVICE_TOKEN,
@@ -34,6 +33,7 @@ import {
 import { ImplementationStatus } from '@/core/domain/pullRequests/enums/implementationStatus.enum';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { LLMModelProvider } from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class SuggestionService implements ISuggestionService {
@@ -308,12 +308,13 @@ export class SuggestionService implements ISuggestionService {
 
         if (limitationType === LimitationType.SEVERITY && severityLimits) {
             // Nova lógica para limitação por severidade
-            prioritizedByQuantity = await this.prioritizeSuggestionsBySeverityLimits(
-                organizationAndTeamData,
-                prNumber,
-                prioritizedBySeverity,
-                severityLimits,
-            );
+            prioritizedByQuantity =
+                await this.prioritizeSuggestionsBySeverityLimits(
+                    organizationAndTeamData,
+                    prNumber,
+                    prioritizedBySeverity,
+                    severityLimits,
+                );
         } else if (!limitationType || limitationType === LimitationType.FILE) {
             // Lógica existente para limitação por arquivo
             prioritizedByQuantity = await this.prioritizeSuggestionsByFile(
@@ -371,15 +372,25 @@ export class SuggestionService implements ISuggestionService {
 
             // Categorizar sugestões por severidade
             const categorizedSuggestions = {
-                critical: suggestions.filter(s => s.severity?.toLowerCase() === 'critical'),
-                high: suggestions.filter(s => s.severity?.toLowerCase() === 'high'),
-                medium: suggestions.filter(s => s.severity?.toLowerCase() === 'medium'),
-                low: suggestions.filter(s => s.severity?.toLowerCase() === 'low'),
+                critical: suggestions.filter(
+                    (s) => s.severity?.toLowerCase() === 'critical',
+                ),
+                high: suggestions.filter(
+                    (s) => s.severity?.toLowerCase() === 'high',
+                ),
+                medium: suggestions.filter(
+                    (s) => s.severity?.toLowerCase() === 'medium',
+                ),
+                low: suggestions.filter(
+                    (s) => s.severity?.toLowerCase() === 'low',
+                ),
             };
 
             // Ordenar cada categoria por rankScore (decrescente)
-            Object.keys(categorizedSuggestions).forEach(severity => {
-                categorizedSuggestions[severity] = categorizedSuggestions[severity].sort((a, b) => {
+            Object.keys(categorizedSuggestions).forEach((severity) => {
+                categorizedSuggestions[severity] = categorizedSuggestions[
+                    severity
+                ].sort((a, b) => {
                     const scoreA = a.rankScore || 0;
                     const scoreB = b.rankScore || 0;
                     return scoreB - scoreA;
@@ -388,24 +399,27 @@ export class SuggestionService implements ISuggestionService {
 
             // Aplicar limites por severidade
             const prioritizedSuggestions: Partial<CodeSuggestion>[] = [];
-            
+
             // Prioridade: critical > high > medium > low
-            ['critical', 'high', 'medium', 'low'].forEach(severity => {
+            ['critical', 'high', 'medium', 'low'].forEach((severity) => {
                 const limit = severityLimits[severity];
                 const suggestionsOfSeverity = categorizedSuggestions[severity];
-                
+
                 if (suggestionsOfSeverity.length > 0) {
                     // Se limit = 0, traz todas (sem filtro)
                     // Se limit > 0, traz até o limite
-                    const selected = limit === 0 
-                        ? suggestionsOfSeverity 
-                        : suggestionsOfSeverity.slice(0, limit);
-                        
-                    prioritizedSuggestions.push(...selected.map(s => ({
-                        ...s,
-                        priorityStatus: PriorityStatus.PRIORITIZED,
-                        deliveryStatus: DeliveryStatus.NOT_SENT,
-                    })));
+                    const selected =
+                        limit === 0
+                            ? suggestionsOfSeverity
+                            : suggestionsOfSeverity.slice(0, limit);
+
+                    prioritizedSuggestions.push(
+                        ...selected.map((s) => ({
+                            ...s,
+                            priorityStatus: PriorityStatus.PRIORITIZED,
+                            deliveryStatus: DeliveryStatus.NOT_SENT,
+                        })),
+                    );
                 }
             });
 
@@ -417,25 +431,33 @@ export class SuggestionService implements ISuggestionService {
                     totalSuggestions: suggestions.length,
                     prioritizedCount: prioritizedSuggestions.length,
                     breakdown: {
-                        critical: { 
+                        critical: {
                             available: categorizedSuggestions.critical.length,
                             limit: severityLimits.critical,
-                            selected: prioritizedSuggestions.filter(s => s.severity?.toLowerCase() === 'critical').length
+                            selected: prioritizedSuggestions.filter(
+                                (s) => s.severity?.toLowerCase() === 'critical',
+                            ).length,
                         },
-                        high: { 
+                        high: {
                             available: categorizedSuggestions.high.length,
                             limit: severityLimits.high,
-                            selected: prioritizedSuggestions.filter(s => s.severity?.toLowerCase() === 'high').length
+                            selected: prioritizedSuggestions.filter(
+                                (s) => s.severity?.toLowerCase() === 'high',
+                            ).length,
                         },
-                        medium: { 
+                        medium: {
                             available: categorizedSuggestions.medium.length,
                             limit: severityLimits.medium,
-                            selected: prioritizedSuggestions.filter(s => s.severity?.toLowerCase() === 'medium').length
+                            selected: prioritizedSuggestions.filter(
+                                (s) => s.severity?.toLowerCase() === 'medium',
+                            ).length,
                         },
-                        low: { 
+                        low: {
                             available: categorizedSuggestions.low.length,
                             limit: severityLimits.low,
-                            selected: prioritizedSuggestions.filter(s => s.severity?.toLowerCase() === 'low').length
+                            selected: prioritizedSuggestions.filter(
+                                (s) => s.severity?.toLowerCase() === 'low',
+                            ).length,
                         },
                     },
                     organizationAndTeamData,
@@ -451,9 +473,9 @@ export class SuggestionService implements ISuggestionService {
                 context: SuggestionService.name,
                 metadata: { severityLimits, organizationAndTeamData, prNumber },
             });
-            
+
             // Fallback: retorna todas as sugestões
-            return suggestions.map(s => ({
+            return suggestions.map((s) => ({
                 ...s,
                 priorityStatus: PriorityStatus.PRIORITIZED,
                 deliveryStatus: DeliveryStatus.NOT_SENT,

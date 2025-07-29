@@ -32,9 +32,8 @@ import { ValidateCommunicationManagementIntegration } from '@/shared/utils/decor
 import {
     MODEL_STRATEGIES,
     LLMModelProvider,
-} from '../llmProviders/llmModelProvider.helper';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '../llmProviders/llmProvider.service';
+    LLMProviderService,
+} from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class CheckinService implements ICheckinService {
@@ -45,7 +44,6 @@ export class CheckinService implements ICheckinService {
         @Inject(SNOOZED_ITEMS_SERVICE_TOKEN)
         private readonly snoozedItemsService: ISnoozedItemsService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         private readonly logger: PinoLoggerService,
@@ -305,17 +303,20 @@ export class CheckinService implements ICheckinService {
 
             const checkinNotification = safelyParseMessageContent(
                 (
-                    await llm.invoke(await promptCheckin.format({
-                        organizationAndTeamData,
-                        payload: payload,
-                        promptIsForChat: false,
-                    }), {
-                        metadata: {
-                            submodule: 'GetWarnings',
-                            module: 'AutomationDailyCheckin',
-                            teamId: organizationAndTeamData.teamId,
+                    await llm.invoke(
+                        await promptCheckin.format({
+                            organizationAndTeamData,
+                            payload: payload,
+                            promptIsForChat: false,
+                        }),
+                        {
+                            metadata: {
+                                submodule: 'GetWarnings',
+                                module: 'AutomationDailyCheckin',
+                                teamId: organizationAndTeamData.teamId,
+                            },
                         },
-                    })
+                    )
                 ).content,
             );
 

@@ -8,14 +8,12 @@ import {
     PersistorType,
     MongoDBPersistorConfig,
 } from '@kodus/flow';
-import { LLMProviderService } from '../../llmProviders/llmProvider.service';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../../llmProviders/llmProvider.service.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { LLMModelProvider } from '../../llmProviders/llmModelProvider.helper';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseConnection } from '@/config/types';
 import { ConnectionString } from 'connection-string';
+import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class ConversationAgentProvider {
@@ -30,10 +28,8 @@ export class ConversationAgentProvider {
     constructor(
         private readonly configService: ConfigService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
-        private readonly llmProviderService: LLMProviderService,
-
         private readonly mcpManagerService: MCPManagerService,
+        private readonly llmProviderService: LLMProviderService,
     ) {
         this.config = configService.get<DatabaseConnection>('mongoDatabase');
         this.llmAdapter = this.createLLMAdapter();

@@ -34,7 +34,6 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
     }
 
     async initialize(): Promise<void> {
-        debugger;
         if (this.isInitialized) return;
 
         try {

@@ -224,7 +224,7 @@ export class CoTPlanner implements Planner {
             maxSteps,
             maxDepth: _options?.maxDepth || 3,
             tenantId: context.tenantId,
-            executionId: context.system.executionId,
+            executionId: context.invocationId,
             correlationId: context.correlationId,
             addPlanHistory: (
                 planId: string,

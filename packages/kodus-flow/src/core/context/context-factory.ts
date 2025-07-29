@@ -23,8 +23,7 @@ import type {
 import type { WorkflowContext } from '../types/workflow-types.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextStateService } from './services/state-service.js';
-import { getGlobalMemoryManager } from '../memory/memory-manager.js';
-import { RuntimeRegistry } from './runtime-registry.js';
+import { contextBuilder } from './context-builder.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🎯 CONFIGURAÇÕES UNIFICADAS
@@ -119,34 +118,8 @@ export class UnifiedContextFactory {
     async createAgentContext(
         agentExecutionOptions: AgentExecutionOptions,
     ): Promise<AgentContext> {
-        // Initialize memory manager
-        const memoryManager = getGlobalMemoryManager();
-        await memoryManager.initialize();
-
-        // Get ExecutionRuntime for this thread (creates if doesn't exist)
-        const threadId = agentExecutionOptions.thread?.id || 'default';
-        const executionRuntime = RuntimeRegistry.getByThread(threadId);
-
-        // Create BaseContext with defaults for missing values
-        const baseContext: BaseContext = {
-            tenantId: agentExecutionOptions.tenantId || 'default',
-            correlationId:
-                agentExecutionOptions.correlationId ||
-                IdGenerator.correlationId(),
-            startTime: Date.now(),
-        };
-
-        // Merge with user options
-        const fullOptions = {
-            ...baseContext,
-            ...agentExecutionOptions,
-        };
-
-        return await executionRuntime.initializeAgentContext(
-            { name: agentExecutionOptions.agentName }, // Agent with defaults
-            fullOptions as BaseContext,
-            agentExecutionOptions,
-        );
+        // Just delegate to ContextBuilder
+        return contextBuilder.createAgentContext(agentExecutionOptions);
     }
 
     /**

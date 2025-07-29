@@ -9,8 +9,6 @@
 
 import { createLogger } from '../../../observability/index.js';
 import type { LLMAdapter } from '../../../adapters/llm/index.js';
-import type { ExecutionRuntime } from '../../../core/context/execution-runtime.js';
-import { RuntimeRegistry } from '../../../core/context/runtime-registry.js';
 import type {
     Planner,
     AgentThought,
@@ -23,7 +21,6 @@ import {
     getResultError,
     getResultContent,
 } from '../planner-factory.js';
-import { Thread } from '../../../core/types/common-types.js';
 import { ToolMetadataForLLM } from '../../../core/types/tool-types.js';
 // import { getGlobalPersistor } from '../../../persistor/factory.js';
 import {
@@ -54,22 +51,6 @@ export interface ExecutionPlan {
     status: 'planning' | 'executing' | 'completed' | 'failed' | 'replanning';
     reasoning: string;
     metadata?: Record<string, unknown>;
-}
-
-interface Memory {
-    value?: unknown;
-    content?: unknown;
-}
-
-interface ConversationEntry {
-    input?: unknown;
-    output?: unknown;
-}
-
-interface SuccessfulPlan {
-    goal: string;
-    strategy: string;
-    steps?: Array<{ description: string; type: string; tool?: string }>;
 }
 
 export class PlanAndExecutePlanner implements Planner {
@@ -284,23 +265,99 @@ export class PlanAndExecutePlanner implements Planner {
     }
 
     /**
-     * Get ExecutionRuntime for the current thread
+     * Get available tools for the current context from AgentContext
      */
-    private getExecutionRuntime(thread: Thread): ExecutionRuntime | null {
-        const threadId = thread.id;
-        if (!threadId) {
-            this.logger.warn('No threadId found in planner metadata');
-            return null;
+    private getAvailableToolsForContext(
+        context: PlannerExecutionContext,
+    ): ToolMetadataForLLM[] {
+        if (!context.agentContext?.availableToolsForLLM) {
+            this.logger.debug('No tools available in AgentContext');
+            return [];
         }
-        return RuntimeRegistry.getByThread(threadId);
+
+        this.logger.debug('Retrieved tools from AgentContext', {
+            toolCount: context.agentContext.availableToolsForLLM.length,
+            tools: context.agentContext.availableToolsForLLM.map((t) => t.name),
+        });
+
+        return context.agentContext.availableToolsForLLM;
     }
 
     /**
-     * Get available tools for the current context
+     * Get memory context for better planning using ContextBuilder APIs
      */
-    private getAvailableToolsForContext(thread: Thread): ToolMetadataForLLM[] {
-        const executionRuntime = this.getExecutionRuntime(thread);
-        return executionRuntime?.getAvailableToolsForLLM() || [];
+    private async getMemoryContext(
+        context: PlannerExecutionContext,
+        currentInput: string,
+    ): Promise<string> {
+        if (!context.agentContext) {
+            this.logger.debug('No AgentContext available for memory access');
+            return '';
+        }
+
+        const contextParts: string[] = [];
+
+        try {
+            // 1. MEMORY SEARCH: Get relevant memories for current input
+            const memories = await context.agentContext.memory.search(
+                currentInput,
+                3,
+            );
+            if (memories && memories.length > 0) {
+                contextParts.push('\n📚 Relevant knowledge:');
+                memories.forEach((memory, i) => {
+                    const memoryStr =
+                        typeof memory === 'string'
+                            ? memory
+                            : JSON.stringify(memory);
+                    contextParts.push(
+                        `${i + 1}. ${memoryStr.substring(0, 100)}...`,
+                    );
+                });
+            }
+
+            // 2. SESSION HISTORY: Get recent conversation context
+            const sessionHistory =
+                await context.agentContext.session.getHistory();
+            if (sessionHistory && sessionHistory.length > 0) {
+                contextParts.push('\n💬 Recent conversation:');
+                sessionHistory.slice(-2).forEach((entry, i) => {
+                    const entryStr =
+                        typeof entry === 'string'
+                            ? entry
+                            : JSON.stringify(entry);
+                    contextParts.push(
+                        `${i + 1}. ${entryStr.substring(0, 50)}...`,
+                    );
+                });
+            }
+
+            // 3. WORKING STATE: Get relevant planner state
+            const plannerState =
+                await context.agentContext.state.getNamespace('planner');
+            if (plannerState && plannerState.size > 0) {
+                contextParts.push('\n⚡ Current context:');
+                let count = 0;
+                for (const [key, value] of plannerState) {
+                    if (count >= 3) break; // Limit to 3 items
+                    const valueStr =
+                        typeof value === 'string'
+                            ? value
+                            : JSON.stringify(value);
+                    contextParts.push(
+                        `- ${key}: ${valueStr.substring(0, 50)}...`,
+                    );
+                    count++;
+                }
+            }
+        } catch (error) {
+            this.logger.debug('Could not retrieve memory context', {
+                error: error instanceof Error ? error.message : 'Unknown error',
+                currentInput: currentInput.substring(0, 50),
+            });
+        }
+
+        return contextParts.length > 0 ? contextParts.join('\n') : '';
     }
 
     async think(context: PlannerExecutionContext): Promise<AgentThought> {
@@ -344,19 +401,11 @@ export class PlanAndExecutePlanner implements Planner {
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
         debugger; // 🔍 DEBUG: Monitor plan creation
-        const thread = context.plannerMetadata.thread!;
-        const availableTools = this.getAvailableToolsForContext(thread);
-
-        const executionRuntime = this.getExecutionRuntime(thread);
-        const agentIdentity = executionRuntime?.getAgentIdentity();
-        const userContext = executionRuntime?.getUserContext();
+        const availableTools = this.getAvailableToolsForContext(context);
         const input = context.input;
 
-        // ✅ GET MEMORY CONTEXT for better planning
-        const memoryContext = await this.getMemoryContext(
-            executionRuntime,
-            input,
-        );
+        // ✅ GET MEMORY CONTEXT using ContextBuilder APIs
+        const memoryContext = await this.getMemoryContext(context, input);
 
         // ✅ Build enhanced tools context for Plan-Execute
         const toolsContext =
@@ -365,20 +414,14 @@ export class PlanAndExecutePlanner implements Planner {
         // ✅ Build planning history context
         const planningHistory = this.buildPlanningHistory(context);
 
+        // ✅ Build identity context from AgentContext
+        const agentIdentity = context.agentContext?.agentIdentity;
         const identityContext = agentIdentity
             ? `\nYour identity:
 - Role: ${agentIdentity?.role || 'Planning Assistant'}
 - Goal: ${agentIdentity?.goal || 'Create effective execution plans'}
 - Expertise: ${agentIdentity?.expertise?.join(', ') || 'Strategic planning'}`
             : '';
-
-        this.logger.info('Creating execution plan with enhanced context', {
-            goal: input.substring(0, 100),
-            availableTools: availableTools.length,
-            hasMemoryContext: !!memoryContext,
-            hasIdentity: !!agentIdentity,
-            hasHistory: planningHistory.length > 0,
-        });
 
         // Use createPlan method with prompts from this planner
         if (!this.llmAdapter.createPlan) {
@@ -392,10 +435,10 @@ export class PlanAndExecutePlanner implements Planner {
                 availableTools: availableTools,
                 toolsContext: toolsContext || '',
                 identityContext: identityContext || '',
-                userContext:
-                    typeof userContext === 'string'
-                        ? userContext
-                        : JSON.stringify(userContext || {}),
+                userContext: JSON.stringify(
+                    context.agentContext?.agentExecutionOptions?.userContext ||
+                        {},
+                ),
                 memoryContext: memoryContext || '',
                 planningHistory: planningHistory || '',
                 // Provide prompts from this planner to the adapter
@@ -404,12 +447,9 @@ export class PlanAndExecutePlanner implements Planner {
                     goal: input,
                     availableTools: availableTools,
                     toolsContext: toolsContext || '',
-                    identityContext: identityContext || '',
-                    userContext:
-                        typeof userContext === 'string'
-                            ? userContext
-                            : JSON.stringify(userContext || {}),
-                    memoryContext: memoryContext || '',
+                    identityContext: '',
+                    userContext: '',
+                    memoryContext: '',
                     planningHistory: planningHistory || '',
                 }),
             },
@@ -433,7 +473,7 @@ export class PlanAndExecutePlanner implements Planner {
             metadata: {
                 startTime: Date.now(),
                 createdBy: 'plan-execute-planner',
-                thread: thread.id,
+                thread: context.plannerMetadata.thread?.id,
             },
         };
 
@@ -473,9 +513,6 @@ export class PlanAndExecutePlanner implements Planner {
         if (!currentStep) {
             // Plan completed
             this.currentPlan.status = 'completed';
-
-            // Store successful plan for future reference
-            await this.storePlanExecution(this.currentPlan, 'success');
 
             return {
                 reasoning: 'All plan steps completed successfully',
@@ -542,9 +579,7 @@ export class PlanAndExecutePlanner implements Planner {
         currentStep.status = 'executing';
 
         // ✅ VALIDAÇÃO - Verificar se a tool solicitada existe antes de executar
-        const availableTools = this.getAvailableToolsForContext(
-            context.plannerMetadata.thread!,
-        );
+        const availableTools = this.getAvailableToolsForContext(context);
         const availableToolNames = availableTools.map((t) => t.name);
 
         let action: any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -941,9 +976,7 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         // Consider available tools
-        const availableTools = this.getAvailableToolsForContext(
-            context.plannerMetadata.thread!,
-        );
+        const availableTools = this.getAvailableToolsForContext(context);
         if (
             step.tool &&
             availableTools.some((tool) => tool.name === step.tool)
@@ -1091,101 +1124,6 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         return invalidSteps;
-    }
-
-    /**
-     * Get memory context for better planning
-     */
-    private async getMemoryContext(
-        executionRuntime: ExecutionRuntime | null,
-        currentInput: string,
-    ): Promise<string> {
-        if (!executionRuntime) {
-            return '';
-        }
-
-        const contextParts: string[] = [];
-
-        try {
-            // 1. MEMORY MANAGER: Recent stored memories
-            const memoryManager = executionRuntime.getMemoryManager?.();
-            if (memoryManager) {
-                const memories = await memoryManager.getRecentMemories?.(3);
-                if (memories && memories.length > 0) {
-                    contextParts.push('\n📚 Recent knowledge:');
-                    memories.forEach((memory: unknown, i: number) => {
-                        const memoryObj = memory as Memory;
-                        const content =
-                            memoryObj.value ||
-                            memoryObj.content ||
-                            'Memory entry';
-                        const contentStr =
-                            typeof content === 'string'
-                                ? content
-                                : JSON.stringify(content);
-                        contextParts.push(
-                            `${i + 1}. ${contentStr.substring(0, 100)}...`,
-                        );
-                    });
-                }
-            }
-
-            // 2. SESSION SERVICE: Conversation history
-            const sessionService = executionRuntime.getSessionService?.();
-            if (sessionService) {
-                // Get current session from execution runtime
-                const sessionHistory = executionRuntime.getSessionHistory?.();
-                if (sessionHistory && sessionHistory.length > 0) {
-                    contextParts.push('\n💬 Recent conversation:');
-                    sessionHistory
-                        .slice(-2)
-                        .forEach((conv: unknown, i: number) => {
-                            const convObj = conv as ConversationEntry;
-                            const input = convObj.input
-                                ? String(convObj.input).substring(0, 50)
-                                : 'unknown';
-                            const output = convObj.output
-                                ? String(convObj.output).substring(0, 50)
-                                : 'no response';
-                            contextParts.push(
-                                `${i + 1}. "${input}" → "${output}"`,
-                            );
-                        });
-                }
-            }
-
-            // 3. STATE SERVICE: Current execution state
-            const stateService = executionRuntime.getStateService?.();
-            if (stateService) {
-                // Check for previous successful plans
-                const successfulPlans = await stateService.get?.(
-                    'planner',
-                    'successfulPlans',
-                );
-                if (
-                    successfulPlans &&
-                    Array.isArray(successfulPlans) &&
-                    successfulPlans.length > 0
-                ) {
-                    contextParts.push('\n✅ Previous successful strategies:');
-                    successfulPlans
-                        .slice(-2)
-                        .forEach((plan: unknown, i: number) => {
-                            const planObj = plan as SuccessfulPlan;
-                            contextParts.push(
-                                `${i + 1}. "${planObj.goal}" → ${planObj.strategy} (${planObj.steps?.length || 0} steps)`,
-                            );
-                        });
-                }
-            }
-        } catch (error) {
-            this.logger.debug('Could not retrieve enhanced memory context', {
-                error: error instanceof Error ? error.message : 'Unknown error',
-                currentInput: currentInput.substring(0, 50),
-            });
-        }
-
-        return contextParts.length > 0 ? contextParts.join('\n') : '';
     }
 
     /**
@@ -1743,114 +1681,5 @@ ${context.toolsContext || 'No tools available'}
 "${context.goal}"
 
 Create an executable DAG using the template system and parallel execution optimization.`;
-    }
-
-    /**
-     * Store successful plan execution for future learning
-     */
-    private async storePlanExecution(
-        plan: ExecutionPlan,
-        outcome: 'success' | 'failure',
-    ): Promise<void> {
-        try {
-            const executionRuntime = this.getExecutionRuntimeForStorage();
-            if (!executionRuntime) {
-                this.logger.debug(
-                    'No execution runtime available for plan storage',
-                );
-                return;
-            }
-
-            // 1. STATE SERVICE: Store for immediate reuse
-            const stateService = executionRuntime.getStateService?.();
-            if (stateService && outcome === 'success') {
-                const successfulPlans =
-                    (await stateService.get('planner', 'successfulPlans')) ||
-                    [];
-
-                // Add current plan
-                const planSummary = {
-                    goal: plan.goal,
-                    strategy: plan.strategy,
-                    steps: plan.steps.map((step) => ({
-                        description: step.description,
-                        type: step.type,
-                        tool: step.tool,
-                    })),
-                    stepCount: plan.steps.length,
-                    timestamp: Date.now(),
-                };
-
-                (successfulPlans as SuccessfulPlan[]).push(planSummary);
-
-                // Keep only last 10 successful plans
-                const limitedPlans = Array.isArray(successfulPlans)
-                    ? successfulPlans.slice(-10)
-                    : [planSummary];
-
-                await stateService.set(
-                    'planner',
-                    'successfulPlans',
-                    limitedPlans,
-                );
-
-                this.logger.debug('Successful plan stored in state service', {
-                    planId: plan.id,
-                    goal: plan.goal.substring(0, 50),
-                    stepCount: plan.steps.length,
-                });
-            }
-
-            // 2. MEMORY MANAGER: Store for long-term learning
-            const memoryManager = executionRuntime.getMemoryManager?.();
-            if (memoryManager) {
-                const planContent = `Task: ${plan.goal}. Strategy: ${plan.strategy}. Steps: ${plan.steps.map((s) => s.description).join(', ')}. Outcome: ${outcome}`;
-
-                await memoryManager.store({
-                    content: planContent,
-                    type: 'plan_execution',
-                    metadata: {
-                        outcome,
-                        stepCount: plan.steps.length,
-                        strategy: plan.strategy,
-                        planId: plan.id,
-                    },
-                });
-
-                this.logger.debug('Plan execution stored in memory manager', {
-                    planId: plan.id,
-                    outcome,
-                    contentLength: planContent.length,
-                });
-            }
-        } catch (error) {
-            this.logger.warn('Failed to store plan execution', {
-                planId: plan.id,
-                outcome,
-                error: error instanceof Error ? error.message : 'Unknown error',
-            });
-        }
-    }
-
-    /**
-     * Get execution runtime from thread in store context
-     */
-    private getExecutionRuntimeForStorage(): ExecutionRuntime | null {
-        try {
-            // Try to get threadId from current planner metadata or context
-            // This will be available during execution
-            const threadId = this.currentPlan?.metadata?.thread;
-            if (threadId && typeof threadId === 'string') {
-                return RuntimeRegistry.getByThread(threadId);
-            }
-
-            this.logger.debug('No threadId available for runtime access');
-            return null;
-        } catch (error) {
-            this.logger.debug('Could not get execution runtime', {
-                error: error instanceof Error ? error.message : 'Unknown error',
-            });
-            return null;
-        }
     }
 }

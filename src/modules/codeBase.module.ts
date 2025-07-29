@@ -21,7 +21,6 @@ import { PullRequestsModule } from './pullRequests.module';
 import { SUGGESTION_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/SuggestionService.contract';
 import { SuggestionEmbeddedModule } from './suggestionEmbedded.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
-import { PromptRunnerService } from '@/core/infrastructure/adapters/services/codeBase/promptRunner.service';
 import { CommentAnalysisService } from '@/core/infrastructure/adapters/services/codeBase/commentAnalysis.service';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 
@@ -43,10 +42,19 @@ import {
 import { GlobalParametersModule } from './global-parameters.module';
 import { LogModule } from './log.module';
 import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeBase.controller';
-import { KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN, KodyRulesPrLevelAnalysisService } from '@/ee/codeBase/kodyRulesPrLevelAnalysis.service';
-import { CROSS_FILE_ANALYSIS_SERVICE_TOKEN, CrossFileAnalysisService } from '@/core/infrastructure/adapters/services/codeBase/crossFileAnalysis.service';
+import {
+    KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN,
+    KodyRulesPrLevelAnalysisService,
+} from '@/ee/codeBase/kodyRulesPrLevelAnalysis.service';
+import {
+    CROSS_FILE_ANALYSIS_SERVICE_TOKEN,
+    CrossFileAnalysisService,
+} from '@/core/infrastructure/adapters/services/codeBase/crossFileAnalysis.service';
 import { TokenChunkingModule } from './tokenChunking.module';
-import { TOKEN_TRACKING_SERVICE_TOKEN, TokenTrackingService } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
+import {
+    TOKEN_TRACKING_SERVICE_TOKEN,
+    TokenTrackingService,
+} from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
 
 @Module({
     imports: [
@@ -112,7 +120,6 @@ import { TOKEN_TRACKING_SERVICE_TOKEN, TokenTrackingService } from '@/shared/inf
         CodeAnalysisOrchestrator,
         CodeReviewHandlerService,
         KodyFineTuningService,
-        PromptRunnerService,
         CommentAnalysisService,
     ],
     exports: [

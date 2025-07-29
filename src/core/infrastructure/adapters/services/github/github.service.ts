@@ -27,7 +27,6 @@ import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-k
 import { IntegrationEntity } from '@/core/domain/integrations/entities/integration.entity';
 import { GithubAuthDetail } from '@/core/domain/authIntegrations/types/github-auth-detail.type';
 import {
-    AuthorContributions,
     OneSentenceSummaryItem,
     PullRequestAuthor,
     PullRequestCodeReviewTime,
@@ -63,14 +62,6 @@ import { IntegrationConfigEntity } from '@/core/domain/integrationConfigs/entiti
 import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { CodeManagementConnectionStatus } from '@/shared/utils/decorators/validate-code-management-integration.decorator';
-import {
-    DORA_METRICS_FACTORY_TOKEN,
-    IDoraMetricsFactory,
-} from '@/core/domain/metrics/contracts/doraMetrics.factory.contract';
-import {
-    ORGANIZATION_METRICS_SERVICE_TOKEN,
-    IOrganizationMetricsService,
-} from '@/core/domain/organizationMetrics/contracts/organizationMetrics.service.contract';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { GitHubReaction } from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
 import {
@@ -88,14 +79,9 @@ import { ReviewComment } from '@/config/types/general/codeReview.type';
 import { getSeverityLevelShield } from '@/shared/utils/codeManagement/severityLevel';
 import { getCodeReviewBadge } from '@/shared/utils/codeManagement/codeReviewBadge';
 import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
-import {
-    LLMModelProvider,
-    MODEL_STRATEGIES,
-} from '../llmProviders/llmModelProvider.helper';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '../llmProviders/llmProvider.service';
 import { ConfigService } from '@nestjs/config';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 interface GitHubAuthResponse {
     token: string;
@@ -171,7 +157,6 @@ export class GithubService
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parameterService: IParametersService,
 
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
 
         private readonly cacheService: CacheService,

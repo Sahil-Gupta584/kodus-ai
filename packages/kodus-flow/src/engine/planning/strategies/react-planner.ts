@@ -7,8 +7,7 @@
 
 import { createLogger } from '../../../observability/index.js';
 import type { LLMAdapter } from '../../../adapters/llm/index.js';
-import type { ExecutionRuntime } from '../../../core/context/execution-runtime.js';
-import { RuntimeRegistry } from '../../../core/context/runtime-registry.js';
+// import { contextBuilder } from '../../../core/context/context-builder.js';
 import type {
     Planner,
     AgentThought,
@@ -58,23 +57,15 @@ export class ReActPlanner implements Planner {
     }
 
     /**
-     * Get ExecutionRuntime for the current thread
-     */
-    private getExecutionRuntime(thread: Thread): ExecutionRuntime | null {
-        const threadId = thread.id;
-        if (!threadId) {
-            this.logger.warn('No threadId found in planner metadata');
-            return null;
-        }
-        return RuntimeRegistry.getByThread(threadId);
-    }
-
-    /**
      * Get available tools for the current context
+     * TODO: This should come from the PlannerExecutionContext instead of thread
      */
-    private getAvailableToolsForContext(thread: Thread): ToolMetadataForLLM[] {
-        const executionRuntime = this.getExecutionRuntime(thread);
-        return executionRuntime?.getAvailableToolsForLLM() || [];
+    private getAvailableToolsForContext(_thread: Thread): ToolMetadataForLLM[] {
+        // For now, return empty array - tools should come from context
+        this.logger.warn(
+            'getAvailableToolsForContext called with thread - tools should come from PlannerExecutionContext',
+        );
+        return [];
     }
 
     async think(context: PlannerExecutionContext): Promise<AgentThought> {
@@ -145,15 +136,14 @@ Let me provide what I can based on available information and logical reasoning.`
             };
         }
 
-        const executionRuntime = this.getExecutionRuntime(thread);
-        const agentIdentity = executionRuntime?.getAgentIdentity();
-        const userContext = executionRuntime?.getUserContext();
+        // TODO: Get agentIdentity and userContext from PlannerExecutionContext
+        // For now, use defaults
+        // const agentIdentity = undefined;
+        const userContext = undefined;
 
         // ✅ GET MEMORY CONTEXT for better reasoning
-        const memoryContext = await this.getMemoryContext(
-            executionRuntime,
-            input,
-        );
+        // TODO: Get memory from PlannerExecutionContext
+        const memoryContext = '';
 
         // ✅ Build enhanced tools context for ReAct
         const toolsContext = this.buildToolsContextForReAct(availableTools);
@@ -175,12 +165,12 @@ Let me provide what I can based on available information and logical reasoning.`
         // ✅ Build proper agent_scratchpad for ReAct format
         const agentScratchpad = this.buildAgentScratchpad(context);
 
-        const identityContext = agentIdentity
-            ? `\nYour identity:
-- Role: ${agentIdentity?.role || 'AI Assistant'}
-- Goal: ${agentIdentity?.goal || 'Help the user'}
-- Expertise: ${agentIdentity?.expertise?.join(', ') || 'General knowledge'}`
-            : '';
+        //         const identityContext = agentIdentity
+        //             ? `\nYour identity:
+        // // - Role: ${agentIdentity?.role || 'AI Assistant'}
+        // // - Goal: ${agentIdentity?.goal || 'Help the user'}
+        // // - Expertise: ${agentIdentity?.expertise?.join(', ') || 'General knowledge'}`
+        //             : '';
 
         // ✅ Use createPlan with enhanced context engineering
         if (!this.llmAdapter.createPlan) {
@@ -208,12 +198,12 @@ Let me provide what I can based on available information and logical reasoning.`
             // ✅ Enhanced context engineering for ReAct
             toolsContext,
             agentScratchpad,
-            identityContext,
+            // identityContext,
             userContext,
             memoryContext, // ✅ ADD MEMORY CONTEXT
             // ✅ ENHANCED: Added parallel execution and efficiency guidance
             sequentialInstructions: this.getSequentialInstructions(),
-            systemPrompt: this.getSystemPrompt(identityContext),
+            // systemPrompt: this.getSystemPrompt(identityContext),
             userPromptTemplate: this.getUserPromptTemplate(
                 input,
                 toolsContext,
@@ -1228,73 +1218,46 @@ FINAL VALIDATION before each action:
     /**
      * ✅ Get relevant memory context for better ReAct reasoning
      */
-    private async getMemoryContext(
-        executionRuntime: ExecutionRuntime | null,
-        _currentInput: string,
-    ): Promise<string> {
-        if (!executionRuntime) {
-            return '';
-        }
+    //     private async getMemoryContext(_currentInput: string): Promise<string> {
+    //         // TODO: Implement memory context using ContextBuilder
+    //         // For now, return empty string
+    //         return '';
 
-        try {
-            // For now, we'll use the existing context system
-            // Future: Integrate with proper memory and conversation history
+    //         /* TODO: Implement this with new architecture
+    //         try {
+    //             // Get memory context from AgentContext
+    //             const agentContext = await contextBuilder.createAgentContext({
+    //                 agentName: 'react-planner',
+    //                 thread: { id: threadId },
+    //             });
 
-            // Get available context via the get method
-            const contextParts: string[] = [];
+    //             const recentMemories = await agentContext.memory.getRecent(5);
+    //             const sessionHistory = await agentContext.session.getHistory();
 
-            // Try to get session context (if available)
-            try {
-                const sessionData = await executionRuntime.get({
-                    path: 'session.recent',
-                });
-                if (sessionData && typeof sessionData === 'object') {
-                    contextParts.push('Session context available');
-                }
-            } catch {
-                // Session context not available - that's ok
-            }
+    //             return recentMemories.join('\n') + '\n' + sessionHistory.join('\n');
+    //         } catch (error) {
+    //             this.logger.error('Failed to get memory context', error);
+    //             return '';
+    //         }
+    //         */
+    //     }
 
-            // Try to get memory context (if available)
-            try {
-                const memoryData = await executionRuntime.get({
-                    path: 'memory.relevant',
-                });
-                if (memoryData && typeof memoryData === 'object') {
-                    contextParts.push('Memory context available');
-                }
-            } catch {
-                // Memory context not available - that's ok
-            }
+    //     /**
+    //      * Get system prompt for ReAct planner
+    //      */
+    //     private getSystemPrompt(identityContext: string): string {
+    //         return `You are an expert AI assistant that uses ReAct (Reasoning + Acting) methodology to solve problems step by step.${identityContext}
 
-            // For now, return placeholder that indicates memory integration is ready
-            return contextParts.length > 0
-                ? `Previous context: ${contextParts.join(', ')}`
-                : '';
-        } catch (error) {
-            this.logger.warn('Failed to get memory context', {
-                error: (error as Error).message,
-            });
-            return '';
-        }
-    }
+    // Your approach:
+    // 1. UNDERSTAND: Analyze what is being asked carefully
+    // 2. ASSESS: Determine if you need tools or can answer directly
+    // 3. PLAN: Think step by step about what you need to do
+    // 4. EXECUTE: Use tools when you need external information or actions
+    // 5. REASON: Provide clear reasoning for your decisions
+    // 6. DELIVER: Give accurate, helpful answers
 
-    /**
-     * Get system prompt for ReAct planner
-     */
-    private getSystemPrompt(identityContext: string): string {
-        return `You are an expert AI assistant that uses ReAct (Reasoning + Acting) methodology to solve problems step by step.${identityContext}
-
-Your approach:
-1. UNDERSTAND: Analyze what is being asked carefully
-2. ASSESS: Determine if you need tools or can answer directly
-3. PLAN: Think step by step about what you need to do
-4. EXECUTE: Use tools when you need external information or actions
-5. REASON: Provide clear reasoning for your decisions
-6. DELIVER: Give accurate, helpful answers
-
-Remember: Always think before you act, and explain your reasoning clearly.`;
-    }
+    // Remember: Always think before you act, and explain your reasoning clearly.`;
+    //     }
 
     /**
      * Get user prompt template for ReAct planner

@@ -17,18 +17,50 @@ import type {
     Metadata,
     SessionId,
 } from './base-types.js';
-import type { Thread } from './common-types.js';
+import type { Thread, ToolCall } from './common-types.js';
 import type { UserContext, SystemContext } from './base-types.js';
-import type {
-    ToolCall,
-    ToolMetadataForLLM,
-    ToolMetadataForPlanner,
-} from './tool-types.js';
-import { IdGenerator } from '../../utils/id-generator.js';
+import type { ToolMetadataForLLM } from './tool-types.js';
 import { AgentIdentity } from './agent-definition.js';
-import type { ExecutionRuntime } from '../context/execution-runtime.js';
+import type { ContextValueUpdate } from '../context/execution-runtime-types.js';
+
+import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextStateService } from '../context/services/state-service.js';
 import { Persistor } from '../../persistor/index.js';
+import { ToolMetadataForPlanner } from './tool-types.js';
+// Import interface instead of class to avoid circular dependency
+interface SimpleExecutionRuntime {
+    // Public methods - these are what AgentExecutionContext needs
+    startExecution(agentName: string): Promise<void>;
+    endExecution(result: {
+        success: boolean;
+        error?: Error;
+        outputSummary?: string;
+    }): Promise<void>;
+    updateExecution(updates: {
+        iteration?: number;
+        toolsUsed?: string[];
+        currentThought?: string;
+    }): void;
+    getExecutionInfo(): {
+        executionId: string;
+        isRunning: boolean;
+        duration: number;
+        agentName?: string;
+        identifiers: {
+            sessionId: string;
+            tenantId: string;
+            threadId: string;
+        };
+    };
+    health(): Promise<{ status: 'healthy' | 'unhealthy'; details: unknown }>;
+    cleanup(): Promise<void>;
+    getSummary(): {
+        executionId: string;
+        agentName?: string;
+        status: 'running' | 'completed' | 'idle';
+        duration: number;
+    };
+}
 
 /**
  * Agent action types - what an agent can decide to do
@@ -283,10 +315,107 @@ export interface AgentDefinition<
  * Agent Context - Execution environment for agents
  * Extends BaseContext with intelligent capabilities (memory, persistence, tools)
  */
-export type AgentContext = BaseContext & {
+/**
+ * AgentContext - GLOBAL context shared across ALL components
+ * Used by Planners, ToolEngine, Router, etc.
+ */
+export interface AgentContext {
+    // ===== EXECUTION DATA =====
+    sessionId: string;
+    tenantId: string;
+    correlationId: string;
+    thread: Thread;
+    agentName: string;
+    invocationId: string;
+
+    // State: Namespace-based working memory
+    state: {
+        get: <T>(namespace: string, key: string) => Promise<T | undefined>;
+        set: (namespace: string, key: string, value: unknown) => Promise<void>;
+        clear: (namespace: string) => Promise<void>;
+        getNamespace: (
+            namespace: string,
+        ) => Promise<Map<string, unknown> | undefined>;
+    };
+
+    // Memory: Long-term storage with search
+    memory: {
+        store: (content: unknown, type?: string) => Promise<void>;
+        get: (id: string) => Promise<unknown>;
+        search: (query: string, limit?: number) => Promise<unknown[]>;
+        getRecent: (limit?: number) => Promise<unknown[]>;
+    };
+
+    // Session: Conversation management
+    session: {
+        addEntry: (input: unknown, output: unknown) => Promise<void>;
+        getHistory: () => Promise<unknown[]>;
+        updateMetadata: (metadata: Record<string, unknown>) => Promise<void>;
+    };
+
+    // High-level tracking
+    track: {
+        toolUsage: (
+            toolName: string,
+            params: unknown,
+            result: unknown,
+            success: boolean,
+        ) => Promise<void>;
+        plannerStep: (step: unknown) => Promise<void>;
+        error: (error: Error, context?: unknown) => Promise<void>;
+    };
+
+    // Signal for cancellation
+    signal: AbortSignal;
+
+    // Cleanup
+    cleanup(): Promise<void>;
+
+    // ===== BACKWARD COMPATIBILITY =====
+    // TODO: Remove these after full migration
+    // system: {
+    //     sessionId: string;
+    //     threadId: string;
+    //     executionId: string;
+    //     conversationHistory?: unknown[];
+    //     iteration?: number;
+    //     toolsUsed?: string[];
+    // };
+    executionRuntime: {
+        addContextValue: (update: ContextValueUpdate) => Promise<void>;
+        storeToolUsagePattern: (
+            toolName: string,
+            input: unknown,
+            output: unknown,
+            success: boolean,
+            duration: number,
+        ) => Promise<void>;
+        storeExecutionPattern: (
+            patternType: 'success' | 'failure',
+            action: string,
+            result: unknown,
+            context?: string,
+        ) => Promise<void>;
+        setState: (
+            namespace: string,
+            key: string,
+            value: unknown,
+        ) => Promise<void>;
+    };
+    agentIdentity?: AgentIdentity;
+    agentExecutionOptions?: AgentExecutionOptions;
+    availableToolsForLLM?: ToolMetadataForLLM[];
+}
+
+/**
+ * AgentExecutionContext - AGENT COMPONENT specific context
+ * Used internally by agent-core.ts for agent-specific operations
+ */
+export interface AgentExecutionContext extends BaseContext {
     // === AGENT IDENTITY ===
     agentName: string;
     invocationId: string;
+    startTime: number;
 
     // ✅ AGENT IDENTITY: Structured for enhanced execution context
     agentIdentity?: AgentIdentity;
@@ -296,7 +425,7 @@ export type AgentContext = BaseContext & {
     system: SystemContext;
 
     // === SINGLE RUNTIME REFERENCE ===
-    executionRuntime: ExecutionRuntime;
+    executionRuntime: SimpleExecutionRuntime;
 
     availableToolsForLLM?: ToolMetadataForLLM[];
     signal: AbortSignal;
@@ -304,7 +433,7 @@ export type AgentContext = BaseContext & {
     // === CLEANUP ===
     cleanup(): Promise<void>;
     agentExecutionOptions?: AgentExecutionOptions;
-};
+}
 
 // ===== AGENT ENGINE TYPES =====
 
@@ -766,7 +895,7 @@ export function createAgentContext(
         userContext?: UserContext;
         systemContext?: SystemContext;
     } = {},
-): AgentContext {
+): AgentExecutionContext {
     const correlationId = options.correlationId || IdGenerator.correlationId();
     const invocationId = options.invocationId || IdGenerator.executionId();
 
@@ -810,7 +939,7 @@ export function createAgentContext(
         system: systemContext,
 
         // Single runtime reference (mock for compatibility)
-        executionRuntime: null as unknown as ExecutionRuntime, // This should be set by proper factory
+        executionRuntime: null as unknown as SimpleExecutionRuntime, // TODO: Replace with actual ExecutionRuntime instance
 
         // Resources
         signal: new AbortController().signal,

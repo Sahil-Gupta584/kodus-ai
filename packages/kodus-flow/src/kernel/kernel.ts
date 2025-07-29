@@ -13,10 +13,7 @@ import { createLogger } from '../observability/index.js';
 import { getObservability } from '../observability/index.js';
 import { KernelError } from '../core/errors.js';
 
-import {
-    UnifiedContextFactory,
-    ContextStateService,
-} from '../core/context/index.js';
+import { ContextStateService } from '../core/context/index.js';
 import {
     createRuntime,
     type Runtime,
@@ -192,7 +189,7 @@ export interface KernelConfig {
     workflow: Workflow;
 
     // Context configuration
-    contextFactory?: UnifiedContextFactory;
+    // TODO: Remove contextFactory - using ContextBuilder instead
 
     // Persistence
     persistor?: Persistor;
@@ -257,7 +254,7 @@ export class ExecutionKernel {
     // private circuitBreakerManager: CircuitBreakerManager;
 
     // Context factory for context management
-    private contextFactory: UnifiedContextFactory;
+    // Legacy field - now using ContextBuilder
 
     // Runtime for event processing
     private runtime: Runtime | null = null;
@@ -305,8 +302,7 @@ export class ExecutionKernel {
         );
 
         // Initialize context factory
-        this.contextFactory =
-            config.contextFactory || new UnifiedContextFactory();
+        // Using ContextBuilder singleton instead of contextFactory
 
         // Initialize state
         const jobId = config.jobId || IdGenerator.executionId();
@@ -1016,19 +1012,13 @@ export class ExecutionKernel {
     private initializeContextStore(): void {
         // Performance: Pre-allocate context data
         if (!this.config.performance?.enableLazyLoading) {
-            // Use context factory to create base context structure
-            const baseContext = this.contextFactory.createBaseContext({
-                tenantId: this.state.tenantId,
-                correlationId: this.state.correlationId,
-                startTime: this.state.startTime,
-            });
-
+            // TODO: Use ContextBuilder for base context creation
+            // For now, initialize empty context data
             this.state.contextData = {
                 eventHistory: [],
                 metrics: {},
                 user: {},
                 system: {},
-                baseContext: baseContext,
             };
         }
     }

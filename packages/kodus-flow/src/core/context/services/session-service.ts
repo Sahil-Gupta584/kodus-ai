@@ -218,6 +218,18 @@ export class SessionService {
     }
 
     /**
+     * Get session by thread ID (for ContextBuilder)
+     */
+    getSessionByThread(threadId: string): Session | undefined {
+        for (const session of this.sessions.values()) {
+            if (session.threadId === threadId && session.status === 'active') {
+                return session;
+            }
+        }
+        return undefined;
+    }
+
+    /**
      * Obter contexto completo da sessão
      */
     getSessionContext(sessionId: string): SessionContext | undefined {

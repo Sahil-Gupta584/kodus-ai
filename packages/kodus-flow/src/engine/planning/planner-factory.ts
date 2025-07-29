@@ -224,6 +224,9 @@ export interface PlannerExecutionContext {
     // 🚀 NEW: Execution hints for better LLM decision making
     executionHints?: ExecutionHints;
 
+    // ✅ NEW: ContextBuilder integration - AgentContext with clean APIs
+    agentContext?: import('../../core/types/agent-types.js').AgentContext;
+
     // Methods
     update(
         thought: AgentThought,

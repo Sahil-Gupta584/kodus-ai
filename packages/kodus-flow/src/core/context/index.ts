@@ -1,33 +1,35 @@
 /**
- * Context Module - Simplified
+ * Context Module - Updated with New Architecture
  *
  * Core context management for agents and workflows
+ * Now includes ContextBuilder as the main entry point
  */
 
-// Core services
+// ===== NEW ARCHITECTURE (RECOMMENDED) =====
+// Main entry point - use this for new code
+export {
+    ContextBuilder,
+    contextBuilder,
+    createAgentContext,
+} from './context-builder.js';
+
+// New execution runtime (pure lifecycle manager)
+export { ExecutionRuntime as SimpleExecutionRuntime } from './execution-runtime-simple.js';
+
+// ===== CORE SERVICES =====
+// These services are used by ContextBuilder internally
 export { ContextStateService } from './services/state-service.js';
-export { sessionService } from './services/session-service.js';
+export { SessionService } from './services/session-service.js';
 export type {
     Session,
     SessionConfig,
     SessionContext,
 } from './services/session-service.js';
 
-// Context factory
-export {
-    UnifiedContextFactory,
-    createAgentContext,
-    createWorkflowContext,
-    createBaseContext,
-    contextFactory,
-} from './context-factory.js';
-
-export type { ContextState } from './context-factory.js';
-
-// ExecutionRuntime - Unified facade
-export { ExecutionRuntime } from './execution-runtime.js';
+// ===== TYPES =====
+// Keep useful types, mark legacy ones
 export type {
-    ExecutionRuntime as IExecutionRuntime,
+    // New architecture types
     ContextSource,
     ContextData,
     ContextVersion,
@@ -35,23 +37,26 @@ export type {
     ContextPath,
     ContextQuery,
     ContextResult,
+
+    // Enhanced types (still useful)
     EnhancedPlannerExecutionContext,
     Pattern,
     FailurePattern,
     ExecutionStep,
     ExecutionResult,
+
+    // System types
     HealthStatus,
     StorageRoutingStrategy,
+
+    // User/Session types
     UserPreferences,
     UserPattern,
     ConversationEntry,
     SessionMetadata,
     ToolUsagePattern,
     WorkingState,
-} from './execution-runtime-types.js';
 
-// Registry
-export {
-    RuntimeRegistry,
-    getExecutionRuntimeByThread,
-} from './runtime-registry.js';
+    // Legacy interface (for backward compatibility)
+    ExecutionRuntime as IExecutionRuntime,
+} from './execution-runtime-types.js';

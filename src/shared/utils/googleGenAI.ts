@@ -1,6 +1,4 @@
-import { MODEL_STRATEGIES, LLMModelProvider } from "@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper";
-
-
+import { MODEL_STRATEGIES, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 const {
     GoogleGenerativeAI,
@@ -16,7 +14,9 @@ export const getGemini = async (params?: {
     const genAI = new GoogleGenerativeAI(process.env.API_GOOGLE_AI_API_KEY);
 
     const llm = genAI.getGenerativeModel({
-        model: params.model || MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO].modelName,
+        model:
+            params.model ||
+            MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO].modelName,
     });
 
     return llm.startChat({

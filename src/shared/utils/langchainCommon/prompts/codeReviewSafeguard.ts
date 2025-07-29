@@ -1,6 +1,8 @@
-export const prompt_codeReviewSafeguard_system = (
-    languageResultPrompt: string,
-) => {
+export const prompt_codeReviewSafeguard_system = (params: {
+    languageResultPrompt: string;
+}) => {
+    const { languageResultPrompt } = params;
+
     return `## You are a panel of four experts on code review:
 
 - **Alice (Syntax & Compilation)**: Checks for syntax issues, compilation errors, and conformance with language requirements.
@@ -183,9 +185,11 @@ DISCUSSION
 Start analysis`;
 };
 
-export const prompt_codeReviewSafeguard_user = (
-    languageResultPrompt: string,
-) => {
+export const prompt_codeReviewSafeguard_user = (params: {
+    languageResultPrompt: string;
+}) => {
+    const { languageResultPrompt } = params;
+
     return `
 <Instructions>
 <AnalysisProtocol>

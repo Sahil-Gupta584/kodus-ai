@@ -10,8 +10,8 @@ import { CodeManagementService } from '@/core/infrastructure/adapters/services/p
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { Test, TestingModule } from '@nestjs/testing';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/llmProviders/llmProvider.service.contract';
 import { PARAMETERS_SERVICE_TOKEN } from '@/core/domain/parameters/contracts/parameters.service.contract';
+import { LLMProviderService } from '@kodus/kodus-common/llm';
 
 describe('commentManager', () => {
     let commentManagerService: CommentManagerService;
@@ -33,7 +33,7 @@ describe('commentManager', () => {
                     useValue: mockLoggerService,
                 },
                 {
-                    provide: LLM_PROVIDER_SERVICE_TOKEN,
+                    provide: LLMProviderService,
                     useValue: mockLLMProviderService,
                 },
                 {

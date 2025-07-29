@@ -43,12 +43,7 @@ import {
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { TeamMethodology } from '@/shared/domain/enums/team-methodology.enum';
-import {
-    MODEL_STRATEGIES,
-    LLMModelProvider,
-} from '../../../llmProviders/llmModelProvider.helper';
-import { LLM_PROVIDER_SERVICE_TOKEN } from '../../../llmProviders/llmProvider.service.contract';
-import { LLMProviderService } from '../../../llmProviders/llmProvider.service';
+import { LLMModelProvider, LLMProviderService } from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class AutomationSprintRetroService implements IAutomationFactory {
@@ -69,7 +64,6 @@ export class AutomationSprintRetroService implements IAutomationFactory {
         private readonly sprintService: ISprintService,
         @Inject(METRICS_FACTORY_TOKEN)
         private readonly metricsFactory: IMetricsFactory,
-        @Inject(LLM_PROVIDER_SERVICE_TOKEN)
         private readonly llmProviderService: LLMProviderService,
         private readonly logger: PinoLoggerService,
         private readonly promptService: PromptService,

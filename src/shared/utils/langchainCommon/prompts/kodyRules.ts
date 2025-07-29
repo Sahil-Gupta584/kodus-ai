@@ -1,4 +1,19 @@
-/** kody rules classifier */
+import z from 'zod';
+
+//#region classifier
+export const kodyRulesClassifierSchema = z.object({
+    rules: z.array(
+        z.object({
+            uuid: z.string(),
+            reason: z.string(),
+        }),
+    ),
+});
+
+export type KodyRulesClassifierSchema = z.infer<
+    typeof kodyRulesClassifierSchema
+>;
+
 export const prompt_kodyrules_classifier_system = () => {
     return `
 You are a panel of three expert software engineers - Alice, Bob, and Charles.
@@ -51,16 +66,41 @@ DISCUSSION HERE
 `;
 };
 
-/** kody rules update code review suggestions */
+//#region updater
+export const kodyRulesUpdateSuggestionsSchema = z.object({
+    overallSummary: z.string(),
+    codeSuggestions: z.array(
+        z.object({
+            id: z.string(),
+            relevantFile: z.string(),
+            language: z.string(),
+            suggestionContent: z.string(),
+            existingCode: z.string(),
+            improvedCode: z.string(),
+            oneSentenceSummary: z.string(),
+            relevantLinesStart: z.number(),
+            relevantLinesEnd: z.number(),
+            label: z.string(),
+            severity: z.string(),
+            violatedKodyRulesIds: z.array(z.string()).optional(),
+            brokenKodyRulesIds: z.array(z.string()).optional(),
+        }),
+    ),
+});
+
+export type KodyRulesUpdateSuggestionsSchema = z.infer<
+    typeof kodyRulesUpdateSuggestionsSchema
+>;
+
 export const prompt_kodyrules_updatestdsuggestions_system = () => {
     return `
 You are a senior engineer tasked with reviewing a list of code-review suggestions, ensuring that none of them violate the specific code rules (referred to as **Kody Rules**) and practices followed by your company.
 
 Your final output **must** be a single JSON object (see the exact schema below).
 
-Data you have access to  
-1. **Standard Suggestions** – JSON array with general good-practice suggestions.  
-2. **Kody Rules** – JSON array with the company’s specific code rules. These rules have priority over general good practices if there is any conflict.  
+Data you have access to
+1. **Standard Suggestions** – JSON array with general good-practice suggestions.
+2. **Kody Rules** – JSON array with the company’s specific code rules. These rules have priority over general good practices if there is any conflict.
 3. **fileDiff** – Full diff of the PR; every suggestion relates to this code.
 
 ---
@@ -69,18 +109,18 @@ Data you have access to
 
 1. **Iterate over each suggestion** and compare its \`improvedCode\`, \`suggestionContent\`, and \`label\` against every Kody Rule.
 
-2. **Decision branch**  
-   2a. **If the suggestion *violates* one or more Kody Rules**  
-       • Refactor \`improvedCode\` so it complies.  
-       • List all violated rule UUIDs in \`violatedKodyRulesIds\`.  
+2. **Decision branch**
+   2a. **If the suggestion *violates* one or more Kody Rules**
+       • Refactor \`improvedCode\` so it complies.
+       • List all violated rule UUIDs in \`violatedKodyRulesIds\`.
 2b. **Else if the suggestion is directly fixing a Kody Rule violation present in the existing code**
     • The existing code must explicitly violate the rule's requirements
     • Adjust wording/label/code as needed
     • List those rule UUIDs in \`brokenKodyRulesIds\`
    2c. **Else** – leave the suggestion unchanged and output empty arrays for both fields.
 
-3. **Never invent rule IDs.** Copy the exact UUIDs provided in **Kody Rules**.  
-4. **Keep key order consistent** to ease downstream parsing.  
+3. **Never invent rule IDs.** Copy the exact UUIDs provided in **Kody Rules**.
+4. **Keep key order consistent** to ease downstream parsing.
 
 ## Output schema (strict)
 
@@ -130,7 +170,30 @@ ${patchWithLinesStr}
 `;
 };
 
-/** kody rules generate new suggestions */
+//#region generator
+export const kodyRulesSuggestionGenerationSchema = z.object({
+    overallSummary: z.string(),
+    codeSuggestions: z.array(
+        z.object({
+            id: z.string(),
+            relevantFile: z.string(),
+            language: z.string(),
+            suggestionContent: z.string(),
+            existingCode: z.string(),
+            improvedCode: z.string(),
+            oneSentenceSummary: z.string(),
+            relevantLinesStart: z.number(),
+            relevantLinesEnd: z.number(),
+            label: z.string(),
+            brokenKodyRulesIds: z.array(z.string()),
+        }),
+    ),
+});
+
+export type KodyRulesSuggestionGenerationSchema = z.infer<
+    typeof kodyRulesSuggestionGenerationSchema
+>;
+
 export const prompt_kodyrules_suggestiongeneration_system = () => {
     return `You are a senior engineer with expertise in code review and a deep understanding of coding standards and best practices. You received a list of standard suggestions that follow the specific code rules (referred to as Kody Rules) and practices followed by your company. Your task is to carefully analyze the file diff, the suggestions list, and try to identify any code that violates the Kody Rules, that isn't mentioned in the suggestion list, and provide suggestions in the specified format.
 
@@ -263,6 +326,18 @@ DISCUSSION HERE
 `;
 };
 
+//#region guardian
+export const kodyRulesGuardianSchema = z.object({
+    decisions: z.array(
+        z.object({
+            id: z.string(),
+            shouldRemove: z.boolean(),
+        }),
+    ),
+});
+
+export type KodyRulesGuardianSchema = z.infer<typeof kodyRulesGuardianSchema>;
+
 export const prompt_kodyrules_guardian_system = () => {
     return `
 You are **KodyGuardian**, a strict gate-keeper for code-review suggestions.
@@ -303,7 +378,13 @@ ${JSON.stringify(kodyRules, null, 2)}
 `;
 };
 
-/** kody rules extract UUID from suggestion content */
+//#region extract id
+export const kodyRulesExtractIdSchema = z.object({
+    ids: z.array(z.string()),
+});
+
+export type KodyRulesExtractIdSchema = z.infer<typeof kodyRulesExtractIdSchema>;
+
 export const prompt_kodyrules_extract_id_system = () => {
     return `
 You are a Kody Rule ID extraction specialist. Your task is to find and extract Kody Rule identifiers from text content.

@@ -27,7 +27,7 @@ import { CircuitBreaker } from '../../runtime/core/circuit-breaker.js';
 import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
-import { createAgentContext } from '../../core/context/context-factory.js';
+import { contextBuilder } from '../../core/context/context-builder.js';
 import type {
     AgentContext,
     TenantId,
@@ -150,8 +150,7 @@ export interface AgentCoreConfig {
     // Kernel Integration - sempre habilitado
     enableKernelIntegration?: boolean;
 
-    // Permitir injeção de factory customizada
-    agentContextFactory?: (config: AgentExecutionOptions) => AgentContext;
+    // Factory customization moved to ContextBuilder level
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -170,8 +169,6 @@ export abstract class AgentCore<
     protected readonly thinkingTimeout: number;
     protected config: AgentCoreConfig;
     protected eventHistory: AnyEvent[] = [];
-    // ✅ REMOVER: StateManager duplicado - usar apenas do contexto
-    // protected stateManager: ContextStateService;
 
     // Single agent mode
     protected singleAgentDefinition?: AgentDefinition<
@@ -327,10 +324,7 @@ export abstract class AgentCore<
     // ✅ REMOVER: Variável não utilizada
     // private currentAgentContext?: AgentContext;
 
-    // Permitir injeção de factory customizada
-    protected agentContextFactory: (
-        config: AgentExecutionOptions,
-    ) => Promise<AgentContext> = createAgentContext;
+    // Context creation moved to initialization phase
 
     constructor(
         definitionOrConfig:
@@ -357,23 +351,7 @@ export abstract class AgentCore<
                 );
             }
         }
-        // Permitir injeção de factory customizada
-        if (
-            this.config &&
-            typeof (this.config as Partial<AgentCoreConfig>)
-                .agentContextFactory === 'function'
-        ) {
-            const customFactory = (this.config as AgentCoreConfig)
-                .agentContextFactory!;
-            this.agentContextFactory = async (
-                config: AgentExecutionOptions,
-            ) => {
-                const result = customFactory(config);
-                return result instanceof Promise
-                    ? result
-                    : Promise.resolve(result);
-            };
-        }
+        // Factory customization removed - use ContextBuilder.getInstance() directly
 
         // Apply defaults
         this.config = {
@@ -432,6 +410,14 @@ export abstract class AgentCore<
             this.startDeliveryProcessor();
         }
 
+        // ✅ NEW: Configure ToolEngine in ContextBuilder if available
+        if (this.toolEngine) {
+            contextBuilder.setToolEngine(this.toolEngine);
+            this.logger.info('ToolEngine configured in ContextBuilder', {
+                toolCount: this.toolEngine.listTools().length,
+            });
+        }
+
         this.logger.info('AgentCore created', {
             mode: this.singleAgentDefinition ? 'single' : 'multi',
             agentName,
@@ -441,6 +427,7 @@ export abstract class AgentCore<
                 advancedCoordination: this.config.enableAdvancedCoordination,
                 messaging: this.config.enableMessaging,
                 tools: this.config.enableTools,
+                toolEngineConfigured: !!this.toolEngine,
             },
         });
     }
@@ -479,58 +466,33 @@ export abstract class AgentCore<
             agentExecutionOptions,
         );
 
-        context.availableToolsForLLM = this.toolEngine?.getToolsForLLM() || [];
-
         // Track execution with actual sessionId from context
-        this.activeExecutions.set(executionId, {
-            correlationId: correlationId || '',
-            sessionId: context.system.sessionId,
+        //TODO Ainda precisa
+        // this.activeExecutions.set(executionId, {
+        //     correlationId: correlationId || '',
+        //     sessionId: context.sessionId,
+        //     startTime,
+        //     status: 'running',
+        // });
+
+        // 🚀 Track execution start using context tracking API
+        //TODO Porque plannerStep?
+        await context.track.plannerStep({
+            type: 'execution_start',
+            executionId,
             startTime,
             status: 'running',
+            agentName: agent.name,
+            correlationId,
         });
 
-        // 🚀 Add execution start to ExecutionRuntime
-        if (context.executionRuntime) {
-            await context.executionRuntime.addContextValue({
-                type: 'execution',
-                key: 'start',
-                value: {
-                    executionId,
-                    startTime,
-                    status: 'running',
-                    agentName: agent.name,
-                    timestamp: Date.now(),
-                },
-                metadata: {
-                    source: 'agent-core',
-                    action: 'execution_started',
-                    correlationId,
-                    agentName: agent.name,
-                },
-            });
-        }
-
-        // 🚀 Add agent identity to context for enhanced execution
-        if (agent.identity) {
-            context.agentIdentity = agent.identity;
-
-            // Inform ExecutionRuntime about this context update
-            await context.executionRuntime?.addContextValue({
-                type: 'agent',
-                key: 'identity',
-                value: agent.identity,
-                metadata: {
-                    source: 'agent-core',
-                    action: 'initialization',
-                    agentName: agent.name,
-                },
-            });
-        }
+        // ✅ REMOVED: agentIdentity is now set during createAgentContext
 
         // 🚀 Add conversation entry if session exists
-        if (context.system.sessionId) {
+        //TODO: Aqui não precisa recuperar?
+        if (context.sessionId) {
             sessionService.addConversationEntry(
-                context.system.sessionId,
+                context.sessionId,
                 input,
                 null, // output será adicionado depois
                 agent.name,
@@ -541,7 +503,7 @@ export abstract class AgentCore<
                 type: 'session',
                 key: 'conversationEntry',
                 value: {
-                    sessionId: context.system.sessionId,
+                    sessionId: context.sessionId,
                     input,
                     agentName: agent.name,
                     timestamp: Date.now(),
@@ -549,7 +511,7 @@ export abstract class AgentCore<
                 metadata: {
                     source: 'agent-core',
                     action: 'conversation-start',
-                    sessionId: context.system.sessionId,
+                    sessionId: context.sessionId,
                 },
             });
         }
@@ -593,20 +555,10 @@ export abstract class AgentCore<
                 });
             }
 
-            this.logger.info('Agent execution completed', {
-                agentName: agent.name,
-                correlationId,
-                executionId,
-                sessionId,
-                duration,
-                iterations: result.iterations,
-                toolsUsed: result.toolsUsed,
-            });
-
             // Atualizar saída na conversa se tiver sessionId
-            if (context.system.sessionId) {
+            if (context.sessionId) {
                 sessionService.addConversationEntry(
-                    context.system.sessionId,
+                    context.sessionId,
                     input,
                     result.output,
                     agent.name,
@@ -619,7 +571,7 @@ export abstract class AgentCore<
                 data: result.output,
                 reasoning: result.reasoning,
                 correlationId,
-                sessionId: context.system.sessionId,
+                sessionId: context.sessionId,
                 status: 'COMPLETED',
                 executionId,
                 duration,
@@ -643,7 +595,7 @@ export abstract class AgentCore<
                 agentName: agent.name,
                 correlationId,
                 executionId,
-                sessionId: context.system.sessionId,
+                sessionId: context.sessionId,
                 duration,
             });
 
@@ -668,6 +620,7 @@ export abstract class AgentCore<
         toolsUsed: number;
         events: AnyEvent[];
     }> {
+        debugger;
         // Agents REQUIRE planner and LLM - no fallback
         if (!this.planner || !this.llmAdapter) {
             throw createAgentError(
@@ -759,7 +712,7 @@ export abstract class AgentCore<
                             agentName: context.agentName,
                             actionType,
                             correlationId,
-                            sessionId: context.system.sessionId,
+                            sessionId: context.sessionId,
                         },
                         {
                             deliveryGuarantee: 'at-least-once',
@@ -779,7 +732,7 @@ export abstract class AgentCore<
                         agentName: context.agentName,
                         actionType,
                         correlationId,
-                        sessionId: context.system.sessionId,
+                        sessionId: context.sessionId,
                     });
                 }
             }
@@ -909,7 +862,7 @@ export abstract class AgentCore<
                                         agentName: context.agentName,
                                         toolName: toolName,
                                         correlationId,
-                                        sessionId: context.system.sessionId,
+                                        sessionId: context.sessionId,
                                         result: toolResult,
                                     },
                                     {
@@ -933,7 +886,7 @@ export abstract class AgentCore<
                                 agentName: context.agentName,
                                 toolName: toolName,
                                 correlationId,
-                                sessionId: context.system.sessionId,
+                                sessionId: context.sessionId,
                             });
                         }
                     }
@@ -955,7 +908,7 @@ export abstract class AgentCore<
                                         agentName: context.agentName,
                                         toolName: toolName,
                                         correlationId,
-                                        sessionId: context.system.sessionId,
+                                        sessionId: context.sessionId,
                                         error: (error as Error).message,
                                     },
                                     {
@@ -979,7 +932,7 @@ export abstract class AgentCore<
                                 agentName: context.agentName,
                                 toolName: toolName,
                                 correlationId,
-                                sessionId: context.system.sessionId,
+                                sessionId: context.sessionId,
                                 error: (error as Error).message,
                             });
                         }
@@ -1665,7 +1618,15 @@ export abstract class AgentCore<
             tenantId: agentExecutionOptions?.tenantId || this.config.tenantId,
         };
 
-        return this.agentContextFactory(config);
+        // 1. Create base context via ContextBuilder
+        const context = await contextBuilder.createAgentContext(config);
+
+        // 2. ✅ ELEGANT: Enrich context with AgentDefinition data
+        if (this.singleAgentDefinition?.identity) {
+            context.agentIdentity = this.singleAgentDefinition.identity;
+        }
+
+        return context;
     }
 
     protected emitEvent<K extends EventType>(
@@ -1754,7 +1715,7 @@ export abstract class AgentCore<
                         agentName: context.agentName,
                         toolNames: tools.map((t) => t.toolName),
                         correlationId,
-                        sessionId: context.system.sessionId,
+                        sessionId: context.sessionId,
                     },
                     {
                         deliveryGuarantee: 'at-least-once',
@@ -1788,7 +1749,7 @@ export abstract class AgentCore<
                       tools: toolEngineAction.tools,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.system.sessionId,
+                          sessionId: context.sessionId,
                           correlationId,
                       },
                   },
@@ -1806,7 +1767,7 @@ export abstract class AgentCore<
                         agentName: context.agentName,
                         results,
                         correlationId,
-                        sessionId: context.system.sessionId,
+                        sessionId: context.sessionId,
                     },
                     {
                         deliveryGuarantee: 'at-least-once',
@@ -1870,7 +1831,7 @@ export abstract class AgentCore<
                       stopOnError: toolEngineAction.stopOnError,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.system.sessionId,
+                          sessionId: context.sessionId,
                           correlationId,
                       },
                   },
@@ -1921,7 +1882,7 @@ export abstract class AgentCore<
                       conditions: toolEngineAction.conditions,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.system.sessionId,
+                          sessionId: context.sessionId,
                           correlationId,
                       },
                   },
@@ -1979,7 +1940,7 @@ export abstract class AgentCore<
                               failFast: parallelAction.failFast,
                               metadata: {
                                   agentName: context.agentName,
-                                  sessionId: context.system.sessionId,
+                                  sessionId: context.sessionId,
                                   correlationId,
                               },
                           },
@@ -2005,7 +1966,7 @@ export abstract class AgentCore<
                               timeout: sequentialAction.timeout,
                               metadata: {
                                   agentName: context.agentName,
-                                  sessionId: context.system.sessionId,
+                                  sessionId: context.sessionId,
                                   correlationId,
                               },
                           },
@@ -2031,7 +1992,7 @@ export abstract class AgentCore<
                               conditions: conditionalAction.conditions,
                               metadata: {
                                   agentName: context.agentName,
-                                  sessionId: context.system.sessionId,
+                                  sessionId: context.sessionId,
                                   correlationId,
                               },
                           },
@@ -2104,7 +2065,7 @@ export abstract class AgentCore<
                           concurrency: parallelAction.concurrency,
                           metadata: {
                               agentName: context.agentName,
-                              sessionId: context.system.sessionId,
+                              sessionId: context.sessionId,
                               correlationId,
                           },
                       },
@@ -2126,7 +2087,7 @@ export abstract class AgentCore<
                           tools: sequentialAction.tools,
                           metadata: {
                               agentName: context.agentName,
-                              sessionId: context.system.sessionId,
+                              sessionId: context.sessionId,
                               correlationId,
                           },
                       },
@@ -2175,7 +2136,7 @@ export abstract class AgentCore<
                       },
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.system.sessionId,
+                          sessionId: context.sessionId,
                           correlationId,
                       },
                   },
@@ -2231,7 +2192,7 @@ export abstract class AgentCore<
                           failFast: false,
                           metadata: {
                               agentName: context.agentName,
-                              sessionId: context.system.sessionId,
+                              sessionId: context.sessionId,
                               correlationId,
                           },
                       },
@@ -2256,11 +2217,8 @@ export abstract class AgentCore<
         // Prepare context for Router analysis
         const routerContext = {
             agentName: context.agentName,
-            executionId: context.system.executionId,
+            executionId: context.invocationId,
             tenantId: context.tenantId,
-            // Add agent-specific context
-            iterationCount: context.system.iteration || 0,
-            toolsUsed: context.system.toolsUsed || 0,
             ...constraints,
         };
 
@@ -2275,7 +2233,7 @@ export abstract class AgentCore<
                       constraints,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.system.sessionId,
+                          sessionId: context.sessionId,
                           correlationId,
                       },
                   },
@@ -2450,7 +2408,7 @@ export abstract class AgentCore<
                       plan,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.system.sessionId,
+                          sessionId: context.sessionId,
                           correlationId,
                       },
                   },
@@ -2513,7 +2471,7 @@ export abstract class AgentCore<
                       planId: planId || `${context.agentName}-${Date.now()}`,
                       metadata: {
                           agentName: context.agentName,
-                          sessionId: context.system.sessionId,
+                          sessionId: context.sessionId,
                           correlationId,
                       },
                   },
@@ -2635,6 +2593,26 @@ export abstract class AgentCore<
         parameters: Record<string, unknown>;
     }> {
         return this.toolEngine?.getToolsForLLM() || [];
+    }
+
+    /**
+     * Set ToolEngine (for dependency injection)
+     */
+    setToolEngine(toolEngine: ToolEngine): void {
+        this.toolEngine = toolEngine;
+
+        // Configure ToolEngine in ContextBuilder
+        contextBuilder.setToolEngine(toolEngine);
+
+        // Inject KernelHandler if available
+        if (this.kernelHandler) {
+            toolEngine.setKernelHandler(this.kernelHandler);
+        }
+
+        this.logger.info('ToolEngine set for AgentCore', {
+            toolCount: toolEngine.listTools().length,
+            hasKernelHandler: !!this.kernelHandler,
+        });
     }
 
     /**
@@ -4231,15 +4209,31 @@ export abstract class AgentCore<
         // ✅ REMOVER: Assignment desnecessário
         // this.currentAgentContext = context;
 
+        // ✅ NEW: Use ContextBuilder - initialize execution history
+        const executionHistory: Array<{
+            thought: AgentThought;
+            action: AgentAction;
+            result: ActionResult;
+            observation: ResultAnalysis;
+        }> = [];
+
+        // ✅ PERFORMANCE: Create context ONCE before loop
         this.executionContext = await this.createExecutionContext(
             inputString,
             context,
+            executionHistory,
+            iterations,
         );
 
-        while (
-            iterations < maxIterations &&
-            !this.executionContext.isComplete
-        ) {
+        while (iterations < maxIterations) {
+            // ✅ PERFORMANCE: Update context instead of recreating
+            this.updateExecutionContext(
+                this.executionContext,
+                executionHistory,
+                iterations,
+            );
+
+            if (this.executionContext.isComplete) break;
             try {
                 // Get initial event count from kernel
                 const kernel = this.kernelHandler
@@ -4272,8 +4266,13 @@ export abstract class AgentCore<
 
                 // ✅ REMOVER: Debugger statement
                 // debugger;
-                // 4. UPDATE - Update context for next iteration
-                this.executionContext.update(thought, result, observation);
+                // ✅ NEW: Add to execution history directly
+                executionHistory.push({
+                    thought,
+                    action: thought.action,
+                    result,
+                    observation,
+                });
 
                 iterations++;
 
@@ -4368,9 +4367,9 @@ export abstract class AgentCore<
             }
         }
 
-        const finalResult = this.executionContext.getFinalResult();
+        const finalResult = this.executionContext?.getFinalResult();
 
-        if (finalResult.success) {
+        if (finalResult && finalResult.success) {
             // Extract the content from the result if it's a final_answer
             const result = finalResult.result;
             if (
@@ -4383,7 +4382,7 @@ export abstract class AgentCore<
                     return result.content as TOutput;
                 }
             }
-            return finalResult.result as TOutput;
+            return finalResult?.result as TOutput;
         } else {
             // ✅ ADD: Log detalhado para debug
             this.logger.debug('❌ THINK→ACT→OBSERVE FAILED', {
@@ -4989,47 +4988,37 @@ export abstract class AgentCore<
 
     /**
      * Create execution context for Think→Act→Observe
+     * ✅ NEW: Uses ContextBuilder with dynamic history and iterations
      */
     private async createExecutionContext(
         input: string,
         agentContext: AgentContext,
-    ): Promise<PlannerExecutionContext> {
-        // Fallback to simple execution context for backward compatibility
-        const history: Array<{
+        history: Array<{
             thought: AgentThought;
             action: AgentAction;
             result: ActionResult;
             observation: ResultAnalysis;
-        }> = [];
-
-        // ✅ Fallback to simple execution context for backward compatibility
+        }>,
+        iterations: number,
+    ): Promise<PlannerExecutionContext> {
+        // ✅ NEW: Use ContextBuilder with dynamic context
         const plannerContext: PlannerExecutionContext = {
             input,
-            history,
-            iterations: 0,
+            history, // ✅ Use passed history (accumulated)
+            iterations, // ✅ Use passed iterations (current)
             maxIterations: this.config.maxThinkingIterations || 15,
             plannerMetadata: {
                 agentName: agentContext.agentName,
                 correlationId: agentContext.correlationId,
                 tenantId: agentContext.tenantId,
-                thread: {
-                    id: agentContext.system.threadId,
-                    metadata: { description: 'Agent execution thread' },
-                },
+                thread: agentContext.thread,
                 startTime: Date.now(),
             },
-            update(thought, result, observation) {
-                const historyEntry = {
-                    thought,
-                    action: thought.action || {
-                        type: 'final_answer',
-                        content: 'No action available',
-                    },
-                    result,
-                    observation,
-                };
-
-                history.push(historyEntry);
+            // ✅ NEW: Pass AgentContext with ContextBuilder APIs
+            agentContext,
+            update(_thought, _result, _observation) {
+                // ✅ NEW: No longer needed - history managed externally
+                // This method kept for backward compatibility
             },
             getCurrentSituation() {
                 const recentHistory = history.slice(-3);
@@ -5081,6 +5070,35 @@ export abstract class AgentCore<
         };
 
         return plannerContext;
+    }
+
+    /**
+     * ✅ PERFORMANCE: Update execution context instead of recreating
+     */
+    private updateExecutionContext(
+        context: PlannerExecutionContext,
+        history: Array<{
+            thought: AgentThought;
+            action: AgentAction;
+            result: ActionResult;
+            observation: ResultAnalysis;
+        }>,
+        iterations: number,
+    ): void {
+        // Update mutable properties without object recreation
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (context as any).history = history; // Update reference
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (context as any).iterations = iterations;
+
+        // Update computed properties
+        if (typeof context.getCurrentSituation === 'function') {
+            // getCurrentSituation will use updated history automatically
+        }
+
+        if (typeof context.getFinalResult === 'function') {
+            // getFinalResult will use updated history automatically
+        }
     }
 
     /**

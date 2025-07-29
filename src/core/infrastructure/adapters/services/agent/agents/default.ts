@@ -16,7 +16,7 @@ import {
     MessagesPlaceholder,
 } from '@langchain/core/prompts';
 import { conversationChatMemory } from '@/shared/utils/langchainCommon/conversationChatMemory';
-import { MODEL_STRATEGIES, LLMModelProvider } from '../../llmProviders/llmModelProvider.helper';
+import { MODEL_STRATEGIES, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class DefaultAgentProvider
@@ -74,7 +74,8 @@ export class DefaultAgentProvider
                     sessionId: runParams?.sessionId,
                 },
                 {
-                    model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O].modelName
+                    model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
+                        .modelName,
                 },
             );
 
