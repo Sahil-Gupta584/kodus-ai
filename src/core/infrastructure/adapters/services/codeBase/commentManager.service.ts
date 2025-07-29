@@ -42,7 +42,7 @@ import {
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
-import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
+import { IPullRequestMessageContent, IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { PullRequestMessageStatus } from '@/config/types/general/pullRequestMessages.type';
 import {
     MessageTemplateProcessor,
@@ -1394,13 +1394,13 @@ ${reviewOptions}
         language?: string,
         codeSuggestions?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
-        finishReviewMessage?: IPullRequestMessages,
+        endReviewMessage?: IPullRequestMessageContent,
     ): Promise<void> {
         let commentBody;
 
-        if (finishReviewMessage) {
+        if (endReviewMessage) {
 
-            commentBody = finishReviewMessage.content;
+            commentBody = endReviewMessage.content;
 
             const placeholderContext = await this.getTemplateContext(
                 changedFiles,
@@ -1412,7 +1412,7 @@ ${reviewOptions}
             );
 
             commentBody = await this.messageProcessor.processTemplate(
-                finishReviewMessage.content,
+                endReviewMessage.content,
                 placeholderContext,
             );
         } else {

@@ -15,20 +15,45 @@ export class PullRequestMessagesModel extends CoreDocument {
     @Prop({ type: String, required: true })
     organizationId: string;
 
-    @Prop({ type: String, required: true, enum: PullRequestMessageType })
-    pullRequestMessageType: PullRequestMessageType;
-
-    @Prop({ type: String, required: true })
-    content: string;
-
-    @Prop({ type: String, required: true, enum: PullRequestMessageStatus })
-    status: PullRequestMessageStatus;
-
     @Prop({ type: String, required: true, enum: ConfigLevel })
     configLevel: ConfigLevel;
 
     @Prop({ type: String, required: false })
     repositoryId: string;
+
+    @Prop({
+        type: {
+            content: { type: String, required: true },
+            status: {
+                type: String,
+                required: true,
+                enum: PullRequestMessageStatus,
+            },
+        },
+        _id: false,
+        required: false,
+    })
+    startReviewMessage: {
+        content: string;
+        status: PullRequestMessageStatus;
+    };
+
+    @Prop({
+        type: {
+            content: { type: String, required: true },
+            status: {
+                type: String,
+                required: true,
+                enum: PullRequestMessageStatus,
+            },
+        },
+        _id: false,
+        required: false,
+    })
+    endReviewMessage: {
+        content: string;
+        status: PullRequestMessageStatus;
+    };
 }
 
 export const PullRequestMessagesSchema = SchemaFactory.createForClass(

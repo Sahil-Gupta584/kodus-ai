@@ -38,7 +38,8 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
     protected async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
-        const startReviewMessage = await this.setStartReviewMessage(context);
+        const pullRequestMessagesConfig =
+            await this.setPullRequestMessagesConfig(context);
 
         if (
             context.lastExecution &&
@@ -76,6 +77,9 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
             }
         }
 
+        const startReviewMessage =
+            pullRequestMessagesConfig?.startReviewMessage;
+
         if (
             startReviewMessage &&
             startReviewMessage.status === PullRequestMessageStatus.INACTIVE
@@ -91,7 +95,7 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
             });
 
             return this.updateContext(context, (draft) => {
-                draft.startReviewMessage = startReviewMessage;
+                draft.pullRequestMessagesConfig = pullRequestMessagesConfig;
             });
         }
 
@@ -108,34 +112,33 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
 
         return this.updateContext(context, (draft) => {
             draft.initialCommentData = result;
-            draft.startReviewMessage = startReviewMessage;
+            draft.pullRequestMessagesConfig = pullRequestMessagesConfig;
         });
     }
 
-    private async setStartReviewMessage(
+    private async setPullRequestMessagesConfig(
         context: CodeReviewPipelineContext,
-    ): Promise<IPullRequestMessages> {
-        const pullRequestMessages = await this.pullRequestMessagesService.find({
-            organizationId: context.organizationAndTeamData.organizationId,
-            pullRequestMessageType: PullRequestMessageType.START_REVIEW,
-        });
+    ): Promise<IPullRequestMessages | null> {
+        const repositoryId = context.repository.id;
+        const organizationId = context.organizationAndTeamData.organizationId;
 
-        if (pullRequestMessages.length > 0) {
-            const repositoryId = context.repository.id;
+        // Busca primeiro por configuração específica do repositório
+        let pullRequestMessagesConfig =
+            await this.pullRequestMessagesService.findOne({
+                organizationId,
+                repositoryId,
+                configLevel: ConfigLevel.REPOSITORY,
+            });
 
-            let startReviewMessage = pullRequestMessages.find(
-                (message) => message.repositoryId === repositoryId,
-            );
-
-            if (!startReviewMessage) {
-                startReviewMessage = pullRequestMessages.find(
-                    (message) => message.configLevel === ConfigLevel.GLOBAL,
-                );
-            }
-
-            return startReviewMessage;
+        // Se não encontrar, busca por configuração global
+        if (!pullRequestMessagesConfig) {
+            pullRequestMessagesConfig =
+                await this.pullRequestMessagesService.findOne({
+                    organizationId,
+                    configLevel: ConfigLevel.GLOBAL,
+                });
         }
 
-        return null;
+        return pullRequestMessagesConfig;
     }
 }

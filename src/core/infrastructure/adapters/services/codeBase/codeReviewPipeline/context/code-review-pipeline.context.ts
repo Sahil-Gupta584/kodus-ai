@@ -52,8 +52,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
         threadId?: number;
     };
 
-    startReviewMessage?: IPullRequestMessages | null;
-    endReviewMessage?: IPullRequestMessages | null;
+    pullRequestMessagesConfig?: IPullRequestMessages;
 
     batches: FileChange[][];
 

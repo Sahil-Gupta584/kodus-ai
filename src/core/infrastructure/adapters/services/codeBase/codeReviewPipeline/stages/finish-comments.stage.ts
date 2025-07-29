@@ -48,7 +48,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             lineComments,
         } = context;
 
-        if (!initialCommentData && !context.startReviewMessage) {
+        if (!initialCommentData && !context.pullRequestMessagesConfig?.startReviewMessage) {
             this.logger.warn({
                 message: `Missing initialCommentData for PR#${pullRequest.number}`,
                 context: this.stageName,
@@ -80,9 +80,9 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             );
         }
 
-        const finishReviewMessage = await this.setFinishReviewMessage(context);
+        const endReviewMessage = context.pullRequestMessagesConfig?.endReviewMessage;
 
-        if (!context.startReviewMessage && !finishReviewMessage) {
+        if (!context.pullRequestMessagesConfig?.startReviewMessage && !endReviewMessage) {
             await this.commentManagerService.updateOverallComment(
                 organizationAndTeamData,
                 pullRequest.number,
@@ -96,8 +96,8 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             );
         } else {
             if (
-                finishReviewMessage &&
-                finishReviewMessage.status === PullRequestMessageStatus.INACTIVE
+                endReviewMessage &&
+                endReviewMessage.status === PullRequestMessageStatus.INACTIVE
             ) {
                 this.logger.log({
                     message: `Skipping comment for PR#${context.pullRequest.number} with finish review message because it is inactive`,
@@ -120,37 +120,10 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 context.codeReviewConfig?.languageResultPrompt ?? 'en-US',
                 lineComments,
                 codeReviewConfig,
-                finishReviewMessage,
+                endReviewMessage,
             );
         }
 
         return context;
-    }
-
-    private async setFinishReviewMessage(
-        context: CodeReviewPipelineContext,
-    ): Promise<IPullRequestMessages> {
-        const pullRequestMessages = await this.pullRequestMessagesService.find({
-            organizationId: context.organizationAndTeamData.organizationId,
-            pullRequestMessageType: PullRequestMessageType.END_REVIEW,
-        });
-
-        if (pullRequestMessages.length > 0) {
-            const repositoryId = context.repository.id;
-
-            let finishReviewMessage = pullRequestMessages.find(
-                (message) => message.repositoryId === repositoryId,
-            );
-
-            if (!finishReviewMessage) {
-                finishReviewMessage = pullRequestMessages.find(
-                    (message) => message.configLevel === ConfigLevel.GLOBAL,
-                );
-            }
-
-            return finishReviewMessage;
-        }
-
-        return null;
     }
 }

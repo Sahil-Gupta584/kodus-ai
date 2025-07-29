@@ -28,16 +28,7 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
         }
 
         pullRequestMessages.organizationId =
-        this.request.user.organization.uuid;
-
-        const existingPullRequestMessage = await this.pullRequestMessagesService.findById(
-            pullRequestMessages.uuid,
-        );
-
-        if (existingPullRequestMessage) {
-            await this.pullRequestMessagesService.update(pullRequestMessages);
-            return;
-        }
+            this.request.user.organization.uuid;
 
         if (pullRequestMessages?.repositoryId) {
             pullRequestMessages.configLevel = ConfigLevel.REPOSITORY;
@@ -45,6 +36,38 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
             pullRequestMessages.configLevel = ConfigLevel.GLOBAL;
         }
 
+        const existingPullRequestMessage = await this.findExistingConfiguration(
+            pullRequestMessages.organizationId,
+            pullRequestMessages.configLevel,
+            pullRequestMessages.repositoryId,
+        );
+
+        if (existingPullRequestMessage) {
+            // Mapear id para uuid se existir
+            if (pullRequestMessages.id && !pullRequestMessages.uuid) {
+                pullRequestMessages.uuid = pullRequestMessages.id;
+            }
+            await this.pullRequestMessagesService.update(pullRequestMessages);
+            return;
+        }
+
         await this.pullRequestMessagesService.create(pullRequestMessages);
+    }
+
+    private async findExistingConfiguration(
+        organizationId: string,
+        configLevel: ConfigLevel,
+        repositoryId?: string,
+    ): Promise<IPullRequestMessages | null> {
+        const searchCriteria: any = {
+            organizationId,
+            configLevel,
+        };
+
+        if (configLevel === ConfigLevel.REPOSITORY && repositoryId) {
+            searchCriteria.repositoryId = repositoryId;
+        }
+
+        return await this.pullRequestMessagesService.findOne(searchCriteria);
     }
 }

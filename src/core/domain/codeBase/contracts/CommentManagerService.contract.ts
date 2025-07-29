@@ -10,7 +10,7 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { LLMModelProvider } from '@/core/infrastructure/adapters/services/llmProviders/llmModelProvider.helper';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { ISuggestionByPR } from '../../pullRequests/interfaces/pullRequests.interface';
-import { IPullRequestMessages } from '../../pullRequestMessages/interfaces/pullRequestMessages.interface';
+import { IPullRequestMessageContent, IPullRequestMessages } from '../../pullRequestMessages/interfaces/pullRequestMessages.interface';
 
 export const COMMENT_MANAGER_SERVICE_TOKEN = Symbol('CommentManagerService');
 
@@ -113,6 +113,6 @@ export interface ICommentManagerService {
         language?: string,
         codeSuggestions?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
-        finishReviewMessage?: IPullRequestMessages,
+        endReviewMessage?: IPullRequestMessageContent,
     ): Promise<void>;
 }
