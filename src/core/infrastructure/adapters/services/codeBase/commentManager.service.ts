@@ -43,7 +43,10 @@ interface ClusteredSuggestion {
     problemDescription?: string;
     actionStatement?: string;
 }
-import { IPullRequestMessageContent, IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
+import {
+    IPullRequestMessageContent,
+    IPullRequestMessages,
+} from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { PullRequestMessageStatus } from '@/config/types/general/pullRequestMessages.type';
 import {
     MessageTemplateProcessor,
@@ -288,10 +291,11 @@ Avoid making assumptions or including inferred details not present in the provid
                     platformType,
                 );
 
-                commentBody = await this.messageProcessor.processTemplate(
+                const rawBody = await this.messageProcessor.processTemplate(
                     startReviewMessage,
                     placeholderContext,
                 );
+                commentBody = this.sanitizeBitbucketMarkdown(rawBody, platformType);
             } else {
                 commentBody = await this.generatePullRequestSummaryMarkdown(
                     changedFiles,
@@ -1323,7 +1327,6 @@ ${reviewOptions}
         let commentBody;
 
         if (endReviewMessage) {
-
             commentBody = endReviewMessage.content;
 
             const placeholderContext = await this.getTemplateContext(
@@ -1335,10 +1338,12 @@ ${reviewOptions}
                 platformType,
             );
 
-            commentBody = await this.messageProcessor.processTemplate(
+            const rawBody = await this.messageProcessor.processTemplate(
                 endReviewMessage.content,
                 placeholderContext,
             );
+
+            commentBody = this.sanitizeBitbucketMarkdown(rawBody, platformType);
         } else {
             commentBody = await this.generateLastReviewCommenBody(
                 organizationAndTeamData,
