@@ -43,10 +43,6 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
         );
 
         if (existingPullRequestMessage) {
-            // Mapear id para uuid se existir
-            if (pullRequestMessages.id && !pullRequestMessages.uuid) {
-                pullRequestMessages.uuid = pullRequestMessages.id;
-            }
             await this.pullRequestMessagesService.update(pullRequestMessages);
             return;
         }

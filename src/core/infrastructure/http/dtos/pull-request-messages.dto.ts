@@ -1,5 +1,5 @@
 import { PullRequestMessageStatus, PullRequestMessageType } from '@/config/types/general/pullRequestMessages.type';
-import { IsObject, IsString } from 'class-validator';
+import { IsObject, IsOptional, IsString } from 'class-validator';
 
 export class PullRequestMessagesDto {
     @IsString()
@@ -14,6 +14,7 @@ export class PullRequestMessagesDto {
     @IsString()
     public status: PullRequestMessageStatus;
 
+    @IsOptional()
     @IsString()
     public content: string;
 
