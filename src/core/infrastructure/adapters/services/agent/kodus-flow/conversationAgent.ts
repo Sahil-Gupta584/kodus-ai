@@ -23,7 +23,6 @@ export class ConversationAgentProvider {
     private mcpAdapter: ReturnType<typeof createMCPAdapter>;
 
     private llmAdapter: any;
-    private isInitialized = false;
 
     constructor(
         private readonly configService: ConfigService,
@@ -31,7 +30,8 @@ export class ConversationAgentProvider {
         private readonly mcpManagerService: MCPManagerService,
         private readonly llmProviderService: LLMProviderService,
     ) {
-        this.config = configService.get<DatabaseConnection>('mongoDatabase');
+        this.config =
+            this.configService.get<DatabaseConnection>('mongoDatabase');
         this.llmAdapter = this.createLLMAdapter();
     }
 
@@ -158,12 +158,6 @@ export class ConversationAgentProvider {
             console.warn('MCP offline, prosseguindo.');
         }
 
-        const tools = this.orchestration.getRegisteredTools();
-
-        console.log(
-            'REGISTERED TOOLS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!',
-            tools,
-        );
         await this.orchestration.createAgent({
             name: 'conversational-agent',
             planner: 'plan-execute',
@@ -172,9 +166,6 @@ export class ConversationAgentProvider {
                     'Agente de conversação para interações com usuários.',
             },
         });
-
-        this.isInitialized = true;
-        console.log('🚀 Conversational-agent pronto!');
     }
 
     // -------------------------------------------------------------------------
