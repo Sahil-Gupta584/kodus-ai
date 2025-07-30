@@ -23,7 +23,7 @@ export class PullRequestMessagesModel extends CoreDocument {
 
     @Prop({
         type: {
-            content: { type: String, required: true },
+            content: { type: String, required: false },
             status: {
                 type: String,
                 required: true,
@@ -40,7 +40,7 @@ export class PullRequestMessagesModel extends CoreDocument {
 
     @Prop({
         type: {
-            content: { type: String, required: true },
+            content: { type: String, required: false },
             status: {
                 type: String,
                 required: true,

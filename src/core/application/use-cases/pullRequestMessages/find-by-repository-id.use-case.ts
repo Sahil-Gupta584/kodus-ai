@@ -18,17 +18,24 @@ export class FindByRepositoryIdPullRequestMessagesUseCase implements IUseCase {
             throw new Error('Repository ID and organization ID are required');
         }
 
+        let result;
         if (repositoryId === 'global') {
-            return await this.pullRequestMessagesService.find({
+            result = await this.pullRequestMessagesService.findOne({
                 organizationId,
                 configLevel: ConfigLevel.GLOBAL,
             });
+        } else {
+            result = await this.pullRequestMessagesService.findOne({
+                repositoryId: repositoryId.toLowerCase(),
+                organizationId,
+                configLevel: ConfigLevel.REPOSITORY,
+            });
         }
 
-        return await this.pullRequestMessagesService.find({
-            repositoryId: repositoryId.toLowerCase(),
-            organizationId,
-            configLevel: ConfigLevel.REPOSITORY,
-        });
+        if (!result) {
+            return;
+        }
+
+        return result.toJson();
     }
 }

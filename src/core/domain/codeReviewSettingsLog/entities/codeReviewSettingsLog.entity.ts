@@ -23,6 +23,8 @@ export class CodeReviewSettingsLogEntity
         name?: string;
     };
     private readonly _changedData: ChangedData[];
+    private readonly _createdAt?: Date;
+    private readonly _updatedAt?: Date;
 
     constructor(codeReviewSettingsLog: ICodeReviewSettingsLog) {
         this._uuid = codeReviewSettingsLog.uuid;
@@ -33,6 +35,8 @@ export class CodeReviewSettingsLogEntity
         this._configLevel = codeReviewSettingsLog.configLevel;
         this._repository = codeReviewSettingsLog.repository;
         this._changedData = codeReviewSettingsLog.changedData;
+        this._createdAt = codeReviewSettingsLog.createdAt;
+        this._updatedAt = codeReviewSettingsLog.updatedAt;
     }
 
     toJson(): ICodeReviewSettingsLog {
@@ -45,6 +49,8 @@ export class CodeReviewSettingsLogEntity
             configLevel: this._configLevel,
             repository: this._repository,
             changedData: this._changedData,
+            createdAt: this._createdAt,
+            updatedAt: this._updatedAt,
         };
     }
 
@@ -58,6 +64,8 @@ export class CodeReviewSettingsLogEntity
             configLevel: this._configLevel,
             repository: this._repository,
             changedData: this._changedData,
+            createdAt: this._createdAt,
+            updatedAt: this._updatedAt,
         };
     }
 
@@ -97,6 +105,14 @@ export class CodeReviewSettingsLogEntity
 
     get changedData(): ChangedData[] {
         return this._changedData;
+    }
+
+    get createdAt(): Date {
+        return this._createdAt;
+    }
+
+    get updatedAt(): Date {
+        return this._updatedAt;
     }
 
     public static create(

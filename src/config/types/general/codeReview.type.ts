@@ -74,10 +74,6 @@ export type AnalysisContext = {
             taskId: string;
             status?: TaskStatus;
         };
-        impactAnalysis?: {
-            taskId: string;
-            status?: TaskStatus;
-        };
     };
 };
 

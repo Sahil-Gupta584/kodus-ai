@@ -30,10 +30,8 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
         pullRequestMessages.organizationId =
             this.request.user.organization.uuid;
 
-        if (pullRequestMessages?.repositoryId) {
-            pullRequestMessages.configLevel = ConfigLevel.REPOSITORY;
-        } else {
-            pullRequestMessages.configLevel = ConfigLevel.GLOBAL;
+        if (pullRequestMessages?.configLevel === ConfigLevel.GLOBAL) {
+            pullRequestMessages.repositoryId = 'global';
         }
 
         const existingPullRequestMessage = await this.findExistingConfiguration(
@@ -43,10 +41,6 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
         );
 
         if (existingPullRequestMessage) {
-            // Mapear id para uuid se existir
-            if (pullRequestMessages.id && !pullRequestMessages.uuid) {
-                pullRequestMessages.uuid = pullRequestMessages.id;
-            }
             await this.pullRequestMessagesService.update(pullRequestMessages);
             return;
         }

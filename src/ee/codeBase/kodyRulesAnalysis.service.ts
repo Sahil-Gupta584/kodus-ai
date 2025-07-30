@@ -274,27 +274,32 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                         if (!foundIds?.length) {
                             let extractedIds: string[] = [];
 
-                            if (suggestion?.suggestionContent) {
-                                extractedIds =
-                                    await this.extractKodyRuleIdsFromContent(
-                                        updatedContent,
-                                        organizationAndTeamData,
-                                        prNumber,
-                                        suggestion,
-                                    );
-                            }
+                            const brokenIds = (suggestion as any)
+                                ?.brokenKodyRulesIds;
 
-                            if (extractedIds.length > 0) {
-                                foundIds = extractedIds;
-                            } else {
-                                const brokenIds = (suggestion as any)
-                                    ?.brokenKodyRulesIds;
+                            const violatedIds = (suggestion as any)
+                                ?.violatedKodyRulesIds;
+
+                            if (suggestion?.suggestionContent) {
                                 if (brokenIds?.length > 0) {
                                     const firstRuleId = brokenIds[0];
-                                    updatedContent += `\n\nKody Rules Violation: ${firstRuleId}`;
+                                    updatedContent += `\n\nKody Rule violation: ${firstRuleId}`;
+                                    foundIds = [firstRuleId];
+                                } else if (violatedIds?.length > 0) {
+                                    const firstRuleId = violatedIds[0];
+                                    updatedContent += `\n\nKody Rule violation: ${firstRuleId}`;
                                     foundIds = [firstRuleId];
                                 } else {
-                                    return suggestion;
+                                    extractedIds =
+                                        await this.extractKodyRuleIdsFromContent(
+                                            updatedContent,
+                                            organizationAndTeamData,
+                                            prNumber,
+                                            suggestion,
+                                        );
+                                    if (extractedIds.length > 0) {
+                                        foundIds = extractedIds;
+                                    }
                                 }
                             }
                         }

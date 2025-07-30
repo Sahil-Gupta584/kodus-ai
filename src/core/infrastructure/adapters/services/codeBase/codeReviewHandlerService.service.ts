@@ -9,6 +9,7 @@ import { PinoLoggerService } from '../logger/pino.service';
 import { CodeReviewPipelineContext } from './codeReviewPipeline/context/code-review-pipeline.context';
 import { PipelineStatus } from '../pipeline/interfaces/pipeline-context.interface';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
+import { TaskStatus } from '@kodus/kodus-proto/task';
 
 @Injectable()
 export class CodeReviewHandlerService {
@@ -56,9 +57,7 @@ export class CodeReviewHandlerService {
                 tasks: {
                     astAnalysis: {
                         taskId: null,
-                    },
-                    impactAnalysis: {
-                        taskId: null,
+                        status: TaskStatus.TASK_STATUS_UNSPECIFIED,
                     },
                 },
             };
