@@ -2306,8 +2306,10 @@
   dependencies:
     buffer "^6.0.3"
 
-"@kodus/flow@file:./packages/kodus-flow":
+"@kodus/flow@^0.1.0":
   version "0.1.0"
+  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/flow/-/@kodus/flow-0.1.0.tgz#cbfc40847a9908e544e9fe0526b45923d9fa00b1"
+  integrity sha512-Pn8/FYO82mx5QqjXwz14WbV2iXdOHFOQMeNq1e3XTxjKaZp6pIIUYniY3gBIOqRdoyNg0sd/J0W7Sawl7hYasw==
   dependencies:
     "@google/generative-ai" "^0.24.1"
     "@modelcontextprotocol/sdk" "^1.17.0"
@@ -2321,8 +2323,8 @@
 
 "@kodus/kodus-common@^1.2.0":
   version "1.2.0"
-  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-common/@kodus/kodus-common/-/@kodus/kodus-common-1.2.0.tgz#54700bc5be062e98843a72ba0f6bc7c587f5afac"
-  integrity sha512-plkiBmRtzGrGpKYB/wsQmvwBElgCD3/DN4TxMRnrAGipgMHJ9EzXBMvPzfreycbw1dMGI2PoN2lG6J0aOdb62A==
+  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/kodus-common/-/@kodus/kodus-common-1.2.0.tgz#23c91c16c763a73279229f782f892e27b0667cc4"
+  integrity sha512-wH6yvuYLR83df6SJXQj4o5LdGJZFi/VaBV5eKN1PPUynesoaCq78PP7Um3Q+om9x9TmlwTO/COgOQrILSbA0PQ==
 
 "@kodus/kodus-proto@https://registry.npmjs.org/@kodus/kodus-proto/-/kodus-proto-3.1.2.tgz":
   version "3.1.2"
