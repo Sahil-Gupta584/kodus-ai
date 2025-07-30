@@ -14,8 +14,10 @@ import { IntegrationConfigModule } from './integrationConfig.module';
 import { TeamsModule } from './team.module';
 import { CodeReviewSettingLogController } from '@/core/infrastructure/http/controllers/codeReviewSettingLog.controller';
 import { RegisterUserStatusLogUseCase } from '@/core/application/use-cases/user/register-user-status-log.use-case';
+import { FindCodeReviewSettingsLogsUseCase } from '@/core/application/use-cases/codeReviewSettingsLog/find-code-review-settings-logs.use-case';
 import { UserStatusLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/userStatusLog.handler';
 import { IntegrationLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/integrationLog.handler';
+import { LogModule } from './log.module';
 
 @Module({
     imports: [
@@ -23,6 +25,7 @@ import { IntegrationLogHandler } from '@/core/infrastructure/adapters/services/c
         forwardRef(() => UsersModule),
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => TeamsModule),
+        LogModule,
     ],
     providers: [
         {
@@ -33,13 +36,14 @@ import { IntegrationLogHandler } from '@/core/infrastructure/adapters/services/c
             provide: CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
             useClass: CodeReviewSettingsLogService,
         },
-        RegisterUserStatusLogUseCase,
         UnifiedLogHandler,
         CodeReviewConfigLogHandler,
         RepositoriesLogHandler,
         KodyRulesLogHandler,
         IntegrationLogHandler,
         UserStatusLogHandler,
+        RegisterUserStatusLogUseCase,
+        FindCodeReviewSettingsLogsUseCase,
     ],
     exports: [
         CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,
@@ -49,6 +53,7 @@ import { IntegrationLogHandler } from '@/core/infrastructure/adapters/services/c
         RepositoriesLogHandler,
         KodyRulesLogHandler,
         RegisterUserStatusLogUseCase,
+        FindCodeReviewSettingsLogsUseCase,
         IntegrationLogHandler,
         UserStatusLogHandler,
     ],

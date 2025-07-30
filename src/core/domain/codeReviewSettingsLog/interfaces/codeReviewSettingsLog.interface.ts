@@ -15,4 +15,6 @@ export interface ICodeReviewSettingsLog {
         name?: string;
     };
     changedData: ChangedData[];
+    createdAt?: Date;
+    updatedAt?: Date;
 }
