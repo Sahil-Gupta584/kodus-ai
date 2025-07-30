@@ -36,8 +36,12 @@ export class CodeReviewSettingsLogRepository
         filter?: Partial<ICodeReviewSettingsLog>,
     ): Promise<CodeReviewSettingsLogEntity[]> {
         try {
-            const codeReviewSettingsLog =
-                await this.codeReviewSettingsLogModel.find(filter);
+            const query = this.codeReviewSettingsLogModel.find(filter);
+            
+            // Ordenar por data de criação (mais recente primeiro)
+            query.sort({ createdAt: -1 });
+
+            const codeReviewSettingsLog = await query.exec();
 
             return mapSimpleModelsToEntities(
                 codeReviewSettingsLog,
