@@ -10,7 +10,6 @@ import {
 export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
     private readonly _uuid: string;
     private readonly _organizationId: string;
-    private readonly _teamId: string;
     private readonly _configLevel: ConfigLevel;
     private readonly _repositoryId?: string;
     private readonly _startReviewMessage?: IPullRequestMessageContent;
@@ -19,7 +18,6 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
     constructor(pullRequestMessages: IPullRequestMessages) {
         this._uuid = pullRequestMessages.uuid;
         this._organizationId = pullRequestMessages.organizationId;
-        this._teamId = pullRequestMessages.teamId;
         this._configLevel = pullRequestMessages.configLevel;
         this._repositoryId = pullRequestMessages.repositoryId;
         this._startReviewMessage = pullRequestMessages.startReviewMessage;
@@ -30,7 +28,6 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
         return {
             uuid: this._uuid,
             organizationId: this._organizationId,
-            teamId: this._teamId,
             configLevel: this._configLevel,
             repositoryId: this._repositoryId,
             startReviewMessage: this._startReviewMessage,
@@ -42,7 +39,6 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
         return {
             uuid: this._uuid,
             organizationId: this._organizationId,
-            teamId: this._teamId,
             configLevel: this._configLevel,
             repositoryId: this._repositoryId,
             startReviewMessage: this._startReviewMessage,
@@ -56,10 +52,6 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
 
     get organizationId(): string {
         return this._organizationId;
-    }
-
-    get teamId(): string {
-        return this._teamId;
     }
 
     get configLevel(): ConfigLevel {
