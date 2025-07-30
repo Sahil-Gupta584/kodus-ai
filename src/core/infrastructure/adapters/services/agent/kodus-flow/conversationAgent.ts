@@ -37,14 +37,14 @@ export class ConversationAgentProvider {
 
     private createLLMAdapter() {
         const llm = this.llmProviderService.getLLMProvider({
-            model: LLMModelProvider.OPENAI_GPT_4O_MINI,
+            model: LLMModelProvider.GEMINI_2_5_FLASH,
             temperature: 0.1,
-            maxTokens: 1500,
+            maxTokens: 8000,
+            maxReasoningTokens: 1000,
         });
 
         // ✅ WRAPPER para compatibilizar com nossa interface
         const wrappedLLM = {
-            name: 'openai-gpt-4o-mini',
             async call(messages: any[]): Promise<any> {
                 // Converter nossas mensagens para formato LangChain
                 const langchainMessages = messages.map((msg) => ({
@@ -82,9 +82,11 @@ export class ConversationAgentProvider {
 
         const defaultServers: MCPServerConfig[] = [
             {
-                name: 'github-mcp',
+                name: 'kodus-mcp-server',
                 type: 'http' as const,
-                url: process.env.MCP_SERVER_URL ?? 'http://localhost:3001/mcp',
+                url:
+                    process.env.API_KODUS_MCP_SERVER_URL ??
+                    'http://localhost:3001/mcp',
                 timeout: 10_000,
                 retries: 1,
                 headers: { contentType: 'application/json' },

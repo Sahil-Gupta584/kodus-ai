@@ -138,6 +138,7 @@ KEYS=(
 
     "/prod/kodus-orchestrator/API_MCP_SERVER_ENABLED"
     "/prod/kodus-orchestrator/API_KODUS_SERVICE_MCP_MANAGER"
+    "/prod/kodus-orchestrator/API_KODUS_MCP_SERVER_URL"
 )
 
 # Lista de todas as chaves que você precisa
