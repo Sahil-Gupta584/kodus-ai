@@ -16,6 +16,8 @@ import { GenerateCodeReviewParameterUseCase } from '@/core/application/use-cases
 import { GenerateCodeReviewParameterDTO } from '../dtos/generate-code-review-parameter.dto';
 import { DeleteRepositoryCodeReviewParameterDto } from '../dtos/delete-repository-code-review-parameter.dto';
 import { DeleteRepositoryCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/delete-repository-code-review-parameter.use-case';
+import { PreviewPrSummaryDto } from '../dtos/preview-pr-summary.dto';
+import { PreviewPrSummaryUseCase } from '@/core/application/use-cases/parameters/preview-pr-summary.use-case';
 @Controller('parameters')
 export class ParametersController {
     constructor(
@@ -28,6 +30,7 @@ export class ParametersController {
         private readonly copyCodeReviewParameterUseCase: CopyCodeReviewParameterUseCase,
         private readonly generateCodeReviewParameterUseCase: GenerateCodeReviewParameterUseCase,
         private readonly deleteRepositoryCodeReviewParameterUseCase: DeleteRepositoryCodeReviewParameterUseCase,
+        private readonly previewPrSummaryUseCase: PreviewPrSummaryUseCase,
     ) { }
 
     //#region Parameters
@@ -130,4 +133,12 @@ export class ParametersController {
         return this.deleteRepositoryCodeReviewParameterUseCase.execute(body);
     }
     //#endregion
+
+    @Post('/preview-pr-summary')
+    public async previewPrSummary(
+        @Body()
+        body: PreviewPrSummaryDto,
+    ) {
+        return this.previewPrSummaryUseCase.execute(body);
+    }
 }
