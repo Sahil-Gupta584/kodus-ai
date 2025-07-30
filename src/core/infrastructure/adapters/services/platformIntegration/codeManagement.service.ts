@@ -572,7 +572,7 @@ export class CodeManagementService implements ICodeManagementService {
     async getPullRequestDetails(
         params: {
             organizationAndTeamData: OrganizationAndTeamData;
-            repository: { id: string; name: string };
+            repository: Partial<Repository>;
             prNumber: number;
         },
         type?: PlatformType,
@@ -652,7 +652,13 @@ export class CodeManagementService implements ICodeManagementService {
         params: {
             organizationAndTeamData: OrganizationAndTeamData;
             commentId: string;
-            reason?: 'ABUSE' | 'OFF_TOPIC' | 'OUTDATED' | 'RESOLVED' | 'DUPLICATE' | 'SPAM';
+            reason?:
+                | 'ABUSE'
+                | 'OFF_TOPIC'
+                | 'OUTDATED'
+                | 'RESOLVED'
+                | 'DUPLICATE'
+                | 'SPAM';
         },
         type?: PlatformType,
     ): Promise<any | null> {

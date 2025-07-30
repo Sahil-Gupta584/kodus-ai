@@ -134,7 +134,11 @@ KEYS=(
 
     "/prod/kodus-orchestrator/API_POSTHOG_KEY"
 
-    "/prod/kodus-orchestrator/SERVICE_AST_URL"
+    "/prod/kodus-orchestrator/API_SERVICE_AST_URL"
+
+    "/prod/kodus-orchestrator/API_MCP_SERVER_ENABLED"
+    "/prod/kodus-orchestrator/API_KODUS_SERVICE_MCP_MANAGER"
+    "/prod/kodus-orchestrator/API_KODUS_MCP_SERVER_URL"
 )
 
 # Lista de todas as chaves que você precisa

@@ -3,12 +3,14 @@ import { IPostHog, PostHog } from 'posthog-node';
 import { IOrganization } from '@/core/domain/organization/interfaces/organization.interface';
 import { ITeam } from '@/core/domain/team/interfaces/team.interface';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
 class PostHogClient {
     private readonly posthog: IPostHog | null = null;
 
     constructor() {
         const apiKey = process.env.API_POSTHOG_KEY;
+
         if (apiKey) {
             this.posthog = new PostHog(apiKey, {
                 host: 'https://us.i.posthog.com',
@@ -19,7 +21,9 @@ class PostHogClient {
     }
 
     userIdentify(user: IUser): void {
-        if (!this.posthog) return;
+        if (!this.posthog) {
+            return;
+        }
 
         const properties: any = {
             email: user.email,
@@ -35,6 +39,7 @@ class PostHogClient {
             distinctId: user.uuid,
             properties,
         });
+
         this.posthog.capture({
             distinctId: user.uuid,
             event: 'user_added_to_organization',
@@ -43,11 +48,14 @@ class PostHogClient {
                 organization: user.organization?.uuid,
             },
         });
+
         this.posthog.shutdown();
     }
 
     organizationIdentify(organization: IOrganization): void {
-        if (!this.posthog) return;
+        if (!this.posthog) {
+            return;
+        }
 
         this.posthog.groupIdentify({
             groupType: 'organization',
@@ -62,7 +70,9 @@ class PostHogClient {
     }
 
     teamIdentify(team: ITeam): void {
-        if (!this.posthog) return;
+        if (!this.posthog) {
+            return;
+        }
 
         const properties: any = {
             name: team.name,
@@ -79,14 +89,21 @@ class PostHogClient {
             groupKey: team.uuid,
             properties,
         });
+
         this.posthog.shutdown();
     }
 
-    isFeatureEnabled(featureName: string, user: IUser): Promise<boolean> {
-        if (!this.posthog) return Promise.resolve(true);
+    isFeatureEnabled(
+        featureName: string,
+        identifier: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<boolean> {
+        if (!this.posthog) {
+            return Promise.resolve(true);
+        }
 
-        return this.posthog.isFeatureEnabled(featureName, user.uuid, {
-            groups: { organization: user.organization.uuid },
+        return this.posthog.isFeatureEnabled(featureName, identifier, {
+            groups: { organization: organizationAndTeamData.organizationId },
         });
     }
 }

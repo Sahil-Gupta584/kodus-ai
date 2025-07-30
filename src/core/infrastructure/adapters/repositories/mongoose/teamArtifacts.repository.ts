@@ -338,7 +338,7 @@ export class TeamArtifactsDatabaseRepository
                         },
                     },
                 },
-                { new: true, upsert: false },
+                { upsert: false },
             );
         } catch (error) {
             console.log(error);

@@ -10,6 +10,8 @@ import { GetGuildByUserUseCase } from './get-guild-by-user';
 import { GetMemoryUseCase } from './get-memory.use-case';
 import { GetRouterUseCase } from './get-router-use-case';
 import { SendMetricMessageUseCase } from './send-metrics-message';
+import { NewAgentUseCase } from './teste';
+import { ConversationAgentUseCase } from './conversation-agent.use-case';
 
 export const UseCases = [
     GetRouterUseCase,
@@ -24,4 +26,6 @@ export const UseCases = [
     CheckIfHasTeamConfigUseCase,
     ExecuteToolUseCase,
     ExecutionAgentPromptUseCase,
+    NewAgentUseCase,
+    ConversationAgentUseCase,
 ];

@@ -1,33 +1,54 @@
-import { Controller, Get } from '@nestjs/common';
-import { HealthCheckService, HealthCheck } from '@nestjs/terminus';
-import { OpenAIHealthIndicator } from '@/core/infrastructure/adapters/services/health/openai.health';
-import { GitHubHealthIndicator } from '@/core/infrastructure/adapters/services/health/github.health';
-import { JiraHealthIndicator } from '@/core/infrastructure/adapters/services/health/jira.health';
-import { SlackHealthIndicator } from '@/core/infrastructure/adapters/services/health/slack.health';
+import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
+import { Response } from 'express';
+import { DatabaseHealthIndicator } from '@/core/infrastructure/adapters/services/health/database.health';
+import { ApplicationHealthIndicator } from '@/core/infrastructure/adapters/services/health/application.health';
 
 @Controller('health')
 export class HealthController {
     constructor(
-        private health: HealthCheckService,
-        private openAIHealthIndicator: OpenAIHealthIndicator,
-        private gitHubHealthIndicator: GitHubHealthIndicator,
-        private jiraHealthIndicator: JiraHealthIndicator,
-        private slackHealthIndicator: SlackHealthIndicator,
+        private readonly databaseHealthIndicator: DatabaseHealthIndicator,
+        private readonly applicationHealthIndicator: ApplicationHealthIndicator,
     ) {}
 
     @Get()
-    @HealthCheck()
-    async check() {
-        const githubCheck = () => this.gitHubHealthIndicator.isGitHubHealthy();
-        const openAICheck = () => this.openAIHealthIndicator.isOpenAIHealthy();
-        const jiraCheck = () => this.jiraHealthIndicator.isJiraHealthy();
-        const slackCheck = () => this.slackHealthIndicator.isSlackHealthy();
+    async check(@Res() res: Response) {
+        try {
+            // Verificar aplicação
+            const appResult =
+                await this.applicationHealthIndicator.isApplicationHealthy();
+            const appHealthy = appResult.application.status === 'up';
 
-        return this.health.check([
-            githubCheck,
-            openAICheck,
-            jiraCheck,
-            slackCheck,
-        ]);
+            // Verificar database
+            const dbResult =
+                await this.databaseHealthIndicator.isDatabaseHealthy();
+            const dbHealthy = dbResult.database.status === 'up';
+
+            // Ambos precisam estar UP
+            const overallHealthy = appHealthy && dbHealthy;
+
+            const response = {
+                status: overallHealthy ? 'ok' : 'error',
+                timestamp: new Date().toISOString(),
+                details: {
+                    application: appResult.application,
+                    database: dbResult.database,
+                },
+            };
+
+            // Se unhealthy, retorna HTTP 503
+            const statusCode = overallHealthy
+                ? HttpStatus.OK
+                : HttpStatus.SERVICE_UNAVAILABLE;
+
+            return res.status(statusCode).json(response);
+        } catch (error) {
+            const response = {
+                status: 'error',
+                error: 'Health check failed',
+                timestamp: new Date().toISOString(),
+            };
+
+            return res.status(HttpStatus.SERVICE_UNAVAILABLE).json(response);
+        }
     }
 }

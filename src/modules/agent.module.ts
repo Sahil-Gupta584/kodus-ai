@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { MemoryModule } from './memory.module';
 import { TeamAutomationModule } from './teamAutomation.module';
 import { PromptRouter } from '@/core/infrastructure/adapters/services/agent/config/promptRouter';
@@ -34,6 +35,7 @@ import { CheckinHistoryOrganizationModule } from './checkInHistoryOrganization.m
 import { ParametersModule } from './parameters.module';
 import { CodeReviewAgentProvider } from '@/core/infrastructure/adapters/services/agent/agents/codeReview';
 import { OrganizationParametersModule } from './organizationParameters.module';
+import { McpAgentModule } from './mcpAgent.module';
 
 @Module({
     imports: [
@@ -57,6 +59,7 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         forwardRef(() => S3Module),
         forwardRef(() => ParametersModule),
         forwardRef(() => OrganizationParametersModule),
+        McpAgentModule,
     ],
     providers: [
         ...UseCases,
@@ -104,4 +107,4 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         AGENT_EXECUTION_REPOSITORY_TOKEN,
     ],
 })
-export class AgentModule { }
+export class AgentModule {}

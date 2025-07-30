@@ -147,7 +147,7 @@ export class OrganizationArtifactsDatabaseRepository
                         },
                     },
                 },
-                { new: true, upsert: false },
+                { upsert: false },
             );
         } catch (error) {
             console.log(error);
