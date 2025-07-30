@@ -81,7 +81,7 @@ export class MemoryManager {
     ): Promise<void> {
         try {
             // Create primary adapter
-            const adapterType = options.adapterType || 'in-memory';
+            const adapterType = options.adapterType || 'memory';
             const adapterConfig = {
                 adapterType,
                 connectionString: options.adapterConfig?.connectionString,
@@ -124,11 +124,31 @@ export class MemoryManager {
                 autoVectorizeText: this.options.autoVectorizeText,
             });
         } catch (error) {
-            logger.error(
-                'Failed to initialize memory adapters',
-                error instanceof Error ? error : new Error('Unknown error'),
+            logger.warn(
+                'Failed to initialize memory storage - falling back to in-memory mode',
+                {
+                    error:
+                        error instanceof Error
+                            ? error.message
+                            : 'Unknown error',
+                    adapterType: options.adapterType || 'memory',
+                    connectionString: options.adapterConfig?.connectionString
+                        ? '[CONFIGURED]'
+                        : '[NOT SET]',
+                    fallbackMode: 'in-memory',
+                },
             );
-            throw error;
+
+            // Fallback to in-memory adapter
+            this.primaryAdapter = new (
+                await import('./storage-adapter.js')
+            ).StorageMemoryAdapter({
+                adapterType: 'memory',
+                timeout: 5000,
+                retries: 1,
+            });
+
+            this.backupAdapter = undefined; // No backup in fallback mode
         }
     }
 

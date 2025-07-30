@@ -169,21 +169,6 @@ export interface PlanningResult {
     estimatedTime?: number;
 }
 
-// Interface for the new DAG format from LLM
-interface LLMPlanStep {
-    id: string;
-    description: string;
-    tool?: string;
-    arguments?: Record<string, unknown>;
-    argsTemplate?: Record<string, unknown>; // New format
-    dependencies?: string[];
-    dependsOn?: string[]; // New format
-    type?: 'analysis' | 'action' | 'decision' | 'observation';
-    parallel?: boolean;
-    expectedOutcome?: string;
-    fallback?: string;
-}
-
 export interface RoutingResult {
     strategy: string;
     selectedTool: string;
@@ -203,15 +188,14 @@ export interface RoutingResult {
 export class DirectLLMAdapter {
     private llm: LangChainLLM;
     private logger = createLogger('direct-llm-adapter');
-    private planningTechniques = new Map<string, PlanningTechnique>();
-    private routingStrategies = new Map<string, RoutingTechnique>();
+    // 🗑️ REMOVED: Planning techniques and routing strategies (planners handle this now)
+    private routingStrategies = new Map<string, RoutingTechnique>(); // 🔄 Keep for legacy fallback
 
     constructor(langchainLLM: LangChainLLM) {
         this.llm = langchainLLM;
-        this.initializePlanningTechniques();
-        this.initializeRoutingStrategies();
+        this.initializeRoutingStrategies(); // 🔄 Keep for legacy fallback
 
-        this.logger.info('Direct LLM adapter initialized', {
+        this.logger.info('Direct LLM adapter initialized (SIMPLIFIED)', {
             llmName: langchainLLM.name || 'unknown-llm',
             hasStreaming: typeof langchainLLM.stream === 'function',
         });
@@ -225,6 +209,11 @@ export class DirectLLMAdapter {
         goal: string,
         technique: string = 'cot',
         context?: {
+            // 📝 NEW: Simplified interface - planners send READY prompts
+            systemPrompt?: string; // ✅ Final system prompt (ready to use)
+            userPrompt?: string; // ✅ Final user prompt (ready to use)
+
+            // 🔄 LEGACY: Fallback for old planners (will be deprecated)
             availableTools?:
                 | string[]
                 | Array<{
@@ -234,55 +223,35 @@ export class DirectLLMAdapter {
                   }>;
             previousPlans?: PlanningResult[];
             constraints?: string[];
-            // Context engineering fields for enhanced prompting
-            toolsContext?: string;
-            agentScratchpad?: string; // ReAct agent_scratchpad
-            identityContext?: string;
-            userContext?: Record<string, unknown>; // User context for personalization
-            memoryContext?: string; // Memory context from conversation and knowledge
-            sequentialInstructions?: string; // Custom instructions for sequential planning
-            planningInstructions?: string; // Detailed planning instructions from planner
-            planningHistory?: string; // History of previous planning attempts
-            systemPrompt?: string; // System prompt provided by planner
-            userPromptTemplate?: string; // User prompt template provided by planner
         },
     ): Promise<PlanningResult> {
-        // ✅ Standard technique-based planning
-        const planningTechnique = this.planningTechniques.get(technique);
-        if (!planningTechnique) {
-            throw new EngineError(
-                'LLM_ERROR',
-                `Planning technique '${technique}' not found`,
-            );
-        }
+        const options = {
+            ...DEFAULT_LLM_SETTINGS,
+            maxTokens: TOKEN_PRESETS.REACT_COMPLEX,
+        };
 
-        // Use prompts from planner if provided, otherwise fallback to technique prompts
-        let systemPrompt: string;
-        let userPrompt: string;
-
-        if (context?.systemPrompt && context?.userPromptTemplate) {
-            // Planner provides prompts - use them directly
-            systemPrompt = this.formatTemplate(context.systemPrompt, {
-                identityContext: this.formatIdentityContext(
-                    context?.identityContext,
-                ),
-                userContext: this.formatUserContext(context?.userContext),
-                memoryContext: this.formatMemoryContext(
-                    typeof context?.memoryContext === 'string'
-                        ? context.memoryContext
-                        : '',
-                ),
+        // ✅ SIMPLE: Log prompt source
+        if (context?.systemPrompt && context?.userPrompt) {
+            this.logger.debug('Using ready prompts from planner', {
+                technique,
+                systemPromptLength: context.systemPrompt.length,
+                userPromptLength: context.userPrompt.length,
             });
-            userPrompt = this.formatUserPrompt(
-                context.userPromptTemplate,
-                goal,
-                context,
-            );
         } else {
-            // Fallback: create simple prompts when planner doesn't provide them
-            systemPrompt = `You are an AI assistant using the ${technique} planning technique.`;
-            userPrompt = this.formatUserPrompt('Goal: {goal}', goal, context);
+            this.logger.warn(
+                'Using fallback prompts - planner should provide ready prompts',
+                {
+                    technique,
+                    goal: goal.substring(0, 50),
+                },
+            );
         }
+
+        // ✅ SIMPLE: Build messages with ready prompts
+        const systemPrompt =
+            context?.systemPrompt ||
+            `You are an AI assistant using the ${technique} planning technique.`;
+        const userPrompt = context?.userPrompt || `Goal: ${goal}`;
 
         const messages: LangChainMessage[] = [
             {
@@ -302,29 +271,13 @@ export class DirectLLMAdapter {
                 contextProvided: !!context,
             });
 
-            // ✅ CHAMADA DIRETA - SEM CONVERSÃO
-            const response = await this.llm.call(
-                messages,
-                planningTechnique.options,
-            );
+            const response = await this.llm.call(messages, options);
 
-            debugger;
-
-            // Handle both string and object responses from LangChain
             const content =
                 typeof response === 'string' ? response : response.content;
 
-            // ✅ Always use the technique's official parser
-            const result = planningTechnique.responseParser(content);
-            debugger;
-
-            this.logger.debug('Plan created successfully', {
-                strategy: result.strategy,
-                stepsCount: result.steps.length,
-                complexity: result.complexity,
-            });
-
-            return result;
+            // ✅ SIMPLE: Parse response as JSON or return simple fallback
+            return this.parseFlexiblePlanningResponse(content, goal, technique);
         } catch (error) {
             this.logger.error(
                 'Planning failed',
@@ -340,50 +293,81 @@ export class DirectLLMAdapter {
     async routeToTool(
         input: string | Record<string, unknown>,
         availableTools: string[],
-        strategy: string = 'llm_decision',
+        context?: {
+            systemPrompt?: string; // ✅ Final system prompt
+            userPrompt?: string; // ✅ Final user prompt
+            strategy?: string; // Strategy name for fallback
+        },
     ): Promise<RoutingResult> {
-        const routingStrategy = this.routingStrategies.get(strategy);
-        if (!routingStrategy) {
-            throw new EngineError(
-                'LLM_ERROR',
-                `Routing strategy '${strategy}' not found`,
-            );
+        // ✅ SIMPLE: Use ready prompts if provided
+        let systemPrompt: string;
+        let userPrompt: string;
+
+        if (context?.systemPrompt && context?.userPrompt) {
+            systemPrompt = context.systemPrompt;
+            userPrompt = context.userPrompt;
+
+            this.logger.debug('Using ready routing prompts', {
+                systemPromptLength: systemPrompt.length,
+                userPromptLength: userPrompt.length,
+            });
+        } else {
+            // 🔄 FALLBACK: Use legacy routing strategy
+            const strategy = context?.strategy || 'llm_decision';
+            const routingStrategy = this.routingStrategies.get(strategy);
+
+            if (!routingStrategy) {
+                throw new EngineError(
+                    'LLM_ERROR',
+                    `Routing strategy '${strategy}' not found`,
+                );
+            }
+
+            systemPrompt = routingStrategy.systemPrompt;
+            userPrompt = routingStrategy.userPromptTemplate
+                .replace('{input}', String(input))
+                .replace('{availableTools}', availableTools.join(', '));
+
+            this.logger.warn('Using legacy routing strategy', { strategy });
         }
 
         const messages: LangChainMessage[] = [
             {
                 role: 'system',
-                content: routingStrategy.systemPrompt,
+                content: systemPrompt,
             },
             {
                 role: 'user',
-                content: this.formatUserPrompt(
-                    routingStrategy.userPromptTemplate,
-                    input,
-                    { availableTools },
-                ),
+                content: userPrompt,
             },
         ];
 
         try {
             this.logger.debug('Routing with LangChain LLM', {
-                strategy,
+                hasReadyPrompts: !!(
+                    context?.systemPrompt && context?.userPrompt
+                ),
                 input:
                     typeof input === 'object' ? JSON.stringify(input) : input,
                 availableToolsCount: availableTools.length,
             });
 
-            // ✅ CHAMADA DIRETA - SEM CONVERSÃO
-            const response = await this.llm.call(
-                messages,
-                routingStrategy.options,
-            );
+            // ✅ SIMPLE: Direct call to LLM
+            const options =
+                context?.systemPrompt && context?.userPrompt
+                    ? DEFAULT_LLM_SETTINGS
+                    : this.routingStrategies.get(
+                          context?.strategy || 'llm_decision',
+                      )?.options || DEFAULT_LLM_SETTINGS;
+
+            const response = await this.llm.call(messages, options);
 
             // Handle both string and object responses from LangChain
             const content =
                 typeof response === 'string' ? response : response.content;
 
-            const result = routingStrategy.responseParser(content);
+            // ✅ SIMPLE: Parse routing response directly
+            const result = this.parseSimpleRoutingResponse(content);
 
             this.logger.debug('Routing completed successfully', {
                 selectedTool: result.selectedTool,
@@ -405,42 +389,8 @@ export class DirectLLMAdapter {
     }
 
     // ──────────────────────────────────────────────────────────────────────────────
-    // 🧠 PLANNING TECHNIQUES INITIALIZATION
+    // 🗑️ REMOVED: Planning techniques (planners handle this now)
     // ──────────────────────────────────────────────────────────────────────────────
-
-    private initializePlanningTechniques() {
-        // Plan-Execute technique
-        this.planningTechniques.set('plan-execute', {
-            name: 'Plan-Execute',
-            description:
-                'Creates a comprehensive plan and then executes it step by step',
-            responseParser: this.parseStandardPlanningResponse.bind(this),
-            options: {
-                ...DEFAULT_LLM_SETTINGS,
-                maxTokens: TOKEN_PRESETS.REACT_COMPLEX,
-            },
-        });
-
-        // ReAct technique
-        this.planningTechniques.set('react', {
-            name: 'ReAct',
-            description:
-                'Combines reasoning with acting in an iterative process',
-            responseParser: this.parseReActResponse.bind(this),
-            options: {
-                ...DEFAULT_LLM_SETTINGS,
-                maxTokens: TOKEN_PRESETS.REACT_COMPLEX,
-            },
-        });
-
-        // Chain of Thought technique
-        this.planningTechniques.set('cot', {
-            name: 'Chain of Thought',
-            description: 'Sequential reasoning approach',
-            responseParser: this.parseStandardPlanningResponse.bind(this),
-            options: DEFAULT_LLM_SETTINGS,
-        });
-    }
 
     // ──────────────────────────────────────────────────────────────────────────────
     // 🔀 ROUTING STRATEGIES IMPLEMENTATION
@@ -480,7 +430,7 @@ Always respond in JSON format with the following structure:
 Available tools: {availableTools}
 
 Please analyze the input and select the most appropriate tool.`,
-            responseParser: this.parseRoutingResponse.bind(this),
+            responseParser: this.parseSimpleRoutingResponse.bind(this),
             options: DEFAULT_LLM_SETTINGS,
         });
 
@@ -517,7 +467,7 @@ Always respond in JSON format with the following structure:
 Available tools: {availableTools}
 
 Please analyze semantic similarity and select the most appropriate tool.`,
-            responseParser: this.parseRoutingResponse.bind(this),
+            responseParser: this.parseSimpleRoutingResponse.bind(this),
             options: {
                 ...DEFAULT_LLM_SETTINGS,
                 maxTokens: TOKEN_PRESETS.QUICK, // Routing needs less tokens
@@ -526,177 +476,47 @@ Please analyze semantic similarity and select the most appropriate tool.`,
     }
 
     // ──────────────────────────────────────────────────────────────────────────────
-    // 🔧 HELPER METHODS
+    // 🗑️ REMOVED: Template engine methods (planners handle prompts now)
     // ──────────────────────────────────────────────────────────────────────────────
 
-    private formatUserPrompt(
-        template: string,
-        primary: string | Record<string, unknown>,
-        context?: Record<string, unknown>,
-    ): string {
-        return this.formatTemplate(template, {
-            goal: String(primary),
-            input: String(primary),
-            identityContext: this.formatIdentityContext(
-                context?.identityContext,
-            ),
-            userContext: this.formatUserContext(context?.userContext),
-            availableTools: this.formatAvailableTools(context?.availableTools),
-            tools: this.formatToolsForTemplate(
-                context?.availableTools,
-                context,
-            ),
-            toolNames: this.extractToolNames(context?.availableTools),
-            context: this.formatContext(context),
-            agentScratchpad: String(context?.agentScratchpad || ''),
-            memoryContext: this.formatMemoryContext(
-                typeof context?.memoryContext === 'string'
-                    ? context.memoryContext
-                    : '',
-            ),
-            sequentialInstructions: String(
-                context?.sequentialInstructions || '',
-            ),
-            planningInstructions: String(context?.planningInstructions || ''),
-            planningHistory: String(context?.planningHistory || ''),
-            toolsContext: String(context?.toolsContext || ''),
-            iteration: String(context?.iteration || '0'),
-            maxIterations: String(context?.maxIterations || '15'),
-        });
-    }
+    // 🗑️ REMOVED: All formatting methods - planners handle prompts now
 
     /**
-     * ✅ Simple template engine - replaces {key} with values
+     * ✅ SIMPLE: Parse planning response - try JSON first, fallback to text
      */
-    private formatTemplate(
-        template: string,
-        values: Record<string, string>,
-    ): string {
-        let result = template.replace(/\{(\w+)\}/g, (_match, key) => {
-            const value = values[key];
-            return value !== undefined ? value : '';
-        });
+    private parseFlexiblePlanningResponse(
+        response: string,
+        goal: string,
+        technique: string,
+    ): PlanningResult {
+        try {
+            // Try JSON parsing first
+            const cleanedResponse = this.cleanJsonResponse(response);
+            const parsed = JSON.parse(cleanedResponse);
 
-        // Clean up multiple consecutive newlines left by empty placeholders
-        result = result.replace(/\n\s*\n\s*\n/g, '\n\n');
-
-        // Clean up cases where empty placeholders leave awkward spacing
-        result = result.replace(/\.\{\w+\}/g, '.');
-        result = result.replace(/step by step\.\s*\n\n/g, 'step by step.\n\n');
-
-        return result;
-    }
-
-    /**
-     * ✅ Format identity context with proper newlines when present
-     */
-    private formatIdentityContext(identityContext?: unknown): string {
-        if (
-            !identityContext ||
-            (typeof identityContext === 'string' &&
-                identityContext.trim() === '')
-        ) {
-            return '';
+            return {
+                strategy: parsed.strategy || technique,
+                goal: parsed.goal || goal,
+                steps: parsed.steps || parsed.plan || [],
+                reasoning: parsed.reasoning || '',
+                complexity: parsed.complexity || 'medium',
+            };
+        } catch {
+            // JSON parsing failed, return simple text response
+            return {
+                strategy: technique,
+                goal: goal,
+                steps: [
+                    {
+                        id: 'step_1',
+                        description: response.trim(),
+                        type: 'analysis',
+                    },
+                ],
+                reasoning: response.trim(),
+                complexity: 'medium',
+            };
         }
-
-        const contextStr = String(identityContext);
-        // Add leading newline if content exists, so it formats nicely after the main prompt
-        return `\n\n${contextStr}`;
-    }
-
-    /**
-     * ✅ Format user context in readable way
-     */
-    private formatUserContext(userContext?: unknown): string {
-        return userContext
-            ? `User preferences: ${JSON.stringify(userContext, null, 2)}`
-            : '';
-    }
-
-    /**
-     * ✅ Format available tools for simple listing
-     */
-    private formatAvailableTools(availableTools?: unknown): string {
-        if (!Array.isArray(availableTools)) return '';
-
-        return availableTools
-            .map((tool) => (typeof tool === 'string' ? tool : tool.name))
-            .join(', ');
-    }
-
-    /**
-     * ✅ Format tools for ReAct template (detailed format)
-     */
-    private formatToolsForTemplate(
-        availableTools?: unknown,
-        context?: Record<string, unknown>,
-    ): string {
-        // Use enhanced toolsContext if available
-        if (context?.toolsContext && typeof context.toolsContext === 'string') {
-            return context.toolsContext;
-        }
-
-        // Fallback to basic formatting
-        if (!Array.isArray(availableTools)) return '';
-
-        return availableTools
-            .map(
-                (tool: string | { name: string; description?: string }) =>
-                    `${typeof tool === 'string' ? tool : tool.name}: ${typeof tool === 'string' ? tool : tool.description || 'No description'}`,
-            )
-            .join('\n');
-    }
-
-    /**
-     * ✅ Extract tool names for comma-separated list
-     */
-    private extractToolNames(availableTools?: unknown): string {
-        if (!Array.isArray(availableTools)) return '';
-
-        return availableTools
-            .map((tool: string | { name: string }) =>
-                typeof tool === 'string' ? tool : tool.name,
-            )
-            .join(', ');
-    }
-
-    /**
-     * ✅ Format context object with structured or fallback approach
-     */
-    private formatContext(context?: Record<string, unknown>): string {
-        if (!context) return '';
-
-        // Use structured context if available
-        if (
-            context.toolsContext ||
-            context.historyContext ||
-            context.identityContext
-        ) {
-            return [
-                context.identityContext,
-                context.toolsContext,
-                context.historyContext,
-            ]
-                .filter(Boolean)
-                .join('\n');
-        }
-
-        // Fallback to JSON
-        return JSON.stringify(context);
-    }
-
-    /**
-     * ✅ Format memory context for prompt
-     */
-    private formatMemoryContext(memoryContext?: string): string {
-        if (!memoryContext || memoryContext.trim() === '') {
-            return '';
-        }
-
-        return `MEMORY CONTEXT:
-${memoryContext}
-
-`;
     }
 
     /**
@@ -739,282 +559,30 @@ ${memoryContext}
     }
 
     /**
-     * ✅ NEW: Flexible parser that handles both JSON and natural text responses
+     * ✅ SIMPLE: Parse routing response - try JSON first, fallback to simple
      */
-    // private parseFlexiblePlanningResponse(
-    //     response: string,
-    //     goal: string,
-    //     technique: string,
-    // ): PlanningResult {
-    //     try {
-    //         // First try JSON parsing
-    //         const cleanedResponse = this.cleanJsonResponse(response);
-    //         const parsed = JSON.parse(cleanedResponse);
-    //         return {
-    //             strategy: parsed.strategy || technique,
-    //             goal: parsed.goal || goal,
-    //             steps: parsed.steps || [],
-    //             reasoning: parsed.reasoning || '',
-    //             complexity: parsed.complexity || 'medium',
-    //         };
-    //     } catch {
-    //         // JSON parsing failed, treat as natural text response
-    //         return {
-    //             strategy: technique,
-    //             goal: goal,
-    //             steps: [
-    //                 {
-    //                     id: 'step_1',
-    //                     description: response.trim(),
-    //                     type: 'analysis' as const,
-    //                 },
-    //             ],
-    //             reasoning: response.trim(),
-    //             complexity: 'medium' as const,
-    //         };
-    //     }
-    // }
-
-    private parseReActResponse(response: string): PlanningResult {
+    private parseSimpleRoutingResponse(response: string): RoutingResult {
         try {
-            // ReAct should return next action, not full plan
-            const lines = response
-                .trim()
-                .split('\n')
-                .map((line) => line.trim())
-                .filter((line) => line.length > 0);
-
-            let thought = '';
-            let action = '';
-            let actionInput = '';
-            let finalAnswer = '';
-
-            // Extract the latest Thought/Action/Final Answer from response
-            for (const line of lines) {
-                if (line.startsWith('Thought:')) {
-                    thought = line.substring(8).trim();
-                } else if (line.startsWith('Action:')) {
-                    action = line.substring(7).trim();
-                } else if (line.startsWith('Action Input:')) {
-                    actionInput = line.substring(13).trim();
-                } else if (line.startsWith('Final Answer:')) {
-                    finalAnswer = line.substring(13).trim();
-                }
-            }
-
-            // If we have a final answer, this is the end
-            if (finalAnswer) {
-                return {
-                    strategy: 'react',
-                    goal: 'ReAct final answer',
-                    steps: [
-                        {
-                            id: 'final_answer',
-                            description: finalAnswer,
-                            type: 'decision',
-                        },
-                    ],
-                    reasoning: `Final answer: ${finalAnswer}`,
-                    complexity: 'simple',
-                };
-            }
-
-            // If we have action, return next tool call
-            if (action && actionInput) {
-                let parsedInput: Record<string, unknown> = {};
-                try {
-                    parsedInput = JSON.parse(actionInput);
-                } catch {
-                    parsedInput = { input: actionInput };
-                }
-
-                return {
-                    strategy: 'react',
-                    goal: 'ReAct next action',
-                    steps: [
-                        {
-                            id: 'next_action',
-                            description: thought || `Execute ${action}`,
-                            tool: action,
-                            arguments: parsedInput,
-                            type: 'action',
-                        },
-                    ],
-                    reasoning: thought || `Executing ${action}`,
-                    complexity: 'simple',
-                };
-            }
-
-            // If only thought, continue reasoning
-            if (thought) {
-                return {
-                    strategy: 'react',
-                    goal: 'ReAct continue thinking',
-                    steps: [
-                        {
-                            id: 'continue_thinking',
-                            description: thought,
-                            type: 'analysis',
-                        },
-                    ],
-                    reasoning: thought,
-                    complexity: 'simple',
-                };
-            }
-
-            // Fallback: raw response
-            return {
-                strategy: 'react',
-                goal: 'ReAct raw response',
-                steps: [
-                    {
-                        id: 'raw_response',
-                        description: response.trim(),
-                        type: 'analysis',
-                    },
-                ],
-                reasoning: response.trim(),
-                complexity: 'simple',
-            };
-        } catch (error) {
-            this.logger.error(
-                'Failed to parse ReAct response',
-                error instanceof Error ? error : new Error('Unknown error'),
-            );
-            return {
-                strategy: 'react',
-                goal: '',
-                steps: [
-                    {
-                        id: 'fallback',
-                        description: response.trim(),
-                        type: 'analysis',
-                    },
-                ],
-                reasoning: 'Failed to parse ReAct response',
-                complexity: 'medium',
-            };
-        }
-    }
-
-    private parseStandardPlanningResponse(response: string): PlanningResult {
-        try {
-            // Clean response from markdown code blocks and comments
-            const cleanedResponse = this.cleanJsonResponse(response);
-
-            // ✅ IMPROVED: Better error logging
-            this.logger.debug('Attempting to parse JSON response', {
-                originalLength: response.length,
-                cleanedLength: cleanedResponse.length,
-                cleanedPreview: cleanedResponse.substring(0, 200),
-            });
-
-            const parsed = JSON.parse(cleanedResponse);
-
-            // ✅ IMPROVED: Validate parsed structure
-            if (!parsed || typeof parsed !== 'object') {
-                throw new Error('Parsed response is not an object');
-            }
-
-            // Handle both old format (steps) and new format (plan)
-            const steps: LLMPlanStep[] = parsed.steps || parsed.plan || [];
-
-            // Convert new format to old format for backward compatibility
-            const convertedSteps = steps.map(
-                (step: LLMPlanStep, index: number) => ({
-                    id: step.id || `step_${index + 1}`,
-                    description: step.description || '',
-                    tool: step.tool,
-                    arguments: step.arguments || step.argsTemplate || {},
-                    dependencies: step.dependencies || step.dependsOn || [],
-                    type: step.type || 'action',
-                    parallel: step.parallel || false,
-                    expectedOutcome: step.expectedOutcome,
-                    fallback: step.fallback,
-                }),
-            );
-
-            return {
-                strategy: parsed.strategy || 'plan-execute',
-                goal: parsed.goal || '',
-                steps: convertedSteps,
-                reasoning: parsed.reasoning || '',
-                complexity: parsed.complexity || 'medium',
-            };
-        } catch (error) {
-            this.logger.error(
-                'Failed to parse planning response',
-                error instanceof Error ? error : new Error('Unknown error'),
-                {
-                    responsePreview: response.substring(0, 500),
-                    errorPosition:
-                        error instanceof SyntaxError
-                            ? error.message
-                            : 'unknown',
-                },
-            );
-            return {
-                strategy: 'fallback',
-                goal: '',
-                steps: [],
-                reasoning: 'Failed to parse LLM response',
-                complexity: 'medium',
-            };
-        }
-    }
-
-    private parseRoutingResponse(response: string): RoutingResult {
-        try {
-            // Clean response from markdown code blocks
             const cleanedResponse = this.cleanJsonResponse(response);
             const parsed = JSON.parse(cleanedResponse);
+
             return {
-                strategy: parsed.strategy || 'unknown',
-                selectedTool: parsed.selectedTool || '',
+                strategy: parsed.strategy || 'llm_decision',
+                selectedTool: parsed.selectedTool || 'unknown',
                 confidence: parsed.confidence || 0.5,
-                reasoning: parsed.reasoning || '',
+                reasoning: parsed.reasoning || 'LLM routing response',
                 alternatives: parsed.alternatives || [],
             };
-        } catch (error) {
-            this.logger.error(
-                'Failed to parse routing response',
-                error instanceof Error ? error : new Error('Unknown error'),
-            );
+        } catch {
+            // JSON parsing failed, return simple fallback
             return {
-                strategy: 'fallback',
-                selectedTool: '',
-                confidence: 0.1,
-                reasoning: 'Failed to parse LLM response',
+                strategy: 'llm_decision',
+                selectedTool: 'unknown',
+                confidence: 0.5,
+                reasoning: response.trim(),
+                alternatives: [],
             };
         }
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 📊 PROVIDER MANAGEMENT
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    getLLM(): LangChainLLM {
-        return this.llm;
-    }
-
-    setLLM(llm: LangChainLLM): void {
-        this.llm = llm;
-        this.logger.info('LangChain LLM updated', { name: llm.name });
-    }
-
-    // ✅ COMPATIBILIDADE COM SDKOrchestrator
-    getProvider(): { name: string } {
-        return {
-            name: this.llm.name || 'unknown-llm',
-        };
-    }
-
-    getAvailableTechniques(): string[] {
-        return Array.from(this.planningTechniques.keys());
-    }
-
-    getAvailableRoutingStrategies(): string[] {
-        return Array.from(this.routingStrategies.keys());
     }
 
     supportsStreaming(): boolean {

@@ -4,12 +4,13 @@
  */
 
 import type { MemoryItem, MemoryQuery } from '../types/memory-types.js';
+import type { StorageType } from '../storage/factory.js';
 
 /**
  * Memory adapter configuration
  */
 export interface MemoryAdapterConfig {
-    adapterType: 'in-memory' | 'mongodb' | 'redis' | 'temporal';
+    adapterType: StorageType;
     connectionString?: string;
     options?: Record<string, unknown>;
     timeout?: number;
@@ -38,4 +39,4 @@ export interface MemoryAdapter {
 /**
  * Memory adapter types
  */
-export type AdapterType = 'in-memory' | 'mongodb' | 'redis' | 'temporal';
+export type AdapterType = StorageType;

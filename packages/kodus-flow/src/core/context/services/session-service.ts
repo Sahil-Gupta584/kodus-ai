@@ -12,6 +12,8 @@ import { IdGenerator } from '../../../utils/id-generator.js';
 import { createLogger } from '../../../observability/index.js';
 import { ContextStateService } from './state-service.js';
 import { SessionId, ThreadId, TenantId } from '@/core/types/base-types.js';
+import { StorageSessionAdapter } from './storage-session-adapter.js';
+import type { StorageType } from '../../storage/factory.js';
 
 export type ConversationHistory = Array<{
     timestamp: number;
@@ -39,6 +41,11 @@ export interface SessionConfig {
     maxConversationHistory?: number;
     enableAutoCleanup?: boolean;
     cleanupInterval?: number; // ms
+    // ✅ CORRECTED: Use same pattern as MemoryAdapterConfig
+    persistent?: boolean;
+    adapterType?: StorageType;
+    connectionString?: string;
+    adapterOptions?: Record<string, unknown>;
 }
 
 export interface SessionContext {
@@ -46,55 +53,153 @@ export interface SessionContext {
     threadId: ThreadId;
     tenantId: TenantId;
     stateManager: ContextStateService;
-    // TODO
-    //memoryService?: MemoryService;
     conversationHistory: Session['conversationHistory'];
     metadata: Record<string, unknown>;
 }
 
 export class SessionService {
+    // ✅ HYBRID: RAM cache + persistent storage
     private sessions = new Map<string, Session>();
     private sessionStateManagers = new Map<string, ContextStateService>();
+    private storage?: StorageSessionAdapter;
     private logger = createLogger('session-service');
     private config: Required<SessionConfig>;
     private cleanupIntervalId?: NodeJS.Timeout;
+    private isInitialized = false;
 
     constructor(config: SessionConfig = {}) {
+        this.logger.info('🔍 [DEBUG] SessionService constructor called', {
+            receivedConfig: config,
+            hasConnectionString: !!config.connectionString,
+            connectionStringValue: config.connectionString,
+            adapterType: config.adapterType,
+        });
+
         this.config = {
             maxSessions: config.maxSessions || 1000,
             sessionTimeout: config.sessionTimeout || 30 * 60 * 1000, // 30 min
             maxConversationHistory: config.maxConversationHistory || 100,
             enableAutoCleanup: config.enableAutoCleanup !== false,
             cleanupInterval: config.cleanupInterval || 5 * 60 * 1000, // 5 min
+            // ✅ CORRECTED: Use adapterType consistently
+            persistent: config.persistent ?? true,
+            adapterType: config.adapterType || 'memory',
+            connectionString: config.connectionString || '',
+            adapterOptions: config.adapterOptions || {},
         };
+
+        this.logger.info('🔍 [DEBUG] SessionService final config', {
+            finalConfig: this.config,
+            connectionStringFinal: this.config.connectionString,
+            adapterTypeFinal: this.config.adapterType,
+        });
+
+        // Initialize asynchronously
+        this.initializeStorage();
 
         if (this.config.enableAutoCleanup) {
             this.startAutoCleanup();
         }
 
-        this.logger.info('SessionService initialized', this.config);
+        this.logger.info('SessionService initialized', {
+            ...this.config,
+            connectionString: this.config.connectionString
+                ? '[REDACTED]'
+                : undefined,
+        });
+    }
+
+    /**
+     * ✅ NEW: Initialize storage adapter
+     */
+    private async initializeStorage(): Promise<void> {
+        if (!this.config.persistent) {
+            this.isInitialized = true;
+            return;
+        }
+
+        try {
+            const storageConfig = {
+                adapterType:
+                    this.config.adapterType === 'mongodb'
+                        ? ('mongodb' as const)
+                        : ('memory' as const),
+                connectionString: this.config.connectionString,
+                options: {
+                    ...this.config.adapterOptions,
+                    database: this.config.adapterOptions?.database || 'kodus',
+                    collection:
+                        this.config.adapterOptions?.collection || 'sessions',
+                },
+                timeout: 10000,
+                retries: 3,
+            };
+
+            this.logger.info('🔍 [DEBUG] Creating StorageSessionAdapter', {
+                storageConfig,
+                connectionStringUsed: storageConfig.connectionString,
+                adapterTypeUsed: storageConfig.adapterType,
+            });
+
+            this.storage = new StorageSessionAdapter(storageConfig);
+
+            await this.storage.initialize();
+
+            // ✅ LOAD: Restore active sessions from storage
+            await this.loadActiveSessions();
+
+            this.isInitialized = true;
+            this.logger.info('SessionService storage initialized', {
+                adapterType: this.config.adapterType,
+                persistent: this.config.persistent,
+            });
+        } catch (error) {
+            this.logger.warn(
+                'Failed to initialize session storage - falling back to in-memory mode',
+                {
+                    error:
+                        error instanceof Error
+                            ? error.message
+                            : 'Unknown error',
+                    adapterType: this.config.adapterType,
+                    connectionString: this.config.connectionString
+                        ? '[CONFIGURED]'
+                        : '[NOT SET]',
+                    fallbackMode: 'in-memory',
+                },
+            );
+            // Continue without persistence - sessions will work but won't persist between restarts
+            this.storage = undefined;
+            this.isInitialized = true;
+        }
+    }
+
+    /**
+     * ✅ NEW: Load active sessions from storage
+     */
+    private async loadActiveSessions(): Promise<void> {
+        if (!this.storage) return;
+
+        try {
+            // Note: This would need custom query support in BaseStorage
+            // For now, we'll load on-demand when sessions are requested
+            this.logger.info('Session loading strategy: on-demand');
+        } catch (error) {
+            this.logger.warn('Failed to load active sessions', {
+                error: error instanceof Error ? error.message : 'Unknown error',
+            });
+        }
     }
 
     /**
      * Criar nova sessão
      */
-    createSession(
+    async createSession(
         tenantId: string,
         threadId: string,
         metadata: Record<string, unknown> = {},
-    ): Session {
-        // ✅ ADD: Log detalhado para debug
-        console.log('🔧 SESSION SERVICE - CREATE SESSION START', {
-            tenantId,
-            threadId,
-            metadataKeys: Object.keys(metadata),
-            totalSessionsBefore: this.sessions.size,
-            trace: {
-                source: 'session-service',
-                step: 'create-session-start',
-                timestamp: Date.now(),
-            },
-        });
+    ): Promise<Session> {
+        await this.ensureInitialized();
 
         const sessionId = IdGenerator.sessionId();
 
@@ -119,31 +224,24 @@ export class SessionService {
             },
         );
 
+        // ✅ HYBRID: Store in both RAM cache and persistent storage
         this.sessions.set(sessionId, session);
         this.sessionStateManagers.set(sessionId, stateManager);
 
+        // ✅ PERSIST: Store in database if persistent mode
+        if (this.config.persistent && this.storage) {
+            await this.storage.storeSession(session);
+        }
+
         // Enforce max sessions limit
         this.enforceMaxSessions();
-
-        // ✅ ADD: Log após criação bem-sucedida
-        console.log('🔧 SESSION SERVICE - SESSION CREATED SUCCESS', {
-            sessionId,
-            threadId,
-            tenantId,
-            totalSessionsAfter: this.sessions.size,
-            stateManagersCount: this.sessionStateManagers.size,
-            trace: {
-                source: 'session-service',
-                step: 'create-session-success',
-                timestamp: Date.now(),
-            },
-        });
 
         this.logger.info('Session created', {
             sessionId,
             threadId,
             tenantId,
             totalSessions: this.sessions.size,
+            persistent: this.config.persistent,
         });
 
         return session;
@@ -152,37 +250,37 @@ export class SessionService {
     /**
      * Obter sessão existente
      */
-    getSession(sessionId: string): Session | undefined {
-        // ✅ ADD: Log detalhado para debug
-        console.log('🔧 SESSION SERVICE - GET SESSION', {
-            sessionId,
-            totalSessions: this.sessions.size,
-            sessionExists: this.sessions.has(sessionId),
-            stateManagerExists: this.sessionStateManagers.has(sessionId),
-            trace: {
-                source: 'session-service',
-                step: 'get-session-start',
-                timestamp: Date.now(),
-            },
-        });
+    async getSession(sessionId: string): Promise<Session | undefined> {
+        await this.ensureInitialized();
 
-        const session = this.sessions.get(sessionId);
+        // ✅ HYBRID: Check RAM cache first
+        let session = this.sessions.get(sessionId);
+
+        // ✅ FALLBACK: If not in cache and persistent mode, try loading from storage
+        if (!session && this.config.persistent && this.storage) {
+            const loadedSession = await this.storage.retrieveSession(sessionId);
+            if (loadedSession) {
+                session = loadedSession;
+                // Cache the loaded session
+                this.sessions.set(sessionId, session);
+                // Recreate state manager
+                const stateManager = new ContextStateService(
+                    { sessionId },
+                    {
+                        maxNamespaceSize: 1000,
+                        maxNamespaces: 50,
+                    },
+                );
+                this.sessionStateManagers.set(sessionId, stateManager);
+            }
+        }
 
         if (session) {
             // Verificar se sessão expirou ANTES de atualizar lastActivity
             if (this.isSessionExpired(session)) {
                 session.status = 'expired';
-                // CRÍTICO: Limpar state manager quando sessão expira
                 this.sessionStateManagers.delete(sessionId);
-                console.log('🔧 SESSION SERVICE - SESSION EXPIRED', {
-                    sessionId,
-                    sessionAge: Date.now() - session.createdAt,
-                    trace: {
-                        source: 'session-service',
-                        step: 'session-expired',
-                        timestamp: Date.now(),
-                    },
-                });
+
                 this.logger.warn('Session expired', { sessionId });
                 return undefined;
             }
@@ -190,28 +288,12 @@ export class SessionService {
             // Atualizar última atividade apenas se sessão não expirou
             session.lastActivity = Date.now();
 
-            // ✅ ADD: Log após get bem-sucedido
-            console.log('🔧 SESSION SERVICE - GET SESSION SUCCESS', {
-                sessionId,
-                sessionStatus: session.status,
-                sessionAge: Date.now() - session.createdAt,
-                lastActivity: session.lastActivity,
-                trace: {
-                    source: 'session-service',
-                    step: 'get-session-success',
-                    timestamp: Date.now(),
-                },
-            });
+            // ✅ SYNC: Update in storage if persistent
+            if (this.config.persistent && this.storage) {
+                await this.storage.storeSession(session);
+            }
         } else {
-            console.log('🔧 SESSION SERVICE - GET SESSION NOT FOUND', {
-                sessionId,
-                availableSessions: Array.from(this.sessions.keys()),
-                trace: {
-                    source: 'session-service',
-                    step: 'get-session-not-found',
-                    timestamp: Date.now(),
-                },
-            });
+            this.logger.warn('Session not found', { sessionId });
         }
 
         return session;
@@ -220,20 +302,28 @@ export class SessionService {
     /**
      * Get session by thread ID (for ContextBuilder)
      */
-    getSessionByThread(threadId: string): Session | undefined {
+    async getSessionByThread(threadId: string): Promise<Session | undefined> {
+        await this.ensureInitialized();
+
+        // Check RAM cache first
         for (const session of this.sessions.values()) {
             if (session.threadId === threadId && session.status === 'active') {
                 return session;
             }
         }
+
+        // Note: In a full implementation, we'd query storage here
+        // For now, we rely on the on-demand loading in getSession()
         return undefined;
     }
 
     /**
      * Obter contexto completo da sessão
      */
-    getSessionContext(sessionId: string): SessionContext | undefined {
-        const session = this.getSession(sessionId);
+    async getSessionContext(
+        sessionId: string,
+    ): Promise<SessionContext | undefined> {
+        const session = await this.getSession(sessionId);
         if (!session) {
             return undefined;
         }
@@ -256,14 +346,14 @@ export class SessionService {
     /**
      * Adicionar entrada na conversa
      */
-    addConversationEntry(
+    async addConversationEntry(
         sessionId: string,
         input: unknown,
         output: unknown,
         agentName?: string,
         metadata: Record<string, unknown> = {},
-    ): boolean {
-        const session = this.getSession(sessionId);
+    ): Promise<boolean> {
+        const session = await this.getSession(sessionId);
         if (!session) return false;
 
         const entry = {
@@ -281,17 +371,16 @@ export class SessionService {
             session.conversationHistory.length >
             this.config.maxConversationHistory
         ) {
-            session.conversationHistory.shift(); // Remove oldest entry
+            session.conversationHistory.shift();
         }
 
         // Atualizar última atividade
         session.lastActivity = Date.now();
 
-        this.logger.debug('Conversation entry added', {
-            sessionId,
-            agentName,
-            historyLength: session.conversationHistory.length,
-        });
+        // ✅ SYNC: Persist changes if enabled
+        if (this.config.persistent && this.storage) {
+            await this.storage.storeSession(session);
+        }
 
         return true;
     }
@@ -299,15 +388,20 @@ export class SessionService {
     /**
      * Atualizar metadados da sessão
      */
-    updateSessionMetadata(
+    async updateSessionMetadata(
         sessionId: string,
         updates: Record<string, unknown>,
-    ): boolean {
-        const session = this.getSession(sessionId);
+    ): Promise<boolean> {
+        const session = await this.getSession(sessionId);
         if (!session) return false;
 
         session.metadata = { ...session.metadata, ...updates };
         session.lastActivity = Date.now();
+
+        // ✅ SYNC: Persist changes if enabled
+        if (this.config.persistent && this.storage) {
+            await this.storage.storeSession(session);
+        }
 
         return true;
     }
@@ -315,15 +409,20 @@ export class SessionService {
     /**
      * Atualizar dados de contexto da sessão
      */
-    updateSessionContext(
+    async updateSessionContext(
         sessionId: string,
         updates: Record<string, unknown>,
-    ): boolean {
-        const session = this.getSession(sessionId);
+    ): Promise<boolean> {
+        const session = await this.getSession(sessionId);
         if (!session) return false;
 
         session.contextData = { ...session.contextData, ...updates };
         session.lastActivity = Date.now();
+
+        // ✅ SYNC: Persist changes if enabled
+        if (this.config.persistent && this.storage) {
+            await this.storage.storeSession(session);
+        }
 
         return true;
     }
@@ -331,12 +430,17 @@ export class SessionService {
     /**
      * Pausar sessão
      */
-    pauseSession(sessionId: string): boolean {
-        const session = this.getSession(sessionId);
+    async pauseSession(sessionId: string): Promise<boolean> {
+        const session = await this.getSession(sessionId);
         if (!session) return false;
 
         session.status = 'paused';
         session.lastActivity = Date.now();
+
+        // ✅ SYNC: Persist changes if enabled
+        if (this.config.persistent && this.storage) {
+            await this.storage.storeSession(session);
+        }
 
         this.logger.info('Session paused', { sessionId });
         return true;
@@ -345,12 +449,17 @@ export class SessionService {
     /**
      * Resumir sessão
      */
-    resumeSession(sessionId: string): boolean {
-        const session = this.sessions.get(sessionId);
+    async resumeSession(sessionId: string): Promise<boolean> {
+        const session = await this.getSession(sessionId);
         if (!session) return false;
 
         session.status = 'active';
         session.lastActivity = Date.now();
+
+        // ✅ SYNC: Persist changes if enabled
+        if (this.config.persistent && this.storage) {
+            await this.storage.storeSession(session);
+        }
 
         this.logger.info('Session resumed', { sessionId });
         return true;
@@ -359,17 +468,21 @@ export class SessionService {
     /**
      * Fechar sessão
      */
-    closeSession(sessionId: string): boolean {
-        const session = this.sessions.get(sessionId);
+    async closeSession(sessionId: string): Promise<boolean> {
+        const session = await this.getSession(sessionId);
         if (!session) return false;
 
         session.status = 'closed';
         session.lastActivity = Date.now();
 
+        // ✅ SYNC: Persist final state if enabled
+        if (this.config.persistent && this.storage) {
+            await this.storage.storeSession(session);
+        }
+
         // Cleanup state manager
         this.sessionStateManagers.delete(sessionId);
 
-        this.logger.info('Session closed', { sessionId });
         return true;
     }
 
@@ -401,10 +514,12 @@ export class SessionService {
     /**
      * Buscar sessão por thread (para continuidade)
      */
-    findSessionByThread(
+    async findSessionByThread(
         threadId: string,
         tenantId?: string,
-    ): Session | undefined {
+    ): Promise<Session | undefined> {
+        await this.ensureInitialized();
+
         for (const session of this.sessions.values()) {
             if (
                 session.threadId === threadId &&
@@ -544,10 +659,31 @@ export class SessionService {
     }
 
     /**
+     * ✅ NEW: Ensure initialization
+     */
+    private async ensureInitialized(): Promise<void> {
+        if (!this.isInitialized) {
+            await this.initializeStorage();
+        }
+    }
+
+    /**
      * Cleanup completo
      */
     async cleanup(): Promise<void> {
         this.stopAutoCleanup();
+
+        // ✅ PERSIST: Final sync if persistent mode
+        if (this.config.persistent && this.storage) {
+            // Persist all active sessions before cleanup
+            const persistPromises = Array.from(this.sessions.values()).map(
+                (session) => this.storage!.storeSession(session),
+            );
+            await Promise.allSettled(persistPromises);
+
+            // Cleanup storage
+            await this.storage.cleanup();
+        }
 
         // Cleanup all sessions
         this.sessions.clear();

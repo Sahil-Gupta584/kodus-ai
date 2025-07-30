@@ -23,6 +23,7 @@ import { AgentExecutor } from '../engine/agents/agent-executor.js';
 import { IdGenerator } from '../utils/id-generator.js';
 
 import { createDefaultMultiKernelHandler } from '../engine/core/multi-kernel-handler.js';
+import { ContextBuilder } from '../core/context/context-builder.js';
 
 import type { LLMAdapter } from '../adapters/llm/index.js';
 import type { PlannerType } from '../engine/planning/planner-factory.js';
@@ -46,6 +47,7 @@ import { AgentIdentity } from '@/core/types/agent-definition.js';
 import { SessionId, UserContext } from '@/core/types/base-types.js';
 import { Thread } from '@/core/types/common-types.js';
 import type { PersistorType } from '../persistor/config.js';
+import type { StorageType } from '../core/storage/factory.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🏗️ CLEAN ORCHESTRATOR INTERFACES
@@ -69,7 +71,42 @@ export interface OrchestrationConfig {
     defaultPlanner?: PlannerType;
     defaultMaxIterations?: number;
 
-    // Persistence configuration
+    // ✅ NEW: Clean storage configuration - completely separated
+    storage?: {
+        memory?: {
+            type: StorageType;
+            connectionString?: string;
+            database?: string;
+            collection?: string;
+            maxItems?: number;
+            enableCompression?: boolean;
+            cleanupInterval?: number;
+        };
+        session?: {
+            type: StorageType;
+            connectionString?: string;
+            database?: string;
+            collection?: string;
+            maxSessions?: number;
+            sessionTimeout?: number;
+            enableCompression?: boolean;
+            cleanupInterval?: number;
+        };
+        persistor?: {
+            type: StorageType;
+            connectionString?: string;
+            database?: string;
+            collection?: string;
+            maxSnapshots?: number;
+            enableCompression?: boolean;
+            enableDeltaCompression?: boolean;
+            cleanupInterval?: number;
+            ttl?: number;
+        };
+    };
+
+    // ✅ DEPRECATED: Legacy persistorConfig (for backward compatibility)
+    /** @deprecated Use storage.persistor instead */
     persistorConfig?: {
         type: PersistorType;
         connectionString?: string;
@@ -169,17 +206,33 @@ const orchestrator = new SDKOrchestrator({
             defaultTimeout: config.defaultTimeout || 60000, // ✅ UNIFIED: 60s timeout
             defaultPlanner: config.defaultPlanner || 'plan-execute',
             defaultMaxIterations: config.defaultMaxIterations || 15,
-            persistorConfig: config.persistorConfig || {
-                type: 'memory',
-                maxSnapshots: 1000,
-                enableCompression: true,
-                enableDeltaCompression: true,
-                cleanupInterval: 300000,
-            },
+
+            // ✅ NEW: Clean storage config
+            storage: config.storage || {},
+
+            // ✅ BACKWARD COMPATIBILITY: Keep legacy persistorConfig
+            persistorConfig: config.persistorConfig ||
+                config.storage?.persistor || {
+                    type: 'memory',
+                    maxSnapshots: 1000,
+                    enableCompression: true,
+                    enableDeltaCompression: true,
+                    cleanupInterval: 300000,
+                },
         };
 
         this.mcpAdapter = config.mcpAdapter;
         this.toolEngine = new ToolEngine();
+
+        // ✅ Configure ContextBuilder with storage configuration
+        this.logger.info(
+            'About to configure ContextBuilder with storage config',
+            {
+                hasStorageConfig: !!this.config.storage,
+                storageKeys: Object.keys(this.config.storage || {}),
+            },
+        );
+        this.configureContextBuilder();
 
         // Initialize multi-kernel handler with separate kernels for observability and agent execution
         this.kernelHandler = createDefaultMultiKernelHandler(
@@ -740,7 +793,6 @@ const orchestrator = new SDKOrchestrator({
      * Register MCP tools - APENAS delega para MCP adapter
      */
     async registerMCPTools(): Promise<void> {
-        debugger;
         if (!this.mcpAdapter) {
             this.logger.warn(
                 'MCP adapter not configured - cannot register tools',
@@ -751,8 +803,6 @@ const orchestrator = new SDKOrchestrator({
         try {
             const mcpTools = await this.mcpAdapter.getTools();
             this.logger.info(`Registering ${mcpTools.length} MCP tools`);
-
-            console.log('mcpTools', mcpTools);
 
             for (const mcpTool of mcpTools) {
                 // ✅ IMPROVED: Better schema conversion with validation
@@ -871,6 +921,116 @@ const orchestrator = new SDKOrchestrator({
     // ──────────────────────────────────────────────────────────────────────────────
     // 🔧 INTERNAL HELPERS
     // ──────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Configure ContextBuilder with storage settings
+     */
+    private configureContextBuilder(): void {
+        this.logger.info('🔍 [DEBUG] Starting configureContextBuilder', {
+            hasStorageInConfig: !!this.config.storage,
+            storageKeys: Object.keys(this.config.storage || {}),
+            fullStorageConfig: this.config.storage,
+        });
+
+        const contextConfig = this.getStorageConfig();
+
+        this.logger.info(
+            '🔍 [DEBUG] Generated contextConfig from getStorageConfig',
+            {
+                contextConfig,
+                hasMemory: !!contextConfig.memory,
+                hasSession: !!contextConfig.session,
+                memoryConnectionString:
+                    contextConfig.memory?.adapterConfig?.connectionString,
+                sessionConnectionString:
+                    contextConfig.session?.connectionString,
+            },
+        );
+
+        try {
+            ContextBuilder.configure(contextConfig);
+
+            this.logger.info(
+                'ContextBuilder configured with storage settings',
+                {
+                    hasMemoryConfig: !!contextConfig.memory,
+                    hasSessionConfig: !!contextConfig.session,
+                    memoryAdapter: contextConfig.memory?.adapterType,
+                    sessionAdapter: contextConfig.session?.adapterType,
+                },
+            );
+        } catch (error) {
+            this.logger.error(
+                'Failed to configure ContextBuilder',
+                error instanceof Error ? error : new Error('Unknown error'),
+            );
+        }
+    }
+
+    /**
+     * ✅ NEW: Get storage config for ContextBuilder
+     * Converts OrchestrationConfig.storage to ContextBuilderConfig format
+     */
+    getStorageConfig(): {
+        memory?: {
+            adapterType: StorageType;
+            adapterConfig?: {
+                connectionString?: string;
+                options?: Record<string, unknown>;
+            };
+        };
+        session?: import('../core/context/services/session-service.js').SessionConfig;
+    } {
+        const result: {
+            memory?: {
+                adapterType: StorageType;
+                adapterConfig?: {
+                    connectionString?: string;
+                    options?: Record<string, unknown>;
+                };
+            };
+            session?: import('../core/context/services/session-service.js').SessionConfig;
+        } = {};
+
+        // ✅ Convert memory config to ContextBuilder format
+        if (this.config.storage?.memory) {
+            const memoryConfig = this.config.storage.memory;
+            result.memory = {
+                adapterType: memoryConfig.type,
+                adapterConfig: {
+                    connectionString: memoryConfig.connectionString,
+                    options: {
+                        database: memoryConfig.database || 'kodus',
+                        collection: memoryConfig.collection || 'memories',
+                        maxItems: memoryConfig.maxItems || 10000,
+                        enableCompression:
+                            memoryConfig.enableCompression ?? true,
+                        cleanupInterval: memoryConfig.cleanupInterval || 300000,
+                    },
+                },
+            };
+        }
+
+        // ✅ Convert session config to SessionConfig format
+        if (this.config.storage?.session) {
+            const sessionConfig = this.config.storage.session;
+            result.session = {
+                maxSessions: sessionConfig.maxSessions || 1000,
+                sessionTimeout: sessionConfig.sessionTimeout || 30 * 60 * 1000,
+                enableAutoCleanup: true,
+                persistent: sessionConfig.type === 'mongodb',
+                adapterType: sessionConfig.type,
+                connectionString: sessionConfig.connectionString,
+                adapterOptions: {
+                    database: sessionConfig.database || 'kodus',
+                    collection: sessionConfig.collection || 'sessions',
+                },
+                cleanupInterval: sessionConfig.cleanupInterval || 300000,
+            };
+        }
+
+        return result;
+    }
 
     /**
      * Inject kernel handler into agent

@@ -11,7 +11,11 @@
 
 import { createLogger } from '../../observability/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
-import { getGlobalMemoryManager } from '../memory/memory-manager.js';
+import {
+    getGlobalMemoryManager,
+    MemoryManager,
+    setGlobalMemoryManager,
+} from '../memory/memory-manager.js';
 import { SessionService } from './services/session-service.js';
 import { ContextStateService } from './services/state-service.js';
 import { ExecutionRuntime } from './execution-runtime-simple.js';
@@ -20,9 +24,26 @@ import type {
     AgentContext,
     AgentExecutionOptions,
 } from '../types/agent-types.js';
-import type { Session } from './services/session-service.js';
-import type { MemoryManager } from '../memory/memory-manager.js';
+import type { Session, SessionConfig } from './services/session-service.js';
 import type { ToolEngine } from '../../engine/tools/tool-engine.js';
+import { StorageType } from '../storage/index.js';
+
+/**
+ * ✅ CLEAN: ContextBuilder usa as interfaces corretas de cada serviço
+ * AMBOS usam o padrão adapterType + options consistente
+ */
+export interface ContextBuilderConfig {
+    // Memory usa o padrão adapterType + adapterConfig
+    memory?: {
+        adapterType?: StorageType;
+        adapterConfig?: {
+            connectionString?: string;
+            options?: Record<string, unknown>;
+        };
+    };
+    // Session usa SessionConfig (que agora também usa adapterType + adapterOptions)
+    session?: SessionConfig;
+}
 
 /**
  * ContextBuilder - Single entry point for all context creation
@@ -31,29 +52,102 @@ import type { ToolEngine } from '../../engine/tools/tool-engine.js';
 export class ContextBuilder {
     private static instance: ContextBuilder;
     private readonly logger = createLogger('ContextBuilder');
+    private readonly _config: ContextBuilderConfig;
 
     // Service instances (singleton pattern)
-    private memoryManager: MemoryManager;
+    private memoryManager!: MemoryManager;
     private sessionService: SessionService;
     private toolEngine?: ToolEngine;
 
-    private constructor() {
-        // Initialize global services once
-        this.memoryManager = getGlobalMemoryManager();
-        this.sessionService = new SessionService({
+    private constructor(config: ContextBuilderConfig = {}) {
+        this._config = config;
+
+        // ✅ Initialize MemoryManager with provided config
+        if (config.memory) {
+            this.initializeMemoryManager(config.memory);
+        } else {
+            this.memoryManager = getGlobalMemoryManager();
+        }
+        const sessionConfig = {
             maxSessions: 1000,
             sessionTimeout: 30 * 60 * 1000, // 30 min
             enableAutoCleanup: true,
+            // ✅ Apply session config from constructor - SessionConfig já tem as propriedades corretas
+            ...config.session,
+        };
+
+        this.logger.info('🔍 [DEBUG] Creating SessionService with config', {
+            sessionConfig,
+            hasConnectionString: !!sessionConfig.connectionString,
+            adapterType: sessionConfig.adapterType,
+            originalConfigSession: config.session,
         });
 
-        this.logger.info('ContextBuilder initialized');
+        this.sessionService = new SessionService(sessionConfig);
+
+        this.logger.info('ContextBuilder initialized', {
+            memoryConfig: config.memory ? 'configured' : 'default',
+            sessionConfig: config.session ? 'configured' : 'default',
+        });
     }
 
-    static getInstance(): ContextBuilder {
+    static getInstance(config?: ContextBuilderConfig): ContextBuilder {
         if (!ContextBuilder.instance) {
-            ContextBuilder.instance = new ContextBuilder();
+            ContextBuilder.instance = new ContextBuilder(config);
         }
         return ContextBuilder.instance;
+    }
+
+    /**
+     * ✅ NEW: Reset instance to allow reconfiguration
+     */
+    static resetInstance(): void {
+        ContextBuilder.instance = undefined as unknown as ContextBuilder;
+    }
+
+    /**
+     * ✅ NEW: Configure services after instantiation
+     */
+    static configure(config: ContextBuilderConfig): ContextBuilder {
+        const logger = createLogger('ContextBuilder');
+        logger.info('🔍 [DEBUG] ContextBuilder.configure called', {
+            config,
+            hasMemory: !!config.memory,
+            hasSession: !!config.session,
+            memoryAdapterType: config.memory?.adapterType,
+            sessionAdapterType: config.session?.adapterType,
+        });
+
+        ContextBuilder.resetInstance();
+        return ContextBuilder.getInstance(config);
+    }
+
+    /**
+     * Get current configuration
+     */
+    getConfig(): ContextBuilderConfig {
+        return this._config;
+    }
+
+    /**
+     * ✅ NEW: Initialize MemoryManager with provided config
+     */
+    private initializeMemoryManager(
+        memoryConfig: NonNullable<ContextBuilderConfig['memory']>,
+    ): void {
+        const memoryManager = new MemoryManager({
+            // ✅ Use correct properties from MemoryManager constructor
+            adapterType: memoryConfig.adapterType || 'memory',
+            adapterConfig: memoryConfig.adapterConfig,
+        });
+
+        setGlobalMemoryManager(memoryManager);
+        this.memoryManager = memoryManager;
+
+        this.logger.info('MemoryManager initialized with custom config', {
+            adapterType: memoryConfig.adapterType || 'memory',
+            hasConnectionString: !!memoryConfig.adapterConfig?.connectionString,
+        });
     }
 
     /**
@@ -74,9 +168,10 @@ export class ContextBuilder {
 
             // 2. Get or create session
             const threadId = options.thread?.id || 'default';
-            let session = this.sessionService.getSessionByThread(threadId);
+            let session =
+                await this.sessionService.getSessionByThread(threadId);
             if (!session) {
-                session = this.sessionService.createSession(
+                session = await this.sessionService.createSession(
                     options.tenantId || 'default',
                     threadId,
                     {}, // metadata será passado via options.userContext
@@ -134,7 +229,6 @@ export class ContextBuilder {
         executionRuntime: ExecutionRuntime;
         options: AgentExecutionOptions;
     }): AgentContext {
-        debugger;
         const invocationId = IdGenerator.executionId(); // usando executionId como invocationId
 
         return {
@@ -154,7 +248,7 @@ export class ContextBuilder {
                     workingMemory.set(namespace, key, value),
                 clear: (namespace: string) => workingMemory.clear(namespace),
                 getNamespace: async (namespace: string) => {
-                    const nsMap = await workingMemory.getNamespace(namespace);
+                    const nsMap = workingMemory.getNamespace(namespace);
                     return nsMap ? new Map(Object.entries(nsMap)) : undefined;
                 },
             },
@@ -189,20 +283,20 @@ export class ContextBuilder {
 
             session: {
                 addEntry: async (input: unknown, output: unknown) => {
-                    this.sessionService.addConversationEntry(
+                    await this.sessionService.addConversationEntry(
                         session.id,
                         input,
                         output,
                     );
                 },
                 getHistory: async () => {
-                    const currentSession = this.sessionService.getSession(
+                    const currentSession = await this.sessionService.getSession(
                         session.id,
                     );
                     return currentSession?.conversationHistory || [];
                 },
                 updateMetadata: async (metadata: Record<string, unknown>) => {
-                    this.sessionService.updateSessionMetadata(
+                    await this.sessionService.updateSessionMetadata(
                         session.id,
                         metadata,
                     );
@@ -216,39 +310,38 @@ export class ContextBuilder {
                     result: unknown,
                     success: boolean,
                 ) => {
-                    await this.memoryManager.store({
-                        content: {
-                            toolName,
-                            params,
-                            result,
-                            success,
-                            timestamp: Date.now(),
-                        },
-                        type: 'tool_usage',
-                        sessionId: session.id,
-                        tenantId: session.tenantId,
-                    });
+                    // ✅ SIMPLE: Tool usage goes to Session only - single source of truth
+                    await this.sessionService.addConversationEntry(
+                        session.id,
+                        { type: 'tool_call', toolName, params },
+                        { type: 'tool_result', result, success },
+                        'system',
+                        { timestamp: Date.now() },
+                    );
                 },
                 plannerStep: async (step: unknown) => {
-                    await this.memoryManager.store({
-                        content: { step, timestamp: Date.now() },
-                        type: 'planner_step',
-                        sessionId: session.id,
-                        tenantId: session.tenantId,
-                    });
+                    // ✅ CORRECTED: Planner steps are part of conversation - goes to Session
+                    await this.sessionService.addConversationEntry(
+                        session.id,
+                        { type: 'planner_step', step },
+                        null,
+                        'system',
+                        { timestamp: Date.now() },
+                    );
                 },
                 error: async (error: Error, context?: unknown) => {
-                    await this.memoryManager.store({
-                        content: {
-                            error: error.message,
+                    // ✅ SIMPLE: Errors go to Session for historical tracking
+                    await this.sessionService.addConversationEntry(
+                        session.id,
+                        { type: 'error', context },
+                        {
+                            type: 'error_details',
+                            message: error.message,
                             stack: error.stack,
-                            context,
                             timestamp: Date.now(),
                         },
-                        type: 'error',
-                        sessionId: session.id,
-                        tenantId: session.tenantId,
-                    });
+                        'system',
+                    );
                 },
             },
 
@@ -272,13 +365,18 @@ export class ContextBuilder {
             // Provide safe access to runtime info (not the runtime itself)
             executionRuntime: {
                 addContextValue: async (update) => {
-                    // Store in memory instead of runtime
-                    await this.memoryManager.store({
-                        content: update,
-                        type: 'context_update',
-                        sessionId: session.id,
-                        tenantId: session.tenantId,
-                    });
+                    // Context updates são temporários - vão para State
+                    const contextValues =
+                        (await workingMemory.get<unknown[]>(
+                            'runtime',
+                            'contextValues',
+                        )) || [];
+                    contextValues.push({ ...update, timestamp: Date.now() });
+                    await workingMemory.set(
+                        'runtime',
+                        'contextValues',
+                        contextValues,
+                    );
                 },
                 storeToolUsagePattern: async (
                     toolName,
@@ -287,6 +385,7 @@ export class ContextBuilder {
                     success,
                     duration,
                 ) => {
+                    // Padrões de uso de ferramentas são conhecimento de longo prazo - vão para Memory
                     await this.memoryManager.store({
                         content: { toolName, input, output, success, duration },
                         type: 'tool_usage_pattern',
@@ -300,6 +399,7 @@ export class ContextBuilder {
                     result,
                     context,
                 ) => {
+                    // Padrões de execução são conhecimento de longo prazo - vão para Memory
                     await this.memoryManager.store({
                         content: { patternType, action, result, context },
                         type: 'execution_pattern',

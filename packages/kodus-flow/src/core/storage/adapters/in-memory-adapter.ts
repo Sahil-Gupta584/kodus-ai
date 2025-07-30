@@ -3,6 +3,7 @@
  * @description In-memory storage adapter for development and testing
  */
 
+import { StorageType } from '../../types/storage-types.js';
 import { createLogger } from '../../../observability/logger.js';
 import type {
     BaseStorage,
@@ -130,7 +131,7 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
             totalSize,
             averageItemSize:
                 this.items.size > 0 ? totalSize / this.items.size : 0,
-            adapterType: 'in-memory',
+            adapterType: StorageType.INMEMORY,
         };
     }
 

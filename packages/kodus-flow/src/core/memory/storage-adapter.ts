@@ -20,17 +20,21 @@ export class StorageMemoryAdapter implements MemoryAdapter {
     private isInitialized = false;
 
     constructor(
-        private config: MemoryAdapterConfig = { adapterType: 'in-memory' },
+        private config: MemoryAdapterConfig = { adapterType: 'memory' },
     ) {}
 
     async initialize(): Promise<void> {
         if (this.isInitialized) return;
 
         this.storage = await StorageAdapterFactory.create({
-            type:
-                this.config.adapterType === 'in-memory' ? 'memory' : 'mongodb',
+            type: this.config.adapterType,
             connectionString: this.config.connectionString,
-            options: this.config.options,
+            options: {
+                ...this.config.options,
+                // ✅ MEMORY: Use specific collection for Memory data
+                database: this.config.options?.database || 'kodus',
+                collection: this.config.options?.collection || 'memories',
+            },
             maxItems: 10000,
             enableCompression: true,
             cleanupInterval: 300000,

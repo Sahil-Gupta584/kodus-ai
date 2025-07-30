@@ -781,7 +781,7 @@ FINAL VALIDATION before each action:
     //     plan: Record<string, unknown>,
     //     thread: Thread,
     // ): AgentThought {
-    //     debugger;
+    //
 
     //     const availableTools = this.getAvailableToolsForContext(thread);
     //     const availableToolNames = availableTools.map((tool) => tool.name);

@@ -45,7 +45,12 @@ export class StoragePersistorAdapter implements Persistor {
         this.storage = await StorageAdapterFactory.create({
             type: this.config.type,
             connectionString: this.config.connectionString,
-            options: this.config.options,
+            options: {
+                ...this.config.options,
+                // ✅ PERSISTOR: Use specific collection for Persistor data
+                database: this.config.options?.database || 'kodus',
+                collection: this.config.options?.collection || 'snapshots',
+            },
             maxItems: this.persistorConfig?.maxSnapshots ?? 1000,
             enableCompression: this.persistorConfig?.enableCompression ?? true,
             cleanupInterval: this.persistorConfig?.cleanupInterval ?? 300000,

@@ -112,23 +112,36 @@ export class ConversationAgentProvider {
             hosts: [{ name: this.config.host, port: this.config.port }],
         }).toString();
 
-        const persistorConfig = {
-            type: 'mongodb' as any,
-            connectionString: uri,
-            database: this.config.database,
-            collection: 'kodus-snapshots',
-        };
-
         console.log(
-            'Persistor Config:',
-            JSON.stringify(persistorConfig, null, 2),
+            'Creating orchestration with MongoDB URI:',
+            uri,
+            this.config,
         );
 
         this.orchestration = createOrchestration({
             tenantId: 'kodus-agent-conversation',
             llmAdapter: this.llmAdapter,
             mcpAdapter: this.mcpAdapter,
-            persistorConfig,
+            // storage: {
+            //     memory: {
+            //         type: 'mongodb',
+            //         connectionString: uri,
+            //         database: this.config.database,
+            //         collection: 'memories',
+            //     },
+            //     session: {
+            //         type: 'mongodb',
+            //         connectionString: uri,
+            //         database: this.config.database,
+            //         collection: 'sessions',
+            //     },
+            //     persistor: {
+            //         type: 'mongodb',
+            //         connectionString: uri,
+            //         database: this.config.database,
+            //         collection: 'snapshots',
+            //     },
+            // },
         });
     }
 

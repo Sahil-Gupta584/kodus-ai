@@ -361,7 +361,7 @@ export class PlanAndExecutePlanner implements Planner {
     }
 
     async think(context: PlannerExecutionContext): Promise<AgentThought> {
-        debugger; // 🔍 DEBUG: Monitor thinking process
+        // 🔍 DEBUG: Monitor thinking process
 
         try {
             // const thread = context.plannerMetadata.thread!;
@@ -400,7 +400,7 @@ export class PlanAndExecutePlanner implements Planner {
     private async createPlan(
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        debugger; // 🔍 DEBUG: Monitor plan creation
+        // 🔍 DEBUG: Monitor plan creation
         const availableTools = this.getAvailableToolsForContext(context);
         const input = context.input;
 
@@ -432,24 +432,17 @@ export class PlanAndExecutePlanner implements Planner {
             input,
             'plan-execute',
             {
-                availableTools: availableTools,
-                toolsContext: toolsContext || '',
-                identityContext: identityContext || '',
-                userContext: JSON.stringify(
-                    context.agentContext?.agentExecutionOptions?.userContext ||
-                        {},
-                ),
-                memoryContext: memoryContext || '',
-                planningHistory: planningHistory || '',
-                // Provide prompts from this planner to the adapter
                 systemPrompt: this.getSystemPrompt(),
                 userPromptTemplate: this.getUserPrompt({
                     goal: input,
                     availableTools: availableTools,
                     toolsContext: toolsContext || '',
-                    identityContext: '',
-                    userContext: '',
-                    memoryContext: '',
+                    identityContext: identityContext || '',
+                    userContext: JSON.stringify(
+                        context.agentContext?.agentExecutionOptions
+                            ?.userContext || {},
+                    ),
+                    memoryContext: memoryContext,
                     planningHistory: planningHistory || '',
                 }),
             },
@@ -457,7 +450,6 @@ export class PlanAndExecutePlanner implements Planner {
 
         const plan = planResult;
 
-        // Convert LLM plan to execution plan
         const steps = this.convertLLMResponseToSteps(plan);
 
         this.currentPlan = {
@@ -493,19 +485,10 @@ export class PlanAndExecutePlanner implements Planner {
     private async executeNextStep(
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        debugger; // 🔍 DEBUG: Monitor step execution
+        // 🔍 DEBUG: Monitor step execution
         if (!this.currentPlan) {
             throw new Error('No execution plan available');
         }
-
-        this.logger.info('🚀 EXECUTING NEXT STEP', {
-            planId: this.currentPlan.id,
-            currentStepIndex: this.currentPlan.currentStepIndex,
-            totalSteps: this.currentPlan.steps.length,
-            planStatus: this.currentPlan.status,
-            iteration: context.iterations,
-            historyLength: context.history.length,
-        });
 
         const currentStep =
             this.currentPlan.steps[this.currentPlan.currentStepIndex];
@@ -529,31 +512,11 @@ export class PlanAndExecutePlanner implements Planner {
             };
         }
 
-        this.logger.info('📋 CURRENT STEP DETAILS', {
-            stepId: currentStep.id,
-            stepIndex: this.currentPlan.currentStepIndex,
-            stepStatus: currentStep.status,
-            tool: currentStep.tool,
-            originalArguments: currentStep.arguments,
-            hasArguments: !!currentStep.arguments,
-        });
-
-        // 🔄 RESOLVE DYNAMIC ARGUMENTS: Replace references to previous step results
         if (currentStep.arguments) {
-            this.logger.info('🔧 RESOLVING STEP ARGUMENTS - BEFORE', {
-                stepId: currentStep.id,
-                originalArguments: currentStep.arguments,
-            });
-
             currentStep.arguments = this.resolveStepArguments(
                 currentStep.arguments,
                 this.currentPlan.steps,
             );
-
-            this.logger.info('🔧 RESOLVING STEP ARGUMENTS - AFTER', {
-                stepId: currentStep.id,
-                resolvedArguments: currentStep.arguments,
-            });
         }
 
         // 🚀 DYNAMIC PARALLEL EXPANSION: Check if step needs to be expanded for arrays
@@ -661,7 +624,6 @@ export class PlanAndExecutePlanner implements Planner {
         result: ActionResult,
         context: PlannerExecutionContext,
     ): Promise<ResultAnalysis> {
-        debugger;
         this.logger.debug('Analyzing step result', {
             resultType: result.type,
             hasError: isErrorResult(result),
@@ -688,8 +650,6 @@ export class PlanAndExecutePlanner implements Planner {
                 shouldContinue: false,
             };
         }
-
-        debugger;
 
         // Handle step result
         if (isErrorResult(result)) {
@@ -1132,7 +1092,6 @@ export class PlanAndExecutePlanner implements Planner {
     private buildToolsContextForPlanExecute(
         tools: ToolMetadataForLLM[],
     ): string {
-        debugger;
         if (tools.length === 0) return 'No tools available.';
 
         // Group tools by MCP prefix for clean organization
