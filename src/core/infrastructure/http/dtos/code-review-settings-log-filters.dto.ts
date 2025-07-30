@@ -6,10 +6,6 @@ import { PaginationDto } from './pagination.dto';
 export class CodeReviewSettingsLogFiltersDto extends PaginationDto {
     @IsOptional()
     @IsUUID()
-    organizationId?: string;
-
-    @IsOptional()
-    @IsUUID()
     teamId?: string;
 
     @IsOptional()
