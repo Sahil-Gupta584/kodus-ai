@@ -87,10 +87,6 @@ export interface CodeReviewPipelineContext extends PipelineContext {
             taskId: string;
             status?: TaskStatus;
         };
-        impactAnalysis?: {
-            taskId: string;
-            status?: TaskStatus;
-        };
     };
     // Resultados dos comentários de nível de PR
     prLevelCommentResults?: Array<CommentResult>;

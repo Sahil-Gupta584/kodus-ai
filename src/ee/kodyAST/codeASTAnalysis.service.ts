@@ -447,7 +447,6 @@ export class CodeAstAnalysisService
                     delay: 1000,
                     resetOnSuccess: true,
                 }),
-
                 circuitBreaker(AST_ANALYZER_SERVICE_NAME),
                 reduce((acc, chunk) => {
                     return {
@@ -598,6 +597,26 @@ export class CodeAstAnalysisService
                     throw error;
                 }
 
+                this.logger.error({
+                    message: `Full error inspection for task ${taskId}`,
+                    context: CodeAstAnalysisService.name,
+                    error,
+                    metadata: {
+                        taskId,
+                        errorType: typeof error,
+                        errorConstructor: error?.constructor?.name,
+                        errorProto:
+                            Object.getPrototypeOf(error)?.constructor?.name,
+                        errorKeys: error ? Object.keys(error) : null,
+                        errorCode: error?.code,
+                        errorCodeType: typeof error?.code,
+                        statusNotFoundValue: Status.NOT_FOUND,
+                        statusNotFoundType: typeof Status.NOT_FOUND,
+                        fullErrorString: String(error),
+                        fullErrorJSON: JSON.stringify(error),
+                    },
+                });
+
                 if (error?.code === Status.NOT_FOUND) {
                     this.logger.warn({
                         message: `Task ${taskId} not found`,
@@ -606,7 +625,7 @@ export class CodeAstAnalysisService
                         metadata: { taskId },
                     });
 
-                    throw new Error(`Task ${taskId} not found`);
+                    return null;
                 }
 
                 this.logger.warn({

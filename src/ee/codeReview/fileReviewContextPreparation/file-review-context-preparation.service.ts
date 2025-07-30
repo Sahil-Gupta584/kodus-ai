@@ -108,15 +108,26 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
 
         let fileContext: AnalysisContext = baseContext.fileContext;
 
+        const isHeavyMode =
+            fileContext.reviewModeResponse === ReviewModeResponse.HEAVY_MODE;
+
+        const hasASTAnalysisTask =
+            fileContext.tasks.astAnalysis.taskId &&
+            fileContext.tasks.astAnalysis.status !==
+                TaskStatus.TASK_STATUS_FAILED &&
+            fileContext.tasks.astAnalysis.status !==
+                TaskStatus.TASK_STATUS_CANCELLED;
+
+        const hasEnabledBreakingChanges =
+            fileContext.codeReviewConfig.reviewOptions?.breaking_changes;
+
         // Check if we should execute the AST analysis
         const shouldRunAST =
-            fileContext.reviewModeResponse === ReviewModeResponse.HEAVY_MODE &&
-            fileContext.tasks.astAnalysis.taskId &&
-            fileContext.codeReviewConfig.reviewOptions?.breaking_changes;
+            isHeavyMode && hasASTAnalysisTask && hasEnabledBreakingChanges;
 
         if (shouldRunAST) {
             try {
-                const { task: astTask } = await this.astService.awaitTask(
+                const astTaskRes = await this.astService.awaitTask(
                     fileContext.tasks.astAnalysis.taskId,
                     fileContext.organizationAndTeamData,
                     {
@@ -125,8 +136,9 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                 );
 
                 if (
-                    !astTask ||
-                    astTask.status !== TaskStatus.TASK_STATUS_COMPLETED
+                    !astTaskRes ||
+                    astTaskRes?.task?.status !==
+                        TaskStatus.TASK_STATUS_COMPLETED
                 ) {
                     this.logger.warn({
                         message:
@@ -137,8 +149,22 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                             filename: file.filename,
                         },
                     });
-                    return { fileContext };
+
+                    return {
+                        fileContext: this.updateContextWithTaskStatus(
+                            fileContext,
+                            astTaskRes?.task?.status ||
+                                TaskStatus.TASK_STATUS_FAILED,
+                            'astAnalysis',
+                        ),
+                    };
                 }
+
+                fileContext = this.updateContextWithTaskStatus(
+                    fileContext,
+                    astTaskRes?.task?.status,
+                    'astAnalysis',
+                );
 
                 const { taskId } =
                     await this.astService.initializeImpactAnalysis(
@@ -150,7 +176,7 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                         file.filename,
                     );
 
-                const { task: impactTask } = await this.astService.awaitTask(
+                const impactTaskRes = await this.astService.awaitTask(
                     taskId,
                     fileContext.organizationAndTeamData,
                     {
@@ -159,8 +185,9 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                 );
 
                 if (
-                    !impactTask ||
-                    impactTask.status !== TaskStatus.TASK_STATUS_COMPLETED
+                    !impactTaskRes ||
+                    impactTaskRes?.task?.status !==
+                        TaskStatus.TASK_STATUS_COMPLETED
                 ) {
                     this.logger.warn({
                         message:
@@ -219,7 +246,7 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
     protected async getRelevantFileContent(
         file: FileChange,
         context: AnalysisContext,
-    ): Promise<string | null> {
+    ): Promise<{ relevantContent: string | null; taskStatus?: TaskStatus }> {
         try {
             const { taskId } = context.tasks.astAnalysis;
 
@@ -233,10 +260,14 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                         filename: file.filename,
                     },
                 });
-                return file.fileContent || file.content || null;
+
+                return {
+                    relevantContent: file.fileContent || file.content || null,
+                    taskStatus: TaskStatus.TASK_STATUS_FAILED,
+                };
             }
 
-            const { task } = await this.astService.awaitTask(
+            const taskRes = await this.astService.awaitTask(
                 taskId,
                 context.organizationAndTeamData,
                 {
@@ -244,7 +275,10 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                 },
             );
 
-            if (!task || task.status !== TaskStatus.TASK_STATUS_COMPLETED) {
+            if (
+                !taskRes ||
+                taskRes?.task?.status !== TaskStatus.TASK_STATUS_COMPLETED
+            ) {
                 this.logger.warn({
                     message: 'AST analysis task did not complete successfully',
                     context: FileReviewContextPreparation.name,
@@ -253,7 +287,12 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                         filename: file.filename,
                     },
                 });
-                return file.fileContent || file.content || null;
+
+                return {
+                    relevantContent: file.fileContent || file.content || null,
+                    taskStatus:
+                        taskRes?.task?.status || TaskStatus.TASK_STATUS_FAILED,
+                };
             }
 
             const content = await this.astService.getRelatedContentFromDiff(
@@ -266,7 +305,10 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
             );
 
             if (content) {
-                return content;
+                return {
+                    relevantContent: content,
+                    taskStatus: taskRes?.task?.status,
+                };
             } else {
                 this.logger.warn({
                     message: 'No relevant content found for the file',
@@ -276,7 +318,10 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                         filename: file.filename,
                     },
                 });
-                return file.fileContent || file.content || null;
+                return {
+                    relevantContent: file.fileContent || file.content || null,
+                    taskStatus: taskRes?.task?.status,
+                };
             }
         } catch (error) {
             this.logger.error({
@@ -288,7 +333,26 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                     filename: file.filename,
                 },
             });
-            return file.fileContent || file.content || null;
+            return {
+                relevantContent: file.fileContent || file.content || null,
+            };
         }
+    }
+
+    private updateContextWithTaskStatus(
+        context: AnalysisContext,
+        taskStatus: TaskStatus,
+        type: keyof AnalysisContext['tasks'],
+    ): AnalysisContext {
+        return {
+            ...context,
+            tasks: {
+                ...context.tasks,
+                [type]: {
+                    ...context.tasks[type],
+                    status: taskStatus,
+                },
+            },
+        };
     }
 }
