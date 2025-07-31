@@ -1921,6 +1921,10 @@ export class GitlabService
                         username: user ? user.username : null,
                         id: user && user.id ? user.id : null,
                     },
+                    parents:
+                        commit?.parent_ids
+                            ?.map((p) => ({ sha: p ?? '' }))
+                            ?.filter((p) => p.sha) ?? [],
                 };
             }),
         );
