@@ -38,22 +38,12 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
     protected async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
-        const lastExecution =
-            await this.automationExecutionService.findLatestExecutionByFilters(
-                {
-                    status: AutomationStatus.SUCCESS,
-                    teamAutomation: { uuid: context.teamAutomationId },
-                    pullRequestNumber: context.pullRequest.number,
-                    repositoryId: context?.repository?.id,
-                },
-            );
-
         const files = await this.pullRequestHandlerService.getChangedFiles(
             context.organizationAndTeamData,
             context.repository,
             context.pullRequest,
             context?.codeReviewConfig?.ignorePaths,
-            lastExecution?.dataExecution?.lastAnalyzedCommit,
+            context?.lastExecution?.lastAnalyzedCommit,
         );
 
         if (!files?.length || files.length > this.maxFilesToAnalyze) {
@@ -71,19 +61,8 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
 
         const filesWithLineNumbers = this.prepareFilesWithLineNumbers(files);
 
-        const lastExecutionResult = lastExecution
-            ? {
-                  commentId: lastExecution?.dataExecution?.commentId,
-                  noteId: lastExecution?.dataExecution?.noteId,
-                  threadId: lastExecution?.dataExecution?.threadId,
-                  lastAnalyzedCommit:
-                      lastExecution?.dataExecution?.lastAnalyzedCommit,
-              }
-            : undefined;
-
         return this.updateContext(context, (draft) => {
             draft.changedFiles = filesWithLineNumbers;
-            draft.lastExecution = lastExecutionResult;
             draft.pipelineMetadata = {
                 ...draft.pipelineMetadata,
             };

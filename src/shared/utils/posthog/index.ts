@@ -93,7 +93,7 @@ class PostHogClient {
         this.posthog.shutdown();
     }
 
-    isFeatureEnabled(
+    async isFeatureEnabled(
         featureName: string,
         identifier: string,
         organizationAndTeamData: OrganizationAndTeamData,
@@ -102,7 +102,7 @@ class PostHogClient {
             return Promise.resolve(true);
         }
 
-        return this.posthog.isFeatureEnabled(featureName, identifier, {
+        return await this.posthog.isFeatureEnabled(featureName, identifier, {
             groups: { organization: organizationAndTeamData.organizationId },
         });
     }

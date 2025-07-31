@@ -96,7 +96,10 @@ class PromptBuilderWithProviders {
      *
      * This parser will be used to parse the output of the LLM.
      * @param type The type of the parser to be used.
-     * @param parser The parser to be used. Only used with `ParserType.CUSTOM`.
+     * @param parserOrSchema The parser instance or Zod schema to be used.
+     * @param config Optional configuration for the parser. Only used for Zod parsers.
+     * - `provider`: The main LLM provider to use. @default LLMModelProvider.OPENAI_GPT_4O_MINI
+     * - `fallbackProvider`: An optional fallback LLM provider. @default LLMModelProvider.OPENAI_GPT_4O
      * @template NewOutputType The expected output type of the parser.
      * @returns The ConfigurablePromptBuilder instance for chaining.
      */
@@ -111,6 +114,10 @@ class PromptBuilderWithProviders {
     setParser<NewOutputType extends AnyZodObject>(
         type: ParserType.ZOD,
         parserOrSchema: NewOutputType,
+        config?: Pick<
+            PromptRunnerParams<void, NewOutputType>,
+            'provider' | 'fallbackProvider'
+        >,
     ): ConfigurablePromptBuilderWithoutPayload<
         z.infer<NewOutputType>,
         ParserType.ZOD

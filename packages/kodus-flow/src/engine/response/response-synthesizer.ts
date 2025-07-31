@@ -38,6 +38,9 @@ export interface ResponseSynthesisContext {
         result?: unknown;
     }>;
 
+    /** ✅ FRAMEWORK PATTERN: Reasoning do planner (especialmente importante para empty plans) */
+    plannerReasoning?: string;
+
     /** Metadata adicional sobre a execução */
     metadata: {
         totalSteps: number;
@@ -55,9 +58,6 @@ export interface SynthesizedResponse {
 
     /** Confiança na qualidade da resposta (0.0-1.0) */
     confidence: number;
-
-    /** Sugestões de follow-up para continuar a conversa */
-    followUpSuggestions: string[];
 
     /** Se precisa de mais clarificação do usuário */
     needsClarification: boolean;
@@ -121,12 +121,6 @@ export class ResponseSynthesizer {
                 analysis,
             );
 
-            // 3. Gerar follow-up suggestions
-            const followUps = this.generateFollowUpSuggestions(
-                context,
-                analysis,
-            );
-
             // 4. Calcular confiança na resposta
             const confidence = this.calculateResponseConfidence(
                 context,
@@ -136,7 +130,6 @@ export class ResponseSynthesizer {
             const response: SynthesizedResponse = {
                 content: synthesizedContent,
                 confidence,
-                followUpSuggestions: followUps,
                 needsClarification: analysis.hasAmbiguousResults,
                 includesError: analysis.hasErrors,
                 metadata: {
@@ -152,14 +145,6 @@ export class ResponseSynthesizer {
                     synthesisTime: Date.now() - startTime,
                 },
             };
-
-            this.logger.info('Response synthesis completed', {
-                confidence: response.confidence,
-                contentLength: response.content.length,
-                followUpsCount: response.followUpSuggestions.length,
-                includesError: response.includesError,
-                synthesisTime: Date.now() - startTime,
-            });
 
             return response;
         } catch (error) {
@@ -296,7 +281,7 @@ Response:`;
     }
 
     /**
-     * 📋 Estratégia Summary: Lista organizada de descobertas
+     * ✅ REFACTORED: Summary synthesis using LLM
      */
     private async summarySynthesis(
         context: ResponseSynthesisContext,
@@ -304,30 +289,46 @@ Response:`;
             typeof ResponseSynthesizer.prototype.analyzeExecutionResults
         >,
     ): Promise<string> {
-        let response = `Based on your question "${context.originalQuery}", here is the summary of results:\n\n`;
+        const prompt = `Create a summary response for the user's request.
 
-        if (analysis.rawResults.length > 0) {
-            response += `## 🔍 Results:\n`;
-            response += `\`\`\`json\n${JSON.stringify(analysis.rawResults, null, 2)}\n\`\`\`\n\n`;
-        }
+USER REQUEST: "${context.originalQuery}"
 
-        if (analysis.errors.length > 0) {
-            response += `## ⚠️ Issues Found:\n`;
-            analysis.errors.forEach((error, errorIndex) => {
-                response += `${errorIndex + 1}. ${error}\n`;
+EXECUTION RESULTS:
+${analysis.rawResults.length > 0 ? JSON.stringify(analysis.rawResults, null, 2) : 'No data found.'}
+
+ERRORS (if any):
+${analysis.errors.length > 0 ? analysis.errors.join('\n') : 'None'}
+
+EXECUTION STATS:
+- Steps completed: ${context.metadata.completedSteps}/${context.metadata.totalSteps}
+- Success rate: ${Math.round(analysis.successRate * 100)}%
+
+INSTRUCTIONS:
+- Create a clear summary in the same language as the user's request
+- Include the main findings from the results
+- Mention any errors if they occurred
+- Include execution statistics
+- Format as a well-structured summary
+
+Response:`;
+
+        try {
+            const response = await this.llmAdapter.call({
+                messages: [{ role: 'user', content: prompt }],
             });
-            response += '\n';
+            return (
+                response.content || this.createBasicResponse(context, analysis)
+            );
+        } catch (error) {
+            this.logger.warn('LLM summary synthesis failed', {
+                error: (error as Error).message,
+            });
+            return this.createBasicResponse(context, analysis);
         }
-
-        response += `## 📊 Execution Summary:\n`;
-        response += `- Steps executed: ${context.metadata.completedSteps}/${context.metadata.totalSteps}\n`;
-        response += `- Success rate: ${Math.round(analysis.successRate * 100)}%\n`;
-
-        return response;
     }
 
     /**
-     * 🔧 Estratégia Problem-Solution: Foca em problemas e soluções
+     * ✅ REFACTORED: Problem-Solution synthesis using LLM
      */
     private async problemSolutionSynthesis(
         context: ResponseSynthesisContext,
@@ -335,35 +336,46 @@ Response:`;
             typeof ResponseSynthesizer.prototype.analyzeExecutionResults
         >,
     ): Promise<string> {
-        let response = `Analyzing "${context.originalQuery}":\n\n`;
+        const prompt = `Analyze the request and provide a problem-solution focused response.
 
-        if (analysis.errors.length > 0) {
-            response += `## 🚨 Issues Identified:\n`;
-            analysis.errors.forEach((error, errorIdx) => {
-                response += `**${errorIdx + 1}.** ${error}\n`;
+USER REQUEST: "${context.originalQuery}"
+
+RESULTS:
+${analysis.rawResults.length > 0 ? JSON.stringify(analysis.rawResults, null, 2) : 'No results found.'}
+
+ISSUES/ERRORS:
+${analysis.errors.length > 0 ? analysis.errors.join('\n') : 'No issues found.'}
+
+EXECUTION INFO:
+- Success rate: ${Math.round(analysis.successRate * 100)}%
+- Steps completed: ${context.metadata.completedSteps}/${context.metadata.totalSteps}
+
+INSTRUCTIONS:
+- Respond in the same language as the user's request
+- Focus on problems found and their solutions
+- Highlight any issues that need attention
+- Suggest actionable next steps
+- Be constructive and solution-oriented
+
+Response:`;
+
+        try {
+            const response = await this.llmAdapter.call({
+                messages: [{ role: 'user', content: prompt }],
             });
-            response += '\n';
+            return (
+                response.content || this.createBasicResponse(context, analysis)
+            );
+        } catch (error) {
+            this.logger.warn('LLM problem-solution synthesis failed', {
+                error: (error as Error).message,
+            });
+            return this.createBasicResponse(context, analysis);
         }
-
-        if (analysis.rawResults.length > 0) {
-            response += `## ✅ Results:\n`;
-            response += `\`\`\`json\n${JSON.stringify(analysis.rawResults, null, 2)}\n\`\`\`\n\n`;
-        }
-
-        response += `## 🎯 Recommended Next Steps:\n`;
-        if (analysis.errors.length > 0) {
-            response += `- Resolve the issues identified above\n`;
-        }
-        if (analysis.successRate < 1) {
-            response += `- Check steps that were not completed\n`;
-        }
-        response += `- Apply the discoveries found\n`;
-
-        return response;
     }
 
     /**
-     * 🔬 Estratégia Technical: Detalhes técnicos completos
+     * ✅ REFACTORED: Technical synthesis using LLM
      */
     private async technicalSynthesis(
         context: ResponseSynthesisContext,
@@ -371,44 +383,63 @@ Response:`;
             typeof ResponseSynthesizer.prototype.analyzeExecutionResults
         >,
     ): Promise<string> {
-        let response = `## Technical Analysis Report\n\n`;
-        response += `**Query:** ${context.originalQuery}\n`;
-        response += `**Planner:** ${context.plannerType}\n`;
-        response += `**Execution Stats:** ${context.metadata.completedSteps}/${context.metadata.totalSteps} steps (${Math.round(analysis.successRate * 100)}% success rate)\n\n`;
+        const planStepsInfo = context.planSteps
+            ? context.planSteps.map((step) => ({
+                  id: step.id,
+                  description: step.description,
+                  status: step.status,
+                  result: step.result,
+              }))
+            : [];
 
-        if (context.planSteps) {
-            response += `### Execution Steps:\n`;
-            context.planSteps.forEach((step) => {
-                const status =
-                    step.status === 'completed'
-                        ? '✅'
-                        : step.status === 'failed'
-                          ? '❌'
-                          : '⏸️';
-                response += `${status} **${step.id}:** ${step.description}\n`;
+        const prompt = `Generate a technical analysis report for the execution.
+
+USER REQUEST: "${context.originalQuery}"
+
+EXECUTION DETAILS:
+- Planner Type: ${context.plannerType}
+- Steps Completed: ${context.metadata.completedSteps}/${context.metadata.totalSteps}
+- Success Rate: ${Math.round(analysis.successRate * 100)}%
+- Execution Time: ${context.metadata.executionTime || 'N/A'}ms
+
+PLAN STEPS:
+${planStepsInfo.length > 0 ? JSON.stringify(planStepsInfo, null, 2) : 'No plan steps available'}
+
+RESULTS:
+${analysis.rawResults.length > 0 ? JSON.stringify(analysis.rawResults, null, 2) : 'No results'}
+
+ERRORS:
+${analysis.errors.length > 0 ? analysis.errors.join('\n') : 'No errors'}
+
+INSTRUCTIONS:
+- Generate a detailed technical report in the same language as the user's request
+- Include all execution details
+- Present data in a clear, technical format
+- Include performance metrics
+- Be precise and comprehensive
+
+Response:`;
+
+        try {
+            const response = await this.llmAdapter.call({
+                messages: [{ role: 'user', content: prompt }],
             });
-            response += '\n';
-        }
-
-        if (analysis.rawResults.length > 0) {
-            response += `### Results:\n`;
-            response += `\`\`\`json\n${JSON.stringify(analysis.rawResults, null, 2)}\n\`\`\`\n\n`;
-        }
-
-        if (analysis.errors.length > 0) {
-            response += `### Errors:\n`;
-            analysis.errors.forEach((error) => {
-                response += `- ${error}\n`;
+            return (
+                response.content || this.createBasicResponse(context, analysis)
+            );
+        } catch (error) {
+            this.logger.warn('LLM technical synthesis failed', {
+                error: (error as Error).message,
             });
+            return this.createBasicResponse(context, analysis);
         }
-
-        return response;
     }
 
     // ==================== HELPER METHODS ====================
 
     /**
-     * Cria resposta básica quando LLM não está disponível
+     * ✅ REFACTORED: Basic fallback response (minimal formatting)
+     * This should only be used when LLM is completely unavailable
      */
     private createBasicResponse(
         context: ResponseSynthesisContext,
@@ -416,70 +447,20 @@ Response:`;
             typeof ResponseSynthesizer.prototype.analyzeExecutionResults
         >,
     ): string {
-        let response = `About "${context.originalQuery}":\n\n`;
+        // ✅ FRAMEWORK BEST PRACTICE: Return raw data when LLM unavailable
+        // Let the application layer handle formatting if needed
+        const response = {
+            request: context.originalQuery,
+            results: analysis.rawResults,
+            errors: analysis.errors,
+            execution: {
+                completed: context.metadata.completedSteps,
+                total: context.metadata.totalSteps,
+                successRate: analysis.successRate,
+            },
+        };
 
-        if (analysis.rawResults.length > 0) {
-            response += `Results:\n`;
-            response += `\`\`\`json\n${JSON.stringify(analysis.rawResults, null, 2)}\n\`\`\`\n`;
-        }
-
-        if (analysis.errors.length > 0) {
-            response += `\nIssues found:\n`;
-            analysis.errors.forEach((error, _i) => {
-                response += `• ${error}\n`;
-            });
-        }
-
-        response += `\nExecution: ${context.metadata.completedSteps}/${context.metadata.totalSteps} steps completed.`;
-
-        return response;
-    }
-
-    /**
-     * Gera sugestões de follow-up baseadas no contexto
-     */
-    private generateFollowUpSuggestions(
-        context: ResponseSynthesisContext,
-        analysis: ReturnType<
-            typeof ResponseSynthesizer.prototype.analyzeExecutionResults
-        >,
-    ): string[] {
-        const suggestions: string[] = [];
-
-        // Sugestões baseadas em resultados
-        if (analysis.rawResults.length > 0) {
-            suggestions.push('Posso explicar melhor algum desses resultados?');
-            suggestions.push(
-                'Quer que eu detalhe alguma informação específica?',
-            );
-        }
-
-        // Sugestões baseadas em erros
-        if (analysis.errors.length > 0) {
-            suggestions.push('Posso ajudar a resolver esses problemas?');
-            suggestions.push('Quer tentar uma abordagem diferente?');
-        }
-
-        // Sugestões genéricas baseadas no tipo de query
-        const query = context.originalQuery.toLowerCase();
-        if (query.includes('como')) {
-            suggestions.push('Precisa de mais detalhes sobre a implementação?');
-        }
-        if (query.includes('problema') || query.includes('erro')) {
-            suggestions.push(
-                'Quer que eu analise mais profundamente o problema?',
-            );
-        }
-        if (query.includes('melhorar') || query.includes('otimizar')) {
-            suggestions.push('Posso sugerir outras melhorias?');
-        }
-
-        // Sempre ter uma sugestão genérica
-        if (suggestions.length === 0) {
-            suggestions.push('Tem mais alguma dúvida sobre isso?');
-        }
-
-        return suggestions.slice(0, 3); // Máximo 3 sugestões
+        return JSON.stringify(response, null, 2);
     }
 
     /**
@@ -516,23 +497,31 @@ Response:`;
     }
 
     /**
-     * Cria resposta de fallback em caso de erro
+     * ✅ REFACTORED: Fallback response returns raw error data
      */
     private createFallbackResponse(
         context: ResponseSynthesisContext,
         error: Error,
     ): SynthesizedResponse {
+        // ✅ FRAMEWORK BEST PRACTICE: Return raw data on error
+        // Never use hardcoded strings in any language
+        const errorResponse = {
+            type: 'synthesis_error',
+            request: context.originalQuery,
+            execution: {
+                completed: context.metadata.completedSteps,
+                total: context.metadata.totalSteps,
+            },
+            error: error.message,
+        };
+
         return {
-            content: `Executei a análise para "${context.originalQuery}" e completei ${context.metadata.completedSteps} de ${context.metadata.totalSteps} steps. Houve uma dificuldade na síntese final dos resultados, mas o processo foi executado. Posso tentar explicar os resultados de forma diferente se precisar.`,
-            confidence: 0.3,
-            followUpSuggestions: [
-                'Posso tentar explicar os resultados novamente?',
-                'Quer que eu foque em um aspecto específico?',
-            ],
+            content: JSON.stringify(errorResponse, null, 2),
+            confidence: 0.1,
             needsClarification: true,
             includesError: true,
             metadata: {
-                synthesisStrategy: 'fallback',
+                synthesisStrategy: 'error-fallback',
                 discoveryCount: 0,
                 primaryFindings: [],
                 error: error.message,

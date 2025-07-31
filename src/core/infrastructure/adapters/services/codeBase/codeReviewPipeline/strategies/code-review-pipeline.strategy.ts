@@ -16,6 +16,7 @@ import { BasePipelineStage } from '../../../pipeline/base-stage.abstract';
 import { ProcessFilesPrLevelReviewStage } from '../stages/process-files-pr-level-review.stage';
 import { CreatePrLevelCommentsStage } from '../stages/create-pr-level-comments.stage';
 import { CreateFileCommentsStage } from '../stages/create-file-comments.stage';
+import { ValidateNewCommitsStage } from '../stages/validate-new-commits.stage';
 
 @Injectable()
 export class CodeReviewPipelineStrategy
@@ -23,6 +24,7 @@ export class CodeReviewPipelineStrategy
 {
     constructor(
         private readonly validateConfigStage: ValidateConfigStage,
+        private readonly validateNewCommitsStage: ValidateNewCommitsStage,
         private readonly fetchChangedFilesStage: FetchChangedFilesStage,
         private readonly initialCommentStage: InitialCommentStage,
         private readonly processFilesPrLevelReviewStage: ProcessFilesPrLevelReviewStage,
@@ -37,6 +39,7 @@ export class CodeReviewPipelineStrategy
     configureStages(): BasePipelineStage<CodeReviewPipelineContext>[] {
         return [
             this.validateConfigStage,
+            this.validateNewCommitsStage,
             this.fetchChangedFilesStage,
             this.initialCommentStage,
             this.processFilesPrLevelReviewStage,

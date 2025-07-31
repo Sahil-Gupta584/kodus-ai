@@ -35,6 +35,7 @@ import { CreateFileCommentsStage } from '@/core/infrastructure/adapters/services
 import { CodeAnalysisASTCleanupStage } from '@/ee/codeReview/stages/code-analysis-ast-cleanup.stage';
 import { TeamAutomationModule } from './teamAutomation.module';
 import { PullRequestMessagesModule } from './pullRequestMessages.module';
+import { ValidateNewCommitsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/validate-new-commits.stage';
 
 @Module({
     imports: [
@@ -58,6 +59,7 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
         CodeReviewPipelineStrategyEE,
         // Stages
         ValidateConfigStage,
+        ValidateNewCommitsStage,
         FetchChangedFilesStage,
         InitialCommentStage,
         BatchCreationStage,

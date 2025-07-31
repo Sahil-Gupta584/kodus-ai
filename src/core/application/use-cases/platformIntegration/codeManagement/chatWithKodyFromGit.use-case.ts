@@ -145,9 +145,8 @@ export class ChatWithKodyFromGitUseCase {
             );
 
             let response = '';
-
             if (
-                posthogClient.isFeatureEnabled(
+                await posthogClient.isFeatureEnabled(
                     'conversation-agent',
                     organizationAndTeamData.organizationId,
                     organizationAndTeamData,
@@ -180,14 +179,14 @@ export class ChatWithKodyFromGitUseCase {
                     thread: thread,
                 });
                 console.log('Response:', response);
+            } else {
+                response = await this.agentService.conversationWithKody(
+                    organizationAndTeamData,
+                    sender.id,
+                    message,
+                    sender.login,
+                );
             }
-
-            response = await this.agentService.conversationWithKody(
-                organizationAndTeamData,
-                sender.id,
-                message,
-                sender.login,
-            );
 
             await this.codeManagementService.createResponseToComment({
                 organizationAndTeamData,

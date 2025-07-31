@@ -23,8 +23,8 @@ echo "🔑 Configurando autenticação..."
 sed -i.bak "s/\${GAR_PROJECT_ID}/$PROJECT_ID/g" .npmrc
 echo "//us-central1-npm.pkg.dev/$PROJECT_ID/kodus-pkg/:_authToken=$NPM_TOKEN" >> .npmrc
 
-# Build e publicar
-yarn prepack && npm publish --registry=https://us-central1-npm.pkg.dev/$PROJECT_ID/kodus-pkg/ --access public
+# Build e publicar (com variável de ambiente definida)
+GAR_PROJECT_ID=$PROJECT_ID yarn build && yarn lint && npm publish --registry=https://us-central1-npm.pkg.dev/$PROJECT_ID/kodus-pkg/ --access public
 
 # Limpar .npmrc (remover linha de autenticação e restaurar variável)
 echo "🧹 Limpando configuração..."

@@ -20,19 +20,11 @@ export class ConversationAgentUseCase implements IUseCase {
             const { prompt, organizationAndTeamData, prepareContext, thread } =
                 request;
 
-            // Usar o método flexível do provider
-            let result: {
-                response: string;
-                timestamp: string;
-            };
-
-            result = await this.conversationAgentProvider.execute(prompt, {
+            return await this.conversationAgentProvider.execute(prompt, {
                 organizationAndTeamData,
                 prepareContext,
                 thread,
             });
-
-            return result;
         } catch (error) {
             console.error('Erro no use-case de conversação:', error);
             throw new Error(`Falha ao processar conversação: ${error.message}`);
