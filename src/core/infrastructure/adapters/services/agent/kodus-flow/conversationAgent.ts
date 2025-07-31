@@ -37,7 +37,7 @@ export class ConversationAgentProvider {
 
     private createLLMAdapter() {
         const llm = this.llmProviderService.getLLMProvider({
-            model: LLMModelProvider.OPENAI_GPT_4_1,
+            model: LLMModelProvider.GEMINI_2_5_PRO,
             temperature: 0,
             maxTokens: 8000,
         });
