@@ -565,7 +565,10 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                     main: provider,
                     fallback: fallbackProvider,
                 })
-                .setParser(ParserType.ZOD, schema)
+                .setParser(ParserType.ZOD, schema, {
+                    provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
+                    fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
+                })
                 .setLLMJsonMode(true)
                 .setPayload(payload)
                 .addPrompt({
