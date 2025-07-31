@@ -165,6 +165,7 @@ export interface AzureRepoChange {
         objectId: string;
         originalObjectId?: string;
         path?: string;
+        isFolder?: boolean;
     };
 }
 
@@ -238,4 +239,3 @@ export interface AzureRepoReviewerWithVote {
     vote: number; // int16
     votedFor: any;
 }
-

@@ -27,7 +27,6 @@ import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-k
 import { IntegrationEntity } from '@/core/domain/integrations/entities/integration.entity';
 import { GithubAuthDetail } from '@/core/domain/authIntegrations/types/github-auth-detail.type';
 import {
-    AuthorContributions,
     OneSentenceSummaryItem,
     PullRequestAuthor,
     PullRequestCodeReviewTime,
@@ -63,14 +62,6 @@ import { IntegrationConfigEntity } from '@/core/domain/integrationConfigs/entiti
 import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { CodeManagementConnectionStatus } from '@/shared/utils/decorators/validate-code-management-integration.decorator';
-import {
-    DORA_METRICS_FACTORY_TOKEN,
-    IDoraMetricsFactory,
-} from '@/core/domain/metrics/contracts/doraMetrics.factory.contract';
-import {
-    ORGANIZATION_METRICS_SERVICE_TOKEN,
-    IOrganizationMetricsService,
-} from '@/core/domain/organizationMetrics/contracts/organizationMetrics.service.contract';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { GitHubReaction } from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
 import {
@@ -163,14 +154,8 @@ export class GithubService
         @Inject(TEAM_SERVICE_TOKEN)
         private readonly teamService: ITeamService,
 
-        @Inject(ORGANIZATION_METRICS_SERVICE_TOKEN)
-        private readonly organizationMetricsService: IOrganizationMetricsService,
-
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parameterService: IParametersService,
-
-        @Inject(DORA_METRICS_FACTORY_TOKEN)
-        private readonly doraMetricsFactory: IDoraMetricsFactory,
 
         private readonly llmProviderService: LLMProviderService,
 
@@ -3366,6 +3351,10 @@ export class GithubService
                 await this.integrationConfigService.findOne({
                     configKey: IntegrationConfigKey.REPOSITORIES,
                     configValue: [{ id: params?.repository?.id?.toString() }],
+                    integration: {
+                        status: true,
+                        platform: PlatformType.GITHUB,
+                    },
                 });
 
             return integrationConfig &&

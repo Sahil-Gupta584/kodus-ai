@@ -21,6 +21,7 @@ import {
     OneSentenceSummaryItem,
     ReactionsInComments,
     PullRequestAuthor,
+    PullRequestDetails,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { v4 as uuidv4, v4 } from 'uuid';
@@ -54,6 +55,7 @@ import { generateWebhookToken } from '@/shared/utils/webhooks/webhookTokenCrypto
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
 import {
     AzurePullRequestVote,
+    AzureRepoCommit,
     AzureRepoPRThread,
     EventConfig,
 } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
@@ -76,7 +78,6 @@ export class AzureReposService
         Omit<
             ICodeManagementService,
             | 'getOrganizations'
-            | 'getPullRequestDetails'
             | 'getWorkflows'
             | 'getListMembers'
             | 'getCommitsByReleaseMode'
@@ -3399,5 +3400,71 @@ export class AzureReposService
             | 'SPAM';
     }): Promise<any | null> {
         throw new Error('Method not implemented.');
+    }
+
+    async getPullRequestDetails(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<any | null> {
+        const { organizationAndTeamData, repository, prNumber } = params;
+
+        try {
+            const authDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            if (!projectId) {
+                throw new Error(
+                    `Project ID not found for repository ${repository.name}`,
+                );
+            }
+
+            const pullRequest =
+                await this.azureReposRequestHelper.getPullRequestDetails({
+                    orgName: authDetails.orgName,
+                    token: authDetails.token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                });
+
+            if (!pullRequest) {
+                this.logger.warn({
+                    message: `Pull request #${prNumber} not found in repository ${repository.name}`,
+                    context: this.getPullRequestDetails.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        repository: repository.name,
+                        prNumber,
+                    },
+                });
+                return null;
+            }
+
+            const pr = this.transformPullRequest(
+                pullRequest,
+                repository.name,
+                organizationAndTeamData.organizationId,
+            );
+
+            return pr;
+        } catch (error) {
+            this.logger.error({
+                message: `Error getting pull request details for #${prNumber} in repository ${repository.name}`,
+                context: this.getPullRequestDetails.name,
+                error: error,
+                metadata: {
+                    organizationAndTeamData,
+                    repository: repository.name,
+                    prNumber,
+                },
+            });
+            return null; // Return null to indicate failure
+        }
     }
 }

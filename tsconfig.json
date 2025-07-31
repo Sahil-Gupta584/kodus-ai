@@ -22,6 +22,11 @@
         "noEmitHelpers": true,
         "importHelpers": true,
         "inlineSources": true,
+        "typeRoots": ["./node_modules/@types"],
+        "types": ["node", "jest"],
+        "tsBuildInfoFile": "./dist/.tsbuildinfo",
+        "assumeChangesOnlyAffectDirectDependencies": true,
+        "disableSourceOfProjectReferenceRedirect": true,
 
         "paths": {
             "@/*": ["src/*"]
@@ -32,5 +37,13 @@
         "watchFile": "useFsEventsOnParentDirectory"
     },
     "include": ["src", "test/**/*.ts", "tsconfig-paths-bootstrap.js"],
-    "exclude": ["node_modules", "dist", "ormlogs.log"]
+    "exclude": [
+        "node_modules",
+        "dist",
+        "ormlogs.log",
+        "packages/kodus-flow/src",
+        "**/*.map",
+        "**/*.spec.ts",
+        "**/*.test.ts"
+    ]
 }

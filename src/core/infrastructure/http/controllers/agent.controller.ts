@@ -7,9 +7,13 @@ import { GetGuildByUserUseCase } from '@/core/application/use-cases/agent/get-gu
 import { GetMemoryUseCase } from '@/core/application/use-cases/agent/get-memory.use-case';
 import { GetRouterUseCase } from '@/core/application/use-cases/agent/get-router-use-case';
 import { SendMetricMessageUseCase } from '@/core/application/use-cases/agent/send-metrics-message';
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { CheckIfHasTeamConfigUseCase } from '@/core/application/use-cases/agent/check-has-team-config.use-case';
 import { ExecutionAgentPromptUseCase } from '@/core/application/use-cases/agent/execute-agent.use-case';
+import { NewAgentUseCase } from '@/core/application/use-cases/agent/teste';
+import { ConversationAgentUseCase } from '@/core/application/use-cases/agent/conversation-agent.use-case';
+import { OrganizationAndTeamDataDto } from '../dtos/organizationAndTeamData.dto';
+import { createThreadId } from '@kodus/flow';
 
 @Controller('agent')
 export class AgentController {
@@ -25,6 +29,8 @@ export class AgentController {
         private readonly sendMetricMessageUseCase: SendMetricMessageUseCase,
         private readonly checkIfHasTeamConfigUseCase: CheckIfHasTeamConfigUseCase,
         private readonly executionAgentPromptUseCase: ExecutionAgentPromptUseCase,
+        private readonly newAgentUseCase: NewAgentUseCase,
+        private readonly conversationAgentUseCase: ConversationAgentUseCase,
     ) {}
 
     @Post('/router')
@@ -80,5 +86,32 @@ export class AgentController {
     @Post('/execute-agent')
     public async executeAgentByType(@Body() body: any) {
         return this.executionAgentPromptUseCase.execute(body);
+    }
+
+    @Get('/teste')
+    public async newAgent() {
+        // This method is not defined in the provided code, but it should be implemented similarly to the others.
+        // Assuming there's an ExecuteToolUseCase that handles tool execution.
+        return this.newAgentUseCase.execute();
+    }
+
+    @Post('/conversation')
+    public async conversation(
+        @Body()
+        body: {
+            prompt: string;
+            organizationAndTeamData: OrganizationAndTeamDataDto;
+        },
+    ) {
+        const thread = createThreadId(
+            {
+                organizationId: body.organizationAndTeamData.organizationId,
+                teamId: body.organizationAndTeamData.teamId,
+            },
+            {
+                prefix: 'cmc', // Code Management Chat
+            },
+        );
+        return this.conversationAgentUseCase.execute({ ...body, thread });
     }
 }

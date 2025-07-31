@@ -12,7 +12,7 @@ export const AST_MICROSERVICE_OPTIONS: ClientProviderOptions = {
             cwd(),
             'node_modules/@kodus/kodus-proto/kodus/ast/v3/analyzer.proto',
         ),
-        url: process.env.SERVICE_AST_URL ?? null,
+        url: process.env.API_SERVICE_AST_URL ?? null,
         loader: {
             includeDirs: [resolve(cwd(), 'node_modules/@kodus/kodus-proto')],
         },

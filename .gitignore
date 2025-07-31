@@ -46,7 +46,6 @@ lerna-debug.log*
 .yarnrc.yml
 .yarn
 
-
 .cosine
 .vscode/settings.json
 .vscode/launch.json
@@ -63,7 +62,10 @@ environment.ts
 src/ee/configs/environment/environment.ts
 certs
 .windsurf
+.sdk
 
 .yalc
 yalc.lock
-packages/kodus-flow/
+# packages
+# .packages
+#packages/kodus-flow/

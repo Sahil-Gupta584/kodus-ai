@@ -120,17 +120,25 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                 },
             });
 
-            const lastExecution =
-                await this.findLastTeamAutomationCodeReviewExecution(
-                    context.organizationAndTeamData.teamId,
-                    context.pullRequest.number,
-                    context.repository.id,
+            const commits =
+                await this.codeManagementService.getCommitsForPullRequestForCodeReview(
+                    {
+                        organizationAndTeamData:
+                            context.organizationAndTeamData,
+                        repository: context.repository,
+                        prNumber: context.pullRequest.number,
+                    },
                 );
+
+            if (!commits?.length) {
+                return context;
+            }
+
+            const lastAnalyzedCommit = commits[commits.length - 1];
 
             return this.updateContext(context, (draft) => {
                 draft.lineComments = [];
-                draft.lastAnalyzedCommit =
-                    lastExecution?.dataExecution?.lastAnalyzedCommit;
+                draft.lastAnalyzedCommit = lastAnalyzedCommit;
             });
         }
 

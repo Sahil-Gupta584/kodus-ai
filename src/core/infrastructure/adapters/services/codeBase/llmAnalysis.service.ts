@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { IAIAnalysisService } from '../../../../domain/codeBase/contracts/AIAnalysisService.contract';
 import {
     FileChangeContext,
@@ -8,34 +8,24 @@ import {
     ReviewModeResponse,
     FileChange,
     ISafeguardResponse,
-    ReviewModeConfig,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '../logger/pino.service';
-import { RunnableSequence } from '@langchain/core/runnables';
-import {
-    BaseOutputParser,
-    StringOutputParser,
-    StructuredOutputParser,
-} from '@langchain/core/output_parsers';
+
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
-import { HumanMessage } from '@langchain/core/messages';
-import { AnyZodObject, z } from 'zod';
+import { z } from 'zod';
 import { LLMResponseProcessor } from './utils/transforms/llmResponseProcessor.transform';
 import { prompt_validateImplementedSuggestions } from '@/shared/utils/langchainCommon/prompts/validateImplementedSuggestions';
 import { prompt_selectorLightOrHeavyMode_system } from '@/shared/utils/langchainCommon/prompts/seletorLightOrHeavyMode';
 import {
-    CodeReviewPayload,
     prompt_codereview_system_gemini,
     prompt_codereview_user_deepseek,
     prompt_codereview_user_gemini,
 } from '@/shared/utils/langchainCommon/prompts/configuration/codeReview';
 import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
 import { prompt_codeReviewSafeguard_system } from '@/shared/utils/langchainCommon/prompts';
-import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import {
     LLMModelProvider,
-    LLMProviderService,
     ParserType,
     PromptRole,
     PromptRunnerService,
