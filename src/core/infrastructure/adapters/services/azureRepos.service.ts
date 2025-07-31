@@ -1089,6 +1089,24 @@ export class AzureReposService
                         }
                     }
 
+                    let commitParents = commit.parents || null;
+
+                    if (!commitParents) {
+                        try {
+                            const commitDetails =
+                                await this.azureReposRequestHelper.getCommit({
+                                    orgName,
+                                    token,
+                                    projectId,
+                                    repositoryId: repository.id,
+                                    commitId: commit.commitId,
+                                });
+                            commitParents = commitDetails.parents || [];
+                        } catch {
+                            commitParents = [];
+                        }
+                    }
+
                     return {
                         sha: commit.commitId,
                         message: commit.comment,
@@ -1100,6 +1118,7 @@ export class AzureReposService
                             username: authorName,
                             id: userId,
                         },
+                        parents: commitParents || [],
                     };
                 }),
             );

@@ -1913,6 +1913,7 @@ export class BitbucketService
                             email,
                             date: commit?.date,
                         },
+                        parents: commit?.parents?.map((p) => p.hash) || [],
                     };
                 })
                 .sort(

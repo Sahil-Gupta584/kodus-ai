@@ -19,6 +19,7 @@ import { ProcessFilesPrLevelReviewStage } from '@/core/infrastructure/adapters/s
 import { CreatePrLevelCommentsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/create-pr-level-comments.stage';
 import { CreateFileCommentsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/create-file-comments.stage';
 import { CodeAnalysisASTCleanupStage } from '../stages/code-analysis-ast-cleanup.stage';
+import { ValidateNewCommitsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/validate-new-commits.stage';
 
 @Injectable()
 export class CodeReviewPipelineStrategyEE
@@ -26,6 +27,7 @@ export class CodeReviewPipelineStrategyEE
 {
     constructor(
         private readonly validateConfigStage: ValidateConfigStage,
+        private readonly validateNewCommitsStage: ValidateNewCommitsStage,
         private readonly fetchChangedFilesStage: FetchChangedFilesStage,
         private readonly initialCommentStage: InitialCommentStage,
         private readonly kodyFineTuningStage: KodyFineTuningStage,
@@ -47,6 +49,7 @@ export class CodeReviewPipelineStrategyEE
     configureStages(): PipelineStage<CodeReviewPipelineContext>[] {
         return [
             this.validateConfigStage,
+            this.validateNewCommitsStage,
             this.fetchChangedFilesStage,
             this.initialCommentStage,
             this.kodyFineTuningStage,

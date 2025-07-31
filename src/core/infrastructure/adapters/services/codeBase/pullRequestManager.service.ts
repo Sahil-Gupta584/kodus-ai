@@ -7,6 +7,8 @@ import { IPullRequestManagerService } from '../../../../domain/codeBase/contract
 import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
 import { PullRequestAuthor } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { CacheService } from '@/shared/utils/cache/cache.service';
+import { ICommit } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { Commit } from '@/config/types/general/commit.type';
 
 @Injectable()
 export class PullRequestHandlerService implements IPullRequestManagerService {
@@ -169,6 +171,58 @@ export class PullRequestHandlerService implements IPullRequestManagerService {
                 error,
                 metadata: { organizationAndTeamData },
             });
+            throw error;
+        }
+    }
+
+    async getNewCommitsSinceLastExecution(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repository: { name: string; id: any },
+        pullRequest: any,
+        lastCommit?: any,
+    ): Promise<Commit[]> {
+        try {
+            const commits =
+                await this.codeManagementService.getCommitsForPullRequestForCodeReview(
+                    {
+                        organizationAndTeamData,
+                        repository,
+                        prNumber: pullRequest?.number,
+                    },
+                );
+
+            const mappedCommits: Commit[] = commits?.map((commit) => {
+                return {
+                    ...commit,
+                    parents:
+                        commit.parents?.map((p: string) => ({ sha: p })) || [],
+                };
+            });
+
+            if (lastCommit) {
+                const lastCommitIndex = mappedCommits.findIndex(
+                    (commit) => commit.sha === lastCommit.sha,
+                );
+
+                if (lastCommitIndex !== -1) {
+                    return mappedCommits.slice(lastCommitIndex + 1);
+                }
+            }
+
+            return mappedCommits;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error fetching new commits since last execution',
+                context: PullRequestHandlerService.name,
+                error,
+                metadata: {
+                    organizationAndTeamData,
+                    repository,
+                    pullRequestNumber: pullRequest?.number,
+                    lastCommit,
+                },
+            });
+
             throw error;
         }
     }
