@@ -54,7 +54,7 @@
         "@gitbeaker/rest": "^43.3.0",
         "@golevelup/nestjs-rabbitmq": "^6.0.2",
         "@google/generative-ai": "^0.24.1",
-        "@kodus/flow": "^0.1.0",
+        "@kodus/flow": "file:./packages/kodus-flow",
         "@kodus/kodus-common": "^1.2.0",
         "@kodus/kodus-proto": "https://registry.npmjs.org/@kodus/kodus-proto/-/kodus-proto-3.1.2.tgz",
         "@langchain/anthropic": "^0.3.25",

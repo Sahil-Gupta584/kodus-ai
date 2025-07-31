@@ -38,9 +38,9 @@ export class ConversationAgentProvider {
     private createLLMAdapter() {
         const llm = this.llmProviderService.getLLMProvider({
             model: LLMModelProvider.GEMINI_2_5_FLASH,
-            temperature: 0.1,
+            temperature: 0,
             maxTokens: 8000,
-            maxReasoningTokens: 1000,
+            maxReasoningTokens: 500,
         });
 
         // ✅ WRAPPER para compatibilizar com nossa interface
@@ -84,9 +84,7 @@ export class ConversationAgentProvider {
             {
                 name: 'kodus-mcp-server',
                 type: 'http' as const,
-                url:
-                    process.env.API_KODUS_MCP_SERVER_URL ??
-                    'http://localhost:3001/mcp',
+                url: process.env.API_KODUS_MCP_SERVER_URL,
                 timeout: 10_000,
                 retries: 1,
                 headers: { contentType: 'application/json' },
@@ -204,12 +202,8 @@ export class ConversationAgentProvider {
             },
         );
 
-        return {
-            response:
-                typeof result.result === 'string'
-                    ? result.result
-                    : JSON.stringify(result.result),
-            timestamp: new Date().toISOString(),
-        };
+        return typeof result.result === 'string'
+            ? result.result
+            : JSON.stringify(result.result);
     }
 }

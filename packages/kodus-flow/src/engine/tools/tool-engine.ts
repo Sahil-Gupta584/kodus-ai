@@ -1,8 +1,3 @@
-/**
- * @module engine/tool-engine
- * @description Tool engine with Zod validation and timeout protection
- */
-
 import { createLogger } from '../../observability/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import type {
@@ -15,6 +10,11 @@ import type {
     ToolMetadataForLLM,
 } from '../../core/types/tool-types.js';
 import { createToolContext } from '../../core/types/tool-types.js';
+import {
+    getBuiltInTools,
+    isBuiltInTool,
+    executeBuiltInTool,
+} from './built-in-tools.js';
 import type {
     ParallelToolsAction,
     SequentialToolsAction,
@@ -33,7 +33,6 @@ import {
     extractDependenciesFromPlan,
     type PlanDependencyExtractionConfig,
 } from '../planning/plan-dependency-extractor.js';
-import type { FeedbackOptimizer } from '../planning/feedback-optimizer.js';
 
 export class ToolEngine {
     private logger: ReturnType<typeof createLogger>;
@@ -41,7 +40,6 @@ export class ToolEngine {
     private config: ToolEngineConfig;
     private kernelHandler?: MultiKernelHandler;
     private router?: Router;
-    private feedbackOptimizer?: FeedbackOptimizer;
 
     constructor(
         config: ToolEngineConfig = {},
@@ -52,10 +50,6 @@ export class ToolEngine {
         this.kernelHandler = kernelHandler;
         this.router = router;
         this.logger = createLogger('tool-engine');
-        this.logger.info('Tool engine created', {
-            hasKernelHandler: !!kernelHandler,
-            hasRouter: !!router,
-        });
     }
 
     /**
@@ -68,11 +62,6 @@ export class ToolEngine {
             tool.name as ToolId,
             tool as ToolDefinition<unknown, unknown>,
         );
-
-        this.logger.info('Tool registered', {
-            toolName: tool.name,
-            description: tool.description,
-        });
     }
 
     /**
@@ -83,24 +72,9 @@ export class ToolEngine {
         toolName: ToolId,
         input: TInput,
     ): Promise<TOutput> {
-        console.log('@@@@ executeCall', toolName);
-
         const callId = IdGenerator.callId();
-        const timeout = this.config.timeout || 60000; // ✅ 60s timeout para ferramentas MCP
+        const timeout = this.config.timeout || 60000;
         const startTime = Date.now();
-
-        this.logger.info('🚀 TOOL ENGINE - Tool execution started', {
-            toolName,
-            callId,
-            inputKeys: Object.keys(input as Record<string, unknown>),
-            timeout,
-            hasKernelHandler: !!this.kernelHandler,
-            trace: {
-                source: 'tool-engine',
-                step: 'executeCall-start',
-                timestamp: Date.now(),
-            },
-        });
 
         try {
             // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
@@ -119,65 +93,10 @@ export class ToolEngine {
                 callId,
             );
 
-            // Race between execution and timeout
-            this.logger.debug('⚡ TOOL ENGINE - Starting execution race', {
-                toolName,
-                callId,
-                timeout,
-                trace: {
-                    source: 'tool-engine',
-                    step: 'execution-race-start',
-                    timestamp: Date.now(),
-                },
-            });
-
             const result = await Promise.race([
                 executionPromise,
                 timeoutPromise,
             ]);
-
-            console.log('@@@@ executeCall Result', result);
-
-            this.logger.debug('✅ TOOL ENGINE - Execution race completed', {
-                toolName,
-                callId,
-                executionTime: Date.now() - startTime,
-                trace: {
-                    source: 'tool-engine',
-                    step: 'execution-race-completed',
-                    timestamp: Date.now(),
-                },
-            });
-
-            // Record feedback metrics for successful execution
-            if (this.feedbackOptimizer) {
-                const executionTime = Date.now() - startTime;
-                this.feedbackOptimizer.recordToolExecution(
-                    toolName,
-                    executionTime,
-                    true, // success
-                    0, // no retries at this level
-                );
-            }
-
-            this.logger.info(
-                '✅ TOOL ENGINE - Tool execution completed successfully',
-                {
-                    toolName,
-                    callId,
-                    executionTime: Date.now() - startTime,
-                    hasResult: !!result,
-                    resultType: typeof result,
-                    resultKeys: result
-                        ? Object.keys(result as Record<string, unknown>)
-                        : [],
-                    trace: {
-                        source: 'tool-engine',
-                        step: 'executeCall-success',
-                        timestamp: Date.now(),
-                    },
-                },
-            );
 
             return result;
         } catch (error) {
@@ -202,16 +121,6 @@ export class ToolEngine {
                 },
             );
 
-            // Record feedback metrics for failed execution
-            if (this.feedbackOptimizer) {
-                this.feedbackOptimizer.recordToolExecution(
-                    toolName,
-                    executionTime,
-                    false, // failed
-                    0, // no retries at this level
-                );
-            }
-
             throw lastError;
         }
     }
@@ -224,22 +133,18 @@ export class ToolEngine {
         input: TInput,
         callId: string,
     ): Promise<TOutput> {
-        this.logger.debug('🔧 TOOL ENGINE - Internal execution started', {
-            toolName,
-            callId,
-            inputType: typeof input,
-            trace: {
-                source: 'tool-engine',
-                step: 'executeToolInternal-start',
-                timestamp: Date.now(),
-            },
-        });
+        if (isBuiltInTool(toolName)) {
+            const result = executeBuiltInTool(toolName);
 
-        // Find tool
+            // Built-in tools always fail now - throw error to indicate no built-in tools available
+            throw new Error(result.error);
+        }
+
         const tool = this.tools.get(toolName) as ToolDefinition<
             TInput,
             TOutput
         >;
+
         if (!tool) {
             this.logger.error(
                 '❌ TOOL ENGINE - Tool not found',
@@ -248,6 +153,7 @@ export class ToolEngine {
                     toolName,
                     callId,
                     availableTools: Array.from(this.tools.keys()),
+                    builtInTools: getBuiltInTools().map((t) => t.name),
                     trace: {
                         source: 'tool-engine',
                         step: 'tool-not-found',
@@ -258,27 +164,6 @@ export class ToolEngine {
             throw new Error(`Tool not found: ${toolName}`);
         }
 
-        this.logger.debug('✅ TOOL ENGINE - Tool found', {
-            toolName,
-            callId,
-            toolDescription: tool.description,
-            trace: {
-                source: 'tool-engine',
-                step: 'tool-found',
-                timestamp: Date.now(),
-            },
-        });
-
-        // ✅ Unified validation
-        this.logger.debug('🔍 TOOL ENGINE - Validating input', {
-            toolName,
-            callId,
-            trace: {
-                source: 'tool-engine',
-                step: 'validate-input',
-                timestamp: Date.now(),
-            },
-        });
         this.validateToolInput(tool, input);
 
         // Create tool context using factory function
@@ -290,40 +175,72 @@ export class ToolEngine {
             input as Record<string, unknown>,
         );
 
-        this.logger.debug('⚡ TOOL ENGINE - Executing tool function', {
-            toolName,
-            callId,
-            contextType: typeof context,
-            trace: {
-                source: 'tool-engine',
-                step: 'execute-tool-function',
-                timestamp: Date.now(),
-            },
-        });
-
         // Execute tool using execute function
-        const result = await tool.execute(input, context);
-
-        this.logger.debug('✅ TOOL ENGINE - Tool executed successfully', {
-            toolName,
-            callId,
-            resultType: typeof result,
-            hasResult: !!result,
-            trace: {
-                source: 'tool-engine',
-                step: 'executeToolInternal-success',
-                timestamp: Date.now(),
-            },
-        });
-
-        return result;
+        return await tool.execute(input, context);
     }
 
     /**
      * Get available tools with metadata for planner context engineering
+     * Includes both built-in tools and external tools
      */
     getAvailableTools(): ToolMetadataForPlanner[] {
-        return Array.from(this.tools.values())?.map((tool) => {
+        // Get built-in tools (always available)
+        const builtInTools = getBuiltInTools();
+
+        // Convert built-in tools to ToolMetadataForPlanner format
+        const builtInToolsForPlanner: ToolMetadataForPlanner[] =
+            builtInTools.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                inputSchema: {
+                    type: 'object' as const,
+                    properties: this.extractPropertiesWithRequiredFlag(
+                        (tool.parameters?.properties as Record<
+                            string,
+                            unknown
+                        >) || {},
+                        (tool.parameters?.required as string[]) || [],
+                    ),
+                    required: (tool.parameters?.required as string[]) || [],
+                },
+                config: {
+                    timeout: 30000, // Built-in tools are fast
+                    requiresAuth: false,
+                    allowParallel: true,
+                    maxConcurrentCalls: 10,
+                    source: 'system' as const,
+                },
+                categories: [],
+                dependencies: [],
+                tags: ['built-in', 'conversational'],
+                examples: [],
+                plannerHints: {
+                    useWhen:
+                        tool.name === 'conversation'
+                            ? [
+                                  'When responding to greetings, questions, or general conversation',
+                              ]
+                            : tool.name === 'analysis'
+                              ? [
+                                    'When analyzing information or providing detailed explanations',
+                                ]
+                              : [
+                                    'When creating plans or providing structured guidance',
+                                ],
+                    avoidWhen: [],
+                    combinesWith: [],
+                    conflictsWith: [],
+                },
+                errorHandling: {
+                    retryStrategy: 'none',
+                    maxRetries: 0,
+                    fallbackAction: 'continue',
+                    errorMessages: {},
+                },
+            }));
+
+        // Get external tools
+        const externalTools = Array.from(this.tools.values())?.map((tool) => {
             // Prioritize existing JSON Schema, then convert Zod if needed
             let jsonSchema: unknown = tool.jsonSchema;
 
@@ -405,14 +322,22 @@ export class ToolEngine {
                 },
             };
         });
+
+        // Return built-in tools first, then external tools
+        return [...builtInToolsForPlanner, ...externalTools];
     }
 
     /**
      * Get tools in the correct format for LLMs (OpenAI, Anthropic, etc.)
+     * Includes both built-in tools and external tools
      * Removes individual 'required' flags and keeps only the 'required' array
      */
     getToolsForLLM(): ToolMetadataForLLM[] {
-        return Array.from(this.tools.values()).map((tool) => {
+        // Get built-in tools (always available)
+        const builtInTools = getBuiltInTools();
+
+        // Get external tools
+        const externalTools = Array.from(this.tools.values()).map((tool) => {
             // Prioritize existing JSON Schema, then convert Zod if needed
             let jsonSchema: unknown = tool.jsonSchema;
 
@@ -423,7 +348,6 @@ export class ToolEngine {
                 tool.inputSchema !== null &&
                 'type' in
                     (tool.inputSchema as unknown as Record<string, unknown>) &&
-                // ✅ CORRIGIDO: Verificar se é realmente JSON Schema (não Zod)
                 !(
                     '_def' in
                     (tool.inputSchema as unknown as Record<string, unknown>)
@@ -486,6 +410,9 @@ export class ToolEngine {
                 },
             };
         });
+
+        // Return built-in tools first, then external tools
+        return [...builtInTools, ...externalTools];
     }
 
     /**
@@ -574,141 +501,25 @@ export class ToolEngine {
      */
     private registerEventHandlers(): void {
         if (!this.kernelHandler) {
-            this.logger.warn(
-                '🔧 NO KERNELHANDLER AVAILABLE FOR EVENT HANDLERS',
-                {
-                    trace: {
-                        source: 'tool-engine',
-                        step: 'register-event-handlers-no-kernelhandler',
-                        timestamp: Date.now(),
-                    },
-                },
-            );
             return;
         }
-
-        this.logger.info('🔧 REGISTERING TOOLENGINE EVENT HANDLERS', {
-            hasKernelHandler: !!this.kernelHandler,
-            trace: {
-                source: 'tool-engine',
-                step: 'register-event-handlers-start',
-                timestamp: Date.now(),
-            },
-        });
 
         // Register handler for tool execution requests
         this.kernelHandler.registerHandler(
             'tool.execute.request',
             async (event: AnyEvent) => {
-                console.log(
-                    '@@@@ registerEventHandlers',
-                    event.metadata?.correlationId,
-                );
-                // ✅ ADD: Log detalhado para debug
-                this.logger.info('🔧 [TOOL] HANDLER EXECUTION STARTED', {
-                    eventId: event.id,
-                    eventType: event.type,
-                    correlationId: event.metadata?.correlationId,
-                    hasData: !!event.data,
-                    dataKeys: event.data
-                        ? Object.keys(event.data as Record<string, unknown>)
-                        : [],
-                    trace: {
-                        source: 'tool-engine',
-                        step: 'handler-execution-start',
-                        timestamp: Date.now(),
-                    },
-                });
-
                 const correlationId = event.metadata?.correlationId;
-
-                // ✅ ADD: Log para rastrear duplicação
-                this.logger.info('🔍 [TOOL] HANDLER EXECUTION TRACE', {
-                    eventId: event.id,
-                    eventType: event.type,
-                    correlationId: event.metadata?.correlationId,
-                    timestamp: Date.now(),
-                    stackTrace: new Error().stack
-                        ?.split('\n')
-                        .slice(1, 3)
-                        .join('\n'),
-                });
 
                 const { toolName, input } = event.data as {
                     toolName: string;
                     input: unknown;
                 };
 
-                this.logger.info('🔧 [TOOL] Received tool execution request', {
-                    toolName,
-                    correlationId,
-                    eventId: event.id,
-                    hasInput: !!input,
-                });
-
                 try {
-                    this.logger.info('🔧 [TOOL] Executing tool', {
-                        toolName,
-                        correlationId,
-                    });
-
                     const result = await this.executeCall(toolName, input);
 
-                    this.logger.info('🔧 [TOOL] Tool execution successful', {
-                        toolName,
-                        correlationId,
-                        hasResult: !!result,
-                    });
-
-                    // Emit success response
-                    this.logger.info('📤 EMITTING TOOL EXECUTION RESPONSE', {
-                        toolName,
-                        correlationId,
-                        hasResult: !!result,
-                        resultKeys: result
-                            ? Object.keys(result as Record<string, unknown>)
-                            : [],
-                        trace: {
-                            source: 'tool-engine',
-                            step: 'emit-success-response',
-                            timestamp: Date.now(),
-                        },
-                    });
-
-                    // ✅ ADD: Log detalhado para debug
-                    this.logger.info('🎯 TOOL ENGINE EMIT KERNEL', {
-                        eventType: 'tool.execute.response',
-                        correlationId,
-                        kernelHandlerType: this.kernelHandler?.constructor.name,
-                        hasKernelHandler: !!this.kernelHandler,
-                        trace: {
-                            source: 'tool-engine',
-                            step: 'emit-kernel-debug',
-                            timestamp: Date.now(),
-                        },
-                    });
-
-                    // ✅ ADD: Log para verificar se o evento está sendo emitido corretamente
-                    this.logger.info(
-                        '🎯 TOOL ENGINE - EMITTING RESPONSE EVENT',
-                        {
-                            eventType: 'tool.execute.response',
-                            correlationId,
-                            hasResult: !!result,
-                            resultKeys: result
-                                ? Object.keys(result as Record<string, unknown>)
-                                : [],
-                            trace: {
-                                source: 'tool-engine',
-                                step: 'emit-response-event',
-                                timestamp: Date.now(),
-                            },
-                        },
-                    );
-
-                    // ✅ CORREÇÃO: Usar emitAsync para garantir delivery
                     if (this.kernelHandler?.emitAsync) {
-                        const emitResult = await this.kernelHandler.emitAsync(
+                        await this.kernelHandler.emitAsync(
                             'tool.execute.response',
                             {
                                 ...(typeof result === 'object' &&
@@ -728,23 +539,7 @@ export class ToolEngine {
                                 deliveryGuarantee: 'at-least-once',
                             },
                         );
-
-                        this.logger.info(
-                            '🎯 TOOL ENGINE - RESPONSE EVENT EMITTED VIA EMITASYNC',
-                            {
-                                eventType: 'tool.execute.response',
-                                correlationId,
-                                success: true,
-                                emitResult,
-                                trace: {
-                                    source: 'tool-engine',
-                                    step: 'response-event-emitted-via-emitasync',
-                                    timestamp: Date.now(),
-                                },
-                            },
-                        );
                     } else {
-                        // Fallback para emit básico
                         this.kernelHandler!.emit('tool.execute.response', {
                             ...(typeof result === 'object' && result !== null
                                 ? result
@@ -757,31 +552,11 @@ export class ToolEngine {
                                 toolName,
                             },
                         });
-
-                        // ✅ ADD: Log após emissão
-                        this.logger.info(
-                            '🎯 TOOL ENGINE - RESPONSE EVENT EMITTED VIA BASIC EMIT',
-                            {
-                                eventType: 'tool.execute.response',
-                                correlationId,
-                                success: true,
-                                trace: {
-                                    source: 'tool-engine',
-                                    step: 'response-event-emitted-via-basic-emit',
-                                    timestamp: Date.now(),
-                                },
-                            },
-                        );
                     }
 
                     // ✅ ACK the original event after successful processing
                     if (this.kernelHandler) {
                         await this.kernelHandler.ack(event.id);
-                        this.logger.debug('🎯 [TOOL] Event ACK successful', {
-                            eventId: event.id,
-                            toolName,
-                            correlationId,
-                        });
                     }
                 } catch (error) {
                     this.logger.error(
@@ -832,15 +607,6 @@ export class ToolEngine {
                 }
             },
         );
-
-        this.logger.info('✅ TOOLENGINE EVENT HANDLERS REGISTERED', {
-            eventTypes: ['tool.execute.request'],
-            trace: {
-                source: 'tool-engine',
-                step: 'register-event-handlers-complete',
-                timestamp: Date.now(),
-            },
-        });
     }
 
     /**
@@ -849,14 +615,6 @@ export class ToolEngine {
     setRouter(router: Router): void {
         this.router = router;
         this.logger.info('Router set for ToolEngine');
-    }
-
-    /**
-     * Set FeedbackOptimizer (for learning and optimization)
-     */
-    setFeedbackOptimizer(feedbackOptimizer: FeedbackOptimizer): void {
-        this.feedbackOptimizer = feedbackOptimizer;
-        this.logger.info('FeedbackOptimizer set for ToolEngine');
     }
 
     /**
@@ -874,13 +632,6 @@ export class ToolEngine {
     }
 
     /**
-     * Get FeedbackOptimizer status
-     */
-    hasFeedbackOptimizer(): boolean {
-        return !!this.feedbackOptimizer;
-    }
-
-    /**
      * Execute tool directly with timeout protection
      * Note: Retry logic is handled by Circuit Breaker at higher level
      */
@@ -891,18 +642,6 @@ export class ToolEngine {
         const callId = IdGenerator.callId();
         const timeout = this.config.timeout || 60000; // ✅ 60s timeout para ferramentas MCP
         const startTime = Date.now();
-
-        this.logger.info('🔧 TOOL EXECUTION STARTED (executeTool)', {
-            toolName,
-            callId,
-            inputKeys: Object.keys(input as Record<string, unknown>),
-            timeout,
-            trace: {
-                source: 'tool-engine',
-                step: 'tool-execution-started',
-                timestamp: Date.now(),
-            },
-        });
 
         try {
             // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
@@ -927,32 +666,6 @@ export class ToolEngine {
                 timeoutPromise,
             ]);
 
-            // Record feedback metrics for successful execution
-            if (this.feedbackOptimizer) {
-                const executionTime = Date.now() - startTime;
-                this.feedbackOptimizer.recordToolExecution(
-                    toolName,
-                    executionTime,
-                    true, // success
-                    0, // no retries at this level
-                );
-            }
-
-            this.logger.info('✅ TOOL EXECUTION SUCCESS (executeTool)', {
-                toolName,
-                callId,
-                executionTime: Date.now() - startTime,
-                hasResult: !!result,
-                resultKeys: result
-                    ? Object.keys(result as Record<string, unknown>)
-                    : [],
-                trace: {
-                    source: 'tool-engine',
-                    step: 'tool-execution-success',
-                    timestamp: Date.now(),
-                },
-            });
-
             return result;
         } catch (error) {
             const lastError = error as Error;
@@ -973,16 +686,6 @@ export class ToolEngine {
                     },
                 },
             );
-
-            // Record feedback metrics for failed execution
-            if (this.feedbackOptimizer) {
-                this.feedbackOptimizer.recordToolExecution(
-                    toolName,
-                    executionTime,
-                    false, // failed
-                    0, // no retries at this level
-                );
-            }
 
             throw lastError;
         }
@@ -1136,11 +839,6 @@ export class ToolEngine {
             phaseIndex++
         ) {
             const phase = executionOrder[phaseIndex];
-
-            this.logger.debug('Executing dependency phase', {
-                phase: phaseIndex,
-                tools: phase?.map((t) => t.toolName) || [],
-            });
 
             // Execute tools in this phase (can be parallel)
             const phaseResults = await this.executeParallelTools<TOutput>({
@@ -2239,6 +1937,4 @@ export class ToolEngine {
         this.logger.info('Tool engine cleaned up');
     }
 }
-
-// Re-export defineTool from tool-types to avoid duplication
 export { defineTool } from '../../core/types/tool-types.js';

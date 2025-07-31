@@ -6,9 +6,6 @@
 
 import { createLogger } from '../../observability/index.js';
 import type { LLMAdapter } from '../../adapters/llm/index.js';
-import { ReActPlanner } from './strategies/react-planner.js';
-import { TreeOfThoughtsPlanner } from './strategies/tree-of-thoughts-planner.js';
-import { ReflexionPlanner } from './strategies/reflexion-planner.js';
 import { PlanAndExecutePlanner } from './strategies/plan-execute-planner.js';
 import { Thread } from '../../core/types/common-types.js';
 import { AgentIdentity } from '@/core/types/agent-definition.js';
@@ -659,15 +656,6 @@ Available LLM adapters: LLMAdapter with Gemini, OpenAI, etc.
         });
 
         switch (type) {
-            case 'react':
-                return new ReActPlanner(llmAdapter);
-
-            case 'tot':
-                return new TreeOfThoughtsPlanner(llmAdapter);
-
-            case 'reflexion':
-                return new ReflexionPlanner(llmAdapter);
-
             case 'plan-execute':
                 return new PlanAndExecutePlanner(llmAdapter);
 

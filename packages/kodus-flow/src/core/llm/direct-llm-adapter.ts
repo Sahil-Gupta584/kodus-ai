@@ -12,6 +12,10 @@
 
 import { createLogger } from '../../observability/index.js';
 import { EngineError } from '../errors.js';
+import {
+    validatePlanningResponse,
+    validateLLMResponse,
+} from './response-validator.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🎯 GLOBAL LLM SETTINGS - Best Practices
@@ -22,7 +26,7 @@ import { EngineError } from '../errors.js';
  */
 export const DEFAULT_LLM_SETTINGS = {
     // Temperature: Lower = more focused/deterministic, Higher = more creative
-    temperature: 0.1, // Very focused for agent tasks (0.0-0.2 recommended for tools)
+    temperature: 0, // Very focused for agent tasks (0.0-0.2 recommended for tools)
 
     // Max tokens: Sufficient for reasoning + action without waste
     maxTokens: 2500, // Increased for complex tool metadata and enhanced ReAct prompts
@@ -237,14 +241,6 @@ export class DirectLLMAdapter {
                 systemPromptLength: context.systemPrompt.length,
                 userPromptLength: context.userPrompt.length,
             });
-        } else {
-            this.logger.warn(
-                'Using fallback prompts - planner should provide ready prompts',
-                {
-                    technique,
-                    goal: goal.substring(0, 50),
-                },
-            );
         }
 
         // ✅ SIMPLE: Build messages with ready prompts
@@ -265,19 +261,13 @@ export class DirectLLMAdapter {
         ];
 
         try {
-            this.logger.debug('Creating plan with LangChain LLM', {
-                technique,
-                goal,
-                contextProvided: !!context,
-            });
-
             const response = await this.llm.call(messages, options);
 
-            const content =
-                typeof response === 'string' ? response : response.content;
-
-            // ✅ SIMPLE: Parse response as JSON or return simple fallback
-            return this.parseFlexiblePlanningResponse(content, goal, technique);
+            return this.parseFlexiblePlanningResponse(
+                response,
+                goal,
+                technique,
+            );
         } catch (error) {
             this.logger.error(
                 'Planning failed',
@@ -362,12 +352,8 @@ export class DirectLLMAdapter {
 
             const response = await this.llm.call(messages, options);
 
-            // Handle both string and object responses from LangChain
-            const content =
-                typeof response === 'string' ? response : response.content;
-
-            // ✅ SIMPLE: Parse routing response directly
-            const result = this.parseSimpleRoutingResponse(content);
+            // ✅ ROBUST: Pass the entire response object for flexible parsing
+            const result = this.parseSimpleRoutingResponse(response);
 
             this.logger.debug('Routing completed successfully', {
                 selectedTool: result.selectedTool,
@@ -482,90 +468,35 @@ Please analyze semantic similarity and select the most appropriate tool.`,
     // 🗑️ REMOVED: All formatting methods - planners handle prompts now
 
     /**
-     * ✅ SIMPLE: Parse planning response - try JSON first, fallback to text
+     * ✅ AJV: Parse planning response with industry-standard validation
      */
     private parseFlexiblePlanningResponse(
-        response: string,
+        response: unknown,
         goal: string,
         technique: string,
     ): PlanningResult {
-        try {
-            // Try JSON parsing first
-            const cleanedResponse = this.cleanJsonResponse(response);
-            const parsed = JSON.parse(cleanedResponse);
+        // Use AJV for validation (industry standard)
+        const validated = validatePlanningResponse(response);
 
-            return {
-                strategy: parsed.strategy || technique,
-                goal: parsed.goal || goal,
-                steps: parsed.steps || parsed.plan || [],
-                reasoning: parsed.reasoning || '',
-                complexity: parsed.complexity || 'medium',
-            };
-        } catch {
-            // JSON parsing failed, return simple text response
-            return {
-                strategy: technique,
-                goal: goal,
-                steps: [
-                    {
-                        id: 'step_1',
-                        description: response.trim(),
-                        type: 'analysis',
-                    },
-                ],
-                reasoning: response.trim(),
-                complexity: 'medium',
-            };
-        }
+        return {
+            strategy: validated.strategy || technique,
+            goal: validated.goal || goal,
+            steps: validated.steps || [],
+            reasoning: validated.reasoning || '',
+            complexity: validated.complexity || 'medium',
+        };
     }
 
     /**
-     * Clean JSON response from markdown code blocks
+     * ✅ AJV: Parse routing response with industry-standard validation
      */
-    private cleanJsonResponse(response: string): string {
-        let cleaned = response.trim();
+    private parseSimpleRoutingResponse(response: unknown): RoutingResult {
+        // Use AJV for validation (industry standard)
+        const validated = validateLLMResponse(response);
+        const content = validated.content;
 
-        // Remove opening code block markers
-        if (cleaned.startsWith('```json')) {
-            cleaned = cleaned.substring(7);
-        } else if (cleaned.startsWith('```')) {
-            cleaned = cleaned.substring(3);
-        }
-
-        // Remove closing code block markers
-        if (cleaned.endsWith('```')) {
-            cleaned = cleaned.substring(0, cleaned.length - 3);
-        }
-
-        // ✅ IMPROVED: Remove JSON comments and fix common issues
-        cleaned = cleaned
-            // Remove single-line comments (// ...)
-            .replace(/\/\/.*$/gm, '')
-            // Remove multi-line comments (/* ... */)
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            // Remove trailing commas before closing braces/brackets
-            .replace(/,(\s*[}\]])/g, '$1')
-            // Remove trailing commas in objects
-            .replace(/,(\s*})/g, '$1')
-            // Fix common LLM mistakes: replace "undefined" with null
-            .replace(/"undefined"/g, 'null')
-            // Fix common LLM mistakes: replace undefined without quotes
-            .replace(/:\s*undefined\s*([,}])/g, ': null$1')
-            // Remove extra whitespace
-            .replace(/\s+/g, ' ')
-            .trim();
-
-        return cleaned;
-    }
-
-    /**
-     * ✅ SIMPLE: Parse routing response - try JSON first, fallback to simple
-     */
-    private parseSimpleRoutingResponse(response: string): RoutingResult {
         try {
-            const cleanedResponse = this.cleanJsonResponse(response);
-            const parsed = JSON.parse(cleanedResponse);
-
+            const parsed = JSON.parse(content);
             return {
                 strategy: parsed.strategy || 'llm_decision',
                 selectedTool: parsed.selectedTool || 'unknown',
@@ -574,12 +505,11 @@ Please analyze semantic similarity and select the most appropriate tool.`,
                 alternatives: parsed.alternatives || [],
             };
         } catch {
-            // JSON parsing failed, return simple fallback
             return {
                 strategy: 'llm_decision',
                 selectedTool: 'unknown',
                 confidence: 0.5,
-                reasoning: response.trim(),
+                reasoning: content.trim(),
                 alternatives: [],
             };
         }

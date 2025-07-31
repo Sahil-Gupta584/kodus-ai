@@ -160,7 +160,8 @@ export class PlanAndExecutePlanner implements Planner {
         context: PlannerExecutionContext,
     ): Promise<string> {
         if (!this.currentPlan) {
-            return 'Tarefa completada com sucesso!';
+            // ✅ FRAMEWORK BEST PRACTICE: Return empty response if no plan
+            return '';
         }
 
         try {
@@ -188,6 +189,11 @@ export class PlanAndExecutePlanner implements Planner {
                             | 'skipped',
                         result: step.result,
                     })),
+                // ✅ FRAMEWORK PATTERN: Include dynamic planner reasoning
+                plannerReasoning: this.buildDynamicReasoning(
+                    context,
+                    this.currentPlan,
+                ),
                 metadata: {
                     totalSteps: this.currentPlan.steps.length,
                     completedSteps: this.currentPlan.steps.filter(
@@ -213,26 +219,9 @@ export class PlanAndExecutePlanner implements Planner {
                     'conversational',
                 );
 
-            this.logger.info('🎯 Final response synthesized', {
-                planId: this.currentPlan.id,
-                confidence: synthesizedResponse.confidence,
-                followUpsCount: synthesizedResponse.followUpSuggestions.length,
-                includesError: synthesizedResponse.includesError,
-            });
-
-            // Adicionar follow-up suggestions se disponíveis
-            let finalResponse = synthesizedResponse.content;
-
-            if (synthesizedResponse.followUpSuggestions.length > 0) {
-                finalResponse += '\n\n💡 **Posso ajudar mais:**\n';
-                synthesizedResponse.followUpSuggestions.forEach(
-                    (suggestion) => {
-                        finalResponse += `• ${suggestion}\n`;
-                    },
-                );
-            }
-
-            return finalResponse;
+            // ✅ FRAMEWORK PATTERN: Extract final text from synthesized response
+            // Filter out reasoning to return only user-facing content
+            return this.extractFinalText(synthesizedResponse.content);
         } catch (error) {
             this.logger.error(
                 'Failed to synthesize final response',
@@ -261,6 +250,112 @@ export class PlanAndExecutePlanner implements Planner {
                 '.\n\nPosso explicar melhor algum resultado específico se precisar!';
 
             return fallbackResponse;
+        }
+    }
+
+    /**
+     * Extract final text from synthesized response, filtering out reasoning
+     */
+    private extractFinalText(content: unknown): string {
+        // Handle different response formats from LLM
+        if (typeof content === 'string') {
+            return content;
+        }
+
+        if (Array.isArray(content)) {
+            // Format: [{type: "reasoning", reasoning: "..."}, {type: "text", text: "..."}]
+            const textEntry = content.find(
+                (item) =>
+                    item &&
+                    typeof item === 'object' &&
+                    'type' in item &&
+                    item.type === 'text',
+            );
+
+            if (
+                textEntry &&
+                'text' in textEntry &&
+                typeof textEntry.text === 'string'
+            ) {
+                return textEntry.text;
+            }
+
+            // Fallback: join all text content
+            return content
+                .filter((item) => item && typeof item === 'object')
+                .map((item) => {
+                    if ('text' in item) return item.text;
+                    if ('content' in item) return item.content;
+                    return '';
+                })
+                .filter(Boolean)
+                .join(' ');
+        }
+
+        if (typeof content === 'object' && content !== null) {
+            // Handle object format
+            const obj = content as Record<string, unknown>;
+
+            if ('text' in obj && typeof obj.text === 'string') {
+                return obj.text;
+            }
+
+            if ('content' in obj && typeof obj.content === 'string') {
+                return obj.content;
+            }
+        }
+
+        // Fallback: convert to string
+        return String(content || 'Response generated successfully');
+    }
+
+    /**
+     * Build dynamic reasoning based on plan type and execution state
+     */
+    private buildDynamicReasoning(
+        context: PlannerExecutionContext,
+        plan: ExecutionPlan,
+    ): string {
+        if (plan.steps.length === 0) {
+            // Empty plan - use original reasoning from LLM (e.g., "Simple greeting - no tools needed")
+            return Array.isArray(plan.reasoning)
+                ? plan.reasoning.join(' ')
+                : plan.reasoning;
+        } else {
+            // Plan with steps - create reasoning based on execution results
+            const completedSteps = plan.steps.filter(
+                (s) => s.status === 'completed',
+            ).length;
+            const failedSteps = plan.steps.filter(
+                (s) => s.status === 'failed',
+            ).length;
+
+            let dynamicReasoning = `Executed plan with ${plan.steps.length} steps: `;
+
+            if (completedSteps > 0) {
+                dynamicReasoning += `${completedSteps} completed successfully`;
+            }
+
+            if (failedSteps > 0) {
+                dynamicReasoning += `${completedSteps > 0 ? ', ' : ''}${failedSteps} failed`;
+            }
+
+            // Include brief summary of execution results if available
+            if (context.history.length > 0) {
+                const recentResults = context.history
+                    .slice(-2)
+                    .map((h) => {
+                        const content = getResultContent(h.result);
+                        return typeof content === 'string'
+                            ? content.substring(0, 100)
+                            : 'result obtained';
+                    })
+                    .join('; ');
+
+                dynamicReasoning += `. Recent results: ${recentResults}`;
+            }
+
+            return dynamicReasoning;
         }
     }
 
@@ -361,22 +456,8 @@ export class PlanAndExecutePlanner implements Planner {
     }
 
     async think(context: PlannerExecutionContext): Promise<AgentThought> {
-        // 🔍 DEBUG: Monitor thinking process
-
         try {
-            // const thread = context.plannerMetadata.thread!;
-            // const threadId = thread.id!;
-
-            // 🔄 CLAUDE CODE FEATURE: Persistence temporarily disabled
-            // const thread = context.plannerMetadata.thread!;
-            // const threadId = thread.id!;
-
-            // Se não temos plano ou precisamos replanejamento
             if (!this.currentPlan || this.shouldReplan(context)) {
-                this.logger.info('📋 CREATING NEW PLAN', {
-                    reason: !this.currentPlan ? 'no_plan' : 'should_replan',
-                    iteration: context.iterations,
-                });
                 return await this.createPlan(context);
             }
 
@@ -433,7 +514,7 @@ export class PlanAndExecutePlanner implements Planner {
             'plan-execute',
             {
                 systemPrompt: this.getSystemPrompt(),
-                userPromptTemplate: this.getUserPrompt({
+                userPrompt: this.getUserPrompt({
                     goal: input,
                     availableTools: availableTools,
                     toolsContext: toolsContext || '',
@@ -469,15 +550,6 @@ export class PlanAndExecutePlanner implements Planner {
             },
         };
 
-        this.logger.info('LLM execution plan created', {
-            planId: this.currentPlan.id,
-            totalSteps: this.currentPlan.steps.length,
-            firstStep: this.currentPlan.steps[0]?.description,
-        });
-
-        // 💾 CLAUDE CODE FEATURE: Persist the new plan (temporarily disabled)
-        // await this.savePlan(this.currentPlan, thread.id!);
-
         // Start executing first step
         return this.executeNextStep(context);
     }
@@ -485,7 +557,6 @@ export class PlanAndExecutePlanner implements Planner {
     private async executeNextStep(
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        // 🔍 DEBUG: Monitor step execution
         if (!this.currentPlan) {
             throw new Error('No execution plan available');
         }
@@ -494,20 +565,40 @@ export class PlanAndExecutePlanner implements Planner {
             this.currentPlan.steps[this.currentPlan.currentStepIndex];
 
         if (!currentStep) {
-            // Plan completed
+            // Plan completed or no steps were created
             this.currentPlan.status = 'completed';
 
+            // ✅ FRAMEWORK APPROACH: Use LLM's reasoning as response when no steps exist
+            const hasSteps = this.currentPlan.steps.length > 0;
+
+            let responseContent: string;
+
+            if (hasSteps) {
+                // Actual plan was executed - provide generic completion message
+                responseContent = 'Plan execution completed successfully';
+            } else {
+                // No steps were created - use the LLM's reasoning as the direct response
+                responseContent = Array.isArray(this.currentPlan.reasoning)
+                    ? this.currentPlan.reasoning.join(' ')
+                    : this.currentPlan.reasoning || 'Ready to respond';
+            }
+
             return {
-                reasoning: 'All plan steps completed successfully',
+                reasoning: hasSteps
+                    ? 'All plan steps completed successfully'
+                    : 'No executable steps required - LLM provided direct response',
                 action: {
                     type: 'final_answer',
-                    content: 'Task completed according to plan',
+                    content: responseContent,
                 },
                 metadata: {
                     planId: this.currentPlan.id,
                     completedSteps: this.currentPlan.steps.length,
                     executionHistory: context.history.length,
                     iterationCount: context.iterations,
+                    responseSource: hasSteps
+                        ? 'step_execution'
+                        : 'llm_reasoning',
                 },
             };
         }
@@ -529,13 +620,7 @@ export class PlanAndExecutePlanner implements Planner {
             .slice(-3)
             .filter((h) => isErrorResult(h.result));
         if (recentFailures.length >= 2) {
-            // Adapt step based on recent failures
             currentStep.retry = (currentStep.retry || 0) + 1;
-            this.logger.warn('Adapting step due to recent failures', {
-                stepId: currentStep.id,
-                recentFailures: recentFailures.length,
-                newRetryCount: currentStep.retry,
-            });
         }
 
         // Mark step as executing
@@ -579,14 +664,8 @@ export class PlanAndExecutePlanner implements Planner {
                     aggregateResults: true,
                 };
 
-                // Mark all parallel steps as executing
                 parallelOpportunity.steps.forEach((step) => {
                     step.status = 'executing';
-                });
-
-                this.logger.info('Creating parallel tools action', {
-                    toolCount: parallelTools.length,
-                    tools: parallelTools.map((t) => t.toolName),
                 });
             } else {
                 // Fallback to single tool execution
@@ -624,17 +703,47 @@ export class PlanAndExecutePlanner implements Planner {
         result: ActionResult,
         context: PlannerExecutionContext,
     ): Promise<ResultAnalysis> {
-        this.logger.debug('Analyzing step result', {
-            resultType: result.type,
-            hasError: isErrorResult(result),
-            hasCurrentPlan: !!this.currentPlan,
-        });
-
         if (!this.currentPlan) {
             return {
                 isComplete: true,
                 isSuccessful: true,
                 feedback: 'No plan to analyze',
+                shouldContinue: false,
+            };
+        }
+
+        if (result.type === 'final_answer') {
+            this.currentPlan.status = 'completed';
+
+            // ✅ FRAMEWORK PATTERN: Add final_answer to history to maintain consistency
+            // This ensures Response Synthesizer has access to the reasoning from empty plans
+            context.history.push({
+                thought: {
+                    reasoning: this.currentPlan.reasoning,
+                    action: {
+                        type: 'final_answer',
+                        content: result.content,
+                    },
+                },
+                action: {
+                    type: 'final_answer',
+                    content: result.content,
+                },
+                result: result,
+                observation: {
+                    isComplete: true,
+                    isSuccessful: true,
+                    feedback: result.content || 'Task completed',
+                    shouldContinue: false,
+                },
+            });
+
+            const synthesizedResponse = await this.createFinalResponse(context);
+
+            return {
+                isComplete: true,
+                isSuccessful: true,
+                feedback: synthesizedResponse,
                 shouldContinue: false,
             };
         }
@@ -651,12 +760,10 @@ export class PlanAndExecutePlanner implements Planner {
             };
         }
 
-        // Handle step result
         if (isErrorResult(result)) {
             currentStep.status = 'failed';
             currentStep.result = { error: getResultError(result) };
 
-            // Determine if we should retry, replan, or fail
             const shouldReplan = await this.shouldReplanOnFailure(
                 result,
                 context,
@@ -674,7 +781,6 @@ export class PlanAndExecutePlanner implements Planner {
             } else {
                 this.currentPlan.status = 'failed';
 
-                // 🎯 RESPONSE SYNTHESIS: Criar resposta conversacional para erros também
                 const synthesizedErrorResponse =
                     await this.createFinalResponse(context);
 
@@ -687,16 +793,13 @@ export class PlanAndExecutePlanner implements Planner {
             }
         }
 
-        // Step succeeded - handle both single and parallel execution
         if (result.type === 'tool_results') {
-            // Handle parallel tools results
             const parallelResults = result.content as Array<{
                 toolName: string;
                 result?: unknown;
                 error?: string;
             }>;
 
-            // Mark all steps that were executed in parallel as completed
             let stepsCompleted = 0;
             const startIndex = this.currentPlan.currentStepIndex;
 
@@ -722,14 +825,7 @@ export class PlanAndExecutePlanner implements Planner {
             }
 
             this.currentPlan.currentStepIndex = startIndex + stepsCompleted;
-
-            this.logger.info('Parallel execution completed', {
-                stepsCompleted,
-                newIndex: this.currentPlan.currentStepIndex,
-                totalSteps: this.currentPlan.steps.length,
-            });
         } else {
-            // Handle single step execution
             const stepResult = getResultContent(result);
             currentStep.status = 'completed';
             currentStep.result = stepResult;
@@ -737,25 +833,12 @@ export class PlanAndExecutePlanner implements Planner {
             this.currentPlan.currentStepIndex++;
         }
 
-        // Check if plan is complete
         const isLastStep =
             this.currentPlan.currentStepIndex >= this.currentPlan.steps.length;
-
-        // 💾 CLAUDE CODE FEATURE: Update progress after each step (temporarily disabled)
-        // const threadId = context.plannerMetadata.thread?.id;
-        // if (threadId) {
-        //     await this.updatePlanProgress(threadId);
-        // }
 
         if (isLastStep) {
             this.currentPlan.status = 'completed';
 
-            // 🎉 CLAUDE CODE FEATURE: Final persistence with completion (temporarily disabled)
-            // if (threadId) {
-            //     await this.savePlan(this.currentPlan, threadId);
-            // }
-
-            // 🎯 RESPONSE SYNTHESIS: Criar resposta conversacional final
             const synthesizedResponse = await this.createFinalResponse(context);
 
             return {
@@ -766,7 +849,6 @@ export class PlanAndExecutePlanner implements Planner {
             };
         }
 
-        // Continue to next step
         return {
             isComplete: false,
             isSuccessful: true,
@@ -777,10 +859,14 @@ export class PlanAndExecutePlanner implements Planner {
     }
 
     private shouldReplan(context: PlannerExecutionContext): boolean {
-        if (!this.currentPlan) return true;
+        if (!this.currentPlan) {
+            return true;
+        }
 
         // Replan if status indicates replanning needed
-        if (this.currentPlan.status === 'replanning') return true;
+        if (this.currentPlan.status === 'replanning') {
+            return true;
+        }
 
         // Replan if too many consecutive failures
         const recentFailures = context.history
@@ -794,10 +880,8 @@ export class PlanAndExecutePlanner implements Planner {
         result: ActionResult,
         context: PlannerExecutionContext,
     ): Promise<boolean> {
-        // Simple heuristic: replan if error seems recoverable
         const errorMessage = getResultError(result)?.toLowerCase() || '';
 
-        // Don't replan for certain types of errors
         const unrecoverableErrors = [
             'permission denied',
             'not found',
@@ -809,7 +893,6 @@ export class PlanAndExecutePlanner implements Planner {
             return false;
         }
 
-        // Replan for other errors if we haven't tried too many times
         return context.iterations < 3;
     }
 
@@ -917,13 +1000,19 @@ export class PlanAndExecutePlanner implements Planner {
         let confidence = 0.7; // Base confidence
 
         // Higher confidence for tool-based actions
-        if (step.tool) confidence += 0.2;
+        if (step.tool) {
+            confidence += 0.2;
+        }
 
         // Higher confidence for steps with clear descriptions
-        if (step.description && step.description.length > 20) confidence += 0.1;
+        if (step.description && step.description.length > 20) {
+            confidence += 0.1;
+        }
 
         // Lower confidence for verification steps (harder to predict)
-        if (step.type === 'verification') confidence -= 0.1;
+        if (step.type === 'verification') {
+            confidence -= 0.1;
+        }
 
         // Use context to adjust confidence
         const recentSuccesses = context.history
@@ -987,7 +1076,7 @@ export class PlanAndExecutePlanner implements Planner {
 
         // Convert to PlanStep format with placeholder validation
         const convertedSteps = rawSteps.map((step, index) => ({
-            id: `step-${index + 1}`,
+            id: (step.id as string) || `step-${index + 1}`,
             description:
                 (step.description as string) ||
                 (step.content as string) ||
@@ -1000,28 +1089,44 @@ export class PlanAndExecutePlanner implements Planner {
             tool: (step.tool as string) || (step.tool as string),
             arguments: (step.arguments ||
                 step.args ||
-                step.parameters) as Record<string, unknown>,
-            dependencies: index > 0 ? [`step-${index}`] : [],
+                step.parameters ||
+                step.argsTemplate) as Record<string, unknown>,
+            dependencies:
+                (step.dependsOn as string[]) ||
+                (index > 0 ? [`step-${index}`] : []),
             status: 'pending' as const,
             retry: 0,
+            parallel: (step.parallel as boolean) || false,
         }));
 
-        // 🚨 VALIDATE: Check for placeholders in arguments
         const invalidSteps = this.validateStepsForPlaceholders(convertedSteps);
         if (invalidSteps.length > 0) {
-            this.logger.warn('🚨 Plan contains invalid placeholders', {
-                invalidSteps: invalidSteps.map((s) => ({
-                    id: s.id,
-                    tool: s.tool,
-                    placeholders: s.placeholders,
-                })),
-            });
+            this.logger.warn(
+                '🚨 Plan contains invalid placeholders or validation errors',
+                {
+                    invalidSteps: invalidSteps.map((s) => ({
+                        id: s.id,
+                        tool: s.tool,
+                        placeholders: s.placeholders,
+                    })),
+                },
+            );
 
-            // Return a fallback plan explaining the issue
+            let errorMessage =
+                'Não consegui criar um plano executável. Encontrei os seguintes problemas:\n\n';
+
+            for (const invalidStep of invalidSteps) {
+                errorMessage += `Step "${invalidStep.id}" (${invalidStep.tool || 'unknown tool'}):\n`;
+                errorMessage += `  - Problemas encontrados: ${invalidStep.placeholders.join(', ')}\n\n`;
+            }
+
+            errorMessage +=
+                'Preciso de valores concretos para executar as ferramentas. Por favor, forneça os valores específicos necessários.';
+
             return [
                 {
                     id: 'step-1',
-                    description: `Não consegui criar um plano executável. Encontrei placeholders nos parâmetros: ${invalidSteps.map((s) => s.placeholders.join(', ')).join('; ')}. Preciso de valores concretos para executar as ferramentas.`,
+                    description: errorMessage,
                     type: 'decision' as const,
                     status: 'pending' as const,
                     retry: 0,
@@ -1034,43 +1139,56 @@ export class PlanAndExecutePlanner implements Planner {
     }
 
     /**
-     * 🚨 VALIDATE: Check steps for placeholder values that cannot be executed
+     * ✅ SIMPLE: Check steps for obviously bad placeholder values
+     * Focused validation - only catch real problems, not valid template usage
      */
     private validateStepsForPlaceholders(steps: PlanStep[]): Array<{
         id: string;
         tool?: string;
         placeholders: string[];
     }> {
-        const placeholderPatterns = [
-            /REPOSITORY_ID(_AQUI|_HERE)?/i,
-            /USER_ID(_AQUI|_HERE)?/i,
-            /TEAM_ID(_AQUI|_HERE)?/i,
-            /ORG_ID(_AQUI|_HERE)?/i,
-            /PLACEHOLDER/i,
-            /TODO/i,
-            /FILL_IN/i,
-            /REPLACE_WITH/i,
-            /YOUR_.*_HERE/i,
-            /\$\{(?!step-\d+\.result).*\}/, // ${variable} patterns EXCEPT {{step-X.result}}
-            /<(?!step-\d+\.result).*>/, // <variable> patterns EXCEPT step references
-        ];
-
         const invalidSteps: Array<{
             id: string;
             tool?: string;
             placeholders: string[];
         }> = [];
 
+        // Only check for obviously problematic placeholders
+        const badPlaceholders = [
+            'REPOSITORY_ID',
+            'USER_ID',
+            'TEAM_ID',
+            'ORG_ID',
+            'TODO',
+            'PLACEHOLDER',
+            'FILL_IN',
+            'REPLACE_WITH',
+            'YOUR_*_HERE',
+            'INSERT_*_HERE',
+            'CHANGE_THIS',
+            'UPDATE_ME',
+        ];
+
         for (const step of steps) {
+            // ✅ SKIP steps without arguments or tools
             if (!step.arguments || !step.tool) continue;
 
+            const argsStr = JSON.stringify(step.arguments).toUpperCase();
             const foundPlaceholders: string[] = [];
-            const argsStr = JSON.stringify(step.arguments);
 
-            for (const pattern of placeholderPatterns) {
-                const matches = argsStr.match(pattern);
-                if (matches) {
-                    foundPlaceholders.push(...matches);
+            // Check for obviously bad placeholders
+            for (const placeholder of badPlaceholders) {
+                if (argsStr.includes(placeholder)) {
+                    foundPlaceholders.push(placeholder);
+                }
+            }
+
+            // Check for suspicious empty required fields (simple check)
+            if (typeof step.arguments === 'object') {
+                for (const [key, value] of Object.entries(step.arguments)) {
+                    if (typeof value === 'string' && value.trim() === '') {
+                        foundPlaceholders.push(`Empty ${key}`);
+                    }
                 }
             }
 
@@ -1078,7 +1196,7 @@ export class PlanAndExecutePlanner implements Planner {
                 invalidSteps.push({
                     id: step.id,
                     tool: step.tool,
-                    placeholders: foundPlaceholders,
+                    placeholders: [...new Set(foundPlaceholders)], // Remove duplicates
                 });
             }
         }
@@ -1092,7 +1210,10 @@ export class PlanAndExecutePlanner implements Planner {
     private buildToolsContextForPlanExecute(
         tools: ToolMetadataForLLM[],
     ): string {
-        if (tools.length === 0) return 'No tools available.';
+        if (tools.length === 0) {
+            return `No external tools available. The system will handle responses automatically.
+IMPORTANT: Since no tools are available, you should return an empty plan [] and let the Response Synthesizer handle the user query.`;
+        }
 
         // Group tools by MCP prefix for clean organization
         const toolsByPrefix = new Map<string, ToolMetadataForLLM[]>();
@@ -1146,6 +1267,8 @@ export class PlanAndExecutePlanner implements Planner {
                 }
             });
         });
+
+        context += `\nIMPORTANT: Only use tools that are listed above. If you need functionality that's not available, return an empty plan [] to let the Response Synthesizer handle the user query directly.`;
 
         return context;
     }
@@ -1255,7 +1378,8 @@ export class PlanAndExecutePlanner implements Planner {
     }
 
     /**
-     * Create single tool action (fallback)
+     * Create single tool action with intelligent fallback
+     * Never exposes internal architecture details to users
      */
     private createSingleToolAction(
         step: PlanStep,
@@ -1263,12 +1387,14 @@ export class PlanAndExecutePlanner implements Planner {
     ): { type: string; [key: string]: unknown } {
         if (step.tool && step.tool !== 'none') {
             if (!availableToolNames.includes(step.tool)) {
-                // ✅ FALLBACK - Tool não existe, converter para resposta conversacional
+                // ✅ INTELLIGENT FALLBACK - Use step description instead of exposing technical details
+                // The planner should have created a meaningful description for this scenario
                 return {
                     type: 'final_answer',
-                    content: `Não tenho acesso à ferramenta "${step.tool}" necessária para: ${step.description}. Como posso ajudar de outra forma?`,
+                    content: step.description, // Trust the planner's description, don't mention "tools"
                 };
             } else {
+                // Tool exists and is available - execute it
                 return {
                     type: 'tool_call',
                     toolName: step.tool,
@@ -1276,6 +1402,7 @@ export class PlanAndExecutePlanner implements Planner {
                 };
             }
         } else {
+            // No tool needed - this is a conversational response
             return {
                 type: 'final_answer',
                 content: step.description,
@@ -1583,12 +1710,45 @@ following the Plan-and-Execute methodology.
 4. SPECIFY   • 5. VALIDATE  • 6. ADAPT
 
 === CRITICAL RULES ===
-• Allowed placeholders: {{stepId.result}} or {{step-X.result[…]}}, any other format is forbidden.
+• Allowed placeholders: {{stepId.result}} or {{step-X.result[…]}}, any other format is STRICTLY FORBIDDEN.
 • IDs: all \`"id"\` values must be in **kebab-case** (lowercase, words joined by hyphens) and **action-agnostic** (e.g. \`action-name\`, \`validate-data\`, \`process-items\`).
 • Wildcard syntax: when referring to arrays, use \`{{stepId.result[*].field}}\` (e.g. \`{{fetch-data.result[*].id}}\`).
+• NEVER USE “placeholder-like” tokens (examples, not exhaustive): PLACEHOLDER, FILL_ME, YOUR_*_HERE, INSERT_*_HERE, <placeholder>, {{placeholder}}.
 • Fixed context fields (e.g. organizationId, teamId) MUST be concrete values inside \`argsTemplate\`; never placeholders.
 • Use \`parallel:true\` only for steps that can run in independent batches; otherwise use \`parallel:false\`.
 • The final reply must be pure JSON – no comments, no trailing commas.
+• If you don't have concrete values for required parameters, create a step to ask the user for them FIRST.
+• If required tools are not available, return an empty plan [] - the system will handle the response naturally.
+• For conversational inputs (greetings, simple questions), prefer empty plans over artificial tool steps.
+• IMPORTANT: If tools ARE available to gather relevant data, USE THEM! Don't default to empty plans when you can fetch useful information.
+
+=== EMPTY PLANS ===
+• When no tools are available for the user's request, return: {"strategy": "plan-execute", "goal": "user goal", "plan": [], "reasoning": ["No tools required - direct response appropriate"]}
+• When user input is conversational (greetings, simple questions), return empty plan [] to let the natural response flow handle it
+• Don't create steps just to fill a plan - empty plans are valid and preferred for simple interactions
+• Examples:
+  - User: "hello" → {"plan": [], "reasoning": ["Simple greeting - no tools needed"]}
+  - User: "how are you?" → {"plan": [], "reasoning": ["Conversational question - direct response appropriate"]}
+  - User: "explain photosynthesis" → {"plan": [], "reasoning": ["Knowledge request - no external tools required"]}
+
+=== PLAN-AND-SOLVE METHODOLOGY ===
+• UNDERSTAND the request: What information is needed? What is the user asking for?
+• PLAN the approach: What data should be gathered? In what sequence?
+• EXECUTE the plan: Use available tools step by step to collect information
+• SYNTHESIZE with reasoning: Analyze gathered data to provide comprehensive response
+
+=== TOOL COMBINATION PATTERNS ===
+• DATA RETRIEVAL + ANALYSIS: Use tools to fetch data, then leverage LLM reasoning for analysis
+• MULTI-STEP WORKFLOWS: Tool results can be used as inputs for subsequent tools using {{step-id.result}}
+• CONTEXT BUILDING: Each tool result enriches the context for better final analysis
+• SEQUENTIAL DEPENDENCIES: Plan steps that build upon previous results
+• Don't assume you need specific "analysis" tools - the LLM can analyze any gathered data
+
+=== REASONING APPROACH ===
+• Break complex requests into smaller, manageable information-gathering tasks
+• Identify what data sources are needed before determining specific tools
+• Plan the sequence: Which information is prerequisite for other steps?
+• Build comprehensive context through multiple tool calls before final analysis
 
 === NODE FORMAT ===
 {

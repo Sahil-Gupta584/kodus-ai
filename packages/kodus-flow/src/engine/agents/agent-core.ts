@@ -1,27 +1,3 @@
-/**
- * @module engine/agents/agent-core
- * @description Core compartilhado para agentes com suporte multi-agent avançado
- *
- * RESPONSABILIDADES BÁSICAS:
- * ✅ State, Context, Logging
- * ✅ Communication, Router, Coordination
- * ✅ Thinking, Actions, Tools
- * ✅ Event tracking, Observability
- * ✅ Multi-agent support (BÁSICO + AVANÇADO)
- *
- * NOVAS FUNCIONALIDADES INTEGRADAS:
- * ✅ Coordenação avançada (sequential, parallel, competition, etc.)
- * ✅ Sistema de mensagens entre agentes
- * ✅ Critérios de seleção de agentes
- * ✅ Métricas e performance tracking
- * ✅ Workflow integration
- *
- * NÃO INCLUI:
- * ❌ Lifecycle management (já existe AgentLifecycleHandler)
- * ❌ Workflow execution (responsabilidade do executor)
- * ❌ Snapshot management (responsabilidade do executor)
- */
-
 import { createLogger } from '../../observability/index.js';
 import { CircuitBreaker } from '../../runtime/core/circuit-breaker.js';
 import { EngineError } from '../../core/errors.js';
@@ -62,13 +38,11 @@ import type {
     DependencyToolsAction,
 } from '../../core/types/agent-types.js';
 
-import type {
-    AnyEvent,
-    EventType,
-    EventPayloads,
-} from '../../core/types/events.js';
+import type { AnyEvent } from '../../core/types/events.js';
 
-import { createEvent } from '../../core/types/events.js';
+// ──────────────────────────────────────────────────────────────────────────
+// 🚀 CONVERSATIONAL SHORTCUT UTILITIES
+// ──────────────────────────────────────────────────────────────────────────
 
 // Import dos types de coordenação
 import type {
@@ -208,19 +182,11 @@ export abstract class AgentCore<
         }
     >();
 
-    // Kernel integration
     protected kernelHandler?: MultiKernelHandler;
 
-    // Circuit breaker for tool execution resilience
     protected toolCircuitBreaker?: CircuitBreaker;
 
-    // === RETRY LOGIC REMOVED ===
-    // ✅ Removed retryWithBackoff method - Circuit Breaker handles retries now
-    // This eliminates retry amplification: Agent → Circuit Breaker → Runtime
-
-    // === CIRCUIT BREAKER INITIALIZATION ===
     private initializeCircuitBreaker(): void {
-        // Create observability system for circuit breaker
         const observabilitySystem = {
             logger: this.logger,
             monitoring: {
@@ -322,16 +288,9 @@ export abstract class AgentCore<
         return this._deliveryQueue;
     }
 
-    // NEW: Think→Act→Observe components
     protected planner?: Planner;
     protected llmAdapter?: LLMAdapter;
     protected executionContext?: PlannerExecutionContext;
-
-    // NEW: Current context for action processing
-    // ✅ REMOVER: Variável não utilizada
-    // private currentAgentContext?: AgentContext;
-
-    // Context creation moved to initialization phase
 
     constructor(
         definitionOrConfig:
@@ -358,9 +317,7 @@ export abstract class AgentCore<
                 );
             }
         }
-        // Factory customization removed - use ContextBuilder.getInstance() directly
 
-        // Apply defaults
         this.config = {
             maxThinkingIterations: 15,
             thinkingTimeout: 60000, // ✅ 60s thinking timeout
@@ -386,16 +343,11 @@ export abstract class AgentCore<
         // Setup logger first
         const agentName = this.config.agentName || 'multi-agent';
         this.logger = createLogger(`agent-core:${agentName}`);
-
-        // Initialize circuit breaker for tool execution
         this.initializeCircuitBreaker();
 
         // KernelHandler sempre habilitado - será injetado via setKernelHandler()
         // Apenas criar local KernelHandler se tenant for 'isolated'
         if (this.config.tenantId === 'isolated') {
-            this.logger.warn(
-                'Creating isolated KernelHandler - this should be rare',
-            );
             this.kernelHandler = createDefaultMultiKernelHandler(
                 this.config.tenantId,
             );
@@ -407,12 +359,8 @@ export abstract class AgentCore<
             this.cleanupExpiredExecutions();
         }, 300000);
 
-        // Initialize state manager
-
-        // NEW: Initialize Think→Act→Observe components
         this.initializePlannerComponents();
 
-        // Initialize advanced multi-agent features
         if (this.config.enableMessaging) {
             this.startDeliveryProcessor();
         }
@@ -424,19 +372,6 @@ export abstract class AgentCore<
                 toolCount: this.toolEngine.listTools().length,
             });
         }
-
-        this.logger.info('AgentCore created', {
-            mode: this.singleAgentDefinition ? 'single' : 'multi',
-            agentName,
-            tenantId: this.config.tenantId,
-            features: {
-                multiAgent: this.config.enableMultiAgent,
-                advancedCoordination: this.config.enableAdvancedCoordination,
-                messaging: this.config.enableMessaging,
-                tools: this.config.enableTools,
-                toolEngineConfigured: !!this.toolEngine,
-            },
-        });
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -455,15 +390,7 @@ export abstract class AgentCore<
     ): Promise<AgentExecutionResult<unknown>> {
         const startTime = Date.now();
         const executionId = IdGenerator.executionId();
-        const { correlationId, sessionId } = agentExecutionOptions || {};
-
-        this.logger.info('Agent execution started', {
-            agentName: agent.name,
-            correlationId,
-            executionId,
-            sessionId: sessionId || 'will-be-determined-by-threadId',
-            inputType: typeof input,
-        });
+        const { correlationId } = agentExecutionOptions || {};
 
         // Create context - session will be determined by threadId, not sessionId
         const context = await this.createAgentContext(
@@ -471,15 +398,6 @@ export abstract class AgentCore<
             executionId,
             agentExecutionOptions,
         );
-
-        // Track execution with actual sessionId from context
-        //TODO Ainda precisa
-        // this.activeExecutions.set(executionId, {
-        //     correlationId: correlationId || '',
-        //     sessionId: context.sessionId,
-        //     startTime,
-        //     status: 'running',
-        // });
 
         // 🚀 Track execution start using context tracking API
         //TODO Porque plannerStep?
@@ -492,9 +410,6 @@ export abstract class AgentCore<
             correlationId,
         });
 
-        // ✅ REMOVED: agentIdentity is now set during createAgentContext
-
-        // 🚀 Add conversation entry if session exists
         //TODO: Aqui não precisa recuperar?
         if (context.sessionId) {
             sessionService.addConversationEntry(
@@ -523,7 +438,6 @@ export abstract class AgentCore<
         }
 
         try {
-            // Process agent thinking (lógica principal)
             const result = await this.processAgentThinking(
                 agent,
                 input,
@@ -532,7 +446,6 @@ export abstract class AgentCore<
 
             const duration = Date.now() - startTime;
 
-            // Update execution status
             const execution = this.activeExecutions.get(executionId);
             if (execution) {
                 execution.status = 'completed';
@@ -600,30 +513,15 @@ export abstract class AgentCore<
                 },
             } as AgentExecutionResult<unknown> & { timeline?: unknown };
         } catch (error) {
-            const duration = Date.now() - startTime;
-
-            // Update execution status
             const execution = this.activeExecutions.get(executionId);
             if (execution) {
                 execution.status = 'failed';
             }
 
-            this.logger.error('Agent execution failed', error as Error, {
-                agentName: agent.name,
-                correlationId,
-                executionId,
-                sessionId: context.sessionId,
-                duration,
-            });
-
             throw error;
         }
     }
 
-    /**
-     * Processamento de thinking do agente (lógica principal)
-     * MIGRATED: Now uses Think→Act→Observe pattern
-     */
     protected async processAgentThinking(
         agent:
             | AgentDefinition<TInput, TOutput, TContent>
@@ -637,7 +535,6 @@ export abstract class AgentCore<
         toolsUsed: number;
         events: AnyEvent[];
     }> {
-        // Agents REQUIRE planner and LLM - no fallback
         if (!this.planner || !this.llmAdapter) {
             throw createAgentError(
                 `Agent '${agent.name}' requires both planner and LLM adapter`,
@@ -694,15 +591,7 @@ export abstract class AgentCore<
         if (thought.action) {
             const actionType = this.getActionType(thought.action);
 
-            this.logger.debug('Processing agent action', {
-                agentName: context.agentName,
-                actionType,
-                correlationId,
-            });
-
-            // Emit action processing event with delivery guarantee
             if (this.kernelHandler) {
-                // ✅ Use kernelHandler.emitAsync() instead of accessing runtime directly
                 if (this.kernelHandler.emitAsync) {
                     const emitResult = await this.kernelHandler.emitAsync(
                         'agent.action.start',
@@ -725,7 +614,6 @@ export abstract class AgentCore<
                         });
                     }
                 } else {
-                    // Fallback to basic emit
                     this.kernelHandler.emit('agent.action.start', {
                         agentName: context.agentName,
                         actionType,
@@ -744,20 +632,17 @@ export abstract class AgentCore<
                 const toolAction = thought.action as ToolCallAction;
                 const toolStartTime = Date.now();
 
-                // Extract toolName and input from both possible structures
                 let toolName: string = '';
                 let toolInput: unknown;
 
                 try {
                     if ('toolName' in toolAction && toolAction.toolName) {
-                        // Direct structure: { type: 'tool_call', toolName: 'name', input: {...} }
                         toolName = toolAction.toolName;
                         toolInput = toolAction.input;
                     } else if (
                         toolAction.content &&
                         typeof toolAction.content === 'object'
                     ) {
-                        // Content structure: { type: 'tool_call', content: { toolName: 'name', arguments: {...} } }
                         const content = toolAction.content as {
                             toolName?: string;
                             arguments?: unknown;
@@ -879,7 +764,6 @@ export abstract class AgentCore<
                                 );
                             }
                         } else {
-                            // Fallback to basic emit
                             this.kernelHandler.emit('agent.tool.completed', {
                                 agentName: context.agentName,
                                 toolName: toolName,
@@ -888,12 +772,6 @@ export abstract class AgentCore<
                             });
                         }
                     }
-
-                    this.logger.debug('Tool execution completed', {
-                        agentName: context.agentName,
-                        toolName: toolName,
-                        correlationId,
-                    });
                 } catch (error) {
                     // Emit tool error event with delivery guarantee
                     if (this.kernelHandler) {
@@ -935,12 +813,6 @@ export abstract class AgentCore<
                             });
                         }
                     }
-
-                    this.logger.error('Tool execution failed', error as Error, {
-                        agentName: context.agentName,
-                        toolName: toolName,
-                        correlationId,
-                    });
 
                     // 🚀 Add tool error to ExecutionRuntime for learning
                     if (context.executionRuntime) {
@@ -997,12 +869,6 @@ export abstract class AgentCore<
                         'delegationResult',
                         delegationResult,
                     );
-
-                    this.logger.debug('Agent delegation completed', {
-                        agentName: context.agentName,
-                        targetAgent: delegateAction.agentName,
-                        correlationId,
-                    });
                 } catch (error) {
                     this.logger.error(
                         'Agent delegation failed',
@@ -1018,9 +884,6 @@ export abstract class AgentCore<
                 }
             }
 
-            // ===== 🚀 NEW: PARALLEL TOOL EXECUTION ACTIONS =====
-
-            // Handle parallel tools execution
             if (
                 actionType === 'parallel_tools' &&
                 this.config.enableTools &&
@@ -1626,21 +1489,6 @@ export abstract class AgentCore<
         return context;
     }
 
-    protected emitEvent<K extends EventType>(
-        eventType: K,
-        data: EventPayloads[K],
-    ): AnyEvent {
-        const event = createEvent(eventType, data);
-        this.eventHistory.push(event);
-
-        this.logger.debug('Event emitted', {
-            eventType,
-            eventId: event.id,
-        });
-
-        return event;
-    }
-
     /**
      * Extract tools from action for processing
      */
@@ -1664,18 +1512,6 @@ export abstract class AgentCore<
         ) {
             return (action.content as { tools: ToolCall[] }).tools;
         }
-
-        this.logger.warn('No tools found in action', {
-            actionType: action.type,
-            hasTools: !!action.tools,
-            hasContent: !!action.content,
-            hasContentTools: !!(
-                action.content &&
-                typeof action.content === 'object' &&
-                action.content !== null &&
-                'tools' in action.content
-            ),
-        });
 
         return [];
     }
@@ -5057,47 +4893,15 @@ export abstract class AgentCore<
         result: ActionResult,
         context: PlannerExecutionContext,
     ): Promise<ResultAnalysis> {
-        // ✅ REMOVER: Debugger statement
-        //
         if (!this.planner) {
             throw new EngineError('AGENT_ERROR', 'Planner not initialized');
         }
 
-        this.logger.debug('Observe phase started', {
-            resultType: result.type,
-            hasError: isErrorResult(result),
-            agentName: this.config.agentName,
-        });
-
-        // ✅ SIMPLE: Early success detection
-        if (result.type === 'final_answer') {
-            return {
-                isComplete: true,
-                isSuccessful: true,
-                feedback: 'Task completed successfully',
-                shouldContinue: false,
-            };
-        }
-
-        // ✅ ENHANCED: Use smart tool result parser
         if (isToolResult(result)) {
             const { parseToolResult } = await import(
                 '../../core/utils/tool-result-parser.js'
             );
             const parsed = parseToolResult(result.content);
-
-            this.logger.debug('Tool result parsed', {
-                isSubstantial: parsed.isSubstantial,
-                isError: parsed.isError,
-                textLength: parsed.metadata.textLength,
-                source: parsed.metadata.source,
-                hasStructuredData: parsed.metadata.hasStructuredData,
-                trace: {
-                    source: 'agent-core',
-                    step: 'tool-result-analysis',
-                    timestamp: Date.now(),
-                },
-            });
 
             if (parsed.isSubstantial && !parsed.isError) {
                 // Tool gave substantial response, might be sufficient
@@ -5171,6 +4975,13 @@ export abstract class AgentCore<
 
         return false;
     }
+
+    // ──────────────────────────────────────────────────────────────────────────────
+    // 🚀 CONVERSATIONAL SHORTCUT UTILITIES
+    // ──────────────────────────────────────────────────────────────────────────────
+
+    // ✅ REMOVED: isConversationalAction and extractDirectResponse methods
+    // These have been replaced by Response Synthesizer logic for final_answer actions
 
     // Removed createExecutionContext and updateExecutionContext - no longer needed
     // Context is now created inline in executeThinkActObserve loop
