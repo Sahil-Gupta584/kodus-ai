@@ -41,9 +41,7 @@ interface ClusteredSuggestion {
     problemDescription?: string;
     actionStatement?: string;
 }
-import {
-    IPullRequestMessageContent,
-} from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
+import { IPullRequestMessageContent } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import {
     MessageTemplateProcessor,
     PlaceholderContext,
@@ -104,11 +102,6 @@ export class CommentManagerService implements ICommentManagerService {
                     },
                 });
 
-                let llm = this.llmProviderService.getLLMProvider({
-                    model: LLMModelProvider.OPENAI_GPT_4O,
-                    temperature: 0,
-                });
-
                 // Building the base prompt - Updated for code analysis
                 let promptBase = `Based on the code changes (patches) provided below, generate a precise description for this pull request.
     Analyze the actual code modifications to understand what was implemented, fixed, or changed.
@@ -140,7 +133,7 @@ export class CommentManagerService implements ICommentManagerService {
                     - Focus on WHAT was changed and WHY (based on the code context)
                     - Summarize the changes in business/functional terms when possible
                     - Use only the code changes provided. Do not add inferred information beyond what the code clearly shows.
-                    - Write the description in ${languageResultPrompt}.
+                    - You must always respond in ${languageResultPrompt}.
 
                     **Pull Request Details**:
                     - **Repository**: ${pullRequest?.head?.repo?.fullName || 'Desconhecido'}
@@ -156,15 +149,55 @@ export class CommentManagerService implements ICommentManagerService {
                         )
                         .join('\n\n')}`;
 
-                const chain = await llm.invoke(promptBase, {
-                    metadata: {
-                        module: 'CodeBase',
-                        submodule: 'CommentManagerService',
-                        ...organizationAndTeamData,
-                    },
-                });
+                const baseContext = {
+                    changedFiles,
+                    pullRequest,
+                    repository,
+                    summaryConfig,
+                    languageResultPrompt,
+                    updatedPR,
+                };
 
-                let finalDescription = chain.content || 'No comment generated';
+                const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
+
+                const userPrompt = `<changedFilesContext>${JSON.stringify(baseContext?.changedFiles, null, 2) || 'No files changed'}</changedFilesContext>`;
+
+                const result = await this.promptRunnerService
+                    .builder()
+                    .setProviders({
+                        main: LLMModelProvider.GEMINI_2_5_FLASH,
+                        fallback: fallbackProvider,
+                    })
+                    .setParser(ParserType.STRING)
+                    .setLLMJsonMode(false)
+                    .setPayload(baseContext)
+                    .addPrompt({
+                        prompt: promptBase,
+                        role: PromptRole.SYSTEM,
+                    })
+                    .addPrompt({
+                        prompt: userPrompt,
+                        role: PromptRole.USER,
+                    })
+                    .addMetadata({
+                        organizationId: organizationAndTeamData?.organizationId,
+                        teamId: organizationAndTeamData?.teamId,
+                        pullRequestId: pullRequest?.number,
+                        repositoryId: repository?.id,
+                        provider: LLMModelProvider.GEMINI_2_5_FLASH,
+                        fallbackProvider,
+                    })
+                    .setRunName('generateSummaryPR')
+                    .setTemperature(0)
+                    .execute();
+
+                if (!result) {
+                    throw new Error(
+                        'No result returned from generateSummaryPR',
+                    );
+                }
+
+                let finalDescription = result || 'No comment generated';
 
                 // Apply CONCATENATE behavior if necessary
                 if (
@@ -295,7 +328,10 @@ export class CommentManagerService implements ICommentManagerService {
                     startReviewMessage,
                     placeholderContext,
                 );
-                commentBody = this.sanitizeBitbucketMarkdown(rawBody, platformType);
+                commentBody = this.sanitizeBitbucketMarkdown(
+                    rawBody,
+                    platformType,
+                );
             } else {
                 commentBody = await this.generatePullRequestSummaryMarkdown(
                     changedFiles,
