@@ -713,6 +713,22 @@ export class AzureReposRequestHelper {
         return data?.value ?? [];
     }
 
+    async getCommit(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        commitId: string;
+    }): Promise<any | null> {
+        const instance = await this.azureRequest(params);
+
+        const { data } = await instance.get(
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/commits/${params.commitId}?api-version=7.1`,
+        );
+
+        return data ?? null;
+    }
+
     async updatePullRequestDescription(params: {
         orgName: string;
         token: string;
