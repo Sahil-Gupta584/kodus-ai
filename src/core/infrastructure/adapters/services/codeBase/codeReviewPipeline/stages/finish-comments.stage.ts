@@ -6,15 +6,8 @@ import {
 } from '@/core/domain/codeBase/contracts/CommentManagerService.contract';
 import { PinoLoggerService } from '../../../logger/pino.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
-import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import {
-    IPullRequestMessagesService,
-    PULL_REQUEST_MESSAGES_SERVICE_TOKEN,
-} from '@/core/domain/pullRequestMessages/contracts/pullRequestMessages.service.contract';
-import {
-    ConfigLevel,
     PullRequestMessageStatus,
-    PullRequestMessageType,
 } from '@/config/types/general/pullRequestMessages.type';
 
 @Injectable()
@@ -24,9 +17,6 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
     constructor(
         @Inject(COMMENT_MANAGER_SERVICE_TOKEN)
         private readonly commentManagerService: ICommentManagerService,
-
-        @Inject(PULL_REQUEST_MESSAGES_SERVICE_TOKEN)
-        private readonly pullRequestMessagesService: IPullRequestMessagesService,
 
         private readonly logger: PinoLoggerService,
     ) {
@@ -62,11 +52,17 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 context: this.stageName,
             });
 
+            const changedFiles = context.changedFiles.map((file) => ({
+                filename: file.filename,
+                patch: file.patch,
+                status: file.status,
+            }));
+
             const summaryPR =
                 await this.commentManagerService.generateSummaryPR(
                     pullRequest,
                     repository,
-                    overallComments,
+                    changedFiles,
                     organizationAndTeamData,
                     codeReviewConfig.languageResultPrompt,
                     codeReviewConfig.summary,
