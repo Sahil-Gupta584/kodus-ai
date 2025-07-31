@@ -607,7 +607,10 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 main: provider,
                 fallback: fallbackProvider,
             })
-            .setParser(ParserType.ZOD, kodyRulesClassifierSchema)
+            .setParser(ParserType.ZOD, kodyRulesClassifierSchema, {
+                provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
+                fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
+            })
             .setLLMJsonMode(true)
             .setTemperature(0)
             .setPayload(context)

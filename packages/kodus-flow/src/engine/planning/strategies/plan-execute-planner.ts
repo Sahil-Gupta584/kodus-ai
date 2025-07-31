@@ -27,6 +27,10 @@ import {
     createResponseSynthesizer,
     type ResponseSynthesisContext,
 } from '../../response/response-synthesizer.js';
+// 🆕 NEW: Import do novo sistema de prompts domain-agnostic
+import { PlannerPromptComposer } from './prompts/planner-prompt-composer.js';
+import { createPlannerPromptComposer } from './prompts/factory.js';
+import type { PlannerPromptConfig } from '../types/prompt-types.js';
 
 export interface PlanStep {
     id: string;
@@ -56,102 +60,75 @@ export interface ExecutionPlan {
 export class PlanAndExecutePlanner implements Planner {
     readonly name = 'Plan-and-Execute';
     private logger = createLogger('plan-execute-planner');
-    private currentPlan: ExecutionPlan | null = null;
+    // ✅ MULTI-TENANCY FIX: Store plans per thread/session instead of shared state
+    private plansByThread = new Map<string, ExecutionPlan>();
     // private persistor = getGlobalPersistor();
     private responseSynthesizer: ReturnType<typeof createResponseSynthesizer>;
+    // 🆕 NEW: Sistema de prompts domain-agnostic inteligente
+    private promptComposer: PlannerPromptComposer;
 
-    constructor(private llmAdapter: LLMAdapter) {
+    constructor(
+        private llmAdapter: LLMAdapter,
+        promptConfig?: PlannerPromptConfig,
+    ) {
         this.responseSynthesizer = createResponseSynthesizer(this.llmAdapter);
+        // 🆕 NEW: Inicializa o compositor de prompts com configuração opcional
+        this.promptComposer = createPlannerPromptComposer(promptConfig);
+
         this.logger.info('Plan-and-Execute Planner initialized', {
             llmProvider: llmAdapter.getProvider?.()?.name || 'unknown',
             supportsStructured:
                 llmAdapter.supportsStructuredGeneration?.() || false,
             supportsPlanning: !!llmAdapter.createPlan,
             availableTechniques: llmAdapter.getAvailableTechniques?.() || [],
+            promptSystem: 'domain-agnostic-v1.0.0',
         });
     }
 
     /**
-     * 💾 CLAUDE CODE FEATURE: Persist execution plan for recovery
+     * ✅ MULTI-TENANCY: Get unique thread identifier from context
      */
-    // private async savePlan(
-    //     plan: ExecutionPlan,
-    //     threadId: string,
-    // ): Promise<void> {
-    //     try {
-    //         const planKey = `plan_${threadId}_${plan.id}`;
-    //         await this.persistor.store({
-    //             id: planKey,
-    //             timestamp: Date.now(),
-    //             metadata: {
-    //                 threadId,
-    //                 planId: plan.id,
-    //                 goal: plan.goal,
-    //                 status: plan.status,
-    //                 currentStepIndex: plan.currentStepIndex,
-    //                 totalSteps: plan.steps.length,
-    //             },
-    //             data: plan,
-    //         });
+    private getThreadId(context: PlannerExecutionContext): string {
+        const threadId =
+            context.plannerMetadata?.thread?.id ||
+            context.plannerMetadata?.correlationId ||
+            'default-thread';
 
-    //         this.logger.info('💾 Plan persisted successfully', {
-    //             planId: plan.id,
-    //             threadId,
-    //             status: plan.status,
-    //             progress: `${plan.currentStepIndex}/${plan.steps.length}`,
-    //         });
-    //     } catch (error) {
-    //         this.logger.warn('Failed to persist plan', {
-    //             planId: plan.id,
-    //             error: (error as Error).message,
-    //         });
-    //     }
-    // }
+        return threadId;
+    }
 
-    // /**
-    //  * 🔄 CLAUDE CODE FEATURE: Restore execution plan for continuity
-    //  */
-    // private async loadPlan(threadId: string): Promise<ExecutionPlan | null> {
-    //     try {
-    //         // Look for the most recent plan for this thread
-    //         const stats = await this.persistor.getStats();
-    //         this.logger.debug('Searching for persisted plans', {
-    //             threadId,
-    //             storageStats: stats,
-    //         });
+    /**
+     * ✅ MULTI-TENANCY: Get plan for specific thread
+     */
+    private getCurrentPlan(
+        context: PlannerExecutionContext,
+    ): ExecutionPlan | null {
+        const threadId = this.getThreadId(context);
 
-    //         // In a real implementation, we'd search by threadId
-    //         // For now, we'll return null and let the system create new plans
-    //         return null;
-    //     } catch (error) {
-    //         this.logger.warn('Failed to load persisted plan', {
-    //             threadId,
-    //             error: (error as Error).message,
-    //         });
-    //         return null;
-    //     }
-    // }
+        return this.plansByThread.get(threadId) || null;
+    }
 
-    // /**
-    //  * 📊 CLAUDE CODE FEATURE: Update plan progress and persist
-    //  */
-    // private async updatePlanProgress(threadId: string): Promise<void> {
-    //     if (!this.currentPlan) return;
+    /**
+     * ✅ MULTI-TENANCY: Set plan for specific thread
+     */
+    private setCurrentPlan(
+        context: PlannerExecutionContext,
+        plan: ExecutionPlan | null,
+    ): void {
+        const threadId = this.getThreadId(context);
+        if (plan === null) {
+            this.plansByThread.delete(threadId);
+        } else {
+            this.plansByThread.set(threadId, plan);
+        }
 
-    //     this.currentPlan.metadata = {
-    //         ...this.currentPlan.metadata,
-    //         lastUpdated: Date.now(),
-    //         progress: `${this.currentPlan.currentStepIndex}/${this.currentPlan.steps.length}`,
-    //         completedSteps: this.currentPlan.steps.filter(
-    //             (s) => s.status === 'completed',
-    //         ).length,
-    //         failedSteps: this.currentPlan.steps.filter(
-    //             (s) => s.status === 'failed',
-    //         ).length,
-    //     };
-
-    //     await this.savePlan(this.currentPlan, threadId);
-    // }
+        this.logger.debug('Plan set for thread', {
+            threadId,
+            planId: plan?.id,
+            status: plan?.status,
+            totalPlans: this.plansByThread.size,
+        });
+    }
 
     /**
      * 🎯 RESPONSE SYNTHESIS: Criar resposta final conversacional
@@ -159,7 +136,8 @@ export class PlanAndExecutePlanner implements Planner {
     private async createFinalResponse(
         context: PlannerExecutionContext,
     ): Promise<string> {
-        if (!this.currentPlan) {
+        const currentPlan = this.getCurrentPlan(context);
+        if (!currentPlan) {
             // ✅ FRAMEWORK BEST PRACTICE: Return empty response if no plan
             return '';
         }
@@ -173,7 +151,7 @@ export class PlanAndExecutePlanner implements Planner {
                 originalQuery: context.input,
                 plannerType: 'plan-execute',
                 executionResults,
-                planSteps: this.currentPlan.steps
+                planSteps: currentPlan.steps
                     .filter(
                         (step) =>
                             step.status === 'completed' ||
@@ -192,23 +170,23 @@ export class PlanAndExecutePlanner implements Planner {
                 // ✅ FRAMEWORK PATTERN: Include dynamic planner reasoning
                 plannerReasoning: this.buildDynamicReasoning(
                     context,
-                    this.currentPlan,
+                    currentPlan,
                 ),
                 metadata: {
-                    totalSteps: this.currentPlan.steps.length,
-                    completedSteps: this.currentPlan.steps.filter(
+                    totalSteps: currentPlan.steps.length,
+                    completedSteps: currentPlan.steps.filter(
                         (s) => s.status === 'completed',
                     ).length,
-                    failedSteps: this.currentPlan.steps.filter(
+                    failedSteps: currentPlan.steps.filter(
                         (s) => s.status === 'failed',
                     ).length,
                     executionTime:
                         Date.now() -
-                        ((this.currentPlan.metadata?.startTime as number) ||
+                        ((currentPlan.metadata?.startTime as number) ||
                             Date.now()),
                     iterationCount: context.iterations,
-                    planId: this.currentPlan.id,
-                    strategy: this.currentPlan.strategy,
+                    planId: currentPlan.id,
+                    strategy: currentPlan.strategy,
                 },
             };
 
@@ -227,15 +205,15 @@ export class PlanAndExecutePlanner implements Planner {
                 'Failed to synthesize final response',
                 error as Error,
                 {
-                    planId: this.currentPlan.id,
+                    planId: currentPlan.id,
                 },
             );
 
             // Fallback: resposta básica mas útil
-            const completedSteps = this.currentPlan.steps.filter(
+            const completedSteps = currentPlan.steps.filter(
                 (s) => s.status === 'completed',
             ).length;
-            const failedSteps = this.currentPlan.steps.filter(
+            const failedSteps = currentPlan.steps.filter(
                 (s) => s.status === 'failed',
             ).length;
 
@@ -457,7 +435,8 @@ export class PlanAndExecutePlanner implements Planner {
 
     async think(context: PlannerExecutionContext): Promise<AgentThought> {
         try {
-            if (!this.currentPlan || this.shouldReplan(context)) {
+            const currentPlan = this.getCurrentPlan(context);
+            if (!currentPlan || this.shouldReplan(context)) {
                 return await this.createPlan(context);
             }
 
@@ -488,44 +467,51 @@ export class PlanAndExecutePlanner implements Planner {
         // ✅ GET MEMORY CONTEXT using ContextBuilder APIs
         const memoryContext = await this.getMemoryContext(context, input);
 
-        // ✅ Build enhanced tools context for Plan-Execute
-        const toolsContext =
-            this.buildToolsContextForPlanExecute(availableTools);
-
         // ✅ Build planning history context
         const planningHistory = this.buildPlanningHistory(context);
 
         // ✅ Build identity context from AgentContext
         const agentIdentity = context.agentContext?.agentIdentity;
-        const identityContext = agentIdentity
-            ? `\nYour identity:
-- Role: ${agentIdentity?.role || 'Planning Assistant'}
-- Goal: ${agentIdentity?.goal || 'Create effective execution plans'}
-- Expertise: ${agentIdentity?.expertise?.join(', ') || 'Strategic planning'}`
-            : '';
 
         // Use createPlan method with prompts from this planner
         if (!this.llmAdapter.createPlan) {
             throw new Error('LLM adapter must support createPlan method');
         }
 
+        const composedPrompt = await this.promptComposer.composePrompt({
+            goal: input,
+            availableTools: availableTools.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
+            })),
+            memoryContext,
+            planningHistory,
+            additionalContext: {
+                ...context.plannerMetadata,
+                agentIdentity,
+                userContext:
+                    context.agentContext?.agentExecutionOptions?.userContext,
+            },
+            iteration: 1,
+            maxIterations: 5,
+        });
+
+        this.logger.debug('Composed intelligent prompt', {
+            systemPromptLength: composedPrompt.systemPrompt.length,
+            userPromptLength: composedPrompt.userPrompt.length,
+            estimatedTokens: composedPrompt.metadata.estimatedTokens,
+            includesSmartAnalysis:
+                composedPrompt.metadata.includesSmartAnalysis,
+            exampleCount: composedPrompt.metadata.exampleCount,
+        });
+
         const planResult = await this.llmAdapter.createPlan(
             input,
             'plan-execute',
             {
-                systemPrompt: this.getSystemPrompt(),
-                userPrompt: this.getUserPrompt({
-                    goal: input,
-                    availableTools: availableTools,
-                    toolsContext: toolsContext || '',
-                    identityContext: identityContext || '',
-                    userContext: JSON.stringify(
-                        context.agentContext?.agentExecutionOptions
-                            ?.userContext || {},
-                    ),
-                    memoryContext: memoryContext,
-                    planningHistory: planningHistory || '',
-                }),
+                systemPrompt: composedPrompt.systemPrompt,
+                userPrompt: composedPrompt.userPrompt,
             },
         );
 
@@ -533,7 +519,7 @@ export class PlanAndExecutePlanner implements Planner {
 
         const steps = this.convertLLMResponseToSteps(plan);
 
-        this.currentPlan = {
+        const newPlan: ExecutionPlan = {
             id: `plan-${Date.now()}`,
             goal: input,
             strategy: 'plan-execute',
@@ -550,6 +536,9 @@ export class PlanAndExecutePlanner implements Planner {
             },
         };
 
+        // ✅ MULTI-TENANCY: Store plan per thread
+        this.setCurrentPlan(context, newPlan);
+
         // Start executing first step
         return this.executeNextStep(context);
     }
@@ -557,19 +546,21 @@ export class PlanAndExecutePlanner implements Planner {
     private async executeNextStep(
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        if (!this.currentPlan) {
+        const currentPlan = this.getCurrentPlan(context);
+
+        if (!currentPlan) {
             throw new Error('No execution plan available');
         }
 
-        const currentStep =
-            this.currentPlan.steps[this.currentPlan.currentStepIndex];
+        const currentStep = currentPlan.steps[currentPlan.currentStepIndex];
 
         if (!currentStep) {
             // Plan completed or no steps were created
-            this.currentPlan.status = 'completed';
+            currentPlan.status = 'completed';
+            this.setCurrentPlan(context, currentPlan);
 
             // ✅ FRAMEWORK APPROACH: Use LLM's reasoning as response when no steps exist
-            const hasSteps = this.currentPlan.steps.length > 0;
+            const hasSteps = currentPlan.steps.length > 0;
 
             let responseContent: string;
 
@@ -578,9 +569,9 @@ export class PlanAndExecutePlanner implements Planner {
                 responseContent = 'Plan execution completed successfully';
             } else {
                 // No steps were created - use the LLM's reasoning as the direct response
-                responseContent = Array.isArray(this.currentPlan.reasoning)
-                    ? this.currentPlan.reasoning.join(' ')
-                    : this.currentPlan.reasoning || 'Ready to respond';
+                responseContent = Array.isArray(currentPlan.reasoning)
+                    ? currentPlan.reasoning.join(' ')
+                    : currentPlan.reasoning || 'Ready to respond';
             }
 
             return {
@@ -592,8 +583,8 @@ export class PlanAndExecutePlanner implements Planner {
                     content: responseContent,
                 },
                 metadata: {
-                    planId: this.currentPlan.id,
-                    completedSteps: this.currentPlan.steps.length,
+                    planId: currentPlan.id,
+                    completedSteps: currentPlan.steps.length,
                     executionHistory: context.history.length,
                     iterationCount: context.iterations,
                     responseSource: hasSteps
@@ -606,12 +597,12 @@ export class PlanAndExecutePlanner implements Planner {
         if (currentStep.arguments) {
             currentStep.arguments = this.resolveStepArguments(
                 currentStep.arguments,
-                this.currentPlan.steps,
+                currentPlan.steps,
             );
         }
 
         // 🚀 DYNAMIC PARALLEL EXPANSION: Check if step needs to be expanded for arrays
-        if (this.shouldExpandToParallel(currentStep, this.currentPlan.steps)) {
+        if (this.shouldExpandToParallel(currentStep, currentPlan.steps)) {
             return this.expandToParallelExecution(currentStep, context);
         }
 
@@ -683,14 +674,14 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         return {
-            reasoning: `Executing step ${this.currentPlan.currentStepIndex + 1}/${this.currentPlan.steps.length}: ${currentStep.description}. Context: ${context.history.length} previous actions, iteration ${context.iterations}`,
+            reasoning: `Executing step ${currentPlan.currentStepIndex + 1}/${currentPlan.steps.length}: ${currentStep.description}. Context: ${context.history.length} previous actions, iteration ${context.iterations}`,
             action,
             confidence: this.calculateStepConfidence(currentStep, context),
             metadata: {
-                planId: this.currentPlan.id,
+                planId: currentPlan.id,
                 stepId: currentStep.id,
-                stepIndex: this.currentPlan.currentStepIndex,
-                totalSteps: this.currentPlan.steps.length,
+                stepIndex: currentPlan.currentStepIndex,
+                totalSteps: currentPlan.steps.length,
                 stepType: currentStep.type,
                 contextHistory: context.history.length,
                 currentIteration: context.iterations,
@@ -703,7 +694,8 @@ export class PlanAndExecutePlanner implements Planner {
         result: ActionResult,
         context: PlannerExecutionContext,
     ): Promise<ResultAnalysis> {
-        if (!this.currentPlan) {
+        const currentPlan = this.getCurrentPlan(context);
+        if (!currentPlan) {
             return {
                 isComplete: true,
                 isSuccessful: true,
@@ -713,13 +705,14 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         if (result.type === 'final_answer') {
-            this.currentPlan.status = 'completed';
+            currentPlan.status = 'completed';
+            this.setCurrentPlan(context, currentPlan);
 
             // ✅ FRAMEWORK PATTERN: Add final_answer to history to maintain consistency
             // This ensures Response Synthesizer has access to the reasoning from empty plans
             context.history.push({
                 thought: {
-                    reasoning: this.currentPlan.reasoning,
+                    reasoning: currentPlan.reasoning,
                     action: {
                         type: 'final_answer',
                         content: result.content,
@@ -748,8 +741,7 @@ export class PlanAndExecutePlanner implements Planner {
             };
         }
 
-        const currentStep =
-            this.currentPlan.steps[this.currentPlan.currentStepIndex];
+        const currentStep = currentPlan.steps[currentPlan.currentStepIndex];
 
         if (!currentStep) {
             return {
@@ -770,7 +762,8 @@ export class PlanAndExecutePlanner implements Planner {
             );
 
             if (shouldReplan) {
-                this.currentPlan.status = 'replanning';
+                currentPlan.status = 'replanning';
+                this.setCurrentPlan(context, currentPlan);
                 return {
                     isComplete: false,
                     isSuccessful: false,
@@ -779,7 +772,8 @@ export class PlanAndExecutePlanner implements Planner {
                     suggestedNextAction: 'Replan execution strategy',
                 };
             } else {
-                this.currentPlan.status = 'failed';
+                currentPlan.status = 'failed';
+                this.setCurrentPlan(context, currentPlan);
 
                 const synthesizedErrorResponse =
                     await this.createFinalResponse(context);
@@ -801,15 +795,15 @@ export class PlanAndExecutePlanner implements Planner {
             }>;
 
             let stepsCompleted = 0;
-            const startIndex = this.currentPlan.currentStepIndex;
+            const startIndex = currentPlan.currentStepIndex;
 
             for (
                 let i = startIndex;
-                i < this.currentPlan.steps.length &&
+                i < currentPlan.steps.length &&
                 stepsCompleted < parallelResults.length;
                 i++
             ) {
-                const step = this.currentPlan.steps[i];
+                const step = currentPlan.steps[i];
                 if (step && step.status === 'executing') {
                     const stepResult = parallelResults.find(
                         (r) => r.toolName === step.tool,
@@ -824,20 +818,20 @@ export class PlanAndExecutePlanner implements Planner {
                 }
             }
 
-            this.currentPlan.currentStepIndex = startIndex + stepsCompleted;
+            currentPlan.currentStepIndex = startIndex + stepsCompleted;
         } else {
             const stepResult = getResultContent(result);
             currentStep.status = 'completed';
             currentStep.result = stepResult;
 
-            this.currentPlan.currentStepIndex++;
+            currentPlan.currentStepIndex++;
         }
 
         const isLastStep =
-            this.currentPlan.currentStepIndex >= this.currentPlan.steps.length;
+            currentPlan.currentStepIndex >= currentPlan.steps.length;
 
         if (isLastStep) {
-            this.currentPlan.status = 'completed';
+            currentPlan.status = 'completed';
 
             const synthesizedResponse = await this.createFinalResponse(context);
 
@@ -852,19 +846,20 @@ export class PlanAndExecutePlanner implements Planner {
         return {
             isComplete: false,
             isSuccessful: true,
-            feedback: `✅ Step completed: ${currentStep.description}. Progress: ${this.currentPlan.currentStepIndex}/${this.currentPlan.steps.length}`,
+            feedback: `✅ Step completed: ${currentStep.description}. Progress: ${currentPlan.currentStepIndex}/${currentPlan.steps.length}`,
             shouldContinue: true,
-            suggestedNextAction: `Next: ${this.currentPlan.steps[this.currentPlan.currentStepIndex]?.description}`,
+            suggestedNextAction: `Next: ${currentPlan.steps[currentPlan.currentStepIndex]?.description}`,
         };
     }
 
     private shouldReplan(context: PlannerExecutionContext): boolean {
-        if (!this.currentPlan) {
+        const currentPlan = this.getCurrentPlan(context);
+        if (!currentPlan) {
             return true;
         }
 
         // Replan if status indicates replanning needed
-        if (this.currentPlan.status === 'replanning') {
+        if (currentPlan.status === 'replanning') {
             return true;
         }
 
@@ -895,103 +890,6 @@ export class PlanAndExecutePlanner implements Planner {
 
         return context.iterations < 3;
     }
-
-    //     private buildPlanningGoal(
-    //         input: string,
-    //         context: PlannerExecutionContext,
-    //     ): string {
-    //             // const availableToolNames =
-    //             //     context.availableTools?.map((tool) => tool.name) || [];
-
-    //         // ✅ CONTEXT ENGINEERING - Informar tools disponíveis de forma simples
-    //         const toolsContext =
-    //             availableToolNames.length > 0
-    //                 ? `Available tools: ${availableToolNames.join(', ')}`
-    //                 : `No tools available for this session`;
-
-    //         const historyContext =
-    //             context.history.length > 0
-    //                 ? `\nPrevious attempts context: ${context.history
-    //                       .slice(-2)
-    //                       .map(
-    //                           (h) =>
-    //                               `Action: ${JSON.stringify(h.action)}, Result: ${h.observation.feedback}`,
-    //                       )
-    //                       .join('; ')}`
-    //                 : '';
-
-    //         return `
-    // ${toolsContext}
-
-    // Create a detailed step-by-step plan to achieve this goal: ${input}
-    // ${historyContext}
-
-    // Requirements:
-    // 1. Break down into specific, actionable steps
-    // 2. Each step should be clear and measurable
-    // 3. Include appropriate actions and tool usage
-    // 4. Consider dependencies between steps
-    // 5. Plan for verification and error handling
-
-    // Create a structured plan with steps that can be executed sequentially.
-    //         `.trim();
-    //     }
-
-    //     private convertLLMStepsToExecutionSteps(
-    //         llmSteps: Array<{
-    //             tool?: string;
-    //             arguments?: Record<string, unknown>;
-    //             description?: string;
-    //             type?: string;
-    //         }>,
-    //     ): PlanStep[] {
-    //         return llmSteps.map((step, index) => {
-    //             // ✅ VALIDAÇÃO - Verificar se step usa tool inexistente
-    //             const finalTool = step.tool;
-    //             const finalDescription = step.description || `Step ${index + 1}`;
-
-    //             if (step.tool && step.tool !== 'none') {
-    //                 // Se step menciona uma tool, verificar se ela existe
-    //                 // Nota: availableTools não está disponível aqui, mas a validação será feita na execução
-    //                 // Por agora, mantemos a tool conforme especificada pelo LLM
-    //             }
-
-    //             return {
-    //                 id: `step-${index + 1}`,
-    //                 description: finalDescription,
-    //                 type:
-    //                     step.type === 'verification'
-    //                         ? 'verification'
-    //                         : finalTool
-    //                           ? 'action'
-    //                           : 'decision',
-    //                 tool: finalTool,
-    //                 input: step.arguments,
-    //                 status: 'pending' as const,
-    //                 dependencies: index > 0 ? [`step-${index}`] : [],
-    //                 retry: 0,
-    //             };
-    //         });
-    //     }
-
-    //     private extractPreviousPlans(context: PlannerExecutionContext) {
-    //         // Extract previous planning attempts from history
-    //         return context.history
-    //             .filter((h) => h.thought.metadata?.planId)
-    //             .map((h) => ({
-    //                 strategy: 'plan-execute',
-    //                 goal: context.input,
-    //                 steps: [
-    //                     {
-    //                         id: 'previous-step',
-    //                         description: h.thought.reasoning,
-    //                         type: 'action' as const,
-    //                     },
-    //                 ],
-    //                 reasoning: h.observation.feedback,
-    //                 complexity: 'medium' as const,
-    //             }));
-    //     }
 
     private calculateStepConfidence(
         step: PlanStep,
@@ -1207,71 +1105,71 @@ export class PlanAndExecutePlanner implements Planner {
     /**
      * Build enhanced tools context for Plan-Execute
      */
-    private buildToolsContextForPlanExecute(
-        tools: ToolMetadataForLLM[],
-    ): string {
-        if (tools.length === 0) {
-            return `No external tools available. The system will handle responses automatically.
-IMPORTANT: Since no tools are available, you should return an empty plan [] and let the Response Synthesizer handle the user query.`;
-        }
+    //     private buildToolsContextForPlanExecute(
+    //         tools: ToolMetadataForLLM[],
+    //     ): string {
+    //         if (tools.length === 0) {
+    //             return `No external tools available. The system will handle responses automatically.
+    // IMPORTANT: Since no tools are available, you should return an empty plan [] and let the Response Synthesizer handle the user query.`;
+    //         }
 
-        // Group tools by MCP prefix for clean organization
-        const toolsByPrefix = new Map<string, ToolMetadataForLLM[]>();
+    //         // Group tools by MCP prefix for clean organization
+    //         const toolsByPrefix = new Map<string, ToolMetadataForLLM[]>();
 
-        tools.forEach((tool) => {
-            const prefix = tool.name.split('.')[0] || 'other';
-            if (!toolsByPrefix.has(prefix)) {
-                toolsByPrefix.set(prefix, []);
-            }
-            toolsByPrefix.get(prefix)!.push(tool);
-        });
+    //         tools.forEach((tool) => {
+    //             const prefix = tool.name.split('.')[0] || 'other';
+    //             if (!toolsByPrefix.has(prefix)) {
+    //                 toolsByPrefix.set(prefix, []);
+    //             }
+    //             toolsByPrefix.get(prefix)!.push(tool);
+    //         });
 
-        let context = '';
-        const sortedPrefixes = Array.from(toolsByPrefix.keys()).sort();
+    //         let context = '';
+    //         const sortedPrefixes = Array.from(toolsByPrefix.keys()).sort();
 
-        sortedPrefixes.forEach((prefix, index) => {
-            if (index > 0) {
-                context += '\n---\n\n'; // Separator between MCP groups
-            }
+    //         sortedPrefixes.forEach((prefix, index) => {
+    //             if (index > 0) {
+    //                 context += '\n---\n\n'; // Separator between MCP groups
+    //             }
 
-            const prefixTools = toolsByPrefix.get(prefix)!;
-            prefixTools.forEach((tool) => {
-                context += `- ${tool.name}: ${tool.description}\n`;
+    //             const prefixTools = toolsByPrefix.get(prefix)!;
+    //             prefixTools.forEach((tool) => {
+    //                 context += `- ${tool.name}: ${tool.description}\n`;
 
-                // Include parameter information
-                if (tool.parameters && typeof tool.parameters === 'object') {
-                    const params = tool.parameters as Record<string, unknown>;
-                    const properties = params.properties as Record<
-                        string,
-                        unknown
-                    >;
-                    const required = params.required as string[];
+    //                 // Include parameter information
+    //                 if (tool.parameters && typeof tool.parameters === 'object') {
+    //                     const params = tool.parameters as Record<string, unknown>;
+    //                     const properties = params.properties as Record<
+    //                         string,
+    //                         unknown
+    //                     >;
+    //                     const required = params.required as string[];
 
-                    if (properties && Object.keys(properties).length > 0) {
-                        context += `  Parameters:\n`;
-                        Object.entries(properties).forEach(
-                            ([paramName, paramInfo]) => {
-                                const info = paramInfo as Record<
-                                    string,
-                                    unknown
-                                >;
-                                const isRequired =
-                                    required?.includes(paramName);
-                                const type = info.type || 'string';
-                                const description = info.description || '';
+    //                     if (properties && Object.keys(properties).length > 0) {
+    //                         context += `  Parameters:\n`;
+    //                         Object.entries(properties).forEach(
+    //                             ([paramName, paramInfo]) => {
+    //                                 const info = paramInfo as Record<
+    //                                     string,
+    //                                     unknown
+    //                                 >;
+    //                                 const isRequired =
+    //                                     required?.includes(paramName);
+    //                                 const type = info.type || 'string';
+    //                                 const description = info.description || '';
 
-                                context += `    - ${paramName} (${type})${isRequired ? ' [REQUIRED]' : ' [optional]'}: ${description}\n`;
-                            },
-                        );
-                    }
-                }
-            });
-        });
+    //                                 context += `    - ${paramName} (${type})${isRequired ? ' [REQUIRED]' : ' [optional]'}: ${description}\n`;
+    //                             },
+    //                         );
+    //                     }
+    //                 }
+    //             });
+    //         });
 
-        context += `\nIMPORTANT: Only use tools that are listed above. If you need functionality that's not available, return an empty plan [] to let the Response Synthesizer handle the user query directly.`;
+    //         context += `\nIMPORTANT: Only use tools that are listed above. If you need functionality that's not available, return an empty plan [] to let the Response Synthesizer handle the user query directly.`;
 
-        return context;
-    }
+    //         return context;
+    //     }
 
     /**
      * Build planning history context
@@ -1301,19 +1199,20 @@ IMPORTANT: Since no tools are available, you should return an empty plan [] and 
      */
     private detectParallelExecution(
         currentStep: PlanStep,
-        _context: PlannerExecutionContext,
+        context: PlannerExecutionContext,
     ): {
         canExecuteInParallel: boolean;
         steps: PlanStep[];
         reason?: string;
     } {
-        if (!this.currentPlan) {
+        const currentPlan = this.getCurrentPlan(context);
+        if (!currentPlan) {
             return { canExecuteInParallel: false, steps: [currentStep] };
         }
 
         // Get remaining pending steps
-        const remainingSteps = this.currentPlan.steps
-            .slice(this.currentPlan.currentStepIndex)
+        const remainingSteps = currentPlan.steps
+            .slice(currentPlan.currentStepIndex)
             .filter((step) => step.status === 'pending');
 
         if (remainingSteps.length <= 1) {
@@ -1327,9 +1226,7 @@ IMPORTANT: Since no tools are available, you should return an empty plan [] and 
         for (const step of candidateSteps) {
             // Check if step has dependencies that haven't been completed yet
             const hasPendingDependencies = step.dependencies?.some((depId) => {
-                const depStep = this.currentPlan!.steps.find(
-                    (s) => s.id === depId,
-                );
+                const depStep = currentPlan.steps.find((s) => s.id === depId);
                 return depStep && depStep.status !== 'completed';
             });
 
@@ -1621,12 +1518,13 @@ IMPORTANT: Since no tools are available, you should return an empty plan [] and 
      */
     private expandToParallelExecution(
         currentStep: PlanStep,
-        _context: PlannerExecutionContext,
+        context: PlannerExecutionContext,
     ): AgentThought {
         const argsStr = JSON.stringify(currentStep.arguments);
         const match = argsStr.match(/\{\{([^.}]+)\.result\}\}/);
 
-        if (!match || !this.currentPlan) {
+        const currentPlan = this.getCurrentPlan(context);
+        if (!match || !currentPlan) {
             throw new Error('Invalid state for parallel expansion');
         }
 
@@ -1641,10 +1539,10 @@ IMPORTANT: Since no tools are available, you should return an empty plan [] and 
         if (stepIdentifier.startsWith('step-')) {
             const stepNum = parseInt(stepIdentifier.substring(5));
             const stepIndex = stepNum - 1;
-            referencedStep = this.currentPlan.steps[stepIndex];
+            referencedStep = currentPlan.steps[stepIndex];
         } else {
             // Try to find step by ID
-            referencedStep = this.currentPlan.steps.find(
+            referencedStep = currentPlan.steps.find(
                 (s) => s.id === stepIdentifier,
             );
         }
@@ -1689,7 +1587,7 @@ IMPORTANT: Since no tools are available, you should return an empty plan [] and 
             } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
             confidence: 0.9,
             metadata: {
-                planId: this.currentPlan.id,
+                planId: currentPlan.id,
                 stepId: currentStep.id,
                 expandedToParallel: true,
                 itemCount: arrayResult.length,
@@ -1698,107 +1596,43 @@ IMPORTANT: Since no tools are available, you should return an empty plan [] and 
     }
 
     // ──────────────────────────────────────────────────────────────────────────────
-    // 🎯 Prompt Generation Helpers
+    // 🆕 NEW: Prompt system management
     // ──────────────────────────────────────────────────────────────────────────────
 
-    private getSystemPrompt(): string {
-        return `You are an expert planning agent that creates executable DAGs
-following the Plan-and-Execute methodology.
-
-=== CORE PRINCIPLES ===
-1. ANALYZE   • 2. DECOMPOSE • 3. SEQUENCE
-4. SPECIFY   • 5. VALIDATE  • 6. ADAPT
-
-=== CRITICAL RULES ===
-• Allowed placeholders: {{stepId.result}} or {{step-X.result[…]}}, any other format is STRICTLY FORBIDDEN.
-• IDs: all \`"id"\` values must be in **kebab-case** (lowercase, words joined by hyphens) and **action-agnostic** (e.g. \`action-name\`, \`validate-data\`, \`process-items\`).
-• Wildcard syntax: when referring to arrays, use \`{{stepId.result[*].field}}\` (e.g. \`{{fetch-data.result[*].id}}\`).
-• NEVER USE “placeholder-like” tokens (examples, not exhaustive): PLACEHOLDER, FILL_ME, YOUR_*_HERE, INSERT_*_HERE, <placeholder>, {{placeholder}}.
-• Fixed context fields (e.g. organizationId, teamId) MUST be concrete values inside \`argsTemplate\`; never placeholders.
-• Use \`parallel:true\` only for steps that can run in independent batches; otherwise use \`parallel:false\`.
-• The final reply must be pure JSON – no comments, no trailing commas.
-• If you don't have concrete values for required parameters, create a step to ask the user for them FIRST.
-• If required tools are not available, return an empty plan [] - the system will handle the response naturally.
-• For conversational inputs (greetings, simple questions), prefer empty plans over artificial tool steps.
-• IMPORTANT: If tools ARE available to gather relevant data, USE THEM! Don't default to empty plans when you can fetch useful information.
-
-=== EMPTY PLANS ===
-• When no tools are available for the user's request, return: {"strategy": "plan-execute", "goal": "user goal", "plan": [], "reasoning": ["No tools required - direct response appropriate"]}
-• When user input is conversational (greetings, simple questions), return empty plan [] to let the natural response flow handle it
-• Don't create steps just to fill a plan - empty plans are valid and preferred for simple interactions
-• Examples:
-  - User: "hello" → {"plan": [], "reasoning": ["Simple greeting - no tools needed"]}
-  - User: "how are you?" → {"plan": [], "reasoning": ["Conversational question - direct response appropriate"]}
-  - User: "explain photosynthesis" → {"plan": [], "reasoning": ["Knowledge request - no external tools required"]}
-
-=== PLAN-AND-SOLVE METHODOLOGY ===
-• UNDERSTAND the request: What information is needed? What is the user asking for?
-• PLAN the approach: What data should be gathered? In what sequence?
-• EXECUTE the plan: Use available tools step by step to collect information
-• SYNTHESIZE with reasoning: Analyze gathered data to provide comprehensive response
-
-=== TOOL COMBINATION PATTERNS ===
-• DATA RETRIEVAL + ANALYSIS: Use tools to fetch data, then leverage LLM reasoning for analysis
-• MULTI-STEP WORKFLOWS: Tool results can be used as inputs for subsequent tools using {{step-id.result}}
-• CONTEXT BUILDING: Each tool result enriches the context for better final analysis
-• SEQUENTIAL DEPENDENCIES: Plan steps that build upon previous results
-• Don't assume you need specific "analysis" tools - the LLM can analyze any gathered data
-
-=== REASONING APPROACH ===
-• Break complex requests into smaller, manageable information-gathering tasks
-• Identify what data sources are needed before determining specific tools
-• Plan the sequence: Which information is prerequisite for other steps?
-• Build comprehensive context through multiple tool calls before final analysis
-
-=== NODE FORMAT ===
-{
-  "id"           : "kebab-case-string",
-  "description"  : "Short description",
-  "tool"         : "exact_tool_name_from_catalog",
-  "argsTemplate" : { "param": "value | {{stepId.result}}" },
-  "parallel"     : true|false,
-  "dependsOn"    : ["previous_step_ids"],
-  "expectedOutcome": "Your success criterion",
-}
-
-=== COMPLETE FORMAT ===
-{
-  "strategy" : "plan-execute",
-  "goal"     : "original user goal",
-  "plan"     : [ <array of nodes> ],
-  "reasoning": [
-     "Step 1: ...",
-     "Step 2: ...",
-     "..."
-  ]
-}`;
+    /**
+     * 🆕 Update prompt configuration dynamically
+     * Allows runtime customization of prompt behavior
+     */
+    updatePromptConfig(config: PlannerPromptConfig): void {
+        this.promptComposer = createPlannerPromptComposer(config);
+        this.logger.info('Prompt configuration updated', {
+            hasCustomExamples: !!config.customExamples?.length,
+            hasExamplesProvider: !!config.examplesProvider,
+            hasPatternsProvider: !!config.patternsProvider,
+            additionalPatterns: config.additionalPatterns?.length || 0,
+            behavior: config.behavior || {},
+        });
     }
 
-    private getUserPrompt(context: {
-        goal: string;
-        availableTools?: unknown[];
-        toolsContext?: string;
-        identityContext?: string;
-        userContext?: string;
-        memoryContext?: string;
-        planningHistory?: string;
-    }): string {
-        return `## DYNAMIC CONTEXT
-${context.identityContext || 'Agent identity not specified'}
+    /**
+     * 🆕 Get current prompt composition statistics
+     */
+    getPromptStats(): {
+        cacheSize: number;
+        version: string;
+    } {
+        const cacheStats = this.promptComposer.getCacheStats();
+        return {
+            cacheSize: cacheStats.size,
+            version: '1.0.0',
+        };
+    }
 
-Additional context provided by caller (JSON)
-${context.userContext || '{}'}
-
-${context.memoryContext || 'Recent Memory: '}
-${context.planningHistory || 'Planning History: '}
-Current Iteration: {iteration} / {maxIterations}
-
-## RELEVANT MCP TOOLS
-${context.toolsContext || 'No tools available'}
-
-## USER GOAL
-"${context.goal}"
-
-Create an executable DAG using the template system and parallel execution optimization.`;
+    /**
+     * 🆕 Clear prompt cache (useful for testing or memory management)
+     */
+    clearPromptCache(): void {
+        this.promptComposer.clearCache();
+        this.logger.debug('Prompt cache cleared');
     }
 }

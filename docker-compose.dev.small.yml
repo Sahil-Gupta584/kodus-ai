@@ -1,6 +1,5 @@
 services:
   kodus-orchestrator:
-    # no M1, NÃO force amd64 (mais lento em emulação)
     container_name: ${GLOBAL_API_CONTAINER_NAME}
     build:
       context: .
@@ -12,35 +11,21 @@ services:
       - "9229:9229"
     env_file: [.env]
     environment:
-      # watchers dentro do container (fs events nem sempre chegam bem no Docker Desktop)
       - CHOKIDAR_USEPOLLING=true
       - API_DEVELOPMENT_MODE=true
     restart: unless-stopped
     volumes:
-      # código monta por bind (hot reload)
-      - .:/usr/src/app
-      # node_modules persiste entre recriações do container
-      - node_modules_cache:/usr/src/app/node_modules
-      # certs só leitura
+      - .:/usr/src/app                       # <- bind: código-fonte
+      - node_modules_cache:/usr/src/app/node_modules  # <- volume nomeado: deps
       - ./certs:/usr/src/app/certs:ro
     depends_on:
       db_postgres:
         condition: service_healthy
       db_mongodb:
         condition: service_healthy
-    # Compose Watch: copia mudanças sem rebuild de imagem
-    develop:
-      watch:
-        - path: ./src
-          action: sync
-          target: /usr/src/app/src
-        - path: ./packages
-          action: sync
-          target: /usr/src/app/packages
-          ignore: ["node_modules/", "dist/"]
 
   db_postgres:
-    image: pgvector/pgvector:pg16   # multi-arch; roda nativo no M1
+    image: pgvector/pgvector:pg16
     container_name: db_postgres
     ports: ["5432:5432"]
     environment:
@@ -58,7 +43,7 @@ services:
       start_period: 10s
 
   db_mongodb:
-    image: mongo:8      # oficial, multi-arch
+    image: mongo:8
     container_name: mongodb
     ports: ["27017:27017"]
     environment:
@@ -67,10 +52,7 @@ services:
       MONGO_INITDB_DATABASE: ${API_MG_DB_DATABASE}
     volumes:
       - mongodbdata:/data/db
-      # se quiser seed inicial: monte scripts .js/.sh em /docker-entrypoint-initdb.d
-      # - ./docker/mongodb/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      # readiness com 'mongosh' (ping no admin)
       test: ["CMD-SHELL", "echo 'db.runCommand({ ping: 1 }).ok' | mongosh --quiet mongodb://$${MONGO_INITDB_ROOT_USERNAME}:$${MONGO_INITDB_ROOT_PASSWORD}@localhost:27017/admin | grep -q 1"]
       interval: 10s
       timeout: 5s
