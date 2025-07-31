@@ -1089,7 +1089,7 @@ export class AzureReposService
                         }
                     }
 
-                    let commitParents = commit.parents || null;
+                    let commitParents: string[] = commit.parents || null;
 
                     if (!commitParents) {
                         try {
@@ -1118,7 +1118,12 @@ export class AzureReposService
                             username: authorName,
                             id: userId,
                         },
-                        parents: commitParents || [],
+                        parents:
+                            commitParents
+                                ?.map((p) => ({
+                                    sha: p ?? '',
+                                }))
+                                ?.filter((p) => p.sha) ?? [],
                     };
                 }),
             );

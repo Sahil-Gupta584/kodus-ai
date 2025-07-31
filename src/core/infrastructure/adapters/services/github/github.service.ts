@@ -3163,7 +3163,10 @@ export class GithubService
                     ...commit?.commit?.author,
                     username: commit?.author?.login,
                 },
-                parents: commit?.parents?.map((p) => p.sha) || [],
+                parents:
+                    commit?.parents
+                        ?.map((p) => ({ sha: p?.sha ?? '' }))
+                        ?.filter((p) => p.sha) ?? [],
             }))
             ?.sort((a, b) => {
                 return (

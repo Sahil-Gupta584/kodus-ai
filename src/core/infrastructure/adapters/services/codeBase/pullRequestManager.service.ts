@@ -183,33 +183,38 @@ export class PullRequestHandlerService implements IPullRequestManagerService {
     ): Promise<Commit[]> {
         try {
             const commits =
-                await this.codeManagementService.getCommitsForPullRequestForCodeReview(
+                (await this.codeManagementService.getCommitsForPullRequestForCodeReview(
                     {
                         organizationAndTeamData,
                         repository,
                         prNumber: pullRequest?.number,
                     },
-                );
+                )) as Commit[];
 
-            const mappedCommits: Commit[] = commits?.map((commit) => {
-                return {
-                    ...commit,
-                    parents:
-                        commit.parents?.map((p: string) => ({ sha: p })) || [],
-                };
-            });
+            if (!commits || commits.length === 0) {
+                this.logger.warn({
+                    message: `No commits found for PR#${pullRequest?.number}`,
+                    context: PullRequestHandlerService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        repository,
+                        pullRequestNumber: pullRequest?.number,
+                    },
+                });
+                return [];
+            }
 
-            if (lastCommit) {
-                const lastCommitIndex = mappedCommits.findIndex(
+            if (lastCommit && lastCommit.sha) {
+                const lastCommitIndex = commits.findIndex(
                     (commit) => commit.sha === lastCommit.sha,
                 );
 
                 if (lastCommitIndex !== -1) {
-                    return mappedCommits.slice(lastCommitIndex + 1);
+                    return commits.slice(lastCommitIndex + 1);
                 }
             }
 
-            return mappedCommits;
+            return commits;
         } catch (error) {
             this.logger.error({
                 message: 'Error fetching new commits since last execution',

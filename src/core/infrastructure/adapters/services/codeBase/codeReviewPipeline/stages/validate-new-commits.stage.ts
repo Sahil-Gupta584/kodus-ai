@@ -15,15 +15,15 @@ import { PipelineStatus } from '../../../pipeline/interfaces/pipeline-context.in
 
 @Injectable()
 export class ValidateNewCommitsStage extends BasePipelineStage<CodeReviewPipelineContext> {
-    stageName = 'ValidateNewCommitsStage';
+    readonly stageName = 'ValidateNewCommitsStage';
 
     constructor(
         @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
-        private automationExecutionService: IAutomationExecutionService,
+        private readonly automationExecutionService: IAutomationExecutionService,
         @Inject(PULL_REQUEST_MANAGER_SERVICE_TOKEN)
-        private pullRequestHandlerService: IPullRequestManagerService,
+        private readonly pullRequestHandlerService: IPullRequestManagerService,
 
-        private logger: PinoLoggerService,
+        private readonly logger: PinoLoggerService,
     ) {
         super();
     }
@@ -113,27 +113,43 @@ export class ValidateNewCommitsStage extends BasePipelineStage<CodeReviewPipelin
 
             const mergedCommitTracker = new Set();
 
-            const findAncestorsInPush = (sha) => {
-                if (
-                    !allNewCommitShas.has(sha) ||
-                    mergedCommitTracker.has(sha)
-                ) {
-                    return;
-                }
-
-                mergedCommitTracker.add(sha);
-                const commit = commitMap.get(sha);
-                commit.parents.forEach((parent) =>
-                    findAncestorsInPush(parent.sha),
-                );
-            };
+            const stack: string[] = [];
 
             for (const commit of mergeCommits) {
                 mergedCommitTracker.add(commit.sha);
 
-                for (let i = 1; i < commit.parents.length; i++) {
-                    findAncestorsInPush(commit.parents[i].sha);
+                for (let i = 1; i < (commit.parents?.length || 0); i++) {
+                    const parentSha = commit.parents[i]?.sha;
+
+                    if (parentSha) {
+                        stack.push(parentSha);
+                    }
                 }
+            }
+
+            while (stack.length > 0) {
+                const sha = stack.pop();
+
+                if (
+                    !sha ||
+                    !allNewCommitShas.has(sha) ||
+                    mergedCommitTracker.has(sha)
+                ) {
+                    continue;
+                }
+
+                mergedCommitTracker.add(sha);
+
+                const commit = commitMap.get(sha);
+                if (!commit || !commit.parents || commit.parents.length === 0) {
+                    continue;
+                }
+
+                commit.parents.forEach((parent) => {
+                    if (parent.sha) {
+                        stack.push(parent.sha);
+                    }
+                });
             }
 
             if (mergedCommitTracker.size === allNewCommitShas.size) {
