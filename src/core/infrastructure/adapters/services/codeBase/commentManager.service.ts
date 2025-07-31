@@ -13,8 +13,6 @@ import {
     CodeSuggestion,
     ClusteringType,
 } from '@/config/types/general/codeReview.type';
-import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
-import { RunnableSequence } from '@langchain/core/runnables';
 import { prompt_repeated_suggestion_clustering_system } from '@/shared/utils/langchainCommon/prompts/repeatedCodeReviewSuggestionClustering';
 import { LLMResponseProcessor } from './utils/transforms/llmResponseProcessor.transform';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
@@ -45,9 +43,7 @@ interface ClusteredSuggestion {
 }
 import {
     IPullRequestMessageContent,
-    IPullRequestMessages,
 } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
-import { PullRequestMessageStatus } from '@/config/types/general/pullRequestMessages.type';
 import {
     MessageTemplateProcessor,
     PlaceholderContext,
@@ -73,7 +69,7 @@ export class CommentManagerService implements ICommentManagerService {
     async generateSummaryPR(
         pullRequest: any,
         repository: { name: string; id: string },
-        comments: any[],
+        changedFiles: Partial<FileChange>[],
         organizationAndTeamData: OrganizationAndTeamData,
         languageResultPrompt: string,
         summaryConfig: SummaryConfig,
@@ -113,10 +109,11 @@ export class CommentManagerService implements ICommentManagerService {
                     temperature: 0,
                 });
 
-                // Building the base prompt
-                let promptBase = `Based on the file change summaries provided below, generate a precise description for this pull request.
-The description should strictly reflect the information provided in the summaries and the pull request metadata.
-Avoid making assumptions or including inferred details not present in the provided data.`;
+                // Building the base prompt - Updated for code analysis
+                let promptBase = `Based on the code changes (patches) provided below, generate a precise description for this pull request.
+    Analyze the actual code modifications to understand what was implemented, fixed, or changed.
+    Focus on the functional impact and purpose of the changes rather than technical implementation details.
+    Avoid making assumptions beyond what can be inferred from the code changes.`;
 
                 // Adds the existing description only for COMPLEMENT mode
                 if (
@@ -125,8 +122,8 @@ Avoid making assumptions or including inferred details not present in the provid
                         BehaviourForExistingDescription.COMPLEMENT
                 ) {
                     promptBase += `\n\n**Additional Instructions**:
-                    - Focus on generating new insights and relevant information
-                    - Highlight changes that are not covered in the existing description
+                    - Focus on generating new insights and relevant information based on the code changes
+                    - Highlight modifications that are not covered in the existing description
                     - Provide technical context that complements the current description
 
                     **Existing Description**:
@@ -139,7 +136,10 @@ Avoid making assumptions or including inferred details not present in the provid
                 }
 
                 promptBase += `\n\n**Important**:
-                    - Use only the data provided below. Do not add inferred information or assumptions.
+                    - Analyze the code changes to understand the functional purpose and impact
+                    - Focus on WHAT was changed and WHY (based on the code context)
+                    - Summarize the changes in business/functional terms when possible
+                    - Use only the code changes provided. Do not add inferred information beyond what the code clearly shows.
                     - Write the description in ${languageResultPrompt}.
 
                     **Pull Request Details**:
@@ -148,11 +148,11 @@ Avoid making assumptions or including inferred details not present in the provid
                     - **Target Branch**: \`${pullRequest?.base?.ref}\`
                     - **Title**: ${pullRequest?.title || 'Sem título'}
 
-                    **File Change Summaries**:
-                    ${comments
+                    **File Changes**:
+                    ${changedFiles
                         .map(
-                            (comment) =>
-                                `- **File**: ${comment?.filepath} (${comment?.status})\n  **Summary**: ${comment?.summary}`,
+                            (file) =>
+                                `- **File**: ${file?.filename} (${file?.status})\n  **Changes**:\n\`\`\`diff\n${file?.patch}\n\`\`\``,
                         )
                         .join('\n\n')}`;
 
