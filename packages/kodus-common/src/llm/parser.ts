@@ -143,7 +143,8 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
         const result = await this.config.promptRunnerService
             .builder()
             .setProviders({
-                main: this.config.provider || LLMModelProvider.OPENAI_GPT_4O,
+                main:
+                    this.config.provider || LLMModelProvider.OPENAI_GPT_4O_MINI,
                 fallback:
                     this.config.fallbackProvider ||
                     LLMModelProvider.OPENAI_GPT_4O,
