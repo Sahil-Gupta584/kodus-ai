@@ -139,15 +139,7 @@ export class CommentManagerService implements ICommentManagerService {
                     - **Repository**: ${pullRequest?.head?.repo?.fullName || 'Desconhecido'}
                     - **Source Branch**: \`${pullRequest?.head?.ref}\`
                     - **Target Branch**: \`${pullRequest?.base?.ref}\`
-                    - **Title**: ${pullRequest?.title || 'Sem título'}
-
-                    **File Changes**:
-                    ${changedFiles
-                        .map(
-                            (file) =>
-                                `- **File**: ${file?.filename} (${file?.status})\n  **Changes**:\n\`\`\`diff\n${file?.patch}\n\`\`\``,
-                        )
-                        .join('\n\n')}`;
+                    - **Title**: ${pullRequest?.title || 'Sem título'}`;
 
                 const baseContext = {
                     changedFiles,
