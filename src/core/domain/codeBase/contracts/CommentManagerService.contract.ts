@@ -29,7 +29,7 @@ export interface ICommentManagerService {
     generateSummaryPR(
         pullRequest: any,
         repository: { name: string; id: string },
-        comments: any[],
+        changedFiles: Partial<FileChange>[],
         organizationAndTeamData: OrganizationAndTeamData,
         languageResultPrompt: string,
         summaryConfig: SummaryConfig,
