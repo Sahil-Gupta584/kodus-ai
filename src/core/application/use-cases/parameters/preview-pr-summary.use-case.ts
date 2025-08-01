@@ -1,8 +1,4 @@
-import { CodeReviewConfig } from '@/config/types/general/codeReview.type';
-import {
-    CODE_BASE_CONFIG_SERVICE_TOKEN,
-    ICodeBaseConfigService,
-} from '@/core/domain/codeBase/contracts/CodeBaseConfigService.contract';
+import { SummaryConfig } from '@/config/types/general/codeReview.type';
 import {
     COMMENT_MANAGER_SERVICE_TOKEN,
     ICommentManagerService,
@@ -28,13 +24,17 @@ export class PreviewPrSummaryUseCase {
 
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
-
-        @Inject(CODE_BASE_CONFIG_SERVICE_TOKEN)
-        private readonly codeBaseConfigService: ICodeBaseConfigService,
     ) {}
 
     async execute(body: PreviewPrSummaryDto) {
-        const { prNumber, repository, organizationId, teamId } = body;
+        const {
+            prNumber,
+            repository,
+            organizationId,
+            teamId,
+            behaviourForExistingDescription,
+            customInstructions,
+        } = body;
 
         const organizationAndTeamData = {
             organizationId,
@@ -69,19 +69,24 @@ export class PreviewPrSummaryUseCase {
             status: file.status,
         }));
 
-        const config: CodeReviewConfig =
-            await this.codeBaseConfigService.getConfig(
-                organizationAndTeamData,
-                { name: repository.name, id: repository.id },
-            );
+        const languageResultPrompt = await this.parametersService.findByKey(
+            ParametersKey.LANGUAGE_CONFIG,
+            organizationAndTeamData,
+        );
+
+        const summaryConfig: SummaryConfig = {
+            behaviourForExistingDescription: behaviourForExistingDescription,
+            customInstructions: customInstructions,
+            generatePRSummary: true,
+        };
 
         const prSummary = await this.commentManagerService.generateSummaryPR(
             pullRequest,
             repository,
             files,
             organizationAndTeamData,
-            config.languageResultPrompt ?? 'en-US',
-            config.summary,
+            languageResultPrompt?.configValue ?? 'en-US',
+            summaryConfig,
         );
 
         return prSummary;
