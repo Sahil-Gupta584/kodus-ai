@@ -8,6 +8,7 @@ import { ListCodeReviewAutomationLabelsUseCase } from './list-code-review-automa
 import { SaveArtifactsStructureUseCase } from './save-artifacts-structure.use-case';
 import { UpdateCodeReviewParameterRepositoriesUseCase } from './update-code-review-parameter-repositories-use-case';
 import { UpdateOrCreateCodeReviewParameterUseCase } from './update-or-create-code-review-parameter-use-case';
+import { PreviewPrSummaryUseCase } from './preview-pr-summary.use-case';
 
 export const UseCases = [
     CreateOrUpdateParametersUseCase,
@@ -20,4 +21,5 @@ export const UseCases = [
     CopyCodeReviewParameterUseCase,
     GenerateCodeReviewParameterUseCase,
     DeleteRepositoryCodeReviewParameterUseCase,
+    PreviewPrSummaryUseCase,
 ];

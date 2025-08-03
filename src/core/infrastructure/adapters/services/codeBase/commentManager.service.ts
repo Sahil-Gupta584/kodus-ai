@@ -13,8 +13,6 @@ import {
     CodeSuggestion,
     ClusteringType,
 } from '@/config/types/general/codeReview.type';
-import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
-import { RunnableSequence } from '@langchain/core/runnables';
 import { prompt_repeated_suggestion_clustering_system } from '@/shared/utils/langchainCommon/prompts/repeatedCodeReviewSuggestionClustering';
 import { LLMResponseProcessor } from './utils/transforms/llmResponseProcessor.transform';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
@@ -43,11 +41,7 @@ interface ClusteredSuggestion {
     problemDescription?: string;
     actionStatement?: string;
 }
-import {
-    IPullRequestMessageContent,
-    IPullRequestMessages,
-} from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
-import { PullRequestMessageStatus } from '@/config/types/general/pullRequestMessages.type';
+import { IPullRequestMessageContent } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import {
     MessageTemplateProcessor,
     PlaceholderContext,
@@ -73,7 +67,7 @@ export class CommentManagerService implements ICommentManagerService {
     async generateSummaryPR(
         pullRequest: any,
         repository: { name: string; id: string },
-        comments: any[],
+        changedFiles: Partial<FileChange>[],
         organizationAndTeamData: OrganizationAndTeamData,
         languageResultPrompt: string,
         summaryConfig: SummaryConfig,
@@ -108,15 +102,11 @@ export class CommentManagerService implements ICommentManagerService {
                     },
                 });
 
-                let llm = this.llmProviderService.getLLMProvider({
-                    model: LLMModelProvider.OPENAI_GPT_4O,
-                    temperature: 0,
-                });
-
-                // Building the base prompt
-                let promptBase = `Based on the file change summaries provided below, generate a precise description for this pull request.
-The description should strictly reflect the information provided in the summaries and the pull request metadata.
-Avoid making assumptions or including inferred details not present in the provided data.`;
+                // Building the base prompt - Updated for code analysis
+                let promptBase = `Based on the code changes (patches) provided below, generate a precise description for this pull request.
+    Analyze the actual code modifications to understand what was implemented, fixed, or changed.
+    Focus on the functional impact and purpose of the changes rather than technical implementation details.
+    Avoid making assumptions beyond what can be inferred from the code changes.`;
 
                 // Adds the existing description only for COMPLEMENT mode
                 if (
@@ -125,8 +115,8 @@ Avoid making assumptions or including inferred details not present in the provid
                         BehaviourForExistingDescription.COMPLEMENT
                 ) {
                     promptBase += `\n\n**Additional Instructions**:
-                    - Focus on generating new insights and relevant information
-                    - Highlight changes that are not covered in the existing description
+                    - Focus on generating new insights and relevant information based on the code changes
+                    - Highlight modifications that are not covered in the existing description
                     - Provide technical context that complements the current description
 
                     **Existing Description**:
@@ -139,32 +129,67 @@ Avoid making assumptions or including inferred details not present in the provid
                 }
 
                 promptBase += `\n\n**Important**:
-                    - Use only the data provided below. Do not add inferred information or assumptions.
-                    - Write the description in ${languageResultPrompt}.
+                    - Analyze the code changes to understand the functional purpose and impact
+                    - Focus on WHAT was changed and WHY (based on the code context)
+                    - Summarize the changes in business/functional terms when possible
+                    - Use only the code changes provided. Do not add inferred information beyond what the code clearly shows.
+                    - You must always respond in ${languageResultPrompt}.
 
                     **Pull Request Details**:
                     - **Repository**: ${pullRequest?.head?.repo?.fullName || 'Desconhecido'}
                     - **Source Branch**: \`${pullRequest?.head?.ref}\`
                     - **Target Branch**: \`${pullRequest?.base?.ref}\`
-                    - **Title**: ${pullRequest?.title || 'Sem título'}
+                    - **Title**: ${pullRequest?.title || 'Sem título'}`;
 
-                    **File Change Summaries**:
-                    ${comments
-                        .map(
-                            (comment) =>
-                                `- **File**: ${comment?.filepath} (${comment?.status})\n  **Summary**: ${comment?.summary}`,
-                        )
-                        .join('\n\n')}`;
+                const baseContext = {
+                    changedFiles,
+                    pullRequest,
+                    repository,
+                    summaryConfig,
+                    languageResultPrompt,
+                    updatedPR,
+                };
 
-                const chain = await llm.invoke(promptBase, {
-                    metadata: {
-                        module: 'CodeBase',
-                        submodule: 'CommentManagerService',
-                        ...organizationAndTeamData,
-                    },
-                });
+                const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
 
-                let finalDescription = chain.content || 'No comment generated';
+                const userPrompt = `<changedFilesContext>${JSON.stringify(baseContext?.changedFiles, null, 2) || 'No files changed'}</changedFilesContext>`;
+
+                const result = await this.promptRunnerService
+                    .builder()
+                    .setProviders({
+                        main: LLMModelProvider.GEMINI_2_5_FLASH,
+                        fallback: fallbackProvider,
+                    })
+                    .setParser(ParserType.STRING)
+                    .setLLMJsonMode(false)
+                    .setPayload(baseContext)
+                    .addPrompt({
+                        prompt: promptBase,
+                        role: PromptRole.SYSTEM,
+                    })
+                    .addPrompt({
+                        prompt: userPrompt,
+                        role: PromptRole.USER,
+                    })
+                    .addMetadata({
+                        organizationId: organizationAndTeamData?.organizationId,
+                        teamId: organizationAndTeamData?.teamId,
+                        pullRequestId: pullRequest?.number,
+                        repositoryId: repository?.id,
+                        provider: LLMModelProvider.GEMINI_2_5_FLASH,
+                        fallbackProvider,
+                    })
+                    .setRunName('generateSummaryPR')
+                    .setTemperature(0)
+                    .execute();
+
+                if (!result) {
+                    throw new Error(
+                        'No result returned from generateSummaryPR',
+                    );
+                }
+
+                let finalDescription = result || 'No comment generated';
 
                 // Apply CONCATENATE behavior if necessary
                 if (
@@ -295,7 +320,10 @@ Avoid making assumptions or including inferred details not present in the provid
                     startReviewMessage,
                     placeholderContext,
                 );
-                commentBody = this.sanitizeBitbucketMarkdown(rawBody, platformType);
+                commentBody = this.sanitizeBitbucketMarkdown(
+                    rawBody,
+                    platformType,
+                );
             } else {
                 commentBody = await this.generatePullRequestSummaryMarkdown(
                     changedFiles,
