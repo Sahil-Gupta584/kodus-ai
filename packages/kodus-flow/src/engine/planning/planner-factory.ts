@@ -134,6 +134,63 @@ export interface ResultAnalysis {
     suggestedNextAction?: string;
 }
 
+/**
+ * Enhanced execution step with metadata tracking
+ * Replaces the simple array structure for better analytics and debugging
+ */
+export interface StepExecution {
+    /** Unique identifier for this execution step */
+    stepId: string;
+
+    /** Sequential step number within the execution */
+    stepNumber: number;
+
+    /** The thought process that led to this action */
+    thought: AgentThought;
+
+    /** The action that was executed */
+    action: AgentAction;
+
+    /** The result of executing the action */
+    result: ActionResult;
+
+    /** Analysis of the result and decision to continue */
+    observation: ResultAnalysis;
+
+    /** Metadata about this execution step */
+    metadata: StepExecutionMetadata;
+}
+
+/**
+ * Metadata tracked for each execution step
+ */
+export interface StepExecutionMetadata {
+    /** When this step started executing */
+    startTime: number;
+
+    /** How long this step took to complete (ms) */
+    duration: number;
+
+    /** Number of tool calls made in this step */
+    toolCalls: number;
+
+    /** Whether this step completed successfully */
+    success: boolean;
+
+    /** Any errors encountered during execution */
+    errors?: string[];
+
+    /** Tool names used in this step */
+    toolsUsed?: string[];
+
+    /** Execution context snapshot */
+    contextSnapshot?: {
+        iteration: number;
+        totalSteps: number;
+        remainingIterations: number;
+    };
+}
+
 // Specific metadata types for execution context
 export interface ExecutionContextMetadata {
     agentName?: string;
@@ -142,6 +199,12 @@ export interface ExecutionContextMetadata {
     thread?: Thread; // ⭐ NOVO: ID da thread para acesso ao ExecutionRuntime
     startTime?: number;
     plannerType?: PlannerType;
+    // 🆕 NEW: Context quality metrics from auto-retrieval
+    contextMetrics?: {
+        memoryRelevance: number;
+        sessionContinuity: number;
+        executionHealth: number;
+    };
     [key: string]: unknown;
 }
 
@@ -199,6 +262,11 @@ export interface ExecutionHints {
         riskTolerance?: 'conservative' | 'moderate' | 'aggressive';
         preferredStyle?: 'formal' | 'casual' | 'technical';
     };
+    // 🆕 NEW: Auto-retrieved context from ContextBuilder
+    relevantMemories?: string[];
+    recentPatterns?: string[];
+    suggestions?: string[];
+    sessionContinuity?: string;
 }
 
 export interface ExecutionHistoryEntry {
@@ -211,7 +279,7 @@ export interface ExecutionHistoryEntry {
 // Enhanced execution context for planners with improved LLM performance
 export interface PlannerExecutionContext {
     input: string;
-    history: ExecutionHistoryEntry[];
+    history: StepExecution[];
     isComplete: boolean;
 
     iterations: number;
@@ -252,7 +320,7 @@ export function isSuccessResult(result: ActionResult): boolean {
  * Generate execution hints automatically from history and context
  */
 export function generateExecutionHints(
-    history: ExecutionHistoryEntry[],
+    history: StepExecution[],
     agentIdentity?: AgentIdentity,
 ): ExecutionHints {
     const hints: ExecutionHints = {};
@@ -313,7 +381,7 @@ export function generateExecutionHints(
  * Generate learning context from execution history
  */
 export function generateLearningContext(
-    history: ExecutionHistoryEntry[],
+    history: StepExecution[],
 ): LearningContext {
     const context: LearningContext = {
         commonMistakes: [],

@@ -14,7 +14,7 @@ import { createLogger } from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
 import type { Event } from '../../core/types/events.js';
 import type { AgentContext } from '../../core/types/agent-types.js';
-import { createAgentContext } from '../../core/context/context-factory.js';
+import { createAgentContext } from '../../core/context/context-builder.js';
 import type { MultiKernelHandler } from '../core/multi-kernel-handler.js';
 import type {
     ToolExecutionStrategy,

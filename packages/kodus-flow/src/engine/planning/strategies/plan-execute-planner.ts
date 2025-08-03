@@ -15,6 +15,7 @@ import type {
     ActionResult,
     ResultAnalysis,
     PlannerExecutionContext,
+    StepExecution,
 } from '../planner-factory.js';
 import {
     isErrorResult,
@@ -710,7 +711,9 @@ export class PlanAndExecutePlanner implements Planner {
 
             // ✅ FRAMEWORK PATTERN: Add final_answer to history to maintain consistency
             // This ensures Response Synthesizer has access to the reasoning from empty plans
-            context.history.push({
+            const stepExecution: StepExecution = {
+                stepId: `step-final-${Date.now()}`,
+                stepNumber: context.history.length + 1,
                 thought: {
                     reasoning: currentPlan.reasoning,
                     action: {
@@ -729,7 +732,22 @@ export class PlanAndExecutePlanner implements Planner {
                     feedback: result.content || 'Task completed',
                     shouldContinue: false,
                 },
-            });
+                metadata: {
+                    startTime: Date.now(),
+                    duration: 0, // Instant response for empty plan
+
+                    toolCalls: 0,
+                    success: true,
+                    toolsUsed: [],
+                    contextSnapshot: {
+                        iteration: context.iterations,
+                        totalSteps: context.history.length + 1,
+                        remainingIterations:
+                            context.maxIterations - context.iterations,
+                    },
+                },
+            };
+            context.history.push(stepExecution);
 
             const synthesizedResponse = await this.createFinalResponse(context);
 

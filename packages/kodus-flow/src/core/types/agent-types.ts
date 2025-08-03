@@ -21,7 +21,7 @@ import type { Thread, ToolCall } from './common-types.js';
 import type { UserContext, SystemContext } from './base-types.js';
 import type { ToolMetadataForLLM } from './tool-types.js';
 import { AgentIdentity } from './agent-definition.js';
-import type { ContextValueUpdate } from '../context/execution-runtime-types.js';
+// Removed dependency on execution-runtime-types
 
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextStateService } from '../context/services/state-service.js';
@@ -382,7 +382,7 @@ export interface AgentContext {
     //     toolsUsed?: string[];
     // };
     executionRuntime: {
-        addContextValue: (update: ContextValueUpdate) => Promise<void>;
+        addContextValue: (update: Record<string, unknown>) => Promise<void>;
         storeToolUsagePattern: (
             toolName: string,
             input: unknown,

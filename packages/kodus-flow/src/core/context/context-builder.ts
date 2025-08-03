@@ -18,7 +18,6 @@ import {
 } from '../memory/memory-manager.js';
 import { SessionService } from './services/session-service.js';
 import { ContextStateService } from './services/state-service.js';
-import { ExecutionRuntime } from './execution-runtime-simple.js';
 
 import type {
     AgentContext,
@@ -184,18 +183,10 @@ export class ContextBuilder {
                 { maxNamespaceSize: 1000, maxNamespaces: 50 },
             );
 
-            // 4. Create execution runtime (lifecycle manager)
-            const executionRuntime = new ExecutionRuntime({
-                sessionId: session.id,
-                tenantId: options.tenantId || 'default',
-                threadId,
-            });
-
-            // 5. Build clean AgentContext with service references
+            // 4. Build clean AgentContext with service references
             const agentContext = this.buildAgentContext({
                 session,
                 workingMemory,
-                executionRuntime,
                 options,
             });
 
@@ -221,12 +212,10 @@ export class ContextBuilder {
     private buildAgentContext({
         session,
         workingMemory,
-        executionRuntime,
         options,
     }: {
         session: Session;
         workingMemory: ContextStateService;
-        executionRuntime: ExecutionRuntime;
         options: AgentExecutionOptions;
     }): AgentContext {
         const invocationId = IdGenerator.executionId(); // usando executionId como invocationId
@@ -348,24 +337,12 @@ export class ContextBuilder {
             signal: new AbortController().signal,
 
             cleanup: async () => {
-                await executionRuntime.cleanup();
                 // Note: workingMemory uses WeakMap, so it cleans up automatically
             },
 
-            // // ===== BACKWARD COMPATIBILITY (NO CIRCULAR REFS) =====
-            // system: {
-            //     sessionId: session.id,
-            //     threadId: session.threadId,
-            //     executionId: executionRuntime.getExecutionInfo().executionId,
-            //     conversationHistory: session.conversationHistory,
-            //     iteration: 0,
-            //     toolsUsed: [],
-            // },
-
-            // Provide safe access to runtime info (not the runtime itself)
+            // Simple execution runtime
             executionRuntime: {
-                addContextValue: async (update) => {
-                    // Context updates são temporários - vão para State
+                addContextValue: async (update: Record<string, unknown>) => {
                     const contextValues =
                         (await workingMemory.get<unknown[]>(
                             'runtime',
@@ -379,13 +356,12 @@ export class ContextBuilder {
                     );
                 },
                 storeToolUsagePattern: async (
-                    toolName,
-                    input,
-                    output,
-                    success,
-                    duration,
+                    toolName: string,
+                    input: unknown,
+                    output: unknown,
+                    success: boolean,
+                    duration: number,
                 ) => {
-                    // Padrões de uso de ferramentas são conhecimento de longo prazo - vão para Memory
                     await this.memoryManager.store({
                         content: { toolName, input, output, success, duration },
                         type: 'tool_usage_pattern',
@@ -394,12 +370,11 @@ export class ContextBuilder {
                     });
                 },
                 storeExecutionPattern: async (
-                    patternType,
-                    action,
-                    result,
-                    context,
+                    patternType: string,
+                    action: unknown,
+                    result: unknown,
+                    context: unknown,
                 ) => {
-                    // Padrões de execução são conhecimento de longo prazo - vão para Memory
                     await this.memoryManager.store({
                         content: { patternType, action, result, context },
                         type: 'execution_pattern',
@@ -407,10 +382,24 @@ export class ContextBuilder {
                         tenantId: session.tenantId,
                     });
                 },
-                setState: async (namespace, key, value) => {
+                setState: async (
+                    namespace: string,
+                    key: string,
+                    value: unknown,
+                ) => {
                     await workingMemory.set(namespace, key, value);
                 },
             },
+
+            // // ===== BACKWARD COMPATIBILITY (NO CIRCULAR REFS) =====
+            // system: {
+            //     sessionId: session.id,
+            //     threadId: session.threadId,
+            //     executionId: executionRuntime.getExecutionInfo().executionId,
+            //     conversationHistory: session.conversationHistory,
+            //     iteration: 0,
+            //     toolsUsed: [],
+            // },
 
             agentIdentity: undefined, // ✅ Will be set by agent-core from AgentDefinition
             agentExecutionOptions: options,
