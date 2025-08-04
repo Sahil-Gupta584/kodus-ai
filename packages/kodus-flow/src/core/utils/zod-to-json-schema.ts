@@ -6,18 +6,19 @@
 import { z } from 'zod';
 import type { ToolJSONSchema } from '../types/tool-types.js';
 
-// Tipo para a API interna do Zod
+// Tipo para a API interna do Zod 4
 type ZodInternalDef = {
-    typeName: string;
+    type: string;
     checks?: unknown[];
-    type?: z.ZodSchema;
-    shape?: () => Record<string, z.ZodSchema>;
+    shape?: Record<string, z.ZodSchema>;
     values?: unknown[];
     value?: unknown;
     options?: z.ZodSchema[];
     innerType?: z.ZodSchema;
-    defaultValue?: () => unknown;
+    defaultValue?: unknown | (() => unknown);
     valueType?: z.ZodSchema;
+    entries?: Record<string, unknown>;
+    description?: string; // ✅ ADDED: Support for .describe()
 };
 
 /**
@@ -45,43 +46,114 @@ export function zodToJSONSchema(
 }
 
 /**
+ * Verifica se um schema Zod é opcional
+ */
+function isOptional(schema: z.ZodSchema): boolean {
+    const zodType = schema._def as ZodInternalDef;
+
+    // ✅ FIXED: Access the 'type' field correctly for Zod 4
+    const type = zodType.type;
+
+    // Direct optional types
+    if (type === 'optional' || type === 'default') {
+        return true;
+    }
+
+    // Check for nullable (which makes it optional in practice)
+    if (type === 'nullable') {
+        return true;
+    }
+
+    // Check for union with undefined/null
+    if (type === 'union' && zodType.options) {
+        const options = zodType.options as z.ZodSchema[];
+        return options.some((option) => {
+            const optionDef = option._def as ZodInternalDef;
+            const optionType = optionDef.type;
+            return optionType === 'undefined' || optionType === 'null';
+        });
+    }
+
+    return false;
+}
+
+type ZodMaybeMeta = { meta?: () => { description?: string } };
+type ZodMaybeDef = { _def?: { description?: string } };
+
+/**
+ * Extrai a descrição de um schema Zod (compatível com Zod 3 e 4)
+ */
+export function extractDescription(schema: z.ZodSchema): string | undefined {
+    // Tenta Zod 4
+    const meta = (schema as ZodMaybeMeta).meta?.();
+    if (meta?.description) return meta.description;
+    // Fallback para Zod 3
+    const def = (schema as ZodMaybeDef)._def;
+    if (def && typeof def.description === 'string') return def.description;
+    return undefined;
+}
+
+/**
  * Converte recursivamente um Zod schema para objeto JSON Schema
  */
 function zodSchemaToJsonSchemaObject(
     schema: z.ZodSchema,
 ): Record<string, unknown> {
-    const zodType = schema._def as unknown as ZodInternalDef;
+    const zodType = schema._def as ZodInternalDef;
 
-    // ✅ CORRIGIDO para Zod 4: typeName não existe mais, usar type
-    const typeName = zodType.type || zodType.typeName;
+    // ✅ FIXED: Use 'type' instead of 'typeName' for Zod 4
+    const typeName = zodType.type;
+
+    // ✅ ADDED: Extract description
+    const description = extractDescription(schema);
+
+    // ✅ ADDED: Helper function to add description to schema
+    const addDescription = (schemaObj: Record<string, unknown>) => {
+        if (description) {
+            schemaObj.description = description;
+        }
+        return schemaObj;
+    };
 
     switch (typeName) {
         case 'ZodString':
         case 'string':
-            return {
+            const stringSchema: Record<string, unknown> = {
                 type: 'string',
                 ...(zodType.checks && getStringConstraints(zodType.checks)),
             };
 
+            // ✅ ADDED: Preserve format information
+            if (zodType.checks) {
+                const format = extractFormatFromChecks(zodType.checks);
+                if (format) {
+                    stringSchema.format = format;
+                }
+            }
+
+            return addDescription(stringSchema);
+
         case 'ZodNumber':
         case 'number':
-            return {
+            return addDescription({
                 type: 'number',
                 ...(zodType.checks && getNumberConstraints(zodType.checks)),
-            };
+            });
 
         case 'ZodBoolean':
         case 'boolean':
-            return { type: 'boolean' };
+            return addDescription({ type: 'boolean' });
 
         case 'ZodArray':
             if (!zodType.type) {
-                return { type: 'array' };
+                return addDescription({ type: 'array' });
             }
-            return {
+            return addDescription({
                 type: 'array',
-                items: zodSchemaToJsonSchemaObject(zodType.type),
-            };
+                items: zodSchemaToJsonSchemaObject(
+                    zodType.type as unknown as z.ZodSchema,
+                ),
+            });
 
         case 'ZodObject':
         case 'object':
@@ -89,108 +161,132 @@ function zodSchemaToJsonSchemaObject(
             const required: string[] = [];
 
             if (!zodType.shape) {
-                return { type: 'object' };
+                return addDescription({ type: 'object' });
             }
 
             // ✅ CORRIGIDO para Zod 4: shape é um objeto, não uma função
-            const shape =
-                typeof zodType.shape === 'function'
-                    ? zodType.shape()
-                    : zodType.shape;
+            const shape = zodType.shape;
 
             for (const [key, value] of Object.entries(shape)) {
-                properties[key] = zodSchemaToJsonSchemaObject(
-                    value as z.ZodSchema,
-                );
+                const valueSchema = value as z.ZodSchema;
+                properties[key] = zodSchemaToJsonSchemaObject(valueSchema);
 
-                // Verifica se o campo é obrigatório
-                if (!isOptional(value as z.ZodSchema)) {
+                // ✅ IMPROVED: Better required field detection
+                if (!isOptional(valueSchema)) {
                     required.push(key);
                 }
             }
 
-            return {
+            return addDescription({
                 type: 'object',
                 properties,
                 required: required.length > 0 ? required : undefined,
                 additionalProperties: false,
-            };
+            });
 
         case 'ZodEnum':
-            return {
+        case 'enum':
+            return addDescription({
                 type: 'string',
-                enum: zodType.values,
-            };
+                enum: Object.values(zodType.entries || {}),
+            });
 
         case 'ZodLiteral':
-            return {
-                type: typeof zodType.value,
-                const: zodType.value,
-            };
+        case 'literal':
+            return addDescription({
+                type: 'string',
+                const: Array.from(zodType.values || [])[0],
+            });
 
         case 'ZodUnion':
+        case 'union':
             if (!zodType.options) {
-                return { type: 'object' };
+                return addDescription({ type: 'string' });
             }
-            return {
-                anyOf: zodType.options.map((option: z.ZodSchema) =>
-                    zodSchemaToJsonSchemaObject(option),
-                ),
-            };
+
+            const unionSchemas = zodType.options as z.ZodSchema[];
+            if (unionSchemas.length === 0) {
+                return addDescription({ type: 'string' });
+            }
+
+            // ✅ IMPROVED: Check if all union members are literals (convert to enum)
+            const allLiterals = unionSchemas.every((unionSchema) => {
+                const unionDef = unionSchema._def as ZodInternalDef;
+                return unionDef.type === 'literal';
+            });
+
+            if (allLiterals) {
+                const enumValues = unionSchemas.map((unionSchema) => {
+                    const unionDef = unionSchema._def as ZodInternalDef;
+                    return Array.from(unionDef.values || [])[0];
+                });
+
+                return addDescription({
+                    type: 'string',
+                    enum: enumValues,
+                });
+            }
+
+            // ✅ IMPROVED: Handle mixed unions with anyOf
+            const anyOf = unionSchemas.map((unionSchema) =>
+                zodSchemaToJsonSchemaObject(unionSchema),
+            );
+
+            return addDescription({
+                anyOf,
+            });
 
         case 'ZodOptional':
+        case 'optional':
             if (!zodType.innerType) {
-                return { type: 'object' };
+                return addDescription({ type: 'string' });
             }
-            return zodSchemaToJsonSchemaObject(zodType.innerType);
+            return addDescription(
+                zodSchemaToJsonSchemaObject(zodType.innerType),
+            );
 
         case 'ZodNullable':
+        case 'nullable':
             if (!zodType.innerType) {
-                return { type: 'null' };
+                return addDescription({ type: 'string' });
             }
-            const innerSchema = zodSchemaToJsonSchemaObject(zodType.innerType);
-            return {
-                anyOf: [innerSchema, { type: 'null' }],
-            };
+            return addDescription({
+                ...zodSchemaToJsonSchemaObject(zodType.innerType),
+                nullable: true,
+            });
 
         case 'ZodDefault':
+        case 'default':
             if (!zodType.innerType) {
-                return { type: 'object' };
+                return addDescription({ type: 'string' });
             }
-            const defaultSchema = zodSchemaToJsonSchemaObject(
-                zodType.innerType,
-            );
-            return {
-                ...defaultSchema,
-                default: zodType.defaultValue?.() || undefined,
-            };
+
+            const innerSchema = zodSchemaToJsonSchemaObject(zodType.innerType);
+            const defaultValue =
+                typeof zodType.defaultValue === 'function'
+                    ? (zodType.defaultValue as () => unknown)()
+                    : zodType.defaultValue;
+
+            return addDescription({
+                ...innerSchema,
+                default: defaultValue,
+            });
 
         case 'ZodRecord':
-            return {
+            return addDescription({
                 type: 'object',
                 additionalProperties: zodType.valueType
                     ? zodSchemaToJsonSchemaObject(zodType.valueType)
                     : true,
-            };
+            });
 
         case 'ZodUnknown':
         case 'ZodAny':
-            return {};
+            return addDescription({});
 
         default:
-            // Fallback para tipos não suportados
-            return { type: 'object' };
+            return addDescription({ type: 'string' });
     }
-}
-
-/**
- * Verifica se um schema Zod é opcional
- */
-function isOptional(schema: z.ZodSchema): boolean {
-    const zodType = schema._def as unknown as ZodInternalDef;
-    return (
-        zodType.typeName === 'ZodOptional' || zodType.typeName === 'ZodDefault'
-    );
 }
 
 /**
@@ -256,6 +352,37 @@ function getNumberConstraints(checks: unknown[]): Record<string, unknown> {
     }
 
     return constraints;
+}
+
+/**
+ * Extract format information from Zod string checks
+ */
+function extractFormatFromChecks(checks: unknown[]): string | undefined {
+    for (const check of checks) {
+        const checkObj = check as Record<string, unknown>;
+
+        // Check for email format
+        if (checkObj.kind === 'email') {
+            return 'email';
+        }
+
+        // Check for URL format
+        if (checkObj.kind === 'url') {
+            return 'uri';
+        }
+
+        // Check for UUID format
+        if (checkObj.kind === 'uuid') {
+            return 'uuid';
+        }
+
+        // Check for date format
+        if (checkObj.kind === 'datetime') {
+            return 'date-time';
+        }
+    }
+
+    return undefined;
 }
 
 /**

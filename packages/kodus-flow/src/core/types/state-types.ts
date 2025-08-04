@@ -13,7 +13,7 @@ import { contextIdSchema } from './context-types.js';
  * Used to identify a state object
  */
 export const stateIdSchema = z.string().min(1);
-export type StateId = string;
+// StateId moved to base-types.ts
 
 /**
  * State value schema and type

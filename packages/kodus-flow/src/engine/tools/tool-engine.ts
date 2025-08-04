@@ -34,6 +34,10 @@ import {
     type PlanDependencyExtractionConfig,
 } from '../planning/plan-dependency-extractor.js';
 
+/**
+ * Enhanced Tool Engine with Manus-style prefix validation
+ * Implements consistent tool naming with category-based control
+ */
 export class ToolEngine {
     private logger: ReturnType<typeof createLogger>;
     private tools = new Map<ToolId, ToolDefinition<unknown, unknown>>();
@@ -46,7 +50,10 @@ export class ToolEngine {
         kernelHandler?: MultiKernelHandler,
         router?: Router,
     ) {
-        this.config = config;
+        this.config = {
+            validateSchemas: true,
+            ...config,
+        };
         this.kernelHandler = kernelHandler;
         this.router = router;
         this.logger = createLogger('tool-engine');
@@ -62,6 +69,9 @@ export class ToolEngine {
             tool.name as ToolId,
             tool as ToolDefinition<unknown, unknown>,
         );
+        this.logger.info('Tool registered', {
+            toolName: tool.name,
+        });
     }
 
     /**
@@ -465,25 +475,79 @@ export class ToolEngine {
                 }
             }
 
-            // Convert to LLM format - remove individual 'required' flags
+            // Convert to LLM format - preserve detailed type information
             const jsonSchemaObj = jsonSchema as Record<string, unknown>;
             const properties =
                 (jsonSchemaObj.properties as Record<string, unknown>) || {};
             const required = (jsonSchemaObj.required as string[]) || [];
 
-            // Clean properties - remove individual 'required' flags
+            // ✅ IMPROVED: Better property cleaning with optional detection
             const cleanProperties: Record<string, unknown> = {};
             for (const [key, prop] of Object.entries(properties)) {
                 const propObj = prop as Record<string, unknown>;
-                cleanProperties[key] = {
+
+                // Preserve detailed type information
+                const cleanProp: Record<string, unknown> = {
                     type: propObj.type || 'string',
                     description: propObj.description,
                     enum: propObj.enum,
                     default: propObj.default,
                     format: propObj.format,
-                    // ❌ REMOVED: required: propObj.required
                 };
+
+                // Handle nested object properties
+                if (propObj.type === 'object' && propObj.properties) {
+                    cleanProp.properties = propObj.properties;
+                }
+
+                // Handle array items
+                if (propObj.type === 'array' && propObj.items) {
+                    cleanProp.items = propObj.items;
+                }
+
+                // Handle oneOf/anyOf for union types
+                if (propObj.oneOf) {
+                    cleanProp.oneOf = propObj.oneOf;
+                }
+                if (propObj.anyOf) {
+                    cleanProp.anyOf = propObj.anyOf;
+                }
+
+                // ✅ ADDED: Detect optional fields from Zod conversion
+                if (propObj.optional === true) {
+                    // This field was marked as optional during Zod conversion
+                    // Don't add to required array (already handled)
+                }
+
+                cleanProperties[key] = cleanProp;
             }
+
+            // ✅ IMPROVED: Better required array handling
+            const finalRequired = required.filter((field) => {
+                const prop = cleanProperties[field];
+                if (!prop) return false;
+
+                const propObj = prop as Record<string, unknown>;
+
+                // Skip if explicitly marked as optional
+                if (propObj.optional === true) {
+                    return false;
+                }
+
+                // Skip if it's a nullable type (optional in practice)
+                if (propObj.anyOf && Array.isArray(propObj.anyOf)) {
+                    const anyOfArray = propObj.anyOf as unknown[];
+                    const hasNull = anyOfArray.some((item) => {
+                        const itemObj = item as Record<string, unknown>;
+                        return itemObj.type === 'null';
+                    });
+                    if (hasNull) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
 
             return {
                 name: tool.name,
@@ -491,7 +555,8 @@ export class ToolEngine {
                 parameters: {
                     type: 'object',
                     properties: cleanProperties,
-                    required: required, // ✅ Keep only the array
+                    required:
+                        finalRequired.length > 0 ? finalRequired : undefined,
                     additionalProperties:
                         jsonSchemaObj.additionalProperties ?? false,
                 },
@@ -1199,9 +1264,6 @@ export class ToolEngine {
 
         return baseConcurrency;
     }
-
-    /**
-
 
     /**
      * Extract conditions from context for conditional execution
@@ -2024,4 +2086,5 @@ export class ToolEngine {
         this.logger.info('Tool engine cleaned up');
     }
 }
+
 export { defineTool } from '../../core/types/tool-types.js';

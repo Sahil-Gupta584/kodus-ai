@@ -115,9 +115,6 @@ export {
 // ===== TOOL TYPES =====
 // Re-export all tool-related types
 export type {
-    // Tool identity
-    ToolCallId,
-
     // Tool parameter and schema types
     ToolParameter,
 
@@ -165,9 +162,6 @@ export {
 // ===== WORKFLOW TYPES =====
 // Re-export all workflow-related types
 export type {
-    // Workflow identity (StepId já vem de base-types)
-    WorkflowExecutionId,
-
     // Workflow step types
     StepType,
     StepStatus,
@@ -367,7 +361,7 @@ export interface EventStream<T extends AnyEvent = AnyEvent>
 // export type SessionId = z.infer<typeof sessionIdSchema>; // Using SessionId from context-core
 
 export const contextIdSchema = z.string().min(1);
-export type ContextId = z.infer<typeof contextIdSchema>;
+// ContextId moved to base-types.ts (now exported as string type)
 
 // ===== UTILITY TYPES =====
 // Common utility types used across the SDK

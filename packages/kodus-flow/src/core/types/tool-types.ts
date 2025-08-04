@@ -41,7 +41,7 @@ export type { ToolId } from './base-types.js';
  * Tool Call ID - identifies a specific tool invocation
  */
 export const toolCallIdSchema = z.string().min(1);
-export type ToolCallId = z.infer<typeof toolCallIdSchema>;
+// ToolCallId moved to base-types.ts
 
 // =============================================================================
 // ZOD-FIRST SCHEMA SYSTEM

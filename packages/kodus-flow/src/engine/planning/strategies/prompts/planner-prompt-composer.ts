@@ -173,22 +173,25 @@ export class PlannerPromptComposer {
     private composeUserPrompt(context: PromptCompositionContext): string {
         const sections: string[] = [];
 
-        // 1. Available tools - simple list
+        // 1. Tool usage instructions
+        sections.push(this.getToolUsageInstructions());
+
+        // 2. Available tools - enhanced list
         sections.push(this.formatAvailableTools(context.availableTools));
 
-        // 2. Context information
+        // 3. Context information
         if (context.memoryContext) {
             sections.push(`CONTEXT:\n${context.memoryContext.trim()}`);
         }
 
-        // 3. Planning history
+        // 4. Planning history
         if (context.planningHistory) {
             sections.push(
                 `PREVIOUS ATTEMPTS:\n${context.planningHistory.trim()}`,
             );
         }
 
-        // 4. Additional context
+        // 5. Additional context
         if (
             context.additionalContext &&
             Object.keys(context.additionalContext).length > 0
@@ -198,7 +201,7 @@ export class PlannerPromptComposer {
             );
         }
 
-        // 5. Simple dynamic hints
+        // 6. Simple dynamic hints
         if (this.config.features?.includeDynamicHints !== false) {
             const hints = this.generateSimpleHints(context.goal);
             if (hints) {
@@ -206,15 +209,51 @@ export class PlannerPromptComposer {
             }
         }
 
-        // 6. The user request
+        // 7. The user request
         sections.push(`USER REQUEST: "${context.goal}"`);
 
-        // 7. Final instruction
+        // 8. Final instruction
         sections.push(
             'Create an executable plan using the available tools above.',
         );
 
         return sections.join('\n\n');
+    }
+
+    /**
+     * Instructions for using tools in the plan
+     */
+    private getToolUsageInstructions(): string {
+        return `TOOL USAGE INSTRUCTIONS:
+
+When creating your plan, follow these guidelines:
+
+1. PARAMETER REQUIREMENTS:
+   - REQUIRED fields must be provided with valid values
+   - OPTIONAL fields can be omitted or set to null/undefined
+   - Use the exact parameter names shown in the tool definitions
+
+2. TOOL SELECTION:
+   - Choose tools that match the user's request
+   - Start with discovery tools (list_*) to gather information
+   - Use specific tools (get_*) for detailed operations
+   - Consider parallel execution for independent operations
+
+3. PARAMETER VALUES:
+   - String parameters: Use descriptive values (e.g., "active", "main", "feature-branch")
+   - Enum parameters: Use exact values from the enum list
+   - Object parameters: Provide nested structure with required fields
+   - Date parameters: Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ)
+
+4. EXECUTION ORDER:
+   - Discovery → Analysis → Action
+   - Ensure dependencies are met before using dependent tools
+   - Use conditional logic when appropriate
+
+5. ERROR HANDLING:
+   - Include fallback steps for potential failures
+   - Validate inputs before tool execution
+   - Consider alternative approaches if primary tools fail`;
     }
 
     /**
@@ -440,26 +479,45 @@ DEPENDENCY RULES:
     }
 
     /**
-     * Format available tools - simple list
+     * Format available tools - enhanced list with better structure
      */
-    private formatAvailableTools(tools: ToolMetadataForLLM[]): string {
-        const sections: string[] = ['AVAILABLE TOOLS:'];
+    private formatAvailableTools(tools: ToolMetadataForLLM[] | string): string {
+        const sections: string[] = ['TOOLS:'];
 
-        tools.forEach((tool) => {
-            sections.push(`\n• ${tool.name}: ${tool.description}`);
+        // Handle case where tools is a JSON string
+        let toolsArray: ToolMetadataForLLM[];
+        if (typeof tools === 'string') {
+            try {
+                toolsArray = JSON.parse(tools);
+            } catch (error) {
+                this.logger.warn('Failed to parse tools JSON string', {
+                    error,
+                });
+                return 'TOOLS: [Error parsing tools]';
+            }
+        } else {
+            toolsArray = tools;
+        }
+
+        toolsArray.forEach((tool) => {
+            // Tool name and description
+            sections.push(`- ${tool.name}: ${tool.description}`);
+
             if (tool.parameters?.properties) {
-                const params = this.formatToolParameters(tool);
+                const params = this.formatToolParametersEnhanced(tool);
                 if (params) sections.push(`  ${params}`);
             }
+
+            sections.push(''); // Empty line between tools
         });
 
         return sections.join('\n');
     }
 
     /**
-     * Format tool parameters concisely
+     * Enhanced tool parameters formatting with better structure
      */
-    private formatToolParameters(tool: ToolMetadataForLLM): string {
+    private formatToolParametersEnhanced(tool: ToolMetadataForLLM): string {
         if (!tool.parameters?.properties) return '';
 
         const properties = tool.parameters.properties as Record<
@@ -468,15 +526,95 @@ DEPENDENCY RULES:
         >;
         const required = (tool.parameters.required as string[]) || [];
 
-        const paramStrings = Object.entries(properties).map(([name, prop]) => {
-            const isRequired = required.includes(name);
-            const propObj = prop as { type?: string };
-            const type = propObj.type || 'unknown';
-            const marker = isRequired ? '[REQUIRED]' : '[optional]';
-            return `${name} (${type}) ${marker}`;
-        });
+        const paramStrings: string[] = [];
 
-        return `Parameters: ${paramStrings.join(', ')}`;
+        for (const [name, prop] of Object.entries(properties)) {
+            const isRequired = required.includes(name);
+            const propObj = prop as {
+                type?: string;
+                description?: string;
+                enum?: unknown[];
+                format?: string;
+                properties?: Record<string, unknown>;
+            };
+
+            // Determine the type display
+            let typeDisplay = propObj.type || 'unknown';
+
+            // Handle complex types
+            if (typeDisplay === 'object' && propObj.properties) {
+                const propKeys = Object.keys(propObj.properties);
+                if (propKeys.length > 0) {
+                    typeDisplay = `object{${propKeys.join(',')}}`;
+                }
+            }
+
+            // Handle enums
+            if (propObj.enum && Array.isArray(propObj.enum)) {
+                const enumValues = propObj.enum as unknown[];
+                if (enumValues.length <= 3) {
+                    typeDisplay = `enum[${enumValues.join('|')}]`;
+                } else {
+                    typeDisplay = `enum(${enumValues.length} values)`;
+                }
+            }
+
+            // Handle specific formats
+            if (propObj.format) {
+                typeDisplay = `${typeDisplay}:${propObj.format}`;
+            }
+
+            const marker = isRequired ? 'REQUIRED' : 'OPTIONAL';
+            const paramLine = `- ${name} (${typeDisplay}, ${marker})${
+                propObj.description ? `: ${propObj.description}` : ''
+            }`;
+
+            paramStrings.push(paramLine);
+
+            // Handle nested object properties
+            if (typeDisplay.startsWith('object{') && propObj.properties) {
+                const nestedProps = propObj.properties as Record<
+                    string,
+                    unknown
+                >;
+                for (const [nestedName, nestedProp] of Object.entries(
+                    nestedProps,
+                )) {
+                    const nestedPropObj = nestedProp as {
+                        type?: string;
+                        description?: string;
+                        enum?: unknown[];
+                    };
+
+                    let nestedTypeDisplay = nestedPropObj.type || 'unknown';
+
+                    // Handle nested enums
+                    if (
+                        nestedPropObj.enum &&
+                        Array.isArray(nestedPropObj.enum)
+                    ) {
+                        const nestedEnumValues =
+                            nestedPropObj.enum as unknown[];
+                        if (nestedEnumValues.length <= 3) {
+                            nestedTypeDisplay = `enum[${nestedEnumValues.join(
+                                '|',
+                            )}]`;
+                        } else {
+                            nestedTypeDisplay = `enum(${nestedEnumValues.length} values)`;
+                        }
+                    }
+
+                    const nestedLine = `    - ${nestedName} (${nestedTypeDisplay}, OPTIONAL)${
+                        nestedPropObj.description
+                            ? `: ${nestedPropObj.description}`
+                            : ''
+                    }`;
+                    paramStrings.push(nestedLine);
+                }
+            }
+        }
+
+        return `Parameters:\n    ${paramStrings.join('\n    ')}`;
     }
 
     /**
