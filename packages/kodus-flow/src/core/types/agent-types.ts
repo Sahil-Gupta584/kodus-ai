@@ -405,6 +405,11 @@ export interface AgentContext {
     agentIdentity?: AgentIdentity;
     agentExecutionOptions?: AgentExecutionOptions;
     availableToolsForLLM?: ToolMetadataForLLM[];
+
+    // ✅ NEW: AI SDK Components - Available for advanced usage
+    stepExecution?: import('../context/step-execution.js').StepExecution;
+    messageContext?: import('../context/step-execution.js').EnhancedMessageContext;
+    contextManager?: import('../context/step-execution.js').ContextManager;
 }
 
 /**

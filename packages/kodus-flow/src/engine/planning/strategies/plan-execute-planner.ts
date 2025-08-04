@@ -15,8 +15,9 @@ import type {
     ActionResult,
     ResultAnalysis,
     PlannerExecutionContext,
-    StepExecution,
+    ParallelToolsAction,
 } from '../planner-factory.js';
+
 import {
     isErrorResult,
     getResultError,
@@ -358,7 +359,7 @@ export class PlanAndExecutePlanner implements Planner {
     }
 
     /**
-     * Get memory context for better planning using ContextBuilder APIs
+     * ✅ ENHANCED: Get memory context using AI SDK Components
      */
     private async getMemoryContext(
         context: PlannerExecutionContext,
@@ -369,9 +370,27 @@ export class PlanAndExecutePlanner implements Planner {
             return '';
         }
 
-        const contextParts: string[] = [];
-
         try {
+            // ✅ ENHANCED: Use AI SDK Components as primary method
+            if (context.agentContext.messageContext) {
+                // ✅ SEMPRE usar EnhancedMessageContext quando disponível
+                const enhancedContext =
+                    await context.agentContext.messageContext.getContextForModel(
+                        context.agentContext,
+                        currentInput,
+                    );
+
+                if (enhancedContext) {
+                    this.logger.debug(
+                        'Using AI SDK EnhancedMessageContext for context',
+                    );
+                    return enhancedContext;
+                }
+            }
+
+            // ✅ FALLBACK: Use traditional APIs if AI SDK not available
+            const contextParts: string[] = [];
+
             // 1. MEMORY SEARCH: Get relevant memories for current input
             const memories = await context.agentContext.memory.search(
                 currentInput,
@@ -384,26 +403,37 @@ export class PlanAndExecutePlanner implements Planner {
                         typeof memory === 'string'
                             ? memory
                             : JSON.stringify(memory);
-                    contextParts.push(
-                        `${i + 1}. ${memoryStr.substring(0, 100)}...`,
-                    );
+                    contextParts.push(`${i + 1}. ${memoryStr}`);
                 });
             }
 
-            // 2. SESSION HISTORY: Get recent conversation context
+            // 2. SESSION HISTORY: Get recent conversation context (only user-relevant entries)
             const sessionHistory =
                 await context.agentContext.session.getHistory();
             if (sessionHistory && sessionHistory.length > 0) {
-                contextParts.push('\n💬 Recent conversation:');
-                sessionHistory.slice(-2).forEach((entry, i) => {
-                    const entryStr =
-                        typeof entry === 'string'
-                            ? entry
-                            : JSON.stringify(entry);
-                    contextParts.push(
-                        `${i + 1}. ${entryStr.substring(0, 50)}...`,
-                    );
-                });
+                // Filter only user-relevant entries
+                const relevantEntries = sessionHistory
+                    .filter((entry) => {
+                        const entryObj = entry as Record<string, unknown>;
+                        const input = entryObj.input as Record<string, unknown>;
+
+                        // Only include user inputs and final responses
+                        return (
+                            input?.type === 'memory_context_request' ||
+                            input?.type === 'plan_completed'
+                        );
+                    })
+                    .slice(-3); // Get last 3 relevant entries
+
+                if (relevantEntries.length > 0) {
+                    contextParts.push('\n💬 Recent conversation:');
+                    relevantEntries.forEach((entry, i) => {
+                        const formattedEntry = this.formatSessionEntry(entry);
+                        if (formattedEntry) {
+                            contextParts.push(`${i + 1}. ${formattedEntry}`);
+                        }
+                    });
+                }
             }
 
             // 3. WORKING STATE: Get relevant planner state
@@ -418,35 +448,214 @@ export class PlanAndExecutePlanner implements Planner {
                         typeof value === 'string'
                             ? value
                             : JSON.stringify(value);
-                    contextParts.push(
-                        `- ${key}: ${valueStr.substring(0, 50)}...`,
-                    );
+                    contextParts.push(`- ${key}: ${valueStr}`);
                     count++;
                 }
             }
+
+            // ✅ ENHANCED: Use ContextManager for unified operations
+            if (context.agentContext.contextManager) {
+                await context.agentContext.contextManager.addToContext(
+                    'state',
+                    'planner_lastInput',
+                    currentInput,
+                    context.agentContext,
+                );
+
+                await context.agentContext.contextManager.addToContext(
+                    'session',
+                    'memory_context_request',
+                    { input: currentInput, timestamp: Date.now() },
+                    context.agentContext,
+                );
+            } else {
+                // ✅ FALLBACK: Use traditional APIs
+                await context.agentContext.state.set(
+                    'planner',
+                    'lastInput',
+                    currentInput,
+                );
+                await context.agentContext.state.set(
+                    'planner',
+                    'lastAccess',
+                    Date.now(),
+                );
+                await context.agentContext.state.set(
+                    'planner',
+                    'contextParts',
+                    contextParts.length,
+                );
+
+                await context.agentContext.session.addEntry(
+                    { type: 'memory_context_request', input: currentInput },
+                    {
+                        type: 'memory_context_response',
+                        parts: contextParts.length,
+                    },
+                );
+            }
+
+            return contextParts.length > 0 ? contextParts.join('\n') : '';
         } catch (error) {
             this.logger.debug('Could not retrieve memory context', {
                 error: error instanceof Error ? error.message : 'Unknown error',
                 currentInput: currentInput.substring(0, 50),
             });
+            return '';
+        }
+    }
+
+    /**
+     * ✅ NEW: Format session entry for human-readable display
+     */
+    private formatSessionEntry(entry: unknown): string | null {
+        if (!entry || typeof entry !== 'object') {
+            return null;
         }
 
-        return contextParts.length > 0 ? contextParts.join('\n') : '';
+        const entryObj = entry as Record<string, unknown>;
+
+        // Extract user input and assistant output
+        const input = entryObj.input;
+        const output = entryObj.output;
+
+        // Format based on entry type
+        if (input && typeof input === 'object') {
+            const inputObj = input as Record<string, unknown>;
+
+            // Handle different input types
+            if (inputObj.type === 'memory_context_request') {
+                const userInput = inputObj.input as string;
+                return `User: "${userInput}"`;
+            }
+
+            if (inputObj.type === 'execution_step') {
+                const thought = inputObj.thought as string;
+                return `Agent: ${thought}`;
+            }
+
+            if (inputObj.type === 'plan_created') {
+                const goal = inputObj.goal as string;
+                return `Planning: "${goal}"`;
+            }
+
+            if (inputObj.type === 'plan_completed') {
+                const synthesized =
+                    output && typeof output === 'object'
+                        ? ((output as Record<string, unknown>)
+                              .synthesized as string)
+                        : 'Completed';
+                return `Response: "${synthesized}"`;
+            }
+
+            if (inputObj.type === 'step_execution_start') {
+                const tool = inputObj.tool as string;
+                return `Tool: ${tool}`;
+            }
+        }
+
+        // Fallback: try to extract meaningful content
+        if (output && typeof output === 'object') {
+            const outputObj = output as Record<string, unknown>;
+            if (outputObj.synthesized) {
+                return `Response: "${outputObj.synthesized as string}"`;
+            }
+            if (outputObj.observation) {
+                return `Result: "${outputObj.observation as string}"`;
+            }
+        }
+
+        // If we have a simple string input/output
+        if (typeof input === 'string' && input.length > 0) {
+            return `User: "${input.substring(0, 50)}..."`;
+        }
+
+        return null;
     }
 
     async think(context: PlannerExecutionContext): Promise<AgentThought> {
+        // ✅ NEW: Start step execution tracking if available
+        let stepId: string | undefined;
+        if (context.agentContext?.stepExecution) {
+            stepId = context.agentContext.stepExecution.startStep(
+                context.iterations || 0,
+            );
+            this.logger.debug('Started step execution tracking', { stepId });
+        }
+
         try {
             const currentPlan = this.getCurrentPlan(context);
             if (!currentPlan || this.shouldReplan(context)) {
-                return await this.createPlan(context);
+                const result = await this.createPlan(context);
+
+                // ✅ NEW: Update step execution with result
+                if (stepId && context.agentContext?.stepExecution) {
+                    context.agentContext.stepExecution.updateStep(stepId, {
+                        thought: result,
+                        action: result.action,
+                        result: {
+                            type: 'final_answer',
+                            content: 'Plan created successfully',
+                        },
+                        observation: {
+                            isComplete: false,
+                            isSuccessful: true,
+                            feedback: 'Plan created',
+                            shouldContinue: true,
+                        },
+                        duration: 0,
+                    });
+                }
+
+                return result;
             }
 
-            return await this.executeNextStep(context);
+            const result = await this.executeNextStep(context);
+
+            // ✅ NEW: Update step execution with result
+            if (stepId && context.agentContext?.stepExecution) {
+                context.agentContext.stepExecution.updateStep(stepId, {
+                    thought: result,
+                    action: result.action,
+                    result: {
+                        type: 'final_answer',
+                        content: 'Step executed successfully',
+                    },
+                    observation: {
+                        isComplete: false,
+                        isSuccessful: true,
+                        feedback: 'Step executed',
+                        shouldContinue: true,
+                    },
+                    duration: 0,
+                });
+            }
+
+            return result;
         } catch (error) {
             this.logger.error(
                 'Plan-and-Execute thinking failed',
                 error as Error,
             );
+
+            // ✅ NEW: Update step execution with error
+            if (stepId && context.agentContext?.stepExecution) {
+                context.agentContext.stepExecution.updateStep(stepId, {
+                    result: {
+                        type: 'error',
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : 'Unknown error',
+                    },
+                    observation: {
+                        isComplete: true,
+                        isSuccessful: false,
+                        feedback: 'Planning failed',
+                        shouldContinue: false,
+                    },
+                });
+            }
 
             return {
                 reasoning: `Error in planning: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -498,15 +707,6 @@ export class PlanAndExecutePlanner implements Planner {
             maxIterations: 5,
         });
 
-        this.logger.debug('Composed intelligent prompt', {
-            systemPromptLength: composedPrompt.systemPrompt.length,
-            userPromptLength: composedPrompt.userPrompt.length,
-            estimatedTokens: composedPrompt.metadata.estimatedTokens,
-            includesSmartAnalysis:
-                composedPrompt.metadata.includesSmartAnalysis,
-            exampleCount: composedPrompt.metadata.exampleCount,
-        });
-
         const planResult = await this.llmAdapter.createPlan(
             input,
             'plan-execute',
@@ -539,6 +739,44 @@ export class PlanAndExecutePlanner implements Planner {
 
         // ✅ MULTI-TENANCY: Store plan per thread
         this.setCurrentPlan(context, newPlan);
+
+        // ✅ NOVO: Persistir dados do plano no state e session
+        if (context.agentContext) {
+            try {
+                // Salvar plano no state
+                await context.agentContext.state.set('planner', 'currentPlan', {
+                    id: newPlan.id,
+                    goal: newPlan.goal,
+                    stepsCount: newPlan.steps.length,
+                    status: newPlan.status,
+                    createdAt: Date.now(),
+                });
+
+                // Salvar entrada na session
+                await context.agentContext.session.addEntry(
+                    {
+                        type: 'plan_created',
+                        goal: input,
+                        stepsCount: newPlan.steps.length,
+                    },
+                    {
+                        type: 'plan_details',
+                        planId: newPlan.id,
+                        strategy: newPlan.strategy,
+                    },
+                );
+
+                this.logger.debug('Plan data persisted', {
+                    planId: newPlan.id,
+                    stepsCount: newPlan.steps.length,
+                    threadId: context.plannerMetadata.thread?.id,
+                });
+            } catch (error) {
+                this.logger.warn('Failed to persist plan data', {
+                    error: error as Error,
+                });
+            }
+        }
 
         // Start executing first step
         return this.executeNextStep(context);
@@ -617,6 +855,97 @@ export class PlanAndExecutePlanner implements Planner {
 
         // Mark step as executing
         currentStep.status = 'executing';
+
+        // ✅ ENHANCED: Use AI SDK Components for real tracking
+        let stepId: string | undefined;
+
+        if (context.agentContext?.stepExecution) {
+            stepId = context.agentContext.stepExecution.startStep(
+                context.iterations || 0,
+            );
+
+            // ✅ NEW: Track context operations
+            context.agentContext.stepExecution.addContextOperation(
+                stepId,
+                'state',
+                'set_current_step',
+                {
+                    stepId: currentStep.id,
+                    description: currentStep.description,
+                    tool: currentStep.tool,
+                    status: currentStep.status,
+                },
+            );
+        }
+
+        // ✅ ENHANCED: Use ContextManager for unified operations
+        if (context.agentContext?.contextManager) {
+            try {
+                await context.agentContext.contextManager.addToContext(
+                    'state',
+                    'current_step',
+                    {
+                        stepId: currentStep.id,
+                        description: currentStep.description,
+                        tool: currentStep.tool,
+                        status: currentStep.status,
+                        executedAt: Date.now(),
+                    },
+                    context.agentContext,
+                );
+
+                await context.agentContext.contextManager.addToContext(
+                    'session',
+                    'step_execution_start',
+                    {
+                        stepId: currentStep.id,
+                        tool: currentStep.tool,
+                        timestamp: Date.now(),
+                    },
+                    context.agentContext,
+                );
+            } catch (error) {
+                this.logger.warn(
+                    'Failed to persist step execution via ContextManager',
+                    {
+                        error: error as Error,
+                    },
+                );
+            }
+        } else {
+            // ✅ FALLBACK: Use traditional APIs
+            if (context.agentContext) {
+                try {
+                    await context.agentContext.state.set(
+                        'planner',
+                        'currentStep',
+                        {
+                            stepId: currentStep.id,
+                            description: currentStep.description,
+                            tool: currentStep.tool,
+                            status: currentStep.status,
+                            executedAt: Date.now(),
+                        },
+                    );
+
+                    await context.agentContext.session.addEntry(
+                        {
+                            type: 'step_execution_start',
+                            stepId: currentStep.id,
+                            tool: currentStep.tool,
+                        },
+                        {
+                            type: 'step_details',
+                            description: currentStep.description,
+                        },
+                    );
+                } catch (error) {
+                    this.logger.warn('Failed to persist step execution', {
+                        error: error as Error,
+                    });
+                }
+            }
+        }
 
         // ✅ VALIDAÇÃO - Verificar se a tool solicitada existe antes de executar
         const availableTools = this.getAvailableToolsForContext(context);
@@ -709,47 +1038,120 @@ export class PlanAndExecutePlanner implements Planner {
             currentPlan.status = 'completed';
             this.setCurrentPlan(context, currentPlan);
 
-            // ✅ FRAMEWORK PATTERN: Add final_answer to history to maintain consistency
-            // This ensures Response Synthesizer has access to the reasoning from empty plans
-            const stepExecution: StepExecution = {
-                stepId: `step-final-${Date.now()}`,
-                stepNumber: context.history.length + 1,
-                thought: {
-                    reasoning: currentPlan.reasoning,
+            // ✅ ENHANCED: Use AI SDK Components for real tracking
+            if (context.agentContext?.stepExecution) {
+                const stepId = `step-final-${Date.now()}`;
+                const endTime = Date.now();
+
+                // ✅ NEW: Track context operations for final answer
+                context.agentContext.stepExecution.addContextOperation(
+                    stepId,
+                    'session',
+                    'final_answer',
+                    { content: result.content, timestamp: endTime },
+                );
+
+                // ✅ NEW: Track context operations
+                context.agentContext.stepExecution.addContextOperation(
+                    stepId,
+                    'session',
+                    'final_answer',
+                    { content: result.content, timestamp: endTime },
+                );
+
+                // ✅ NEW: Update step with real duration
+                context.agentContext.stepExecution.updateStep(stepId, {
+                    thought: {
+                        reasoning: currentPlan.reasoning,
+                        action: {
+                            type: 'final_answer' as const,
+                            content: result.content,
+                        },
+                    },
                     action: {
-                        type: 'final_answer',
+                        type: 'final_answer' as const,
                         content: result.content,
                     },
-                },
-                action: {
-                    type: 'final_answer',
-                    content: result.content,
-                },
-                result: result,
-                observation: {
-                    isComplete: true,
-                    isSuccessful: true,
-                    feedback: result.content || 'Task completed',
-                    shouldContinue: false,
-                },
-                metadata: {
-                    startTime: Date.now(),
-                    duration: 0, // Instant response for empty plan
-
-                    toolCalls: 0,
-                    success: true,
-                    toolsUsed: [],
-                    contextSnapshot: {
-                        iteration: context.iterations,
-                        totalSteps: context.history.length + 1,
-                        remainingIterations:
-                            context.maxIterations - context.iterations,
+                    result: result,
+                    observation: {
+                        isComplete: true,
+                        isSuccessful: true,
+                        feedback: result.content || 'Task completed',
+                        shouldContinue: false,
                     },
-                },
-            };
-            context.history.push(stepExecution);
+                    duration:
+                        endTime -
+                        (context.agentContext.stepExecution.getCurrentStep()
+                            ?.duration || 0),
+                });
+            } else {
+                // ✅ FALLBACK: Use traditional approach
+                const stepExecution = {
+                    stepId: `step-final-${Date.now()}`,
+                    stepNumber: context.history.length + 1,
+                    iteration: context.history.length + 1,
+                    thought: {
+                        reasoning: currentPlan.reasoning,
+                        action: {
+                            type: 'final_answer' as const,
+                            content: result.content,
+                        },
+                    },
+                    action: {
+                        type: 'final_answer' as const,
+                        content: result.content,
+                    },
+                    result: result,
+                    observation: {
+                        isComplete: true,
+                        isSuccessful: true,
+                        feedback: result.content || 'Task completed',
+                        shouldContinue: false,
+                    },
+                    duration: 0, // Instant response for empty plan
+                    metadata: {
+                        contextOperations: [],
+                        toolCalls: [],
+                        performance: {
+                            thinkDuration: 0,
+                            actDuration: 0,
+                            observeDuration: 0,
+                        },
+                    },
+                };
+                context.history.push(stepExecution);
+            }
 
             const synthesizedResponse = await this.createFinalResponse(context);
+
+            // ✅ NOVO: Persistir resultado final no state e session
+            if (context.agentContext) {
+                try {
+                    await context.agentContext.state.set(
+                        'planner',
+                        'finalResult',
+                        {
+                            planId: currentPlan.id,
+                            result: result.content,
+                            synthesizedResponse,
+                            completedAt: Date.now(),
+                        },
+                    );
+
+                    await context.agentContext.session.addEntry(
+                        { type: 'plan_completed', planId: currentPlan.id },
+                        {
+                            type: 'final_result',
+                            content: result.content,
+                            synthesized: synthesizedResponse,
+                        },
+                    );
+                } catch (error) {
+                    this.logger.warn('Failed to persist final result', {
+                        error: error as Error,
+                    });
+                }
+            }
 
             return {
                 isComplete: true,
@@ -1584,8 +1986,10 @@ export class PlanAndExecutePlanner implements Planner {
             );
 
             return {
+                id: `tool-${Date.now()}-${index}`,
                 toolName: currentStep.tool!,
-                input: itemArgs,
+                arguments: itemArgs,
+                timestamp: Date.now(),
                 reasoning: `${currentStep.description} (item ${index + 1}/${arrayResult.length})`,
             };
         });
@@ -1602,7 +2006,7 @@ export class PlanAndExecutePlanner implements Planner {
                 concurrency: Math.min(arrayResult.length, 5), // Limit concurrency
                 failFast: false,
                 aggregateResults: true,
-            } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+            } as ParallelToolsAction,
             confidence: 0.9,
             metadata: {
                 planId: currentPlan.id,

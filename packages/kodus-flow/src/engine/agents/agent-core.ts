@@ -5054,23 +5054,19 @@ export abstract class AgentCore<
         // Convert simple history to StepExecution format
         const stepHistory: StepExecution[] = history.map((entry, index) => ({
             stepId: `step-${index + 1}`,
-            stepNumber: index + 1,
+            iteration: index + 1,
             thought: entry.thought,
             action: entry.action,
             result: entry.result,
             observation: entry.observation,
+            duration: 0,
             metadata: {
-                startTime: Date.now(),
-                duration: 0,
-                toolCalls: entry.action.type === 'tool_call' ? 1 : 0,
-                success: entry.result.type !== 'error',
-                toolsUsed: isToolCallAction(entry.action)
-                    ? [entry.action.toolName]
-                    : [],
-                contextSnapshot: {
-                    iteration: index + 1,
-                    totalSteps: history.length,
-                    remainingIterations: maxIterations - (index + 1),
+                contextOperations: [],
+                toolCalls: [],
+                performance: {
+                    thinkDuration: 0,
+                    actDuration: 0,
+                    observeDuration: 0,
                 },
             },
         }));

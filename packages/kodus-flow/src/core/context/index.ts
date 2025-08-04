@@ -21,3 +21,24 @@ export type {
     SessionContext,
     ConversationHistory,
 } from './services/session-service.js';
+
+// ===== ENHANCED CONTEXT INTEGRATION (AI SDK INSPIRED) =====
+export {
+    EnhancedContextBuilder,
+    createEnhancedContext,
+    withContext,
+    type EnhancedContextConfig,
+    type ContextLayer,
+    type ContextOperation,
+    type ContextEntry,
+    type ContextQuery,
+} from './enhanced-context-builder.js';
+
+// ===== AI SDK COMPONENTS =====
+export {
+    StepExecution,
+    EnhancedMessageContext,
+    ContextManager,
+    type AgentStepResult,
+    type MessageEntry,
+} from './step-execution.js';

@@ -27,6 +27,13 @@ import type { Session, SessionConfig } from './services/session-service.js';
 import type { ToolEngine } from '../../engine/tools/tool-engine.js';
 import { StorageType } from '../storage/index.js';
 
+// ✅ NEW: AI SDK Components Integration
+import {
+    StepExecution,
+    EnhancedMessageContext,
+    ContextManager,
+} from './step-execution.js';
+
 /**
  * ✅ CLEAN: ContextBuilder usa as interfaces corretas de cada serviço
  * AMBOS usam o padrão adapterType + options consistente
@@ -404,6 +411,13 @@ export class ContextBuilder {
             agentIdentity: undefined, // ✅ Will be set by agent-core from AgentDefinition
             agentExecutionOptions: options,
             availableToolsForLLM: this.toolEngine?.getToolsForLLM() || [],
+
+            // ✅ NEW: AI SDK Components - Available for advanced usage
+            stepExecution: new StepExecution(),
+            messageContext: new EnhancedMessageContext(
+                new ContextManager(new StepExecution()),
+            ),
+            contextManager: new ContextManager(new StepExecution()),
         };
     }
 

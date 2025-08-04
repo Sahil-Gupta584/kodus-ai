@@ -373,13 +373,32 @@ export function validatePlanningResponse(response: unknown): PlanningResult {
         if (typeof planData === 'object' && planData !== null) {
             const obj = planData as Record<string, unknown>;
 
-            // If has 'plan' but not 'steps', copy plan to steps
-            if (obj.plan && !obj.steps) {
-                obj.steps = obj.plan;
+            // ✅ FIX: Handle case where both plan and steps are empty
+            if (obj.plan && obj.steps) {
+                // If both exist, prefer steps and remove plan to satisfy oneOf
+                if (Array.isArray(obj.steps) && Array.isArray(obj.plan)) {
+                    if (obj.steps.length === 0 && obj.plan.length === 0) {
+                        // Both empty - keep steps, remove plan
+                        delete obj.plan;
+                    } else if (obj.steps.length === 0 && obj.plan.length > 0) {
+                        // Steps empty, plan has data - copy plan to steps
+                        obj.steps = obj.plan;
+                        delete obj.plan;
+                    } else if (obj.steps.length > 0 && obj.plan.length === 0) {
+                        // Steps has data, plan empty - remove plan
+                        delete obj.plan;
+                    }
+                    // If both have data, prefer steps
+                }
             }
-            // If has 'steps' but not 'plan', copy steps to plan
+            // If has 'plan' but not 'steps', copy plan to steps
+            else if (obj.plan && !obj.steps) {
+                obj.steps = obj.plan;
+                delete obj.plan;
+            }
+            // If has 'steps' but not 'plan', keep as is
             else if (obj.steps && !obj.plan) {
-                obj.plan = obj.steps;
+                // Already correct format
             }
 
             // Normalize reasoning to string

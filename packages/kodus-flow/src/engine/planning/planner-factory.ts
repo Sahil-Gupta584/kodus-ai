@@ -135,61 +135,16 @@ export interface ResultAnalysis {
 }
 
 /**
- * Enhanced execution step with metadata tracking
- * Replaces the simple array structure for better analytics and debugging
+ * ✅ UNIFIED: StepExecution now uses the implementation from step-execution.ts
+ * This ensures consistency between planner and AI SDK components
  */
-export interface StepExecution {
-    /** Unique identifier for this execution step */
-    stepId: string;
-
-    /** Sequential step number within the execution */
-    stepNumber: number;
-
-    /** The thought process that led to this action */
-    thought: AgentThought;
-
-    /** The action that was executed */
-    action: AgentAction;
-
-    /** The result of executing the action */
-    result: ActionResult;
-
-    /** Analysis of the result and decision to continue */
-    observation: ResultAnalysis;
-
-    /** Metadata about this execution step */
-    metadata: StepExecutionMetadata;
-}
+export type StepExecution =
+    import('../../core/context/step-execution.js').AgentStepResult;
 
 /**
- * Metadata tracked for each execution step
+ * ✅ REMOVED: StepExecutionMetadata is no longer needed
+ * Metadata is now handled by AgentStepResult from step-execution.ts
  */
-export interface StepExecutionMetadata {
-    /** When this step started executing */
-    startTime: number;
-
-    /** How long this step took to complete (ms) */
-    duration: number;
-
-    /** Number of tool calls made in this step */
-    toolCalls: number;
-
-    /** Whether this step completed successfully */
-    success: boolean;
-
-    /** Any errors encountered during execution */
-    errors?: string[];
-
-    /** Tool names used in this step */
-    toolsUsed?: string[];
-
-    /** Execution context snapshot */
-    contextSnapshot?: {
-        iteration: number;
-        totalSteps: number;
-        remainingIterations: number;
-    };
-}
 
 // Specific metadata types for execution context
 export interface ExecutionContextMetadata {

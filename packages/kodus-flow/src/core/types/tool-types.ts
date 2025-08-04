@@ -153,6 +153,10 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown>
     };
     dependencies?: string[];
     tags?: string[];
+
+    // === TOOL CALLBACKS (AI SDK INSPIRED) ===
+    /** Callbacks para melhor UX durante execução da tool */
+    callbacks?: ToolCallbacks;
 }
 
 /**
@@ -811,6 +815,7 @@ export function defineTool<TInput = unknown, TOutput = unknown>(config: {
     categories?: string[];
     dependencies?: string[];
     tags?: string[];
+    callbacks?: ToolCallbacks;
 }): ToolDefinition<TInput, TOutput> {
     const jsonSchema = zodToJSONSchema(
         config.inputSchema,
@@ -836,6 +841,7 @@ export function defineTool<TInput = unknown, TOutput = unknown>(config: {
         categories: config.categories || [],
         dependencies: config.dependencies || [],
         tags: config.tags || [],
+        callbacks: config.callbacks,
     };
 }
 
@@ -1282,4 +1288,72 @@ function createEmptyMetrics(
         tenantId,
         timestamp: now,
     };
+}
+
+/**
+ * Enhanced tool callbacks for better UX (AI SDK inspired)
+ */
+export interface ToolCallbacks {
+    /**
+     * Called when tool input streaming starts
+     * Only called when the tool is used in a streaming context
+     */
+    onInputStart?: (options: {
+        toolCallId: string;
+        messages: unknown[];
+        abortSignal?: AbortSignal;
+    }) => void | PromiseLike<void>;
+
+    /**
+     * Called when a tool input streaming delta is available
+     * Only called when the tool is used in a streaming context
+     */
+    onInputDelta?: (options: {
+        inputTextDelta: string;
+        toolCallId: string;
+        messages: unknown[];
+        abortSignal?: AbortSignal;
+    }) => void | PromiseLike<void>;
+
+    /**
+     * Called when a tool call can be started
+     * Even if the execute function is not provided
+     */
+    onInputAvailable?: (options: {
+        input: unknown;
+        toolCallId: string;
+        messages: unknown[];
+        abortSignal?: AbortSignal;
+    }) => void | PromiseLike<void>;
+
+    /**
+     * Called before tool execution starts
+     */
+    onExecutionStart?: (options: {
+        toolName: string;
+        input: unknown;
+        toolCallId: string;
+    }) => void | PromiseLike<void>;
+
+    /**
+     * Called after tool execution completes
+     */
+    onExecutionComplete?: (options: {
+        toolName: string;
+        input: unknown;
+        result: unknown;
+        duration: number;
+        success: boolean;
+        toolCallId: string;
+    }) => void | PromiseLike<void>;
+
+    /**
+     * Called when tool execution fails
+     */
+    onExecutionError?: (options: {
+        toolName: string;
+        input: unknown;
+        error: Error;
+        toolCallId: string;
+    }) => void | PromiseLike<void>;
 }
