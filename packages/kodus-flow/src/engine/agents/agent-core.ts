@@ -80,6 +80,7 @@ import {
     isErrorResult,
     getResultError,
     isToolResult,
+    StepExecution,
 } from '../planning/planner-factory.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -5050,9 +5051,29 @@ export abstract class AgentCore<
         maxIterations: number,
         agentContext: AgentContext,
     ): PlannerExecutionContext {
+        // Convert simple history to StepExecution format
+        const stepHistory: StepExecution[] = history.map((entry, index) => ({
+            stepId: `step-${index + 1}`,
+            iteration: index + 1,
+            thought: entry.thought,
+            action: entry.action,
+            result: entry.result,
+            observation: entry.observation,
+            duration: 0,
+            metadata: {
+                contextOperations: [],
+                toolCalls: [],
+                performance: {
+                    thinkDuration: 0,
+                    actDuration: 0,
+                    observeDuration: 0,
+                },
+            },
+        }));
+
         return {
             input,
-            history,
+            history: stepHistory,
             iterations,
             maxIterations,
             plannerMetadata: {

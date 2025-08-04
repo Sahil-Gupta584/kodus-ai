@@ -23,6 +23,9 @@ services:
         condition: service_healthy
       db_mongodb:
         condition: service_healthy
+    networks:
+            - kodus-backend-services
+            - shared-network
 
   db_postgres:
     image: pgvector/pgvector:pg16
@@ -41,6 +44,8 @@ services:
       timeout: 3s
       retries: 20
       start_period: 10s
+    networks:
+      - kodus-backend-services
 
   db_mongodb:
     image: mongo:8
@@ -58,8 +63,18 @@ services:
       timeout: 5s
       retries: 20
       start_period: 20s
+    networks:
+      - kodus-backend-services
 
 volumes:
   node_modules_cache: {}
   pgdata: {}
   mongodbdata: {}
+
+networks:
+    kodus-backend-services:
+        driver: bridge
+        name: kodus-backend-services
+        external: true
+    shared-network:
+        external: true

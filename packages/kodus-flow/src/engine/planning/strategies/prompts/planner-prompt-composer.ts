@@ -245,30 +245,59 @@ When user mentions implicit context or references unclear items:
 → Then proceed with specific operations using discovered identifiers
 
 Pattern 2 - Parameter Resolution
-When a tool needs parameters you don't have:
-→ Find tools that can provide those parameters
-→ Common flow: list → get details → perform action
-→ Chain results using {{step-id.result}} references
+CRITICAL: Parameters can come from 3 sources. Extract the actual values:
 
-Pattern 3 - Tool Analysis
+A) DIRECT VALUES - when you know the exact value:
+   "argsTemplate": { "name": "exact-value", "count": 10, "enabled": true }
+
+B) CONTEXT VALUES - extract actual values from the CONTEXT section:
+   → Look at the CONTEXT section in the prompt
+   → Find the data you need (navigate nested objects with dot notation)
+   → Extract the ACTUAL VALUE, not a template reference
+   → Example: if CONTEXT shows { "user": { "id": "123" } }, use "userId": "123"
+
+C) STEP RESULTS - reference output from previous steps:
+   "argsTemplate": { "paramName": "{{step-id.result}}" }
+   "argsTemplate": { "nestedData": "{{step-id.result.fieldName}}" }
+   "argsTemplate": { "firstItem": "{{step-id.result.items[0]}}" }
+   → Use template syntax {{step-id.result}} for step dependencies
+   → This will be resolved at execution time
+
+D) MIXED SOURCES - combine context values and step results:
+   "argsTemplate": {
+     "contextValue": "actual-value-from-context",
+     "stepResult": "{{previous-step.result.id}}",
+     "directValue": "static-value"
+   }
+
+Pattern 3 - Dependency Management
+Tools often depend on results from previous tools:
+→ Use "dependsOn": ["step-id"] to enforce execution order
+→ Reference dependent step results in argsTemplate
+→ Example flow: list-items → get-details → perform-action
+→ Never reference a step result without adding it to dependsOn
+
+Pattern 4 - Tool Analysis
 Read tool descriptions to understand what each tool does:
 → Tools that mention returning multiple items, lists, or arrays usually provide discovery
 → Tools that require specific identifiers in parameters usually need those IDs first
 → Tools that mention creating, updating, or deleting modify data
 → Always read the tool description - it contains the most reliable information
 
-Pattern 4 - Parallel Optimization
+Pattern 5 - Parallel Optimization
 Execute simultaneously when:
 → Operations are independent (no shared data dependencies)
 → Different resource types or endpoints
 → Read-only operations that don't conflict
 → Mark with parallel:true for concurrent execution
+→ NEVER parallelize steps that depend on each other
 
-Pattern 5 - Intelligent Fallback
+Pattern 6 - Intelligent Fallback
 When specific data is missing:
 → Don't give up - use available tools creatively
 → Use partial matches, filters, or approximations
-→ Chain multiple operations to build needed context`;
+→ Chain multiple operations to build needed context
+→ Use empty objects {} for optional filter parameters`;
     }
 
     /**
@@ -361,9 +390,9 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
       "description": "<what this step accomplishes>",
       "tool": "<exact tool name from available list>",
       "argsTemplate": {
-        "<param>": "<value or {{step-id.result}} reference>"
+        "<param>": "<see PARAMETER VALUES guide below>"
       },
-      "dependsOn": ["<previous-step-ids>"],
+      "dependsOn": ["<step-ids-this-depends-on>"],
       "parallel": <true|false>
     }
   ],
@@ -372,7 +401,41 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
     "<why this approach was chosen>",
     "<any assumptions made>"
   ]
-}`
+}
+
+PARAMETER VALUES - Choose the right approach:
+
+1. DIRECT VALUE (when you know it):
+   "name": "exact-string"
+   "count": 42
+   "enabled": true
+   "filters": { "status": "active" }
+
+2. CONTEXT VALUE (extract from CONTEXT section):
+   → Look at the CONTEXT section in the prompt
+   → Navigate to the data you need using mental dot notation
+   → Extract the ACTUAL VALUE and use it directly
+   → Example: if CONTEXT has {"user":{"id":"abc123"}}, use "userId": "abc123"
+
+3. STEP RESULT (from previous step output):
+   "paramName": "{{step-id.result}}"
+   "nestedField": "{{step-id.result.fieldName}}"
+   "arrayItem": "{{step-id.result.items[0]}}"
+   → Use template syntax for step dependencies
+   → This will be resolved at execution time
+
+4. MIXED (combine multiple sources):
+   {
+     "contextValue": "actual-extracted-value",
+     "stepResult": "{{previous-step.result.id}}",
+     "directValue": "static-value"
+   }
+
+DEPENDENCY RULES:
+- If you reference {{step-id.result}}, add "step-id" to dependsOn
+- Steps in dependsOn execute BEFORE current step
+- Use parallel:true only when steps have no dependencies
+- Empty dependsOn [] means step can run immediately`
         );
     }
 

@@ -166,17 +166,104 @@ export class ToolEngine {
 
         this.validateToolInput(tool, input);
 
-        // Create tool context using factory function
-        const context = createToolContext(
-            tool.name,
-            callId,
-            `exec-${Date.now()}`,
-            'default',
-            input as Record<string, unknown>,
-        );
+        // ✅ IMPLEMENTADO: Tool Callbacks - onInputAvailable
+        if (tool.callbacks?.onInputAvailable) {
+            try {
+                await tool.callbacks.onInputAvailable({
+                    input,
+                    toolCallId: callId,
+                    messages: [], // TODO: Implementar mensagens do contexto
+                    abortSignal: undefined, // TODO: Implementar abort signal
+                });
+            } catch (error) {
+                this.logger.warn('Tool callback onInputAvailable failed', {
+                    error: error as Error,
+                    toolName,
+                    callId,
+                });
+            }
+        }
 
-        // Execute tool using execute function
-        return await tool.execute(input, context);
+        // ✅ IMPLEMENTADO: Tool Callbacks - onExecutionStart
+        if (tool.callbacks?.onExecutionStart) {
+            try {
+                await tool.callbacks.onExecutionStart({
+                    toolName,
+                    input,
+                    toolCallId: callId,
+                });
+            } catch (error) {
+                this.logger.warn('Tool callback onExecutionStart failed', {
+                    error: error as Error,
+                    toolName,
+                    callId,
+                });
+            }
+        }
+
+        const startTime = Date.now();
+        let result: TOutput;
+        let error: Error | undefined;
+
+        try {
+            // Create tool context using factory function
+            const context = createToolContext(
+                tool.name,
+                callId,
+                `exec-${Date.now()}`,
+                'default',
+                input as Record<string, unknown>,
+            );
+
+            // Execute tool using execute function
+            result = await tool.execute(input, context);
+        } catch (err) {
+            error = err as Error;
+
+            // ✅ IMPLEMENTADO: Tool Callbacks - onExecutionError
+            if (tool.callbacks?.onExecutionError) {
+                try {
+                    await tool.callbacks.onExecutionError({
+                        toolName,
+                        input,
+                        error,
+                        toolCallId: callId,
+                    });
+                } catch (callbackError) {
+                    this.logger.warn('Tool callback onExecutionError failed', {
+                        error: callbackError as Error,
+                        toolName,
+                        callId,
+                    });
+                }
+            }
+
+            throw error;
+        }
+
+        const duration = Date.now() - startTime;
+
+        // ✅ IMPLEMENTADO: Tool Callbacks - onExecutionComplete
+        if (tool.callbacks?.onExecutionComplete) {
+            try {
+                await tool.callbacks.onExecutionComplete({
+                    toolName,
+                    input,
+                    result,
+                    duration,
+                    success: true,
+                    toolCallId: callId,
+                });
+            } catch (error) {
+                this.logger.warn('Tool callback onExecutionComplete failed', {
+                    error: error as Error,
+                    toolName,
+                    callId,
+                });
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -1114,20 +1201,7 @@ export class ToolEngine {
     }
 
     /**
-     * Determine if results should be passed between tools
-     */
-    private shouldPassResults(
-        strategy: ReturnType<Router['determineToolExecutionStrategy']>,
-        context: Record<string, unknown>,
-    ): boolean {
-        // Pass results if strategy indicates dependencies or sequential processing benefits
-        return (
-            strategy.strategy === 'sequential' &&
-            (strategy.reasoning.includes('dependencies') ||
-                strategy.reasoning.includes('pipeline') ||
-                context.passResults === true)
-        );
-    }
+
 
     /**
      * Extract conditions from context for conditional execution
@@ -1881,6 +1955,19 @@ export class ToolEngine {
                 );
             }
         }
+    }
+
+    private shouldPassResults(
+        strategy: ReturnType<Router['determineToolExecutionStrategy']>,
+        context: Record<string, unknown>,
+    ): boolean {
+        // Pass results if strategy indicates dependencies or sequential processing benefits
+        return (
+            strategy.strategy === 'sequential' &&
+            (strategy.reasoning.includes('dependencies') ||
+                strategy.reasoning.includes('pipeline') ||
+                context.passResults === true)
+        );
     }
 
     /**
