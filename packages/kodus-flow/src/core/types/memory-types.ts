@@ -13,7 +13,7 @@ import { contextIdSchema } from './context-types.js';
  * Used to identify a memory item
  */
 export const memoryIdSchema = z.string().min(1);
-export type MemoryId = string;
+// MemoryId moved to base-types.ts
 
 /**
  * Memory item schema and type

@@ -11,7 +11,7 @@ import { z } from 'zod';
  * Used to identify an execution context
  */
 export const contextIdSchema = z.string().min(1);
-export type ContextId = string;
+// ContextId moved to base-types.ts
 
 /**
  * Execution context schema and type

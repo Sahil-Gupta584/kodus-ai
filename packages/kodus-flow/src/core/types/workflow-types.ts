@@ -28,19 +28,19 @@ import { IdGenerator } from '../../utils/id-generator.js';
  * Workflow ID - identifies a specific workflow definition
  */
 export const workflowIdSchema = z.string().min(1);
-export type WorkflowId = string;
+// WorkflowId moved to base-types.ts
 
 /**
  * Step ID - identifies a specific step in a workflow
  */
 export const stepIdSchema = z.string().min(1);
-export type StepId = string;
+// StepId moved to base-types.ts
 
 /**
  * Execution ID for workflow instances
  */
 export const workflowExecutionIdSchema = z.string().min(1);
-export type WorkflowExecutionId = string;
+// WorkflowExecutionId moved to base-types.ts
 
 // ===== WORKFLOW STEP TYPES =====
 

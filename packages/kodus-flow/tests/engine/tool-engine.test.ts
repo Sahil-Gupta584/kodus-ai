@@ -17,9 +17,10 @@ import type {
     ParallelToolsAction,
     SequentialToolsAction,
     ConditionalToolsAction,
-    ToolCall,
 } from '../../src/core/types/agent-types.js';
 import { z } from 'zod';
+import { ToolCall } from '../../src/core/types/tool-types.js';
+import { extractDescription } from '../../src/core/utils/zod-to-json-schema';
 
 // ===== MOCKS E SETUP =====
 
@@ -639,5 +640,399 @@ describe('ToolEngine - Parallel Tool Execution', () => {
             expect(endTime - startTime).toBeLessThan(2000); // Deve terminar rapidamente
             expect(mockTool1.execute).toHaveBeenCalledTimes(20);
         });
+    });
+});
+
+describe('ToolEngine - Enhanced Schema Conversion', () => {
+    let toolEngine: ToolEngine;
+
+    beforeEach(() => {
+        toolEngine = new ToolEngine();
+    });
+
+    describe('getToolsForLLM - Schema Preservation', () => {
+        it('should preserve optional fields correctly', () => {
+            // Create a tool with optional fields
+            const optionalTool = {
+                name: 'test.optional_tool',
+                description: 'Test tool with optional fields',
+                inputSchema: z.object({
+                    requiredField: z.string(),
+                    optionalField: z.string().optional(),
+                    nullableField: z.string().nullable(),
+                    defaultField: z.string().default('default'),
+                }),
+                execute: async () => ({ result: 'success' }),
+            };
+
+            toolEngine.registerTool(optionalTool);
+
+            const tools = toolEngine.getToolsForLLM();
+            const testTool = tools.find((t) => t.name === 'test.optional_tool');
+
+            expect(testTool).toBeDefined();
+            expect(testTool?.parameters).toBeDefined();
+
+            const params = testTool!.parameters as Record<string, unknown>;
+            const properties = params.properties as Record<string, unknown>;
+            const required = params.required as string[];
+
+            // Should only have required_field in required array
+            expect(required).toContain('requiredField');
+            expect(required).not.toContain('optionalField');
+            expect(required).not.toContain('nullableField');
+            expect(required).not.toContain('defaultField');
+
+            // Should have all fields in properties
+            expect(properties.requiredField).toBeDefined();
+            expect(properties.optionalField).toBeDefined();
+            expect(properties.nullableField).toBeDefined();
+            expect(properties.defaultField).toBeDefined();
+        });
+
+        it('should preserve complex object types', () => {
+            const complexTool = {
+                name: 'test.complex_tool',
+                description: 'Test tool with complex object types',
+                inputSchema: z.object({
+                    pageSize: z.object({
+                        value: z.number(),
+                        unit: z.string(),
+                    }),
+                    filters: z
+                        .object({
+                            status: z.enum(['active', 'inactive']),
+                            dateRange: z
+                                .object({
+                                    start: z.string(),
+                                    end: z.string(),
+                                })
+                                .optional(),
+                        })
+                        .optional(),
+                }),
+                execute: async () => ({ result: 'success' }),
+            };
+
+            toolEngine.registerTool(complexTool);
+
+            const tools = toolEngine.getToolsForLLM();
+            const testTool = tools.find((t) => t.name === 'test.complex_tool');
+
+            expect(testTool).toBeDefined();
+
+            const params = testTool!.parameters as Record<string, unknown>;
+            const properties = params.properties as Record<string, unknown>;
+
+            // Should preserve nested object structure
+            const pageSize = properties.pageSize as Record<string, unknown>;
+            expect(pageSize.type).toBe('object');
+            expect(pageSize.properties).toBeDefined();
+
+            const pageSizeProps = pageSize.properties as Record<
+                string,
+                unknown
+            >;
+            expect(pageSizeProps.value?.type).toBe('number');
+            expect(pageSizeProps.unit?.type).toBe('string');
+        });
+
+        it('should preserve enum types correctly', () => {
+            const enumTool = {
+                name: 'test.enum_tool',
+                description: 'Test tool with enum types',
+                inputSchema: z.object({
+                    priority: z.enum(['low', 'medium', 'high']),
+                    status: z.enum(['active', 'inactive', 'pending']),
+                }),
+                execute: async () => ({ result: 'success' }),
+            };
+
+            toolEngine.registerTool(enumTool);
+
+            const tools = toolEngine.getToolsForLLM();
+            const testTool = tools.find((t) => t.name === 'test.enum_tool');
+
+            expect(testTool).toBeDefined();
+
+            const params = testTool!.parameters as Record<string, unknown>;
+            const properties = params.properties as Record<string, unknown>;
+
+            // Should preserve enum values
+            const priority = properties.priority as Record<string, unknown>;
+            expect(priority.type).toBe('string');
+            expect(priority.enum).toEqual(['low', 'medium', 'high']);
+
+            const status = properties.status as Record<string, unknown>;
+            expect(status.type).toBe('string');
+            expect(status.enum).toEqual(['active', 'inactive', 'pending']);
+        });
+
+        it('should handle union types correctly', () => {
+            const unionTool = {
+                name: 'test.union_tool',
+                description: 'Test tool with union types',
+                inputSchema: z.object({
+                    id: z.union([z.string(), z.number()]),
+                    status: z.union([
+                        z.literal('active'),
+                        z.literal('inactive'),
+                    ]),
+                }),
+                execute: async () => ({ result: 'success' }),
+            };
+
+            toolEngine.registerTool(unionTool);
+
+            const tools = toolEngine.getToolsForLLM();
+            const testTool = tools.find((t) => t.name === 'test.union_tool');
+
+            expect(testTool).toBeDefined();
+
+            const params = testTool!.parameters as Record<string, unknown>;
+            const properties = params.properties as Record<string, unknown>;
+
+            // Should handle union types appropriately
+            const id = properties.id as Record<string, unknown>;
+            expect(id.anyOf).toBeDefined();
+
+            const status = properties.status as Record<string, unknown>;
+            // Should convert literal union to enum
+            expect(status.type).toBe('string');
+            expect(status.enum).toEqual(['active', 'inactive']);
+        });
+
+        it('should preserve .describe() descriptions correctly', () => {
+            const describeTool = {
+                name: 'test.describe_tool',
+                description: 'Test tool with .describe() descriptions',
+                inputSchema: z.object({
+                    organizationId: z
+                        .string()
+                        .describe(
+                            'Organization UUID - unique identifier for the organization in the system',
+                        ),
+                    teamId: z
+                        .string()
+                        .describe(
+                            'Team UUID - unique identifier for the team within the organization',
+                        ),
+                    filters: z
+                        .object({
+                            archived: z
+                                .boolean()
+                                .optional()
+                                .describe(
+                                    'Filter by archived status: true (only archived repos), false (only active repos), undefined (all repos)',
+                                ),
+                            private: z
+                                .boolean()
+                                .optional()
+                                .describe(
+                                    'Filter by visibility: true (only private repos), false (only public repos), undefined (all repos)',
+                                ),
+                            language: z
+                                .string()
+                                .optional()
+                                .describe(
+                                    'Filter by primary programming language (e.g., "JavaScript", "TypeScript", "Python")',
+                                ),
+                        })
+                        .optional()
+                        .describe(
+                            'Optional filters to narrow down repository results',
+                        ),
+                }),
+                execute: async () => ({ result: 'success' }),
+            };
+
+            toolEngine.registerTool(describeTool);
+
+            const tools = toolEngine.getToolsForLLM();
+            const testTool = tools.find((t) => t.name === 'test.describe_tool');
+
+            expect(testTool).toBeDefined();
+
+            const params = testTool!.parameters;
+            expect(params).toBeDefined();
+
+            // Check that descriptions are preserved
+            expect(params.properties?.organizationId?.description).toBe(
+                'Organization UUID - unique identifier for the organization in the system',
+            );
+            expect(params.properties?.teamId?.description).toBe(
+                'Team UUID - unique identifier for the team within the organization',
+            );
+            expect(params.properties?.filters?.description).toBe(
+                'Optional filters to narrow down repository results',
+            );
+
+            // Check nested object descriptions
+            const filtersProps = params.properties?.filters
+                ?.properties as Record<string, unknown>;
+            expect(filtersProps.archived?.description).toBe(
+                'Filter by archived status: true (only archived repos), false (only active repos), undefined (all repos)',
+            );
+            expect(filtersProps.private?.description).toBe(
+                'Filter by visibility: true (only private repos), false (only public repos), undefined (all repos)',
+            );
+            expect(filtersProps.language?.description).toBe(
+                'Filter by primary programming language (e.g., "JavaScript", "TypeScript", "Python")',
+            );
+        });
+
+        it('should support all complex schema patterns with .describe()', () => {
+            // Test 1: Enum with .describe()
+            const enumTool = {
+                name: 'test.enum_tool',
+                description: 'Test tool with enum and .describe()',
+                inputSchema: z.object({
+                    state: z
+                        .enum(['open', 'closed', 'merged'])
+                        .optional()
+                        .describe(
+                            'PR state filter: "open" (active PRs awaiting review), "closed" (rejected/abandoned PRs), "merged" (accepted and merged PRs)',
+                        ),
+                    repository: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Repository name or ID to filter PRs from a specific repository only',
+                        ),
+                }),
+                execute: async () => ({ result: 'success' }),
+            };
+
+            // Test 2: Nested objects with .describe()
+            const nestedTool = {
+                name: 'test.nested_tool',
+                description: 'Test tool with nested objects and .describe()',
+                inputSchema: z.object({
+                    repository: z
+                        .object({
+                            id: z
+                                .string()
+                                .describe(
+                                    'Repository unique identifier (UUID or platform-specific ID)',
+                                ),
+                            name: z
+                                .string()
+                                .describe(
+                                    'Repository name (e.g., "my-awesome-project")',
+                                ),
+                        })
+                        .optional()
+                        .describe(
+                            'Specific repository to get commits from. If not provided, gets commits from all accessible repositories',
+                        ),
+                    filters: z
+                        .object({
+                            since: z
+                                .string()
+                                .optional()
+                                .describe(
+                                    'ISO date string (YYYY-MM-DDTHH:mm:ssZ) to get commits created after this date',
+                                ),
+                            until: z
+                                .string()
+                                .optional()
+                                .describe(
+                                    'ISO date string (YYYY-MM-DDTHH:mm:ssZ) to get commits created before this date',
+                                ),
+                        })
+                        .optional()
+                        .describe(
+                            'Optional filters to narrow down commit history results',
+                        ),
+                }),
+                execute: async () => ({ result: 'success' }),
+            };
+
+            // Test 3: Arrays with .describe()
+            const arrayTool = {
+                name: 'test.array_tool',
+                description: 'Test tool with arrays and .describe()',
+                inputSchema: z.object({
+                    examples: z
+                        .array(
+                            z
+                                .object({
+                                    snippet: z
+                                        .string()
+                                        .describe(
+                                            'Code example snippet demonstrating the rule',
+                                        ),
+                                    isCorrect: z
+                                        .boolean()
+                                        .describe(
+                                            'Whether this snippet follows the rule (true) or violates it (false)',
+                                        ),
+                                })
+                                .describe(
+                                    'Code example showing correct or incorrect usage of the rule',
+                                ),
+                        )
+                        .optional()
+                        .describe(
+                            'Array of code examples to help understand and apply the rule',
+                        ),
+                }),
+                execute: async () => ({ result: 'success' }),
+            };
+
+            // Register all tools
+            toolEngine.registerTool(enumTool);
+            toolEngine.registerTool(nestedTool);
+            toolEngine.registerTool(arrayTool);
+
+            const tools = toolEngine.getToolsForLLM();
+
+            // Test enum tool
+            const enumTestTool = tools.find((t) => t.name === 'test.enum_tool');
+            expect(enumTestTool).toBeDefined();
+            const enumParams = enumTestTool!.parameters;
+            expect(enumParams.properties?.state?.description).toBe(
+                'PR state filter: "open" (active PRs awaiting review), "closed" (rejected/abandoned PRs), "merged" (accepted and merged PRs)',
+            );
+
+            // Test nested tool
+            const nestedTestTool = tools.find(
+                (t) => t.name === 'test.nested_tool',
+            );
+            expect(nestedTestTool).toBeDefined();
+            const nestedParams = nestedTestTool!.parameters;
+            expect(nestedParams.properties?.repository?.description).toBe(
+                'Specific repository to get commits from. If not provided, gets commits from all accessible repositories',
+            );
+
+            // Test array tool
+            const arrayTestTool = tools.find(
+                (t) => t.name === 'test.array_tool',
+            );
+            expect(arrayTestTool).toBeDefined();
+            const arrayParams = arrayTestTool!.parameters;
+            expect(arrayParams.properties?.examples?.description).toBe(
+                'Array of code examples to help understand and apply the rule',
+            );
+        });
+    });
+});
+
+describe('extractDescription compatibilidade Zod 3 e 4', () => {
+    it('extrai descrição de schema Zod 4 (.meta().description)', () => {
+        const schema = z.string().describe('Descrição Zod 4');
+        // Usa a função real
+        expect(extractDescription(schema)).toBe('Descrição Zod 4');
+    });
+
+    it('extrai descrição de schema Zod 3 (_def.description)', () => {
+        // Simula um objeto Zod 3
+        type FakeZod3 = { _def: { description: string } };
+        const fakeZod3Schema: FakeZod3 = {
+            ['_def']: { description: 'Descrição Zod 3' },
+        };
+        expect(
+            extractDescription(fakeZod3Schema as unknown as z.ZodSchema),
+        ).toBe('Descrição Zod 3');
     });
 });

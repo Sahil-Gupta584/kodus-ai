@@ -64,11 +64,14 @@ export function mcpToolToEngineTool(mcpTool: MCPToolRawWithServer): EngineTool {
         throw new Error(`Invalid tool name: ${toolName}`);
     }
 
+    // ✅ IMPROVED: Preserve original JSON Schema with enhanced metadata
+    const enhancedJsonSchema = enhanceMCPSchema(mcpTool.inputSchema);
+
     return {
         name: toolName,
         description: mcpTool.description || `MCP Tool: ${mcpTool.name}`,
         schema: zodSchema,
-        jsonSchema: mcpTool.inputSchema, // Keep original JSON Schema for LLMs
+        jsonSchema: enhancedJsonSchema, // Enhanced JSON Schema for LLMs
         execute: async (_args: unknown, _ctx: unknown) => {
             // This will be overridden by the adapter
             throw new Error(
@@ -76,6 +79,87 @@ export function mcpToolToEngineTool(mcpTool: MCPToolRawWithServer): EngineTool {
             );
         },
     };
+}
+
+/**
+ * Enhance MCP JSON Schema to preserve important metadata
+ */
+function enhanceMCPSchema(schema: unknown): unknown {
+    if (!schema || typeof schema !== 'object') {
+        return schema;
+    }
+
+    const enhancedSchema = { ...schema } as Record<string, unknown>;
+
+    // Ensure required array is preserved
+    if (
+        enhancedSchema.properties &&
+        typeof enhancedSchema.properties === 'object'
+    ) {
+        const properties = enhancedSchema.properties as Record<string, unknown>;
+
+        // If no required array exists, try to infer from properties
+        if (
+            !enhancedSchema.required ||
+            !Array.isArray(enhancedSchema.required)
+        ) {
+            const inferredRequired: string[] = [];
+
+            for (const [key, prop] of Object.entries(properties)) {
+                const propObj = prop as Record<string, unknown>;
+
+                // Only mark as required if explicitly marked as required: true
+                if (propObj.required === true) {
+                    inferredRequired.push(key);
+                }
+
+                // Don't infer required from complex objects - let the original schema decide
+                // This prevents marking optional fields as required
+            }
+
+            if (inferredRequired.length > 0) {
+                enhancedSchema.required = inferredRequired;
+            }
+        }
+
+        // Enhance individual properties
+        for (const [key, prop] of Object.entries(properties)) {
+            const propObj = prop as Record<string, unknown>;
+            const enhancedProp = { ...propObj };
+
+            // Preserve format information
+            if (propObj.format && typeof propObj.format === 'string') {
+                enhancedProp.format = propObj.format;
+            }
+
+            // Preserve enum information
+            if (propObj.enum && Array.isArray(propObj.enum)) {
+                enhancedProp.enum = propObj.enum;
+            }
+
+            // Preserve description
+            if (
+                propObj.description &&
+                typeof propObj.description === 'string'
+            ) {
+                enhancedProp.description = propObj.description;
+            }
+
+            // Handle nested objects
+            if (propObj.type === 'object' && propObj.properties) {
+                enhancedProp.properties = enhanceMCPSchema(propObj.properties);
+            }
+
+            // Handle arrays
+            if (propObj.type === 'array' && propObj.items) {
+                enhancedProp.items = enhanceMCPSchema(propObj.items);
+            }
+
+            properties[key] = enhancedProp;
+        }
+    }
+
+    return enhancedSchema;
 }
 
 /**
