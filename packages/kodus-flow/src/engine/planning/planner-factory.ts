@@ -134,6 +134,18 @@ export interface ResultAnalysis {
     suggestedNextAction?: string;
 }
 
+/**
+ * ✅ UNIFIED: StepExecution now uses the implementation from step-execution.ts
+ * This ensures consistency between planner and AI SDK components
+ */
+export type StepExecution =
+    import('../../core/context/step-execution.js').AgentStepResult;
+
+/**
+ * ✅ REMOVED: StepExecutionMetadata is no longer needed
+ * Metadata is now handled by AgentStepResult from step-execution.ts
+ */
+
 // Specific metadata types for execution context
 export interface ExecutionContextMetadata {
     agentName?: string;
@@ -142,6 +154,12 @@ export interface ExecutionContextMetadata {
     thread?: Thread; // ⭐ NOVO: ID da thread para acesso ao ExecutionRuntime
     startTime?: number;
     plannerType?: PlannerType;
+    // 🆕 NEW: Context quality metrics from auto-retrieval
+    contextMetrics?: {
+        memoryRelevance: number;
+        sessionContinuity: number;
+        executionHealth: number;
+    };
     [key: string]: unknown;
 }
 
@@ -199,6 +217,11 @@ export interface ExecutionHints {
         riskTolerance?: 'conservative' | 'moderate' | 'aggressive';
         preferredStyle?: 'formal' | 'casual' | 'technical';
     };
+    // 🆕 NEW: Auto-retrieved context from ContextBuilder
+    relevantMemories?: string[];
+    recentPatterns?: string[];
+    suggestions?: string[];
+    sessionContinuity?: string;
 }
 
 export interface ExecutionHistoryEntry {
@@ -211,7 +234,7 @@ export interface ExecutionHistoryEntry {
 // Enhanced execution context for planners with improved LLM performance
 export interface PlannerExecutionContext {
     input: string;
-    history: ExecutionHistoryEntry[];
+    history: StepExecution[];
     isComplete: boolean;
 
     iterations: number;
@@ -252,7 +275,7 @@ export function isSuccessResult(result: ActionResult): boolean {
  * Generate execution hints automatically from history and context
  */
 export function generateExecutionHints(
-    history: ExecutionHistoryEntry[],
+    history: StepExecution[],
     agentIdentity?: AgentIdentity,
 ): ExecutionHints {
     const hints: ExecutionHints = {};
@@ -313,7 +336,7 @@ export function generateExecutionHints(
  * Generate learning context from execution history
  */
 export function generateLearningContext(
-    history: ExecutionHistoryEntry[],
+    history: StepExecution[],
 ): LearningContext {
     const context: LearningContext = {
         commonMistakes: [],

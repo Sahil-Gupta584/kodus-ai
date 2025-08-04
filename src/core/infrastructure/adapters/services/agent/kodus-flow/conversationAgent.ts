@@ -40,6 +40,7 @@ export class ConversationAgentProvider {
             model: LLMModelProvider.GEMINI_2_5_PRO,
             temperature: 0,
             maxTokens: 8000,
+            maxReasoningTokens: 500,
         });
 
         // ✅ WRAPPER para compatibilizar com nossa interface
