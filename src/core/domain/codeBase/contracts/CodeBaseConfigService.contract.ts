@@ -19,4 +19,16 @@ export interface ICodeBaseConfigService {
         organizationAndTeamData: OrganizationAndTeamData,
     );
     getDefaultConfigs(): CodeReviewConfig;
+
+    resolveConfigByDirectories(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repository: { name: string; id: string },
+        affectedPaths: string[],
+    ): Promise<CodeReviewConfig>;
+
+    hasDirectoryConfigs(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<boolean>;
+
+    extractUniqueDirectoryPaths(files: { filename: string }[]): string[];
 }
