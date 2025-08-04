@@ -48,7 +48,7 @@ import { TaskStatus } from '@kodus/kodus-proto/task';
 export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineContext> {
     readonly stageName = 'FileAnalysisStage';
 
-    private readonly concurrencyLimit = 10;
+    private readonly concurrencyLimit = 20;
 
     constructor(
         @Inject(SUGGESTION_SERVICE_TOKEN)

@@ -561,7 +561,14 @@ export class SuggestionService implements ISuggestionService {
             maxSuggestions,
             limitationType,
             severityLevelFilter,
+            severityLimits,
         } = suggestionControl;
+
+        let severityLevelFilterWithConditional = severityLevelFilter;
+
+        if (severityLimits) {
+            severityLevelFilterWithConditional = SeverityLevel.LOW;
+        }
 
         let refinedSuggestions = suggestions;
 
@@ -584,7 +591,7 @@ export class SuggestionService implements ISuggestionService {
         const { prioritizedBySeverity, discardedBySeverity } =
             await this.processSeverityFilter(
                 refinedSuggestions,
-                severityLevelFilter,
+                severityLevelFilterWithConditional,
                 organizationAndTeamData,
                 prNumber,
             );

@@ -573,32 +573,47 @@ export class PullRequestsRepository implements IPullRequestsRepository {
     private sanitizeCodeReviewConfigData(
         updateData: Partial<IFile>,
     ): Partial<IFile> {
-        const sanitizedData = { ...updateData };
+        const sanitizedData: Partial<IFile> = {};
 
-        if (!updateData.reviewMode || updateData.reviewMode.toString() === '') {
-            delete sanitizedData?.reviewMode;
-        }
+        Object.keys(updateData).forEach((key) => {
+            if (key === 'reviewMode') {
+                if (
+                    updateData.reviewMode &&
+                    updateData.reviewMode.toString() !== ''
+                ) {
+                    sanitizedData.reviewMode = updateData.reviewMode;
+                }
+            } else if (key === 'codeReviewModelUsed') {
+                if (typeof updateData.codeReviewModelUsed === 'object') {
+                    const modelUsed: any = {};
 
-        if (typeof sanitizedData.codeReviewModelUsed === 'object') {
-            const { generateSuggestions, safeguard } =
-                sanitizedData.codeReviewModelUsed;
+                    if (
+                        updateData.codeReviewModelUsed.generateSuggestions &&
+                        updateData.codeReviewModelUsed.generateSuggestions.toString() !==
+                            ''
+                    ) {
+                        modelUsed.generateSuggestions =
+                            updateData.codeReviewModelUsed.generateSuggestions;
+                    }
 
-            if (!generateSuggestions || generateSuggestions.toString() === '') {
-                delete sanitizedData?.codeReviewModelUsed?.generateSuggestions;
+                    if (
+                        updateData.codeReviewModelUsed.safeguard &&
+                        updateData.codeReviewModelUsed.safeguard.toString() !==
+                            ''
+                    ) {
+                        modelUsed.safeguard =
+                            updateData.codeReviewModelUsed.safeguard;
+                    }
+
+                    if (Object.keys(modelUsed).length > 0) {
+                        sanitizedData.codeReviewModelUsed = modelUsed;
+                    }
+                }
+            } else {
+                (sanitizedData as any)[key] = (updateData as any)[key];
             }
+        });
 
-            if (!safeguard || safeguard.toString() === '') {
-                delete sanitizedData?.codeReviewModelUsed?.safeguard;
-            }
-        }
-
-        if (
-            !sanitizedData.codeReviewModelUsed ||
-            Object.keys(sanitizedData.codeReviewModelUsed).length === 0
-        ) {
-            delete sanitizedData.codeReviewModelUsed;
-            return sanitizedData;
-        }
         return sanitizedData;
     }
 

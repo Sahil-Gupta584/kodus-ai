@@ -20,13 +20,10 @@ import {
     FILE_REVIEW_CONTEXT_PREPARATION_TOKEN,
     IFileReviewContextPreparation,
 } from '@/shared/interfaces/file-review-context-preparation.interface';
-import pLimit from 'p-limit';
 
 @Injectable()
 export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReviewPipelineContext> {
     readonly stageName = 'PRLevelReviewStage';
-
-    private readonly concurrencyLimit = 15;
 
     constructor(
         private readonly logger: PinoLoggerService,
