@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import type { ToolJSONSchema } from '../types/tool-types.js';
 
-// Tipo para a API interna do Zod 4
+// Tipo para acessar propriedades internas do Zod
 type ZodInternalDef = {
     type: string;
     checks?: unknown[];
@@ -18,7 +18,8 @@ type ZodInternalDef = {
     defaultValue?: unknown | (() => unknown);
     valueType?: z.ZodSchema;
     entries?: Record<string, unknown>;
-    description?: string; // ✅ ADDED: Support for .describe()
+    description?: string;
+    element?: z.ZodSchema;
 };
 
 /**
@@ -145,14 +146,16 @@ function zodSchemaToJsonSchemaObject(
             return addDescription({ type: 'boolean' });
 
         case 'ZodArray':
-            if (!zodType.type) {
+        case 'array':
+            if (!zodType.element) {
                 return addDescription({ type: 'array' });
             }
+            const arrayItems = zodSchemaToJsonSchemaObject(
+                zodType.element as unknown as z.ZodSchema,
+            );
             return addDescription({
                 type: 'array',
-                items: zodSchemaToJsonSchemaObject(
-                    zodType.type as unknown as z.ZodSchema,
-                ),
+                items: arrayItems,
             });
 
         case 'ZodObject':
@@ -186,9 +189,12 @@ function zodSchemaToJsonSchemaObject(
 
         case 'ZodEnum':
         case 'enum':
+            // ✅ FIXED: Handle Zod 4 enum structure correctly
+            const enumValues =
+                zodType.options || Object.values(zodType.entries || {});
             return addDescription({
                 type: 'string',
-                enum: Object.values(zodType.entries || {}),
+                enum: enumValues,
             });
 
         case 'ZodLiteral':
@@ -235,6 +241,18 @@ function zodSchemaToJsonSchemaObject(
             return addDescription({
                 anyOf,
             });
+
+        case 'ZodRecord':
+            return addDescription({
+                type: 'object',
+                additionalProperties: zodType.valueType
+                    ? zodSchemaToJsonSchemaObject(zodType.valueType)
+                    : true,
+            });
+
+        case 'ZodUnknown':
+        case 'ZodAny':
+            return addDescription({});
 
         case 'ZodOptional':
         case 'optional':

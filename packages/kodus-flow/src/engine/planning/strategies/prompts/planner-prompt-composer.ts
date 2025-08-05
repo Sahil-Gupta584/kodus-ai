@@ -541,6 +541,35 @@ DEPENDENCY RULES:
             // Determine the type display
             let typeDisplay = propObj.type || 'unknown';
 
+            // Handle arrays
+            if (
+                typeDisplay === 'array' &&
+                (propObj as Record<string, unknown>).items
+            ) {
+                const items = (propObj as Record<string, unknown>)
+                    .items as Record<string, unknown>;
+                if (items.type === 'object' && items.properties) {
+                    const itemKeys = Object.keys(
+                        items.properties as Record<string, unknown>,
+                    );
+                    if (itemKeys.length > 0) {
+                        typeDisplay = `array<object{${itemKeys.join(',')}}>`;
+                    } else {
+                        typeDisplay = 'array<object>';
+                    }
+                } else if (items.type) {
+                    // Check if items has enum
+                    if (items.enum && Array.isArray(items.enum)) {
+                        const enumValues = items.enum as unknown[];
+                        typeDisplay = `array<enum[${enumValues.join('|')}]>`;
+                    } else {
+                        typeDisplay = `array<${items.type as string}>`;
+                    }
+                } else {
+                    typeDisplay = 'array';
+                }
+            }
+
             // Handle complex types
             if (typeDisplay === 'object' && propObj.properties) {
                 const propKeys = Object.keys(propObj.properties);
@@ -552,16 +581,27 @@ DEPENDENCY RULES:
             // Handle enums
             if (propObj.enum && Array.isArray(propObj.enum)) {
                 const enumValues = propObj.enum as unknown[];
-                if (enumValues.length <= 3) {
-                    typeDisplay = `enum[${enumValues.join('|')}]`;
-                } else {
-                    typeDisplay = `enum(${enumValues.length} values)`;
-                }
+                typeDisplay = `enum[${enumValues.join('|')}]`;
+            }
+
+            // Handle anyOf (unions)
+            if ((propObj as Record<string, unknown>).anyOf) {
+                typeDisplay = 'union';
             }
 
             // Handle specific formats
             if (propObj.format) {
                 typeDisplay = `${typeDisplay}:${propObj.format}`;
+            }
+
+            // Handle nullable
+            if ((propObj as Record<string, unknown>).nullable) {
+                typeDisplay = `${typeDisplay} | null`;
+            }
+
+            // Handle default
+            if ((propObj as Record<string, unknown>).default !== undefined) {
+                typeDisplay = `${typeDisplay} (default: ${(propObj as Record<string, unknown>).default})`;
             }
 
             const marker = isRequired ? 'REQUIRED' : 'OPTIONAL';
@@ -571,12 +611,71 @@ DEPENDENCY RULES:
 
             paramStrings.push(paramLine);
 
+            // Handle array of objects - show nested properties
+            if (
+                typeDisplay.startsWith('array<object{') &&
+                (propObj as Record<string, unknown>).items
+            ) {
+                const items = (propObj as Record<string, unknown>)
+                    .items as Record<string, unknown>;
+                if (items.type === 'object' && items.properties) {
+                    const nestedProps = items.properties as Record<
+                        string,
+                        unknown
+                    >;
+                    const nestedRequired = (items.required as string[]) || [];
+
+                    for (const [nestedName, nestedProp] of Object.entries(
+                        nestedProps,
+                    )) {
+                        const nestedPropObj = nestedProp as {
+                            type?: string;
+                            description?: string;
+                            enum?: unknown[];
+                        };
+
+                        let nestedTypeDisplay = nestedPropObj.type || 'unknown';
+
+                        // Handle nested enums in array items
+                        if (
+                            nestedPropObj.enum &&
+                            Array.isArray(nestedPropObj.enum)
+                        ) {
+                            const nestedEnumValues =
+                                nestedPropObj.enum as unknown[];
+                            nestedTypeDisplay = `enum[${nestedEnumValues.join(
+                                '|',
+                            )}]`;
+                        }
+
+                        const isNestedRequired =
+                            nestedRequired.includes(nestedName);
+                        const nestedMarker = isNestedRequired
+                            ? 'REQUIRED'
+                            : 'OPTIONAL';
+
+                        const nestedLine = `    - ${nestedName} (${nestedTypeDisplay}, ${nestedMarker})${
+                            nestedPropObj.description
+                                ? `: ${nestedPropObj.description}`
+                                : ''
+                        }`;
+                        paramStrings.push(nestedLine);
+                    }
+                }
+            }
+
             // Handle nested object properties
             if (typeDisplay.startsWith('object{') && propObj.properties) {
                 const nestedProps = propObj.properties as Record<
                     string,
                     unknown
                 >;
+
+                // Check if this object has a required array
+                const nestedRequired =
+                    ((propObj as Record<string, unknown>)
+                        .required as string[]) || [];
+
                 for (const [nestedName, nestedProp] of Object.entries(
                     nestedProps,
                 )) {
@@ -588,6 +687,35 @@ DEPENDENCY RULES:
 
                     let nestedTypeDisplay = nestedPropObj.type || 'unknown';
 
+                    // Handle nested arrays
+                    if (
+                        nestedTypeDisplay === 'array' &&
+                        (nestedPropObj as Record<string, unknown>).items
+                    ) {
+                        const items = (nestedPropObj as Record<string, unknown>)
+                            .items as Record<string, unknown>;
+                        if (items.type === 'object' && items.properties) {
+                            const itemKeys = Object.keys(
+                                items.properties as Record<string, unknown>,
+                            );
+                            if (itemKeys.length > 0) {
+                                nestedTypeDisplay = `array<object{${itemKeys.join(',')}}>`;
+                            } else {
+                                nestedTypeDisplay = 'array<object>';
+                            }
+                        } else if (items.type) {
+                            // Check if items has enum
+                            if (items.enum && Array.isArray(items.enum)) {
+                                const enumValues = items.enum as unknown[];
+                                nestedTypeDisplay = `array<enum[${enumValues.join('|')}]>`;
+                            } else {
+                                nestedTypeDisplay = `array<${items.type as string}>`;
+                            }
+                        } else {
+                            nestedTypeDisplay = 'array';
+                        }
+                    }
+
                     // Handle nested enums
                     if (
                         nestedPropObj.enum &&
@@ -595,21 +723,81 @@ DEPENDENCY RULES:
                     ) {
                         const nestedEnumValues =
                             nestedPropObj.enum as unknown[];
-                        if (nestedEnumValues.length <= 3) {
-                            nestedTypeDisplay = `enum[${nestedEnumValues.join(
-                                '|',
-                            )}]`;
-                        } else {
-                            nestedTypeDisplay = `enum(${nestedEnumValues.length} values)`;
-                        }
+                        nestedTypeDisplay = `enum[${nestedEnumValues.join(
+                            '|',
+                        )}]`;
                     }
 
-                    const nestedLine = `    - ${nestedName} (${nestedTypeDisplay}, OPTIONAL)${
+                    const isNestedRequired =
+                        nestedRequired.includes(nestedName);
+                    const nestedMarker = isNestedRequired
+                        ? 'REQUIRED'
+                        : 'OPTIONAL';
+
+                    const nestedLine = `    - ${nestedName} (${nestedTypeDisplay}, ${nestedMarker})${
                         nestedPropObj.description
                             ? `: ${nestedPropObj.description}`
                             : ''
                     }`;
                     paramStrings.push(nestedLine);
+
+                    // ✅ ADDED: Handle nested array of objects - show nested properties
+                    if (
+                        nestedTypeDisplay.startsWith('array<object{') &&
+                        (nestedPropObj as Record<string, unknown>).items
+                    ) {
+                        const items = (nestedPropObj as Record<string, unknown>)
+                            .items as Record<string, unknown>;
+                        if (items.type === 'object' && items.properties) {
+                            const nestedArrayProps = items.properties as Record<
+                                string,
+                                unknown
+                            >;
+                            const nestedArrayRequired =
+                                (items.required as string[]) || [];
+
+                            for (const [
+                                nestedArrayName,
+                                nestedArrayProp,
+                            ] of Object.entries(nestedArrayProps)) {
+                                const nestedArrayPropObj = nestedArrayProp as {
+                                    type?: string;
+                                    description?: string;
+                                    enum?: unknown[];
+                                };
+
+                                let nestedArrayTypeDisplay =
+                                    nestedArrayPropObj.type || 'unknown';
+
+                                // Handle nested array enums
+                                if (
+                                    nestedArrayPropObj.enum &&
+                                    Array.isArray(nestedArrayPropObj.enum)
+                                ) {
+                                    const nestedArrayEnumValues =
+                                        nestedArrayPropObj.enum as unknown[];
+                                    nestedArrayTypeDisplay = `enum[${nestedArrayEnumValues.join(
+                                        '|',
+                                    )}]`;
+                                }
+
+                                const isNestedArrayRequired =
+                                    nestedArrayRequired.includes(
+                                        nestedArrayName,
+                                    );
+                                const nestedArrayMarker = isNestedArrayRequired
+                                    ? 'REQUIRED'
+                                    : 'OPTIONAL';
+
+                                const nestedArrayLine = `        - ${nestedArrayName} (${nestedArrayTypeDisplay}, ${nestedArrayMarker})${
+                                    nestedArrayPropObj.description
+                                        ? `: ${nestedArrayPropObj.description}`
+                                        : ''
+                                }`;
+                                paramStrings.push(nestedArrayLine);
+                            }
+                        }
+                    }
                 }
             }
         }

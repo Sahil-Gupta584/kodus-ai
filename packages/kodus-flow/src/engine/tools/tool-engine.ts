@@ -497,12 +497,47 @@ export class ToolEngine {
 
                 // Handle nested object properties
                 if (propObj.type === 'object' && propObj.properties) {
-                    cleanProp.properties = propObj.properties;
+                    // ✅ FIXED: Process nested properties recursively to preserve descriptions
+                    cleanProp.properties = this.cleanPropertiesRecursively(
+                        propObj.properties as Record<string, unknown>,
+                    );
+
+                    // ✅ ADDED: Preserve required array for nested objects
+                    if (propObj.required && Array.isArray(propObj.required)) {
+                        cleanProp.required = propObj.required;
+                    }
                 }
 
-                // Handle array items
+                // Handle array items with descriptions
                 if (propObj.type === 'array' && propObj.items) {
-                    cleanProp.items = propObj.items;
+                    // ✅ FIXED: Process array items recursively to preserve descriptions
+                    if (
+                        typeof propObj.items === 'object' &&
+                        propObj.items !== null
+                    ) {
+                        const itemsObj = propObj.items as Record<
+                            string,
+                            unknown
+                        >;
+                        cleanProp.items = {
+                            type: itemsObj.type,
+                            properties: itemsObj.properties
+                                ? this.cleanPropertiesRecursively(
+                                      itemsObj.properties as Record<
+                                          string,
+                                          unknown
+                                      >,
+                                  )
+                                : itemsObj.properties,
+                            required: itemsObj.required,
+                            additionalProperties: itemsObj.additionalProperties,
+                            description: itemsObj.description,
+                            enum: itemsObj.enum,
+                            format: itemsObj.format,
+                        };
+                    } else {
+                        cleanProp.items = propObj.items;
+                    }
                 }
 
                 // Handle oneOf/anyOf for union types
@@ -565,6 +600,78 @@ export class ToolEngine {
 
         // Return built-in tools first, then external tools
         return [...builtInTools, ...externalTools];
+    }
+
+    /**
+     * Clean properties recursively to preserve descriptions and metadata
+     */
+    private cleanPropertiesRecursively(
+        properties: Record<string, unknown>,
+    ): Record<string, unknown> {
+        const cleanProperties: Record<string, unknown> = {};
+
+        for (const [key, prop] of Object.entries(properties)) {
+            const propObj = prop as Record<string, unknown>;
+            const cleanProp: Record<string, unknown> = {
+                type: propObj.type || 'string',
+                description: propObj.description,
+                enum: propObj.enum,
+                default: propObj.default,
+                format: propObj.format,
+            };
+
+            // Handle nested object properties
+            if (propObj.type === 'object' && propObj.properties) {
+                cleanProp.properties = this.cleanPropertiesRecursively(
+                    propObj.properties as Record<string, unknown>,
+                );
+
+                if (propObj.required && Array.isArray(propObj.required)) {
+                    cleanProp.required = propObj.required;
+                }
+            }
+
+            // Handle array items
+            if (propObj.type === 'array' && propObj.items) {
+                // ✅ FIXED: Preserve array items structure correctly
+                if (
+                    typeof propObj.items === 'object' &&
+                    propObj.items !== null
+                ) {
+                    const itemsObj = propObj.items as Record<string, unknown>;
+                    cleanProp.items = {
+                        type: itemsObj.type,
+                        properties: itemsObj.properties
+                            ? this.cleanPropertiesRecursively(
+                                  itemsObj.properties as Record<
+                                      string,
+                                      unknown
+                                  >,
+                              )
+                            : itemsObj.properties,
+                        required: itemsObj.required,
+                        additionalProperties: itemsObj.additionalProperties,
+                        description: itemsObj.description,
+                        enum: itemsObj.enum,
+                        format: itemsObj.format,
+                    };
+                } else {
+                    cleanProp.items = propObj.items;
+                }
+            }
+
+            // Handle oneOf/anyOf for union types
+            if (propObj.oneOf) {
+                cleanProp.oneOf = propObj.oneOf;
+            }
+            if (propObj.anyOf) {
+                cleanProp.anyOf = propObj.anyOf;
+            }
+
+            cleanProperties[key] = cleanProp;
+        }
+
+        return cleanProperties;
     }
 
     /**
