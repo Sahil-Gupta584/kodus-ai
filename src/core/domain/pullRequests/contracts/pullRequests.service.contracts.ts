@@ -36,19 +36,19 @@ export interface IPullRequestsService extends IPullRequestsRepository {
         prioritizedSuggestions: Partial<ISuggestion>[],
         unusedSuggestions: Partial<ISuggestion>[],
         platformType: string,
-        organizationId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         commits: ICommit[],
     ): Promise<IPullRequests | null>;
 
     extractUser(
         data: any,
-        organizationId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         platformType: PlatformType,
         prNumber: number,
     ): Promise<IPullRequestUser | null>;
     extractUsers(
         data: any,
-        organizationId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         platformType: PlatformType,
         prNumber: number,
     ): Promise<Array<IPullRequestUser>>;
@@ -58,5 +58,5 @@ export interface IPullRequestsService extends IPullRequestsRepository {
         repositoryName: string,
         prLevelSuggestions: ISuggestionByPR[],
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<PullRequestsEntity | null>
+    ): Promise<PullRequestsEntity | null>;
 }
