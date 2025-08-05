@@ -16,4 +16,5 @@ export interface IPullRequestMessages {
     repositoryId?: string;
     startReviewMessage?: IPullRequestMessageContent;
     endReviewMessage?: IPullRequestMessageContent;
+    directoryPath?: string;
 }
