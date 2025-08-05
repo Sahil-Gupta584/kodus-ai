@@ -122,15 +122,27 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
         const repositoryId = context.repository.id;
         const organizationId = context.organizationAndTeamData.organizationId;
 
-        // Busca primeiro por configuração específica do repositório
-        let pullRequestMessagesConfig =
-            await this.pullRequestMessagesService.findOne({
-                organizationId,
-                repositoryId,
-                configLevel: ConfigLevel.REPOSITORY,
-            });
+        let pullRequestMessagesConfig = null;
 
-        // Se não encontrar, busca por configuração global
+        if (context.codeReviewConfig?.configLevel === ConfigLevel.DIRECTORY) {
+            pullRequestMessagesConfig =
+                await this.pullRequestMessagesService.findOne({
+                    organizationId,
+                    repositoryId,
+                    directoryPath: context.codeReviewConfig?.directoryPath,
+                    configLevel: ConfigLevel.DIRECTORY,
+                });
+        }
+
+        if (!pullRequestMessagesConfig) {
+            pullRequestMessagesConfig =
+                await this.pullRequestMessagesService.findOne({
+                    organizationId,
+                    repositoryId,
+                    configLevel: ConfigLevel.REPOSITORY,
+                });
+        }
+
         if (!pullRequestMessagesConfig) {
             pullRequestMessagesConfig =
                 await this.pullRequestMessagesService.findOne({
