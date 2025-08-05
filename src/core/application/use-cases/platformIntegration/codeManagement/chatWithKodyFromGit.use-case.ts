@@ -152,12 +152,15 @@ export class ChatWithKodyFromGitUseCase {
                     organizationAndTeamData,
                 )
             ) {
-                const prepareContext = this.prepareContext(
+                const prepareContext = this.prepareContext({
                     comment,
                     originalKodyComment,
-                    sender.login,
+                    gitUserName: sender.login,
                     othersReplies,
-                );
+                    pullRequestNumber,
+                    repository,
+                    platformType: params.platformType,
+                });
 
                 const thread = createThreadId(
                     {
@@ -591,20 +594,34 @@ export class ChatWithKodyFromGitUseCase {
         }
     }
 
-    private prepareContext(
-        comment: Comment,
-        originalKodyComment: Comment,
-        userName: string,
-        othersReplies: Comment[],
-    ): any {
+    private prepareContext({
+        comment,
+        originalKodyComment,
+        gitUserName,
+        othersReplies,
+        pullRequestNumber,
+        repository,
+        platformType,
+    }: {
+        comment?: Comment;
+        originalKodyComment?: Comment;
+        gitUserName?: string;
+        othersReplies?: Comment[];
+        repository?: Repository;
+        platformType?: PlatformType;
+        pullRequestNumber?: number;
+    }): any {
         const userQuestion =
             comment.body.trim() === '@kody'
                 ? 'The user did not ask any questions. Ask them what they would like to know about the codebase or suggestions for code changes.'
                 : comment.body;
 
         return {
-            userName,
+            gitUserName,
             userQuestion,
+            pullRequestNumber,
+            repository,
+            platformType,
             codeManagementContext: {
                 originalComment: {
                     text: originalKodyComment?.body,
@@ -612,7 +629,6 @@ export class ChatWithKodyFromGitUseCase {
                 },
                 othersReplies: othersReplies.map((reply) => ({
                     text: reply.body,
-                    diffHunk: reply.diff_hunk,
                 })),
             },
         };
