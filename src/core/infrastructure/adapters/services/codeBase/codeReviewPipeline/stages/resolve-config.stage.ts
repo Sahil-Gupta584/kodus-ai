@@ -112,7 +112,6 @@ export class ResolveConfigStage extends BasePipelineStage<CodeReviewPipelineCont
                     organizationAndTeamData: context.organizationAndTeamData,
                     repository: context.repository.name,
                     pullRequestNumber: context.pullRequest.number,
-                    affectedPaths: affectedPaths.slice(0, 10), // Log apenas os primeiros 10
                 },
             });
 
