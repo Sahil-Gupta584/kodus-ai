@@ -1,12 +1,3 @@
-/**
- * Plan-and-Execute Planner
- *
- * Implementa o pattern Plan-and-Execute onde:
- * 1. Cria um plano detalhado primeiro
- * 2. Executa cada step do plano
- * 3. Re-planeja quando necessário
- */
-
 import { createLogger } from '../../../observability/index.js';
 import type { LLMAdapter } from '../../../adapters/llm/index.js';
 import type {
@@ -24,12 +15,10 @@ import {
     getResultContent,
 } from '../planner-factory.js';
 import { ToolMetadataForLLM } from '../../../core/types/tool-types.js';
-// import { getGlobalPersistor } from '../../../persistor/factory.js';
 import {
     createResponseSynthesizer,
     type ResponseSynthesisContext,
 } from '../../response/response-synthesizer.js';
-// 🆕 NEW: Import do novo sistema de prompts domain-agnostic
 import { PlannerPromptComposer } from './prompts/planner-prompt-composer.js';
 import { createPlannerPromptComposer } from './prompts/factory.js';
 import type { PlannerPromptConfig } from '../types/prompt-types.js';
@@ -62,11 +51,8 @@ export interface ExecutionPlan {
 export class PlanAndExecutePlanner implements Planner {
     readonly name = 'Plan-and-Execute';
     private logger = createLogger('plan-execute-planner');
-    // ✅ MULTI-TENANCY FIX: Store plans per thread/session instead of shared state
     private plansByThread = new Map<string, ExecutionPlan>();
-    // private persistor = getGlobalPersistor();
     private responseSynthesizer: ReturnType<typeof createResponseSynthesizer>;
-    // 🆕 NEW: Sistema de prompts domain-agnostic inteligente
     private promptComposer: PlannerPromptComposer;
 
     constructor(
@@ -74,22 +60,9 @@ export class PlanAndExecutePlanner implements Planner {
         promptConfig?: PlannerPromptConfig,
     ) {
         this.responseSynthesizer = createResponseSynthesizer(this.llmAdapter);
-        // 🆕 NEW: Inicializa o compositor de prompts com configuração opcional
         this.promptComposer = createPlannerPromptComposer(promptConfig);
-
-        this.logger.info('Plan-and-Execute Planner initialized', {
-            llmProvider: llmAdapter.getProvider?.()?.name || 'unknown',
-            supportsStructured:
-                llmAdapter.supportsStructuredGeneration?.() || false,
-            supportsPlanning: !!llmAdapter.createPlan,
-            availableTechniques: llmAdapter.getAvailableTechniques?.() || [],
-            promptSystem: 'domain-agnostic-v1.0.0',
-        });
     }
 
-    /**
-     * ✅ MULTI-TENANCY: Get unique thread identifier from context
-     */
     private getThreadId(context: PlannerExecutionContext): string {
         const threadId =
             context.plannerMetadata?.thread?.id ||
@@ -99,9 +72,6 @@ export class PlanAndExecutePlanner implements Planner {
         return threadId;
     }
 
-    /**
-     * ✅ MULTI-TENANCY: Get plan for specific thread
-     */
     private getCurrentPlan(
         context: PlannerExecutionContext,
     ): ExecutionPlan | null {
@@ -110,45 +80,31 @@ export class PlanAndExecutePlanner implements Planner {
         return this.plansByThread.get(threadId) || null;
     }
 
-    /**
-     * ✅ MULTI-TENANCY: Set plan for specific thread
-     */
     private setCurrentPlan(
         context: PlannerExecutionContext,
         plan: ExecutionPlan | null,
     ): void {
         const threadId = this.getThreadId(context);
-        if (plan === null) {
+
+        if (!plan) {
             this.plansByThread.delete(threadId);
         } else {
             this.plansByThread.set(threadId, plan);
         }
-
-        this.logger.debug('Plan set for thread', {
-            threadId,
-            planId: plan?.id,
-            status: plan?.status,
-            totalPlans: this.plansByThread.size,
-        });
     }
 
-    /**
-     * 🎯 RESPONSE SYNTHESIS: Criar resposta final conversacional
-     */
     private async createFinalResponse(
         context: PlannerExecutionContext,
     ): Promise<string> {
         const currentPlan = this.getCurrentPlan(context);
+
         if (!currentPlan) {
-            // ✅ FRAMEWORK BEST PRACTICE: Return empty response if no plan
             return '';
         }
 
         try {
-            // Coletar todos os resultados da execução
             const executionResults = context.history.map((h) => h.result);
 
-            // Preparar contexto para synthesis
             const synthesisContext: ResponseSynthesisContext = {
                 originalQuery: context.input,
                 plannerType: 'plan-execute',
@@ -169,11 +125,12 @@ export class PlanAndExecutePlanner implements Planner {
                             | 'skipped',
                         result: step.result,
                     })),
-                // ✅ FRAMEWORK PATTERN: Include dynamic planner reasoning
+
                 plannerReasoning: this.buildDynamicReasoning(
                     context,
                     currentPlan,
                 ),
+
                 metadata: {
                     totalSteps: currentPlan.steps.length,
                     completedSteps: currentPlan.steps.filter(
@@ -199,8 +156,6 @@ export class PlanAndExecutePlanner implements Planner {
                     'conversational',
                 );
 
-            // ✅ FRAMEWORK PATTERN: Extract final text from synthesized response
-            // Filter out reasoning to return only user-facing content
             return this.extractFinalText(synthesizedResponse.content);
         } catch (error) {
             this.logger.error(
@@ -211,7 +166,6 @@ export class PlanAndExecutePlanner implements Planner {
                 },
             );
 
-            // Fallback: resposta básica mas útil
             const completedSteps = currentPlan.steps.filter(
                 (s) => s.status === 'completed',
             ).length;
@@ -233,17 +187,12 @@ export class PlanAndExecutePlanner implements Planner {
         }
     }
 
-    /**
-     * Extract final text from synthesized response, filtering out reasoning
-     */
     private extractFinalText(content: unknown): string {
-        // Handle different response formats from LLM
         if (typeof content === 'string') {
             return content;
         }
 
         if (Array.isArray(content)) {
-            // Format: [{type: "reasoning", reasoning: "..."}, {type: "text", text: "..."}]
             const textEntry = content.find(
                 (item) =>
                     item &&
@@ -260,7 +209,6 @@ export class PlanAndExecutePlanner implements Planner {
                 return textEntry.text;
             }
 
-            // Fallback: join all text content
             return content
                 .filter((item) => item && typeof item === 'object')
                 .map((item) => {
@@ -273,7 +221,6 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         if (typeof content === 'object' && content !== null) {
-            // Handle object format
             const obj = content as Record<string, unknown>;
 
             if ('text' in obj && typeof obj.text === 'string') {
@@ -285,19 +232,14 @@ export class PlanAndExecutePlanner implements Planner {
             }
         }
 
-        // Fallback: convert to string
         return String(content || 'Response generated successfully');
     }
 
-    /**
-     * Build dynamic reasoning based on plan type and execution state
-     */
     private buildDynamicReasoning(
         context: PlannerExecutionContext,
         plan: ExecutionPlan,
     ): string {
         if (plan.steps.length === 0) {
-            // Empty plan - use original reasoning from LLM (e.g., "Simple greeting - no tools needed")
             return Array.isArray(plan.reasoning)
                 ? plan.reasoning.join(' ')
                 : plan.reasoning;
@@ -339,28 +281,16 @@ export class PlanAndExecutePlanner implements Planner {
         }
     }
 
-    /**
-     * Get available tools for the current context from AgentContext
-     */
     private getAvailableToolsForContext(
         context: PlannerExecutionContext,
     ): ToolMetadataForLLM[] {
         if (!context.agentContext?.availableToolsForLLM) {
-            this.logger.debug('No tools available in AgentContext');
             return [];
         }
-
-        this.logger.debug('Retrieved tools from AgentContext', {
-            toolCount: context.agentContext.availableToolsForLLM.length,
-            tools: context.agentContext.availableToolsForLLM.map((t) => t.name),
-        });
 
         return context.agentContext.availableToolsForLLM;
     }
 
-    /**
-     * ✅ ENHANCED: Get memory context using AI SDK Components
-     */
     private async getMemoryContext(
         context: PlannerExecutionContext,
         currentInput: string,
@@ -371,9 +301,7 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         try {
-            // ✅ ENHANCED: Use AI SDK Components as primary method
             if (context.agentContext.messageContext) {
-                // ✅ SEMPRE usar EnhancedMessageContext quando disponível
                 const enhancedContext =
                     await context.agentContext.messageContext.getContextForModel(
                         context.agentContext,
@@ -381,17 +309,12 @@ export class PlanAndExecutePlanner implements Planner {
                     );
 
                 if (enhancedContext) {
-                    this.logger.debug(
-                        'Using AI SDK EnhancedMessageContext for context',
-                    );
                     return enhancedContext;
                 }
             }
 
-            // ✅ FALLBACK: Use traditional APIs if AI SDK not available
             const contextParts: string[] = [];
 
-            // 1. MEMORY SEARCH: Get relevant memories for current input
             const memories = await context.agentContext.memory.search(
                 currentInput,
                 3,
@@ -407,11 +330,9 @@ export class PlanAndExecutePlanner implements Planner {
                 });
             }
 
-            // 2. SESSION HISTORY: Get recent conversation context (only user-relevant entries)
             const sessionHistory =
                 await context.agentContext.session.getHistory();
             if (sessionHistory && sessionHistory.length > 0) {
-                // Filter only user-relevant entries
                 const relevantEntries = sessionHistory
                     .filter((entry) => {
                         const entryObj = entry as Record<string, unknown>;
@@ -497,10 +418,7 @@ export class PlanAndExecutePlanner implements Planner {
 
             return contextParts.length > 0 ? contextParts.join('\n') : '';
         } catch (error) {
-            this.logger.debug('Could not retrieve memory context', {
-                error: error instanceof Error ? error.message : 'Unknown error',
-                currentInput: currentInput.substring(0, 50),
-            });
+            this.logger.error('Error getting memory context', error as Error);
             return '';
         }
     }
@@ -574,13 +492,11 @@ export class PlanAndExecutePlanner implements Planner {
     }
 
     async think(context: PlannerExecutionContext): Promise<AgentThought> {
-        // ✅ NEW: Start step execution tracking if available
         let stepId: string | undefined;
         if (context.agentContext?.stepExecution) {
             stepId = context.agentContext.stepExecution.startStep(
                 context.iterations || 0,
             );
-            this.logger.debug('Started step execution tracking', { stepId });
         }
 
         try {
@@ -765,12 +681,6 @@ export class PlanAndExecutePlanner implements Planner {
                         strategy: newPlan.strategy,
                     },
                 );
-
-                this.logger.debug('Plan data persisted', {
-                    planId: newPlan.id,
-                    stepsCount: newPlan.steps.length,
-                    threadId: context.plannerMetadata.thread?.id,
-                });
             } catch (error) {
                 this.logger.warn('Failed to persist plan data', {
                     error: error as Error,
@@ -834,7 +744,7 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         if (currentStep.arguments) {
-            currentStep.arguments = this.resolveStepArguments(
+            currentStep.arguments = await this.resolveStepArguments(
                 currentStep.arguments,
                 currentPlan.steps,
             );
@@ -1417,25 +1327,39 @@ export class PlanAndExecutePlanner implements Planner {
             parallel: (step.parallel as boolean) || false,
         }));
 
+        // ✅ ENHANCED: Validate both placeholders and dependencies
         const invalidSteps = this.validateStepsForPlaceholders(convertedSteps);
-        if (invalidSteps.length > 0) {
-            this.logger.warn(
-                '🚨 Plan contains invalid placeholders or validation errors',
-                {
-                    invalidSteps: invalidSteps.map((s) => ({
-                        id: s.id,
-                        tool: s.tool,
-                        placeholders: s.placeholders,
-                    })),
-                },
-            );
 
+        // ✅ NEW: Validate step dependencies
+        const tempPlan: ExecutionPlan = {
+            id: 'temp-validation',
+            goal: '',
+            strategy: '',
+            steps: convertedSteps,
+            currentStepIndex: 0,
+            status: 'planning',
+            reasoning: '',
+        };
+
+        const dependencyValidation = this.validatePlanDependencies(tempPlan);
+
+        if (invalidSteps.length > 0 || !dependencyValidation.isValid) {
             let errorMessage =
                 'Não consegui criar um plano executável. Encontrei os seguintes problemas:\n\n';
 
+            // Add placeholder errors
             for (const invalidStep of invalidSteps) {
                 errorMessage += `Step "${invalidStep.id}" (${invalidStep.tool || 'unknown tool'}):\n`;
                 errorMessage += `  - Problemas encontrados: ${invalidStep.placeholders.join(', ')}\n\n`;
+            }
+
+            // Add dependency errors
+            if (!dependencyValidation.isValid) {
+                errorMessage += '**Problemas de Dependências:**\n';
+                for (const error of dependencyValidation.errors) {
+                    errorMessage += `  - ${error}\n`;
+                }
+                errorMessage += '\n';
             }
 
             errorMessage +=
@@ -1501,15 +1425,6 @@ export class PlanAndExecutePlanner implements Planner {
                 }
             }
 
-            // Check for suspicious empty required fields (simple check)
-            if (typeof step.arguments === 'object') {
-                for (const [key, value] of Object.entries(step.arguments)) {
-                    if (typeof value === 'string' && value.trim() === '') {
-                        foundPlaceholders.push(`Empty ${key}`);
-                    }
-                }
-            }
-
             if (foundPlaceholders.length > 0) {
                 invalidSteps.push({
                     id: step.id,
@@ -1522,78 +1437,6 @@ export class PlanAndExecutePlanner implements Planner {
         return invalidSteps;
     }
 
-    /**
-     * Build enhanced tools context for Plan-Execute
-     */
-    //     private buildToolsContextForPlanExecute(
-    //         tools: ToolMetadataForLLM[],
-    //     ): string {
-    //         if (tools.length === 0) {
-    //             return `No external tools available. The system will handle responses automatically.
-    // IMPORTANT: Since no tools are available, you should return an empty plan [] and let the Response Synthesizer handle the user query.`;
-    //         }
-
-    //         // Group tools by MCP prefix for clean organization
-    //         const toolsByPrefix = new Map<string, ToolMetadataForLLM[]>();
-
-    //         tools.forEach((tool) => {
-    //             const prefix = tool.name.split('.')[0] || 'other';
-    //             if (!toolsByPrefix.has(prefix)) {
-    //                 toolsByPrefix.set(prefix, []);
-    //             }
-    //             toolsByPrefix.get(prefix)!.push(tool);
-    //         });
-
-    //         let context = '';
-    //         const sortedPrefixes = Array.from(toolsByPrefix.keys()).sort();
-
-    //         sortedPrefixes.forEach((prefix, index) => {
-    //             if (index > 0) {
-    //                 context += '\n---\n\n'; // Separator between MCP groups
-    //             }
-
-    //             const prefixTools = toolsByPrefix.get(prefix)!;
-    //             prefixTools.forEach((tool) => {
-    //                 context += `- ${tool.name}: ${tool.description}\n`;
-
-    //                 // Include parameter information
-    //                 if (tool.parameters && typeof tool.parameters === 'object') {
-    //                     const params = tool.parameters as Record<string, unknown>;
-    //                     const properties = params.properties as Record<
-    //                         string,
-    //                         unknown
-    //                     >;
-    //                     const required = params.required as string[];
-
-    //                     if (properties && Object.keys(properties).length > 0) {
-    //                         context += `  Parameters:\n`;
-    //                         Object.entries(properties).forEach(
-    //                             ([paramName, paramInfo]) => {
-    //                                 const info = paramInfo as Record<
-    //                                     string,
-    //                                     unknown
-    //                                 >;
-    //                                 const isRequired =
-    //                                     required?.includes(paramName);
-    //                                 const type = info.type || 'string';
-    //                                 const description = info.description || '';
-
-    //                                 context += `    - ${paramName} (${type})${isRequired ? ' [REQUIRED]' : ' [optional]'}: ${description}\n`;
-    //                             },
-    //                         );
-    //                     }
-    //                 }
-    //             });
-    //         });
-
-    //         context += `\nIMPORTANT: Only use tools that are listed above. If you need functionality that's not available, return an empty plan [] to let the Response Synthesizer handle the user query directly.`;
-
-    //         return context;
-    //     }
-
-    /**
-     * Build planning history context
-     */
     private buildPlanningHistory(context: PlannerExecutionContext): string {
         if (context.history.length === 0) {
             return '';
@@ -1680,18 +1523,185 @@ export class PlanAndExecutePlanner implements Planner {
         step: PlanStep,
         otherSteps: PlanStep[],
     ): boolean {
-        // Simple heuristic: check if step arguments reference outputs from other steps
+        // ✅ IMPROVED: Check for actual template references instead of simple string matching
         if (!step.arguments || !otherSteps.length) return false;
 
-        const stepArgsText = JSON.stringify(step.arguments).toLowerCase();
+        const argsStr = JSON.stringify(step.arguments);
+        const stepRefPattern = /\{\{([^.}]+)\.result/;
+        const matches = argsStr.match(stepRefPattern);
 
-        return otherSteps.some((otherStep) => {
-            // Check if current step references the other step's tool or expected output
-            return (
-                stepArgsText.includes(otherStep.tool?.toLowerCase() || '') ||
-                stepArgsText.includes(otherStep.id.toLowerCase())
-            );
-        });
+        if (!matches) return false;
+
+        const referencedStepId = matches[1];
+        return otherSteps.some(
+            (otherStep) => otherStep.id === referencedStepId,
+        );
+    }
+
+    /**
+     * ✅ NEW: Validate step dependencies for circular references
+     */
+    private validateDependencies(steps: PlanStep[]): {
+        isValid: boolean;
+        errors: string[];
+    } {
+        const errors: string[] = [];
+
+        // Check for circular dependencies
+        for (const step of steps) {
+            const visited = new Set<string>();
+            const recursionStack = new Set<string>();
+
+            if (
+                this.hasCircularDependency(step, steps, visited, recursionStack)
+            ) {
+                errors.push(
+                    `Circular dependency detected involving step "${step.id}"`,
+                );
+                break; // Only report the first circular dependency found
+            }
+        }
+
+        return { isValid: errors.length === 0, errors };
+    }
+
+    /**
+     * ✅ NEW: Check for circular dependencies using DFS
+     */
+    private hasCircularDependency(
+        step: PlanStep,
+        allSteps: PlanStep[],
+        visited: Set<string>,
+        recursionStack: Set<string>,
+    ): boolean {
+        if (recursionStack.has(step.id)) {
+            return true; // Circular dependency found
+        }
+
+        if (visited.has(step.id)) {
+            return false; // Already processed
+        }
+
+        visited.add(step.id);
+        recursionStack.add(step.id);
+
+        // Check dependencies of this step
+        if (step.dependencies) {
+            for (const depId of step.dependencies) {
+                const depStep = allSteps.find((s) => s.id === depId);
+                if (
+                    depStep &&
+                    this.hasCircularDependency(
+                        depStep,
+                        allSteps,
+                        visited,
+                        recursionStack,
+                    )
+                ) {
+                    return true;
+                }
+            }
+        }
+
+        // Check data dependencies (template references)
+        if (step.arguments) {
+            const argsStr = JSON.stringify(step.arguments);
+            const stepRefPattern = /\{\{([^.}]+)\.result/g;
+            const matches = argsStr.match(stepRefPattern);
+
+            if (matches) {
+                for (const match of matches) {
+                    const referencedStepId =
+                        match.match(/\{\{([^.}]+)\.result/)?.[1];
+                    if (referencedStepId) {
+                        const referencedStep = allSteps.find(
+                            (s) => s.id === referencedStepId,
+                        );
+                        if (
+                            referencedStep &&
+                            this.hasCircularDependency(
+                                referencedStep,
+                                allSteps,
+                                visited,
+                                recursionStack,
+                            )
+                        ) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        recursionStack.delete(step.id);
+        return false;
+    }
+
+    /**
+     * ✅ NEW: Validate that all referenced steps exist
+     */
+    private validateStepReferences(steps: PlanStep[]): {
+        isValid: boolean;
+        errors: string[];
+    } {
+        const errors: string[] = [];
+        const stepIds = new Set(steps.map((s) => s.id));
+
+        for (const step of steps) {
+            // Check template references in arguments
+            if (step.arguments) {
+                const argsStr = JSON.stringify(step.arguments);
+                const matches = argsStr.match(/\{\{([^.}]+)\.result/g);
+
+                if (matches) {
+                    for (const match of matches) {
+                        const stepId = match.match(/\{\{([^.}]+)\.result/)?.[1];
+                        if (stepId && !stepIds.has(stepId)) {
+                            errors.push(
+                                `Step "${step.id}" references non-existent step "${stepId}"`,
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Check explicit dependencies
+            if (step.dependencies) {
+                for (const depId of step.dependencies) {
+                    if (!stepIds.has(depId)) {
+                        errors.push(
+                            `Step "${step.id}" has dependency on non-existent step "${depId}"`,
+                        );
+                    }
+                }
+            }
+        }
+
+        return { isValid: errors.length === 0, errors };
+    }
+
+    /**
+     * ✅ NEW: Comprehensive validation of plan dependencies
+     */
+    private validatePlanDependencies(plan: ExecutionPlan): {
+        isValid: boolean;
+        errors: string[];
+    } {
+        const errors: string[] = [];
+
+        // Validate step references
+        const refValidation = this.validateStepReferences(plan.steps);
+        if (!refValidation.isValid) {
+            errors.push(...refValidation.errors);
+        }
+
+        // Validate circular dependencies
+        const depValidation = this.validateDependencies(plan.steps);
+        if (!depValidation.isValid) {
+            errors.push(...depValidation.errors);
+        }
+
+        return { isValid: errors.length === 0, errors };
     }
 
     /**
@@ -1733,16 +1743,35 @@ export class PlanAndExecutePlanner implements Planner {
      * - {{step-1.result}} - entire result from step-1
      * - {{step-1.result[0].id}} - specific path in result
      * - {{step-1.result.repositories[0].id}} - nested path
+     *
+     * ✅ ENHANCED: Includes runtime validation for circular references and invalid steps
      */
-    private resolveStepArguments(
+    private async resolveStepArguments(
         args: Record<string, unknown>,
         allSteps: PlanStep[],
-    ): Record<string, unknown> {
-        const argsStr = JSON.stringify(args);
+    ): Promise<Record<string, unknown>> {
+        // ✅ NEW: Runtime validation to prevent infinite loops
+        const visitedReferences = new Set<string>();
+
+        const validateCircularReference = (
+            stepId: string,
+            currentPath: string,
+        ): boolean => {
+            const referenceKey = `${stepId}:${currentPath}`;
+            if (visitedReferences.has(referenceKey)) {
+                this.logger.warn('❌ CIRCULAR REFERENCE DETECTED', {
+                    stepId,
+                    currentPath,
+                    visitedReferences: Array.from(visitedReferences),
+                });
+                return true;
+            }
+            visitedReferences.add(referenceKey);
+            return false;
+        };
 
         this.logger.info('🔧 RESOLVING STEP ARGUMENTS', {
             originalArgs: args,
-            argsStr,
             availableSteps: allSteps.map((s) => ({
                 id: s.id,
                 status: s.status,
@@ -1754,96 +1783,361 @@ export class PlanAndExecutePlanner implements Planner {
             })),
         });
 
-        // Pattern to match {{step-X.result...}} references (supports both numbers and IDs)
-        const resolvedStr = argsStr.replace(
-            /\{\{([^.}]+)\.result([\w\[\]\.]*)\}\}/g,
-            (match, stepIdentifier, path) => {
-                this.logger.info('🔍 TEMPLATE MATCH FOUND', {
-                    match,
-                    stepIdentifier,
-                    path,
-                });
+        // ✅ NEW: Recursive function to resolve templates in any value
+        const resolveValue = async (value: unknown): Promise<unknown> => {
+            if (typeof value === 'string') {
+                // Check if this string contains template references
+                const templatePattern =
+                    /\{\{([^.}]+)\.result([\w\[\]\.]*)\}\}/g;
+                let match;
+                let resolvedValue = value;
 
-                let step: PlanStep | undefined;
+                while ((match = templatePattern.exec(value)) !== null) {
+                    const [fullMatch, stepIdentifier, path] = match;
 
-                // Try to find step by number (step-1, step-2, etc.)
-                if (stepIdentifier.startsWith('step-')) {
-                    const stepNum = parseInt(stepIdentifier.substring(5));
-                    const stepIndex = stepNum - 1;
-                    step = allSteps[stepIndex];
-                    this.logger.info('🔢 STEP BY NUMBER', {
-                        stepNum,
-                        stepIndex,
-                        found: !!step,
-                    });
-                } else {
-                    // Try to find step by ID
-                    step = allSteps.find((s) => s.id === stepIdentifier);
-                    this.logger.info('🆔 STEP BY ID', {
-                        stepIdentifier,
-                        found: !!step,
-                    });
-                }
-
-                if (!step || !step.result) {
-                    this.logger.warn('❌ STEP REFERENCE NOT RESOLVED', {
-                        reference: match,
-                        stepIdentifier,
-                        stepFound: !!step,
-                        hasResult: !!step?.result,
-                        stepResult: step?.result,
-                        availableSteps: allSteps.map((s) => ({
-                            id: s.id,
-                            status: s.status,
-                            hasResult: !!s.result,
-                        })),
-                    });
-                    return match; // Keep original if can't resolve
-                }
-
-                try {
-                    // Evaluate the path to get the value
-                    const result = this.evaluatePath(step.result, path);
-                    this.logger.info('✅ STEP REFERENCE RESOLVED', {
-                        reference: match,
+                    this.logger.info('🔍 TEMPLATE MATCH FOUND', {
+                        match: fullMatch,
                         stepIdentifier,
                         path,
-                        resultType: typeof result,
-                        resultValue: JSON.stringify(result).substring(0, 500),
                     });
-                    return JSON.stringify(result);
-                } catch (error) {
-                    this.logger.warn('❌ FAILED TO RESOLVE STEP REFERENCE', {
-                        reference: match,
-                        stepIdentifier,
-                        path,
-                        stepResult: step.result,
-                        error: (error as Error).message,
-                    });
-                    return match;
-                }
-            },
-        );
 
-        try {
-            const resolvedArgs = JSON.parse(resolvedStr);
-            this.logger.info('🎯 STEP ARGUMENTS RESOLVED SUCCESSFULLY', {
-                originalArgs: args,
-                resolvedArgs,
-                resolvedStr,
-            });
-            return resolvedArgs;
-        } catch (error) {
-            this.logger.error(
-                'Failed to parse resolved arguments',
-                error as Error,
-            );
-            this.logger.warn('❌ FAILED TO PARSE RESOLVED ARGUMENTS', {
-                originalArgs: args,
-                resolvedStr,
-            });
-            return args; // Return original if parsing fails
-        }
+                    let step: PlanStep | undefined;
+
+                    // Try to find step by number (step-1, step-2, etc.)
+                    if (stepIdentifier && stepIdentifier.startsWith('step-')) {
+                        const stepNum = parseInt(stepIdentifier.substring(5));
+                        const stepIndex = stepNum - 1;
+                        step = allSteps[stepIndex];
+                        this.logger.info('🔢 STEP BY NUMBER', {
+                            stepNum,
+                            stepIndex,
+                            found: !!step,
+                        });
+                    } else if (stepIdentifier) {
+                        // Try to find step by ID
+                        step = allSteps.find((s) => s.id === stepIdentifier);
+                        this.logger.info('🆔 STEP BY ID', {
+                            stepIdentifier,
+                            found: !!step,
+                        });
+                    }
+
+                    // ✅ NEW: Validate circular reference at runtime
+                    if (
+                        step &&
+                        path &&
+                        validateCircularReference(step.id, path)
+                    ) {
+                        continue; // Skip this reference if circular
+                    }
+
+                    if (!step) {
+                        this.logger.warn('❌ STEP NOT FOUND', {
+                            reference: fullMatch,
+                            stepIdentifier,
+                            availableSteps: allSteps.map((s) => ({
+                                id: s.id,
+                                status: s.status,
+                            })),
+                        });
+                        continue; // Keep original if step doesn't exist
+                    }
+
+                    if (!step.result) {
+                        this.logger.warn('❌ STEP HAS NO RESULT', {
+                            reference: fullMatch,
+                            stepIdentifier,
+                            stepStatus: step.status,
+                            stepId: step.id,
+                        });
+                        continue; // Keep original if step has no result
+                    }
+
+                    if (step.status !== 'completed') {
+                        this.logger.warn('❌ STEP NOT COMPLETED', {
+                            reference: fullMatch,
+                            stepIdentifier,
+                            stepStatus: step.status,
+                            stepId: step.id,
+                        });
+                        continue; // Keep original if step not completed
+                    }
+
+                    try {
+                        // ✅ ENHANCED: Handle complex result structures
+                        let actualResult = step.result;
+
+                        // Check if result has nested structure (common in tool results)
+                        if (actualResult && typeof actualResult === 'object') {
+                            const resultObj = actualResult as Record<
+                                string,
+                                unknown
+                            >;
+
+                            // Handle tool result structure: { result: { content: [{ text: "JSON" }] } }
+                            if (
+                                resultObj.result &&
+                                typeof resultObj.result === 'object'
+                            ) {
+                                const nestedResult = resultObj.result as Record<
+                                    string,
+                                    unknown
+                                >;
+
+                                if (
+                                    nestedResult.content &&
+                                    Array.isArray(nestedResult.content)
+                                ) {
+                                    const contentArray =
+                                        nestedResult.content as unknown[];
+                                    if (
+                                        contentArray.length > 0 &&
+                                        contentArray[0] &&
+                                        typeof contentArray[0] === 'object'
+                                    ) {
+                                        const firstContent =
+                                            contentArray[0] as Record<
+                                                string,
+                                                unknown
+                                            >;
+                                        if (
+                                            firstContent.text &&
+                                            typeof firstContent.text ===
+                                                'string'
+                                        ) {
+                                            try {
+                                                // Parse the JSON string to get the actual data
+                                                actualResult = JSON.parse(
+                                                    firstContent.text as string,
+                                                );
+                                                this.logger.info(
+                                                    '🔧 PARSED JSON FROM TOOL RESULT',
+                                                    {
+                                                        originalType:
+                                                            typeof step.result,
+                                                        parsedType:
+                                                            typeof actualResult,
+                                                    },
+                                                );
+                                            } catch (parseError) {
+                                                this.logger.warn(
+                                                    '❌ FAILED TO PARSE JSON FROM TOOL RESULT',
+                                                    {
+                                                        error: (
+                                                            parseError as Error
+                                                        ).message,
+                                                        text: firstContent.text,
+                                                    },
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ✅ ENHANCED: Try multiple patterns to resolve the template
+                        let result = this.evaluatePath(
+                            actualResult,
+                            path || '',
+                        );
+
+                        // If not found, try common array field patterns
+                        if (result === undefined && path) {
+                            const arrayFields = [
+                                'data',
+                                'items',
+                                'list',
+                                'values',
+                                'results',
+                            ];
+                            for (const field of arrayFields) {
+                                const newPath = path.replace(
+                                    'result',
+                                    `result.${field}`,
+                                );
+                                result = this.evaluatePath(
+                                    actualResult,
+                                    newPath,
+                                );
+                                if (result !== undefined) {
+                                    this.logger.info(
+                                        '🔍 FOUND WITH ARRAY FIELD PATTERN',
+                                        {
+                                            field,
+                                            newPath,
+                                            result: typeof result,
+                                        },
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+
+                        // If still not found, try nested result patterns
+                        if (result === undefined && path) {
+                            const nestedFields = [
+                                'result',
+                                'response',
+                                'value',
+                                'data',
+                            ];
+                            for (const field of nestedFields) {
+                                const newPath = path.replace(
+                                    'result',
+                                    `result.${field}`,
+                                );
+                                result = this.evaluatePath(
+                                    actualResult,
+                                    newPath,
+                                );
+                                if (result !== undefined) {
+                                    this.logger.info(
+                                        '🔍 FOUND WITH NESTED FIELD PATTERN',
+                                        {
+                                            field,
+                                            newPath,
+                                            result: typeof result,
+                                        },
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+
+                        // If still not found, try to find any array and access [0].id
+                        if (result === undefined) {
+                            const anyArray = this.findAnyArray(actualResult);
+                            if (anyArray && anyArray.length > 0) {
+                                const firstItem = anyArray[0];
+                                if (
+                                    firstItem &&
+                                    typeof firstItem === 'object' &&
+                                    'id' in firstItem
+                                ) {
+                                    result = (
+                                        firstItem as Record<string, unknown>
+                                    ).id;
+                                    this.logger.info(
+                                        '🔍 FOUND WITH ARRAY FALLBACK',
+                                        {
+                                            arrayLength: anyArray.length,
+                                            result: typeof result,
+                                        },
+                                    );
+                                }
+                            }
+                        }
+
+                        // If still not found, try recursive ID search
+                        if (result === undefined) {
+                            result = this.findIdRecursively(actualResult);
+                            if (result !== undefined) {
+                                this.logger.info(
+                                    '🔍 FOUND WITH RECURSIVE ID SEARCH',
+                                    {
+                                        result: typeof result,
+                                    },
+                                );
+                            }
+                        }
+
+                        // ✅ NEW: LLM Fallback if all patterns fail
+                        if (result === undefined) {
+                            this.logger.warn(
+                                '❌ TEMPLATE RESOLUTION FAILED - USING LLM FALLBACK',
+                                {
+                                    reference: fullMatch,
+                                    stepIdentifier,
+                                    path,
+                                    stepResult: JSON.stringify(
+                                        step.result,
+                                    ).substring(0, 200),
+                                },
+                            );
+
+                            // Use LLM to resolve the template
+                            const llmResolvedValue =
+                                await this.resolveTemplateWithLLM(
+                                    fullMatch,
+                                    stepIdentifier || 'unknown',
+                                    step.result,
+                                    path || '',
+                                );
+
+                            // Replace template with LLM resolved value
+                            resolvedValue = resolvedValue.replace(
+                                fullMatch,
+                                llmResolvedValue,
+                            );
+                        } else {
+                            this.logger.info('✅ STEP REFERENCE RESOLVED', {
+                                reference: fullMatch,
+                                stepIdentifier,
+                                path,
+                                resultType: typeof result,
+                                resultValue:
+                                    result !== undefined
+                                        ? JSON.stringify(result).substring(
+                                              0,
+                                              500,
+                                          )
+                                        : 'undefined',
+                            });
+
+                            // Replace the template with the resolved value
+                            if (typeof result === 'string') {
+                                resolvedValue = resolvedValue.replace(
+                                    fullMatch,
+                                    result,
+                                );
+                            } else {
+                                // For non-string values, replace with JSON string
+                                resolvedValue = resolvedValue.replace(
+                                    fullMatch,
+                                    JSON.stringify(result),
+                                );
+                            }
+                        }
+                    } catch (error) {
+                        this.logger.warn(
+                            '❌ FAILED TO RESOLVE STEP REFERENCE',
+                            {
+                                reference: fullMatch,
+                                stepIdentifier,
+                                path,
+                                stepResult: step.result,
+                                error: (error as Error).message,
+                            },
+                        );
+                        // Keep original if resolution fails
+                    }
+                }
+
+                return resolvedValue;
+            } else if (Array.isArray(value)) {
+                const resolvedArray = [];
+                for (const item of value) {
+                    resolvedArray.push(await resolveValue(item));
+                }
+                return resolvedArray;
+            } else if (value !== null && typeof value === 'object') {
+                const resolved: Record<string, unknown> = {};
+                for (const [key, val] of Object.entries(value)) {
+                    resolved[key] = await resolveValue(val);
+                }
+                return resolved;
+            } else {
+                return value;
+            }
+        };
+
+        const resolvedArgs = (await resolveValue(args)) as Record<
+            string,
+            unknown
+        >;
+
+        return resolvedArgs;
     }
 
     /**
@@ -1870,7 +2164,7 @@ export class PlanAndExecutePlanner implements Planner {
             }
 
             if (current === undefined) {
-                throw new Error(`Path segment "${segment}" not found`);
+                return undefined; // Return undefined instead of throwing error
             }
         }
 
@@ -1878,9 +2172,112 @@ export class PlanAndExecutePlanner implements Planner {
     }
 
     /**
-     * 🚀 Check if step should be expanded to parallel execution
-     * This happens when step references an array result from previous step
+     * Find any array in the object recursively
      */
+    private findAnyArray(obj: unknown): unknown[] | undefined {
+        if (Array.isArray(obj)) {
+            return obj;
+        }
+
+        if (obj && typeof obj === 'object') {
+            const objRecord = obj as Record<string, unknown>;
+            for (const [, value] of Object.entries(objRecord)) {
+                if (Array.isArray(value)) {
+                    return value;
+                }
+                const nestedArray = this.findAnyArray(value);
+                if (nestedArray) {
+                    return nestedArray;
+                }
+            }
+        }
+
+        return undefined;
+    }
+
+    /**
+     * Find any ID field recursively in the object
+     */
+    private findIdRecursively(obj: unknown): unknown {
+        if (obj && typeof obj === 'object') {
+            const objRecord = obj as Record<string, unknown>;
+
+            // Check if this object has an 'id' field
+            if ('id' in objRecord) {
+                return objRecord.id;
+            }
+
+            // Recursively search in all properties
+            for (const [, value] of Object.entries(objRecord)) {
+                const foundId = this.findIdRecursively(value);
+                if (foundId !== undefined) {
+                    return foundId;
+                }
+            }
+        }
+
+        return undefined;
+    }
+
+    /**
+     * Use LLM to resolve template when all patterns fail
+     */
+    private async resolveTemplateWithLLM(
+        template: string,
+        stepId: string,
+        stepResult: unknown,
+        attemptedPath: string,
+    ): Promise<string> {
+        try {
+            const prompt = `You are a template resolution assistant. I need to extract a value from a JSON structure.
+
+Template: ${template}
+Step ID: ${stepId}
+Attempted Path: ${attemptedPath}
+JSON Structure: ${JSON.stringify(stepResult, null, 2)}
+
+IMPORTANT: Return ONLY the raw value as a plain string, without quotes, JSON formatting, or any other characters.
+
+Examples:
+- If the value is "670345891", return: 670345891
+- If the value is "kodus-orchestrator", return: kodus-orchestrator
+- If the value is true, return: true
+- If the value is 42, return: 42
+
+If you cannot find the value, return: NOT_FOUND`;
+
+            const response = await this.llmAdapter.call({
+                messages: [
+                    {
+                        role: 'user',
+                        content: prompt,
+                    },
+                ],
+            });
+            let resolvedValue = response.content?.trim() || 'NOT_FOUND';
+
+            // Clean up the response to ensure it's a valid value
+            if (resolvedValue !== 'NOT_FOUND') {
+                // Remove quotes if present
+                resolvedValue = resolvedValue.replace(/^["']|["']$/g, '');
+                // Remove any JSON formatting
+                resolvedValue = resolvedValue.replace(
+                    /^\{.*?:\s*["']?([^"']+)["']?\s*\}$/,
+                    '$1',
+                );
+            }
+
+            return resolvedValue;
+        } catch (error) {
+            this.logger.warn('❌ LLM TEMPLATE RESOLUTION FAILED', {
+                template,
+                stepId,
+                error: (error as Error).message,
+            });
+            return 'NOT_FOUND';
+        }
+    }
+
     private shouldExpandToParallel(
         currentStep: PlanStep,
         allSteps: PlanStep[],
@@ -1972,12 +2369,6 @@ export class PlanAndExecutePlanner implements Planner {
         }
         const arrayResult = referencedStep.result as unknown[];
 
-        this.logger.info('🚀 Expanding to parallel execution', {
-            stepId: currentStep.id,
-            tool: currentStep.tool,
-            arraySize: arrayResult.length,
-        });
-
         // Create parallel tools action for each item in array
         const parallelTools = arrayResult.map((item, index) => {
             // Replace {{step-X.result}} or {{stepId.result}} with the actual item
@@ -2027,13 +2418,6 @@ export class PlanAndExecutePlanner implements Planner {
      */
     updatePromptConfig(config: PlannerPromptConfig): void {
         this.promptComposer = createPlannerPromptComposer(config);
-        this.logger.info('Prompt configuration updated', {
-            hasCustomExamples: !!config.customExamples?.length,
-            hasExamplesProvider: !!config.examplesProvider,
-            hasPatternsProvider: !!config.patternsProvider,
-            additionalPatterns: config.additionalPatterns?.length || 0,
-            behavior: config.behavior || {},
-        });
     }
 
     /**
@@ -2055,6 +2439,5 @@ export class PlanAndExecutePlanner implements Planner {
      */
     clearPromptCache(): void {
         this.promptComposer.clearCache();
-        this.logger.debug('Prompt cache cleared');
     }
 }

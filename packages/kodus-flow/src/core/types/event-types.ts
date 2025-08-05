@@ -13,7 +13,7 @@ import { contextIdSchema } from './context-types.js';
  * Used to identify an event
  */
 export const eventIdSchema = z.string().min(1);
-export type EventId = string;
+// EventId moved to base-types.ts
 
 /**
  * Event type schema and type

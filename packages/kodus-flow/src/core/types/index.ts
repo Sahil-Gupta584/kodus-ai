@@ -47,7 +47,6 @@ export type {
     Workflow,
     StepType,
     StepStatus,
-    WorkflowExecutionId,
 } from './workflow-types.js';
 
 // Event types (core event system)

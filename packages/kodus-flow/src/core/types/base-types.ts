@@ -44,6 +44,13 @@ export type OperationId = string;
 export type ParentId = string;
 export type SnapshotId = string;
 
+// Additional identifiers consolidated from other files
+export type ContextId = string;
+export type MemoryId = string;
+export type StateId = string;
+export type WorkflowExecutionId = string;
+export type ToolCallId = string;
+
 // ──────────────────────────────────────────────────────────────────────────────
 // 📋 SCHEMAS DE VALIDAÇÃO
 // ──────────────────────────────────────────────────────────────────────────────

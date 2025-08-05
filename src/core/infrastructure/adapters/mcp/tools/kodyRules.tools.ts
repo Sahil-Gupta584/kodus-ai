@@ -158,7 +158,7 @@ export class KodyRulesTools {
                     scope: z
                         .nativeEnum(KodyRulesScope)
                         .describe(
-                            'Rule scope: PULL_REQUEST (analyzes entire PR context), FILE (analyzes individual files one by one)',
+                            'Rule scope: pull_request (analyzes entire PR context), file (analyzes individual files one by one)',
                         ),
                     repositoryId: z
                         .string()
@@ -206,7 +206,7 @@ export class KodyRulesTools {
         return {
             name: 'create_kody_rule',
             description:
-                'Create a new Kody Rule with custom scope and severity. PULL_REQUEST scope: analyzes entire PR context for PR-level rules. FILE scope: analyzes individual files one by one for file-level rules. Rule starts in PENDING status.',
+                'Create a new Kody Rule with custom scope and severity. pull_request scope: analyzes entire PR context for PR-level rules. file scope: analyzes individual files one by one for file-level rules. Rule starts in pending status.',
             inputSchema,
             execute: wrapToolHandler(async (args: InputType) => {
                 const params: {
