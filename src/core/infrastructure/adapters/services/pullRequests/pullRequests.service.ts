@@ -288,8 +288,20 @@ export class PullRequestsService implements IPullRequestsService {
         prLevelSuggestions?: ISuggestionByPR[],
     ): Promise<IPullRequests | null> {
         try {
-            const organizationId =
-                organizationAndTeamData?.organizationId ?? '';
+            const organizationId = organizationAndTeamData?.organizationId;
+
+            if (!organizationId) {
+                this.logger.error({
+                    message: `organizationId is missing in organizationAndTeamData for PR #${pullRequest?.number}`,
+                    context: PullRequestsService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        repositoryName: repository?.name,
+                        pullRequestNumber: pullRequest?.number,
+                    },
+                });
+                return null;
+            }
 
             const enrichedPullRequest = {
                 ...pullRequest,

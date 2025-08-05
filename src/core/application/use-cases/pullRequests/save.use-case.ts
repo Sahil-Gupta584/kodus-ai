@@ -97,8 +97,7 @@ export class SavePullRequestUseCase {
                 const changedFiles =
                     await this.codeManagement.getFilesByPullRequestId(
                         {
-                            organizationAndTeamData:
-                                organizationAndTeamData?.[0],
+                            organizationAndTeamData: organizationAndTeamData[0],
                             prNumber: pullRequest?.number,
                             repository,
                         },
@@ -118,7 +117,7 @@ export class SavePullRequestUseCase {
                     await this.codeManagement.getCommitsForPullRequestForCodeReview(
                         {
                             organizationAndTeamData: {
-                                ...organizationAndTeamData?.[0],
+                                ...organizationAndTeamData[0],
                             },
                             repository: {
                                 id: repository.id,
@@ -137,7 +136,7 @@ export class SavePullRequestUseCase {
                             [],
                             [],
                             platformType,
-                            organizationAndTeamData?.[0],
+                            organizationAndTeamData[0],
                             pullRequestCommits,
                         );
 
@@ -150,8 +149,7 @@ export class SavePullRequestUseCase {
                         metadata: {
                             repository: repository?.name,
                             pullRequest: pullRequestWithUserData?.number,
-                            organizationAndTeamData:
-                                organizationAndTeamData?.[0],
+                            organizationAndTeamData: organizationAndTeamData[0],
                         },
                     });
                     return null;
