@@ -48,7 +48,7 @@ export class SavePullRequestUseCase {
                 return;
             }
 
-            let pullRequest = mappedPlatform.mapPullRequest({
+            const pullRequest = mappedPlatform.mapPullRequest({
                 payload: sanitizedPayload,
             });
             if (
@@ -72,7 +72,7 @@ export class SavePullRequestUseCase {
                     await this.integrationConfigService.findIntegrationConfigWithTeams(
                         IntegrationConfigKey.REPOSITORIES,
                         repository.id,
-                        platformType
+                        platformType,
                     );
 
                 if (!configs || !configs.length) {
@@ -129,16 +129,17 @@ export class SavePullRequestUseCase {
                     );
 
                 try {
-                    const result = await this.pullRequestsService.aggregateAndSaveDataStructure(
-                        pullRequestWithUserData,
-                        repository,
-                        changedFiles,
-                        [],
-                        [],
-                        platformType,
-                        organizationAndTeamData?.[0]?.organizationId,
-                        pullRequestCommits,
-                    );
+                    const result =
+                        await this.pullRequestsService.aggregateAndSaveDataStructure(
+                            pullRequestWithUserData,
+                            repository,
+                            changedFiles,
+                            [],
+                            [],
+                            platformType,
+                            organizationAndTeamData?.[0],
+                            pullRequestCommits,
+                        );
 
                     return result;
                 } catch (error) {
