@@ -49,6 +49,7 @@ import { CodeManagementService } from '@/core/infrastructure/adapters/services/p
 import { ICodeBaseConfigService } from '@/core/domain/codeBase/contracts/CodeBaseConfigService.contract';
 import { KodyRulesValidationService } from '../kodyRules/service/kody-rules-validation.service';
 import { ReviewCadenceType } from '@/config/types/general/codeReview.type';
+import { ConfigLevel } from '@/config/types/general/pullRequestMessages.type';
 
 interface GetKodusConfigFileResponse {
     kodusConfigFile: Omit<KodusConfigFile, 'version'> | null;
@@ -1079,6 +1080,8 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 isCommitMode:
                     directoryConfig.isCommitMode ??
                     this.DEFAULT_CONFIG.isCommitMode,
+                configLevel: ConfigLevel.DIRECTORY,
+                directoryPath: directoryConfig.path,
             };
 
             return config;
