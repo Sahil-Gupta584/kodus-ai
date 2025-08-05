@@ -662,14 +662,12 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 role: PromptRole.USER,
             })
             .addMetadata({
-                metadata: {
-                    organizationId:
-                        context?.organizationAndTeamData?.organizationId,
-                    teamId: context?.organizationAndTeamData?.teamId,
-                    pullRequestId: context?.pullRequest?.number,
-                    provider,
-                    fallbackProvider,
-                },
+                organizationId:
+                    context?.organizationAndTeamData?.organizationId,
+                teamId: context?.organizationAndTeamData?.teamId,
+                pullRequestId: context?.pullRequest?.number,
+                provider,
+                fallbackProvider,
             })
             .addCallbacks([this.tokenTracker])
             .addTags([
@@ -703,14 +701,12 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 role: PromptRole.USER,
             })
             .addMetadata({
-                metadata: {
-                    organizationId:
-                        context?.organizationAndTeamData?.organizationId,
-                    teamId: context?.organizationAndTeamData?.teamId,
-                    pullRequestId: context?.pullRequest?.number,
-                    provider,
-                    fallbackProvider,
-                },
+                organizationId:
+                    context?.organizationAndTeamData?.organizationId,
+                teamId: context?.organizationAndTeamData?.teamId,
+                pullRequestId: context?.pullRequest?.number,
+                provider,
+                fallbackProvider,
             })
             .addCallbacks([this.tokenTracker])
             .addTags([
@@ -744,14 +740,12 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 role: PromptRole.USER,
             })
             .addMetadata({
-                metadata: {
-                    organizationId:
-                        context?.organizationAndTeamData?.organizationId,
-                    teamId: context?.organizationAndTeamData?.teamId,
-                    pullRequestId: context?.pullRequest?.number,
-                    provider,
-                    fallbackProvider,
-                },
+                organizationId:
+                    context?.organizationAndTeamData?.organizationId,
+                teamId: context?.organizationAndTeamData?.teamId,
+                pullRequestId: context?.pullRequest?.number,
+                provider,
+                fallbackProvider,
             })
             .addCallbacks([this.tokenTracker])
             .addTags([
@@ -881,14 +875,12 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             .setParser(ParserType.STRING)
             .setLLMJsonMode(true)
             .addMetadata({
-                metadata: {
-                    organizationId:
-                        baseContext?.organizationAndTeamData?.organizationId,
-                    teamId: baseContext?.organizationAndTeamData?.teamId,
-                    pullRequestId: baseContext?.pullRequest?.number,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
-                },
+                organizationId:
+                    baseContext?.organizationAndTeamData?.organizationId,
+                teamId: baseContext?.organizationAndTeamData?.teamId,
+                pullRequestId: baseContext?.pullRequest?.number,
+                provider: provider,
+                fallbackProvider: fallbackProvider,
             })
             .addCallbacks([this.tokenTracker])
             .addTags([
