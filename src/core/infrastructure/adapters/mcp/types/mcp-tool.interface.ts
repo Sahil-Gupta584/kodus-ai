@@ -4,6 +4,7 @@ export interface McpToolDefinition<T = any> {
     name: string;
     description: string;
     inputSchema: z.ZodSchema<T>;
+    outputSchema: z.ZodSchema<T>;
     handler: ((args: T, extra?: any) => Promise<any>) | null;
 }
 
