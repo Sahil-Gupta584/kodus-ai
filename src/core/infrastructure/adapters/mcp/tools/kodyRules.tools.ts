@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PinoLoggerService } from '../../services/logger/pino.service';
-import { wrapToolHandler } from '../utils';
+import { wrapToolHandler } from '../utils/mcp-protocol.utils';
+import { McpToolDefinition } from '../types/mcp-tool.interface';
 import {
     IKodyRulesService,
     KODY_RULES_SERVICE_TOKEN,
@@ -32,6 +33,15 @@ type KodyRuleInput = Required<
     severity: KodyRuleSeverity;
 };
 
+interface KodyRulesResponse {
+    count: number;
+    data: Partial<IKodyRule>[];
+}
+
+interface CreateKodyRuleResponse {
+    data: Partial<IKodyRule>;
+}
+
 @Injectable()
 export class KodyRulesTools {
     constructor(
@@ -40,7 +50,7 @@ export class KodyRulesTools {
         private readonly logger: PinoLoggerService,
     ) {}
 
-    getKodyRules() {
+    getKodyRules(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -56,32 +66,63 @@ export class KodyRulesTools {
             description:
                 'Get all active Kody Rules at organization level. Use this to see organization-wide coding standards, global rules that apply across all repositories, or when you need a complete overview of all active rules. Returns only ACTIVE status rules.',
             inputSchema,
-            execute: wrapToolHandler(async (args: InputType) => {
-                const params = {
-                    organizationAndTeamData: {
-                        organizationId: args.organizationId,
-                    },
-                };
-
-                const entity = await this.kodyRulesService.findByOrganizationId(
-                    params.organizationAndTeamData.organizationId,
-                );
-
-                const allRules = entity.rules || [];
-
-                const rules = allRules?.filter(
-                    (rule) => rule.status === KodyRulesStatus.ACTIVE,
-                );
-
-                return {
-                    count: rules?.length,
-                    data: rules,
-                };
+            outputSchema: z.object({
+                count: z.number(),
+                data: z.array(
+                    z.object({
+                        uuid: z.string(),
+                        title: z.string(),
+                        rule: z.string(),
+                        path: z.string(),
+                        status: z.nativeEnum(KodyRulesStatus),
+                        severity: z.string(),
+                        label: z.string(),
+                        type: z.string(),
+                        examples: z.array(
+                            z.object({
+                                snippet: z.string(),
+                                isCorrect: z.boolean(),
+                            }),
+                        ),
+                        repositoryId: z.string(),
+                        origin: z.nativeEnum(KodyRulesOrigin),
+                        createdAt: z.date(),
+                        updatedAt: z.date(),
+                        reason: z.string().nullable(),
+                        scope: z.nativeEnum(KodyRulesScope),
+                    }),
+                ),
             }),
+            handler: wrapToolHandler(
+                async (args: InputType): Promise<KodyRulesResponse> => {
+                    const params = {
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                        },
+                    };
+
+                    const entity =
+                        await this.kodyRulesService.findByOrganizationId(
+                            params.organizationAndTeamData.organizationId,
+                        );
+
+                    const allRules: Partial<IKodyRule>[] = entity.rules || [];
+
+                    const rules: Partial<IKodyRule>[] = allRules.filter(
+                        (rule: Partial<IKodyRule>) =>
+                            rule.status === KodyRulesStatus.ACTIVE,
+                    );
+
+                    return {
+                        count: rules.length,
+                        data: rules,
+                    };
+                },
+            ),
         };
     }
 
-    getKodyRulesRepository() {
+    getKodyRulesRepository(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -102,36 +143,67 @@ export class KodyRulesTools {
             description:
                 'Get active Kody Rules specific to a particular repository. Use this to see repository-specific coding standards, rules that only apply to one codebase, or when analyzing rules for a specific project. More focused than get_kody_rules.',
             inputSchema,
-            execute: wrapToolHandler(async (args: InputType) => {
-                const params = {
-                    organizationAndTeamData: {
-                        organizationId: args.organizationId,
-                    },
-                    repositoryId: args.repositoryId,
-                };
-
-                const entity = await this.kodyRulesService.findByOrganizationId(
-                    params.organizationAndTeamData.organizationId,
-                );
-
-                const allRules = entity.rules || [];
-
-                const repositoryRules = allRules?.filter(
-                    (rule) =>
-                        rule.repositoryId &&
-                        rule.repositoryId === params.repositoryId &&
-                        rule.status === KodyRulesStatus.ACTIVE,
-                );
-
-                return {
-                    count: repositoryRules?.length,
-                    data: repositoryRules,
-                };
+            outputSchema: z.object({
+                count: z.number(),
+                data: z.array(
+                    z.object({
+                        uuid: z.string(),
+                        title: z.string(),
+                        rule: z.string(),
+                        path: z.string(),
+                        status: z.nativeEnum(KodyRulesStatus),
+                        severity: z.string(),
+                        label: z.string(),
+                        type: z.string(),
+                        examples: z.array(
+                            z.object({
+                                snippet: z.string(),
+                                isCorrect: z.boolean(),
+                            }),
+                        ),
+                        repositoryId: z.string(),
+                        origin: z.nativeEnum(KodyRulesOrigin),
+                        createdAt: z.date(),
+                        updatedAt: z.date(),
+                        reason: z.string().nullable(),
+                        scope: z.nativeEnum(KodyRulesScope),
+                    }),
+                ),
             }),
+            handler: wrapToolHandler(
+                async (args: InputType): Promise<KodyRulesResponse> => {
+                    const params = {
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                        },
+                        repositoryId: args.repositoryId,
+                    };
+
+                    const entity =
+                        await this.kodyRulesService.findByOrganizationId(
+                            params.organizationAndTeamData.organizationId,
+                        );
+
+                    const allRules: Partial<IKodyRule>[] = entity.rules || [];
+
+                    const repositoryRules: Partial<IKodyRule>[] =
+                        allRules.filter(
+                            (rule: Partial<IKodyRule>) =>
+                                rule.repositoryId &&
+                                rule.repositoryId === params.repositoryId &&
+                                rule.status === KodyRulesStatus.ACTIVE,
+                        );
+
+                    return {
+                        count: repositoryRules.length,
+                        data: repositoryRules,
+                    };
+                },
+            ),
         };
     }
 
-    createKodyRule() {
+    createKodyRule(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -208,46 +280,55 @@ export class KodyRulesTools {
             description:
                 'Create a new Kody Rule with custom scope and severity. pull_request scope: analyzes entire PR context for PR-level rules. file scope: analyzes individual files one by one for file-level rules. Rule starts in pending status.',
             inputSchema,
-            execute: wrapToolHandler(async (args: InputType) => {
-                const params: {
-                    organizationAndTeamData: OrganizationAndTeamData;
-                    kodyRule: KodyRuleInput;
-                } = {
-                    organizationAndTeamData: {
-                        organizationId: args.organizationId,
-                    },
-                    kodyRule: {
-                        title: args.kodyRule.title,
-                        rule: args.kodyRule.rule,
-                        severity: args.kodyRule.severity,
-                        scope: args.kodyRule.scope,
-                        examples:
-                            (args.kodyRule.examples as IKodyRulesExample[]) ||
-                            [],
-                        origin: KodyRulesOrigin.GENERATED,
-                        status: KodyRulesStatus.PENDING,
-                        repositoryId: args.kodyRule.repositoryId || 'global',
-                        path:
-                            (args.kodyRule.scope === KodyRulesScope.FILE
-                                ? args.kodyRule.path
-                                : '') || '',
-                    },
-                };
-
-                const result = await this.kodyRulesService.createOrUpdate(
-                    params.organizationAndTeamData,
-                    params.kodyRule,
-                );
-
-                return {
-                    data: result,
-                };
+            outputSchema: z.object({
+                data: z.object({
+                    uuid: z.string(),
+                    title: z.string(),
+                    rule: z.string(),
+                }),
             }),
+            handler: wrapToolHandler(
+                async (args: InputType): Promise<CreateKodyRuleResponse> => {
+                    const params: {
+                        organizationAndTeamData: OrganizationAndTeamData;
+                        kodyRule: KodyRuleInput;
+                    } = {
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                        },
+                        kodyRule: {
+                            title: args.kodyRule.title,
+                            rule: args.kodyRule.rule,
+                            severity: args.kodyRule.severity,
+                            scope: args.kodyRule.scope,
+                            examples: (args.kodyRule.examples ||
+                                []) as IKodyRulesExample[],
+                            origin: KodyRulesOrigin.GENERATED,
+                            status: KodyRulesStatus.PENDING,
+                            repositoryId:
+                                args.kodyRule.repositoryId || 'global',
+                            path:
+                                (args.kodyRule.scope === KodyRulesScope.FILE
+                                    ? args.kodyRule.path
+                                    : '') || '',
+                        },
+                    };
+
+                    const result: Partial<IKodyRule> =
+                        await this.kodyRulesService.createOrUpdate(
+                            params.organizationAndTeamData,
+                            params.kodyRule,
+                        );
+
+                    return {
+                        data: result,
+                    };
+                },
+            ),
         };
     }
 
-    // Returns all tools in this category
-    getAllTools() {
+    getAllTools(): McpToolDefinition[] {
         return [
             this.getKodyRules(),
             this.getKodyRulesRepository(),
