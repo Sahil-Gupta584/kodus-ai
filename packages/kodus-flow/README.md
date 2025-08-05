@@ -32,10 +32,62 @@ const result = await orchestration.callAgent('echo-agent', 'Teste');
 console.log(result); // Echo: Teste
 ```
 
+## 🕐 Timeline de Execução
+
+O Kodus Flow oferece **visibilidade completa** do fluxo de execução dos agentes:
+
+```typescript
+// Executar agente
+const result = await orchestration.callAgent('myAgent', 'Hello');
+
+// Obter timeline completo
+const correlationId = result.context.correlationId;
+const timeline = orchestration.getExecutionTimeline(correlationId);
+
+console.log(timeline);
+// 🕐 EXECUTION TIMELINE
+// ═══════════════════════════════════════════════════════
+// 09:30:45.123 ⚡ INITIALIZED agent.started (0ms)
+// 09:30:45.150 🤔 THINKING agent.thinking (27ms)
+// 09:30:45.850 ⚡ ACTING tool.called (700ms)
+// 09:30:46.100 👀 OBSERVING tool.result (250ms)
+// 09:30:47.600 ✅ COMPLETED agent.completed (1.48s)
+```
+
+### **Funcionalidades do Timeline:**
+
+- ✅ **Visualização ASCII** - Timeline visual no terminal
+- ✅ **Relatórios detalhados** - Análise completa de performance
+- ✅ **Export JSON/CSV** - Para análise externa
+- ✅ **Monitoramento ativo** - Lista execuções em andamento
+- ✅ **Cleanup automático** - Limpeza de timelines antigos
+
+### **Métodos Disponíveis:**
+
+```typescript
+// Timeline formatado
+orchestration.getExecutionTimeline(correlationId, 'ascii' | 'detailed' | 'compact')
+
+// Relatório completo
+orchestration.getExecutionReport(correlationId)
+
+// Export para análise
+orchestration.exportTimelineJSON(correlationId)
+orchestration.exportTimelineCSV(correlationId)
+
+// Análise programática
+orchestration.getRawTimeline(correlationId)
+orchestration.getActiveExecutions()
+orchestration.hasTimeline(correlationId)
+```
+
+📖 **Guia completo**: [Timeline Integration](docs/TIMELINE_INTEGRATION.md)
+
 ## 📚 Documentação
 
 - [Publicação Simples](PUBLISH_SIMPLE.md) - Como publicar no Google Artifact Registry
 - [Uso Simples](USAGE_SIMPLE.md) - Como usar o pacote
+- [Timeline Integration](docs/TIMELINE_INTEGRATION.md) - Guia completo do timeline
 
 ## 🔧 Desenvolvimento
 

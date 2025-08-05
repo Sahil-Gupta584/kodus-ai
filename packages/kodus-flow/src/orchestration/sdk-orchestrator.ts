@@ -1,19 +1,3 @@
-/**
- * NEW SDK Orchestrator - CLEAN VERSION
- *
- * RESPONSABILIDADES (APENAS COORDENAÇÃO):
- * ✅ Expor APIs simples dos engines
- * ✅ Coordenar uso dos componentes
- * ✅ Ser a porta de entrada para o usuário
- * ✅ LLM obrigatório para agents
- *
- * NÃO FAZ:
- * ❌ Lógica de planning (Planning Engine)
- * ❌ Lógica de routing (Routing Engine)
- * ❌ Implementação de tools (Tool Engine)
- * ❌ Think functions (Agent Core)
- */
-
 import { createLogger } from '../observability/index.js';
 import { EngineError } from '../core/errors.js';
 import { ToolEngine } from '../engine/tools/tool-engine.js';
@@ -24,6 +8,11 @@ import { IdGenerator } from '../utils/id-generator.js';
 
 import { createDefaultMultiKernelHandler } from '../engine/core/multi-kernel-handler.js';
 import { ContextBuilder } from '../core/context/context-builder.js';
+
+// ✅ NEW: Timeline imports
+import { getTimelineManager } from '../observability/execution-timeline.js';
+import { createTimelineViewer } from '../observability/timeline-viewer.js';
+import type { ExecutionTimeline } from '../observability/execution-timeline.js';
 
 import type { LLMAdapter } from '../adapters/llm/index.js';
 import type { PlannerType } from '../engine/planning/planner-factory.js';
@@ -805,53 +794,14 @@ const orchestrator = new SDKOrchestrator({
             this.logger.info(`Registering ${mcpTools.length} MCP tools`);
 
             for (const mcpTool of mcpTools) {
-                // ✅ IMPROVED: Better schema conversion with validation
                 const zodSchema = safeJsonSchemaToZod(mcpTool.inputSchema);
 
-                this.logger.debug('Processing MCP tool', {
-                    name: mcpTool.name,
-                    description: mcpTool.description,
-                    hasInputSchema: !!mcpTool.inputSchema,
-                    schemaType: mcpTool.inputSchema
-                        ? typeof mcpTool.inputSchema
-                        : 'none',
-                    // ✅ ADDED: Log schema details for debugging
-                    schemaProperties:
-                        mcpTool.inputSchema &&
-                        typeof mcpTool.inputSchema === 'object'
-                            ? Object.keys(
-                                  mcpTool.inputSchema as Record<
-                                      string,
-                                      unknown
-                                  >,
-                              )
-                            : [],
-                    requiredFields:
-                        mcpTool.inputSchema &&
-                        typeof mcpTool.inputSchema === 'object'
-                            ? (mcpTool.inputSchema as Record<string, unknown>)
-                                  .required
-                            : [],
-                });
-
-                // ✅ IMPROVED: Preserve original JSON Schema for LLMs
                 this.createTool({
                     name: mcpTool.name,
                     description:
                         mcpTool.description || `MCP Tool: ${mcpTool.name}`,
                     inputSchema: zodSchema,
                     execute: async (input: unknown) => {
-                        this.logger.debug('Executing MCP tool', {
-                            toolName: mcpTool.name,
-                            input,
-                            inputKeys:
-                                input && typeof input === 'object'
-                                    ? Object.keys(
-                                          input as Record<string, unknown>,
-                                      )
-                                    : [],
-                        });
-
                         const result = await this.mcpAdapter!.executeTool(
                             mcpTool.name,
                             input as Record<string, unknown>,
@@ -1065,15 +1015,15 @@ const orchestrator = new SDKOrchestrator({
 
     async connectMCP(): Promise<void> {
         if (!this.mcpAdapter) {
-            this.logger.warn('MCP adapter not configured');
+            this.logger.warn('MCP adapter not configured, skipping connection');
             return;
         }
 
         try {
             await this.mcpAdapter.connect();
-            this.logger.info('MCP connected successfully');
+            this.logger.info('MCP adapter connected successfully');
         } catch (error) {
-            this.logger.error('Failed to connect to MCP', error as Error);
+            this.logger.error('Failed to connect MCP adapter', error as Error);
             throw error;
         }
     }
@@ -1088,11 +1038,130 @@ const orchestrator = new SDKOrchestrator({
 
         try {
             await this.mcpAdapter.disconnect();
-            this.logger.info('MCP disconnected successfully');
+            this.logger.info('MCP adapter disconnected successfully');
         } catch (error) {
-            this.logger.error('Failed to disconnect from MCP', error as Error);
-            throw error;
+            this.logger.error(
+                'Failed to disconnect MCP adapter',
+                error as Error,
+            );
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────────
+    // 🕐 TIMELINE MANAGEMENT - Acesso ao timeline de execução
+    // ──────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Obter timeline de execução formatado
+     */
+    getExecutionTimeline(
+        correlationId: string,
+        format: 'ascii' | 'detailed' | 'compact' = 'ascii',
+    ): string {
+        const timelineManager = getTimelineManager();
+        const timeline = timelineManager.getTimeline(correlationId);
+
+        if (!timeline) {
+            return `❌ Timeline não encontrado para correlationId: ${correlationId}`;
+        }
+
+        const viewer = createTimelineViewer();
+        return viewer.showTimeline(correlationId, {
+            format,
+            showData: true,
+            showPerformance: true,
+        });
+    }
+
+    /**
+     * Obter relatório completo de execução
+     */
+    getExecutionReport(correlationId: string): string {
+        const timelineManager = getTimelineManager();
+        const timeline = timelineManager.getTimeline(correlationId);
+
+        if (!timeline) {
+            return `❌ Timeline não encontrado para correlationId: ${correlationId}`;
+        }
+
+        const viewer = createTimelineViewer();
+        return viewer.generateReport(correlationId);
+    }
+
+    /**
+     * Obter timeline raw para análise programática
+     */
+    getRawTimeline(correlationId: string): ExecutionTimeline | undefined {
+        const timelineManager = getTimelineManager();
+        return timelineManager.getTimeline(correlationId);
+    }
+
+    /**
+     * Exportar timeline como JSON
+     */
+    exportTimelineJSON(correlationId: string): string {
+        const timelineManager = getTimelineManager();
+        const timeline = timelineManager.getTimeline(correlationId);
+
+        if (!timeline) {
+            return `❌ Timeline não encontrado para correlationId: ${correlationId}`;
+        }
+
+        const viewer = createTimelineViewer();
+        return viewer.exportToJSON(correlationId);
+    }
+
+    /**
+     * Exportar timeline como CSV
+     */
+    exportTimelineCSV(correlationId: string): string {
+        const timelineManager = getTimelineManager();
+        const timeline = timelineManager.getTimeline(correlationId);
+
+        if (!timeline) {
+            return `❌ Timeline não encontrado para correlationId: ${correlationId}`;
+        }
+
+        const viewer = createTimelineViewer();
+        return viewer.exportToCSV(correlationId);
+    }
+
+    /**
+     * Listar todas as execuções ativas com timeline
+     */
+    getActiveExecutions(): Array<{
+        correlationId: string;
+        agentName: string;
+        status: string;
+        startTime: number;
+        duration?: number;
+        entryCount: number;
+    }> {
+        const timelineManager = getTimelineManager();
+        return timelineManager.getAllTimelines().map((timeline) => ({
+            correlationId: timeline.correlationId,
+            agentName: (timeline.metadata?.agentName as string) || 'unknown',
+            status: timeline.currentState,
+            startTime: timeline.startTime,
+            duration: timeline.totalDuration,
+            entryCount: timeline.entries.length,
+        }));
+    }
+
+    /**
+     * Limpar timelines antigos (cleanup)
+     */
+    cleanupOldTimelines(maxAgeMs: number = 24 * 60 * 60 * 1000): number {
+        const timelineManager = getTimelineManager();
+        return timelineManager.cleanupOldTimelines(maxAgeMs);
+    }
+
+    /**
+     * Verificar se timeline existe
+     */
+    hasTimeline(correlationId: string): boolean {
+        const timelineManager = getTimelineManager();
+        return timelineManager.getTimeline(correlationId) !== undefined;
     }
 }
 

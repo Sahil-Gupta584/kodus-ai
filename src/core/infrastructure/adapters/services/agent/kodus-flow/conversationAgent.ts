@@ -120,6 +120,7 @@ export class ConversationAgentProvider {
 
         this.orchestration = createOrchestration({
             tenantId: 'kodus-agent-conversation',
+            enableObservability: true,
             llmAdapter: this.llmAdapter,
             mcpAdapter: this.mcpAdapter,
             // storage: {
@@ -201,6 +202,13 @@ export class ConversationAgentProvider {
                 },
             },
         );
+
+        const correlationId = result?.context?.correlationId || '';
+        const teste = correlationId as string;
+
+        // ✅ Ver timeline completo!
+        const timeline = this.orchestration.getExecutionTimeline(teste);
+        console.log(timeline);
 
         return typeof result.result === 'string'
             ? result.result

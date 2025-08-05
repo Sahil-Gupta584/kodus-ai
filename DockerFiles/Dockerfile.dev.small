@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
+# ✅ yalc global + watcher simples (chokidar-cli) para automatizar push
+RUN npm i -g yalc chokidar-cli nodemon
+
 # Copiamos manifestos e configs do Nest para o caso de rodar sem bind mount
 COPY package.json yarn.lock ./
 COPY nest-cli.json tsconfig*.json ./

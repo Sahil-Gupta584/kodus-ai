@@ -91,7 +91,7 @@ export class McpServerService {
                 tool.name,
                 {
                     description: tool.description,
-                    inputSchema: tool.inputSchema.shape as any,
+                    inputSchema: tool.inputSchema.shape,
                 },
                 tool.execute,
             );
