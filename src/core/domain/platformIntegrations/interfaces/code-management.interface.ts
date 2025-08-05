@@ -152,4 +152,9 @@ export interface ICodeManagementService
         language?: string;
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<string>;
+
+    getRepositoryTree(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+    }): Promise<any>;
 }

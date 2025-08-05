@@ -17,6 +17,7 @@ import { GetCodeReviewStartedUseCase } from '@/core/application/use-cases/platfo
 import { FinishOnboardingDTO } from '../../dtos/finish-onboarding.dto';
 import { FinishOnboardingUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/finish-onboarding.use-case';
 import { DeleteIntegrationUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/delete-integration.use-case';
+import { GetRepositoryTreeUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-repository-tree.use-case';
 
 @Controller('code-management')
 export class CodeManagementController {
@@ -36,11 +37,17 @@ export class CodeManagementController {
         private readonly getCodeReviewStartedUseCase: GetCodeReviewStartedUseCase,
         private readonly finishOnboardingUseCase: FinishOnboardingUseCase,
         private readonly deleteIntegrationUseCase: DeleteIntegrationUseCase,
-    ) { }
+        private readonly getRepositoryTreeUseCase: GetRepositoryTreeUseCase,
+    ) {}
 
     @Get('/repositories/org')
     public async getRepositories(
-        @Query() query: { teamId: string; organizationSelected: any; isSelected?: boolean },
+        @Query()
+        query: {
+            teamId: string;
+            organizationSelected: any;
+            isSelected?: boolean;
+        },
     ) {
         return this.getRepositoriesUseCase.execute(query);
     }
@@ -126,14 +133,17 @@ export class CodeManagementController {
     }
 
     @Post('/review-pr')
-    public async reviewPR(@Body() body: {
-        teamId: string;
-        payload: {
-            id: number;
-            repository: string;
-            pull_number: number;
-        }
-    }) {
+    public async reviewPR(
+        @Body()
+        body: {
+            teamId: string;
+            payload: {
+                id: number;
+                repository: string;
+                pull_number: number;
+            };
+        },
+    ) {
         return await this.createPRCodeReviewUseCase.execute(body);
     }
 
@@ -146,7 +156,20 @@ export class CodeManagementController {
     }
 
     @Delete('/delete-integration')
-    public async deleteIntegration(@Query() query: { organizationId: string, teamId: string }) {
+    public async deleteIntegration(
+        @Query() query: { organizationId: string; teamId: string },
+    ) {
         return await this.deleteIntegrationUseCase.execute(query);
+    }
+
+    @Get('/get-repository-tree')
+    public async getRepositoryTree(
+        @Query()
+        query: {
+            organizationId: string;
+            repositoryId: string;
+        },
+    ) {
+        return await this.getRepositoryTreeUseCase.execute(query);
     }
 }
