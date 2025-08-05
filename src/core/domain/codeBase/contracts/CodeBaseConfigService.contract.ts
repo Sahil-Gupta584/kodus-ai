@@ -24,11 +24,13 @@ export interface ICodeBaseConfigService {
         organizationAndTeamData: OrganizationAndTeamData,
         repository: { name: string; id: string },
         affectedPaths: string[],
+        repoConfig: any,
     ): Promise<CodeReviewConfig>;
 
-    hasDirectoryConfigs(
+    getDirectoryConfigs(
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<boolean>;
+        repository: { id: string; name: string },
+    ): Promise<{ hasConfigs: boolean; repoConfig?: any; parameters?: any }>;
 
     extractUniqueDirectoryPaths(files: { filename: string }[]): string[];
 }

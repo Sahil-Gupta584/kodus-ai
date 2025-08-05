@@ -30,13 +30,14 @@ export class ResolveConfigStage extends BasePipelineStage<CodeReviewPipelineCont
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
         try {
-            // Verificar se existem configurações por diretório na organização
-            const hasDirectoryConfigs =
-                await this.codeBaseConfigService.hasDirectoryConfigs(
+            // Verificar se existem configurações por diretório no repositório específico
+            const directoryConfigsResult =
+                await this.codeBaseConfigService.getDirectoryConfigs(
                     context.organizationAndTeamData,
+                    context.repository,
                 );
 
-            if (!hasDirectoryConfigs) {
+            if (!directoryConfigsResult.hasConfigs) {
                 // Não há configs por diretório, usar lógica tradicional
                 this.logger.log({
                     message:
@@ -121,6 +122,7 @@ export class ResolveConfigStage extends BasePipelineStage<CodeReviewPipelineCont
                     context.organizationAndTeamData,
                     context.repository,
                     affectedPaths,
+                    directoryConfigsResult.repoConfig,
                 );
 
             this.logger.log({

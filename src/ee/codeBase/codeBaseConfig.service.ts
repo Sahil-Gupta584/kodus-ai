@@ -909,11 +909,13 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
     // Adicionar estes métodos ao CodeBaseConfigService
 
     /**
-     * Verifica se existem configurações por diretório para a organização
+     * Verifica se existem configurações por diretório para o repositório específico
+     * e retorna as configs encontradas para evitar nova busca no banco
      */
-    async hasDirectoryConfigs(
+    async getDirectoryConfigs(
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<boolean> {
+        repository: { id: string; name: string },
+    ): Promise<{ hasConfigs: boolean; repoConfig?: any; parameters?: any }> {
         try {
             const parameters = await this.parametersService.findOne({
                 configKey: ParametersKey.CODE_REVIEW_CONFIG,
@@ -921,21 +923,33 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             });
 
             if (!parameters?.configValue?.repositories) {
-                return false;
+                return { hasConfigs: false };
             }
 
-            return parameters.configValue.repositories.some(
-                (repo: any) =>
-                    repo.directiories && repo.directiories.length > 0,
+            const repoConfig = parameters.configValue.repositories.find(
+                (repo: any) => repo.id === repository.id.toString(),
             );
+
+            const hasConfigs = !!(
+                repoConfig?.directories && repoConfig.directories.length > 0
+            );
+
+            return {
+                hasConfigs,
+                repoConfig: hasConfigs ? repoConfig : undefined,
+                parameters: hasConfigs ? parameters : undefined,
+            };
         } catch (error) {
             this.logger.error({
                 message: 'Error checking directory configs',
                 context: CodeBaseConfigService.name,
                 error,
-                metadata: { organizationAndTeamData },
+                metadata: {
+                    organizationAndTeamData,
+                    repositoryId: repository.id,
+                },
             });
-            return false;
+            return { hasConfigs: false };
         }
     }
 
@@ -946,30 +960,18 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         organizationAndTeamData: OrganizationAndTeamData,
         repository: { name: string; id: string },
         affectedPaths: string[],
+        repoConfig: any,
     ): Promise<CodeReviewConfig> {
         try {
-            const parameters = await this.parametersService.findOne({
-                configKey: ParametersKey.CODE_REVIEW_CONFIG,
-                team: { uuid: organizationAndTeamData.teamId },
-            });
-
-            if (!parameters?.configValue) {
-                return this.getConfig(organizationAndTeamData, repository);
-            }
-
-            const repoConfig = parameters.configValue.repositories?.find(
-                (repo: any) => repo.id === repository.id.toString(),
-            );
-
-            if (!repoConfig?.directiories) {
+            if (!repoConfig?.directories) {
                 return this.getConfig(organizationAndTeamData, repository);
             }
 
             // Encontrar diretórios configurados que são afetados pelos arquivos alterados
-            const matchingDirectories = repoConfig.directiories.filter(
+            const matchingDirectories = repoConfig.directories.filter(
                 (dir: any) => {
                     return affectedPaths.some((filePath: string) =>
-                        filePath.startsWith(dir.path + '/'),
+                        filePath === dir.path || filePath.startsWith(dir.path + '/'),
                     );
                 },
             );
