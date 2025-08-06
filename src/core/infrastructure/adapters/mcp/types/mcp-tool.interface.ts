@@ -44,6 +44,14 @@ export interface McpToolRegistry {
 }
 
 export const toShape = (x?: z.ZodObject<any> | z.ZodRawShape) => {
-    if (!x) return undefined;
+    if (!x) {
+        return undefined;
+    }
+
     return x instanceof z.ZodObject ? (x as z.ZodObject<any>).shape : x;
 };
+
+export interface BaseResponse {
+    success: boolean;
+    count?: number;
+}

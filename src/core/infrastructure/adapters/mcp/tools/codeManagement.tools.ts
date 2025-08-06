@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { CodeManagementService } from '../../services/platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '../../services/logger/pino.service';
 import { wrapToolHandler } from '../utils/mcp-protocol.utils';
-import { McpToolDefinition } from '../types/mcp-tool.interface';
+import { BaseResponse, McpToolDefinition } from '../types/mcp-tool.interface';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import {
     PullRequests,
@@ -77,10 +77,61 @@ const RepositoryFileSchema = z
     })
     .passthrough();
 
-interface BaseResponse {
-    success: boolean;
-    count: number;
-}
+const PullRequestDetailsSchema = PullRequestSchema.extend({
+    prURL: z.string().url().nullable(),
+    number: z.number(),
+    body: z.string().nullable(),
+    title: z.string().nullable(),
+    updated_at: z.string().nullable(),
+    merged_at: z.string().nullable(),
+
+    participants: z
+        .array(
+            z.object({
+                id: z.string(),
+                approved: z.boolean(),
+                state: z.string(),
+                type: z.string(),
+            }),
+        )
+        .optional(),
+
+    reviewers: z
+        .array(
+            z.object({
+                id: z.string(),
+            }),
+        )
+        .optional(),
+
+    head: z.object({
+        ref: z.string().nullable(),
+        repo: z.object({
+            id: z.string().nullable(),
+            name: z.string().nullable(),
+        }),
+    }),
+
+    base: z.object({
+        ref: z.string().nullable(),
+    }),
+
+    user: z.object({
+        login: z.string(),
+        name: z.string().nullable(),
+        id: z.string().nullable(),
+    }),
+});
+
+const PullRequestDetailsWithFilesSchema = PullRequestDetailsSchema.extend({
+    modified_files: z
+        .array(
+            z.object({
+                filename: z.string(),
+            }),
+        )
+        .optional(),
+});
 
 interface RepositoriesResponse extends BaseResponse {
     data: Repositories[];
@@ -94,8 +145,7 @@ interface CommitsResponse extends BaseResponse {
     data: Commit[];
 }
 
-interface PullRequestDetailsResponse {
-    success: boolean;
+interface PullRequestDetailsResponse extends BaseResponse {
     data: PullRequestDetails;
 }
 
@@ -103,16 +153,16 @@ interface RepositoryFilesResponse extends BaseResponse {
     data: RepositoryFile[];
 }
 
-interface RepositoryContentResponse {
+interface RepositoryContentResponse extends BaseResponse {
     success: boolean;
     data: string;
 }
 
-interface RepositoryLanguagesResponse {
+interface RepositoryLanguagesResponse extends BaseResponse {
     success: boolean;
     data: Record<string, number>;
 }
-interface PullRequestFileContentResponse {
+interface PullRequestFileContentResponse extends BaseResponse {
     success: boolean;
     data: string;
 }
@@ -437,7 +487,8 @@ export class CodeManagementTools {
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
-                data: z.any(),
+                count: z.number(),
+                data: PullRequestDetailsWithFilesSchema,
             }),
             execute: wrapToolHandler(
                 async (
@@ -474,6 +525,7 @@ export class CodeManagementTools {
 
                     return {
                         success: true,
+                        count: 1,
                         data: prDetails,
                     };
                 },
@@ -663,6 +715,7 @@ export class CodeManagementTools {
 
                     return {
                         success: true,
+                        count: 1,
                         data: decodedContent,
                     };
                 },
@@ -709,7 +762,7 @@ export class CodeManagementTools {
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
-                data: z.any(),
+                data: z.string(),
             }),
             execute: wrapToolHandler(
                 async (

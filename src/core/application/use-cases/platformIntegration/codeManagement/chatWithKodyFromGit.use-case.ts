@@ -168,7 +168,7 @@ export class ChatWithKodyFromGitUseCase {
                         teamId: organizationAndTeamData.teamId,
                         repositoryId: repository.id,
                         userId: sender.id,
-                        userName: sender.login,
+                        suggestionCommentId: originalKodyComment?.id,
                     },
                     {
                         prefix: 'cmc', // Code Management Chat
@@ -624,6 +624,7 @@ export class ChatWithKodyFromGitUseCase {
             platformType,
             codeManagementContext: {
                 originalComment: {
+                    suggestionCommentId: originalKodyComment?.id,
                     text: originalKodyComment?.body,
                     diffHunk: originalKodyComment?.diff_hunk,
                 },
