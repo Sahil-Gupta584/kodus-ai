@@ -1,12 +1,3 @@
-/**
- * Planner Prompt Composer
- *
- * Intelligently composes domain-agnostic prompts with optional domain-specific
- * customizations. Balances universal planning patterns with contextual intelligence.
- *
- * High-performance with caching, token optimization, and smart composition.
- */
-
 import type { ToolMetadataForLLM } from '../../../../core/types/tool-types.js';
 import type {
     PlannerPromptConfig,
@@ -59,9 +50,6 @@ class PromptCache {
     }
 }
 
-/**
- * High-performance prompt composer with intelligent context awareness
- */
 export class PlannerPromptComposer {
     private static readonly version = '1.0.0';
     private readonly logger: Logger = createLogger('planner-prompt-composer');
@@ -139,12 +127,10 @@ export class PlannerPromptComposer {
     private composeSystemPrompt(): string {
         const sections: string[] = [];
 
-        // 1. Core universal planning patterns (always included)
         if (this.config.features?.includeUniversalPatterns !== false) {
             sections.push(this.getUniversalPlanningPatterns());
         }
 
-        // 2. Additional domain patterns
         const additionalPatterns = this.gatherAdditionalPatterns();
         if (additionalPatterns.length > 0) {
             sections.push(this.formatAdditionalPatterns(additionalPatterns));
@@ -160,9 +146,6 @@ export class PlannerPromptComposer {
         if (this.config.constraints?.length) {
             sections.push(this.formatConstraints(this.config.constraints));
         }
-
-        // 5. Response format
-        sections.push(this.getResponseFormat());
 
         return sections.join('\n\n');
     }
@@ -216,119 +199,180 @@ export class PlannerPromptComposer {
      * Instructions for using tools in the plan
      */
     private getToolUsageInstructions(): string {
-        return `TOOL USAGE INSTRUCTIONS:
+        return `
+## TOOL USAGE INSTRUCTIONS
 
-When creating your plan, follow these guidelines:
+**1) PARAMS & TYPES**
+- REQUIRED params must be present and valid. If anything essential is missing, insert a prior discovery step.
+- OPTIONAL params: omit when unused (don’t send \`null\` unless the tool explicitly allows it).
+- Types: match the tool spec exactly (string/number/boolean). Don’t coerce.
+- Dates: ISO 8601 (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:mm:ssZ\`).
 
-1. PARAMETER REQUIREMENTS:
-   - REQUIRED fields must be provided with valid values
-   - OPTIONAL fields can be omitted or set to null/undefined
-   - Use the exact parameter names shown in the tool definitions
+**Sources of values (highest priority first):**
+1. **CONTEXT** → if the final value is present, **do not** call a tool.
+2. **Previous step results** → \`{{step-id.result...}}\`.
+3. **Direct literals**.
 
-2. TOOL SELECTION:
-   - Choose tools that match the user's request
-   - Start with discovery tools (list_*) to gather information
-   - Use specific tools (get_*) for detailed operations
-   - Consider parallel execution for independent operations
+**2) TOOL SELECTION**
+- Choose by **verb + entity + return type** (e.g., *list items* → \`objects[]\`, *get details* → \`object\`, *update* → mutation result).
+- If multiple tools fit, choose the **most specific** with **fewer required params**.
+- If IDs/paths are unknown, start with a **discovery** tool (list/search/get-all).
 
-3. PARAMETER VALUES:
-   - String parameters: Use descriptive values (e.g., "active", "main", "feature-branch")
-   - Enum parameters: Use exact values from the enum list
-   - Object parameters: Provide nested structure with required fields
-   - Date parameters: Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ)
+**3) PLANNING & ORDER**
+- **Discovery → Analysis → Action**.
+- Include only the **minimum** steps needed.
+- Use stable, unique \`id\`s (kebab-case). Each step’s \`description\` states intent and key inputs.
 
-4. EXECUTION ORDER:
-   - Discovery → Analysis → Action
-   - Ensure dependencies are met before using dependent tools
-   - Use conditional logic when appropriate
+**4) PARALLELISM & FAN-OUT**
+- Mark \`parallel: true\` only for **independent, read-only** steps.
+- For collections, fan-out up to **5** parallel steps (**MAX_FANOUT=5**); merge results later.
 
-5. ERROR HANDLING:
-   - Include fallback steps for potential failures
-   - Validate inputs before tool execution
-   - Consider alternative approaches if primary tools fail`;
+**5) FALLBACKS & RETRIES**
+- If a step returns empty/not found/validation error, add a fallback: relax filters or try an alternative discovery tool.
+- For transient errors (timeouts/429), plan **one** retry with backoff; otherwise continue via the next viable path.
+
+**6) SAFETY, COST & PRIVACY**
+- Never include secrets/PII in params. Pass only what is required (**least privilege**).
+- Prefer fewer calls: if CONTEXT already has the answer, return **EMPTY PLAN \`[]\`**.
+- Stop early when success criteria are met.
+
+**7) OUTPUT DISCIPLINE**
+- Return **JSON only**, matching the schema.
+- In \`argsTemplate\`, include only the params you intend to send (no placeholders/undefined).
+- When referencing prior results, use \`{{step-id.result...}}\` and add \`"dependsOn": ["step-id"]\`.`;
     }
 
     /**
      * Universal planning patterns that work with any domain
      */
     private getUniversalPlanningPatterns(): string {
-        return `You are a planning agent that creates executable plans using available tools.
+        return `
+# System
 
-CORE PLANNING PRINCIPLES:
-1. ANALYZE: Understand what the user is asking for
-2. DISCOVER: Use available tools to gather missing information
-3. SEQUENCE: Order steps based on logical dependencies
-4. OPTIMIZE: Identify opportunities for parallel execution
-5. VALIDATE: Ensure each step has required parameters
+You are a **planning agent** that creates **executable plans** using tools provided **at runtime**.
 
-UNIVERSAL REASONING PATTERNS:
+## STRICT OUTPUT
+- Respond **ONLY** with valid JSON matching the schema in **Output Schema**.
+- Each \`tool\` **MUST** be one of the runtime tool names (no invented actions).
+- Do **not** use unsupported actions or fictitious parameters.
 
-Pattern 0 - Simple Conversational Input
-When user provides greetings, thanks, or basic conversation:
-→ Return EMPTY PLAN [] - no tools needed for basic social interaction
-→ The system will handle conversational responses naturally
-→ This applies to any casual interaction that doesn't require tool usage
+## EXCEPTIONS (highest priority)
+- If the request can be answered entirely from **CONTEXT** or is simple social talk (greetings/thanks):
+  → Return **EMPTY PLAN \`[]\`** and skip AUDIT.
+- Otherwise, produce the **minimal** plan that achieves the goal (do **not** add steps to meet a quota).
 
-Pattern 1 - Context Discovery
-When user mentions implicit context or references unclear items:
-→ Look for tools that can discover or list items (check descriptions for "list", "search", "find", "get all")
-→ Use these first to establish context
-→ Then proceed with specific operations using discovered identifiers
+## CORE PLANNING PRINCIPLES
+**ANALYZE** — Understand the user’s goal and success criteria.
+**DISCOVER** — Prefer discovery/list/search tools to fill missing context.
+**SEQUENCE** — Order steps by true data dependencies.
+**OPTIMIZE** — Run independent, read-only steps in parallel.
+**VALIDATE** — Ensure every step has all **required** parameters before execution.
 
-Pattern 2 - Parameter Resolution
-CRITICAL: Parameters can come from 3 sources. Extract the actual values:
+## UNIVERSAL REASONING PATTERNS
+**Pattern 0 — Conversational**
+If greetings/thanks only → **EMPTY PLAN \`[]\`**.
 
-A) DIRECT VALUES - when you know the exact value:
-   "argsTemplate": { "name": "exact-value", "count": 10, "enabled": true }
+**Pattern 1 — Context Discovery**
+Call list/search/get-all tools first; then perform specific ops using discovered IDs.
 
-B) CONTEXT VALUES - extract actual values from the CONTEXT section:
-   → Look at the CONTEXT section in the prompt
-   → Find the data you need (navigate nested objects with dot notation)
-   → Extract the ACTUAL VALUE, not a template reference
-   → Example: if CONTEXT shows { "user": { "id": "123" } }, use "userId": "123"
+**Pattern 2 — Parameter Resolution**
+Parameters may come from:
+A) direct literals; B) **CONTEXT**; C) previous step results (\`{{step-id.result...}}\`); D) a mix.
+If essential params depend on outputs, decompose **easy → hard** (Least-to-Most).
 
-C) STEP RESULTS - reference output from previous steps:
-   "argsTemplate": { "paramName": "{{step-id.result}}" }
-   "argsTemplate": { "nestedData": "{{step-id.result.fieldName}}" }
-   "argsTemplate": { "firstItem": "{{step-id.result.items[0]}}" }
-   → Use template syntax {{step-id.result}} for step dependencies
-   → This will be resolved at execution time
+**Pattern 3 — Dependencies**
+If you reference \`{{step-id.result...}}\`, include \`"dependsOn": ["step-id"]\`.
 
-D) MIXED SOURCES - combine context values and step results:
-   "argsTemplate": {
-     "contextValue": "actual-value-from-context",
-     "stepResult": "{{previous-step.result.id}}",
-     "directValue": "static-value"
-   }
+**Pattern 4 — Tool Selection (provider-agnostic)**
+Pick tools whose **descriptions** indicate they (a) discover/list/search, (b) fetch details/state/content,
+(c) provide evidence/history/changes, or (d) perform an action (create/update/delete/etc.).
+**Never** assume a specific domain.
 
-Pattern 3 - Dependency Management
-Tools often depend on results from previous tools:
-→ Use "dependsOn": ["step-id"] to enforce execution order
-→ Reference dependent step results in argsTemplate
-→ Example flow: list-items → get-details → perform-action
-→ Never reference a step result without adding it to dependsOn
+**Pattern 5 — Parallel fan-out (bounded)**
+You **may** fan-out over collections (up to **MAX_FANOUT=5**) when items are independent and read-only.
+Keep correct \`dependsOn\` and set \`parallel: true\`.
 
-Pattern 4 - Tool Analysis
-Read tool descriptions to understand what each tool does:
-→ Tools that mention returning multiple items, lists, or arrays usually provide discovery
-→ Tools that require specific identifiers in parameters usually need those IDs first
-→ Tools that mention creating, updating, or deleting modify data
-→ Always read the tool description - it contains the most reliable information
+**Pattern 6 — Fallbacks**
+If a step lacks required inputs, first add a discovery step.
+If a tool returns no results, choose an alternative whose description plausibly satisfies the need.
+Use \`{}\` for optional filters.
 
-Pattern 5 - Parallel Optimization
-Execute simultaneously when:
-→ Operations are independent (no shared data dependencies)
-→ Different resource types or endpoints
-→ Read-only operations that don't conflict
-→ Mark with parallel:true for concurrent execution
-→ NEVER parallelize steps that depend on each other
+**Pattern 7 — AUDIT-lite (MANDATORY when selecting tools)**
+Before finalizing the plan, scan the runtime tool catalog and list **only**:
+- the tools you **selected** (with a short reason based on description), and
+- up to **2** close alternatives you **did not** select (with one-phrase reasons).
+Prefix each line in \`reasoning\` with **"AUDIT:"**.
 
-Pattern 6 - Intelligent Fallback
-When specific data is missing:
-→ Don't give up - use available tools creatively
-→ Use partial matches, filters, or approximations
-→ Chain multiple operations to build needed context
-→ Use empty objects {} for optional filter parameters`;
+## TOOL USAGE INSTRUCTIONS
+- Use **exact** tool names and parameter shapes from the runtime catalog.
+- **REQUIRED** fields must be present and valid; add a discovery step if something essential is missing.
+- Dates: ISO 8601 (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:mm:ssZ\`).
+- Prefer fewer calls: if **CONTEXT** already has the answer, return **EMPTY PLAN \`[]\`**.
+
+## PARAMETER SOURCES (priority order)
+1) **CONTEXT** (if the final value is present, **do not** call a tool)
+2) **Previous step results** (\`{{step-id.result...}}\`)
+3) **Direct literals**
+
+### Examples (agnostic)
+**Direct literal**
+\`\`\`json
+"argsTemplate": { "name": "exact-string", "enabled": true, "count": 42 }
+\`\`\`
+
+**From CONTEXT**
+> If CONTEXT has \`{"user":{"id":"abc123"}}\` → use \`"userId": "abc123"\` (extract the **actual** value).
+
+**From previous step result**
+\`\`\`json
+"argsTemplate": { "id": "{{list-items.result.items[0].id}}" }
+\`\`\`
+Remember to add \`"dependsOn": ["list-items"]\`.
+
+**Mixed**
+\`\`\`json
+"argsTemplate": {
+  "orgId": "{{discover-entity.result.organization.id}}",
+  "targetId": "{{select-target.result.id}}",
+  "mode": "summary"
+}
+\`\`\`
+
+## DEPENDENCY RULES
+- If you reference \`{{step-id.result...}}\`, add that step to \`dependsOn\`.
+- Steps in \`dependsOn\` execute **before** the current step.
+- Use \`parallel: true\` only when steps have **no** dependencies.
+- Empty \`dependsOn: []\` means the step can run immediately.
+
+## PLANNING & ORDER
+**Discovery → Analysis → Action**
+Stop early when success criteria are met.
+
+## OUTPUT SCHEMA
+Return **only** this JSON (no prose):
+\`\`\`json
+{
+  "strategy": "plan-then-execute",
+  "goal": "<clear description of user intent>",
+  "plan": [
+    {
+      "id": "<kebab-case>",
+      "description": "<what this step accomplishes>",
+      "tool": "<exact runtime tool name>",
+      "argsTemplate": { "<param>": "<value or {{step-id.result...}}>" },
+      "dependsOn": ["<step-ids>"],
+      "parallel": true
+    }
+  ],
+  "reasoning": [
+    "<concise step-by-step thought process>",
+    "<why this approach was chosen>",
+    "AUDIT: <toolName> selected - <short quote/summary from description>",
+    "AUDIT: <altToolName> not_selected - <short reason>"
+  ]
+}
+\`\`\`
+`;
     }
 
     /**
@@ -405,71 +449,6 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
         return `CONSTRAINTS:\n${constraints.map((c) => `• ${c}`).join('\n')}`;
     }
 
-    /**
-     * Get response format specification
-     */
-    private getResponseFormat(): string {
-        return (
-            this.config.templates?.responseFormat ||
-            `OUTPUT FORMAT:
-{
-  "strategy": "plan-execute",
-  "goal": "<clear description of user intent>",
-  "plan": [
-    {
-      "id": "<unique-kebab-case-id>",
-      "description": "<what this step accomplishes>",
-      "tool": "<exact tool name from available list>",
-      "argsTemplate": {
-        "<param>": "<see PARAMETER VALUES guide below>"
-      },
-      "dependsOn": ["<step-ids-this-depends-on>"],
-      "parallel": <true|false>
-    }
-  ],
-  "reasoning": [
-    "<step-by-step thought process>",
-    "<why this approach was chosen>",
-    "<any assumptions made>"
-  ]
-}
-
-PARAMETER VALUES - Choose the right approach:
-
-1. DIRECT VALUE (when you know it):
-   "name": "exact-string"
-   "count": 42
-   "enabled": true
-   "filters": { "status": "active" }
-
-2. CONTEXT VALUE (extract from CONTEXT section):
-   → Look at the CONTEXT section in the prompt
-   → Navigate to the data you need using mental dot notation
-   → Extract the ACTUAL VALUE and use it directly
-   → Example: if CONTEXT has {"user":{"id":"abc123"}}, use "userId": "abc123"
-
-3. STEP RESULT (from previous step output):
-   "paramName": "{{step-id.result}}"
-   "nestedField": "{{step-id.result.fieldName}}"
-   "arrayItem": "{{step-id.result.items[0]}}"
-   → Use template syntax for step dependencies
-   → This will be resolved at execution time
-
-4. MIXED (combine multiple sources):
-   {
-     "contextValue": "actual-extracted-value",
-     "stepResult": "{{previous-step.result.id}}",
-     "directValue": "static-value"
-   }
-
-DEPENDENCY RULES:
-- If you reference {{step-id.result}}, add "step-id" to dependsOn
-- Steps in dependsOn execute BEFORE current step
-- Use parallel:true only when steps have no dependencies
-- Empty dependsOn [] means step can run immediately`
-        );
-    }
-
     private formatAvailableTools(
         tools:
             | ToolMetadataForLLM[]
@@ -518,7 +497,10 @@ DEPENDENCY RULES:
 
             // Add output schema if available
             if (tool.outputSchema?.properties) {
-                const outputFormat = this.formatOutputSchema(tool.outputSchema);
+                const outputFormat = this.formatOutputSchema(
+                    tool.outputSchema,
+                    tool.name,
+                );
 
                 if (outputFormat) {
                     sections.push(outputFormat);
@@ -536,21 +518,63 @@ DEPENDENCY RULES:
      * Supports: primitives, objects, arrays, enums, nested structures
      * Detects wrapper patterns and extracts meaningful data
      */
-    private formatOutputSchema(outputSchema: Record<string, unknown>): string {
-        if (!outputSchema) return '';
+    private formatOutputSchema(
+        outputSchema: Record<string, unknown>,
+        toolName?: string,
+    ): string {
+        if (!outputSchema) {
+            return '';
+        }
 
-        // 🎯 Detect common wrapper patterns (success/count/data)
         const unwrapped = this.unwrapOutputSchema(outputSchema);
 
-        // 🎯 Format the schema recursively (without required markers for outputs)
+        if (this.isEmptyOutputSchema(unwrapped)) {
+            return '';
+        }
+
         const formatted = this.formatSchemaType(unwrapped, 0, false);
-        return formatted ? `\n  Response: ${formatted}` : '';
+        if (!formatted) {
+            return '';
+        }
+
+        if (this.isGenericTypeOnly(formatted)) {
+            return '';
+        }
+
+        const toolSuffix = toolName ? ` (from ${toolName})` : '';
+        return `\n  Returns: ${formatted}${toolSuffix}`;
     }
 
-    /**
-     * 🚀 Unwrap common output wrapper patterns
-     * Patterns: { success, count, data }, { success, data }, { data }
-     */
+    private isEmptyOutputSchema(schema: Record<string, unknown>): boolean {
+        if (!schema || Object.keys(schema).length === 0) {
+            return true;
+        }
+
+        if (schema.type === 'object') {
+            const properties = schema.properties as Record<string, unknown>;
+            if (!properties || Object.keys(properties).length === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private isGenericTypeOnly(formatted: string): boolean {
+        const trimmed = formatted.trim();
+
+        const genericTypes = [
+            'Object',
+            'Array',
+            'string',
+            'number',
+            'boolean',
+            'any',
+        ];
+
+        return genericTypes.includes(trimmed);
+    }
+
     private unwrapOutputSchema(
         schema: Record<string, unknown>,
     ): Record<string, unknown> {
@@ -561,7 +585,6 @@ DEPENDENCY RULES:
         const properties = schema.properties as Record<string, unknown>;
         const propNames = Object.keys(properties);
 
-        // 🎯 Pattern 1: { success, count, data } - Extract data field
         if (
             propNames.includes('data') &&
             (propNames.includes('success') || propNames.includes('count'))
@@ -572,7 +595,6 @@ DEPENDENCY RULES:
             }
         }
 
-        // 🎯 Pattern 2: { data } only - Extract data field
         if (propNames.length === 1 && propNames[0] === 'data') {
             const dataField = properties.data as Record<string, unknown>;
             if (dataField) {
@@ -580,7 +602,6 @@ DEPENDENCY RULES:
             }
         }
 
-        // 🎯 Pattern 3: { results } - Extract results field
         if (propNames.includes('results') && propNames.length <= 3) {
             const resultsField = properties.results as Record<string, unknown>;
             if (resultsField) {
@@ -588,26 +609,23 @@ DEPENDENCY RULES:
             }
         }
 
-        // 🎯 No wrapper pattern detected, return as-is
         return schema;
     }
 
-    /**
-     * 🚀 Recursively format any JSON Schema type with proper indentation
-     */
     private formatSchemaType(
         schema: Record<string, unknown>,
         depth: number = 0,
         showRequiredMarkers: boolean = true,
     ): string {
-        if (!schema) return 'unknown';
+        if (!schema) {
+            return 'unknown';
+        }
 
         const indent = '    '.repeat(depth);
         const type = schema.type as string;
         const description = schema.description as string;
         const enumValues = schema.enum as unknown[];
 
-        // 🎯 Handle enums first (can be any type)
         if (enumValues && enumValues.length > 0) {
             const values = enumValues.map((v) => `"${v}"`).join(' | ');
             const enumType = `(${values})`;
@@ -619,12 +637,10 @@ DEPENDENCY RULES:
                 const format = schema.format as string;
                 let typeDisplay = 'string';
 
-                // Add format info if available
                 if (format) {
                     typeDisplay += ` (${format})`;
                 }
 
-                // Add length constraints
                 const minLength = schema.minLength as number;
                 const maxLength = schema.maxLength as number;
                 if (minLength !== undefined || maxLength !== undefined) {
@@ -645,7 +661,6 @@ DEPENDENCY RULES:
             case 'integer': {
                 let typeDisplay = type;
 
-                // Add numeric constraints
                 const minimum = schema.minimum as number;
                 const maximum = schema.maximum as number;
                 if (minimum !== undefined || maximum !== undefined) {
@@ -675,11 +690,14 @@ DEPENDENCY RULES:
                     return description ? `array - ${description}` : 'array';
                 }
 
-                // 🚀 Use extractTypeName for better type names in arrays of objects
                 let itemType: string;
                 if (items.type === 'object' && items.properties) {
-                    const typeName = this.extractTypeName(items);
-                    itemType = typeName;
+                    const fullStructure = this.formatSchemaType(
+                        items,
+                        depth,
+                        showRequiredMarkers,
+                    );
+                    itemType = fullStructure;
                 } else {
                     itemType = this.formatSchemaType(
                         items,
@@ -690,7 +708,6 @@ DEPENDENCY RULES:
 
                 const arrayType = `${itemType}[]`;
 
-                // Add array constraints
                 const minItems = schema.minItems as number;
                 const maxItems = schema.maxItems as number;
                 let constraints = '';
@@ -719,7 +736,6 @@ DEPENDENCY RULES:
                         : typeName;
                 }
 
-                // 🚀 Build object structure with meaningful type names
                 const lines: string[] = [];
                 const typeName = this.extractTypeName(schema);
                 const objectHeader = description
@@ -748,11 +764,10 @@ DEPENDENCY RULES:
                 }
 
                 lines.push(`${indent}}`);
-                return lines.join('\n' + indent);
+                return lines.join('\n');
             }
 
             default: {
-                // 🎯 Handle special cases and union types
                 if (schema.oneOf || schema.anyOf || schema.allOf) {
                     return this.formatUnionTypes(
                         schema,
@@ -761,7 +776,6 @@ DEPENDENCY RULES:
                     );
                 }
 
-                // Handle schema with direct properties (object without explicit type)
                 if (schema.properties) {
                     return this.formatSchemaType(
                         { ...schema, type: 'object' },
@@ -770,15 +784,11 @@ DEPENDENCY RULES:
                     );
                 }
 
-                // Fallback
                 return description ? `unknown - ${description}` : 'unknown';
             }
         }
     }
 
-    /**
-     * 🚀 Format union types (oneOf, anyOf, allOf)
-     */
     private formatUnionTypes(
         schema: Record<string, unknown>,
         depth: number,
@@ -812,51 +822,37 @@ DEPENDENCY RULES:
         return 'union';
     }
 
-    /**
-     * 🚀 Extract precise type name from JSON Schema or Zod Schema
-     * Uses structured schema information instead of pattern matching
-     */
     private extractTypeName(schema: Record<string, unknown>): string {
-        // 🎯 JSON Schema: Use standard fields (highest priority)
-
-        // 1. title field (explicit type name)
         if (schema.title && typeof schema.title === 'string') {
             return schema.title;
         }
 
-        // 2. $ref (reference to definition)
         if (schema.$ref && typeof schema.$ref === 'string') {
-            // Extract type name from $ref like "#/definitions/User" → "User"
             const refMatch = schema.$ref.match(/\/([^\/]+)$/);
             if (refMatch && refMatch[1]) {
                 return refMatch[1];
             }
         }
 
-        // 3. $id (schema identifier)
         if (schema.$id && typeof schema.$id === 'string') {
-            // Extract from URI-like IDs
             const idMatch = schema.$id.match(/([^\/]+)\.json?$/);
             if (idMatch && idMatch[1]) {
                 return this.capitalize(idMatch[1]);
             }
         }
 
-        // 4. definitions key (when schema contains definitions)
         if (schema.definitions && typeof schema.definitions === 'object') {
             const definitions = schema.definitions as Record<string, unknown>;
             const defKeys = Object.keys(definitions);
             if (defKeys.length === 1 && defKeys[0]) {
-                return defKeys[0]; // Single definition, likely the main type
+                return defKeys[0];
             }
         }
 
-        // 🎯 Zod Schema: Extract from Zod type information
         if (this.isZodSchema(schema)) {
             return this.extractFromZodSchema(schema);
         }
 
-        // 🎯 OpenAPI/Swagger: Extract from component schemas
         if (
             schema.components &&
             typeof schema.components === 'object' &&
@@ -872,9 +868,6 @@ DEPENDENCY RULES:
             }
         }
 
-        // 🎯 Schema-agnostic fallback: use only structural information
-
-        // 🎯 Fallback: Use type field or generic names
         const type = schema.type as string;
         switch (type) {
             case 'object':
@@ -893,9 +886,6 @@ DEPENDENCY RULES:
         }
     }
 
-    /**
-     * 🔍 Detect if schema contains Zod-specific information
-     */
     private isZodSchema(schema: Record<string, unknown>): boolean {
         return !!(
             schema._def ||
@@ -905,31 +895,19 @@ DEPENDENCY RULES:
         );
     }
 
-    /**
-     * 🚀 Extract type information from Zod Schema
-     */
     private extractFromZodSchema(schema: Record<string, unknown>): string {
-        // Try to extract from Zod _def
         const def = schema._def as { typeName?: string };
         if (def?.typeName) {
-            // Convert ZodString → String, ZodObject → Object, etc.
             return def.typeName.replace(/^Zod/, '');
         }
 
-        // Fallback for Zod schemas
         return 'Object';
     }
 
-    /**
-     * 🔧 Utility: Capitalize first letter
-     */
     private capitalize(str: string): string {
         return str.charAt(0).toUpperCase() + str.slice(1);
     }
 
-    /**
-     * Enhanced tool parameters formatting with better structure
-     */
     private formatToolParametersEnhanced(tool: ToolMetadataForLLM): string {
         if (!tool.parameters?.properties) {
             return '';
@@ -1159,7 +1137,6 @@ DEPENDENCY RULES:
                     }`;
                     paramStrings.push(nestedLine);
 
-                    // ✅ ADDED: Handle nested array of objects - show nested properties
                     if (
                         nestedTypeDisplay.startsWith('array<object{') &&
                         (nestedPropObj as Record<string, unknown>).items
@@ -1218,6 +1195,10 @@ DEPENDENCY RULES:
                     }
                 }
             }
+        }
+
+        if (paramStrings.length === 0) {
+            return '';
         }
 
         return `Parameters:\n    ${paramStrings.join('\n    ')}`;

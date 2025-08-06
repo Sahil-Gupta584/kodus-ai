@@ -35,7 +35,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
                 description: 'User name',
             };
             const result = formatOutputSchema(schema);
-            expect(result).toBe('\n  Response: string - User name');
+            expect(result).toBe('\n  Returns: string - User name');
         });
 
         it('should format string with format', () => {
@@ -45,7 +45,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
                 description: 'Email address',
             };
             const result = formatOutputSchema(schema);
-            expect(result).toBe('\n  Response: string (email) - Email address');
+            expect(result).toBe('\n  Returns: string (email) - Email address');
         });
 
         it('should format string with constraints', () => {
@@ -57,7 +57,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
             const result = formatOutputSchema(schema);
             expect(result).toBe(
-                '\n  Response: string [min: 3, max: 50] - Username',
+                '\n  Returns: string [min: 3, max: 50] - Username',
             );
         });
 
@@ -70,7 +70,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
             const result = formatOutputSchema(schema);
             expect(result).toBe(
-                '\n  Response: number [min: 0, max: 100] - Percentage',
+                '\n  Returns: number [min: 0, max: 100] - Percentage',
             );
         });
 
@@ -80,7 +80,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
                 description: 'Is active',
             };
             const result = formatOutputSchema(schema);
-            expect(result).toBe('\n  Response: boolean - Is active');
+            expect(result).toBe('\n  Returns: boolean - Is active');
         });
     });
 
@@ -93,7 +93,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
             const result = formatOutputSchema(schema);
             expect(result).toBe(
-                '\n  Response: ("pending" | "processing" | "completed" | "failed") - Operation status',
+                '\n  Returns: ("pending" | "processing" | "completed" | "failed") - Operation status',
             );
         });
     });
@@ -111,7 +111,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
             const result = formatOutputSchema(schema);
             expect(result).toBe(
-                '\n  Response: string[] [min: 1, max: 10] - List of tags',
+                '\n  Returns: string[] [min: 1, max: 10] - List of tags',
             );
         });
 
@@ -124,7 +124,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
                 description: 'Coordinates',
             };
             const result = formatOutputSchema(schema);
-            expect(result).toBe('\n  Response: number[] - Coordinates');
+            expect(result).toBe('\n  Returns: number[] - Coordinates');
         });
     });
 
@@ -152,7 +152,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             const result = formatOutputSchema(schema);
 
             // Verifica se contém as informações essenciais (sem required/optional pois showRequiredMarkers=false)
-            expect(result).toContain('Response: Object - Basic item {'); // 🎯 Agnostic: no title = Object
+            expect(result).toContain('Returns: Object - Basic item {'); // 🎯 Agnostic: no title = Object
             expect(result).toContain('id: string - Unique identifier');
             expect(result).toContain('name: string - Item name');
             expect(result).toContain('active: boolean - Is active');
@@ -172,7 +172,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
                 description: 'User data',
             };
             const result = formatOutputSchema(schema);
-            expect(result).toContain('Response: CustomUser - User data {');
+            expect(result).toContain('Returns: CustomUser - User data {');
         });
     });
 
@@ -205,7 +205,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(repositorySchema);
-            expect(result).toContain('Response: Object {'); // 🎯 Agnostic: no title = Object
+            expect(result).toContain('Returns: Object {'); // 🎯 Agnostic: no title = Object
             expect(result).toContain('http_url: string');
             expect(result).toContain('avatar_url: string');
             expect(result).toContain('organizationName: string');
@@ -232,9 +232,11 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(schema);
-            expect(result).toBe(
-                '\n  Response: Object[] - List of repositories', // 🎯 Agnostic: no title = Object[]
-            );
+            // 🎯 Agnostic: now shows detailed structure
+            expect(result).toContain('\n  Returns: Object {');
+            expect(result).toContain('[] - List of repositories');
+            expect(result).toContain('http_url: string');
+            expect(result).toContain('avatar_url: string');
         });
     });
 
@@ -262,7 +264,8 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(wrapperSchema);
-            expect(result).toBe('\n  Response: Object[]'); // 🎯 Agnostic: no title = Object[]
+            expect(result).toContain('\n  Returns: Object {'); // 🎯 Agnostic: now shows structure
+            expect(result).toContain('http_url: string');
             expect(result).not.toContain('success');
             expect(result).not.toContain('count');
         });
@@ -281,7 +284,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(wrapperSchema);
-            expect(result).toBe('\n  Response: string - Message');
+            expect(result).toBe('\n  Returns: string - Message');
         });
 
         it('should unwrap data-only pattern', () => {
@@ -296,7 +299,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(wrapperSchema);
-            expect(result).toBe('\n  Response: string[]');
+            expect(result).toBe('\n  Returns: string[]');
         });
 
         it('should unwrap results pattern', () => {
@@ -318,7 +321,8 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(wrapperSchema);
-            expect(result).toBe('\n  Response: Object[]'); // 🎯 Agnostic: no title = Object[]
+            expect(result).toContain('\n  Returns: Object {'); // 🎯 Agnostic: now shows structure
+            expect(result).toContain('email: string');
         });
     });
 
@@ -335,7 +339,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(schema);
-            expect(result).toContain('Response: Object {'); // 🎯 Agnostic: no title = Object
+            expect(result).toContain('Returns: Object {'); // 🎯 Agnostic: no title = Object
         });
 
         it('should detect Product pattern', () => {
@@ -350,7 +354,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(schema);
-            expect(result).toContain('Response: Object {'); // 🎯 Agnostic: no title = Object
+            expect(result).toContain('Returns: Object {'); // 🎯 Agnostic: no title = Object
         });
 
         it('should detect Order pattern', () => {
@@ -365,7 +369,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(schema);
-            expect(result).toContain('Response: Object {'); // 🎯 Agnostic: no title = Object
+            expect(result).toContain('Returns: Object {'); // 🎯 Agnostic: no title = Object
         });
 
         it('should detect Address pattern', () => {
@@ -380,7 +384,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(schema);
-            expect(result).toContain('Response: Object {'); // 🎯 Agnostic: no title = Object
+            expect(result).toContain('Returns: Object {'); // 🎯 Agnostic: no title = Object
         });
 
         it('should detect Project pattern', () => {
@@ -395,7 +399,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(schema);
-            expect(result).toContain('Response: Object {'); // 🎯 Agnostic: no title = Object
+            expect(result).toContain('Returns: Object {'); // 🎯 Agnostic: no title = Object
         });
 
         it('should fallback to Entity for id+name pattern', () => {
@@ -409,7 +413,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(schema);
-            expect(result).toContain('Response: Object {'); // 🎯 Agnostic: no title = Object
+            expect(result).toContain('Returns: Object {'); // 🎯 Agnostic: no title = Object
         });
     });
 
@@ -420,7 +424,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(schema);
-            expect(result).toContain('Response: unknown'); // 🎯 Agnostic: $ref not fully supported yet
+            expect(result).toContain('Returns: unknown'); // 🎯 Agnostic: $ref not fully supported yet
         });
 
         it('should extract type from $id', () => {
@@ -433,7 +437,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(schema);
-            expect(result).toContain('Response: Employee {');
+            expect(result).toContain('Returns: Employee {');
         });
 
         it('should extract from single definition', () => {
@@ -449,7 +453,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(schema);
-            expect(result).toContain('Response: unknown'); // 🎯 Agnostic: definitions not fully supported yet
+            expect(result).toContain('Returns: unknown'); // 🎯 Agnostic: definitions not fully supported yet
         });
     });
 
@@ -471,7 +475,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
 
             const result = formatOutputSchema(schema);
             expect(result).toContain(
-                'Response: (string - Text content | Object {',
+                'Returns: (string - Text content | Object {',
             );
             expect(result).toContain('})'); // 🎯 Union type description handled correctly
         });
@@ -480,7 +484,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
     describe('🔧 Edge Cases', () => {
         it('should handle empty schema', () => {
             const result = formatOutputSchema({});
-            expect(result).toBe('\n  Response: unknown'); // 🎯 Agnostic: fallback for empty schema
+            expect(result).toBe(''); // 🚫 Empty schemas don't show Returns
         });
 
         it('should handle null schema', () => {
@@ -496,7 +500,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(schema);
-            expect(result).toBe('\n  Response: array - Generic array');
+            expect(result).toBe('\n  Returns: array - Generic array');
         });
 
         it('should handle object without properties', () => {
@@ -506,7 +510,7 @@ describe('🚀 Universal Output Schema Formatter', () => {
             };
 
             const result = formatOutputSchema(schema);
-            expect(result).toBe('\n  Response: Object - Generic object');
+            expect(result).toBe(''); // 🚫 Objects without properties don't show Returns
         });
     });
 
@@ -584,15 +588,15 @@ describe('🚀 Universal Output Schema Formatter', () => {
 
             const result = formatOutputSchema(complexSchema);
 
-            // Deve extrair só o data e detectar Repository
-            expect(result).toBe(
-                '\n  Response: Object[] - List of repositories', // 🎯 Agnostic: no title = Object[]
-            );
+            // Deve extrair só o data e mostrar estrutura detalhada
+            expect(result).toContain('\n  Returns: Object {'); // 🎯 Agnostic: shows structure
+            expect(result).toContain('[] - List of repositories'); // Array indicator
+            expect(result).toContain('http_url: string');
+            expect(result).toContain('avatar_url: string');
 
             // NÃO deve conter wrappers
             expect(result).not.toContain('success');
             expect(result).not.toContain('count');
-            // ✅ Deve ser Object[] (agnostic behavior)
         });
     });
 });
