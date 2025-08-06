@@ -48,7 +48,7 @@ export class SavePullRequestUseCase {
                 return;
             }
 
-            let pullRequest = mappedPlatform.mapPullRequest({
+            const pullRequest = mappedPlatform.mapPullRequest({
                 payload: sanitizedPayload,
             });
             if (
@@ -72,7 +72,7 @@ export class SavePullRequestUseCase {
                     await this.integrationConfigService.findIntegrationConfigWithTeams(
                         IntegrationConfigKey.REPOSITORIES,
                         repository.id,
-                        platformType
+                        platformType,
                     );
 
                 if (!configs || !configs.length) {
@@ -97,8 +97,7 @@ export class SavePullRequestUseCase {
                 const changedFiles =
                     await this.codeManagement.getFilesByPullRequestId(
                         {
-                            organizationAndTeamData:
-                                organizationAndTeamData?.[0],
+                            organizationAndTeamData: organizationAndTeamData[0],
                             prNumber: pullRequest?.number,
                             repository,
                         },
@@ -118,7 +117,7 @@ export class SavePullRequestUseCase {
                     await this.codeManagement.getCommitsForPullRequestForCodeReview(
                         {
                             organizationAndTeamData: {
-                                ...organizationAndTeamData?.[0],
+                                ...organizationAndTeamData[0],
                             },
                             repository: {
                                 id: repository.id,
@@ -129,16 +128,17 @@ export class SavePullRequestUseCase {
                     );
 
                 try {
-                    const result = await this.pullRequestsService.aggregateAndSaveDataStructure(
-                        pullRequestWithUserData,
-                        repository,
-                        changedFiles,
-                        [],
-                        [],
-                        platformType,
-                        organizationAndTeamData?.[0]?.organizationId,
-                        pullRequestCommits,
-                    );
+                    const result =
+                        await this.pullRequestsService.aggregateAndSaveDataStructure(
+                            pullRequestWithUserData,
+                            repository,
+                            changedFiles,
+                            [],
+                            [],
+                            platformType,
+                            organizationAndTeamData[0],
+                            pullRequestCommits,
+                        );
 
                     return result;
                 } catch (error) {
@@ -149,8 +149,7 @@ export class SavePullRequestUseCase {
                         metadata: {
                             repository: repository?.name,
                             pullRequest: pullRequestWithUserData?.number,
-                            organizationAndTeamData:
-                                organizationAndTeamData?.[0],
+                            organizationAndTeamData: organizationAndTeamData[0],
                         },
                     });
                     return null;

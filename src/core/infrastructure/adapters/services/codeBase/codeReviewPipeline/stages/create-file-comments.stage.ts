@@ -451,7 +451,7 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
             suggestionsWithStatus,
             discardedSuggestions,
             platformType,
-            organizationAndTeamData?.organizationId,
+            organizationAndTeamData,
             pullRequestCommits,
         );
     }
