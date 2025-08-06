@@ -12,62 +12,70 @@ import {
 import { Commit } from '@/config/types/general/commit.type';
 import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 
-const RepositorySchema = z.object({
-    id: z.string(),
-    name: z.string(),
-    http_url: z.string(),
-    avatar_url: z.string(),
-    organizationName: z.string(),
-    visibility: z.enum(['public', 'private']),
-    selected: z.boolean(),
-    default_branch: z.string().optional(),
-    project: z
-        .object({
-            id: z.string(),
-            name: z.string(),
-        })
-        .optional(),
-    workspaceId: z.string().optional(),
-});
+const RepositorySchema = z
+    .object({
+        id: z.string(),
+        name: z.string(),
+        http_url: z.string(),
+        avatar_url: z.string(),
+        organizationName: z.string(),
+        visibility: z.enum(['public', 'private']),
+        selected: z.boolean(),
+        default_branch: z.string().optional(),
+        project: z
+            .object({
+                id: z.string(),
+                name: z.string(),
+            })
+            .optional(),
+        workspaceId: z.string().optional(),
+    })
+    .passthrough();
 
-const PullRequestSchema = z.object({
-    id: z.string(),
-    author_id: z.string(),
-    author_name: z.string(),
-    message: z.string(),
-    created_at: z.string().optional(),
-    closed_at: z.string().optional(),
-    targetRefName: z.string().optional(),
-    sourceRefName: z.string().optional(),
-    state: z.string(),
-    organizationId: z.string().optional(),
-    pull_number: z.number().optional(),
-    repository: z.string().optional(),
-    repositoryId: z.string().optional(),
-});
-
-const CommitSchema = z.object({
-    sha: z.string(),
-    commit: z.object({
-        author: z.object({
-            id: z.string().optional(),
-            name: z.string(),
-            email: z.string(),
-            date: z.string(),
-        }),
+const PullRequestSchema = z
+    .object({
+        id: z.string(),
+        author_id: z.string(),
+        author_name: z.string(),
         message: z.string(),
-    }),
-    parents: z.array(z.object({ sha: z.string() })).optional(),
-});
+        created_at: z.string().optional(),
+        closed_at: z.string().optional(),
+        targetRefName: z.string().optional(),
+        sourceRefName: z.string().optional(),
+        state: z.string(),
+        organizationId: z.string().optional(),
+        pull_number: z.number().optional(),
+        repository: z.string().optional(),
+        repositoryId: z.string().optional(),
+    })
+    .passthrough();
 
-const RepositoryFileSchema = z.object({
-    path: z.string(),
-    content: z.string(),
-    sha: z.string(),
-    size: z.number(),
-    type: z.string(),
-    encoding: z.string(),
-});
+const CommitSchema = z
+    .object({
+        sha: z.string(),
+        commit: z.object({
+            author: z.object({
+                id: z.string().optional(),
+                name: z.string(),
+                email: z.string(),
+                date: z.string(),
+            }),
+            message: z.string(),
+        }),
+        parents: z.array(z.object({ sha: z.string() })).optional(),
+    })
+    .passthrough();
+
+const RepositoryFileSchema = z
+    .object({
+        path: z.string(),
+        content: z.string(),
+        sha: z.string(),
+        size: z.number(),
+        type: z.string(),
+        encoding: z.string(),
+    })
+    .passthrough();
 
 interface BaseResponse {
     success: boolean;
@@ -170,7 +178,13 @@ export class CodeManagementTools {
                 count: z.number(),
                 data: z.array(RepositorySchema),
             }),
-            handler: wrapToolHandler(
+            annotations: {
+                readOnlyHint: true,
+                idempotentHint: true,
+                destructiveHint: false,
+                openWorldHint: true,
+            },
+            execute: wrapToolHandler(
                 async (args: InputType): Promise<RepositoriesResponse> => {
                     const params = {
                         organizationAndTeamData: {
@@ -190,6 +204,8 @@ export class CodeManagementTools {
                         data: repositories,
                     };
                 },
+                'list_repositories',
+                () => ({ success: false, count: 0, data: [] }),
             ),
         };
     }
@@ -256,7 +272,7 @@ export class CodeManagementTools {
                 count: z.number(),
                 data: z.array(PullRequestSchema),
             }),
-            handler: wrapToolHandler(
+            execute: wrapToolHandler(
                 async (args: InputType): Promise<PullRequestsResponse> => {
                     const params = {
                         organizationAndTeamData: {
@@ -354,7 +370,7 @@ export class CodeManagementTools {
                 count: z.number(),
                 data: z.array(CommitSchema),
             }),
-            handler: wrapToolHandler(
+            execute: wrapToolHandler(
                 async (args: InputType): Promise<CommitsResponse> => {
                     const params = {
                         organizationAndTeamData: {
@@ -423,7 +439,7 @@ export class CodeManagementTools {
                 success: z.boolean(),
                 data: z.any(),
             }),
-            handler: wrapToolHandler(
+            execute: wrapToolHandler(
                 async (
                     args: InputType,
                 ): Promise<PullRequestDetailsResponse> => {
@@ -523,7 +539,7 @@ export class CodeManagementTools {
                 count: z.number(),
                 data: z.array(RepositoryFileSchema),
             }),
-            handler: wrapToolHandler(
+            execute: wrapToolHandler(
                 async (args: InputType): Promise<RepositoryFilesResponse> => {
                     const params = {
                         repository: args.repository,
@@ -607,7 +623,7 @@ export class CodeManagementTools {
                 success: z.boolean(),
                 data: z.string(),
             }),
-            handler: wrapToolHandler(
+            execute: wrapToolHandler(
                 async (args: InputType): Promise<RepositoryContentResponse> => {
                     const params = {
                         organizationAndTeamData: {
@@ -695,7 +711,7 @@ export class CodeManagementTools {
                 success: z.boolean(),
                 data: z.any(),
             }),
-            handler: wrapToolHandler(
+            execute: wrapToolHandler(
                 async (
                     args: InputType,
                 ): Promise<RepositoryLanguagesResponse> => {
@@ -774,7 +790,7 @@ export class CodeManagementTools {
                 success: z.boolean(),
                 data: z.string(),
             }),
-            handler: wrapToolHandler(
+            execute: wrapToolHandler(
                 async (
                     args: InputType,
                 ): Promise<PullRequestFileContentResponse> => {
@@ -859,7 +875,7 @@ export class CodeManagementTools {
                 success: z.boolean(),
                 data: z.string(),
             }),
-            handler: wrapToolHandler(
+            execute: wrapToolHandler(
                 async (args: InputType): Promise<DiffForFileResponse> => {
                     const params = {
                         organizationAndTeamData: {

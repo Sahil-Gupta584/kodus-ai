@@ -50,7 +50,17 @@ export function zodToJSONSchema(
  * Verifica se um schema Zod é opcional
  */
 function isOptional(schema: z.ZodSchema): boolean {
+    // ✅ ADDED: Null/undefined check to prevent "_def" access error
+    if (!schema || typeof schema !== 'object') {
+        return false;
+    }
+
     const zodType = schema._def as ZodInternalDef;
+
+    // ✅ ADDED: Additional null check for _def
+    if (!zodType) {
+        return false;
+    }
 
     // ✅ FIXED: Access the 'type' field correctly for Zod 4
     const type = zodType.type;
@@ -69,7 +79,15 @@ function isOptional(schema: z.ZodSchema): boolean {
     if (type === 'union' && zodType.options) {
         const options = zodType.options as z.ZodSchema[];
         return options.some((option) => {
+            // ✅ ADDED: Null check for option
+            if (!option || typeof option !== 'object') {
+                return false;
+            }
             const optionDef = option._def as ZodInternalDef;
+            // ✅ ADDED: Null check for optionDef
+            if (!optionDef) {
+                return false;
+            }
             const optionType = optionDef.type;
             return optionType === 'undefined' || optionType === 'null';
         });
@@ -85,6 +103,11 @@ type ZodMaybeDef = { _def?: { description?: string } };
  * Extrai a descrição de um schema Zod (compatível com Zod 3 e 4)
  */
 export function extractDescription(schema: z.ZodSchema): string | undefined {
+    // ✅ ADDED: Null/undefined check
+    if (!schema || typeof schema !== 'object') {
+        return undefined;
+    }
+
     // Tenta Zod 4
     const meta = (schema as ZodMaybeMeta).meta?.();
     if (meta?.description) return meta.description;
@@ -100,7 +123,17 @@ export function extractDescription(schema: z.ZodSchema): string | undefined {
 function zodSchemaToJsonSchemaObject(
     schema: z.ZodSchema,
 ): Record<string, unknown> {
+    // ✅ ADDED: Null/undefined check to prevent "_def" access error
+    if (!schema || typeof schema !== 'object') {
+        return { type: 'string' }; // Fallback to string type
+    }
+
     const zodType = schema._def as ZodInternalDef;
+
+    // ✅ ADDED: Null check for _def
+    if (!zodType) {
+        return { type: 'string' }; // Fallback to string type
+    }
 
     // ✅ FIXED: Use 'type' instead of 'typeName' for Zod 4
     const typeName = zodType.type;
@@ -217,15 +250,33 @@ function zodSchemaToJsonSchemaObject(
 
             // ✅ IMPROVED: Check if all union members are literals (convert to enum)
             const allLiterals = unionSchemas.every((unionSchema) => {
+                // ✅ ADDED: Null check for unionSchema
+                if (!unionSchema || typeof unionSchema !== 'object') {
+                    return false;
+                }
                 const unionDef = unionSchema._def as ZodInternalDef;
+                // ✅ ADDED: Null check for unionDef
+                if (!unionDef) {
+                    return false;
+                }
                 return unionDef.type === 'literal';
             });
 
             if (allLiterals) {
-                const enumValues = unionSchemas.map((unionSchema) => {
-                    const unionDef = unionSchema._def as ZodInternalDef;
-                    return Array.from(unionDef.values || [])[0];
-                });
+                const enumValues = unionSchemas
+                    .map((unionSchema) => {
+                        // ✅ ADDED: Null check for unionSchema
+                        if (!unionSchema || typeof unionSchema !== 'object') {
+                            return undefined;
+                        }
+                        const unionDef = unionSchema._def as ZodInternalDef;
+                        // ✅ ADDED: Null check for unionDef
+                        if (!unionDef) {
+                            return undefined;
+                        }
+                        return Array.from(unionDef.values || [])[0];
+                    })
+                    .filter((value) => value !== undefined); // ✅ ADDED: Filter out undefined values
 
                 return addDescription({
                     type: 'string',

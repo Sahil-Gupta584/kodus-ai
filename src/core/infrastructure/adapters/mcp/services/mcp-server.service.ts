@@ -5,6 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { nanoid } from 'nanoid';
 import { CodeManagementTools, KodyRulesTools } from '../tools';
+import { toShape } from '../types/mcp-tool.interface';
 
 interface McpSession {
     id: string;
@@ -91,10 +92,11 @@ export class McpServerService {
                 tool.name,
                 {
                     description: tool.description,
-                    inputSchema: tool.inputSchema as any,
-                    outputSchema: tool.outputSchema as any,
+                    inputSchema: toShape(tool.inputSchema)!,
+                    outputSchema: toShape(tool.outputSchema),
+                    annotations: tool?.annotations,
                 },
-                tool.handler,
+                tool.execute,
             );
         }
 

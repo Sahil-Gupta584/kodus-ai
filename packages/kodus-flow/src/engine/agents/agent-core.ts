@@ -2417,21 +2417,6 @@ export abstract class AgentCore<
         return this.singleAgentDefinition;
     }
 
-    /**
-     * Get tools in the correct format for LLMs (OpenAI, Anthropic, etc.)
-     * This method ensures tools are properly formatted for LLM function calling
-     */
-    getToolsForLLM(): Array<{
-        name: string;
-        description: string;
-        parameters: Record<string, unknown>;
-    }> {
-        return this.toolEngine?.getToolsForLLM() || [];
-    }
-
-    /**
-     * Set ToolEngine (for dependency injection)
-     */
     setToolEngine(toolEngine: ToolEngine): void {
         this.toolEngine = toolEngine;
 
@@ -4905,16 +4890,13 @@ export abstract class AgentCore<
             const parsed = parseToolResult(result.content);
 
             if (parsed.isSubstantial && !parsed.isError) {
-                // Tool gave substantial response, might be sufficient
                 const analysis = await this.planner.analyzeResult(
                     result,
                     context,
                 );
+
                 return {
                     ...analysis,
-                    feedback: `Received substantial tool result (${parsed.metadata.textLength} chars, source: ${parsed.metadata.source}): ${analysis.feedback}`,
-                    suggestedNextAction:
-                        'Consider if this result answers the user question',
                 };
             }
         }

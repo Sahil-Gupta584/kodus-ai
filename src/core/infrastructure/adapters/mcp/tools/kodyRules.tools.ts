@@ -69,31 +69,33 @@ export class KodyRulesTools {
             outputSchema: z.object({
                 count: z.number(),
                 data: z.array(
-                    z.object({
-                        uuid: z.string(),
-                        title: z.string(),
-                        rule: z.string(),
-                        path: z.string(),
-                        status: z.nativeEnum(KodyRulesStatus),
-                        severity: z.string(),
-                        label: z.string(),
-                        type: z.string(),
-                        examples: z.array(
-                            z.object({
-                                snippet: z.string(),
-                                isCorrect: z.boolean(),
-                            }),
-                        ),
-                        repositoryId: z.string(),
-                        origin: z.nativeEnum(KodyRulesOrigin),
-                        createdAt: z.date(),
-                        updatedAt: z.date(),
-                        reason: z.string().nullable(),
-                        scope: z.nativeEnum(KodyRulesScope),
-                    }),
+                    z
+                        .object({
+                            uuid: z.string(),
+                            title: z.string(),
+                            rule: z.string(),
+                            path: z.string(),
+                            status: z.nativeEnum(KodyRulesStatus),
+                            severity: z.string(),
+                            label: z.string(),
+                            type: z.string(),
+                            examples: z.array(
+                                z.object({
+                                    snippet: z.string(),
+                                    isCorrect: z.boolean(),
+                                }),
+                            ),
+                            repositoryId: z.string(),
+                            origin: z.nativeEnum(KodyRulesOrigin),
+                            createdAt: z.date(),
+                            updatedAt: z.date(),
+                            reason: z.string().nullable(),
+                            scope: z.nativeEnum(KodyRulesScope),
+                        })
+                        .passthrough(),
                 ),
             }),
-            handler: wrapToolHandler(
+            execute: wrapToolHandler(
                 async (args: InputType): Promise<KodyRulesResponse> => {
                     const params = {
                         organizationAndTeamData: {
@@ -146,31 +148,33 @@ export class KodyRulesTools {
             outputSchema: z.object({
                 count: z.number(),
                 data: z.array(
-                    z.object({
-                        uuid: z.string(),
-                        title: z.string(),
-                        rule: z.string(),
-                        path: z.string(),
-                        status: z.nativeEnum(KodyRulesStatus),
-                        severity: z.string(),
-                        label: z.string(),
-                        type: z.string(),
-                        examples: z.array(
-                            z.object({
-                                snippet: z.string(),
-                                isCorrect: z.boolean(),
-                            }),
-                        ),
-                        repositoryId: z.string(),
-                        origin: z.nativeEnum(KodyRulesOrigin),
-                        createdAt: z.date(),
-                        updatedAt: z.date(),
-                        reason: z.string().nullable(),
-                        scope: z.nativeEnum(KodyRulesScope),
-                    }),
+                    z
+                        .object({
+                            uuid: z.string(),
+                            title: z.string(),
+                            rule: z.string(),
+                            path: z.string(),
+                            status: z.nativeEnum(KodyRulesStatus),
+                            severity: z.string(),
+                            label: z.string(),
+                            type: z.string(),
+                            examples: z.array(
+                                z.object({
+                                    snippet: z.string(),
+                                    isCorrect: z.boolean(),
+                                }),
+                            ),
+                            repositoryId: z.string(),
+                            origin: z.nativeEnum(KodyRulesOrigin),
+                            createdAt: z.date(),
+                            updatedAt: z.date(),
+                            reason: z.string().nullable(),
+                            scope: z.nativeEnum(KodyRulesScope),
+                        })
+                        .passthrough(),
                 ),
             }),
-            handler: wrapToolHandler(
+            execute: wrapToolHandler(
                 async (args: InputType): Promise<KodyRulesResponse> => {
                     const params = {
                         organizationAndTeamData: {
@@ -281,13 +285,15 @@ export class KodyRulesTools {
                 'Create a new Kody Rule with custom scope and severity. pull_request scope: analyzes entire PR context for PR-level rules. file scope: analyzes individual files one by one for file-level rules. Rule starts in pending status.',
             inputSchema,
             outputSchema: z.object({
-                data: z.object({
-                    uuid: z.string(),
-                    title: z.string(),
-                    rule: z.string(),
-                }),
+                data: z
+                    .object({
+                        uuid: z.string(),
+                        title: z.string(),
+                        rule: z.string(),
+                    })
+                    .passthrough(),
             }),
-            handler: wrapToolHandler(
+            execute: wrapToolHandler(
                 async (args: InputType): Promise<CreateKodyRuleResponse> => {
                     const params: {
                         organizationAndTeamData: OrganizationAndTeamData;

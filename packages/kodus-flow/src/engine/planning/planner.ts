@@ -309,9 +309,7 @@ export class CoTPlanner implements Planner {
 
         // NEW: Analyze parallelization opportunities
         const availableToolNames =
-            context.availableToolsForLLM?.map(
-                (t: { name: string }) => t.name,
-            ) || [];
+            context.allTools?.map((t: { name: string }) => t.name) || [];
         if (availableToolNames.length > 0) {
             const parallelOpportunities = this.analyzeParallelization(
                 availableToolNames,
@@ -890,9 +888,7 @@ export class ToTPlanner implements Planner {
 
         // NEW: Add strategy branches with different tool execution approaches
         const availableTools =
-            context.availableToolsForLLM?.map(
-                (t: { name: string }) => t.name,
-            ) || [];
+            context.allTools?.map((t: { name: string }) => t.name) || [];
         if (availableTools.length > 1) {
             const strategies = this.identifyToolExecutionStrategies(
                 goalText,
@@ -1114,9 +1110,7 @@ export class ToTPlanner implements Planner {
     }> {
         const strategies = [];
         const availableTools =
-            context.availableToolsForLLM?.map(
-                (t: { name: string }) => t.name,
-            ) || [];
+            context.allTools?.map((t: { name: string }) => t.name) || [];
 
         // Strategy 1: Parallel execution
         if (availableTools.length > 2) {
@@ -2144,8 +2138,8 @@ function estimateComplexity(context: AgentContext): number {
     let complexity = 0.5; // Base complexity
 
     // More tools available = more complex
-    if (context.availableToolsForLLM) {
-        complexity += Math.min(context.availableToolsForLLM.length * 0.1, 0.3);
+    if (context.allTools) {
+        complexity += Math.min(context.allTools.length * 0.1, 0.3);
     }
 
     return Math.min(complexity, 1.0);

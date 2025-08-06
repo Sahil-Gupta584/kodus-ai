@@ -281,397 +281,181 @@ export class ToolEngine {
      * Includes both built-in tools and external tools
      */
     getAvailableTools(): ToolMetadataForPlanner[] {
-        // Get built-in tools (always available)
         const builtInTools = getBuiltInTools();
+        const externalTools = Array.from(this.tools.values()).map((tool) =>
+            this.convertToolToPlannerFormat(tool),
+        );
 
-        // Convert built-in tools to ToolMetadataForPlanner format
-        const builtInToolsForPlanner: ToolMetadataForPlanner[] =
-            builtInTools.map((tool) => ({
-                name: tool.name,
-                description: tool.description,
-                inputSchema: {
-                    type: 'object' as const,
-                    properties: this.extractPropertiesWithRequiredFlag(
-                        (tool.parameters?.properties as Record<
-                            string,
-                            unknown
-                        >) || {},
-                        (tool.parameters?.required as string[]) || [],
-                    ),
-                    required: (tool.parameters?.required as string[]) || [],
-                },
-                config: {
-                    timeout: 30000, // Built-in tools are fast
-                    requiresAuth: false,
-                    allowParallel: true,
-                    maxConcurrentCalls: 10,
-                    source: 'system' as const,
-                },
-                categories: [],
-                dependencies: [],
-                tags: ['built-in', 'conversational'],
-                examples: [],
-                plannerHints: {
-                    useWhen:
-                        tool.name === 'conversation'
-                            ? [
-                                  'When responding to greetings, questions, or general conversation',
-                              ]
-                            : tool.name === 'analysis'
-                              ? [
-                                    'When analyzing information or providing detailed explanations',
-                                ]
-                              : [
-                                    'When creating plans or providing structured guidance',
-                                ],
-                    avoidWhen: [],
-                    combinesWith: [],
-                    conflictsWith: [],
-                },
-                errorHandling: {
-                    retryStrategy: 'none',
-                    maxRetries: 0,
-                    fallbackAction: 'continue',
-                    errorMessages: {},
-                },
-            }));
+        // ✅ Convert built-in tools to planner format
+        const builtInToolsForPlanner = builtInTools.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: {
+                type: 'object' as const,
+                properties: this.extractPropertiesWithRequiredFlag(
+                    (tool.parameters?.properties as Record<string, unknown>) ||
+                        {},
+                    (tool.parameters?.required as string[]) || [],
+                ),
+                required: (tool.parameters?.required as string[]) || [],
+            },
+            config: {
+                timeout: 30000,
+                requiresAuth: false,
+                allowParallel: true,
+                maxConcurrentCalls: 10,
+                source: 'system' as const,
+            },
+            categories: [],
+            dependencies: [],
+            tags: ['built-in', 'conversational'],
+            examples: [],
+            plannerHints: {
+                useWhen: [`When you need to use ${tool.name}`],
+                avoidWhen: [],
+                combinesWith: [],
+                conflictsWith: [],
+            },
+            errorHandling: {
+                retryStrategy: 'none' as const,
+                maxRetries: 0,
+                fallbackAction: 'continue',
+                errorMessages: {},
+            },
+        }));
 
-        // Get external tools
-        const externalTools = Array.from(this.tools.values())?.map((tool) => {
-            // Prioritize existing JSON Schema, then convert Zod if needed
-            let jsonSchema: unknown = tool.jsonSchema;
-
-            // If inputSchema exists and looks like JSON Schema (not Zod), use it directly
-            if (
-                tool.inputSchema &&
-                typeof tool.inputSchema === 'object' &&
-                tool.inputSchema !== null &&
-                'type' in tool.inputSchema
-            ) {
-                jsonSchema = tool.inputSchema;
-            } else if (tool.inputSchema && !jsonSchema) {
-                // Try converting Zod schema to JSON Schema
-                try {
-                    const converted = zodToJSONSchema(
-                        tool.inputSchema,
-                        tool.name,
-                        tool.description || `Tool: ${tool.name}`,
-                    );
-                    jsonSchema = converted.parameters;
-                } catch (error) {
-                    this.logger.warn(
-                        'Failed to convert Zod schema to JSON Schema',
-                        {
-                            toolName: tool.name,
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error),
-                        },
-                    );
-                    jsonSchema = { type: 'object', properties: {} };
-                }
-            }
-
-            return {
-                name: tool.name,
-                description: tool.description || `Tool: ${tool.name}`,
-
-                inputSchema: {
-                    type: 'object' as const,
-                    properties: this.extractPropertiesWithRequiredFlag(
-                        ((jsonSchema as Record<string, unknown>)
-                            ?.properties as Record<string, unknown>) || {},
-                        ((jsonSchema as Record<string, unknown>)
-                            ?.required as string[]) || [],
-                    ),
-                    required:
-                        ((jsonSchema as Record<string, unknown>)
-                            ?.required as string[]) || [],
-                },
-
-                config: {
-                    timeout: 60000, // ✅ 60s timeout
-                    requiresAuth: false,
-                    allowParallel: true,
-                    maxConcurrentCalls: 5,
-                    source: 'user' as const,
-                },
-
-                categories: tool.categories || [],
-                dependencies: tool.dependencies || [],
-                tags: tool.tags || [],
-
-                examples: tool.examples || [],
-
-                plannerHints: tool.plannerHints || {
-                    useWhen: [`When you need to use ${tool.name}`],
-                    avoidWhen: [],
-                    combinesWith: [],
-                    conflictsWith: [],
-                },
-
-                errorHandling: tool.errorHandling || {
-                    retryStrategy: 'none', // ✅ No retries at tool level - Circuit Breaker handles it
-                    maxRetries: 0, // ✅ No retries at tool level
-                    fallbackAction: 'continue',
-                    errorMessages: {},
-                },
-            };
-        });
-
-        // Return built-in tools first, then external tools
         return [...builtInToolsForPlanner, ...externalTools];
     }
 
     /**
-     * Get tools in the correct format for LLMs (OpenAI, Anthropic, etc.)
-     * Includes both built-in tools and external tools
-     * Removes individual 'required' flags and keeps only the 'required' array
+     * Convert tool to planner format - SIMPLIFIED
      */
+    private convertToolToPlannerFormat(
+        tool: ToolDefinition<unknown, unknown>,
+    ): ToolMetadataForPlanner {
+        let inputParameters: Record<string, unknown>;
+        let outputParameters: Record<string, unknown>;
+
+        if (tool.inputJsonSchema) {
+            inputParameters = tool.inputJsonSchema.parameters;
+        } else if (tool.inputSchema) {
+            try {
+                const converted = zodToJSONSchema(
+                    tool.inputSchema,
+                    tool.name,
+                    tool.description || `Tool: ${tool.name}`,
+                );
+                inputParameters = converted.parameters;
+            } catch {
+                inputParameters = { type: 'object', properties: {} };
+            }
+        } else {
+            inputParameters = { type: 'object', properties: {} };
+        }
+
+        if (tool.outputJsonSchema) {
+            outputParameters = tool.outputJsonSchema.parameters;
+        } else if (tool.outputSchema) {
+            try {
+                const converted = zodToJSONSchema(
+                    tool.outputSchema,
+                    tool.name,
+                    tool.description || `Tool: ${tool.name}`,
+                );
+                outputParameters = converted.parameters;
+            } catch {
+                outputParameters = { type: 'object', properties: {} };
+            }
+        } else {
+            outputParameters = { type: 'object', properties: {} };
+        }
+
+        return {
+            name: tool.name,
+            description: tool.description || `Tool: ${tool.name}`,
+            inputSchema: {
+                type: 'object' as const,
+                properties: this.extractPropertiesWithRequiredFlag(
+                    (inputParameters.properties as Record<string, unknown>) ||
+                        {},
+                    (inputParameters.required as string[]) || [],
+                ),
+                required: (inputParameters.required as string[]) || [],
+            },
+            outputSchema: {
+                type: 'object' as const,
+                properties: this.extractPropertiesWithRequiredFlag(
+                    (outputParameters.properties as Record<string, unknown>) ||
+                        {},
+                    (outputParameters.required as string[]) || [],
+                ),
+                required: (outputParameters.required as string[]) || [],
+            },
+            config: {
+                timeout: 60000,
+                requiresAuth: false,
+                allowParallel: true,
+                maxConcurrentCalls: 5,
+                source: 'user' as const,
+            },
+            categories: tool.categories || [],
+            dependencies: tool.dependencies || [],
+            tags: tool.tags || [],
+            examples: tool.examples || [],
+            plannerHints: tool.plannerHints || {
+                useWhen: [`When you need to use ${tool.name}`],
+                avoidWhen: [],
+                combinesWith: [],
+                conflictsWith: [],
+            },
+            errorHandling: tool.errorHandling || {
+                retryStrategy: 'none',
+                maxRetries: 0,
+                fallbackAction: 'continue',
+                errorMessages: {},
+            },
+        };
+    }
+
     getToolsForLLM(): ToolMetadataForLLM[] {
-        // Get built-in tools (always available)
         const builtInTools = getBuiltInTools();
+        const externalTools = this.listTools()?.map((tool) =>
+            this.convertToolToLLMFormat(tool),
+        );
 
-        // Get external tools
-        const externalTools = Array.from(this.tools.values()).map((tool) => {
-            // Prioritize existing JSON Schema, then convert Zod if needed
-            let jsonSchema: unknown = tool.jsonSchema;
-
-            // If inputSchema exists and looks like JSON Schema (not Zod), use it directly
-            if (
-                tool.inputSchema &&
-                typeof tool.inputSchema === 'object' &&
-                tool.inputSchema !== null &&
-                'type' in
-                    (tool.inputSchema as unknown as Record<string, unknown>) &&
-                !(
-                    '_def' in
-                    (tool.inputSchema as unknown as Record<string, unknown>)
-                )
-            ) {
-                jsonSchema = tool.inputSchema;
-            } else if (tool.inputSchema) {
-                // Try converting Zod schema to JSON Schema
-                try {
-                    const converted = zodToJSONSchema(
-                        tool.inputSchema,
-                        tool.name,
-                        tool.description || `Tool: ${tool.name}`,
-                    );
-                    jsonSchema = converted.parameters;
-                } catch (error) {
-                    this.logger.warn(
-                        'Failed to convert Zod schema to JSON Schema for LLM',
-                        {
-                            toolName: tool.name,
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error),
-                        },
-                    );
-                    jsonSchema = { type: 'object', properties: {} };
-                }
-            }
-
-            // Convert to LLM format - preserve detailed type information
-            const jsonSchemaObj = jsonSchema as Record<string, unknown>;
-            const properties =
-                (jsonSchemaObj.properties as Record<string, unknown>) || {};
-            const required = (jsonSchemaObj.required as string[]) || [];
-
-            // ✅ IMPROVED: Better property cleaning with optional detection
-            const cleanProperties: Record<string, unknown> = {};
-            for (const [key, prop] of Object.entries(properties)) {
-                const propObj = prop as Record<string, unknown>;
-
-                // Preserve detailed type information
-                const cleanProp: Record<string, unknown> = {
-                    type: propObj.type || 'string',
-                    description: propObj.description,
-                    enum: propObj.enum,
-                    default: propObj.default,
-                    format: propObj.format,
-                };
-
-                // Handle nested object properties
-                if (propObj.type === 'object' && propObj.properties) {
-                    // ✅ FIXED: Process nested properties recursively to preserve descriptions
-                    cleanProp.properties = this.cleanPropertiesRecursively(
-                        propObj.properties as Record<string, unknown>,
-                    );
-
-                    // ✅ ADDED: Preserve required array for nested objects
-                    if (propObj.required && Array.isArray(propObj.required)) {
-                        cleanProp.required = propObj.required;
-                    }
-                }
-
-                // Handle array items with descriptions
-                if (propObj.type === 'array' && propObj.items) {
-                    // ✅ FIXED: Process array items recursively to preserve descriptions
-                    if (
-                        typeof propObj.items === 'object' &&
-                        propObj.items !== null
-                    ) {
-                        const itemsObj = propObj.items as Record<
-                            string,
-                            unknown
-                        >;
-                        cleanProp.items = {
-                            type: itemsObj.type,
-                            properties: itemsObj.properties
-                                ? this.cleanPropertiesRecursively(
-                                      itemsObj.properties as Record<
-                                          string,
-                                          unknown
-                                      >,
-                                  )
-                                : itemsObj.properties,
-                            required: itemsObj.required,
-                            additionalProperties: itemsObj.additionalProperties,
-                            description: itemsObj.description,
-                            enum: itemsObj.enum,
-                            format: itemsObj.format,
-                        };
-                    } else {
-                        cleanProp.items = propObj.items;
-                    }
-                }
-
-                // Handle oneOf/anyOf for union types
-                if (propObj.oneOf) {
-                    cleanProp.oneOf = propObj.oneOf;
-                }
-                if (propObj.anyOf) {
-                    cleanProp.anyOf = propObj.anyOf;
-                }
-
-                // ✅ ADDED: Detect optional fields from Zod conversion
-                if (propObj.optional === true) {
-                    // This field was marked as optional during Zod conversion
-                    // Don't add to required array (already handled)
-                }
-
-                cleanProperties[key] = cleanProp;
-            }
-
-            // ✅ IMPROVED: Better required array handling
-            const finalRequired = required.filter((field) => {
-                const prop = cleanProperties[field];
-                if (!prop) return false;
-
-                const propObj = prop as Record<string, unknown>;
-
-                // Skip if explicitly marked as optional
-                if (propObj.optional === true) {
-                    return false;
-                }
-
-                // Skip if it's a nullable type (optional in practice)
-                if (propObj.anyOf && Array.isArray(propObj.anyOf)) {
-                    const anyOfArray = propObj.anyOf as unknown[];
-                    const hasNull = anyOfArray.some((item) => {
-                        const itemObj = item as Record<string, unknown>;
-                        return itemObj.type === 'null';
-                    });
-                    if (hasNull) {
-                        return false;
-                    }
-                }
-
-                return true;
-            });
-
-            return {
-                name: tool.name,
-                description: tool.description || `Tool: ${tool.name}`,
-                parameters: {
-                    type: 'object',
-                    properties: cleanProperties,
-                    required:
-                        finalRequired.length > 0 ? finalRequired : undefined,
-                    additionalProperties:
-                        jsonSchemaObj.additionalProperties ?? false,
-                },
-            };
-        });
-
-        // Return built-in tools first, then external tools
         return [...builtInTools, ...externalTools];
     }
 
     /**
-     * Clean properties recursively to preserve descriptions and metadata
+     * Convert tool to LLM format - SIMPLIFIED
      */
-    private cleanPropertiesRecursively(
-        properties: Record<string, unknown>,
-    ): Record<string, unknown> {
-        const cleanProperties: Record<string, unknown> = {};
+    private convertToolToLLMFormat(
+        tool: ToolDefinition<unknown, unknown>,
+    ): ToolMetadataForLLM {
+        let parameters: Record<string, unknown>;
 
-        for (const [key, prop] of Object.entries(properties)) {
-            const propObj = prop as Record<string, unknown>;
-            const cleanProp: Record<string, unknown> = {
-                type: propObj.type || 'string',
-                description: propObj.description,
-                enum: propObj.enum,
-                default: propObj.default,
-                format: propObj.format,
-            };
-
-            // Handle nested object properties
-            if (propObj.type === 'object' && propObj.properties) {
-                cleanProp.properties = this.cleanPropertiesRecursively(
-                    propObj.properties as Record<string, unknown>,
+        if (tool.inputJsonSchema) {
+            parameters = tool.inputJsonSchema.parameters;
+        } else if (tool.inputSchema) {
+            try {
+                const converted = zodToJSONSchema(
+                    tool.inputSchema,
+                    tool.name,
+                    tool.description || `Tool: ${tool.name}`,
                 );
-
-                if (propObj.required && Array.isArray(propObj.required)) {
-                    cleanProp.required = propObj.required;
-                }
+                parameters = converted.parameters;
+            } catch {
+                parameters = { type: 'object', properties: {} };
             }
-
-            // Handle array items
-            if (propObj.type === 'array' && propObj.items) {
-                // ✅ FIXED: Preserve array items structure correctly
-                if (
-                    typeof propObj.items === 'object' &&
-                    propObj.items !== null
-                ) {
-                    const itemsObj = propObj.items as Record<string, unknown>;
-                    cleanProp.items = {
-                        type: itemsObj.type,
-                        properties: itemsObj.properties
-                            ? this.cleanPropertiesRecursively(
-                                  itemsObj.properties as Record<
-                                      string,
-                                      unknown
-                                  >,
-                              )
-                            : itemsObj.properties,
-                        required: itemsObj.required,
-                        additionalProperties: itemsObj.additionalProperties,
-                        description: itemsObj.description,
-                        enum: itemsObj.enum,
-                        format: itemsObj.format,
-                    };
-                } else {
-                    cleanProp.items = propObj.items;
-                }
-            }
-
-            // Handle oneOf/anyOf for union types
-            if (propObj.oneOf) {
-                cleanProp.oneOf = propObj.oneOf;
-            }
-            if (propObj.anyOf) {
-                cleanProp.anyOf = propObj.anyOf;
-            }
-
-            cleanProperties[key] = cleanProp;
+        } else {
+            parameters = { type: 'object', properties: {} };
         }
 
-        return cleanProperties;
+        return {
+            name: tool.name,
+            description: tool.description || `Tool: ${tool.name}`,
+            parameters,
+        };
     }
 
     /**
