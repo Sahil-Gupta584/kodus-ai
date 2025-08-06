@@ -193,7 +193,8 @@ export class PullRequestsService implements IPullRequestsService {
                 return null;
             }
 
-            const existingPrLevelSuggestions = existingPR.prLevelSuggestions || [];
+            const existingPrLevelSuggestions =
+                existingPR.prLevelSuggestions || [];
             const updatedPrLevelSuggestions = [
                 ...existingPrLevelSuggestions,
                 ...prLevelSuggestions,
@@ -282,20 +283,30 @@ export class PullRequestsService implements IPullRequestsService {
         prioritizedSuggestions: Array<ISuggestion>,
         unusedSuggestions: Array<ISuggestion>,
         platformType: PlatformType,
-        organizationId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         commits: ICommit[],
         prLevelSuggestions?: ISuggestionByPR[],
     ): Promise<IPullRequests | null> {
         try {
+            const organizationId = organizationAndTeamData?.organizationId;
+
+            if (!organizationId) {
+                this.logger.error({
+                    message: `organizationId is missing in organizationAndTeamData for PR #${pullRequest?.number}`,
+                    context: PullRequestsService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        repositoryName: repository?.name,
+                        pullRequestNumber: pullRequest?.number,
+                    },
+                });
+                return null;
+            }
+
             const enrichedPullRequest = {
                 ...pullRequest,
-                organizationId: organizationId,
-                commits,
-            };
-
-            const organizationAndTeamData: OrganizationAndTeamData = {
                 organizationId,
-                teamId: undefined,
+                commits,
             };
 
             // Sometimes gitlab sends an array of ids instead of assignees and reviewers
@@ -337,7 +348,7 @@ export class PullRequestsService implements IPullRequestsService {
                     prioritizedSuggestions,
                     unusedSuggestions,
                     platformType,
-                    organizationId,
+                    organizationAndTeamData,
                     prLevelSuggestions,
                 );
             }
@@ -349,7 +360,7 @@ export class PullRequestsService implements IPullRequestsService {
                 closedAt: this.extractClosedAt(pullRequest),
                 user: await this.extractUser(
                     pullRequest.user,
-                    organizationId,
+                    organizationAndTeamData,
                     platformType,
                     pullRequest?.number,
                 ),
@@ -357,14 +368,14 @@ export class PullRequestsService implements IPullRequestsService {
                     (pullRequest.reviewers ||
                         pullRequest?.requested_reviewers) ??
                         enrichedPullRequest.reviewers,
-                    organizationId,
+                    organizationAndTeamData,
                     platformType,
                     pullRequest?.number,
                 ),
                 assignees: await this.extractUsers(
                     (pullRequest.assignees || pullRequest?.participants) ??
                         enrichedPullRequest.assignees,
-                    organizationId,
+                    organizationAndTeamData,
                     platformType,
                     pullRequest?.number,
                 ),
@@ -405,7 +416,7 @@ export class PullRequestsService implements IPullRequestsService {
         pullRequest: any,
         repository: any,
         platformType: PlatformType,
-        organizationId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<Partial<IPullRequests>> {
         try {
             return {
@@ -437,21 +448,21 @@ export class PullRequestsService implements IPullRequestsService {
                 user:
                     (await this.extractUser(
                         pullRequest.user,
-                        organizationId,
+                        organizationAndTeamData,
                         platformType,
                         pullRequest?.number,
                     )) || null,
                 reviewers:
                     (await this.extractUsers(
                         pullRequest.reviewers,
-                        organizationId,
+                        organizationAndTeamData,
                         platformType,
                         pullRequest?.number,
                     )) || [],
                 assignees:
                     (await this.extractUsers(
                         pullRequest.assignees,
-                        organizationId,
+                        organizationAndTeamData,
                         platformType,
                         pullRequest?.number,
                     )) || [],
@@ -597,7 +608,7 @@ export class PullRequestsService implements IPullRequestsService {
         prioritizedSuggestions: Array<ISuggestion>,
         unusedSuggestions: Array<ISuggestion>,
         platformType: PlatformType,
-        organizationId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         prLevelSuggestions?: ISuggestionByPR[],
     ): Promise<IPullRequests> {
         try {
@@ -618,7 +629,7 @@ export class PullRequestsService implements IPullRequestsService {
                 pullRequest,
                 repository,
                 platformType,
-                organizationId,
+                organizationAndTeamData,
             );
 
             structure = await this.addFilesToStructure(
@@ -769,15 +780,11 @@ export class PullRequestsService implements IPullRequestsService {
 
     async extractUser(
         data: any,
-        organizationId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         platformType: PlatformType,
         prNumber: number,
     ): Promise<IPullRequestUser | null> {
         try {
-            const organizationAndTeamData: OrganizationAndTeamData = {
-                teamId: undefined,
-                organizationId: organizationId,
-            };
             const rawEmail = data?.email ?? data?.uniqueName;
 
             /**
@@ -788,7 +795,7 @@ export class PullRequestsService implements IPullRequestsService {
                 const completeUser =
                     await this.codeManagement.getUserByUsername(
                         {
-                            organizationAndTeamData: organizationAndTeamData,
+                            organizationAndTeamData,
                             username:
                                 data?.login ||
                                 data?.username ||
@@ -810,7 +817,7 @@ export class PullRequestsService implements IPullRequestsService {
                 const completeUser =
                     await this.codeManagement.getUserByUsername(
                         {
-                            organizationAndTeamData: organizationAndTeamData,
+                            organizationAndTeamData,
                             username:
                                 data?.login ||
                                 data?.username ||
@@ -881,7 +888,7 @@ export class PullRequestsService implements IPullRequestsService {
                 error: error,
                 metadata: {
                     pullRequestNumber: prNumber,
-                    organizationId: organizationId,
+                    organizationAndTeamData,
                 },
             });
             return null;
@@ -890,7 +897,7 @@ export class PullRequestsService implements IPullRequestsService {
 
     async extractUsers(
         data: any,
-        organizationId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         platformType: PlatformType,
         prNumber: number,
     ): Promise<Array<IPullRequestUser>> {
@@ -909,7 +916,7 @@ export class PullRequestsService implements IPullRequestsService {
                         }
                         return this.extractUser(
                             user,
-                            organizationId,
+                            organizationAndTeamData,
                             platformType,
                             prNumber,
                         );
@@ -925,7 +932,7 @@ export class PullRequestsService implements IPullRequestsService {
                 error: error,
                 metadata: {
                     pullRequestNumber: prNumber,
-                    organizationId: organizationId,
+                    organizationAndTeamData,
                 },
             });
             return [];

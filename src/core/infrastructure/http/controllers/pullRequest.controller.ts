@@ -7,8 +7,8 @@ import { updatePullRequestDto } from '../dtos/update-pull-request.dto';
 export class PullRequestController {
     constructor(
         private readonly getPullRequestAuthorsUseCase: GetPullRequestAuthorsUseCase,
-        private readonly updatePullRequestToNewFormatUseCase: UpdatePullRequestToNewFormatUseCase
-    ) { }
+        private readonly updatePullRequestToNewFormatUseCase: UpdatePullRequestToNewFormatUseCase,
+    ) {}
 
     @Get('/get-pull-request-authors')
     public async getPullRequestAuthors(
@@ -19,12 +19,11 @@ export class PullRequestController {
         );
     }
 
+    // TODO: remove, deprecated
     @Post('/update-pull-requests')
     public async updatePullRequestToNewFormat(
         @Body() body: updatePullRequestDto,
     ) {
-        return await this.updatePullRequestToNewFormatUseCase.execute(
-            body
-        );
+        return await this.updatePullRequestToNewFormatUseCase.execute(body);
     }
 }
