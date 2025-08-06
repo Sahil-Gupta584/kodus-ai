@@ -67,6 +67,8 @@ export class SavePullRequestUseCase {
                 return;
             }
 
+            let organizationAndTeamData: OrganizationAndTeamData | null = null;
+
             try {
                 const configs =
                     await this.integrationConfigService.findIntegrationConfigWithTeams(
@@ -88,16 +90,19 @@ export class SavePullRequestUseCase {
                     return null;
                 }
 
-                const organizationAndTeamData: OrganizationAndTeamData[] =
+                const organizationAndTeamDataList: OrganizationAndTeamData[] =
                     configs.map((config) => ({
                         organizationId: config.team.organization.uuid,
                         teamId: config.team.uuid,
                     }));
 
+                organizationAndTeamData =
+                    organizationAndTeamDataList[0] ?? null;
+
                 const changedFiles =
                     await this.codeManagement.getFilesByPullRequestId(
                         {
-                            organizationAndTeamData: organizationAndTeamData[0],
+                            organizationAndTeamData,
                             prNumber: pullRequest?.number,
                             repository,
                         },
@@ -116,9 +121,7 @@ export class SavePullRequestUseCase {
                 const pullRequestCommits =
                     await this.codeManagement.getCommitsForPullRequestForCodeReview(
                         {
-                            organizationAndTeamData: {
-                                ...organizationAndTeamData[0],
-                            },
+                            organizationAndTeamData,
                             repository: {
                                 id: repository.id,
                                 name: repository.name,
@@ -136,7 +139,7 @@ export class SavePullRequestUseCase {
                             [],
                             [],
                             platformType,
-                            organizationAndTeamData[0],
+                            organizationAndTeamData,
                             pullRequestCommits,
                         );
 
@@ -149,7 +152,7 @@ export class SavePullRequestUseCase {
                         metadata: {
                             repository: repository?.name,
                             pullRequest: pullRequestWithUserData?.number,
-                            organizationAndTeamData: organizationAndTeamData[0],
+                            organizationAndTeamData: organizationAndTeamData,
                         },
                     });
                     return null;
@@ -162,6 +165,7 @@ export class SavePullRequestUseCase {
                     metadata: {
                         repository: repository?.name,
                         pullRequest: pullRequest?.number,
+                        organizationAndTeamData,
                     },
                 });
             }
