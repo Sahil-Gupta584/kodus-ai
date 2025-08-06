@@ -16,6 +16,7 @@ export interface TreeItem {
 
 export interface DirectoryStructure {
     name: string;
+    path: string;
     files: Array<{ name: string; path: string }>;
     subdirectories: DirectoryStructure[];
 }
@@ -87,6 +88,7 @@ export class GetRepositoryTreeUseCase implements IUseCase {
 
                 const directoryStructure: DirectoryStructure = {
                     name: dirName,
+                    path: dir.path,
                     files: [],
                     subdirectories: [],
                 };
@@ -110,6 +112,7 @@ export class GetRepositoryTreeUseCase implements IUseCase {
                     if (!rootDir) {
                         rootDir = {
                             name: 'root',
+                            path: '',
                             files: [],
                             subdirectories: [],
                         };
@@ -159,6 +162,7 @@ export class GetRepositoryTreeUseCase implements IUseCase {
 
                 const directoryStructure: DirectoryStructure = {
                     name: dirName,
+                    path: dir.path,
                     files: [], // Sempre vazio para directories only
                     subdirectories: [],
                 };
