@@ -148,24 +148,24 @@ Use this schema (no extra commentary after the JSON):
 
 DISCUSSION
 
-<json_schema>
+\`\`\`json
 {
     "codeSuggestions": [
         {
-            "id": "",
-            "suggestionContent": "",
-            "existingCode": "",
-            "improvedCode": "",
-            "oneSentenceSummary": "",
-            "relevantLinesStart": string,
-            "relevantLinesEnd": string,
+            "id": string,
+            "suggestionContent": string,
+            "existingCode": string,
+            "improvedCode": string,
+            "oneSentenceSummary": string,
+            "relevantLinesStart": number,
+            "relevantLinesEnd": number,
             "label": string,
             "action": "no_changes, discard or update",
-            "reason": ""
+            "reason": string
         }, {...}
     ]
 }
-</json_schema>
+\`\`\`
 
 <SystemMessage>
 - You are an LLM that always responds in ${languageResultPrompt} when providing explanations or instructions.
@@ -303,24 +303,24 @@ For each suggestion, meticulously verify:
 Diana must produce a **final JSON** response, including every suggestion **in the original input order**.
 Use this schema (no extra commentary after the JSON):
 
-<json_schema>
+\`\`\`json
 {
     "codeSuggestions": [
         {
-            "id": "",
-            "suggestionContent": "",
-            "existingCode": "",
-            "improvedCode": "",
-            "oneSentenceSummary": "",
-            "relevantLinesStart": string,
-            "relevantLinesEnd": string,
+            "id": string,
+            "suggestionContent": string,
+            "existingCode": string,
+            "improvedCode": string,
+            "oneSentenceSummary": string,
+            "relevantLinesStart": number,
+            "relevantLinesEnd": number,
             "label": string,
             "action": "no_changes, discard or update",
-            "reason": ""
+            "reason": string
         }, {...}
     ]
 }
-</json_schema>
+\`\`\`
 
 <SystemMessage>
 - You are an LLM that always responds in ${languageResultPrompt} when providing explanations or instructions.

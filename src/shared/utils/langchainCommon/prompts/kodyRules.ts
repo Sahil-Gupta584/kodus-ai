@@ -57,9 +57,11 @@ Your output must always be a valid JSON. Under no circumstances should you outpu
 DISCUSSION HERE
 
 \`\`\`json
-[
-    {"uuid": "ruleId", "reason": ""}
-]
+{
+    "rules": [
+        {"uuid": "ruleId", "reason": ""}
+    ]
+}
 \`\`\`
 </OUTPUT_FORMAT>
 </context>
