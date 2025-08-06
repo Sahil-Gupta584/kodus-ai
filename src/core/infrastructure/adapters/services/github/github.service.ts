@@ -4471,7 +4471,6 @@ export class GithubService
     async getRepositoryTree(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId: string;
-        treeType?: 'all' | 'directories' | 'files';
     }): Promise<any[]> {
         try {
             const githubAuthDetail = await this.getGithubAuthDetails(
@@ -4522,15 +4521,7 @@ export class GithubService
 
             let tree = treeResponse.data.tree;
 
-            // Filter based on treeType parameter
-            if (params.treeType === 'directories') {
-                tree = tree.filter(item => item.type === 'tree');
-            } else if (params.treeType === 'files') {
-                tree = tree.filter(item => item.type === 'blob');
-            }
-            // If treeType is 'all' or undefined, return everything
-
-            return tree.map(item => ({
+            return tree.map((item) => ({
                 path: item.path,
                 type: item.type === 'tree' ? 'directory' : 'file',
                 sha: item.sha,
@@ -4545,7 +4536,6 @@ export class GithubService
                 metadata: {
                     organizationAndTeamData: params.organizationAndTeamData,
                     repositoryId: params.repositoryId,
-                    treeType: params.treeType,
                 },
             });
             return [];
