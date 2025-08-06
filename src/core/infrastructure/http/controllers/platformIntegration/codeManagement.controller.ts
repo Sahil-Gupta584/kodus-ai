@@ -168,6 +168,7 @@ export class CodeManagementController {
         query: {
             organizationId: string;
             repositoryId: string;
+            treeType?: 'all' | 'directories' | 'files';
         },
     ) {
         return await this.getRepositoryTreeUseCase.execute(query);

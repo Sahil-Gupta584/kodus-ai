@@ -18,15 +18,16 @@ export class GetRepositoryTreeUseCase implements IUseCase {
     public async execute(params: {
         organizationId: string;
         repositoryId: string;
+        treeType?: 'all' | 'directories' | 'files';
     }) {
         try {
             const repositoryTree =
                 await this.codeManagementService.getRepositoryTree({
                     organizationAndTeamData: {
                         organizationId: params.organizationId,
-                        teamId: this.request.user.organization.uuid,
                     },
                     repositoryId: params.repositoryId,
+                    treeType: params.treeType || 'all',
                 });
 
             return repositoryTree;
