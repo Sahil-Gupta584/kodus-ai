@@ -152,7 +152,9 @@ export class SavePullRequestUseCase {
                         metadata: {
                             repository: repository?.name,
                             pullRequest: pullRequestWithUserData?.number,
-                            organizationAndTeamData: organizationAndTeamData,
+                            organizationAndTeamData,
+                            platformType,
+                            event,
                         },
                     });
                     return null;
@@ -166,6 +168,8 @@ export class SavePullRequestUseCase {
                         repository: repository?.name,
                         pullRequest: pullRequest?.number,
                         organizationAndTeamData,
+                        platformType,
+                        event,
                     },
                 });
             }
