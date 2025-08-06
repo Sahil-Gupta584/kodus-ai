@@ -77,7 +77,6 @@
         "zod-from-json-schema": "^0.4.2"
     },
     "devDependencies": {
-        "@rollup/rollup-darwin-arm64": "^4.46.2",
         "@types/ajv": "^1.0.4",
         "@types/events": "^3.0.3",
         "@types/node": "^24.2.0",

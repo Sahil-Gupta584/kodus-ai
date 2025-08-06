@@ -872,76 +872,7 @@ DEPENDENCY RULES:
             }
         }
 
-        // 🎯 Intelligent property-based type inference (before fallback)
-        const properties = schema.properties as Record<string, unknown>;
-        if (properties && typeof properties === 'object') {
-            const propNames = Object.keys(properties);
-
-            // 🚀 Repository-like patterns (GIT/VCS)
-            if (
-                propNames.some((p) =>
-                    [
-                        'http_url',
-                        'avatar_url',
-                        'default_branch',
-                        'visibility',
-                        'organizationName',
-                    ].includes(p),
-                )
-            ) {
-                return 'Repository';
-            }
-
-            // User-like object patterns
-            if (
-                propNames.some((p) =>
-                    ['email', 'username', 'firstName', 'lastName'].includes(p),
-                )
-            ) {
-                return 'User';
-            }
-
-            // Product-like object patterns
-            if (
-                propNames.some((p) =>
-                    ['price', 'sku', 'category', 'brand'].includes(p),
-                )
-            ) {
-                return 'Product';
-            }
-
-            // Order-like object patterns
-            if (
-                propNames.some((p) =>
-                    ['orderId', 'total', 'items', 'status'].includes(p),
-                )
-            ) {
-                return 'Order';
-            }
-
-            // Address-like object patterns
-            if (
-                propNames.some((p) =>
-                    ['street', 'city', 'zipCode', 'country'].includes(p),
-                )
-            ) {
-                return 'Address';
-            }
-
-            // Project-like patterns
-            if (
-                propNames.some((p) =>
-                    ['projectId', 'workspaceId', 'project'].includes(p),
-                )
-            ) {
-                return 'Project';
-            }
-
-            // Common entity pattern
-            if (propNames.includes('id') && propNames.includes('name')) {
-                return 'Entity';
-            }
-        }
+        // 🎯 Schema-agnostic fallback: use only structural information
 
         // 🎯 Fallback: Use type field or generic names
         const type = schema.type as string;
