@@ -3834,8 +3834,35 @@ export class GithubService
         const lastMy = myReviews.pop();
 
         if (lastMy?.state === 'APPROVED') {
+            this.logger.log({
+                message: `PR#${prNumber} already approved`,
+                context: GithubService.name,
+                serviceName: 'GithubService - checkIfPullRequestShouldBeApproved',
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    repository: {
+                        name: repository.name,
+                        id: repository.id,
+                    },
+                },
+            });
             return;
         } else {
+            this.logger.log({
+                message: `Approving PR#${prNumber}`,
+                context: GithubService.name,
+                serviceName: 'GithubService - approvePullRequest',
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    repository: {
+                        name: repository.name,
+                        id: repository.id,
+                    },
+                },
+            });
+
             await this.approvePullRequest({
                 organizationAndTeamData,
                 prNumber,
