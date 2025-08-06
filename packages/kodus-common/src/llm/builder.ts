@@ -8,7 +8,7 @@ import {
     PromptRunnerParams,
     PromptRunnerService,
 } from './promptRunner.service';
-import z, { AnyZodObject } from 'zod';
+import z from 'zod';
 
 export enum ParserType {
     STRING = 'string',
@@ -111,7 +111,7 @@ class PromptBuilderWithProviders {
         type: ParserType.JSON,
     ): ConfigurablePromptBuilderWithoutPayload<NewOutputType, ParserType.JSON>;
 
-    setParser<NewOutputType extends AnyZodObject>(
+    setParser<NewOutputType extends z.ZodObject>(
         type: ParserType.ZOD,
         parserOrSchema: NewOutputType,
         config?: Pick<
@@ -135,13 +135,13 @@ class PromptBuilderWithProviders {
         type: ParserType,
         parserOrSchema?:
             | PromptRunnerParams<void, NewOutputType>['parser']
-            | AnyZodObject,
+            | z.ZodObject,
         config?: Pick<
             PromptRunnerParams<void, NewOutputType>,
             'provider' | 'fallbackProvider'
         >,
     ): ConfigurablePromptBuilderWithoutPayload<
-        NewOutputType | string | z.infer<AnyZodObject>,
+        NewOutputType | string | z.infer<z.ZodObject>,
         ParserType
     > {
         switch (type) {

@@ -1,12 +1,11 @@
 import { MessageContentComplex } from '@langchain/core/messages';
 import {
     BaseOutputParser,
-    FormatInstructionsOptions,
     StringOutputParser,
     StructuredOutputParser,
 } from '@langchain/core/output_parsers';
 import { PromptRunnerService } from './promptRunner.service';
-import z, { AnyZodObject } from 'zod';
+import z from 'zod';
 import { LLMModelProvider } from './helper';
 import { ParserType } from './builder';
 import { tryParseJSONObject } from '@/utils/json';
@@ -22,8 +21,13 @@ export class CustomStringOutputParser extends StringOutputParser {
     }
 }
 
-export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
-    lc_namespace: string[] = [];
+export class ZodOutputParser<T extends z.ZodObject> extends BaseOutputParser {
+    static lc_name(): string {
+        return 'ZodOutputParser';
+    }
+    lc_namespace = ['kodus', 'output_parsers', 'zod'];
+
+    private readonly structuredParser: BaseOutputParser<z.infer<T>>;
 
     constructor(
         private readonly config: {
@@ -34,6 +38,9 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
         },
     ) {
         super();
+        this.structuredParser = StructuredOutputParser.fromZodSchema(
+            this.config.schema as any,
+        ) as BaseOutputParser<z.infer<T>>;
     }
 
     _baseMessageContentToString(content: MessageContentComplex[]): string {
@@ -48,12 +55,8 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
         return text.join('\n').trim();
     }
 
-    getFormatInstructions(options?: FormatInstructionsOptions): string {
-        const parser = StructuredOutputParser.fromZodSchema(
-            this.config.schema as any,
-        ) as BaseOutputParser<z.infer<T>>;
-
-        return parser.getFormatInstructions(options);
+    getFormatInstructions(): string {
+        return this.structuredParser.getFormatInstructions();
     }
 
     /**
@@ -92,7 +95,7 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
                     );
                 } catch {
                     ctx.addIssue({
-                        code: z.ZodIssueCode.custom,
+                        code: 'custom',
                         message: 'Invalid JSON string',
                     });
                     return z.NEVER;
@@ -100,22 +103,26 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
             }
 
             ctx.addIssue({
-                code: z.ZodIssueCode.custom,
+                code: 'custom',
                 message: 'Input must be a string',
             });
             return z.NEVER;
         };
 
         try {
-            const preprocessorSchema = z.preprocess(
-                parseJsonPreprocessor,
-                this.config.schema,
-            );
-
-            return preprocessorSchema.parse(text);
+            return await this.structuredParser.parse(text);
         } catch {
-            // If parsing fails, use the LLM to fix the JSON
-            return this._runCorrectionChain(text);
+            try {
+                const preprocessorSchema = z.preprocess(
+                    parseJsonPreprocessor,
+                    this.config.schema,
+                );
+
+                return preprocessorSchema.parse(text);
+            } catch {
+                // If parsing fails, use the LLM to fix the JSON
+                return this._runCorrectionChain(text);
+            }
         }
     }
 
@@ -133,12 +140,8 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
             throw new Error('Malformed output is empty or undefined');
         }
 
-        const correctionParser = StructuredOutputParser.fromZodSchema(
-            this.config.schema as any,
-        ) as BaseOutputParser<z.infer<T>>;
-
         const prompt = (input: string) =>
-            `${input}\n\n${correctionParser.getFormatInstructions()}`;
+            `${input}\n\n${this.structuredParser.getFormatInstructions()}`;
 
         const result = await this.config.promptRunnerService
             .builder()
@@ -149,7 +152,7 @@ export class ZodOutputParser<T extends AnyZodObject> extends BaseOutputParser {
                     this.config.fallbackProvider ||
                     LLMModelProvider.OPENAI_GPT_4O,
             })
-            .setParser(ParserType.CUSTOM, correctionParser)
+            .setParser(ParserType.CUSTOM, this.structuredParser)
             .setPayload(malformedOutput)
             .addPrompt({ prompt })
             .setTemperature(0)
