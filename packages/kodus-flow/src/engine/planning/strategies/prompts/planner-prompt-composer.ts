@@ -532,80 +532,468 @@ DEPENDENCY RULES:
     }
 
     /**
-     * Format output schema for tools - enhanced with detailed types
+     * 🚀 Universal output schema formatter - handles ALL JSON Schema types
+     * Supports: primitives, objects, arrays, enums, nested structures
+     * Detects wrapper patterns and extracts meaningful data
      */
     private formatOutputSchema(outputSchema: Record<string, unknown>): string {
-        if (!outputSchema.properties) return '';
+        if (!outputSchema) return '';
 
-        const properties = outputSchema.properties as Record<string, unknown>;
+        // 🎯 Detect common wrapper patterns (success/count/data)
+        const unwrapped = this.unwrapOutputSchema(outputSchema);
 
-        // 🎯 Find the 'data' property - this is what really matters
-        const dataProperty = properties.data as {
-            type?: string;
-            items?: Record<string, unknown>;
-            description?: string;
-        };
-
-        if (!dataProperty || dataProperty.type !== 'array') {
-            return ''; // No meaningful data to show
-        }
-
-        const items = dataProperty.items;
-        if (!items || items.type !== 'object' || !items.properties) {
-            return ''; // Not a structured object array
-        }
-
-        // 🚀 Build detailed type information
-        const itemProperties = items.properties as Record<string, unknown>;
-        const typeDetails: string[] = [];
-
-        for (const [fieldName, fieldProp] of Object.entries(itemProperties)) {
-            const fieldObj = fieldProp as {
-                type?: string;
-                description?: string;
-                enum?: string[];
-            };
-
-            let typeDisplay = fieldObj.type || 'unknown';
-
-            // 🎯 Handle enums with detailed values
-            if (fieldObj.enum && fieldObj.enum.length > 0) {
-                const enumValues = fieldObj.enum
-                    .map((v) => `"${v}"`)
-                    .join(' | ');
-                typeDisplay = `(${enumValues})`;
-            }
-
-            const description = fieldObj.description
-                ? `: ${fieldObj.description}`
-                : '';
-
-            typeDetails.push(
-                `          - ${fieldName} (${typeDisplay})${description}`,
-            );
-        }
-
-        // 🎯 Create clean output format
-        const typeName = this.extractTypeName(items) || 'Object';
-        const result = [
-            `  Returns: ${typeName}[]`,
-            `      ${typeName} {`,
-            ...typeDetails,
-            '      }',
-        ];
-
-        return `\n${result.join('\n')}`;
+        // 🎯 Format the schema recursively (without required markers for outputs)
+        const formatted = this.formatSchemaType(unwrapped, 0, false);
+        return formatted ? `\n  Response: ${formatted}` : '';
     }
 
     /**
-     * Extract type name from schema - framework agnostic
+     * 🚀 Unwrap common output wrapper patterns
+     * Patterns: { success, count, data }, { success, data }, { data }
+     */
+    private unwrapOutputSchema(
+        schema: Record<string, unknown>,
+    ): Record<string, unknown> {
+        if (schema.type !== 'object' || !schema.properties) {
+            return schema;
+        }
+
+        const properties = schema.properties as Record<string, unknown>;
+        const propNames = Object.keys(properties);
+
+        // 🎯 Pattern 1: { success, count, data } - Extract data field
+        if (
+            propNames.includes('data') &&
+            (propNames.includes('success') || propNames.includes('count'))
+        ) {
+            const dataField = properties.data as Record<string, unknown>;
+            if (dataField) {
+                return dataField;
+            }
+        }
+
+        // 🎯 Pattern 2: { data } only - Extract data field
+        if (propNames.length === 1 && propNames[0] === 'data') {
+            const dataField = properties.data as Record<string, unknown>;
+            if (dataField) {
+                return dataField;
+            }
+        }
+
+        // 🎯 Pattern 3: { results } - Extract results field
+        if (propNames.includes('results') && propNames.length <= 3) {
+            const resultsField = properties.results as Record<string, unknown>;
+            if (resultsField) {
+                return resultsField;
+            }
+        }
+
+        // 🎯 No wrapper pattern detected, return as-is
+        return schema;
+    }
+
+    /**
+     * 🚀 Recursively format any JSON Schema type with proper indentation
+     */
+    private formatSchemaType(
+        schema: Record<string, unknown>,
+        depth: number = 0,
+        showRequiredMarkers: boolean = true,
+    ): string {
+        if (!schema) return 'unknown';
+
+        const indent = '    '.repeat(depth);
+        const type = schema.type as string;
+        const description = schema.description as string;
+        const enumValues = schema.enum as unknown[];
+
+        // 🎯 Handle enums first (can be any type)
+        if (enumValues && enumValues.length > 0) {
+            const values = enumValues.map((v) => `"${v}"`).join(' | ');
+            const enumType = `(${values})`;
+            return description ? `${enumType} - ${description}` : enumType;
+        }
+
+        switch (type) {
+            case 'string': {
+                const format = schema.format as string;
+                let typeDisplay = 'string';
+
+                // Add format info if available
+                if (format) {
+                    typeDisplay += ` (${format})`;
+                }
+
+                // Add length constraints
+                const minLength = schema.minLength as number;
+                const maxLength = schema.maxLength as number;
+                if (minLength !== undefined || maxLength !== undefined) {
+                    const constraints = [];
+                    if (minLength !== undefined)
+                        constraints.push(`min: ${minLength}`);
+                    if (maxLength !== undefined)
+                        constraints.push(`max: ${maxLength}`);
+                    typeDisplay += ` [${constraints.join(', ')}]`;
+                }
+
+                return description
+                    ? `${typeDisplay} - ${description}`
+                    : typeDisplay;
+            }
+
+            case 'number':
+            case 'integer': {
+                let typeDisplay = type;
+
+                // Add numeric constraints
+                const minimum = schema.minimum as number;
+                const maximum = schema.maximum as number;
+                if (minimum !== undefined || maximum !== undefined) {
+                    const constraints = [];
+                    if (minimum !== undefined)
+                        constraints.push(`min: ${minimum}`);
+                    if (maximum !== undefined)
+                        constraints.push(`max: ${maximum}`);
+                    typeDisplay += ` [${constraints.join(', ')}]`;
+                }
+
+                return description
+                    ? `${typeDisplay} - ${description}`
+                    : typeDisplay;
+            }
+
+            case 'boolean':
+                return description ? `boolean - ${description}` : 'boolean';
+
+            case 'null':
+                return description ? `null - ${description}` : 'null';
+
+            case 'array': {
+                const items = schema.items as Record<string, unknown>;
+
+                if (!items) {
+                    return description ? `array - ${description}` : 'array';
+                }
+
+                // 🚀 Use extractTypeName for better type names in arrays of objects
+                let itemType: string;
+                if (items.type === 'object' && items.properties) {
+                    const typeName = this.extractTypeName(items);
+                    itemType = typeName;
+                } else {
+                    itemType = this.formatSchemaType(
+                        items,
+                        depth,
+                        showRequiredMarkers,
+                    );
+                }
+
+                const arrayType = `${itemType}[]`;
+
+                // Add array constraints
+                const minItems = schema.minItems as number;
+                const maxItems = schema.maxItems as number;
+                let constraints = '';
+                if (minItems !== undefined || maxItems !== undefined) {
+                    const constraintList = [];
+                    if (minItems !== undefined)
+                        constraintList.push(`min: ${minItems}`);
+                    if (maxItems !== undefined)
+                        constraintList.push(`max: ${maxItems}`);
+                    constraints = ` [${constraintList.join(', ')}]`;
+                }
+
+                return description
+                    ? `${arrayType}${constraints} - ${description}`
+                    : `${arrayType}${constraints}`;
+            }
+
+            case 'object': {
+                const properties = schema.properties as Record<string, unknown>;
+                const required = (schema.required as string[]) || [];
+
+                if (!properties || Object.keys(properties).length === 0) {
+                    const typeName = this.extractTypeName(schema);
+                    return description
+                        ? `${typeName} - ${description}`
+                        : typeName;
+                }
+
+                // 🚀 Build object structure with meaningful type names
+                const lines: string[] = [];
+                const typeName = this.extractTypeName(schema);
+                const objectHeader = description
+                    ? `${typeName} - ${description}`
+                    : typeName;
+                lines.push(`${objectHeader} {`);
+
+                for (const [propName, propSchema] of Object.entries(
+                    properties,
+                )) {
+                    const isRequired = required.includes(propName);
+                    const requiredMark = showRequiredMarkers
+                        ? isRequired
+                            ? ' (required)'
+                            : ' (optional)'
+                        : '';
+                    const propType = this.formatSchemaType(
+                        propSchema as Record<string, unknown>,
+                        depth + 1,
+                        showRequiredMarkers,
+                    );
+
+                    lines.push(
+                        `${indent}    ${propName}: ${propType}${requiredMark}`,
+                    );
+                }
+
+                lines.push(`${indent}}`);
+                return lines.join('\n' + indent);
+            }
+
+            default: {
+                // 🎯 Handle special cases and union types
+                if (schema.oneOf || schema.anyOf || schema.allOf) {
+                    return this.formatUnionTypes(
+                        schema,
+                        depth,
+                        showRequiredMarkers,
+                    );
+                }
+
+                // Handle schema with direct properties (object without explicit type)
+                if (schema.properties) {
+                    return this.formatSchemaType(
+                        { ...schema, type: 'object' },
+                        depth,
+                        showRequiredMarkers,
+                    );
+                }
+
+                // Fallback
+                return description ? `unknown - ${description}` : 'unknown';
+            }
+        }
+    }
+
+    /**
+     * 🚀 Format union types (oneOf, anyOf, allOf)
+     */
+    private formatUnionTypes(
+        schema: Record<string, unknown>,
+        depth: number,
+        showRequiredMarkers: boolean = true,
+    ): string {
+        const oneOf = schema.oneOf as Record<string, unknown>[];
+        const anyOf = schema.anyOf as Record<string, unknown>[];
+        const allOf = schema.allOf as Record<string, unknown>[];
+
+        if (oneOf && oneOf.length > 0) {
+            const types = oneOf.map((s) =>
+                this.formatSchemaType(s, depth, showRequiredMarkers),
+            );
+            return `(${types.join(' | ')})`;
+        }
+
+        if (anyOf && anyOf.length > 0) {
+            const types = anyOf.map((s) =>
+                this.formatSchemaType(s, depth, showRequiredMarkers),
+            );
+            return `(${types.join(' | ')})`;
+        }
+
+        if (allOf && allOf.length > 0) {
+            const types = allOf.map((s) =>
+                this.formatSchemaType(s, depth, showRequiredMarkers),
+            );
+            return `(${types.join(' & ')})`;
+        }
+
+        return 'union';
+    }
+
+    /**
+     * 🚀 Extract precise type name from JSON Schema or Zod Schema
+     * Uses structured schema information instead of pattern matching
      */
     private extractTypeName(schema: Record<string, unknown>): string {
-        // Only use explicit title if provided
-        if (schema.title) return schema.title as string;
+        // 🎯 JSON Schema: Use standard fields (highest priority)
 
-        // Generic fallback - let the schema speak for itself
+        // 1. title field (explicit type name)
+        if (schema.title && typeof schema.title === 'string') {
+            return schema.title;
+        }
+
+        // 2. $ref (reference to definition)
+        if (schema.$ref && typeof schema.$ref === 'string') {
+            // Extract type name from $ref like "#/definitions/User" → "User"
+            const refMatch = schema.$ref.match(/\/([^\/]+)$/);
+            if (refMatch && refMatch[1]) {
+                return refMatch[1];
+            }
+        }
+
+        // 3. $id (schema identifier)
+        if (schema.$id && typeof schema.$id === 'string') {
+            // Extract from URI-like IDs
+            const idMatch = schema.$id.match(/([^\/]+)\.json?$/);
+            if (idMatch && idMatch[1]) {
+                return this.capitalize(idMatch[1]);
+            }
+        }
+
+        // 4. definitions key (when schema contains definitions)
+        if (schema.definitions && typeof schema.definitions === 'object') {
+            const definitions = schema.definitions as Record<string, unknown>;
+            const defKeys = Object.keys(definitions);
+            if (defKeys.length === 1 && defKeys[0]) {
+                return defKeys[0]; // Single definition, likely the main type
+            }
+        }
+
+        // 🎯 Zod Schema: Extract from Zod type information
+        if (this.isZodSchema(schema)) {
+            return this.extractFromZodSchema(schema);
+        }
+
+        // 🎯 OpenAPI/Swagger: Extract from component schemas
+        if (
+            schema.components &&
+            typeof schema.components === 'object' &&
+            (schema.components as Record<string, unknown>).schemas &&
+            typeof (schema.components as Record<string, unknown>).schemas ===
+                'object'
+        ) {
+            const schemas = (schema.components as Record<string, unknown>)
+                .schemas as Record<string, unknown>;
+            const schemaKeys = Object.keys(schemas);
+            if (schemaKeys.length === 1 && schemaKeys[0]) {
+                return schemaKeys[0];
+            }
+        }
+
+        // 🎯 Intelligent property-based type inference (before fallback)
+        const properties = schema.properties as Record<string, unknown>;
+        if (properties && typeof properties === 'object') {
+            const propNames = Object.keys(properties);
+
+            // 🚀 Repository-like patterns (GIT/VCS)
+            if (
+                propNames.some((p) =>
+                    [
+                        'http_url',
+                        'avatar_url',
+                        'default_branch',
+                        'visibility',
+                        'organizationName',
+                    ].includes(p),
+                )
+            ) {
+                return 'Repository';
+            }
+
+            // User-like object patterns
+            if (
+                propNames.some((p) =>
+                    ['email', 'username', 'firstName', 'lastName'].includes(p),
+                )
+            ) {
+                return 'User';
+            }
+
+            // Product-like object patterns
+            if (
+                propNames.some((p) =>
+                    ['price', 'sku', 'category', 'brand'].includes(p),
+                )
+            ) {
+                return 'Product';
+            }
+
+            // Order-like object patterns
+            if (
+                propNames.some((p) =>
+                    ['orderId', 'total', 'items', 'status'].includes(p),
+                )
+            ) {
+                return 'Order';
+            }
+
+            // Address-like object patterns
+            if (
+                propNames.some((p) =>
+                    ['street', 'city', 'zipCode', 'country'].includes(p),
+                )
+            ) {
+                return 'Address';
+            }
+
+            // Project-like patterns
+            if (
+                propNames.some((p) =>
+                    ['projectId', 'workspaceId', 'project'].includes(p),
+                )
+            ) {
+                return 'Project';
+            }
+
+            // Common entity pattern
+            if (propNames.includes('id') && propNames.includes('name')) {
+                return 'Entity';
+            }
+        }
+
+        // 🎯 Fallback: Use type field or generic names
+        const type = schema.type as string;
+        switch (type) {
+            case 'object':
+                return 'Object';
+            case 'array':
+                return 'Array';
+            case 'string':
+                return 'String';
+            case 'number':
+            case 'integer':
+                return 'Number';
+            case 'boolean':
+                return 'Boolean';
+            default:
+                return 'Object';
+        }
+    }
+
+    /**
+     * 🔍 Detect if schema contains Zod-specific information
+     */
+    private isZodSchema(schema: Record<string, unknown>): boolean {
+        return !!(
+            schema._def ||
+            schema.parse ||
+            schema.safeParse ||
+            (schema.constructor && schema.constructor.name.includes('Zod'))
+        );
+    }
+
+    /**
+     * 🚀 Extract type information from Zod Schema
+     */
+    private extractFromZodSchema(schema: Record<string, unknown>): string {
+        // Try to extract from Zod _def
+        const def = schema._def as { typeName?: string };
+        if (def?.typeName) {
+            // Convert ZodString → String, ZodObject → Object, etc.
+            return def.typeName.replace(/^Zod/, '');
+        }
+
+        // Fallback for Zod schemas
         return 'Object';
+    }
+
+    /**
+     * 🔧 Utility: Capitalize first letter
+     */
+    private capitalize(str: string): string {
+        return str.charAt(0).toUpperCase() + str.slice(1);
     }
 
     /**

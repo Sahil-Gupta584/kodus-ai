@@ -1,16 +1,7 @@
-/**
- * MCP Protocol Helper Functions (refactor)
- * - Tool success: content + structuredContent
- * - Tool error: isError: true (sem structuredContent)
- * - Protocol errors: use JSON-RPC envelope no controller
- */
-
 import { z } from 'zod';
 import { PinoLoggerService } from '../../services/logger/pino.service';
 import { toJsonRpcError, toToolErrorPayload } from './serialize'; // ← novo
 import { JsonRpcCode } from './errors'; // ← novo
-
-/* Types */
 
 type TextBlock = { type: 'text'; text: string };
 type ResourceLink = {
@@ -33,8 +24,6 @@ type JsonRpcError = {
     error: { code: number; message: string; data?: any };
 };
 
-/* Tool success response builder */
-
 export function createToolResponse<T>(
     data: T,
     opts?: {
@@ -46,7 +35,7 @@ export function createToolResponse<T>(
             description?: string;
             mimeType?: string;
         }>;
-        error?: boolean; // se true, marca isError e NÃO inclui structuredContent
+        error?: boolean;
     },
 ): ToolResult {
     const {
@@ -135,8 +124,6 @@ export function wrapToolHandler<I = any, O = any>(
     };
 }
 
-/* JSON-RPC helpers — para o CONTROLLER (protocolo), não para tools */
-
 export function createErrorResponse(
     code: number,
     message: string,
@@ -146,7 +133,6 @@ export function createErrorResponse(
     throw err;
 }
 
-// Exporta os códigos (usa os do arquivo errors.ts)
 export const ErrorCodes = {
     PARSE_ERROR: JsonRpcCode.PARSE_ERROR,
     INVALID_REQUEST: JsonRpcCode.INVALID_REQUEST,
@@ -158,8 +144,6 @@ export const ErrorCodes = {
     RESOURCE_UNAVAILABLE: JsonRpcCode.SERVER_ERROR,
     BACKEND_ERROR: JsonRpcCode.BACKEND_ERROR,
 } as const;
-
-/* (Opcional) validação local — o SDK já valida via Zod, mas pode ser útil */
 
 export function validateArgs<T>(
     args: any,
@@ -197,12 +181,9 @@ export function validateArgs<T>(
         }
         return args;
     } catch (error: any) {
-        // Lança erro “cru”; o wrapToolHandler serializa como tool error (isError: true)
         throw Object.assign(error, { code: JsonRpcCode.INVALID_PARAMS });
     }
 }
-
-/* Logging helpers */
 
 export function logToolInvocation(
     toolName: string,

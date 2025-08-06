@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { CodeManagementService } from '../../services/platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '../../services/logger/pino.service';
 import { wrapToolHandler } from '../utils/mcp-protocol.utils';
-import { McpToolDefinition } from '../types/mcp-tool.interface';
+import { BaseResponse, McpToolDefinition } from '../types/mcp-tool.interface';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import {
     PullRequests,
@@ -77,11 +77,6 @@ const RepositoryFileSchema = z
     })
     .passthrough();
 
-interface BaseResponse {
-    success: boolean;
-    count: number;
-}
-
 interface RepositoriesResponse extends BaseResponse {
     data: Repositories[];
 }
@@ -94,8 +89,7 @@ interface CommitsResponse extends BaseResponse {
     data: Commit[];
 }
 
-interface PullRequestDetailsResponse {
-    success: boolean;
+interface PullRequestDetailsResponse extends BaseResponse {
     data: PullRequestDetails;
 }
 
@@ -103,16 +97,16 @@ interface RepositoryFilesResponse extends BaseResponse {
     data: RepositoryFile[];
 }
 
-interface RepositoryContentResponse {
+interface RepositoryContentResponse extends BaseResponse {
     success: boolean;
     data: string;
 }
 
-interface RepositoryLanguagesResponse {
+interface RepositoryLanguagesResponse extends BaseResponse {
     success: boolean;
     data: Record<string, number>;
 }
-interface PullRequestFileContentResponse {
+interface PullRequestFileContentResponse extends BaseResponse {
     success: boolean;
     data: string;
 }
@@ -437,6 +431,7 @@ export class CodeManagementTools {
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
+                count: z.number(),
                 data: z.any(),
             }),
             execute: wrapToolHandler(
@@ -474,6 +469,7 @@ export class CodeManagementTools {
 
                     return {
                         success: true,
+                        count: 1,
                         data: prDetails,
                     };
                 },
@@ -663,6 +659,7 @@ export class CodeManagementTools {
 
                     return {
                         success: true,
+                        count: 1,
                         data: decodedContent,
                     };
                 },

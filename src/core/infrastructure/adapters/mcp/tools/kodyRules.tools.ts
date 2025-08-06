@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PinoLoggerService } from '../../services/logger/pino.service';
 import { wrapToolHandler } from '../utils/mcp-protocol.utils';
-import { McpToolDefinition } from '../types/mcp-tool.interface';
+import { BaseResponse, McpToolDefinition } from '../types/mcp-tool.interface';
 import {
     IKodyRulesService,
     KODY_RULES_SERVICE_TOKEN,
@@ -33,12 +33,11 @@ type KodyRuleInput = Required<
     severity: KodyRuleSeverity;
 };
 
-interface KodyRulesResponse {
-    count: number;
+interface KodyRulesResponse extends BaseResponse {
     data: Partial<IKodyRule>[];
 }
 
-interface CreateKodyRuleResponse {
+interface CreateKodyRuleResponse extends BaseResponse {
     data: Partial<IKodyRule>;
 }
 
@@ -67,6 +66,7 @@ export class KodyRulesTools {
                 'Get all active Kody Rules at organization level. Use this to see organization-wide coding standards, global rules that apply across all repositories, or when you need a complete overview of all active rules. Returns only ACTIVE status rules.',
             inputSchema,
             outputSchema: z.object({
+                success: z.boolean(),
                 count: z.number(),
                 data: z.array(
                     z
@@ -116,6 +116,7 @@ export class KodyRulesTools {
                     );
 
                     return {
+                        success: true,
                         count: rules.length,
                         data: rules,
                     };
@@ -146,6 +147,7 @@ export class KodyRulesTools {
                 'Get active Kody Rules specific to a particular repository. Use this to see repository-specific coding standards, rules that only apply to one codebase, or when analyzing rules for a specific project. More focused than get_kody_rules.',
             inputSchema,
             outputSchema: z.object({
+                success: z.boolean(),
                 count: z.number(),
                 data: z.array(
                     z
@@ -199,6 +201,7 @@ export class KodyRulesTools {
                         );
 
                     return {
+                        success: true,
                         count: repositoryRules.length,
                         data: repositoryRules,
                     };
@@ -285,6 +288,8 @@ export class KodyRulesTools {
                 'Create a new Kody Rule with custom scope and severity. pull_request scope: analyzes entire PR context for PR-level rules. file scope: analyzes individual files one by one for file-level rules. Rule starts in pending status.',
             inputSchema,
             outputSchema: z.object({
+                success: z.boolean(),
+                count: z.number(),
                 data: z
                     .object({
                         uuid: z.string(),
@@ -327,6 +332,8 @@ export class KodyRulesTools {
                         );
 
                     return {
+                        success: true,
+                        count: 1,
                         data: result,
                     };
                 },
