@@ -3499,7 +3499,9 @@ export class AzureReposService
         try {
             const { organizationAndTeamData, repositoryId } = params;
 
-            const authDetails = await this.getAuthDetails(organizationAndTeamData);
+            const authDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
             if (!authDetails) {
                 this.logger.error({
                     message: 'Azure Repos auth details not found',
@@ -3510,11 +3512,15 @@ export class AzureReposService
             }
 
             const { orgName, token } = authDetails;
-            const projectId = await this.getProjectIdFromRepository(organizationAndTeamData, repositoryId);
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repositoryId,
+            );
 
             if (!projectId) {
                 this.logger.error({
-                    message: 'Project ID not found for Azure Repos repository tree',
+                    message:
+                        'Project ID not found for Azure Repos repository tree',
                     context: this.getRepositoryTree.name,
                     metadata: { organizationAndTeamData, repositoryId },
                 });
@@ -3538,7 +3544,27 @@ export class AzureReposService
                 return [];
             }
 
-            return tree;
+            const normalizedTree = tree.map((item) => ({
+                path: item.path?.startsWith('/')
+                    ? item.path.substring(1)
+                    : item.path, // Remove '/' inicial se existir
+                type: item.gitObjectType === 'tree' ? 'directory' : 'file',
+                sha: item.objectId,
+                size: undefined,
+                url: item.url,
+            }));
+
+            this.logger.debug({
+                message: `Azure Repos tree normalized: ${normalizedTree.length} items`,
+                context: this.getRepositoryTree.name,
+                metadata: {
+                    organizationAndTeamData,
+                    repositoryId,
+                    totalItems: normalizedTree.length,
+                },
+            });
+
+            return normalizedTree;
         } catch (error) {
             this.logger.error({
                 message: 'Error getting repository tree from Azure Repos',
