@@ -2323,10 +2323,10 @@
     zod "^4.0.14"
     zod-from-json-schema "^0.4.2"
 
-"@kodus/kodus-common@^1.2.1":
-  version "1.2.1"
-  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/kodus-common/-/@kodus/kodus-common-1.2.1.tgz#9e9367d666508a464ab7a91ba38afb5abf474d29"
-  integrity sha512-IjQhiFDNhz75wo9XzJorPj6yK6wyYMhlbaYwFPcutU0o3XkHRliSNN6q4bKp51E2LPU7vN3PyXZ7fIUdJG4/DQ==
+"@kodus/kodus-common@^1.2.2":
+  version "1.2.2"
+  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/kodus-common/-/@kodus/kodus-common-1.2.2.tgz#fb9556ce79287fad522fa8ae9628f7c96a5dda8b"
+  integrity sha512-a+JZd534uEUqC187zFMNUwfKfNotMtKzijqVqk+X2Y3zNgwGc+9rYQta7HYcYISDAHzZhRCD4DCpItCo51ZbFg==
 
 "@kodus/kodus-proto@https://registry.npmjs.org/@kodus/kodus-proto/-/kodus-proto-3.1.2.tgz":
   version "3.1.2"
