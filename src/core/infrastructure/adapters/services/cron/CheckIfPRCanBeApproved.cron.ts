@@ -211,6 +211,18 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     number: { $in: automationExecutionsPRs },
                 } as any);
 
+                this.logger.log({
+                    message: 'Open pull requests found',
+                    context: CheckIfPRCanBeApprovedCronProvider.name,
+                    metadata: {
+                        openPullRequests: openPullRequests?.length,
+                        organizationAndTeamData: {
+                            organizationId,
+                            teamId,
+                        },
+                    },
+                });
+
                 if (!openPullRequests || openPullRequests?.length === 0) {
                     continue;
                 }
@@ -294,6 +306,20 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     );
             }
 
+            this.logger.log({
+                message: `Review comments found for PR#${prNumber}`,
+                context: CheckIfPRCanBeApprovedCronProvider.name,
+                metadata: {
+                    reviewComments: reviewComments?.length,
+                    organizationAndTeamData,
+                    prNumber,
+                    repository: {
+                        name: repository.name,
+                        id: repository.id,
+                    },
+                },
+            });
+
             if (platformType === PlatformType.AZURE_REPOS) {
                 reviewComments = reviewComments.filter(
                     (comment) =>
@@ -311,6 +337,20 @@ export class CheckIfPRCanBeApprovedCronProvider {
             );
 
             if (isEveryReviewCommentResolved) {
+                this.logger.log({
+                    message: `Is every review comment resolved for PR#${prNumber}`,
+                    context: CheckIfPRCanBeApprovedCronProvider.name,
+                    metadata: {
+                        isEveryReviewCommentResolved,
+                        organizationAndTeamData,
+                        prNumber,
+                        repository: {
+                            name: repository.name,
+                            id: repository.id,
+                        },
+                    },
+                });
+
                 await this.codeManagementService.checkIfPullRequestShouldBeApproved(
                     {
                         organizationAndTeamData,
