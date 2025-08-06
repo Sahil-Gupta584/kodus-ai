@@ -3855,7 +3855,341 @@ export class BitbucketService
         return Promise.resolve(commentBody.trim());
     }
 
-    minimizeComment(params: {
+    async getRepositoryTree(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+        treeType?: 'all' | 'directories' | 'files';
+    }): Promise<any[]> {
+        try {
+            const {
+                organizationAndTeamData,
+                repositoryId,
+                treeType = 'all',
+            } = params;
+
+            const bitbucketAuthDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            if (!bitbucketAuthDetails) {
+                this.logger.error({
+                    message: 'Bitbucket auth details not found',
+                    context: this.getRepositoryTree.name,
+                    metadata: { organizationAndTeamData, repositoryId },
+                });
+                return [];
+            }
+
+            const workspace = await this.getWorkspaceFromRepository(
+                organizationAndTeamData,
+                repositoryId,
+            );
+
+            if (!workspace) {
+                this.logger.error({
+                    message:
+                        'Workspace not found for Bitbucket repository tree',
+                    context: this.getRepositoryTree.name,
+                    metadata: { organizationAndTeamData, repositoryId },
+                });
+                return [];
+            }
+
+            // Buscar recursivamente com max_depth - mais eficiente que navegação manual
+            const allItems = await this.getRepositoryTreeWithMaxDepth(
+                bitbucketAuthDetails,
+                workspace,
+                repositoryId,
+            );
+
+            // Filtrar baseado no treeType
+            if (treeType === 'directories') {
+                return allItems.filter(
+                    (item: any) => item.type === 'directory',
+                );
+            } else if (treeType === 'files') {
+                return allItems.filter((item: any) => item.type === 'file');
+            }
+
+            return allItems;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting repository tree from Bitbucket',
+                context: this.getRepositoryTree.name,
+                error: error,
+                metadata: {
+                    organizationAndTeamData: params.organizationAndTeamData,
+                    repositoryId: params.repositoryId,
+                    treeType: params.treeType,
+                },
+            });
+            return [];
+        }
+    }
+
+    /**
+     * Método principal que usa max_depth através do SDK do Bitbucket (que já cuida da auth)
+     * Muito mais eficiente que navegação manual - usa o recurso nativo do Bitbucket API
+     */
+    private async getRepositoryTreeWithMaxDepth(
+        bitbucketAuthDetails: any,
+        workspace: string,
+        repositoryId: string,
+        maxDepth: number = 10, // Evitar timeout, pode ajustar conforme necessário
+    ): Promise<any[]> {
+        try {
+            const bitbucketAPI =
+                this.instanceBitbucketApi(bitbucketAuthDetails);
+            const allItems: any[] = [];
+            let hasNext = true;
+            let nextPageUrl: string | null = null;
+            let pageNum = 1;
+
+            while (hasNext) {
+                let response: any;
+
+                if (nextPageUrl) {
+                    // Usar a URL da próxima página diretamente
+                    response = await bitbucketAPI.request({
+                        url: nextPageUrl,
+                        method: 'GET',
+                    });
+                } else {
+                    // Primeira requisição - usar request direto com query params
+                    const queryParams = new URLSearchParams({
+                        max_depth: maxDepth.toString(),
+                        pagelen: '100',
+                        page: pageNum.toString(),
+                    });
+
+                    const url = `/repositories/${workspace}/${repositoryId}/src/HEAD/?${queryParams.toString()}`;
+
+                    this.logger.debug({
+                        message: `Calling Bitbucket API: ${url}`,
+                        context: 'getRepositoryTreeWithMaxDepth',
+                        metadata: {
+                            workspace,
+                            repositoryId,
+                            maxDepth,
+                            pageNum,
+                        },
+                    });
+
+                    response = await bitbucketAPI.request({
+                        url: url,
+                        method: 'GET',
+                    });
+                }
+
+                const items = response.data?.values || [];
+
+                this.logger.debug({
+                    message: `Fetching Bitbucket tree page ${pageNum} - found ${items.length} items`,
+                    context: 'getRepositoryTreeWithMaxDepth',
+                    metadata: {
+                        workspace,
+                        repositoryId,
+                        maxDepth,
+                        pageNum,
+                        itemsCount: items.length,
+                    },
+                });
+
+                for (const item of items) {
+                    // Normalizar o formato para ser compatível com GitHub
+                    const normalizedItem = {
+                        path: item.path,
+                        type:
+                            item.type === 'commit_directory'
+                                ? 'directory'
+                                : 'file',
+                        sha: item.commit?.hash || '',
+                        size: item.size || undefined,
+                        url: item.links?.self?.href || '',
+                        commit: item.commit, // Manter dados do commit se necessário
+                    };
+
+                    allItems.push(normalizedItem);
+                }
+
+                // Verificar se há próxima página
+                nextPageUrl = response.data?.next || null;
+                hasNext = !!nextPageUrl;
+                pageNum++;
+
+                // Proteção contra loops infinitos
+                if (pageNum > 1000) {
+                    this.logger.warn({
+                        message:
+                            'Too many pages in Bitbucket tree, stopping pagination',
+                        context: 'getRepositoryTreeWithMaxDepth',
+                        metadata: { workspace, repositoryId, pageNum },
+                    });
+                    break;
+                }
+            }
+
+            this.logger.debug({
+                message: `Successfully fetched Bitbucket tree with ${allItems.length} items`,
+                context: 'getRepositoryTreeWithMaxDepth',
+                metadata: {
+                    workspace,
+                    repositoryId,
+                    totalItems: allItems.length,
+                    pages: pageNum - 1,
+                },
+            });
+
+            return allItems;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting repository tree with max_depth',
+                context: 'getRepositoryTreeWithMaxDepth',
+                error: error,
+                metadata: { workspace, repositoryId, maxDepth },
+            });
+
+            // Se max_depth falhar (timeout 555), tentar com profundidade menor
+            if (
+                error instanceof Error &&
+                error.message.includes('555') &&
+                maxDepth > 3
+            ) {
+                this.logger.warn({
+                    message: 'Retrying with smaller max_depth due to timeout',
+                    context: 'getRepositoryTreeWithMaxDepth',
+                    metadata: {
+                        workspace,
+                        repositoryId,
+                        previousMaxDepth: maxDepth,
+                        newMaxDepth: 3,
+                    },
+                });
+
+                return await this.getRepositoryTreeWithMaxDepth(
+                    bitbucketAuthDetails,
+                    workspace,
+                    repositoryId,
+                    3, // Tentar com profundidade menor
+                );
+            }
+
+            // Se der erro, tentar o método recursivo fallback
+            this.logger.warn({
+                message:
+                    'Falling back to recursive method due to max_depth failure',
+                context: 'getRepositoryTreeWithMaxDepth',
+                metadata: { workspace, repositoryId },
+            });
+
+            const bitbucketAPI =
+                this.instanceBitbucketApi(bitbucketAuthDetails);
+            return await this.getRepositoryTreeRecursiveFallback(
+                bitbucketAPI,
+                workspace,
+                repositoryId,
+                '', // currentPath vazio para começar da raiz
+                [], // allItems vazio
+                undefined, // commitHash será pego da resposta inicial
+            );
+        }
+    }
+
+    private async getRepositoryTreeRecursiveFallback(
+        bitbucketAPI: any,
+        workspace: string,
+        repositoryId: string,
+        currentPath: string = '',
+        allItems: any[] = [],
+        commitHash?: string, // ADICIONADO: commit hash para resolver o erro
+    ): Promise<any[]> {
+        try {
+            let response: any;
+            let hasNext = true;
+            let currentApiCall: any;
+
+            if (currentPath && commitHash) {
+                // Para subdiretórios - usar source.read com commit hash
+                currentApiCall = () =>
+                    bitbucketAPI.source.read({
+                        repo_slug: `{${repositoryId}}`,
+                        workspace: `{${workspace}}`,
+                        commit: commitHash, // ADICIONADO: resolver o erro "parameter required: 'commit'"
+                        path: currentPath,
+                        pagelen: 100,
+                    });
+            } else {
+                // Para raiz - usar source.readRoot
+                currentApiCall = () =>
+                    bitbucketAPI.source.readRoot({
+                        repo_slug: `{${repositoryId}}`,
+                        workspace: `{${workspace}}`,
+                        pagelen: 100,
+                    });
+            }
+
+            while (hasNext) {
+                response = await currentApiCall();
+                const items = response.data?.values || [];
+
+                for (const item of items) {
+                    // Normalizar o formato do item para ser compatível com o GitHub
+                    const normalizedItem = {
+                        path: item.path,
+                        type:
+                            item.type === 'commit_directory'
+                                ? 'directory'
+                                : 'file',
+                        sha: item.commit?.hash || '',
+                        size: item.size || undefined,
+                        url: item.links?.self?.href || '',
+                        commit: item.commit,
+                    };
+
+                    allItems.push(normalizedItem);
+
+                    // Se for um diretório, buscar recursivamente
+                    if (item.type === 'commit_directory') {
+                        const currentCommitHash =
+                            commitHash || item.commit?.hash; // Usar o commit do item se não tiver
+
+                        await this.getRepositoryTreeRecursiveFallback(
+                            bitbucketAPI,
+                            workspace,
+                            repositoryId,
+                            item.path,
+                            allItems,
+                            currentCommitHash, // PASSAR o commit hash para subdiretórios
+                        );
+                    }
+                }
+
+                // Verificar se há próxima página no mesmo nível
+                const nextUrl = response.data?.next;
+                if (nextUrl) {
+                    // Usar a URL da próxima página
+                    currentApiCall = () =>
+                        bitbucketAPI.request({
+                            url: nextUrl,
+                            method: 'GET',
+                        });
+                } else {
+                    hasNext = false;
+                }
+            }
+
+            return allItems;
+        } catch (error) {
+            this.logger.error({
+                message: `Error getting repository tree recursively for path: ${currentPath}`,
+                context: 'getRepositoryTreeRecursiveFallback',
+                error: error,
+                metadata: { workspace, repositoryId, currentPath, commitHash },
+            });
+            return allItems; // Retorna o que já foi coletado até agora
+        }
+    }
+
+    minimizeComment(_params: {
         organizationAndTeamData: OrganizationAndTeamData;
         commentId: string;
         reason?:
