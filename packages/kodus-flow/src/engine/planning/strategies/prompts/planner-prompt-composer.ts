@@ -201,14 +201,6 @@ export class PlannerPromptComposer {
             );
         }
 
-        // 6. Simple dynamic hints
-        if (this.config.features?.includeDynamicHints !== false) {
-            const hints = this.generateSimpleHints(context.goal);
-            if (hints) {
-                sections.push(`HINTS:\n${hints}`);
-            }
-        }
-
         // 7. The user request
         sections.push(`USER REQUEST: "${context.goal}"`);
 
@@ -478,14 +470,25 @@ DEPENDENCY RULES:
         );
     }
 
-    /**
-     * Format available tools - enhanced list with better structure
-     */
-    private formatAvailableTools(tools: ToolMetadataForLLM[] | string): string {
+    private formatAvailableTools(
+        tools:
+            | ToolMetadataForLLM[]
+            | Array<{
+                  name: string;
+                  description: string;
+                  parameters: Record<string, unknown>;
+                  outputSchema?: Record<string, unknown>;
+              }>
+            | string,
+    ): string {
         const sections: string[] = ['TOOLS:'];
 
-        // Handle case where tools is a JSON string
-        let toolsArray: ToolMetadataForLLM[];
+        let toolsArray: Array<{
+            name: string;
+            description: string;
+            parameters?: Record<string, unknown>;
+            outputSchema?: Record<string, unknown>;
+        }>;
         if (typeof tools === 'string') {
             try {
                 toolsArray = JSON.parse(tools);
@@ -500,25 +503,118 @@ DEPENDENCY RULES:
         }
 
         toolsArray.forEach((tool) => {
-            // Tool name and description
             sections.push(`- ${tool.name}: ${tool.description}`);
 
             if (tool.parameters?.properties) {
-                const params = this.formatToolParametersEnhanced(tool);
-                if (params) sections.push(`  ${params}`);
+                const params = this.formatToolParametersEnhanced({
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: tool.parameters,
+                } as ToolMetadataForLLM);
+                if (params) {
+                    sections.push(`  ${params}`);
+                }
             }
 
-            sections.push(''); // Empty line between tools
+            // Add output schema if available
+            if (tool.outputSchema?.properties) {
+                const outputFormat = this.formatOutputSchema(tool.outputSchema);
+
+                if (outputFormat) {
+                    sections.push(outputFormat);
+                }
+            }
+
+            sections.push('');
         });
 
         return sections.join('\n');
     }
 
     /**
+     * Format output schema for tools - enhanced with detailed types
+     */
+    private formatOutputSchema(outputSchema: Record<string, unknown>): string {
+        if (!outputSchema.properties) return '';
+
+        const properties = outputSchema.properties as Record<string, unknown>;
+
+        // 🎯 Find the 'data' property - this is what really matters
+        const dataProperty = properties.data as {
+            type?: string;
+            items?: Record<string, unknown>;
+            description?: string;
+        };
+
+        if (!dataProperty || dataProperty.type !== 'array') {
+            return ''; // No meaningful data to show
+        }
+
+        const items = dataProperty.items;
+        if (!items || items.type !== 'object' || !items.properties) {
+            return ''; // Not a structured object array
+        }
+
+        // 🚀 Build detailed type information
+        const itemProperties = items.properties as Record<string, unknown>;
+        const typeDetails: string[] = [];
+
+        for (const [fieldName, fieldProp] of Object.entries(itemProperties)) {
+            const fieldObj = fieldProp as {
+                type?: string;
+                description?: string;
+                enum?: string[];
+            };
+
+            let typeDisplay = fieldObj.type || 'unknown';
+
+            // 🎯 Handle enums with detailed values
+            if (fieldObj.enum && fieldObj.enum.length > 0) {
+                const enumValues = fieldObj.enum
+                    .map((v) => `"${v}"`)
+                    .join(' | ');
+                typeDisplay = `(${enumValues})`;
+            }
+
+            const description = fieldObj.description
+                ? `: ${fieldObj.description}`
+                : '';
+
+            typeDetails.push(
+                `          - ${fieldName} (${typeDisplay})${description}`,
+            );
+        }
+
+        // 🎯 Create clean output format
+        const typeName = this.extractTypeName(items) || 'Object';
+        const result = [
+            `  Returns: ${typeName}[]`,
+            `      ${typeName} {`,
+            ...typeDetails,
+            '      }',
+        ];
+
+        return `\n${result.join('\n')}`;
+    }
+
+    /**
+     * Extract type name from schema - framework agnostic
+     */
+    private extractTypeName(schema: Record<string, unknown>): string {
+        // Only use explicit title if provided
+        if (schema.title) return schema.title as string;
+
+        // Generic fallback - let the schema speak for itself
+        return 'Object';
+    }
+
+    /**
      * Enhanced tool parameters formatting with better structure
      */
     private formatToolParametersEnhanced(tool: ToolMetadataForLLM): string {
-        if (!tool.parameters?.properties) return '';
+        if (!tool.parameters?.properties) {
+            return '';
+        }
 
         const properties = tool.parameters.properties as Record<
             string,
@@ -541,6 +637,35 @@ DEPENDENCY RULES:
             // Determine the type display
             let typeDisplay = propObj.type || 'unknown';
 
+            // Handle arrays
+            if (
+                typeDisplay === 'array' &&
+                (propObj as Record<string, unknown>).items
+            ) {
+                const items = (propObj as Record<string, unknown>)
+                    .items as Record<string, unknown>;
+                if (items.type === 'object' && items.properties) {
+                    const itemKeys = Object.keys(
+                        items.properties as Record<string, unknown>,
+                    );
+                    if (itemKeys.length > 0) {
+                        typeDisplay = `array<object{${itemKeys.join(',')}}>`;
+                    } else {
+                        typeDisplay = 'array<object>';
+                    }
+                } else if (items.type) {
+                    // Check if items has enum
+                    if (items.enum && Array.isArray(items.enum)) {
+                        const enumValues = items.enum as unknown[];
+                        typeDisplay = `array<enum[${enumValues.join('|')}]>`;
+                    } else {
+                        typeDisplay = `array<${items.type as string}>`;
+                    }
+                } else {
+                    typeDisplay = 'array';
+                }
+            }
+
             // Handle complex types
             if (typeDisplay === 'object' && propObj.properties) {
                 const propKeys = Object.keys(propObj.properties);
@@ -549,19 +674,33 @@ DEPENDENCY RULES:
                 }
             }
 
-            // Handle enums
+            // Handle enums with detailed formatting
             if (propObj.enum && Array.isArray(propObj.enum)) {
                 const enumValues = propObj.enum as unknown[];
-                if (enumValues.length <= 3) {
-                    typeDisplay = `enum[${enumValues.join('|')}]`;
-                } else {
-                    typeDisplay = `enum(${enumValues.length} values)`;
-                }
+                const formattedValues = enumValues
+                    .map((v) => `"${v}"`)
+                    .join(' | ');
+                typeDisplay = `(${formattedValues})`;
+            }
+
+            // Handle anyOf (unions)
+            if ((propObj as Record<string, unknown>).anyOf) {
+                typeDisplay = 'union';
             }
 
             // Handle specific formats
             if (propObj.format) {
                 typeDisplay = `${typeDisplay}:${propObj.format}`;
+            }
+
+            // Handle nullable
+            if ((propObj as Record<string, unknown>).nullable) {
+                typeDisplay = `${typeDisplay} | null`;
+            }
+
+            // Handle default
+            if ((propObj as Record<string, unknown>).default !== undefined) {
+                typeDisplay = `${typeDisplay} (default: ${(propObj as Record<string, unknown>).default})`;
             }
 
             const marker = isRequired ? 'REQUIRED' : 'OPTIONAL';
@@ -571,12 +710,71 @@ DEPENDENCY RULES:
 
             paramStrings.push(paramLine);
 
+            // Handle array of objects - show nested properties
+            if (
+                typeDisplay.startsWith('array<object{') &&
+                (propObj as Record<string, unknown>).items
+            ) {
+                const items = (propObj as Record<string, unknown>)
+                    .items as Record<string, unknown>;
+                if (items.type === 'object' && items.properties) {
+                    const nestedProps = items.properties as Record<
+                        string,
+                        unknown
+                    >;
+                    const nestedRequired = (items.required as string[]) || [];
+
+                    for (const [nestedName, nestedProp] of Object.entries(
+                        nestedProps,
+                    )) {
+                        const nestedPropObj = nestedProp as {
+                            type?: string;
+                            description?: string;
+                            enum?: unknown[];
+                        };
+
+                        let nestedTypeDisplay = nestedPropObj.type || 'unknown';
+
+                        // Handle nested enums in array items
+                        if (
+                            nestedPropObj.enum &&
+                            Array.isArray(nestedPropObj.enum)
+                        ) {
+                            const nestedEnumValues =
+                                nestedPropObj.enum as unknown[];
+                            nestedTypeDisplay = `enum[${nestedEnumValues.join(
+                                '|',
+                            )}]`;
+                        }
+
+                        const isNestedRequired =
+                            nestedRequired.includes(nestedName);
+                        const nestedMarker = isNestedRequired
+                            ? 'REQUIRED'
+                            : 'OPTIONAL';
+
+                        const nestedLine = `    - ${nestedName} (${nestedTypeDisplay}, ${nestedMarker})${
+                            nestedPropObj.description
+                                ? `: ${nestedPropObj.description}`
+                                : ''
+                        }`;
+                        paramStrings.push(nestedLine);
+                    }
+                }
+            }
+
             // Handle nested object properties
             if (typeDisplay.startsWith('object{') && propObj.properties) {
                 const nestedProps = propObj.properties as Record<
                     string,
                     unknown
                 >;
+
+                // Check if this object has a required array
+                const nestedRequired =
+                    ((propObj as Record<string, unknown>)
+                        .required as string[]) || [];
+
                 for (const [nestedName, nestedProp] of Object.entries(
                     nestedProps,
                 )) {
@@ -588,6 +786,35 @@ DEPENDENCY RULES:
 
                     let nestedTypeDisplay = nestedPropObj.type || 'unknown';
 
+                    // Handle nested arrays
+                    if (
+                        nestedTypeDisplay === 'array' &&
+                        (nestedPropObj as Record<string, unknown>).items
+                    ) {
+                        const items = (nestedPropObj as Record<string, unknown>)
+                            .items as Record<string, unknown>;
+                        if (items.type === 'object' && items.properties) {
+                            const itemKeys = Object.keys(
+                                items.properties as Record<string, unknown>,
+                            );
+                            if (itemKeys.length > 0) {
+                                nestedTypeDisplay = `array<object{${itemKeys.join(',')}}>`;
+                            } else {
+                                nestedTypeDisplay = 'array<object>';
+                            }
+                        } else if (items.type) {
+                            // Check if items has enum
+                            if (items.enum && Array.isArray(items.enum)) {
+                                const enumValues = items.enum as unknown[];
+                                nestedTypeDisplay = `array<enum[${enumValues.join('|')}]>`;
+                            } else {
+                                nestedTypeDisplay = `array<${items.type as string}>`;
+                            }
+                        } else {
+                            nestedTypeDisplay = 'array';
+                        }
+                    }
+
                     // Handle nested enums
                     if (
                         nestedPropObj.enum &&
@@ -595,69 +822,86 @@ DEPENDENCY RULES:
                     ) {
                         const nestedEnumValues =
                             nestedPropObj.enum as unknown[];
-                        if (nestedEnumValues.length <= 3) {
-                            nestedTypeDisplay = `enum[${nestedEnumValues.join(
-                                '|',
-                            )}]`;
-                        } else {
-                            nestedTypeDisplay = `enum(${nestedEnumValues.length} values)`;
-                        }
+                        nestedTypeDisplay = `enum[${nestedEnumValues.join(
+                            '|',
+                        )}]`;
                     }
 
-                    const nestedLine = `    - ${nestedName} (${nestedTypeDisplay}, OPTIONAL)${
+                    const isNestedRequired =
+                        nestedRequired.includes(nestedName);
+                    const nestedMarker = isNestedRequired
+                        ? 'REQUIRED'
+                        : 'OPTIONAL';
+
+                    const nestedLine = `    - ${nestedName} (${nestedTypeDisplay}, ${nestedMarker})${
                         nestedPropObj.description
                             ? `: ${nestedPropObj.description}`
                             : ''
                     }`;
                     paramStrings.push(nestedLine);
+
+                    // ✅ ADDED: Handle nested array of objects - show nested properties
+                    if (
+                        nestedTypeDisplay.startsWith('array<object{') &&
+                        (nestedPropObj as Record<string, unknown>).items
+                    ) {
+                        const items = (nestedPropObj as Record<string, unknown>)
+                            .items as Record<string, unknown>;
+                        if (items.type === 'object' && items.properties) {
+                            const nestedArrayProps = items.properties as Record<
+                                string,
+                                unknown
+                            >;
+                            const nestedArrayRequired =
+                                (items.required as string[]) || [];
+
+                            for (const [
+                                nestedArrayName,
+                                nestedArrayProp,
+                            ] of Object.entries(nestedArrayProps)) {
+                                const nestedArrayPropObj = nestedArrayProp as {
+                                    type?: string;
+                                    description?: string;
+                                    enum?: unknown[];
+                                };
+
+                                let nestedArrayTypeDisplay =
+                                    nestedArrayPropObj.type || 'unknown';
+
+                                // Handle nested array enums
+                                if (
+                                    nestedArrayPropObj.enum &&
+                                    Array.isArray(nestedArrayPropObj.enum)
+                                ) {
+                                    const nestedArrayEnumValues =
+                                        nestedArrayPropObj.enum as unknown[];
+                                    nestedArrayTypeDisplay = `enum[${nestedArrayEnumValues.join(
+                                        '|',
+                                    )}]`;
+                                }
+
+                                const isNestedArrayRequired =
+                                    nestedArrayRequired.includes(
+                                        nestedArrayName,
+                                    );
+                                const nestedArrayMarker = isNestedArrayRequired
+                                    ? 'REQUIRED'
+                                    : 'OPTIONAL';
+
+                                const nestedArrayLine = `        - ${nestedArrayName} (${nestedArrayTypeDisplay}, ${nestedArrayMarker})${
+                                    nestedArrayPropObj.description
+                                        ? `: ${nestedArrayPropObj.description}`
+                                        : ''
+                                }`;
+                                paramStrings.push(nestedArrayLine);
+                            }
+                        }
+                    }
                 }
             }
         }
 
         return `Parameters:\n    ${paramStrings.join('\n    ')}`;
-    }
-
-    /**
-     * Generate simple hints based on request analysis
-     */
-    private generateSimpleHints(goal: string): string | null {
-        const hints: string[] = [];
-        const lowerGoal = goal.toLowerCase();
-
-        // Detect simple greetings - highest priority
-        if (
-            /\b(hello|hi|hey|greetings?|good\s+(morning|afternoon|evening))\b/.test(
-                lowerGoal,
-            )
-        ) {
-            hints.push(
-                'Simple greeting detected - return empty plan [] for natural conversation flow',
-            );
-            return hints.join('\n');
-        }
-
-        // Detect context-less references
-        if (/\b(this|current|latest|recent|active)\b/.test(lowerGoal)) {
-            hints.push(
-                'User refers to implicit context - look for tools that can discover or list items first',
-            );
-        }
-
-        // Detect plural operations
-        if (/\b(all|multiple|several|list|many)\b/.test(lowerGoal)) {
-            hints.push(
-                'Multiple items mentioned - consider parallel execution opportunities',
-            );
-        }
-
-        // Detect urgency or time constraints
-        if (/\b(quick|fast|urgent|immediately|asap)\b/.test(lowerGoal)) {
-            hints.push(
-                'Time-sensitive request - maximize parallel execution where safe',
-            );
-        }
-
-        return hints.length > 0 ? hints.join('\n') : null;
     }
 
     /**

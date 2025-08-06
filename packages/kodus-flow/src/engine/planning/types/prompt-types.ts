@@ -162,6 +162,7 @@ export interface PromptCompositionContext {
         name: string;
         description: string;
         parameters: Record<string, unknown>;
+        outputSchema?: Record<string, unknown>;
     }>;
 
     /** Memory context from previous interactions */

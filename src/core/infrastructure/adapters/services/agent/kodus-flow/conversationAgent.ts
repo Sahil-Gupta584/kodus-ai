@@ -1,4 +1,4 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
     createDirectLLMAdapter,
     createMCPAdapter,
@@ -27,7 +27,7 @@ export class ConversationAgentProvider {
     constructor(
         private readonly configService: ConfigService,
         private readonly llmProviderService: LLMProviderService,
-        @Optional() private readonly mcpManagerService?: MCPManagerService,
+        private readonly mcpManagerService?: MCPManagerService,
     ) {
         this.config =
             this.configService.get<DatabaseConnection>('mongoDatabase');
@@ -75,20 +75,9 @@ export class ConversationAgentProvider {
     private async createMCPAdapter(
         organizationAndTeamData: OrganizationAndTeamData,
     ) {
-        let mcpManagerServers: MCPServerConfig[] = [];
-
-        if (this.mcpManagerService) {
-            try {
-                mcpManagerServers = await this.mcpManagerService.getConnections(
-                    organizationAndTeamData,
-                );
-            } catch (error) {
-                console.warn(
-                    'MCP Manager Service not available:',
-                    error.message,
-                );
-            }
-        }
+        const mcpManagerServers = await this.mcpManagerService.getConnections(
+            organizationAndTeamData,
+        );
 
         const defaultServers: MCPServerConfig[] = [
             {
@@ -130,6 +119,7 @@ export class ConversationAgentProvider {
 
         this.orchestration = createOrchestration({
             tenantId: 'kodus-agent-conversation',
+            enableObservability: true,
             llmAdapter: this.llmAdapter,
             mcpAdapter: this.mcpAdapter,
             // storage: {
@@ -211,6 +201,13 @@ export class ConversationAgentProvider {
                 },
             },
         );
+
+        const correlationId = result?.context?.correlationId || '';
+        const teste = correlationId as string;
+
+        // ✅ Ver timeline completo!
+        const timeline = this.orchestration.getExecutionTimeline(teste);
+        console.log(timeline);
 
         return typeof result.result === 'string'
             ? result.result

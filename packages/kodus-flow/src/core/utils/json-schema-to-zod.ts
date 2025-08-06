@@ -65,60 +65,86 @@ function jsonSchemaPropertyToZod(propSchema: unknown): z.ZodSchema {
 
     // Se tem type, usa o conversor de tipo
     if (schema.type && typeof schema.type === 'string') {
-        return jsonSchemaTypeToZod(schema);
+        const zodSchema = jsonSchemaTypeToZod(schema);
+
+        // ✅ ADDED: Preserve description
+        if (schema.description && typeof schema.description === 'string') {
+            return zodSchema.describe(schema.description as string);
+        }
+
+        return zodSchema;
     }
 
     // Se tem enum, é um enum
     if (schema.enum && Array.isArray(schema.enum)) {
         const enumValues = schema.enum as unknown[];
+        let enumSchema: z.ZodSchema;
+
         if (enumValues.every((v) => typeof v === 'string')) {
-            return z.enum(enumValues as [string, ...string[]]);
-        }
-        if (enumValues.every((v) => typeof v === 'number')) {
+            enumSchema = z.enum(enumValues as [string, ...string[]]);
+        } else if (enumValues.every((v) => typeof v === 'number')) {
             // Para enums numéricos, usamos union de literals
             const numberLiterals = enumValues as number[];
-            return z.union(
+            enumSchema = z.union(
                 numberLiterals.map((n) => z.literal(n)) as [
                     z.ZodLiteral<number>,
                     ...z.ZodLiteral<number>[],
                 ],
             );
+        } else {
+            enumSchema = z.any();
         }
+
+        // ✅ ADDED: Preserve description
+        if (schema.description && typeof schema.description === 'string') {
+            return enumSchema.describe(schema.description as string);
+        }
+
+        return enumSchema;
     }
 
     // Se tem oneOf/anyOf, tenta converter para union
     if (schema.oneOf && Array.isArray(schema.oneOf)) {
         const options = (schema.oneOf as unknown[]).map(jsonSchemaToZod);
         if (options.length >= 2) {
-            return z.union(
+            const unionSchema = z.union(
                 options as [z.ZodSchema, z.ZodSchema, ...z.ZodSchema[]],
             );
+
+            // ✅ ADDED: Preserve description
+            if (schema.description && typeof schema.description === 'string') {
+                return unionSchema.describe(schema.description as string);
+            }
+
+            return unionSchema;
         }
     }
 
     if (schema.anyOf && Array.isArray(schema.anyOf)) {
         const options = (schema.anyOf as unknown[]).map(jsonSchemaToZod);
         if (options.length >= 2) {
-            return z.union(
+            const unionSchema = z.union(
                 options as [z.ZodSchema, z.ZodSchema, ...z.ZodSchema[]],
             );
-        }
-    }
 
-    // Se tem allOf, tenta intersection (simplificado)
-    if (schema.allOf && Array.isArray(schema.allOf)) {
-        const schemas = (schema.allOf as unknown[]).map(jsonSchemaToZod);
-        if (schemas.length >= 2) {
-            // Para evitar problemas de tipo, usa apenas os primeiros 2 schemas
-            const first = schemas[0];
-            const second = schemas[1];
-            if (first && second) {
-                return z.intersection(first, second);
+            // ✅ ADDED: Preserve description
+            if (schema.description && typeof schema.description === 'string') {
+                return unionSchema.describe(schema.description as string);
             }
+
+            return unionSchema;
         }
     }
 
-    return z.any();
+    // Fallback
+    const fallbackSchema = z.any();
+
+    // ✅ ADDED: Preserve description
+    if (schema.description && typeof schema.description === 'string') {
+        return fallbackSchema.describe(schema.description as string);
+    }
+
+    return fallbackSchema;
 }
 
 /**
@@ -126,20 +152,35 @@ function jsonSchemaPropertyToZod(propSchema: unknown): z.ZodSchema {
  */
 function jsonSchemaTypeToZod(schema: Record<string, unknown>): z.ZodSchema {
     const type = schema.type as string;
+    let zodSchema: z.ZodSchema;
 
     switch (type) {
         case 'string':
-            let stringSchema = z.string();
+            // ✅ ADDED: Check for enum first
+            if (schema.enum && Array.isArray(schema.enum)) {
+                const enumValues = schema.enum as unknown[];
+                if (enumValues.every((v) => typeof v === 'string')) {
+                    zodSchema = z.enum(enumValues as [string, ...string[]]);
+                } else {
+                    zodSchema = z.string();
+                }
+            } else {
+                zodSchema = z.string();
+            }
 
             // Adiciona constraints se existirem
             if (schema.minLength && typeof schema.minLength === 'number') {
-                stringSchema = stringSchema.min(schema.minLength as number);
+                zodSchema = (zodSchema as z.ZodString).min(
+                    schema.minLength as number,
+                );
             }
             if (schema.maxLength && typeof schema.maxLength === 'number') {
-                stringSchema = stringSchema.max(schema.maxLength as number);
+                zodSchema = (zodSchema as z.ZodString).max(
+                    schema.maxLength as number,
+                );
             }
             if (schema.pattern && typeof schema.pattern === 'string') {
-                stringSchema = stringSchema.regex(
+                zodSchema = (zodSchema as z.ZodString).regex(
                     new RegExp(schema.pattern as string),
                 );
             }
@@ -150,104 +191,123 @@ function jsonSchemaTypeToZod(schema: Record<string, unknown>): z.ZodSchema {
                 switch (format) {
                     case 'uri':
                     case 'uri-reference':
-                        stringSchema = stringSchema.url();
+                        zodSchema = (zodSchema as z.ZodString).url();
                         break;
                     case 'email':
-                        stringSchema = stringSchema.email();
+                        zodSchema = (zodSchema as z.ZodString).email();
                         break;
                     case 'date-time':
-                        stringSchema = stringSchema.datetime();
+                        zodSchema = (zodSchema as z.ZodString).datetime();
                         break;
                     case 'date':
-                        stringSchema = stringSchema.date();
+                        zodSchema = (zodSchema as z.ZodString).date();
                         break;
                     case 'time':
-                        stringSchema = stringSchema.regex(
+                        zodSchema = (zodSchema as z.ZodString).regex(
                             /^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/,
                         );
                         break;
                     case 'uuid':
-                        stringSchema = stringSchema.uuid();
+                        zodSchema = (zodSchema as z.ZodString).uuid();
                         break;
                     case 'ipv4':
-                        stringSchema = stringSchema.regex(
+                        zodSchema = (zodSchema as z.ZodString).regex(
                             /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
                         );
                         break;
                     case 'ipv6':
-                        stringSchema = stringSchema.regex(
+                        zodSchema = (zodSchema as z.ZodString).regex(
                             /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/,
                         );
                         break;
                 }
             }
 
-            return stringSchema;
+            break;
 
         case 'number':
         case 'integer':
-            let numberSchema = z.number();
+            zodSchema = z.number();
 
             // Adiciona constraints se existirem
             if (
                 schema.minimum !== undefined &&
                 typeof schema.minimum === 'number'
             ) {
-                numberSchema = numberSchema.min(schema.minimum as number);
+                zodSchema = (zodSchema as z.ZodNumber).min(
+                    schema.minimum as number,
+                );
             }
             if (
                 schema.maximum !== undefined &&
                 typeof schema.maximum === 'number'
             ) {
-                numberSchema = numberSchema.max(schema.maximum as number);
+                zodSchema = (zodSchema as z.ZodNumber).max(
+                    schema.maximum as number,
+                );
             }
             if (schema.multipleOf && typeof schema.multipleOf === 'number') {
-                numberSchema = numberSchema.refine(
-                    (val) => val % (schema.multipleOf as number) === 0,
+                zodSchema = (zodSchema as z.ZodNumber).refine(
+                    (val: number) => val % (schema.multipleOf as number) === 0,
                     { message: `Must be multiple of ${schema.multipleOf}` },
                 );
             }
 
-            return numberSchema;
+            break;
 
         case 'boolean':
-            return z.boolean();
+            zodSchema = z.boolean();
+            break;
 
         case 'array':
             if (schema.items) {
                 const itemSchema = jsonSchemaToZod(schema.items);
-                let arraySchema = z.array(itemSchema);
+                zodSchema = z.array(itemSchema);
 
                 // Adiciona constraints de array
                 if (schema.minItems && typeof schema.minItems === 'number') {
-                    arraySchema = arraySchema.min(schema.minItems as number);
+                    zodSchema = (zodSchema as z.ZodArray<z.ZodTypeAny>).min(
+                        schema.minItems as number,
+                    );
                 }
                 if (schema.maxItems && typeof schema.maxItems === 'number') {
-                    arraySchema = arraySchema.max(schema.maxItems as number);
+                    zodSchema = (zodSchema as z.ZodArray<z.ZodTypeAny>).max(
+                        schema.maxItems as number,
+                    );
                 }
                 if (schema.uniqueItems === true) {
-                    arraySchema = arraySchema.refine(
-                        (arr) => new Set(arr).size === arr.length,
+                    zodSchema = (zodSchema as z.ZodArray<z.ZodTypeAny>).refine(
+                        (arr: unknown[]) => new Set(arr).size === arr.length,
                         { message: 'Array items must be unique' },
                     );
                 }
-
-                return arraySchema;
+            } else {
+                zodSchema = z.array(z.unknown()); // ✅ Zod v4: Mais type-safe que z.any()
             }
-            return z.array(z.unknown()); // ✅ Zod v4: Mais type-safe que z.any()
+            break;
 
         case 'object':
             if (schema.properties) {
-                return jsonSchemaToZod(schema);
+                zodSchema = jsonSchemaToZod(schema);
+            } else {
+                zodSchema = z.record(z.string(), z.unknown()); // ✅ Zod v4: Mais type-safe que z.any()
             }
-            return z.record(z.string(), z.unknown()); // ✅ Zod v4: Mais type-safe que z.any()
+            break;
 
         case 'null':
-            return z.null();
+            zodSchema = z.null();
+            break;
 
         default:
-            return z.unknown(); // ✅ Zod v4: Mais type-safe que z.any()
+            zodSchema = z.unknown(); // ✅ Zod v4: Mais type-safe que z.any()
     }
+
+    // ✅ ADDED: Preserve description
+    if (schema.description && typeof schema.description === 'string') {
+        return zodSchema.describe(schema.description as string);
+    }
+
+    return zodSchema;
 }
 
 /**
@@ -256,17 +316,7 @@ function jsonSchemaTypeToZod(schema: Record<string, unknown>): z.ZodSchema {
 export function safeJsonSchemaToZod(jsonSchema: unknown): z.ZodSchema {
     try {
         return jsonSchemaToZod(jsonSchema);
-    } catch (error) {
-        // ✅ IMPROVED: Better fallback with logging
-        console.warn(
-            'Failed to convert JSON Schema to Zod, using object fallback:',
-            {
-                error: error instanceof Error ? error.message : String(error),
-                schema: jsonSchema,
-            },
-        );
-
-        // Try to create a basic object schema if possible
+    } catch {
         if (jsonSchema && typeof jsonSchema === 'object') {
             const schema = jsonSchema as Record<string, unknown>;
             if (schema.properties && typeof schema.properties === 'object') {

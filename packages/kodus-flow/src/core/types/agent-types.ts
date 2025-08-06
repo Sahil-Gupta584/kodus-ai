@@ -19,14 +19,17 @@ import type {
 } from './base-types.js';
 import type { Thread, ToolCall } from './common-types.js';
 import type { UserContext, SystemContext } from './base-types.js';
-import type { ToolMetadataForLLM } from './tool-types.js';
+import type {
+    ToolMetadataForLLM,
+    ToolMetadataForPlanner,
+    ToolDefinition,
+} from './tool-types.js';
 import { AgentIdentity } from './agent-definition.js';
 // Removed dependency on execution-runtime-types
 
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextStateService } from '../context/services/state-service.js';
 import { Persistor } from '../../persistor/index.js';
-import { ToolMetadataForPlanner } from './tool-types.js';
 // Import interface instead of class to avoid circular dependency
 interface SimpleExecutionRuntime {
     // Public methods - these are what AgentExecutionContext needs
@@ -404,9 +407,7 @@ export interface AgentContext {
     };
     agentIdentity?: AgentIdentity;
     agentExecutionOptions?: AgentExecutionOptions;
-    availableToolsForLLM?: ToolMetadataForLLM[];
-
-    // ✅ NEW: AI SDK Components - Available for advanced usage
+    allTools?: ToolDefinition<unknown, unknown>[];
     stepExecution?: import('../context/step-execution.js').StepExecution;
     messageContext?: import('../context/step-execution.js').EnhancedMessageContext;
     contextManager?: import('../context/step-execution.js').ContextManager;

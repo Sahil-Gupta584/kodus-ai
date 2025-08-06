@@ -17,6 +17,7 @@ services:
     volumes:
       - .:/usr/src/app                       # <- bind: código-fonte
       - node_modules_cache:/usr/src/app/node_modules  # <- volume nomeado: deps
+      - yalc_store:/root/.yalc
       - ./certs:/usr/src/app/certs:ro
     depends_on:
       db_postgres:
@@ -68,6 +69,7 @@ services:
 
 volumes:
   node_modules_cache: {}
+  yalc_store: {}
   pgdata: {}
   mongodbdata: {}
 

@@ -153,6 +153,44 @@ export class MCPRegistry {
                 });
 
                 for (const tool of tools) {
+                    // ✅ ADDED: Validate tool structure before processing
+                    if (!tool || typeof tool !== 'object') {
+                        this.logger.warn('Invalid tool structure received', {
+                            serverName,
+                            tool,
+                        });
+                        continue;
+                    }
+
+                    // ✅ ADDED: Validate tool name
+                    if (!tool.name || typeof tool.name !== 'string') {
+                        this.logger.warn('Invalid tool name received', {
+                            serverName,
+                            tool,
+                        });
+                        continue;
+                    }
+
+                    // ✅ ADDED: Validate tool schema
+                    if (!tool.inputSchema) {
+                        this.logger.warn('Tool missing inputSchema', {
+                            serverName,
+                            toolName: tool.name,
+                        });
+                        // Use fallback schema
+                        tool.inputSchema = { type: 'object', properties: {} };
+                    }
+
+                    // ✅ ADDED: Log tool metadata for debugging
+                    this.logger.debug('Processing MCP tool', {
+                        serverName,
+                        toolName: tool.name,
+                        hasTitle: !!tool.title,
+                        hasDescription: !!tool.description,
+                        hasOutputSchema: !!tool.outputSchema,
+                        hasAnnotations: !!tool.annotations,
+                    });
+
                     allTools.push({
                         ...tool,
                         serverName,
@@ -161,15 +199,23 @@ export class MCPRegistry {
             } catch (error) {
                 this.logger.error(
                     'Error listing tools from server',
-                    error instanceof Error ? error : undefined,
+                    error instanceof Error ? error : new Error(String(error)),
                     {
                         serverName,
                         errorMessage:
                             error instanceof Error
                                 ? error.message
                                 : String(error),
+                        errorName:
+                            error instanceof Error ? error.name : 'Unknown',
+                        errorStack:
+                            error instanceof Error ? error.stack : undefined,
                     },
                 );
+
+                // ✅ ADDED: Continue processing other servers instead of breaking
+                // This ensures one bad server doesn't break the entire registry
+                continue;
             }
         }
 

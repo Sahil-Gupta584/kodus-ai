@@ -284,11 +284,47 @@ export class PlanAndExecutePlanner implements Planner {
     private getAvailableToolsForContext(
         context: PlannerExecutionContext,
     ): ToolMetadataForLLM[] {
-        if (!context.agentContext?.availableToolsForLLM) {
+        if (!context.agentContext?.allTools) {
             return [];
         }
 
-        return context.agentContext.availableToolsForLLM;
+        return context.agentContext.allTools.map((tool) => ({
+            name: tool.name,
+            description: tool.description || `Tool: ${tool.name}`,
+            parameters: tool.inputJsonSchema?.parameters || {
+                type: 'object',
+                properties: {},
+                required: [],
+            },
+        }));
+    }
+
+    private getAvailableToolsForPlanning(
+        context: PlannerExecutionContext,
+    ): Array<{
+        name: string;
+        description: string;
+        parameters: Record<string, unknown>;
+        outputSchema?: Record<string, unknown>;
+    }> {
+        if (!context.agentContext?.allTools) {
+            return [];
+        }
+
+        return context.agentContext.allTools.map((tool) => ({
+            name: tool.name,
+            description: tool.description || `Tool: ${tool.name}`,
+            parameters: tool.inputJsonSchema?.parameters || {
+                type: 'object',
+                properties: {},
+                required: [],
+            },
+            outputSchema: tool.outputJsonSchema?.parameters || {
+                type: 'object',
+                properties: {},
+                required: [],
+            },
+        }));
     }
 
     private async getMemoryContext(
@@ -423,9 +459,6 @@ export class PlanAndExecutePlanner implements Planner {
         }
     }
 
-    /**
-     * ✅ NEW: Format session entry for human-readable display
-     */
     private formatSessionEntry(entry: unknown): string | null {
         if (!entry || typeof entry !== 'object') {
             return null;
@@ -433,15 +466,12 @@ export class PlanAndExecutePlanner implements Planner {
 
         const entryObj = entry as Record<string, unknown>;
 
-        // Extract user input and assistant output
         const input = entryObj.input;
         const output = entryObj.output;
 
-        // Format based on entry type
         if (input && typeof input === 'object') {
             const inputObj = input as Record<string, unknown>;
 
-            // Handle different input types
             if (inputObj.type === 'memory_context_request') {
                 const userInput = inputObj.input as string;
                 return `User: "${userInput}"`;
@@ -472,7 +502,6 @@ export class PlanAndExecutePlanner implements Planner {
             }
         }
 
-        // Fallback: try to extract meaningful content
         if (output && typeof output === 'object') {
             const outputObj = output as Record<string, unknown>;
             if (outputObj.synthesized) {
@@ -483,7 +512,6 @@ export class PlanAndExecutePlanner implements Planner {
             }
         }
 
-        // If we have a simple string input/output
         if (typeof input === 'string' && input.length > 0) {
             return `User: "${input.substring(0, 50)}..."`;
         }
@@ -586,31 +614,21 @@ export class PlanAndExecutePlanner implements Planner {
     private async createPlan(
         context: PlannerExecutionContext,
     ): Promise<AgentThought> {
-        // 🔍 DEBUG: Monitor plan creation
-        const availableTools = this.getAvailableToolsForContext(context);
         const input = context.input;
 
-        // ✅ GET MEMORY CONTEXT using ContextBuilder APIs
         const memoryContext = await this.getMemoryContext(context, input);
 
-        // ✅ Build planning history context
         const planningHistory = this.buildPlanningHistory(context);
 
-        // ✅ Build identity context from AgentContext
         const agentIdentity = context.agentContext?.agentIdentity;
 
-        // Use createPlan method with prompts from this planner
         if (!this.llmAdapter.createPlan) {
             throw new Error('LLM adapter must support createPlan method');
         }
 
         const composedPrompt = await this.promptComposer.composePrompt({
             goal: input,
-            availableTools: availableTools.map((tool) => ({
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.parameters,
-            })),
+            availableTools: this.getAvailableToolsForPlanning(context),
             memoryContext,
             planningHistory,
             additionalContext: {
@@ -629,6 +647,7 @@ export class PlanAndExecutePlanner implements Planner {
             {
                 systemPrompt: composedPrompt.systemPrompt,
                 userPrompt: composedPrompt.userPrompt,
+                tools: this.getAvailableToolsForContext(context),
             },
         );
 

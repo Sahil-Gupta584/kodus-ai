@@ -2306,13 +2306,13 @@
   dependencies:
     buffer "^6.0.3"
 
-"@kodus/flow@^0.1.3":
-  version "0.1.3"
-  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/flow/-/@kodus/flow-0.1.3.tgz#2287e5cd8e7adc0c32c22b02d2657806f9500352"
-  integrity sha512-s0Xcw6mPL0qLvuVC/9gB/3Ta6qt/p/2U1ZeR4i5GZBr9jhGF7CinpQpan/feXtrnbPABHXQHKE770pnxhaqXRw==
+"@kodus/flow@^0.1.5":
+  version "0.1.5"
+  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/flow/-/@kodus/flow-0.1.5.tgz#518c16a3d5c2a87e5c81b7b4a4694850366254c6"
+  integrity sha512-50w356gkvQWEB8vYU3KsZw0g9W7KbTAsATk3dawCR5ELYCYrGOwH2KLWghOjjkNMKB7y+jIEqYLaUWVa+niArg==
   dependencies:
     "@google/generative-ai" "^0.24.1"
-    "@modelcontextprotocol/sdk" "^1.17.0"
+    "@modelcontextprotocol/sdk" "^1.17.1"
     ajv "^8.17.1"
     ajv-formats "^3.0.1"
     dotenv "^17.2.1"
@@ -2484,24 +2484,6 @@
   integrity sha512-qC72D4+CDdjGqJvkFMMEAtancHUQ7/d/tAiHf64z8MopFDmcrtbcJuerDtFceuAfQJ2pDSfCKCtbqoGBNnwg0w==
   dependencies:
     "@lukeed/csprng" "^1.1.0"
-
-"@modelcontextprotocol/sdk@^1.17.0":
-  version "1.17.0"
-  resolved "https://registry.yarnpkg.com/@modelcontextprotocol/sdk/-/sdk-1.17.0.tgz#556d91f0b1dcb7aab1b8fa5095ee6e1cc97d590a"
-  integrity sha512-qFfbWFA7r1Sd8D697L7GkTd36yqDuTkvz0KfOGkgXR8EUhQn3/EDNIR/qUdQNMT8IjmasBvHWuXeisxtXTQT2g==
-  dependencies:
-    ajv "^6.12.6"
-    content-type "^1.0.5"
-    cors "^2.8.5"
-    cross-spawn "^7.0.5"
-    eventsource "^3.0.2"
-    eventsource-parser "^3.0.0"
-    express "^5.0.1"
-    express-rate-limit "^7.5.0"
-    pkce-challenge "^5.0.0"
-    raw-body "^3.0.0"
-    zod "^3.23.8"
-    zod-to-json-schema "^3.24.1"
 
 "@modelcontextprotocol/sdk@^1.17.1":
   version "1.17.1"

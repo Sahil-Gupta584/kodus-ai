@@ -320,8 +320,11 @@ export interface MCPAdapterConfig {
 // Raw tool from MCP SDK (without execute function)
 export interface MCPToolRaw {
     name: string;
+    title?: string;
     description?: string;
-    inputSchema: unknown;
+    inputSchema?: unknown;
+    outputSchema?: unknown;
+    annotations?: Record<string, unknown>;
 }
 
 // Tool with execute function for engine compatibility
@@ -477,25 +480,6 @@ export function validateMCPServerConfig(config: MCPServerConfig): boolean {
 
     // For stdio transport, command is required
     if (config.type === 'stdio' && !config.command) {
-        return false;
-    }
-
-    return true;
-}
-
-/**
- * Validate MCP tool configuration
- */
-export function validateMCPToolConfig(tool: MCPToolRaw): boolean {
-    if (!tool.name || typeof tool.name !== 'string') {
-        return false;
-    }
-
-    if (
-        tool.name.includes('..') ||
-        tool.name.startsWith('.') ||
-        tool.name.endsWith('.')
-    ) {
         return false;
     }
 

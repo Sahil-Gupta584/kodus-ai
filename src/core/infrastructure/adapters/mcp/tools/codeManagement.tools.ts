@@ -3,6 +3,124 @@ import { z } from 'zod';
 import { CodeManagementService } from '../../services/platformIntegration/codeManagement.service';
 import { PinoLoggerService } from '../../services/logger/pino.service';
 import { wrapToolHandler } from '../utils/mcp-protocol.utils';
+import { McpToolDefinition } from '../types/mcp-tool.interface';
+import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
+import {
+    PullRequests,
+    PullRequestDetails,
+} from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
+import { Commit } from '@/config/types/general/commit.type';
+import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
+
+const RepositorySchema = z
+    .object({
+        id: z.string(),
+        name: z.string(),
+        http_url: z.string(),
+        avatar_url: z.string(),
+        organizationName: z.string(),
+        visibility: z.enum(['public', 'private']),
+        selected: z.boolean(),
+        default_branch: z.string().optional(),
+        project: z
+            .object({
+                id: z.string(),
+                name: z.string(),
+            })
+            .optional(),
+        workspaceId: z.string().optional(),
+    })
+    .passthrough();
+
+const PullRequestSchema = z
+    .object({
+        id: z.string(),
+        author_id: z.string(),
+        author_name: z.string(),
+        message: z.string(),
+        created_at: z.string().optional(),
+        closed_at: z.string().optional(),
+        targetRefName: z.string().optional(),
+        sourceRefName: z.string().optional(),
+        state: z.string(),
+        organizationId: z.string().optional(),
+        pull_number: z.number().optional(),
+        repository: z.string().optional(),
+        repositoryId: z.string().optional(),
+    })
+    .passthrough();
+
+const CommitSchema = z
+    .object({
+        sha: z.string(),
+        commit: z.object({
+            author: z.object({
+                id: z.string().optional(),
+                name: z.string(),
+                email: z.string(),
+                date: z.string(),
+            }),
+            message: z.string(),
+        }),
+        parents: z.array(z.object({ sha: z.string() })).optional(),
+    })
+    .passthrough();
+
+const RepositoryFileSchema = z
+    .object({
+        path: z.string(),
+        content: z.string(),
+        sha: z.string(),
+        size: z.number(),
+        type: z.string(),
+        encoding: z.string(),
+    })
+    .passthrough();
+
+interface BaseResponse {
+    success: boolean;
+    count: number;
+}
+
+interface RepositoriesResponse extends BaseResponse {
+    data: Repositories[];
+}
+
+interface PullRequestsResponse extends BaseResponse {
+    data: PullRequests[];
+}
+
+interface CommitsResponse extends BaseResponse {
+    data: Commit[];
+}
+
+interface PullRequestDetailsResponse {
+    success: boolean;
+    data: PullRequestDetails;
+}
+
+interface RepositoryFilesResponse extends BaseResponse {
+    data: RepositoryFile[];
+}
+
+interface RepositoryContentResponse {
+    success: boolean;
+    data: string;
+}
+
+interface RepositoryLanguagesResponse {
+    success: boolean;
+    data: Record<string, number>;
+}
+interface PullRequestFileContentResponse {
+    success: boolean;
+    data: string;
+}
+
+interface DiffForFileResponse {
+    success: boolean;
+    data: string;
+}
 
 @Injectable()
 export class CodeManagementTools {
@@ -11,7 +129,7 @@ export class CodeManagementTools {
         private readonly logger: PinoLoggerService,
     ) {}
 
-    listRepositories() {
+    listRepositories(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -55,29 +173,44 @@ export class CodeManagementTools {
             description:
                 'List all repositories accessible to the team. Use this to discover available repositories, check repository metadata (private/public, archived status, languages), or when you need to see what repositories exist before performing other operations.',
             inputSchema,
-            execute: wrapToolHandler(async (args: InputType) => {
-                const params = {
-                    organizationAndTeamData: {
-                        organizationId: args.organizationId,
-                        teamId: args.teamId,
-                    },
-                    ...args.filters,
-                };
-
-                const repositories = (
-                    await this.codeManagementService.getRepositories(params)
-                ).filter((repo) => repo.selected === true);
-
-                return {
-                    success: true,
-                    count: repositories?.length,
-                    data: repositories,
-                };
+            outputSchema: z.object({
+                success: z.boolean(),
+                count: z.number(),
+                data: z.array(RepositorySchema),
             }),
+            annotations: {
+                readOnlyHint: true,
+                idempotentHint: true,
+                destructiveHint: false,
+                openWorldHint: true,
+            },
+            execute: wrapToolHandler(
+                async (args: InputType): Promise<RepositoriesResponse> => {
+                    const params = {
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                            teamId: args.teamId,
+                        },
+                        ...args.filters,
+                    };
+
+                    const repositories: Repositories[] = (
+                        await this.codeManagementService.getRepositories(params)
+                    ).filter((repo) => repo.selected === true);
+
+                    return {
+                        success: true,
+                        count: repositories?.length,
+                        data: repositories,
+                    };
+                },
+                'list_repositories',
+                () => ({ success: false, count: 0, data: [] }),
+            ),
         };
     }
 
-    listPullRequests() {
+    listPullRequests(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -134,27 +267,36 @@ export class CodeManagementTools {
             description:
                 'List pull requests with advanced filtering (by state, repository, author, date range). Use this to find specific PRs, analyze PR patterns, or get overview of team activity. Returns PR metadata only - use get_pull_request_details for full PR content.',
             inputSchema,
-            execute: wrapToolHandler(async (args: InputType) => {
-                const params = {
-                    organizationAndTeamData: {
-                        organizationId: args.organizationId,
-                        teamId: args.teamId,
-                    },
-                    filters: args.filters,
-                };
-                const pullRequests =
-                    await this.codeManagementService.getPullRequests(params);
-
-                return {
-                    success: true,
-                    count: pullRequests?.length,
-                    data: pullRequests,
-                };
+            outputSchema: z.object({
+                success: z.boolean(),
+                count: z.number(),
+                data: z.array(PullRequestSchema),
             }),
+            execute: wrapToolHandler(
+                async (args: InputType): Promise<PullRequestsResponse> => {
+                    const params = {
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                            teamId: args.teamId,
+                        },
+                        filters: args.filters,
+                    };
+                    const pullRequests =
+                        await this.codeManagementService.getPullRequests(
+                            params,
+                        );
+
+                    return {
+                        success: true,
+                        count: pullRequests?.length,
+                        data: pullRequests,
+                    };
+                },
+            ),
         };
     }
 
-    listCommits() {
+    listCommits(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -223,28 +365,35 @@ export class CodeManagementTools {
             description:
                 'List commit history from repositories with filtering by author, date range, or branch. Use this to analyze commit patterns, find specific commits, or track development activity. Returns commit metadata and messages.',
             inputSchema,
-            execute: wrapToolHandler(async (args: InputType) => {
-                const params = {
-                    organizationAndTeamData: {
-                        organizationId: args.organizationId,
-                        teamId: args.teamId,
-                    },
-                    repository: args.repository,
-                    ...args.filters,
-                };
-                const commits =
-                    await this.codeManagementService.getCommits(params);
-
-                return {
-                    success: true,
-                    count: commits.length,
-                    data: commits,
-                };
+            outputSchema: z.object({
+                success: z.boolean(),
+                count: z.number(),
+                data: z.array(CommitSchema),
             }),
+            execute: wrapToolHandler(
+                async (args: InputType): Promise<CommitsResponse> => {
+                    const params = {
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                            teamId: args.teamId,
+                        },
+                        repository: args.repository,
+                        ...args.filters,
+                    };
+                    const commits =
+                        await this.codeManagementService.getCommits(params);
+
+                    return {
+                        success: true,
+                        count: commits.length,
+                        data: commits,
+                    };
+                },
+            ),
         };
     }
 
-    getPullRequestDetails() {
+    getPullRequestDetails(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -286,45 +435,53 @@ export class CodeManagementTools {
             description:
                 'Get complete details of a specific pull request including description, commits, reviews, and list of modified files. Use this when you need full PR context - NOT for file content (use get_pull_request_file_content for that).',
             inputSchema,
-            execute: wrapToolHandler(async (args: InputType) => {
-                const params = {
-                    organizationAndTeamData: {
-                        organizationId: args.organizationId,
-                        teamId: args.teamId,
-                    },
-                    repository: {
-                        id: args.repository.id || args.repository.name,
-                        name: args.repository.name || args.repository.id,
-                    },
-                    prNumber: args.prNumber,
-                };
-
-                const details =
-                    await this.codeManagementService.getPullRequestDetails(
-                        params,
-                    );
-
-                const files =
-                    await this.codeManagementService.getFilesByPullRequestId(
-                        params,
-                    );
-
-                const prDetails = {
-                    ...details,
-                    modified_files: files.map((file) => ({
-                        filename: file.filename,
-                    })),
-                };
-
-                return {
-                    success: true,
-                    data: prDetails,
-                };
+            outputSchema: z.object({
+                success: z.boolean(),
+                data: z.any(),
             }),
+            execute: wrapToolHandler(
+                async (
+                    args: InputType,
+                ): Promise<PullRequestDetailsResponse> => {
+                    const params = {
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                            teamId: args.teamId,
+                        },
+                        repository: {
+                            id: args.repository.id || args.repository.name,
+                            name: args.repository.name || args.repository.id,
+                        },
+                        prNumber: args.prNumber,
+                    };
+
+                    const details =
+                        await this.codeManagementService.getPullRequestDetails(
+                            params,
+                        );
+
+                    const files =
+                        await this.codeManagementService.getFilesByPullRequestId(
+                            params,
+                        );
+
+                    const prDetails = {
+                        ...details,
+                        modified_files: files.map((file) => ({
+                            filename: file.filename,
+                        })),
+                    };
+
+                    return {
+                        success: true,
+                        data: prDetails,
+                    };
+                },
+            ),
         };
     }
 
-    getRepositoryFiles() {
+    getRepositoryFiles(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -377,34 +534,41 @@ export class CodeManagementTools {
             description:
                 'Get file tree/listing from a repository branch with pattern filtering. Use this to explore repository structure, find specific files by pattern, or get overview of codebase organization. Returns file paths only - NOT file content.',
             inputSchema,
-            execute: wrapToolHandler(async (args: InputType) => {
-                const params = {
-                    repository: args.repository,
-                    organizationName: args.organizationName,
-                    branch: args.branch,
-                    organizationAndTeamData: {
-                        organizationId: args.organizationId,
-                        teamId: args.teamId,
-                    },
-                    filePatterns: args.filePatterns,
-                    excludePatterns: args.excludePatterns,
-                    maxFiles: args.maxFiles,
-                };
-                const files =
-                    await this.codeManagementService.getRepositoryAllFiles(
-                        params,
-                    );
-
-                return {
-                    success: true,
-                    count: files.length,
-                    data: files,
-                };
+            outputSchema: z.object({
+                success: z.boolean(),
+                count: z.number(),
+                data: z.array(RepositoryFileSchema),
             }),
+            execute: wrapToolHandler(
+                async (args: InputType): Promise<RepositoryFilesResponse> => {
+                    const params = {
+                        repository: args.repository,
+                        organizationName: args.organizationName,
+                        branch: args.branch,
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                            teamId: args.teamId,
+                        },
+                        filePatterns: args.filePatterns,
+                        excludePatterns: args.excludePatterns,
+                        maxFiles: args.maxFiles,
+                    };
+                    const files =
+                        await this.codeManagementService.getRepositoryAllFiles(
+                            params,
+                        );
+
+                    return {
+                        success: true,
+                        count: files.length,
+                        data: files,
+                    };
+                },
+            ),
         };
     }
 
-    getRepositoryContent() {
+    getRepositoryContent(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -455,51 +619,58 @@ export class CodeManagementTools {
             description:
                 'Get the current content of a specific file from a repository branch. Use this to read files from the main/current branch - NOT from pull requests (use get_pull_request_file_content for PR files).',
             inputSchema,
-            execute: wrapToolHandler(async (args: InputType) => {
-                const params = {
-                    organizationAndTeamData: {
-                        organizationId: args.organizationId,
-                        teamId: args.teamId,
-                    },
-                    repository: {
-                        id: args.repository.id || args.repository.name,
-                        name: args.repository.name || args.repository.id,
-                    },
-                    file: {
-                        path: args.filePath,
-                        filename: args.filePath,
-                        organizationName: args.organizationName,
-                    },
-                    pullRequest: {
-                        head: { ref: args.branch },
-                        base: { ref: args.branch },
-                        branch: args.branch,
-                    },
-                };
-
-                const fileContent =
-                    await this.codeManagementService.getRepositoryContentFile(
-                        params,
-                    );
-
-                const content = fileContent?.data?.content;
-                let decodedContent = content;
-
-                if (content && fileContent?.data?.encoding === 'base64') {
-                    decodedContent = Buffer.from(content, 'base64').toString(
-                        'utf-8',
-                    );
-                }
-
-                return {
-                    success: true,
-                    data: decodedContent,
-                };
+            outputSchema: z.object({
+                success: z.boolean(),
+                data: z.string(),
             }),
+            execute: wrapToolHandler(
+                async (args: InputType): Promise<RepositoryContentResponse> => {
+                    const params = {
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                            teamId: args.teamId,
+                        },
+                        repository: {
+                            id: args.repository.id || args.repository.name,
+                            name: args.repository.name || args.repository.id,
+                        },
+                        file: {
+                            path: args.filePath,
+                            filename: args.filePath,
+                            organizationName: args.organizationName,
+                        },
+                        pullRequest: {
+                            head: { ref: args.branch },
+                            base: { ref: args.branch },
+                            branch: args.branch,
+                        },
+                    };
+
+                    const fileContent =
+                        await this.codeManagementService.getRepositoryContentFile(
+                            params,
+                        );
+
+                    const content = fileContent?.data?.content;
+                    let decodedContent = content;
+
+                    if (content && fileContent?.data?.encoding === 'base64') {
+                        decodedContent = Buffer.from(
+                            content,
+                            'base64',
+                        ).toString('utf-8');
+                    }
+
+                    return {
+                        success: true,
+                        data: decodedContent,
+                    };
+                },
+            ),
         };
     }
 
-    getRepositoryLanguages() {
+    getRepositoryLanguages(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -536,31 +707,39 @@ export class CodeManagementTools {
             description:
                 'Get programming languages breakdown and statistics for a repository. Use this to understand technology stack, language distribution, or filter repositories by technology.',
             inputSchema,
-            execute: wrapToolHandler(async (args: InputType) => {
-                const params = {
-                    organizationAndTeamData: {
-                        organizationId: args.organizationId,
-                        teamId: args.teamId,
-                    },
-                    repository: {
-                        id: args.repository.id || args.repository.name,
-                        name: args.repository.name || args.repository.id,
-                    },
-                };
-                const languages =
-                    await this.codeManagementService.getLanguageRepository(
-                        params,
-                    );
-
-                return {
-                    success: true,
-                    data: languages,
-                };
+            outputSchema: z.object({
+                success: z.boolean(),
+                data: z.any(),
             }),
+            execute: wrapToolHandler(
+                async (
+                    args: InputType,
+                ): Promise<RepositoryLanguagesResponse> => {
+                    const params = {
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                            teamId: args.teamId,
+                        },
+                        repository: {
+                            id: args.repository.id || args.repository.name,
+                            name: args.repository.name || args.repository.id,
+                        },
+                    };
+                    const languages =
+                        await this.codeManagementService.getLanguageRepository(
+                            params,
+                        );
+
+                    return {
+                        success: true,
+                        data: languages,
+                    };
+                },
+            ),
         };
     }
 
-    getPullRequestFileContent() {
+    getPullRequestFileContent(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -607,35 +786,45 @@ export class CodeManagementTools {
             description:
                 'Get the modified content of a specific file within a pull request context. Use this to read how a file looks AFTER the PR changes are applied - NOT the original version.',
             inputSchema,
-            execute: wrapToolHandler(async (args: InputType) => {
-                const params = {
-                    organizationAndTeamData: {
-                        organizationId: args.organizationId,
-                        teamId: args.teamId,
-                    },
-                    repository: {
-                        id: args.repository.id || args.repository.name,
-                        name: args.repository.name || args.repository.id,
-                    },
-                    prNumber: args.prNumber,
-                };
+            outputSchema: z.object({
+                success: z.boolean(),
+                data: z.string(),
+            }),
+            execute: wrapToolHandler(
+                async (
+                    args: InputType,
+                ): Promise<PullRequestFileContentResponse> => {
+                    const params = {
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                            teamId: args.teamId,
+                        },
+                        repository: {
+                            id: args.repository.id || args.repository.name,
+                            name: args.repository.name || args.repository.id,
+                        },
+                        prNumber: args.prNumber,
+                    };
 
-                const files =
-                    await this.codeManagementService.getFilesByPullRequestId(
-                        params,
+                    const files =
+                        await this.codeManagementService.getFilesByPullRequestId(
+                            params,
+                        );
+
+                    const file = files.find(
+                        (f) => f.filename === args.filePath,
                     );
 
-                const file = files.find((f) => f.filename === args.filePath);
-
-                return {
-                    success: true,
-                    data: file.content,
-                };
-            }),
+                    return {
+                        success: true,
+                        data: file.content,
+                    };
+                },
+            ),
         };
     }
 
-    getDiffForFile() {
+    getDiffForFile(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -682,37 +871,44 @@ export class CodeManagementTools {
             description:
                 'Get the exact diff/patch showing what changed in a specific file within a pull request. Use this to see the precise changes made - additions, deletions, and modifications line by line.',
             inputSchema,
-            execute: wrapToolHandler(async (args: InputType) => {
-                const params = {
-                    organizationAndTeamData: {
-                        organizationId: args.organizationId,
-                        teamId: args.teamId,
-                    },
-                    repository: {
-                        id: args.repository.id || args.repository.name,
-                        name: args.repository.name || args.repository.id,
-                    },
-                    prNumber: args.prNumber,
-                    filePath: args.filePath,
-                };
+            outputSchema: z.object({
+                success: z.boolean(),
+                data: z.string(),
+            }),
+            execute: wrapToolHandler(
+                async (args: InputType): Promise<DiffForFileResponse> => {
+                    const params = {
+                        organizationAndTeamData: {
+                            organizationId: args.organizationId,
+                            teamId: args.teamId,
+                        },
+                        repository: {
+                            id: args.repository.id || args.repository.name,
+                            name: args.repository.name || args.repository.id,
+                        },
+                        prNumber: args.prNumber,
+                        filePath: args.filePath,
+                    };
 
-                const files =
-                    await this.codeManagementService.getFilesByPullRequestId(
-                        params,
+                    const files =
+                        await this.codeManagementService.getFilesByPullRequestId(
+                            params,
+                        );
+
+                    const file = files.find(
+                        (f) => f.filename === params.filePath,
                     );
 
-                const file = files.find((f) => f.filename === params.filePath);
-
-                return {
-                    success: true,
-                    data: file?.patch,
-                };
-            }),
+                    return {
+                        success: true,
+                        data: file?.patch,
+                    };
+                },
+            ),
         };
     }
 
-    // Método que retorna todas as tools desta categoria
-    getAllTools() {
+    getAllTools(): McpToolDefinition[] {
         return [
             this.listRepositories(),
             this.listPullRequests(),

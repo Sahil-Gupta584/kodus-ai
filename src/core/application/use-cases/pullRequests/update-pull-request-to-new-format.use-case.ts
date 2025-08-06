@@ -37,14 +37,15 @@ export class UpdatePullRequestToNewFormatUseCase {
     async execute(body: updatePullRequestDto) {
         try {
             const organizationId = body.organizationId;
+            const teamId = body.teamId ?? undefined;
 
             const pullRequests = await this.pullRequestService.find({
                 organizationId: organizationId,
             });
 
             const organizationAndTeamData: OrganizationAndTeamData = {
-                teamId: undefined,
-                organizationId: organizationId,
+                teamId,
+                organizationId,
             };
 
             this.logger.log({
@@ -176,19 +177,19 @@ export class UpdatePullRequestToNewFormatUseCase {
             ),
             this.pullRequestService.extractUser(
                 prDetails.user,
-                organizationAndTeamData.organizationId,
+                organizationAndTeamData,
                 provider,
                 prInfo.prNumber,
             ),
             this.pullRequestService.extractUsers(
                 prDetails.reviewers ?? prDetails.requested_reviewers,
-                organizationAndTeamData.organizationId,
+                organizationAndTeamData,
                 provider,
                 prInfo.prNumber,
             ),
             this.pullRequestService.extractUsers(
                 prDetails.assignees ?? prDetails.participants,
-                organizationAndTeamData.organizationId,
+                organizationAndTeamData,
                 provider,
                 prInfo.prNumber,
             ),
