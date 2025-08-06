@@ -1064,7 +1064,6 @@ export class CodeManagementService implements ICodeManagementService {
         params: {
             organizationAndTeamData: OrganizationAndTeamData;
             repositoryId: string;
-            treeType?: 'all' | 'directories' | 'files';
         },
         type?: PlatformType,
     ): Promise<any> {

@@ -18,6 +18,7 @@ import { FinishOnboardingDTO } from '../../dtos/finish-onboarding.dto';
 import { FinishOnboardingUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/finish-onboarding.use-case';
 import { DeleteIntegrationUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/delete-integration.use-case';
 import { GetRepositoryTreeUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-repository-tree.use-case';
+import { RepositoryTreeType } from '@/shared/utils/enums/repositoryTree.enum';
 
 @Controller('code-management')
 export class CodeManagementController {
@@ -168,9 +169,9 @@ export class CodeManagementController {
         query: {
             organizationId: string;
             repositoryId: string;
-            treeType?: 'all' | 'directories' | 'files';
+            treeType?: RepositoryTreeType;
         },
-    ) {
+    ): Promise<any> {
         return await this.getRepositoryTreeUseCase.execute(query);
     }
 }
