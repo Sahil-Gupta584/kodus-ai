@@ -162,7 +162,6 @@ const generateFiles = async (): Promise<void> => {
             '**/environment',
             '**/Gemfile',
             '**/gemspec',
-            '**/csproj',
             '**/sln',
             '**/build.gradle',
             '**/gradle',

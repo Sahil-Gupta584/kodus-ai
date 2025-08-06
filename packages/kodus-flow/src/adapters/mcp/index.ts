@@ -98,9 +98,7 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
 
             try {
                 registry.destroy();
-            } catch (error) {
-                // Log error but don't throw to ensure cleanup
-                console.warn('Error during MCP disconnect:', error);
+            } catch {
             } finally {
                 isConnected = false;
             }
@@ -116,19 +114,21 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
                 );
             }
 
-            // Ensure fresh connection for each request
             await this.ensureConnection();
 
             const mcpTools = await registry.listAllTools();
             const engineTools = mcpToolsToEngineTools(mcpTools);
 
-            // Override execute functions to use the registry and propagate schemas correctly
             return engineTools.map((tool: EngineTool) => ({
                 name: tool.name,
                 description: tool.description,
-                inputSchema: tool.jsonSchema, // Use original JSON Schema from MCP for LLMs
+                inputSchema: tool?.inputSchema,
+                outputSchema: tool?.outputSchema,
+                annotations: tool?.annotations,
+                title: tool?.title,
                 execute: async (args: unknown, _ctx: unknown) => {
                     const { serverName, toolName } = parseToolName(tool.name);
+
                     return registry.executeTool(
                         toolName,
                         args as Record<string, unknown>,
@@ -251,37 +251,20 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
                 return;
             }
 
-            // Try to list tools to check if connection is still working
             try {
                 await registry.listAllTools();
             } catch {
-                // Connection lost, reconnect
-                console.warn('MCP connection lost, reconnecting...');
                 await this.disconnect();
                 await this.connect();
             }
         },
 
-        /**
-         * Get metrics from all servers
-         */
         getMetrics(): Record<string, unknown> {
             const metrics: Record<string, unknown> = {};
-
-            // Adiciona métricas de health checks
-            // const serverStatuses = registry.getServerStatuses();
-            // for (const [serverName, status] of serverStatuses) {
-            //     metrics[`${serverName}_health`] = status;
-            // }
-
-            // Schema cache removed - keeping it simple
 
             return metrics;
         },
 
-        /**
-         * Get registry for advanced operations
-         */
         getRegistry(): unknown {
             return registry;
         },

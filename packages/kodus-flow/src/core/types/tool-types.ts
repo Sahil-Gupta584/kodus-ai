@@ -105,12 +105,12 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown>
     /** Schema Zod para validação de entrada - PADRÃO INTERNO */
     inputSchema: z.ZodSchema<TInput>;
 
-    /** Schema Zod para validação de saída (opcional) */
-    outputSchema?: z.ZodSchema<TOutput>;
-
     // === JSON SCHEMA (GERADO AUTOMATICAMENTE) ===
     /** JSON Schema gerado automaticamente do Zod para LLMs */
-    jsonSchema?: ToolJSONSchema;
+    inputJsonSchema?: ToolJSONSchema;
+
+    outputSchema?: z.ZodSchema<TOutput>;
+    outputJsonSchema?: ToolJSONSchema;
 
     // === CONFIGURAÇÃO ===
     config?: {
@@ -183,6 +183,7 @@ export type ToolMetadataForLLM = {
     name: string;
     description: string;
     parameters: Record<string, unknown>;
+    outputSchema?: Record<string, unknown>;
 };
 
 /**
@@ -192,7 +193,6 @@ export interface ToolMetadataForPlanner {
     name: string;
     description: string;
 
-    // Schema estruturado com parâmetros obrigatórios
     inputSchema: {
         type: 'object';
         properties: Record<
@@ -207,6 +207,12 @@ export interface ToolMetadataForPlanner {
             }
         >;
         required: string[];
+    };
+
+    outputSchema?: {
+        type: 'object';
+        properties: Record<string, unknown>;
+        required?: string[];
     };
 
     // Configuração de execução
@@ -823,13 +829,18 @@ export function defineTool<TInput = unknown, TOutput = unknown>(config: {
         config.description,
     );
 
+    const outputJsonSchema = config.outputSchema
+        ? zodToJSONSchema(config.outputSchema, config.name, config.description)
+        : undefined;
+
     return {
         name: config.name,
         description: config.description,
         execute: config.execute,
         inputSchema: config.inputSchema,
+        inputJsonSchema: jsonSchema,
         outputSchema: config.outputSchema,
-        jsonSchema,
+        outputJsonSchema: outputJsonSchema,
         config: {
             timeout: 60000, // ✅ 60s timeout
             requiresAuth: false,

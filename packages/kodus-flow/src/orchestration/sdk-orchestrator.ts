@@ -135,11 +135,14 @@ export type AgentConfig = {
 
 export interface ToolConfig {
     name: string;
+    title?: string;
     description: string;
     inputSchema: z.ZodSchema<unknown>;
+    outputSchema?: z.ZodSchema<unknown>;
     execute: (input: unknown, context: ToolContext) => Promise<unknown>;
     categories?: string[];
     dependencies?: string[];
+    annotations?: Record<string, unknown>;
 }
 
 export interface OrchestrationResult<T = unknown> {
@@ -615,25 +618,30 @@ const orchestrator = new SDKOrchestrator({
             name: config.name,
             description: config.description,
             inputSchema: config.inputSchema,
+            outputSchema: config.outputSchema,
             execute: config.execute,
             categories: config.categories || [],
             dependencies: config.dependencies || [],
+            tags: [
+                ...(config.title ? [`title:${config.title}`] : []),
+                ...(config.annotations
+                    ? [`annotations:${JSON.stringify(config.annotations)}`]
+                    : []),
+            ],
         });
 
-        // Register with ToolEngine
         this.toolEngine.registerTool(toolDefinition);
 
         this.logger.info('Tool created and registered', {
             toolName: config.name,
             description: config.description,
+            title: config.title,
+            hasAnnotations: !!config.annotations,
         });
 
         return toolDefinition;
     }
 
-    /**
-     * Call tool - APENAS delega para ToolEngine
-     */
     async callTool(
         toolName: string,
         input: unknown,
@@ -701,20 +709,39 @@ const orchestrator = new SDKOrchestrator({
      */
     getRegisteredTools(): Array<{
         name: string;
+        title?: string;
         description: string;
         categories?: string[];
         schema?: unknown;
+        outputSchema?: unknown;
         examples?: unknown[];
         plannerHints?: unknown;
+        annotations?: Record<string, unknown>;
     }> {
-        return this.toolEngine.getAvailableTools().map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            categories: tool.categories, // Now properly extracted from metadata
-            schema: tool.inputSchema,
-            examples: tool.examples,
-            plannerHints: tool.plannerHints,
-        }));
+        return this.toolEngine.listTools().map((tool) => {
+            // ✅ ADDED: Extract title and annotations from tags
+            const title = tool.tags
+                ?.find((tag) => tag.startsWith('title:'))
+                ?.replace('title:', '');
+            const annotationsTag = tool.tags?.find((tag) =>
+                tag.startsWith('annotations:'),
+            );
+            const annotations = annotationsTag
+                ? JSON.parse(annotationsTag.replace('annotations:', ''))
+                : undefined;
+
+            return {
+                name: tool.name,
+                title,
+                description: tool.description || `Tool: ${tool.name}`,
+                categories: tool.categories,
+                schema: tool.inputSchema,
+                outputSchema: tool.outputSchema,
+                examples: tool.examples,
+                plannerHints: tool.plannerHints,
+                annotations,
+            };
+        });
     }
 
     getRegisteredToolsForLLM(): Array<{
@@ -732,40 +759,6 @@ const orchestrator = new SDKOrchestrator({
         }));
     }
 
-    /**
-     * Get tools in the correct format for LLMs (OpenAI, Anthropic, etc.)
-     * This method ensures tools are properly formatted for LLM function calling
-     *
-     * @example
-     * ```typescript
-     * // ✅ CORRETO: Usar o novo método para LLMs
-     * const toolsForLLM = orchestrator.getToolsForLLM();
-     *
-     * // Formato correto para LLMs:
-     * // [
-     * //   {
-     * //     name: "calculator",
-     * //     description: "Perform mathematical calculations",
-     * //     parameters: {
-     * //       type: "object",
-     * //       properties: {
-     * //         expression: {
-     * //           type: "string",
-     * //           description: "Mathematical expression to evaluate"
-     * //         }
-     * //       },
-     * //       required: ["expression"] // ✅ Apenas array, sem flags individuais
-     * //     }
-     * //   }
-     * // ]
-     *
-     * // Usar com LLM adapter
-     * const response = await llmAdapter.call({
-     *   messages: [{ role: 'user', content: 'Calculate 2 + 2' }],
-     *   tools: toolsForLLM // ✅ Formato correto
-     * });
-     * ```
-     */
     getToolsForLLM(): Array<{
         name: string;
         description: string;
@@ -795,12 +788,19 @@ const orchestrator = new SDKOrchestrator({
 
             for (const mcpTool of mcpTools) {
                 const zodSchema = safeJsonSchemaToZod(mcpTool.inputSchema);
+                const output = mcpTool?.outputSchema
+                    ? safeJsonSchemaToZod(mcpTool.outputSchema)
+                    : undefined;
 
                 this.createTool({
                     name: mcpTool.name,
+                    title: mcpTool.title,
                     description:
-                        mcpTool.description || `MCP Tool: ${mcpTool.name}`,
+                        mcpTool.description ||
+                        mcpTool.title ||
+                        `MCP Tool: ${mcpTool.name}`,
                     inputSchema: zodSchema,
+                    outputSchema: output,
                     execute: async (input: unknown) => {
                         const result = await this.mcpAdapter!.executeTool(
                             mcpTool.name,
@@ -809,6 +809,7 @@ const orchestrator = new SDKOrchestrator({
                         return { result };
                     },
                     categories: ['mcp'],
+                    annotations: mcpTool.annotations,
                 });
             }
 

@@ -675,16 +675,98 @@ export class SpecCompliantMCPClient extends EventEmitter<MCPClientEvents> {
     async listTools(): Promise<Tool[]> {
         this.ensureConnected();
 
-        const result = await this.client.listTools();
+        try {
+            const result = await this.client.listTools();
 
-        if (this.allowedTools.length > 0) {
-            // Filter tools based on allowed tools
-            result.tools = result.tools.filter((tool) =>
-                this.allowedTools.includes(tool.name),
+            // ✅ ADDED: Validate result structure
+            if (!result || typeof result !== 'object') {
+                this.logger?.warn('Invalid tools result received', { result });
+                return [];
+            }
+
+            // ✅ ADDED: Validate tools array
+            if (!result.tools || !Array.isArray(result.tools)) {
+                this.logger?.warn('Invalid tools array received', { result });
+                return [];
+            }
+
+            // ✅ ADDED: Validate each tool before filtering
+            let validTools = result.tools.filter((tool) => {
+                if (!tool || typeof tool !== 'object') {
+                    this.logger?.warn('Invalid tool structure', { tool });
+                    return false;
+                }
+
+                if (!tool.name || typeof tool.name !== 'string') {
+                    this.logger?.warn('Invalid tool name', { tool });
+                    return false;
+                }
+
+                // ✅ ADDED: Ensure inputSchema exists and is valid
+                if (!tool.inputSchema) {
+                    this.logger?.warn(
+                        'Tool missing inputSchema, using fallback',
+                        {
+                            toolName: tool.name,
+                        },
+                    );
+                    tool.inputSchema = { type: 'object', properties: {} };
+                }
+
+                // ✅ ADDED: Validate outputSchema if provided
+                if (
+                    tool.outputSchema &&
+                    typeof tool.outputSchema !== 'object'
+                ) {
+                    this.logger?.warn(
+                        'Tool has invalid outputSchema, ignoring',
+                        {
+                            toolName: tool.name,
+                        },
+                    );
+                    tool.outputSchema = undefined;
+                }
+
+                // ✅ ADDED: Validate annotations if provided
+                if (tool.annotations && typeof tool.annotations !== 'object') {
+                    this.logger?.warn(
+                        'Tool has invalid annotations, ignoring',
+                        {
+                            toolName: tool.name,
+                        },
+                    );
+                    tool.annotations = undefined;
+                }
+
+                return true;
+            });
+
+            if (this.allowedTools.length > 0) {
+                // Filter tools based on allowed tools
+                validTools = validTools.filter((tool) =>
+                    this.allowedTools.includes(tool.name),
+                );
+            }
+
+            return validTools || [];
+        } catch (error) {
+            // ✅ ADDED: Enhanced error handling for SDK errors
+            this.logger?.error(
+                'MCP SDK error in listTools',
+                error instanceof Error ? error : new Error(String(error)),
+                {
+                    errorMessage:
+                        error instanceof Error ? error.message : String(error),
+                    errorName: error instanceof Error ? error.name : 'Unknown',
+                    errorStack:
+                        error instanceof Error ? error.stack : undefined,
+                },
             );
-        }
 
-        return result.tools || [];
+            // ✅ ADDED: Return empty array instead of throwing
+            // This prevents the error from propagating up and breaking the registry
+            return [];
+        }
     }
 
     async listResources(): Promise<Resource[]> {

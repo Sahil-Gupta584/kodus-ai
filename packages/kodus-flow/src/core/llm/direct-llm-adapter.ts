@@ -12,6 +12,7 @@
 
 import { createLogger } from '../../observability/index.js';
 import { EngineError } from '../errors.js';
+import { ToolMetadataForLLM } from '../types/index.js';
 import {
     validatePlanningResponse,
     validateLLMResponse,
@@ -192,8 +193,7 @@ export interface RoutingResult {
 export class DirectLLMAdapter {
     private llm: LangChainLLM;
     private logger = createLogger('direct-llm-adapter');
-    // 🗑️ REMOVED: Planning techniques and routing strategies (planners handle this now)
-    private routingStrategies = new Map<string, RoutingTechnique>(); // 🔄 Keep for legacy fallback
+    private routingStrategies = new Map<string, RoutingTechnique>();
 
     constructor(langchainLLM: LangChainLLM) {
         this.llm = langchainLLM;
@@ -205,45 +205,31 @@ export class DirectLLMAdapter {
         });
     }
 
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 🎯 PLANNING INTERFACE (DIRETO COM LANGCHAIN)
-    // ──────────────────────────────────────────────────────────────────────────────
-
     async createPlan(
         goal: string,
         technique: string = 'cot',
         context?: {
-            // 📝 NEW: Simplified interface - planners send READY prompts
-            systemPrompt?: string; // ✅ Final system prompt (ready to use)
-            userPrompt?: string; // ✅ Final user prompt (ready to use)
-
-            // 🔄 LEGACY: Fallback for old planners (will be deprecated)
-            availableTools?:
-                | string[]
-                | Array<{
-                      name: string;
-                      description?: string;
-                      [key: string]: unknown;
-                  }>;
+            systemPrompt?: string;
+            userPrompt?: string;
+            tools?: ToolMetadataForLLM[];
             previousPlans?: PlanningResult[];
             constraints?: string[];
         },
     ): Promise<PlanningResult> {
-        const options = {
+        const options: LangChainOptions = {
             ...DEFAULT_LLM_SETTINGS,
             maxTokens: TOKEN_PRESETS.REACT_COMPLEX,
         };
 
-        // ✅ SIMPLE: Log prompt source
-        if (context?.systemPrompt && context?.userPrompt) {
-            this.logger.debug('Using ready prompts from planner', {
-                technique,
-                systemPromptLength: context.systemPrompt.length,
-                userPromptLength: context.userPrompt.length,
-            });
+        if (context?.tools && context.tools.length > 0) {
+            options.tools = context.tools.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
+            }));
+            options.toolChoice = 'auto';
         }
 
-        // ✅ SIMPLE: Build messages with ready prompts
         const systemPrompt =
             context?.systemPrompt ||
             `You are an AI assistant using the ${technique} planning technique.`;
@@ -475,15 +461,57 @@ Please analyze semantic similarity and select the most appropriate tool.`,
         goal: string,
         technique: string,
     ): PlanningResult {
-        // Use AJV for validation (industry standard)
-        const validated = validatePlanningResponse(response);
+        const llmValidated = validateLLMResponse(response);
+
+        let extractedSteps = [];
+        let extractedReasoning = '';
+
+        if (llmValidated.toolCalls && llmValidated.toolCalls.length > 0) {
+            this.logger.debug('Extracting steps from function calls', {
+                toolCallsCount: llmValidated.toolCalls.length,
+            });
+
+            extractedSteps = llmValidated?.toolCalls?.map((call, index) => {
+                let parsedArgs: Record<string, unknown> = {};
+                try {
+                    parsedArgs = JSON.parse(call.function.arguments);
+                } catch (error) {
+                    this.logger.warn('Failed to parse tool call arguments', {
+                        toolName: call.function.name,
+                        arguments: call.function.arguments,
+                        error,
+                    });
+                }
+
+                return {
+                    id: call.id || `step-${index + 1}`,
+                    description: `Execute ${call.function.name}`,
+                    tool: call.function.name,
+                    arguments: parsedArgs,
+                    dependencies: index > 0 ? [`step-${index}`] : [],
+                    type: 'action' as const,
+                };
+            });
+
+            extractedReasoning =
+                llmValidated.content || 'Generated from function calls';
+        } else {
+            // Traditional text parsing: use AJV validation
+            this.logger.debug('Extracting steps from text parsing', {
+                hasContent: !!llmValidated.content,
+            });
+
+            const validated = validatePlanningResponse(response);
+            extractedSteps = validated.steps || [];
+            extractedReasoning = validated.reasoning || '';
+        }
 
         return {
-            strategy: validated.strategy || technique,
-            goal: validated.goal || goal,
-            steps: validated.steps || [],
-            reasoning: validated.reasoning || '',
-            complexity: validated.complexity || 'medium',
+            strategy: technique,
+            goal,
+            steps: extractedSteps,
+            reasoning: extractedReasoning,
+            complexity: 'medium' as const,
         };
     }
 

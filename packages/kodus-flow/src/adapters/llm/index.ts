@@ -1,14 +1,3 @@
-/**
- * LLM Adapter - Stub para integração externa
- *
- * O SDK não implementa LLMs próprios. O provider de LLM deve ser fornecido
- * externamente pelo projeto principal que usa o SDK.
- */
-
-// =============================================================================
-// TIPOS E INTERFACES BÁSICAS
-// =============================================================================
-
 export interface LLMMessage {
     role: 'system' | 'user' | 'assistant';
     content: string;
@@ -85,10 +74,8 @@ export interface LLMAdapter {
         originalQuestion: string,
     ): Promise<string>;
 
-    // ✅ NEW: Structured generation support
     supportsStructuredGeneration?(): boolean;
 
-    // ✅ NEW: Legacy planning methods (for backward compatibility)
     createPlan?(
         goal: string,
         strategy: string,
@@ -113,5 +100,4 @@ export function createDefaultLLMAdapter(): LLMAdapter | null {
     return null;
 }
 
-// Mock provider para testes
 export { createMockLLMProvider } from './mock-provider.js';
