@@ -77,6 +77,62 @@ const RepositoryFileSchema = z
     })
     .passthrough();
 
+const PullRequestDetailsSchema = PullRequestSchema.extend({
+    prURL: z.string().url().nullable(),
+    number: z.number(),
+    body: z.string().nullable(),
+    title: z.string().nullable(),
+    updated_at: z.string().nullable(),
+    merged_at: z.string().nullable(),
+
+    participants: z
+        .array(
+            z.object({
+                id: z.string(),
+                approved: z.boolean(),
+                state: z.string(),
+                type: z.string(),
+            }),
+        )
+        .optional(),
+
+    reviewers: z
+        .array(
+            z.object({
+                id: z.string(),
+            }),
+        )
+        .optional(),
+
+    head: z.object({
+        ref: z.string().nullable(),
+        repo: z.object({
+            id: z.string().nullable(),
+            name: z.string().nullable(),
+        }),
+    }),
+
+    base: z.object({
+        ref: z.string().nullable(),
+    }),
+
+    user: z.object({
+        login: z.string(),
+        name: z.string().nullable(),
+        id: z.string().nullable(),
+    }),
+});
+
+const PullRequestDetailsWithFilesSchema = PullRequestDetailsSchema.extend({
+    modified_files: z
+        .array(
+            z.object({
+                filename: z.string(),
+            }),
+        )
+        .optional(),
+});
+
 interface RepositoriesResponse extends BaseResponse {
     data: Repositories[];
 }
@@ -432,7 +488,7 @@ export class CodeManagementTools {
             outputSchema: z.object({
                 success: z.boolean(),
                 count: z.number(),
-                data: z.any(),
+                data: PullRequestDetailsWithFilesSchema,
             }),
             execute: wrapToolHandler(
                 async (
@@ -706,7 +762,7 @@ export class CodeManagementTools {
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
-                data: z.any(),
+                data: z.string(),
             }),
             execute: wrapToolHandler(
                 async (
