@@ -310,7 +310,7 @@ export class CheckIfPRCanBeApprovedCronProvider {
                 message: `Review comments found for PR#${prNumber}`,
                 context: CheckIfPRCanBeApprovedCronProvider.name,
                 metadata: {
-                    reviewComments,
+                    reviewComments: reviewComments?.length,
                     organizationAndTeamData,
                     prNumber,
                     repository: {
