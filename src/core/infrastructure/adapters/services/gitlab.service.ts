@@ -2999,4 +2999,44 @@ export class GitlabService
             return null;
         }
     }
+
+    async getRepositoryTree(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+    }): Promise<any[]> {
+        try {
+            const gitlabAuthDetail = await this.getAuthDetails(
+                params.organizationAndTeamData,
+            );
+
+            if (!gitlabAuthDetail) {
+                return [];
+            }
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const tree = await gitlabAPI.Repositories.allRepositoryTrees(params.repositoryId, {
+                recursive: true,
+            });
+
+            return tree.map((item: any) => ({
+                path: item.path,
+                type: item.type === 'tree' ? 'directory' : 'file',
+                id: item.id,
+                mode: item.mode,
+                name: item.name,
+            }));
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting repository tree from GitLab',
+                context: GitlabService.name,
+                error: error,
+                metadata: {
+                    organizationAndTeamData: params.organizationAndTeamData,
+                    repositoryId: params.repositoryId,
+                },
+            });
+            return [];
+        }
+    }
 }
