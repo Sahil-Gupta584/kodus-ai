@@ -12,4 +12,5 @@ export type Repositories = {
         name: string;
     };
     workspaceId?: string;
+    directories?: Array<any>;
 };
