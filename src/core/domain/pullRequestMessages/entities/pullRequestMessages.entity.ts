@@ -14,6 +14,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
     private readonly _repositoryId?: string;
     private readonly _startReviewMessage?: IPullRequestMessageContent;
     private readonly _endReviewMessage?: IPullRequestMessageContent;
+    private readonly _directoryId?: string;
     private readonly _directoryPath?: string;
 
     constructor(pullRequestMessages: IPullRequestMessages) {
@@ -23,6 +24,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
         this._repositoryId = pullRequestMessages.repositoryId;
         this._startReviewMessage = pullRequestMessages.startReviewMessage;
         this._endReviewMessage = pullRequestMessages.endReviewMessage;
+        this._directoryId = pullRequestMessages.directoryId;
         this._directoryPath = pullRequestMessages.directoryPath;
     }
 
@@ -34,6 +36,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
             repositoryId: this._repositoryId,
             startReviewMessage: this._startReviewMessage,
             endReviewMessage: this._endReviewMessage,
+            directoryId: this._directoryId,
             directoryPath: this._directoryPath,
         };
     }
@@ -46,6 +49,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
             repositoryId: this._repositoryId,
             startReviewMessage: this._startReviewMessage,
             endReviewMessage: this._endReviewMessage,
+            directoryId: this._directoryId,
             directoryPath: this._directoryPath,
         };
     }
@@ -72,6 +76,10 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
 
     get endReviewMessage(): IPullRequestMessageContent | undefined {
         return this._endReviewMessage;
+    }
+
+    get directoryId(): string | undefined {
+        return this._directoryId;
     }
 
     get directoryPath(): string | undefined {
