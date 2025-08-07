@@ -2165,10 +2165,86 @@ export class PlanAndExecutePlanner implements Planner {
     private evaluatePath(obj: unknown, path: string): unknown {
         if (!path || path === '') return obj;
 
-        // Remove leading dot if present
+        this.logger.debug('🚀 SMART TEMPLATE RESOLUTION', { path });
+
+        // Remove leading dot
         const cleanPath = path.startsWith('.') ? path.slice(1) : path;
 
-        // Split path into segments, handling array notation
+        // STEP 1: Parse JSON strings in content.text fields
+        const parsedObj = this.parseJsonStrings(obj);
+
+        // STRATEGY 1: Try direct recursive search first (fastest)
+        const directResult = this.recursiveSearch(parsedObj, cleanPath);
+        if (directResult !== undefined) {
+            this.logger.debug('✅ Direct recursive search succeeded', {
+                path,
+                resultType: typeof directResult,
+            });
+            return directResult;
+        }
+
+        // STRATEGY 2: Smart field search for array paths like .modified_files[0].filename
+        const fieldMatch = cleanPath.match(/([^[]+)(?:\[(\d+)\])?\.([\w.]+)$/);
+        if (fieldMatch) {
+            const [, arrayField, arrayIndex, finalField] = fieldMatch;
+            this.logger.debug('🔍 Trying smart field search', {
+                arrayField,
+                arrayIndex,
+                finalField,
+            });
+
+            if (!finalField) return undefined;
+            const fieldValue = this.findFieldRecursively(parsedObj, finalField);
+            if (fieldValue !== undefined) {
+                if (arrayIndex && Array.isArray(fieldValue)) {
+                    const index = parseInt(arrayIndex);
+                    if (index < fieldValue.length) {
+                        this.logger.debug(
+                            `✅ Smart field search succeeded with array access [${index}]`,
+                            {
+                                fieldName: finalField,
+                                resultType: typeof fieldValue[index],
+                            },
+                        );
+                        return fieldValue[index];
+                    }
+                }
+                this.logger.debug(`✅ Smart field search succeeded`, {
+                    fieldName: finalField,
+                    resultType: typeof fieldValue,
+                });
+                return fieldValue;
+            }
+        }
+
+        // STRATEGY 3: Pattern discovery + smart path building
+        this.logger.debug(
+            '🔄 Field search failed, trying pattern discovery...',
+        );
+        const smartPath = this.discoverSmartPath(obj, path);
+        if (smartPath) {
+            const smartResult = this.evaluatePathOriginal(obj, smartPath);
+            if (smartResult !== undefined) {
+                this.logger.debug('✅ Pattern discovery succeeded', {
+                    originalPath: path,
+                    smartPath,
+                    resultType: typeof smartResult,
+                });
+                return smartResult;
+            }
+        }
+
+        this.logger.debug('❌ All smart strategies failed', { path });
+        return undefined;
+    }
+
+    /**
+     * Original path evaluation logic (now used as helper)
+     */
+    private evaluatePathOriginal(obj: unknown, path: string): unknown {
+        if (!path || path === '') return obj;
+
+        const cleanPath = path.startsWith('.') ? path.slice(1) : path;
         const segments = cleanPath.match(/\w+|\[\d+\]/g) || [];
 
         let current = obj;
@@ -2236,6 +2312,245 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         return undefined;
+    }
+
+    /**
+     * 🔍 STRATEGY 1: Recursive Search
+     * Busca o path exato em qualquer lugar da estrutura
+     */
+    private recursiveSearch(obj: unknown, targetPath: string): unknown {
+        const pathSegments = targetPath.split(/[\.\[\]]+/).filter(Boolean);
+
+        const searchRecursively = (
+            current: unknown,
+            depth: number = 0,
+        ): unknown[] => {
+            if (depth > 10) return [];
+
+            // Try direct path match
+            const directMatch = this.tryDirectPath(current, pathSegments);
+            if (directMatch !== undefined) {
+                return [directMatch];
+            }
+
+            // Recurse into objects
+            if (
+                current &&
+                typeof current === 'object' &&
+                !Array.isArray(current)
+            ) {
+                const results: unknown[] = [];
+                for (const value of Object.values(
+                    current as Record<string, unknown>,
+                )) {
+                    results.push(...searchRecursively(value, depth + 1));
+                }
+                return results;
+            }
+
+            return [];
+        };
+
+        const matches = searchRecursively(obj);
+        return matches.length > 0 ? matches[0] : undefined;
+    }
+
+    /**
+     * 🗺️ STRATEGY 2: Pattern Discovery + Smart Path
+     * Mapeia onde estão os dados e constrói path inteligente
+     */
+    private discoverSmartPath(
+        obj: unknown,
+        templatePath: string,
+    ): string | undefined {
+        // Parse template: .modified_files[0].filename
+        const pathMatch = templatePath.match(/^\.([^[]+)(\[(\d+)\])?\.(.+)$/);
+        if (!pathMatch) return undefined;
+
+        const [, arrayField, , arrayIndex, finalField] = pathMatch;
+
+        // Find all arrays containing the final field
+        if (!finalField) return undefined;
+        const arrayPaths = this.findArraysWithField(obj, finalField);
+
+        // Look for arrays that match our target field name
+        for (const arrayPath of arrayPaths) {
+            if (arrayField && arrayPath.includes(arrayField)) {
+                return `${arrayPath}[${arrayIndex || '0'}].${finalField}`;
+            }
+        }
+
+        // If no exact match, try the first array with the field
+        if (arrayPaths.length > 0) {
+            return `${arrayPaths[0]}[${arrayIndex || '0'}].${finalField}`;
+        }
+
+        return undefined;
+    }
+
+    /**
+     * Helper: Try direct path on object
+     */
+    private tryDirectPath(obj: unknown, segments: string[]): unknown {
+        let current = obj;
+
+        for (const segment of segments) {
+            if (current === null || current === undefined) return undefined;
+
+            if (Array.isArray(current) && /^\d+$/.test(segment)) {
+                const index = parseInt(segment);
+                if (index >= current.length) return undefined;
+                current = current[index];
+            } else if (current && typeof current === 'object') {
+                const objRecord = current as Record<string, unknown>;
+                if (!(segment in objRecord)) return undefined;
+                current = objRecord[segment];
+            } else {
+                return undefined;
+            }
+        }
+
+        return current;
+    }
+
+    /**
+     * Helper: Find arrays containing specific field
+     */
+    private findArraysWithField(obj: unknown, targetField: string): string[] {
+        const arrayPaths: string[] = [];
+
+        const search = (
+            current: unknown,
+            currentPath: string = '',
+            depth: number = 0,
+        ) => {
+            if (depth > 8) return;
+
+            if (Array.isArray(current) && current.length > 0) {
+                const firstItem = current[0];
+                if (
+                    firstItem &&
+                    typeof firstItem === 'object' &&
+                    targetField in firstItem
+                ) {
+                    arrayPaths.push(currentPath || 'root');
+                }
+            } else if (current && typeof current === 'object') {
+                for (const [key, value] of Object.entries(
+                    current as Record<string, unknown>,
+                )) {
+                    const newPath = currentPath ? `${currentPath}.${key}` : key;
+                    search(value, newPath, depth + 1);
+                }
+            }
+        };
+
+        search(obj);
+        return arrayPaths;
+    }
+
+    /**
+     * 🎯 Find ANY field with specific name recursively
+     */
+    private findFieldRecursively(obj: unknown, fieldName: string): unknown {
+        const results: unknown[] = [];
+
+        const search = (current: unknown, depth: number = 0): void => {
+            if (depth > 10) return; // Prevent infinite recursion
+
+            if (Array.isArray(current)) {
+                current.forEach((item) => search(item, depth + 1));
+            } else if (current && typeof current === 'object') {
+                const record = current as Record<string, unknown>;
+
+                // Check if field exists at this level
+                if (fieldName in record) {
+                    results.push(record[fieldName]);
+                }
+
+                // Recurse into nested objects
+                for (const value of Object.values(record)) {
+                    search(value, depth + 1);
+                }
+            }
+        };
+
+        search(obj);
+
+        this.logger.debug(
+            `Found ${results.length} instances of field "${fieldName}"`,
+        );
+        return results.length > 0 ? results[0] : undefined; // Return first match
+    }
+
+    /**
+     * 🔍 Parse structured strings agnostically - try all formats
+     */
+    private parseJsonStrings(obj: unknown): unknown {
+        if (Array.isArray(obj)) {
+            return obj.map((item) => this.parseJsonStrings(item));
+        }
+
+        if (obj && typeof obj === 'object') {
+            const record = obj as Record<string, unknown>;
+            const result: Record<string, unknown> = {};
+
+            for (const [key, value] of Object.entries(record)) {
+                if (typeof value === 'string') {
+                    // 🚀 TRULY AGNOSTIC: Try to parse ANY string
+                    const parsed = this.tryParseAnyFormat(value);
+                    if (parsed !== value) {
+                        // Successfully parsed to something different
+                        result[key] = parsed;
+                        this.logger.debug(
+                            `✅ Parsed structured string in field: ${key}`,
+                        );
+                    } else {
+                        result[key] = value; // Keep original if no parsing worked
+                    }
+                } else {
+                    result[key] = this.parseJsonStrings(value);
+                }
+            }
+
+            return result;
+        }
+
+        return obj;
+    }
+
+    /**
+     * 🚀 TRULY AGNOSTIC: Try to parse string in any structured format
+     */
+    private tryParseAnyFormat(str: string): unknown {
+        const trimmed = str.trim();
+
+        // Skip obviously non-structured strings (performance optimization)
+        if (trimmed.length < 3) return str;
+
+        // Strategy 1: Try JSON parse (most common)
+        try {
+            return JSON.parse(trimmed);
+        } catch {
+            // Continue to other formats
+        }
+
+        // Strategy 2: Try JSON with relaxed quotes
+        try {
+            // Handle single quotes or unquoted keys
+            const relaxedJson = trimmed
+                .replace(/'/g, '"')
+                .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+            return JSON.parse(relaxedJson);
+        } catch {
+            // Continue to other formats
+        }
+
+        // Strategy 3: Try to detect and parse other formats
+        // (Can be extended for XML, YAML, CSV, etc.)
+
+        // If nothing worked, return original string
+        return str;
     }
 
     /**

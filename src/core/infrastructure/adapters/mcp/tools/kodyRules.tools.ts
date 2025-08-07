@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PinoLoggerService } from '../../services/logger/pino.service';
 import { wrapToolHandler } from '../utils/mcp-protocol.utils';
-import { McpToolDefinition } from '../types/mcp-tool.interface';
+import { BaseResponse, McpToolDefinition } from '../types/mcp-tool.interface';
 import {
     IKodyRulesService,
     KODY_RULES_SERVICE_TOKEN,
@@ -33,12 +33,11 @@ type KodyRuleInput = Required<
     severity: KodyRuleSeverity;
 };
 
-interface KodyRulesResponse {
-    count: number;
+interface KodyRulesResponse extends BaseResponse {
     data: Partial<IKodyRule>[];
 }
 
-interface CreateKodyRuleResponse {
+interface CreateKodyRuleResponse extends BaseResponse {
     data: Partial<IKodyRule>;
 }
 
@@ -67,30 +66,33 @@ export class KodyRulesTools {
                 'Get all active Kody Rules at organization level. Use this to see organization-wide coding standards, global rules that apply across all repositories, or when you need a complete overview of all active rules. Returns only ACTIVE status rules.',
             inputSchema,
             outputSchema: z.object({
+                success: z.boolean(),
                 count: z.number(),
                 data: z.array(
                     z
                         .object({
-                            uuid: z.string(),
-                            title: z.string(),
-                            rule: z.string(),
-                            path: z.string(),
-                            status: z.nativeEnum(KodyRulesStatus),
-                            severity: z.string(),
-                            label: z.string(),
-                            type: z.string(),
-                            examples: z.array(
-                                z.object({
-                                    snippet: z.string(),
-                                    isCorrect: z.boolean(),
-                                }),
-                            ),
-                            repositoryId: z.string(),
-                            origin: z.nativeEnum(KodyRulesOrigin),
-                            createdAt: z.date(),
-                            updatedAt: z.date(),
-                            reason: z.string().nullable(),
-                            scope: z.nativeEnum(KodyRulesScope),
+                            uuid: z.string().optional(),
+                            title: z.string().optional(),
+                            rule: z.string().optional(),
+                            path: z.string().optional(),
+                            status: z.nativeEnum(KodyRulesStatus).optional(),
+                            severity: z.string().optional(),
+                            label: z.string().optional(),
+                            type: z.string().optional(),
+                            examples: z
+                                .array(
+                                    z.object({
+                                        snippet: z.string(),
+                                        isCorrect: z.boolean(),
+                                    }),
+                                )
+                                .optional(),
+                            repositoryId: z.string().optional(),
+                            origin: z.nativeEnum(KodyRulesOrigin).optional(),
+                            createdAt: z.date().optional(),
+                            updatedAt: z.date().optional(),
+                            reason: z.string().nullable().optional(),
+                            scope: z.nativeEnum(KodyRulesScope).optional(),
                         })
                         .passthrough(),
                 ),
@@ -116,6 +118,7 @@ export class KodyRulesTools {
                     );
 
                     return {
+                        success: true,
                         count: rules.length,
                         data: rules,
                     };
@@ -146,30 +149,33 @@ export class KodyRulesTools {
                 'Get active Kody Rules specific to a particular repository. Use this to see repository-specific coding standards, rules that only apply to one codebase, or when analyzing rules for a specific project. More focused than get_kody_rules.',
             inputSchema,
             outputSchema: z.object({
+                success: z.boolean(),
                 count: z.number(),
                 data: z.array(
                     z
                         .object({
-                            uuid: z.string(),
-                            title: z.string(),
-                            rule: z.string(),
-                            path: z.string(),
-                            status: z.nativeEnum(KodyRulesStatus),
-                            severity: z.string(),
-                            label: z.string(),
-                            type: z.string(),
-                            examples: z.array(
-                                z.object({
-                                    snippet: z.string(),
-                                    isCorrect: z.boolean(),
-                                }),
-                            ),
-                            repositoryId: z.string(),
-                            origin: z.nativeEnum(KodyRulesOrigin),
-                            createdAt: z.date(),
-                            updatedAt: z.date(),
-                            reason: z.string().nullable(),
-                            scope: z.nativeEnum(KodyRulesScope),
+                            uuid: z.string().optional(),
+                            title: z.string().optional(),
+                            rule: z.string().optional(),
+                            path: z.string().optional(),
+                            status: z.nativeEnum(KodyRulesStatus).optional(),
+                            severity: z.string().optional(),
+                            label: z.string().optional(),
+                            type: z.string().optional(),
+                            examples: z
+                                .array(
+                                    z.object({
+                                        snippet: z.string(),
+                                        isCorrect: z.boolean(),
+                                    }),
+                                )
+                                .optional(),
+                            repositoryId: z.string().optional(),
+                            origin: z.nativeEnum(KodyRulesOrigin).optional(),
+                            createdAt: z.date().optional(),
+                            updatedAt: z.date().optional(),
+                            reason: z.string().nullable().optional(),
+                            scope: z.nativeEnum(KodyRulesScope).optional(),
                         })
                         .passthrough(),
                 ),
@@ -199,7 +205,8 @@ export class KodyRulesTools {
                         );
 
                     return {
-                        count: repositoryRules.length,
+                        success: true,
+                        count: repositoryRules?.length,
                         data: repositoryRules,
                     };
                 },
@@ -285,6 +292,8 @@ export class KodyRulesTools {
                 'Create a new Kody Rule with custom scope and severity. pull_request scope: analyzes entire PR context for PR-level rules. file scope: analyzes individual files one by one for file-level rules. Rule starts in pending status.',
             inputSchema,
             outputSchema: z.object({
+                success: z.boolean(),
+                count: z.number(),
                 data: z
                     .object({
                         uuid: z.string(),
@@ -327,6 +336,8 @@ export class KodyRulesTools {
                         );
 
                     return {
+                        success: true,
+                        count: 1,
                         data: result,
                     };
                 },

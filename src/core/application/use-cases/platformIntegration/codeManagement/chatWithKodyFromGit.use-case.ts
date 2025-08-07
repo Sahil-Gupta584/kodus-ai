@@ -41,6 +41,7 @@ interface Comment {
         html?: string;
         type?: string;
     };
+    path?: string;
     deleted?: boolean;
     user?: { login?: string; display_name?: string };
     author?: {
@@ -168,7 +169,7 @@ export class ChatWithKodyFromGitUseCase {
                         teamId: organizationAndTeamData.teamId,
                         repositoryId: repository.id,
                         userId: sender.id,
-                        userName: sender.login,
+                        suggestionCommentId: originalKodyComment?.id,
                     },
                     {
                         prefix: 'cmc', // Code Management Chat
@@ -624,6 +625,8 @@ export class ChatWithKodyFromGitUseCase {
             platformType,
             codeManagementContext: {
                 originalComment: {
+                    suggestionCommentId: originalKodyComment?.id,
+                    suggestionFilePath: comment?.path,
                     text: originalKodyComment?.body,
                     diffHunk: originalKodyComment?.diff_hunk,
                 },
