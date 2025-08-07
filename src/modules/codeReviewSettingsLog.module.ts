@@ -18,6 +18,7 @@ import { FindCodeReviewSettingsLogsUseCase } from '@/core/application/use-cases/
 import { UserStatusLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/userStatusLog.handler';
 import { IntegrationLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/integrationLog.handler';
 import { LogModule } from './log.module';
+import { PullRequestMessagesLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/pullRequestMessageLog.handler';
 
 @Module({
     imports: [
@@ -42,6 +43,7 @@ import { LogModule } from './log.module';
         KodyRulesLogHandler,
         IntegrationLogHandler,
         UserStatusLogHandler,
+        PullRequestMessagesLogHandler,
         RegisterUserStatusLogUseCase,
         FindCodeReviewSettingsLogsUseCase,
     ],
@@ -56,6 +58,7 @@ import { LogModule } from './log.module';
         FindCodeReviewSettingsLogsUseCase,
         IntegrationLogHandler,
         UserStatusLogHandler,
+        PullRequestMessagesLogHandler,
     ],
     controllers: [CodeReviewSettingLogController],
 })

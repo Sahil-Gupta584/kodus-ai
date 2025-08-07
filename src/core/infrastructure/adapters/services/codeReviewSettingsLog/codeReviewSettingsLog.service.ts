@@ -26,6 +26,7 @@ import {
     UserStatusLogHandler,
     UserStatusLogParams,
 } from './userStatusLog.handler';
+import { PullRequestMessagesLogHandler, PullRequestMessagesLogParams } from './pullRequestMessageLog.handler';
 
 @Injectable()
 export class CodeReviewSettingsLogService
@@ -40,6 +41,7 @@ export class CodeReviewSettingsLogService
         private readonly repositoriesLogHandler: RepositoriesLogHandler,
         private readonly integrationLogHandler: IntegrationLogHandler,
         private readonly userStatusLogHandler: UserStatusLogHandler,
+        private readonly pullRequestMessagesLogHandler: PullRequestMessagesLogHandler,
     ) {}
 
     async create(
@@ -97,5 +99,14 @@ export class CodeReviewSettingsLogService
         params: UserStatusLogParams,
     ): Promise<void> {
         await this.userStatusLogHandler.logUserStatusChanges(params);
+    }
+
+    // Pull Request Messages
+    public async registerPullRequestMessagesLog(
+        params: PullRequestMessagesLogParams,
+    ): Promise<void> {
+        await this.pullRequestMessagesLogHandler.logPullRequestMessagesAction(
+            params,
+        );
     }
 }

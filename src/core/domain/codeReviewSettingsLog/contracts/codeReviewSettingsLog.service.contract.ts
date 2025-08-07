@@ -2,6 +2,7 @@ import { ICodeReviewSettingsLogRepository } from '@/core/domain/codeReviewSettin
 import { CodeReviewConfigLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/codeReviewConfigLog.handler';
 import { IntegrationLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/integrationLog.handler';
 import { KodyRuleLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/kodyRulesLog.handler';
+import { PullRequestMessagesLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/pullRequestMessageLog.handler';
 import { RepositoriesLogParams, RepositoryConfigRemovalParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/repositoriesLog.handler';
 import { UserStatusLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/userStatusLog.handler';
 
@@ -21,4 +22,7 @@ export interface ICodeReviewSettingsLogService
     ): Promise<void>;
     registerIntegrationLog(params: IntegrationLogParams): Promise<void>;
     registerUserStatusLog(params: UserStatusLogParams): Promise<void>;
+    registerPullRequestMessagesLog(
+        params: PullRequestMessagesLogParams,
+    ): Promise<void>;
 }
