@@ -50,17 +50,21 @@ export class GetRepositoryTreeUseCase implements IUseCase {
                     repositoryId: params.repositoryId,
                 });
 
+            let tree;
+
             switch (params.treeType) {
                 case RepositoryTreeType.DIRECTORIES:
-                    return this.formatDirectoriesOnly(repositoryTree);
+                    tree = this.formatDirectoriesOnly(repositoryTree);
 
                 case RepositoryTreeType.FILES:
-                    return this.formatFilesOnly(repositoryTree);
+                    tree = this.formatFilesOnly(repositoryTree);
 
                 case RepositoryTreeType.ALL:
                 default:
-                    return this.formatAllTree(repositoryTree);
+                    tree = this.formatAllTree(repositoryTree);
             }
+
+            return { repository: 'RepositoryName', tree: tree };
         } catch (error) {
             this.logger.error({
                 message: 'Error while getting repository tree',
