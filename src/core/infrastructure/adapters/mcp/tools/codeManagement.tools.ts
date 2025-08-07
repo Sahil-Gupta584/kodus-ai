@@ -404,7 +404,7 @@ export class CodeManagementTools {
                         .string()
                         .optional()
                         .describe(
-                            'Git author name or email to filter commits by specific contributor',
+                            'Git author name to filter commits by specific contributor',
                         ),
                     branch: z
                         .string()
