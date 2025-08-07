@@ -730,10 +730,10 @@ export class GithubService
         const commits = await octokit.paginate(octokit.rest.repos.listCommits, {
             owner,
             repo,
-            author,
-            sha: branch,
-            since: startDate?.toISOString(),
-            until: endDate?.toISOString(),
+            author: author ? author : undefined,
+            sha: branch ? branch : undefined,
+            since: startDate ? startDate.toISOString() : undefined,
+            until: endDate ? endDate.toISOString() : undefined,
             per_page: 100,
         });
 

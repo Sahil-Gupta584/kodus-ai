@@ -1451,29 +1451,33 @@ export class BitbucketService
         const { bitbucketAPI, workspaceId, repoId, filters } = params;
         const { startDate, endDate, author, branch } = filters;
 
-        const query: string[] = [];
-        if (startDate) {
-            query.push(`date >= "${startDate.toISOString()}"`);
-        }
-        if (endDate) {
-            query.push(`date <= "${endDate.toISOString()}"`);
-        }
-        if (author) {
-            query.push(`author="${author}"`);
-        }
-        const q = query.length > 0 ? query.join(' AND ') : undefined;
-
         const initialResponse = await bitbucketAPI.commits.list({
             repo_slug: `{${repoId}}`,
             workspace: `{${workspaceId}}`,
-            include: branch,
-            q,
+            include: branch ? branch : undefined,
         });
 
-        const filteredCommits = await this.getPaginatedResults(
+        const commits = await this.getPaginatedResults(
             bitbucketAPI,
             initialResponse,
         );
+
+        const filteredCommits = commits.filter((commit) => {
+            let isValid = true;
+
+            if (startDate) {
+                isValid =
+                    isValid && new Date(commit.date) >= new Date(startDate);
+            }
+            if (endDate) {
+                isValid = isValid && new Date(commit.date) <= new Date(endDate);
+            }
+            if (author) {
+                const [name] = this.extractUsernameEmail(commit.author);
+                isValid = isValid && name === author;
+            }
+            return isValid;
+        });
 
         return filteredCommits;
     }

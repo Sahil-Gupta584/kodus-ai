@@ -995,15 +995,28 @@ export class GitlabService
         const { startDate, endDate, author, branch } = filters || {};
 
         const commits = await gitlabAPI.Commits.all(projectId, {
-            since: startDate?.toISOString(),
-            until: endDate?.toISOString(),
-            author,
-            refName: branch,
+            since: startDate ? startDate.toISOString() : undefined,
+            until: endDate ? endDate.toISOString() : undefined,
+            author: author ? author : undefined, // doesn't seem to work
+            refName: branch ? branch : undefined,
             perPage: 100,
-            all: true, // Explicitly fetch all pages
+            all: true,
         });
 
-        return commits;
+        const filteredCommits = commits.filter((commit) => {
+            let isValid = true;
+
+            if (author) {
+                isValid =
+                    isValid &&
+                    (commit.author_name === author ||
+                        commit.committer_name === author);
+            }
+
+            return isValid;
+        });
+
+        return filteredCommits.reverse();
     }
 
     async getListMembers(

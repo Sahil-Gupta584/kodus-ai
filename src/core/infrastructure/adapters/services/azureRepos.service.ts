@@ -2466,12 +2466,16 @@ export class AzureReposService
             projectId,
             repositoryId,
             searchCriteria: {
-                author: filters.author,
+                author: filters.author ? filters.author : undefined,
                 itemVersion: filters.branch
                     ? { version: filters.branch }
                     : undefined,
-                fromDate: filters.startDate?.toISOString(),
-                toDate: filters.endDate?.toISOString(),
+                fromDate: filters.startDate
+                    ? filters.startDate.toISOString()
+                    : undefined,
+                toDate: filters.endDate
+                    ? filters.endDate.toISOString()
+                    : undefined,
             },
         });
     }
