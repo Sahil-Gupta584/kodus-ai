@@ -38,6 +38,7 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
             pullRequestMessages.organizationId,
             pullRequestMessages.configLevel,
             pullRequestMessages.repositoryId,
+            pullRequestMessages.directoryId,
         );
 
         if (existingPullRequestMessage) {
@@ -52,14 +53,23 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
         organizationId: string,
         configLevel: ConfigLevel,
         repositoryId?: string,
+        directoryId?: string,
     ): Promise<IPullRequestMessages | null> {
         const searchCriteria: any = {
             organizationId,
             configLevel,
         };
 
-        if (configLevel === ConfigLevel.REPOSITORY && repositoryId) {
+        if (
+            repositoryId &&
+            (configLevel === ConfigLevel.REPOSITORY ||
+                configLevel === ConfigLevel.DIRECTORY)
+        ) {
             searchCriteria.repositoryId = repositoryId;
+        }
+
+        if (configLevel === ConfigLevel.DIRECTORY && directoryId) {
+            searchCriteria.directoryId = directoryId;
         }
 
         return await this.pullRequestMessagesService.findOne(searchCriteria);
