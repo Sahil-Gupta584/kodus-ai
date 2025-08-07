@@ -439,8 +439,18 @@ export class CodeManagementTools {
                             teamId: args.teamId,
                         },
                         repository: args.repository,
-                        ...args.filters,
+                        filters: {
+                            author: args.filters?.author,
+                            startDate: args.filters?.since
+                                ? new Date(args.filters.since)
+                                : undefined,
+                            endDate: args.filters?.until
+                                ? new Date(args.filters.until)
+                                : undefined,
+                            branch: args.filters?.branch,
+                        },
                     };
+
                     const commits =
                         await this.codeManagementService.getCommits(params);
 
