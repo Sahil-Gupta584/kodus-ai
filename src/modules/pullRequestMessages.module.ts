@@ -5,11 +5,17 @@ import { PullRequestMessagesRepository } from '@/core/infrastructure/adapters/re
 import { PullRequestMessagesModelInstance } from '@/core/infrastructure/adapters/repositories/mongoose/schema';
 import { PullRequestMessagesService } from '@/core/infrastructure/adapters/services/pullRequestMessages/pullRequestMessages.service';
 import { PullRequestMessagesController } from '@/core/infrastructure/http/controllers/pullRequestMessages.controller';
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
+import { CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { CodeReviewSettingsLogService } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/codeReviewSettingsLog.service';
 
 @Module({
-    imports: [MongooseModule.forFeature([PullRequestMessagesModelInstance])],
+    imports: [
+        MongooseModule.forFeature([PullRequestMessagesModelInstance]),
+        forwardRef(() => CodeReviewSettingsLogModule),
+    ],
     providers: [
         {
             provide: PULL_REQUEST_MESSAGES_REPOSITORY_TOKEN,
@@ -19,11 +25,16 @@ import { MongooseModule } from '@nestjs/mongoose';
             provide: PULL_REQUEST_MESSAGES_SERVICE_TOKEN,
             useClass: PullRequestMessagesService,
         },
+        {
+            provide: CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+            useClass: CodeReviewSettingsLogService,
+        },
         ...PullRequestMessagesUseCases,
     ],
     exports: [
         PULL_REQUEST_MESSAGES_REPOSITORY_TOKEN,
         PULL_REQUEST_MESSAGES_SERVICE_TOKEN,
+        CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ],
     controllers: [PullRequestMessagesController],
 })

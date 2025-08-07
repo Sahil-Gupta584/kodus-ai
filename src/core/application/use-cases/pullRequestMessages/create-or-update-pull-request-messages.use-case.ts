@@ -7,6 +7,12 @@ import {
 import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { REQUEST } from '@nestjs/core';
 import { ConfigLevel } from '@/config/types/general/pullRequestMessages.type';
+import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
+import { PullRequestMessagesLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/pullRequestMessageLog.handler';
+import {
+    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+    ICodeReviewSettingsLogService,
+} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 
 @Injectable()
 export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
@@ -14,9 +20,14 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
         @Inject(PULL_REQUEST_MESSAGES_SERVICE_TOKEN)
         private readonly pullRequestMessagesService: IPullRequestMessagesService,
 
+        @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
+        private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
         @Inject(REQUEST)
         private readonly request: Request & {
             user: {
+                id: string;
+                email: string;
                 organization: { uuid: string };
             };
         },
@@ -41,12 +52,40 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
             pullRequestMessages.directoryId,
         );
 
-        if (existingPullRequestMessage) {
+        const isUpdate = !!existingPullRequestMessage;
+
+        const logParams: PullRequestMessagesLogParams = {
+            organizationAndTeamData: {
+                organizationId: pullRequestMessages.organizationId,
+            },
+            userInfo: {
+                userId: this.request.user.id,
+                userEmail: this.request.user.email,
+            },
+            actionType: ActionType.EDIT,
+            configLevel: pullRequestMessages.configLevel,
+            repositoryId: pullRequestMessages.repositoryId,
+            directoryId: pullRequestMessages.directoryId,
+            startReviewMessage: pullRequestMessages.startReviewMessage,
+            endReviewMessage: pullRequestMessages.endReviewMessage,
+            existingStartMessage:
+                existingPullRequestMessage?.startReviewMessage,
+            existingEndMessage: existingPullRequestMessage?.endReviewMessage,
+            isUpdate,
+        };
+
+        if (isUpdate) {
             await this.pullRequestMessagesService.update(pullRequestMessages);
+            this.codeReviewSettingsLogService.registerPullRequestMessagesLog(
+                logParams,
+            );
             return;
         }
 
         await this.pullRequestMessagesService.create(pullRequestMessages);
+        this.codeReviewSettingsLogService.registerPullRequestMessagesLog(
+            logParams,
+        );
     }
 
     private async findExistingConfiguration(
