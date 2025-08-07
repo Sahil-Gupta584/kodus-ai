@@ -25,7 +25,6 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
         this._startReviewMessage = pullRequestMessages.startReviewMessage;
         this._endReviewMessage = pullRequestMessages.endReviewMessage;
         this._directoryId = pullRequestMessages.directoryId;
-        this._directoryPath = pullRequestMessages.directoryPath;
     }
 
     toJson(): IPullRequestMessages {
@@ -37,7 +36,6 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
             startReviewMessage: this._startReviewMessage,
             endReviewMessage: this._endReviewMessage,
             directoryId: this._directoryId,
-            directoryPath: this._directoryPath,
         };
     }
 
@@ -50,7 +48,6 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
             startReviewMessage: this._startReviewMessage,
             endReviewMessage: this._endReviewMessage,
             directoryId: this._directoryId,
-            directoryPath: this._directoryPath,
         };
     }
 
@@ -80,10 +77,6 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
 
     get directoryId(): string | undefined {
         return this._directoryId;
-    }
-
-    get directoryPath(): string | undefined {
-        return this._directoryPath;
     }
 
     public static create(
