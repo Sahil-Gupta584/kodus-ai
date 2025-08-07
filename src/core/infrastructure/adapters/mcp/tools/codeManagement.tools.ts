@@ -7,10 +7,8 @@ import { BaseResponse, McpToolDefinition } from '../types/mcp-tool.interface';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import {
     PullRequests,
-    PullRequestDetails,
+    PullRequestDetails as PullRequestDetailsType,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
-import { Commit } from '@/config/types/general/commit.type';
-import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 
 const RepositorySchema = z
     .object({
@@ -34,15 +32,20 @@ const RepositorySchema = z
 
 const PullRequestSchema = z
     .object({
-        id: z.string(),
-        author_id: z.string(),
-        author_name: z.string(),
-        message: z.string(),
+        id: z
+            .union([z.string(), z.number()])
+            .transform((val) => val?.toString()),
+        author_id: z
+            .union([z.string(), z.number()])
+            .optional()
+            .transform((val) => val?.toString()),
+        author_name: z.string().optional(),
+        message: z.string().optional(),
         created_at: z.string().optional(),
-        closed_at: z.string().optional(),
+        closed_at: z.union([z.string(), z.null()]).optional(),
         targetRefName: z.string().optional(),
         sourceRefName: z.string().optional(),
-        state: z.string(),
+        state: z.string().optional(),
         organizationId: z.string().optional(),
         pull_number: z.number().optional(),
         repository: z.string().optional(),
@@ -50,48 +53,37 @@ const PullRequestSchema = z
     })
     .passthrough();
 
-const CommitSchema = z
-    .object({
-        sha: z.string(),
-        commit: z.object({
-            author: z.object({
-                id: z.string().optional(),
-                name: z.string(),
-                email: z.string(),
-                date: z.string(),
-            }),
-            message: z.string(),
-        }),
-        parents: z.array(z.object({ sha: z.string() })).optional(),
-    })
-    .passthrough();
+const CommitSchema = z.any();
 
 const RepositoryFileSchema = z
     .object({
         path: z.string(),
-        content: z.string(),
-        sha: z.string(),
-        size: z.number(),
-        type: z.string(),
-        encoding: z.string(),
+        content: z.string().optional(),
+        sha: z.string().optional(),
+        size: z.number().optional(),
+        type: z.string().optional(),
+        encoding: z.string().optional(),
+        filename: z.string().optional(),
     })
     .passthrough();
 
 const PullRequestDetailsSchema = PullRequestSchema.extend({
-    prURL: z.string().url().nullable(),
-    number: z.number(),
-    body: z.string().nullable(),
-    title: z.string().nullable(),
-    updated_at: z.string().nullable(),
-    merged_at: z.string().nullable(),
+    prURL: z.union([z.string().url(), z.null()]).optional(),
+    number: z.number().optional(),
+    body: z.union([z.string(), z.null()]).optional(),
+    title: z.union([z.string(), z.null()]).optional(),
+    updated_at: z.union([z.string(), z.null()]).optional(),
+    merged_at: z.union([z.string(), z.null()]).optional(),
 
     participants: z
         .array(
             z.object({
-                id: z.string(),
-                approved: z.boolean(),
-                state: z.string(),
-                type: z.string(),
+                id: z
+                    .union([z.string(), z.number()])
+                    .transform((val) => val?.toString()),
+                approved: z.boolean().optional(),
+                state: z.string().optional(),
+                type: z.string().optional(),
             }),
         )
         .optional(),
@@ -99,29 +91,48 @@ const PullRequestDetailsSchema = PullRequestSchema.extend({
     reviewers: z
         .array(
             z.object({
-                id: z.string(),
+                id: z
+                    .union([z.string(), z.number()])
+                    .transform((val) => val?.toString()),
             }),
         )
         .optional(),
 
-    head: z.object({
-        ref: z.string().nullable(),
-        repo: z.object({
-            id: z.string().nullable(),
-            name: z.string().nullable(),
-        }),
-    }),
+    head: z
+        .object({
+            ref: z.union([z.string(), z.null()]).optional(),
+            repo: z
+                .object({
+                    id: z
+                        .union([z.string(), z.number(), z.null()])
+                        .optional()
+                        .transform((val) => val?.toString()),
+                    name: z.union([z.string(), z.null()]).optional(),
+                })
+                .passthrough(),
+        })
+        .passthrough()
+        .optional(),
 
-    base: z.object({
-        ref: z.string().nullable(),
-    }),
+    base: z
+        .object({
+            ref: z.union([z.string(), z.null()]).optional(),
+        })
+        .passthrough()
+        .optional(),
 
-    user: z.object({
-        login: z.string(),
-        name: z.string().nullable(),
-        id: z.string().nullable(),
-    }),
-});
+    user: z
+        .object({
+            login: z.string().optional(),
+            name: z.union([z.string(), z.null()]).optional(),
+            id: z
+                .union([z.string(), z.number(), z.null()])
+                .optional()
+                .transform((val) => val?.toString()),
+        })
+        .passthrough()
+        .optional(),
+}).passthrough();
 
 const PullRequestDetailsWithFilesSchema = PullRequestDetailsSchema.extend({
     modified_files: z
@@ -131,7 +142,7 @@ const PullRequestDetailsWithFilesSchema = PullRequestDetailsSchema.extend({
             }),
         )
         .optional(),
-});
+}).passthrough();
 
 interface RepositoriesResponse extends BaseResponse {
     data: Repositories[];
@@ -142,15 +153,15 @@ interface PullRequestsResponse extends BaseResponse {
 }
 
 interface CommitsResponse extends BaseResponse {
-    data: Commit[];
+    data: z.infer<typeof CommitSchema>[];
 }
 
 interface PullRequestDetailsResponse extends BaseResponse {
-    data: PullRequestDetails;
+    data: PullRequestDetailsType | null;
 }
 
 interface RepositoryFilesResponse extends BaseResponse {
-    data: RepositoryFile[];
+    data: z.infer<typeof RepositoryFileSchema>[];
 }
 
 interface RepositoryContentResponse extends BaseResponse {
@@ -160,7 +171,7 @@ interface RepositoryContentResponse extends BaseResponse {
 
 interface RepositoryLanguagesResponse extends BaseResponse {
     success: boolean;
-    data: Record<string, number>;
+    data: string;
 }
 interface PullRequestFileContentResponse extends BaseResponse {
     success: boolean;
@@ -488,7 +499,7 @@ export class CodeManagementTools {
             outputSchema: z.object({
                 success: z.boolean(),
                 count: z.number(),
-                data: PullRequestDetailsWithFilesSchema,
+                data: z.union([PullRequestDetailsWithFilesSchema, z.null()]),
             }),
             execute: wrapToolHandler(
                 async (
@@ -511,6 +522,14 @@ export class CodeManagementTools {
                             params,
                         );
 
+                    if (!details) {
+                        return {
+                            success: false,
+                            count: 0,
+                            data: null,
+                        };
+                    }
+
                     const files =
                         await this.codeManagementService.getFilesByPullRequestId(
                             params,
@@ -518,9 +537,10 @@ export class CodeManagementTools {
 
                     const prDetails = {
                         ...details,
-                        modified_files: files.map((file) => ({
-                            filename: file.filename,
-                        })),
+                        modified_files:
+                            files?.map((file) => ({
+                                filename: file.filename,
+                            })) || [],
                     };
 
                     return {
@@ -612,7 +632,7 @@ export class CodeManagementTools {
 
                     return {
                         success: true,
-                        count: files.length,
+                        count: files?.length ?? 0,
                         data: files,
                     };
                 },
@@ -703,7 +723,8 @@ export class CodeManagementTools {
                             params,
                         );
 
-                    const content = fileContent?.data?.content;
+                    const content =
+                        fileContent?.data?.content ?? 'NOT FIND CONTENT';
                     let decodedContent = content;
 
                     if (content && fileContent?.data?.encoding === 'base64') {
@@ -715,7 +736,6 @@ export class CodeManagementTools {
 
                     return {
                         success: true,
-                        count: 1,
                         data: decodedContent,
                     };
                 },
@@ -868,9 +888,54 @@ export class CodeManagementTools {
                         (f) => f.filename === args.filePath,
                     );
 
+                    if (!file) {
+                        return {
+                            success: false,
+                            data: 'NOT FIND CONTENT',
+                        };
+                    }
+
+                    const pullRequest =
+                        await this.codeManagementService.getPullRequestByNumber(
+                            params,
+                        );
+
+                    if (!pullRequest) {
+                        return {
+                            success: false,
+                            data: 'NOT FIND CONTENT',
+                        };
+                    }
+
+                    const fileContent =
+                        await this.codeManagementService.getRepositoryContentFile(
+                            {
+                                organizationAndTeamData:
+                                    params.organizationAndTeamData,
+                                repository: params.repository,
+                                file: { filename: file.filename },
+                                pullRequest: {
+                                    branch: pullRequest.head.ref,
+                                    head: { ref: pullRequest.head.ref },
+                                    base: { ref: pullRequest.base.ref },
+                                },
+                            },
+                        );
+
+                    const content =
+                        fileContent?.data?.content ?? 'NOT FIND CONTENT';
+                    let decodedContent = content;
+
+                    if (content && fileContent?.data?.encoding === 'base64') {
+                        decodedContent = Buffer.from(
+                            content,
+                            'base64',
+                        ).toString('utf-8');
+                    }
+
                     return {
                         success: true,
-                        data: file.content,
+                        data: decodedContent,
                     };
                 },
             ),
@@ -969,7 +1034,8 @@ export class CodeManagementTools {
             this.getPullRequestDetails(),
             this.getRepositoryFiles(),
             this.getRepositoryContent(),
-            this.getRepositoryLanguages(),
+            //TODO: Uncomment this when we have a way to get the languages
+            //this.getRepositoryLanguages(),
             this.getPullRequestFileContent(),
             this.getDiffForFile(),
         ];

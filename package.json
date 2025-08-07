@@ -51,7 +51,7 @@
         "dev:yalc:watch": "docker compose -f docker-compose.dev.small.yml exec -d kodus-orchestrator sh -lc \"cd packages/kodus-flow && (yarn build:watch &); (chokidar 'dist/**/*' -c 'yalc push --changed --sig' & )\"",
         "yalc:update:flow": "docker compose -f docker-compose.dev.small.yml exec kodus-orchestrator sh -lc \"cd /usr/src/app && yalc update @kodus/flow && yarn install\"",
         "yalc:remove:flow": "docker compose -f docker-compose.dev.small.yml exec kodus-orchestrator sh -lc \"cd /usr/src/app && yalc remove @kodus/flow && yarn install\"",
-        "dev:yalc:clean": "docker compose -f docker-compose.dev.small.yml down && docker volume rm yalc_store node_modules_cache || true"
+        "dev:yalc:clean": "docker compose -f docker-compose.dev.small.yml down && docker volume rm kodus-ai_yalc_store kodus-ai_node_modules_cache || true"
     },
     "dependencies": {
         "@anthropic-ai/sdk": "^0.58.0",
@@ -60,7 +60,7 @@
         "@gitbeaker/rest": "^43.3.0",
         "@golevelup/nestjs-rabbitmq": "^6.0.2",
         "@google/generative-ai": "^0.24.1",
-        "@kodus/flow": "^0.1.6",
+        "@kodus/flow": "^0.1.7",
         "@kodus/kodus-common": "^1.2.2",
         "@kodus/kodus-proto": "https://registry.npmjs.org/@kodus/kodus-proto/-/kodus-proto-3.1.2.tgz",
         "@langchain/anthropic": "^0.3.25",

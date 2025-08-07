@@ -35,36 +35,66 @@ export class ConversationAgentProvider {
     }
 
     private createLLMAdapter() {
-        const llm = this.llmProviderService.getLLMProvider({
+        const base = this.llmProviderService.getLLMProvider({
             model: LLMModelProvider.GEMINI_2_5_PRO,
             temperature: 0,
             maxTokens: 8000,
-            maxReasoningTokens: 500,
-        });
+            maxReasoningTokens: 800,
+        }) as any;
 
-        // ✅ WRAPPER para compatibilizar com nossa interface
+        function sanitizeName(name: string) {
+            const cleaned = name.replace(/[^\w.\-]/g, '_');
+            return cleaned.slice(0, 64);
+        }
+
         const wrappedLLM = {
-            async call(messages: any[]): Promise<any> {
-                // Converter nossas mensagens para formato LangChain
-                const langchainMessages = messages.map((msg) => ({
+            async call(messages: any[], options: any = {}) {
+                const lcMessages = messages.map((m) => ({
                     type:
-                        msg.role === 'system'
+                        m.role === 'system'
                             ? 'system'
-                            : msg.role === 'user'
+                            : m.role === 'user'
                               ? 'human'
                               : 'ai',
-                    content: msg.content,
+                    content: m.content,
                 }));
 
-                const response = await llm.invoke(langchainMessages);
+                let model = base;
+                if (options.tools?.length) {
+                    const toolDefs = options.tools.map((t: any) => ({
+                        type: 'function',
+                        function: {
+                            name: sanitizeName(t.name),
+                            description: t.description ?? '',
+                            parameters: {
+                                ...t.parameters,
+                                additionalProperties: false,
+                            },
+                        },
+                    }));
+
+                    const bindOpts: any = {};
+                    if (options.toolChoice) {
+                        bindOpts.tool_choice = options.toolChoice;
+                    }
+
+                    model = (base as any).bindTools(toolDefs, bindOpts);
+                }
+
+                const resp = await model.invoke(lcMessages, {
+                    stop: options.stop,
+                    maxTokens: options.maxTokens,
+                    temperature: options.temperature,
+                });
 
                 return {
-                    content: response.content,
-                    usage: response.usage || {
+                    content: resp.content,
+                    usage: resp.usage ?? {
                         promptTokens: 0,
                         completionTokens: 0,
                         totalTokens: 0,
                     },
+                    tool_calls: resp.tool_calls,
                 };
             },
         };

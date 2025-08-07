@@ -2306,10 +2306,10 @@
   dependencies:
     buffer "^6.0.3"
 
-"@kodus/flow@^0.1.6":
-  version "0.1.6"
-  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/flow/-/@kodus/flow-0.1.6.tgz#da4a210d6dcdfc21b21252a8f23fb2d13304616d"
-  integrity sha512-FvWK/cKtytPv5VzqsAhO7kwjMv2OopEHhQBzVPIxTuvcyr7V74U8tViyL8rGrlLmP8tOsynrXpdT1AcHql8tCA==
+"@kodus/flow@^0.1.7":
+  version "0.1.7"
+  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/flow/-/@kodus/flow-0.1.7.tgz#cd2a3356a636dd9c25cdfeb1d4db1dbb33d0834e"
+  integrity sha512-trmsOA8ckHYzm7hfXTTZQ5Hk4Rp870mqq3F1zetfJ477Q+u2w0Oy1cZfly4W+0icCvHuv9ArI7uDy2+vapDcAA==
   dependencies:
     "@google/generative-ai" "^0.24.1"
     "@modelcontextprotocol/sdk" "^1.17.1"

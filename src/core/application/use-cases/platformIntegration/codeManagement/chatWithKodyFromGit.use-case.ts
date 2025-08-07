@@ -41,6 +41,7 @@ interface Comment {
         html?: string;
         type?: string;
     };
+    path?: string;
     deleted?: boolean;
     user?: { login?: string; display_name?: string };
     author?: {
@@ -625,6 +626,7 @@ export class ChatWithKodyFromGitUseCase {
             codeManagementContext: {
                 originalComment: {
                     suggestionCommentId: originalKodyComment?.id,
+                    suggestionFilePath: comment?.path,
                     text: originalKodyComment?.body,
                     diffHunk: originalKodyComment?.diff_hunk,
                 },
