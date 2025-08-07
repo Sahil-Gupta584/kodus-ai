@@ -129,7 +129,7 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
                 await this.pullRequestMessagesService.findOne({
                     organizationId,
                     repositoryId,
-                    directoryPath: context.codeReviewConfig?.directoryPath,
+                    directoryId: context.codeReviewConfig?.directoryId,
                     configLevel: ConfigLevel.DIRECTORY,
                 });
         }
