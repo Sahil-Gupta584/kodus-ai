@@ -2333,87 +2333,147 @@ export class AzureReposService
 
     async getCommits(params: {
         organizationAndTeamData: OrganizationAndTeamData;
+        repository?: Partial<Repository>;
         filters?: {
-            startDate?: string;
-            endDate?: string;
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
         };
     }): Promise<Commit[]> {
-        try {
-            const { organizationAndTeamData } = params;
-            const filters = params.filters ?? {};
-            const { startDate, endDate } = filters;
+        const { organizationAndTeamData, repository, filters } = params;
 
+        try {
             const azureAuthDetail = await this.getAuthDetails(
                 organizationAndTeamData,
             );
-
             const { orgName, token } = azureAuthDetail;
 
-            const repositories: Repositories[] =
+            const configuredRepositories: Repositories[] =
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(
                     organizationAndTeamData,
                     IntegrationConfigKey.REPOSITORIES,
                 );
-            if (!repositories || repositories.length === 0) {
+
+            if (
+                !azureAuthDetail ||
+                !configuredRepositories ||
+                configuredRepositories.length === 0
+            ) {
+                this.logger.warn({
+                    message:
+                        'Azure Repos auth details or repositories not found.',
+                    context: AzureReposService.name,
+                    metadata: params,
+                });
+
                 return [];
             }
 
-            const commitsByRepo = await Promise.all(
-                repositories.map(async (repo) => {
-                    return this.azureReposRequestHelper.getCommits({
-                        orgName,
-                        token,
-                        projectId: repo.project.id,
-                        repositoryId: repo.id,
+            let reposToProcess: Repositories[] = configuredRepositories;
+
+            // If a specific repository is requested, filter the list.
+            if (repository && repository.name) {
+                const foundRepo = configuredRepositories.find(
+                    (r) => r.name === repository.name,
+                );
+
+                if (!foundRepo) {
+                    this.logger.warn({
+                        message: `Repository ${repository.name} not found in the list of configured repositories.`,
+                        context: AzureReposService.name,
+                        metadata: params,
                     });
+                    return [];
+                }
+
+                reposToProcess = [foundRepo];
+            }
+
+            const promises = reposToProcess.map((repo) =>
+                this.getCommitsByRepo({
+                    orgName,
+                    token,
+                    projectId: repo.project.id,
+                    repositoryId: repo.id,
+                    filters: filters || {},
                 }),
             );
 
-            const allCommits = commitsByRepo.flat();
+            const results = await Promise.all(promises);
+            const rawCommits = results.flat();
 
-            const filteredCommits = allCommits.filter((commit: any) => {
-                const commitDate = new Date(commit.author?.date).getTime();
-                const start = startDate ? new Date(startDate).getTime() : null;
-                const end = endDate ? new Date(endDate).getTime() : null;
-                return (
-                    (!start || commitDate >= start) &&
-                    (!end || commitDate <= end)
-                );
-            });
-
-            const formattedCommits: Commit[] = filteredCommits.map(
-                (commit: any) => {
-                    return {
-                        sha: commit.commitId,
-                        commit: {
-                            author: {
-                                id: commit.author?.id || '',
-                                name: commit.author?.name,
-                                email: commit.author?.email,
-                                date: commit.author?.date,
-                            },
-                            message: commit.comment,
-                        },
-                    };
-                },
-            );
-
-            const sortedCommits = formattedCommits.sort(
-                (a, b) =>
-                    new Date(b.commit.author.date).getTime() -
-                    new Date(a.commit.author.date).getTime(),
-            );
-
-            return sortedCommits;
+            return rawCommits.map((rawCommit) => this.formatCommit(rawCommit));
         } catch (error) {
             this.logger.error({
-                message: 'Error to get commits',
-                context: this.getCommits.name,
+                message: 'Error fetching commits from Azure Repos',
+                context: AzureReposService.name,
                 error: error,
-                metadata: { params },
+                metadata: params,
             });
             return [];
         }
+    }
+
+    /**
+     * Formats a raw commit from the Azure DevOps API into the standard Commit interface.
+     * @param rawCommit The raw commit data from Azure Repos.
+     * @returns A formatted Commit object.
+     */
+    private formatCommit(rawCommit: AzureRepoCommit): Commit {
+        return {
+            sha: rawCommit.commitId ?? '',
+            commit: {
+                author: {
+                    id: rawCommit.author?.id ?? '',
+                    name: rawCommit.author?.name ?? '',
+                    email: rawCommit.author?.email ?? '',
+                    date: rawCommit.author?.date?.toString() ?? '',
+                },
+                message: rawCommit.comment ?? '',
+            },
+            parents:
+                rawCommit.parents
+                    ?.map((parentSha) => ({ sha: parentSha }))
+                    .filter((parent) => parent.sha) ?? [],
+        };
+    }
+
+    /**
+     * Fetches commits for a single Azure repository, applying server-side filters.
+     * @param params Parameters including auth, repo identifiers, and filters.
+     * @returns A promise that resolves to an array of raw commit data.
+     */
+    private async getCommitsByRepo(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        filters: {
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<AzureRepoCommit[]> {
+        const { orgName, token, projectId, repositoryId, filters } = params;
+
+        // The azureReposRequestHelper is assumed to handle the actual API call.
+        // We pass the filters to it so it can build the searchCriteria for the API.
+        return this.azureReposRequestHelper.getCommits({
+            orgName,
+            token,
+            projectId,
+            repositoryId,
+            searchCriteria: {
+                author: filters.author,
+                itemVersion: filters.branch
+                    ? { version: filters.branch }
+                    : undefined,
+                fromDate: filters.startDate?.toISOString(),
+                toDate: filters.endDate?.toISOString(),
+            },
+        });
     }
 
     async getFilesByPullRequestId(params: {

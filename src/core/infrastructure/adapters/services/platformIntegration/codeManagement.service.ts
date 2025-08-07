@@ -55,7 +55,19 @@ export class CodeManagementService implements ICodeManagementService {
         }
     }
 
-    async getCommits(params: any, type?: PlatformType): Promise<Commit[]> {
+    async getCommits(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            repository?: Partial<Repository>;
+            filters?: {
+                startDate?: Date;
+                endDate?: Date;
+                author?: string;
+                branch?: string;
+            };
+        },
+        type?: PlatformType,
+    ): Promise<Commit[]> {
         if (!type) {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),

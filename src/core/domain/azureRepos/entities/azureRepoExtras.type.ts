@@ -181,6 +181,7 @@ export interface AzureRepoCommit {
         id?: string; // Opcional, pode não estar presente
     };
     comment?: string; // Mensagem do commit
+    parents?: string[];
     // Outros campos opcionais, como "committer", podem ser adicionados.
 }
 

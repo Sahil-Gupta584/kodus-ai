@@ -1310,91 +1310,172 @@ export class BitbucketService
         }
     }
 
+    /**
+     * Fetches all commits from Gitlab based on the provided parameters.
+     * @param params - The parameters for fetching commits, including organization and team data, repository filters, and commit filters.
+     * @param params.organizationAndTeamData - The organization and team data containing organizationId and teamId.
+     * @param params.repository - Optional repository filter to fetch commits from a specific repository.
+     * @param params.filters - Optional filters for commits, including startDate, endDate, author, and branch.
+     * @param params.filters.startDate - The start date for filtering commits.
+     * @param params.filters.endDate - The end date for filtering commits.
+     * @param params.filters.author - The author of the commits to filter.
+     * @param params.filters.branch - The branch from which to fetch commits.
+     * @returns A promise that resolves to an array of Commit objects.
+     */
     async getCommits(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        filters?: any;
+        repository?: Partial<Repository>;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
+        };
     }): Promise<Commit[]> {
+        const { organizationAndTeamData, repository, filters } = params;
+
         try {
-            const { organizationAndTeamData } = params;
-
-            const filters = params?.filters ?? {};
-
             const bitbucketAuthDetail = await this.getAuthDetails(
                 organizationAndTeamData,
             );
 
-            const repositories = <Repositories[]>(
+            const configuredRepositories = <Repositories[]>(
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(
                     organizationAndTeamData,
                     IntegrationConfigKey.REPOSITORIES,
                 )
             );
 
-            if (!bitbucketAuthDetail || !repositories) {
-                return null;
+            if (
+                !bitbucketAuthDetail ||
+                !configuredRepositories ||
+                configuredRepositories.length === 0
+            ) {
+                this.logger.warn({
+                    message:
+                        'Bitbucket auth details or repositories not found.',
+                    context: BitbucketService.name,
+                    metadata: params,
+                });
+                return [];
+            }
+
+            let reposToProcess: Repositories[] = configuredRepositories;
+
+            if (repository && repository.name) {
+                const foundRepo = configuredRepositories.find(
+                    (r) => r.name === repository.name,
+                );
+
+                if (!foundRepo) {
+                    this.logger.warn({
+                        message: `Repository ${repository.name} not found in the list of configured repositories.`,
+                        context: BitbucketService.name,
+                        metadata: params,
+                    });
+                    return [];
+                }
+                reposToProcess = [foundRepo];
             }
 
             const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
 
-            const { startDate, endDate } = filters || {};
-
-            const commitsByRepo = await Promise.all(
-                repositories.map((repo) =>
-                    bitbucketAPI.commits
-                        .list({
-                            repo_slug: `{${repo.id}}`,
-                            workspace: `{${repo.workspaceId}}`,
-                        })
-                        .then((res) =>
-                            this.getPaginatedResults(bitbucketAPI, res),
-                        ),
-                ),
+            const promises = reposToProcess.map((repo) =>
+                this.getCommitsByRepo({
+                    bitbucketAPI,
+                    workspaceId: repo.workspaceId,
+                    repoId: repo.id,
+                    filters: filters || {},
+                }),
             );
 
-            const filteredCommits = commitsByRepo.flatMap((commits) =>
-                commits.filter(
-                    (commit) =>
-                        (!startDate || new Date(commit.date) >= startDate) &&
-                        (!endDate || new Date(commit.date) <= endDate),
-                ),
-            );
+            const results = await Promise.all(promises);
+            const rawCommits = results.flat();
 
-            const formattedCommits: Commit[] = filteredCommits.map((commit) => {
-                const [name, email] = this.extractUsernameEmail(commit?.author);
-
-                return {
-                    sha: commit.hash,
-                    commit: {
-                        author: {
-                            id: this.sanitizeUUId(commit.author?.user?.uuid),
-                            name,
-                            email,
-                            date: commit.date,
-                        },
-                        message: commit.message,
-                    },
-                };
-            });
-
-            const sortedCommits = formattedCommits.sort(
-                (a, b) =>
-                    new Date(b.commit.author.date).getTime() -
-                    new Date(a.commit.author.date).getTime(),
-            );
-
-            return sortedCommits;
+            return rawCommits.map((rawCommit) => this.formatCommit(rawCommit));
         } catch (error) {
             this.logger.error({
-                message: 'Error to get commits',
+                message: 'Error fetching commits from Bitbucket',
                 context: BitbucketService.name,
-                serviceName: 'BitbucketService getCommits',
                 error: error,
-                metadata: {
-                    params,
-                },
+                metadata: params,
             });
             return [];
         }
+    }
+
+    /**
+     * Formats a raw commit from the Bitbucket API into the standard Commit interface.
+     * @param rawCommit The raw commit data from Bitbucket.
+     * @returns A formatted Commit object.
+     */
+    private formatCommit(rawCommit: Schema.Commit): Commit {
+        const [name, email] = this.extractUsernameEmail(rawCommit?.author);
+
+        return {
+            sha: rawCommit.hash ?? '',
+            commit: {
+                author: {
+                    id: this.sanitizeUUId(rawCommit.author?.user?.uuid) ?? '',
+                    name: name ?? '',
+                    email: email ?? '',
+                    date: rawCommit.date ?? '',
+                },
+                message: rawCommit.message ?? '',
+            },
+            parents:
+                rawCommit.parents
+                    ?.map((parent) => ({
+                        sha: parent.hash ?? '',
+                    }))
+                    .filter((parent) => parent.sha) ?? [],
+        };
+    }
+
+    /**
+     * Fetches and filters commits for a single Bitbucket repository.
+     * @param params Parameters including the API client, repo identifiers, and filters.
+     * @returns A promise that resolves to an array of raw commit data.
+     */
+    private async getCommitsByRepo(params: {
+        bitbucketAPI: InstanceType<typeof Bitbucket>;
+        workspaceId: string;
+        repoId: string;
+        filters: {
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<Schema.Commit[]> {
+        const { bitbucketAPI, workspaceId, repoId, filters } = params;
+        const { startDate, endDate, author, branch } = filters;
+
+        const query: string[] = [];
+        if (startDate) {
+            query.push(`date >= "${startDate.toISOString()}"`);
+        }
+        if (endDate) {
+            query.push(`date <= "${endDate.toISOString()}"`);
+        }
+        if (author) {
+            query.push(`author="${author}"`);
+        }
+        const q = query.length > 0 ? query.join(' AND ') : undefined;
+
+        const initialResponse = await bitbucketAPI.commits.list({
+            repo_slug: `{${repoId}}`,
+            workspace: `{${workspaceId}}`,
+            include: branch,
+            q,
+        });
+
+        const filteredCommits = await this.getPaginatedResults(
+            bitbucketAPI,
+            initialResponse,
+        );
+
+        return filteredCommits;
     }
 
     async getFilesByPullRequestId(params: {

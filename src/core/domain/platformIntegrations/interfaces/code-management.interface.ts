@@ -21,6 +21,7 @@ import {
     ReviewComment,
 } from '@/config/types/general/codeReview.type';
 import { GitCloneParams } from '../types/codeManagement/gitCloneParams.type';
+import { Commit } from '@/config/types/general/commit.type';
 
 export interface ICodeManagementService
     extends ICommonPlatformIntegrationService {
@@ -39,7 +40,16 @@ export interface ICodeManagementService
     getCommitsByReleaseMode(params: any): Promise<CommitLeadTimeForChange[]>;
     getPullRequestsWithFiles(params): Promise<PullRequestWithFiles[] | null>;
     getPullRequestsForRTTM(params): Promise<PullRequestCodeReviewTime[] | null>;
-    getCommits(params: any): Promise<any>;
+    getCommits(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository?: Partial<Repository>;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<Commit[]>;
     getOrganizations(params: any): Promise<Organization[]>;
 
     getFilesByPullRequestId(params): Promise<any[] | null>;

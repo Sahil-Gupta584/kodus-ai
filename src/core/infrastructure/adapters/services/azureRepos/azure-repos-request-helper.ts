@@ -432,13 +432,34 @@ export class AzureReposRequestHelper {
         token: string;
         projectId: string;
         repositoryId: string;
+        searchCriteria?: {
+            author?: string;
+            fromDate?: string;
+            toDate?: string;
+            itemVersion?: {
+                version: string;
+            };
+        };
     }): Promise<AzureRepoCommit[]> {
-        const instance = await this.azureRequest(params);
+        const { orgName, token, projectId, repositoryId, searchCriteria } =
+            params;
 
-        const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/commits?api-version=7.1`,
-        );
-        return data?.value;
+        const instance = await this.azureRequest({ orgName, token });
+
+        const apiPath = `/${projectId}/_apis/git/repositories/${repositoryId}/commits`;
+
+        let queryParams: Record<string, string> = {
+            'api-version': '7.1',
+        };
+
+        if (searchCriteria) {
+            const dynamicParams = this._buildSearchParams(searchCriteria);
+            queryParams = { ...queryParams, ...dynamicParams };
+        }
+
+        const { data } = await instance.get(apiPath, { params: queryParams });
+
+        return data?.value ?? [];
     }
 
     async getFileDiff(params: {
@@ -853,5 +874,38 @@ export class AzureReposRequestHelper {
             default:
                 return 'changed';
         }
+    }
+
+    /**
+     * Recursively builds a flat parameter object from a nested criteria object.
+     * @param obj The object to flatten (e.g., searchCriteria).
+     * @param prefix The base key to prefix nested properties with.
+     * @returns A flat object with dot-notated keys.
+     */
+    private _buildSearchParams(
+        obj: Record<string, any>,
+        prefix = 'searchCriteria',
+    ): Record<string, string> {
+        const params: Record<string, string> = {};
+
+        for (const [key, value] of Object.entries(obj)) {
+            // Skip null or undefined values
+            if (value === null || value === undefined) {
+                continue;
+            }
+
+            const newKey = `${prefix}.${key}`;
+
+            // If the value is a nested object, recurse deeper
+            if (typeof value === 'object' && !Array.isArray(value)) {
+                const nestedParams = this._buildSearchParams(value, newKey);
+                Object.assign(params, nestedParams); // Merge the results
+            } else {
+                // Otherwise, it's a primitive value, so add it
+                params[newKey] = String(value);
+            }
+        }
+
+        return params;
     }
 }

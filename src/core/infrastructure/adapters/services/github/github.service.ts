@@ -2,7 +2,7 @@ import { IGithubService } from '@/core/domain/github/contracts/github.service.co
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { graphql } from '@octokit/graphql';
-import { Octokit } from '@octokit/rest';
+import { Octokit, RestEndpointMethodTypes } from '@octokit/rest';
 import { retry } from '@octokit/plugin-retry';
 import { throttling } from '@octokit/plugin-throttling';
 import { v4 as uuidv4 } from 'uuid';
@@ -574,60 +574,170 @@ export class GithubService
         });
     }
 
-    async getCommits(params: any): Promise<Commit[]> {
+    /**
+     * Fetches all commits from GitHub based on the provided parameters.
+     * @param params - The parameters for fetching commits, including organization and team data, repository filters, and commit filters.
+     * @param params.organizationAndTeamData - The organization and team data containing organizationId and teamId.
+     * @param params.repository - Optional repository filter to fetch commits from a specific repository.
+     * @param params.filters - Optional filters for commits, including startDate, endDate, author, and branch.
+     * @param params.filters.startDate - The start date for filtering commits.
+     * @param params.filters.endDate - The end date for filtering commits.
+     * @param params.filters.author - The author of the commits to filter.
+     * @param params.filters.branch - The branch from which to fetch commits.
+     * @returns A promise that resolves to an array of Commit objects.
+     */
+    async getCommits(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository?: Partial<Repository>;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<Commit[]> {
+        const { organizationAndTeamData, repository, filters } = params;
+
         try {
             const githubAuthDetail = await this.getGithubAuthDetails(
-                params.organizationAndTeamData,
+                organizationAndTeamData,
             );
 
-            const repositories =
+            const configuredRepositories = <Repositories[]>(
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(
-                    params.organizationAndTeamData,
+                    organizationAndTeamData,
                     IntegrationConfigKey.REPOSITORIES,
-                );
+                )
+            );
 
-            if (!githubAuthDetail || !repositories) {
-                return null;
+            if (
+                !githubAuthDetail ||
+                !configuredRepositories ||
+                configuredRepositories.length === 0
+            ) {
+                this.logger.warn({
+                    message: 'GitHub auth details or repositories not found.',
+                    context: GithubService.name,
+                    metadata: params,
+                });
+
+                return [];
             }
 
-            const formatRepo = extractRepoNames(repositories);
+            let reposToProcess: Repositories[] = configuredRepositories;
 
-            const octokit = await this.instanceOctokit(
-                params.organizationAndTeamData,
+            if (repository && repository.name) {
+                const foundRepo = configuredRepositories.find(
+                    (r) => r.name === repository.name,
+                );
+
+                if (!foundRepo) {
+                    this.logger.warn({
+                        message: `Repository ${repository.name} not found in the list of repositories.`,
+                        context: GithubService.name,
+                        metadata: params,
+                    });
+
+                    return [];
+                }
+
+                reposToProcess = [foundRepo];
+            }
+
+            const octokit = await this.instanceOctokit(organizationAndTeamData);
+            const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
+            const { startDate, endDate, author, branch } = filters || {};
+
+            const promises = reposToProcess.map((repo) =>
+                this.getCommitsByRepo({
+                    octokit,
+                    owner,
+                    repo: repo.name,
+                    filters: { startDate, endDate, author, branch },
+                }),
             );
 
-            const { startDate, endDate } = params.filters || {};
-
-            const promises = formatRepo.map(async (repo) => {
-                return await this.getAllCommits(
-                    octokit,
-                    githubAuthDetail?.org,
-                    repo,
-                    startDate,
-                    endDate,
-                );
-            });
-
             const results = await Promise.all(promises);
+            const rawCommits = results.flat();
 
-            const commits =
-                results?.flat()?.map((item) => ({
-                    sha: item?.sha,
-                    commit: {
-                        author: {
-                            id: item?.commit?.author?.id,
-                            name: item?.commit?.author?.name,
-                            email: item?.commit?.author?.email,
-                            date: item?.commit?.author?.date,
-                        },
-                        message: item?.commit?.message,
-                    },
-                })) || null;
-
-            return commits;
-        } catch (err) {
+            return rawCommits.map((rawCommit) => this.formatCommit(rawCommit));
+        } catch (error) {
+            this.logger.error({
+                message: 'Error fetching commits from GitHub',
+                context: GithubService.name,
+                error,
+                metadata: params,
+            });
             return [];
         }
+    }
+
+    /**
+     * Formats a raw commit object from the Github API into the standard Commit interface.
+     * @param rawCommit - The raw commit data from the Github API.
+     * @returns A formatted Commit object.
+     */
+    private formatCommit(
+        rawCommit:
+            | RestEndpointMethodTypes['repos']['getCommit']['response']['data']
+            | RestEndpointMethodTypes['repos']['listCommits']['response']['data'][number],
+    ): Commit {
+        return {
+            sha: rawCommit.sha ?? '',
+            commit: {
+                author: {
+                    id:
+                        rawCommit.author?.id?.toString() ??
+                        rawCommit.committer?.id?.toString() ??
+                        '',
+                    date: rawCommit.commit?.author?.date ?? '',
+                    email: rawCommit.commit?.author?.email ?? '',
+                    name: rawCommit.commit?.author?.name ?? '',
+                },
+                message: rawCommit.commit?.message ?? '',
+            },
+            parents:
+                rawCommit.parents
+                    ?.map((parent) => ({
+                        sha: parent?.sha ?? '',
+                    }))
+                    .filter((parent) => parent.sha) ?? [],
+        };
+    }
+
+    /**
+     * Fetches all commits for a single Github repository based on the provided filters.
+     * @param params - The parameters for fetching commits.
+     * @returns A promise that resolves to an array of raw commit data.
+     */
+    private async getCommitsByRepo(params: {
+        octokit: Octokit;
+        owner: string;
+        repo: string;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<
+        | RestEndpointMethodTypes['repos']['listCommits']['response']['data']
+        | RestEndpointMethodTypes['repos']['getCommit']['response']['data'][]
+    > {
+        const { octokit, owner, repo, filters } = params;
+        const { startDate, endDate, author, branch } = filters || {};
+
+        const commits = await octokit.paginate(octokit.rest.repos.listCommits, {
+            owner,
+            repo,
+            author,
+            sha: branch,
+            since: startDate?.toISOString(),
+            until: endDate?.toISOString(),
+            per_page: 100,
+        });
+
+        return commits;
     }
 
     async updateAuthIntegration(params: any): Promise<any> {
@@ -3837,7 +3947,8 @@ export class GithubService
             this.logger.log({
                 message: `PR#${prNumber} already approved`,
                 context: GithubService.name,
-                serviceName: 'GithubService - checkIfPullRequestShouldBeApproved',
+                serviceName:
+                    'GithubService - checkIfPullRequestShouldBeApproved',
                 metadata: {
                     organizationAndTeamData,
                     prNumber,

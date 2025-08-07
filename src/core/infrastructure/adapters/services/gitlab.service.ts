@@ -13,7 +13,12 @@ import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { IntegrationServiceDecorator } from '@/shared/utils/decorators/integration-service.decorator';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 
-import { Gitlab, MergeRequestSchemaWithBasicLabels } from '@gitbeaker/rest';
+import {
+    Camelize,
+    CommitSchema,
+    Gitlab,
+    MergeRequestSchemaWithBasicLabels,
+} from '@gitbeaker/rest';
 import axios from 'axios';
 import {
     IIntegrationConfigService,
@@ -266,6 +271,7 @@ export class GitlabService
                     : decrypt(gitlabAuthDetail.accessToken),
             ...(gitlabAuthDetail.host && { host: gitlabAuthDetail.host }),
             queryTimeout: 600000,
+            camelize: false,
         });
     }
 
@@ -842,69 +848,162 @@ export class GitlabService
         }
     }
 
-    async getCommits(params: any): Promise<Commit[]> {
+    /**
+     * Fetches all commits from Gitlab based on the provided parameters.
+     * @param params - The parameters for fetching commits, including organization and team data, repository filters, and commit filters.
+     * @param params.organizationAndTeamData - The organization and team data containing organizationId and teamId.
+     * @param params.repository - Optional repository filter to fetch commits from a specific repository.
+     * @param params.filters - Optional filters for commits, including startDate, endDate, author, and branch.
+     * @param params.filters.startDate - The start date for filtering commits.
+     * @param params.filters.endDate - The end date for filtering commits.
+     * @param params.filters.author - The author of the commits to filter.
+     * @param params.filters.branch - The branch from which to fetch commits.
+     * @returns A promise that resolves to an array of Commit objects.
+     */
+    async getCommits(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository?: Partial<Repository>;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<Commit[]> {
+        const { organizationAndTeamData, repository, filters } = params;
+
         try {
-            if (!params?.organizationAndTeamData.organizationId) {
-                return null;
-            }
-
-            const filters = params?.filters ?? {};
-
             const gitlabAuthDetail = await this.getAuthDetails(
-                params.organizationAndTeamData,
+                organizationAndTeamData,
             );
 
-            const repositories = <Repositories[]>(
+            const configuredRepositories = <Repositories[]>(
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(
-                    params?.organizationAndTeamData,
+                    organizationAndTeamData,
                     IntegrationConfigKey.REPOSITORIES,
                 )
             );
 
-            if (!gitlabAuthDetail || !repositories) {
-                return null;
+            if (
+                !gitlabAuthDetail ||
+                !configuredRepositories ||
+                configuredRepositories.length === 0
+            ) {
+                this.logger.warn({
+                    message: 'GitLab auth details or repositories not found.',
+                    context: GitlabService.name,
+                    metadata: params,
+                });
+                return [];
+            }
+
+            let reposToProcess: Repositories[] = configuredRepositories;
+
+            if (repository && repository.name) {
+                const foundRepo = configuredRepositories.find(
+                    (r) => r.name === repository.name,
+                );
+
+                if (!foundRepo) {
+                    this.logger.warn({
+                        message: `Repository ${repository.name} not found in the list of configured repositories.`,
+                        context: GitlabService.name,
+                        metadata: params,
+                    });
+                    return [];
+                }
+
+                reposToProcess = [foundRepo];
             }
 
             const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+            const { startDate, endDate, author, branch } = filters || {};
 
-            const { startDate, endDate } = filters || {};
+            const promises = reposToProcess.map((repo) =>
+                this.getCommitsByRepo({
+                    gitlabAPI,
+                    projectId: repo.id,
+                    filters: { startDate, endDate, author, branch },
+                }),
+            );
 
-            const commits = [];
+            const results = await Promise.all(promises);
+            const rawCommits = results.flat();
 
-            for (const repo of repositories) {
-                const repoCommits = await gitlabAPI.Commits.all(repo.id, {
-                    since: startDate,
-                    until: endDate,
-                    perPage: 100,
-                });
-
-                commits.push(...repoCommits);
-            }
-
-            const commitsFormatted = commits
-                .sort(
-                    (a, b) =>
-                        new Date(b.created_at).getTime() -
-                        new Date(a.created_at).getTime(),
-                )
-                .map((item) => ({
-                    sha: item.sha,
-                    commit: {
-                        author: {
-                            id: item.commit.author.id,
-                            name: item.commit.author.name,
-                            email: item.commit.author.email,
-                            date: item.commit.author.date,
-                        },
-                        message: item.commit.message,
-                    },
-                }));
-
-            return commitsFormatted;
+            return rawCommits.map((rawCommit) => this.formatCommit(rawCommit));
         } catch (error) {
-            console.error('Error fetching commits from GitLab: ', error);
+            this.logger.error({
+                message: 'Error fetching commits from GitLab',
+                context: GitlabService.name,
+                error,
+                metadata: params,
+            });
             return [];
         }
+    }
+
+    /**
+     * Formats a raw commit object from the GitLab API into the standard Commit interface.
+     * @param rawCommit - The raw commit data from the GitLab API.
+     * @returns A formatted Commit object.
+     */
+    private formatCommit(rawCommit: CommitSchema): Commit {
+        return {
+            sha: rawCommit.id ?? '',
+            commit: {
+                author: {
+                    id: '', // The author object in a GitLab commit doesn't have a user ID.
+                    name:
+                        rawCommit.author_name ?? rawCommit.committer_name ?? '',
+                    email:
+                        rawCommit.author_email ??
+                        rawCommit.committer_email ??
+                        '',
+                    date:
+                        rawCommit.created_at ??
+                        rawCommit.authored_date ??
+                        rawCommit.committed_date ??
+                        '',
+                },
+                message: rawCommit.message ?? '',
+            },
+            parents:
+                rawCommit.parent_ids
+                    ?.map((parentId) => ({
+                        sha: parentId ?? '',
+                    }))
+                    .filter((parent) => parent.sha) ?? [],
+        };
+    }
+
+    /**
+     * Fetches all commits for a single GitLab repository based on the provided filters.
+     * @param params - The parameters for fetching commits.
+     * @returns A promise that resolves to an array of raw commit data.
+     */
+    private async getCommitsByRepo(params: {
+        gitlabAPI: InstanceType<typeof Gitlab<false>>; // false refers to camelize option
+        projectId: string | number;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<CommitSchema[]> {
+        const { gitlabAPI, projectId, filters } = params;
+        const { startDate, endDate, author, branch } = filters || {};
+
+        const commits = await gitlabAPI.Commits.all(projectId, {
+            since: startDate?.toISOString(),
+            until: endDate?.toISOString(),
+            author,
+            refName: branch,
+            perPage: 100,
+            all: true, // Explicitly fetch all pages
+        });
+
+        return commits;
     }
 
     async getListMembers(
