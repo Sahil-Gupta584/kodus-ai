@@ -8,5 +8,8 @@ export class CopyCodeReviewParameterDTO {
     targetRepositoryId: string;
 
     @IsString()
+    targetDirectoryPath: string;
+
+    @IsString()
     teamId: string;
 }
