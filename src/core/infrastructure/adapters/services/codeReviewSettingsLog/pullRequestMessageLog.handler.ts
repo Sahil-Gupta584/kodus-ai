@@ -25,6 +25,7 @@ export interface PullRequestMessagesLogParams extends BaseLogParams {
     endReviewMessage?: PullRequestMessage;
     existingStartMessage?: PullRequestMessage;
     existingEndMessage?: PullRequestMessage;
+    directoryPath?: string;
     isUpdate: boolean; // true for update, false for create
 }
 
@@ -69,7 +70,7 @@ export class PullRequestMessagesLogHandler {
                 params.isUpdate,
                 params.configLevel,
                 params.repositoryId,
-                params.directoryId,
+                params.directoryPath,
                 params.userInfo.userEmail,
             );
 
@@ -88,7 +89,7 @@ export class PullRequestMessagesLogHandler {
                 params.isUpdate,
                 params.configLevel,
                 params.repositoryId,
-                params.directoryId,
+                params.directoryPath,
                 params.userInfo.userEmail,
             );
 
@@ -108,7 +109,7 @@ export class PullRequestMessagesLogHandler {
         isUpdate: boolean,
         configLevel: ConfigLevel,
         repositoryId?: string,
-        directoryId?: string,
+        directoryPath?: string,
         userEmail?: string,
     ): ChangedDataToExport | null {
         let previousValue: any;
@@ -129,9 +130,9 @@ export class PullRequestMessagesLogHandler {
             };
 
             if (this.hasContentChanged(defaultMessage, newMessage.content)) {
-                description = `User ${userEmail} changed default ${messageType.toLowerCase()} review message ${this.getConfigLevelDescription(configLevel, repositoryId, directoryId)}`;
+                description = `User ${userEmail} changed default ${messageType.toLowerCase()} review message ${this.getConfigLevelDescription(configLevel, repositoryId, directoryPath)}`;
             } else if (newMessage.status === 'inactive') {
-                description = `User ${userEmail} deactivated ${messageType.toLowerCase()} review message ${this.getConfigLevelDescription(configLevel, repositoryId, directoryId)}`;
+                description = `User ${userEmail} deactivated ${messageType.toLowerCase()} review message ${this.getConfigLevelDescription(configLevel, repositoryId, directoryPath)}`;
             } else {
                 return null; // No significant change
             }
@@ -167,15 +168,15 @@ export class PullRequestMessagesLogHandler {
                     newMessage.status === 'active'
                         ? 'activated'
                         : 'deactivated';
-                description = `User ${userEmail} updated content and ${statusAction} ${messageType.toLowerCase()} review message ${this.getConfigLevelDescription(configLevel, repositoryId, directoryId)}`;
+                description = `User ${userEmail} updated content and ${statusAction} ${messageType.toLowerCase()} review message ${this.getConfigLevelDescription(configLevel, repositoryId, directoryPath)}`;
             } else if (contentChanged) {
-                description = `User ${userEmail} updated ${messageType.toLowerCase()} review message content ${this.getConfigLevelDescription(configLevel, repositoryId, directoryId)}`;
+                description = `User ${userEmail} updated ${messageType.toLowerCase()} review message content ${this.getConfigLevelDescription(configLevel, repositoryId, directoryPath)}`;
             } else {
                 const statusAction =
                     newMessage.status === 'active'
                         ? 'activated'
                         : 'deactivated';
-                description = `User ${userEmail} ${statusAction} ${messageType.toLowerCase()} review message ${this.getConfigLevelDescription(configLevel, repositoryId, directoryId)}`;
+                description = `User ${userEmail} ${statusAction} ${messageType.toLowerCase()} review message ${this.getConfigLevelDescription(configLevel, repositoryId, directoryPath)}`;
             }
         }
 
@@ -194,7 +195,7 @@ export class PullRequestMessagesLogHandler {
     private getConfigLevelDescription(
         configLevel: ConfigLevel,
         repositoryId?: string,
-        directoryId?: string,
+        directoryPath?: string,
     ): string {
         switch (configLevel) {
             case ConfigLevel.GLOBAL:
@@ -202,7 +203,7 @@ export class PullRequestMessagesLogHandler {
             case ConfigLevel.REPOSITORY:
                 return `for repository ${repositoryId}`;
             case ConfigLevel.DIRECTORY:
-                return `for directory ${directoryId}`;
+                return `for directory ${directoryPath}`;
             default:
                 return '';
         }
