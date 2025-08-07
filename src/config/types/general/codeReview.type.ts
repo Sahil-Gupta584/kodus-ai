@@ -288,6 +288,7 @@ export type CodeReviewConfig = {
     kodyFineTuningConfig?: KodyFineTuningConfig;
     isCommitMode?: boolean;
     configLevel?: ConfigLevel;
+    directoryId?: string;
     directoryPath?: string;
 };
 

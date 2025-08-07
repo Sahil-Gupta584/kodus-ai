@@ -1081,6 +1081,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     directoryConfig.isCommitMode ??
                     this.DEFAULT_CONFIG.isCommitMode,
                 configLevel: ConfigLevel.DIRECTORY,
+                directoryId: directoryConfig.id,
                 directoryPath: directoryConfig.path,
             };
 
