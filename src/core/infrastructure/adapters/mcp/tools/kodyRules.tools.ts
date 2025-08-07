@@ -71,26 +71,28 @@ export class KodyRulesTools {
                 data: z.array(
                     z
                         .object({
-                            uuid: z.string(),
-                            title: z.string(),
-                            rule: z.string(),
-                            path: z.string(),
-                            status: z.nativeEnum(KodyRulesStatus),
-                            severity: z.string(),
-                            label: z.string(),
-                            type: z.string(),
-                            examples: z.array(
-                                z.object({
-                                    snippet: z.string(),
-                                    isCorrect: z.boolean(),
-                                }),
-                            ),
-                            repositoryId: z.string(),
-                            origin: z.nativeEnum(KodyRulesOrigin),
-                            createdAt: z.date(),
-                            updatedAt: z.date(),
-                            reason: z.string().nullable(),
-                            scope: z.nativeEnum(KodyRulesScope),
+                            uuid: z.string().optional(),
+                            title: z.string().optional(),
+                            rule: z.string().optional(),
+                            path: z.string().optional(),
+                            status: z.nativeEnum(KodyRulesStatus).optional(),
+                            severity: z.string().optional(),
+                            label: z.string().optional(),
+                            type: z.string().optional(),
+                            examples: z
+                                .array(
+                                    z.object({
+                                        snippet: z.string(),
+                                        isCorrect: z.boolean(),
+                                    }),
+                                )
+                                .optional(),
+                            repositoryId: z.string().optional(),
+                            origin: z.nativeEnum(KodyRulesOrigin).optional(),
+                            createdAt: z.date().optional(),
+                            updatedAt: z.date().optional(),
+                            reason: z.string().nullable().optional(),
+                            scope: z.nativeEnum(KodyRulesScope).optional(),
                         })
                         .passthrough(),
                 ),
@@ -152,26 +154,28 @@ export class KodyRulesTools {
                 data: z.array(
                     z
                         .object({
-                            uuid: z.string(),
-                            title: z.string(),
-                            rule: z.string(),
-                            path: z.string(),
-                            status: z.nativeEnum(KodyRulesStatus),
-                            severity: z.string(),
-                            label: z.string(),
-                            type: z.string(),
-                            examples: z.array(
-                                z.object({
-                                    snippet: z.string(),
-                                    isCorrect: z.boolean(),
-                                }),
-                            ),
-                            repositoryId: z.string(),
-                            origin: z.nativeEnum(KodyRulesOrigin),
-                            createdAt: z.date(),
-                            updatedAt: z.date(),
-                            reason: z.string().nullable(),
-                            scope: z.nativeEnum(KodyRulesScope),
+                            uuid: z.string().optional(),
+                            title: z.string().optional(),
+                            rule: z.string().optional(),
+                            path: z.string().optional(),
+                            status: z.nativeEnum(KodyRulesStatus).optional(),
+                            severity: z.string().optional(),
+                            label: z.string().optional(),
+                            type: z.string().optional(),
+                            examples: z
+                                .array(
+                                    z.object({
+                                        snippet: z.string(),
+                                        isCorrect: z.boolean(),
+                                    }),
+                                )
+                                .optional(),
+                            repositoryId: z.string().optional(),
+                            origin: z.nativeEnum(KodyRulesOrigin).optional(),
+                            createdAt: z.date().optional(),
+                            updatedAt: z.date().optional(),
+                            reason: z.string().nullable().optional(),
+                            scope: z.nativeEnum(KodyRulesScope).optional(),
                         })
                         .passthrough(),
                 ),
@@ -202,7 +206,7 @@ export class KodyRulesTools {
 
                     return {
                         success: true,
-                        count: repositoryRules.length,
+                        count: repositoryRules?.length,
                         data: repositoryRules,
                     };
                 },
