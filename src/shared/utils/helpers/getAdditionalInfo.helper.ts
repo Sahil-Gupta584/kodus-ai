@@ -136,4 +136,48 @@ export class GetAdditionalInfoHelper {
 
         return targetDirectory.path;
     }
+
+    async getRepositoryNameByOrganizationAndRepository(
+        organizationId: string,
+        repositoryId: string,
+    ): Promise<string> {
+        if (!organizationId || !repositoryId) {
+            return '';
+        }
+
+        // 1. Obter o teamId usando o método anterior
+        const teamId = await this.getTeamIdByOrganizationAndRepository(
+            organizationId,
+            repositoryId,
+        );
+
+        // 2. Buscar na tabela PARAMETERS pela configKey CODE_REVIEW_CONFIG
+        const codeReviewConfig = await this.parametersService.findByKey(
+            ParametersKey.CODE_REVIEW_CONFIG,
+            { organizationId, teamId },
+        );
+
+        if (!codeReviewConfig) {
+            throw new Error('Code review config not found');
+        }
+
+        // 3. Buscar na lista de repositórios o que corresponde ao repositoryId
+        const repositories = codeReviewConfig.configValue.repositories;
+        if (!repositories || !Array.isArray(repositories)) {
+            throw new Error('No repositories found in code review config');
+        }
+
+        const targetRepository = repositories.find(
+            (repo: any) =>
+                repo.id === repositoryId || repo.id === repositoryId.toString(),
+        );
+
+        if (!targetRepository) {
+            throw new Error(
+                `Repository with id ${repositoryId} not found in code review config`,
+            );
+        }
+
+        return targetRepository.name;
+    }
 }

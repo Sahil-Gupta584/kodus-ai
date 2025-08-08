@@ -2,6 +2,7 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { RepositoryTreeType } from '@/shared/utils/enums/repositoryTree.enum';
+import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
 import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { Request } from 'express';
@@ -26,6 +27,8 @@ export interface FileItem {
     path: string;
 }
 
+type AllTreeItem = DirectoryStructure | FileItem;
+
 @Injectable()
 export class GetRepositoryTreeUseCase implements IUseCase {
     constructor(
@@ -34,6 +37,7 @@ export class GetRepositoryTreeUseCase implements IUseCase {
         @Inject(REQUEST)
         private readonly request: Request & { user },
         private readonly logger: PinoLoggerService,
+        private readonly getAdditionalInfoHelper: GetAdditionalInfoHelper,
     ) {}
 
     public async execute(params: {
@@ -55,16 +59,26 @@ export class GetRepositoryTreeUseCase implements IUseCase {
             switch (params.treeType) {
                 case RepositoryTreeType.DIRECTORIES:
                     tree = this.formatDirectoriesOnly(repositoryTree);
+                    break;
 
                 case RepositoryTreeType.FILES:
                     tree = this.formatFilesOnly(repositoryTree);
+                    break;
 
                 case RepositoryTreeType.ALL:
                 default:
                     tree = this.formatAllTree(repositoryTree);
+                    break;
             }
 
-            return { repository: 'RepositoryName', tree: tree };
+            return {
+                repository:
+                    await this.getAdditionalInfoHelper.getRepositoryNameByOrganizationAndRepository(
+                        params.organizationId,
+                        params.repositoryId,
+                    ),
+                tree: tree,
+            };
         } catch (error) {
             this.logger.error({
                 message: 'Error while getting repository tree',
@@ -79,8 +93,9 @@ export class GetRepositoryTreeUseCase implements IUseCase {
         }
     }
 
-    private formatAllTree(treeData: TreeItem[]): DirectoryStructure[] {
+    private formatAllTree(treeData: TreeItem[]): AllTreeItem[] {
         const rootDirectories: DirectoryStructure[] = [];
+        const rootFiles: FileItem[] = [];
         const directoryMap = new Map<string, DirectoryStructure>();
 
         // Primeiro, criar todos os diretórios
@@ -100,7 +115,7 @@ export class GetRepositoryTreeUseCase implements IUseCase {
                 directoryMap.set(dir.path, directoryStructure);
             });
 
-        // Adicionar arquivos aos diretórios correspondentes
+        // Adicionar arquivos aos diretórios correspondentes e coletar arquivos na raiz
         treeData
             .filter((item) => item.type === 'file')
             .forEach((file) => {
@@ -109,20 +124,8 @@ export class GetRepositoryTreeUseCase implements IUseCase {
                 const parentPath = pathParts.slice(0, -1).join('/');
 
                 if (parentPath === '') {
-                    // Arquivo na raiz - criar um diretório raiz se necessário
-                    let rootDir = rootDirectories.find(
-                        (dir) => dir.name === 'root',
-                    );
-                    if (!rootDir) {
-                        rootDir = {
-                            name: 'root',
-                            path: '',
-                            files: [],
-                            subdirectories: [],
-                        };
-                        rootDirectories.push(rootDir);
-                    }
-                    rootDir.files.push({ name: fileName, path: file.path });
+                    // Arquivo na raiz - adicionar diretamente ao resultado top-level
+                    rootFiles.push({ name: fileName, path: file.path });
                 } else {
                     const parentDir = directoryMap.get(parentPath);
                     if (parentDir) {
@@ -150,7 +153,8 @@ export class GetRepositoryTreeUseCase implements IUseCase {
             }
         });
 
-        return rootDirectories;
+        // Retornar arquivos da raiz "soltos" seguidos pelos diretórios de topo
+        return [...rootFiles, ...rootDirectories];
     }
 
     private formatDirectoriesOnly(treeData: TreeItem[]): DirectoryStructure[] {
