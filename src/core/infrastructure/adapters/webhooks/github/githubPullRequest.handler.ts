@@ -11,6 +11,8 @@ import { ChatWithKodyFromGitUseCase } from '@/core/application/use-cases/platfor
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
+import { PullRequest } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
+import { IMappedPullRequest } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-common.type';
 
 /**
  * Handler for GitHub webhook events.
@@ -215,13 +217,18 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                         );
 
                     if (teamData?.organizationAndTeamData) {
-                        pullRequestData =
-                            await this.codeManagement.getPullRequest({
-                                organizationAndTeamData:
-                                    teamData?.organizationAndTeamData,
-                                repository,
-                                prNumber: payload.issue.number,
-                            });
+                        const data = await this.codeManagement.getPullRequest({
+                            organizationAndTeamData:
+                                teamData?.organizationAndTeamData,
+                            repository,
+                            prNumber: payload.issue.number,
+                        });
+
+                        pullRequestData = {
+                            // TODO: test
+                            ...data,
+                            pull_request: data,
+                        };
                     }
                 }
 

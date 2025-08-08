@@ -74,11 +74,11 @@ export class GetPRsUseCase implements IUseCase {
 
         const groupedPRsByRepo = pullRequests?.reduce(
             (acc, pr) => {
-                if (!acc[pr.repository.name]) {
-                    acc[pr.repository.name] = [];
+                if (!acc[pr.repositoryData.name]) {
+                    acc[pr.repositoryData.name] = [];
                 }
 
-                acc[pr.repository.name].push(pr);
+                acc[pr.repositoryData.name].push(pr);
                 return acc;
             },
             {} as Record<string, PullRequest[]>,
@@ -95,10 +95,10 @@ export class GetPRsUseCase implements IUseCase {
 
     private getFilteredPRs(pullRequests: PullRequest[]) {
         const filteredPrs = pullRequests.map((pr) => {
-            const id = pr?.id ?? pr?.repository.id;
+            const id = pr?.id ?? pr?.repositoryData.id;
             return {
                 id,
-                repository: pr.repository,
+                repository: pr.repositoryData,
                 pull_number: pr.number,
                 title: pr?.message || pr?.title,
                 url: pr.prURL,

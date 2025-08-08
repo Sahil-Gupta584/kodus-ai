@@ -5,12 +5,16 @@ import { RestEndpointMethodTypes } from '@octokit/rest';
 export type PullRequest = {
     id: string;
     number: number;
+    pull_number: number; // TODO: remove, legacy, use number
     body: string;
     title: string;
     message: string;
     state: PullRequestState;
     organizationId: string;
-    repository: {
+    repository: string; // TODO: remove, legacy, use repositoryData
+    repositoryId: string; // TODO: remove, legacy, use repositoryData
+    repositoryData: {
+        // TODO: consider removing this, use HEAD and BASE instead
         id: string;
         name: string;
     };
@@ -25,13 +29,25 @@ export type PullRequest = {
     reviewers: {
         id: string;
     }[];
+    sourceRefName: string; // TODO: remove, legacy, use head.ref
     head: {
         ref: string;
-        repo: { id: string; name: string };
+        repo: {
+            id: string;
+            name: string;
+            defaultBranch: string;
+            fullName: string;
+        };
     };
+    targetRefName: string; // TODO: remove, legacy, use base.ref
     base: {
         ref: string;
-        repo: { id: string; name: string };
+        repo: {
+            id: string;
+            name: string;
+            defaultBranch: string;
+            fullName: string;
+        };
     };
     user: {
         login: string;

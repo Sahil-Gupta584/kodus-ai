@@ -4657,6 +4657,7 @@ export class GithubService
         return {
             id: pullRequest?.id?.toString() ?? '',
             number: pullRequest?.number ?? -1,
+            pull_number: pullRequest?.number ?? -1, // TODO: remove, legacy, use number
             organizationId: organizationAndTeamData?.organizationId ?? '',
             title: pullRequest?.title ?? '',
             body: pullRequest?.body ?? '',
@@ -4665,7 +4666,9 @@ export class GithubService
                     pullRequest?.state as RestEndpointMethodTypes['pulls']['get']['response']['data']['state'],
                 ) ?? PullRequestState.ALL,
             prURL: pullRequest?.html_url ?? '',
-            repository: {
+            repository: pullRequest?.base?.repo?.full_name ?? '', // TODO: remove, legacy, use repositoryData
+            repositoryId: pullRequest?.base?.repo?.id?.toString() ?? '', // TODO: remove, legacy, use repositoryData
+            repositoryData: {
                 id: pullRequest?.base?.repo?.id?.toString() ?? '',
                 name: pullRequest?.base?.repo?.full_name ?? '',
             },
@@ -4683,18 +4686,26 @@ export class GithubService
                 pullRequest?.requested_reviewers?.map((r) => ({
                     id: r?.id?.toString() ?? '',
                 })) ?? [],
+            sourceRefName: pullRequest?.head?.ref ?? '', // TODO: remove, legacy, use head.ref
             head: {
                 ref: pullRequest?.head?.ref ?? '',
                 repo: {
                     id: pullRequest?.head?.repo?.id?.toString() ?? '',
                     name: pullRequest?.head?.repo?.full_name ?? '',
+                    defaultBranch:
+                        pullRequest?.head?.repo?.default_branch ?? '',
+                    fullName: pullRequest?.head?.repo?.full_name ?? '',
                 },
             },
+            targetRefName: pullRequest?.base?.ref ?? '', // TODO: remove, legacy, use base.ref
             base: {
                 ref: pullRequest?.base?.ref ?? '',
                 repo: {
                     id: pullRequest?.base?.repo?.id?.toString() ?? '',
                     name: pullRequest?.base?.repo?.full_name ?? '',
+                    defaultBranch:
+                        pullRequest?.base?.repo?.default_branch ?? '',
+                    fullName: pullRequest?.base?.repo?.full_name ?? '',
                 },
             },
             user: {

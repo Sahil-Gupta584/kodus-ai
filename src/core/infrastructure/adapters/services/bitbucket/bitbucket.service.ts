@@ -3915,6 +3915,7 @@ export class BitbucketService
         return {
             id: pullRequest?.id?.toString() ?? '',
             number: pullRequest?.id ?? -1,
+            pull_number: pullRequest?.id ?? -1, // TODO: remove, legacy, use number
             organizationId: organizationAndTeamData?.organizationId ?? '',
             title: pullRequest?.title ?? '',
             body: pullRequest?.summary?.raw ?? '',
@@ -3922,7 +3923,12 @@ export class BitbucketService
                 this._prStateMap.get(pullRequest?.state) ??
                 PullRequestState.ALL,
             prURL: pullRequest?.links?.html?.href ?? '',
-            repository: {
+            repository: pullRequest?.source?.repository?.name ?? '', // TODO: remove, legacy, use repositoryData
+            repositoryId:
+                this.sanitizeUUID(
+                    pullRequest?.source?.repository?.uuid ?? '',
+                ) ?? '', // TODO: remove, legacy, use repositoryData
+            repositoryData: {
                 id:
                     this.sanitizeUUID(
                         pullRequest?.source?.repository?.uuid ?? '',
@@ -3947,6 +3953,7 @@ export class BitbucketService
                 pullRequest?.reviewers?.map((r) => ({
                     id: this.sanitizeUUID(r?.uuid ?? '') ?? '',
                 })) ?? [],
+            sourceRefName: pullRequest?.source?.branch?.name ?? '', // TODO: remove, legacy, use head.ref
             head: {
                 ref: pullRequest?.source?.branch?.name ?? '',
                 repo: {
@@ -3955,8 +3962,12 @@ export class BitbucketService
                             pullRequest?.source?.repository?.uuid ?? '',
                         ) ?? '',
                     name: pullRequest?.source?.repository?.name ?? '',
+                    defaultBranch:
+                        pullRequest?.source?.repository?.mainbranch?.name ?? '',
+                    fullName: pullRequest?.source?.repository?.full_name ?? '',
                 },
             },
+            targetRefName: pullRequest?.destination?.branch?.name ?? '', // TODO: remove, legacy, use base.ref
             base: {
                 ref: pullRequest?.destination?.branch?.name ?? '',
                 repo: {
@@ -3965,6 +3976,11 @@ export class BitbucketService
                             pullRequest?.destination?.repository?.uuid ?? '',
                         ) ?? '',
                     name: pullRequest?.destination?.repository?.name ?? '',
+                    defaultBranch:
+                        pullRequest?.destination?.repository?.mainbranch
+                            ?.name ?? '',
+                    fullName:
+                        pullRequest?.destination?.repository?.full_name ?? '',
                 },
             },
             user: {

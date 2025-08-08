@@ -3583,7 +3583,11 @@ export class AzureReposService
     ): PullRequest {
         return {
             id: pr.pullRequestId?.toString() ?? '',
-            repository: {
+            number: pr?.pullRequestId ?? -1,
+            pull_number: pr?.pullRequestId ?? -1, // TODO: remove, legacy, use number
+            repository: pr?.repository?.name ?? '', // TODO: remove, legacy, use repositoryData
+            repositoryId: pr?.repository?.id ?? '', // TODO: remove, legacy, use repositoryData
+            repositoryData: {
                 id: pr?.repository?.id ?? '',
                 name: pr?.repository?.name ?? '',
             },
@@ -3591,7 +3595,6 @@ export class AzureReposService
             state: this._prStateMap.get(pr?.status) ?? PullRequestState.ALL,
             prURL: pr?.url ?? '',
             organizationId: organizationAndTeamData?.organizationId ?? '',
-            number: pr?.pullRequestId ?? -1,
             body: pr?.description ?? '',
             title: pr?.title ?? '',
             created_at: pr?.creationDate ?? '',
@@ -3612,25 +3615,33 @@ export class AzureReposService
                 pr?.reviewers?.map((reviewer) => ({
                     id: reviewer?.id ?? '',
                 })) || [],
+            sourceRefName: pr?.sourceRefName ?? '', // TODO: remove, legacy, use head.ref
             head: {
-                ref: pr.sourceRefName?.replace('refs/heads/', ''),
+                ref: pr?.sourceRefName?.replace('refs/heads/', ''),
                 repo: {
-                    id: pr.repository?.id,
-                    name: pr.repository?.name,
+                    id: pr?.repository?.id ?? '',
+                    name: pr?.repository?.name ?? '',
+                    defaultBranch: pr?.repository?.defaultBranch ?? '',
+                    fullName: `${pr?.repository?.name ?? ''}/${pr?.sourceRefName?.replace('refs/heads/', '')}`,
                 },
             },
+            targetRefName: pr?.targetRefName ?? '', // TODO: remove, legacy, use base.ref
             base: {
-                ref: pr.targetRefName?.replace('refs/heads/', ''),
+                ref: pr?.targetRefName?.replace('refs/heads/', ''),
                 repo: {
-                    id: pr.repository?.id,
-                    name: pr.repository?.name,
+                    id: pr?.repository?.id ?? '',
+                    name: pr?.repository?.name ?? '',
+                    defaultBranch: pr?.repository?.defaultBranch ?? '',
+                    fullName: `${pr?.repository?.name ?? ''}/${pr?.targetRefName?.replace('refs/heads/', '')}`,
                 },
             },
             user: {
                 login:
-                    pr.createdBy?.uniqueName || pr.createdBy?.displayName || '',
-                name: pr.createdBy?.displayName,
-                id: pr.createdBy?.id,
+                    pr?.createdBy?.uniqueName ??
+                    pr.createdBy?.displayName ??
+                    '',
+                name: pr?.createdBy?.displayName ?? '',
+                id: pr?.createdBy?.id ?? '',
             },
         };
     }

@@ -32,12 +32,16 @@ const PullRequestSchema = z
     .object({
         id: z.string(),
         number: z.number(),
+        pull_number: z.number(), // TODO: remove, legacy, use number
         body: z.string(),
         title: z.string(),
         message: z.string(),
         state: z.enum(Object.values(PullRequestState) as [PullRequestState]),
         organizationId: z.string(),
-        repository: z.object({
+        repository: z.string(), // TODO: remove, legacy, use repositoryData
+        repositoryId: z.string(), // TODO: remove, legacy, use repositoryData
+        repositoryData: z.object({
+            // TODO: consider removing this, use HEAD and BASE instead
             id: z.string(),
             name: z.string(),
         }),
@@ -56,18 +60,24 @@ const PullRequestSchema = z
                 id: z.string(),
             }),
         ),
+        sourceRefName: z.string(), // TODO: remove, legacy, use head.ref
         head: z.object({
             ref: z.string(),
             repo: z.object({
                 id: z.string(),
                 name: z.string(),
+                defaultBranch: z.string(),
+                fullName: z.string(),
             }),
         }),
+        targetRefName: z.string(), // TODO: remove, legacy, use base.ref
         base: z.object({
             ref: z.string(),
             repo: z.object({
                 id: z.string(),
                 name: z.string(),
+                defaultBranch: z.string(),
+                fullName: z.string(),
             }),
         }),
         user: z.object({

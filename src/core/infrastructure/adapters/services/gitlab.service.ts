@@ -3147,6 +3147,7 @@ export class GitlabService
         return {
             id: mergeRequest?.id?.toString() ?? '',
             number: mergeRequest?.id ?? -1,
+            pull_number: mergeRequest?.iid ?? -1, // TODO: remove, legacy, use number
             organizationId: organizationAndTeamData?.organizationId ?? '',
             title: mergeRequest?.title ?? '',
             body: mergeRequest?.description ?? '',
@@ -3155,7 +3156,9 @@ export class GitlabService
                     mergeRequest?.state as GitlabPullRequestState,
                 ) ?? PullRequestState.ALL,
             prURL: mergeRequest?.web_url ?? '',
-            repository: {
+            repository: mergeRequest?.source_project_id?.toString() ?? '', // TODO: remove, legacy, use repositoryData
+            repositoryId: mergeRequest?.source_project_id?.toString() ?? '', // TODO: remove, legacy, use repositoryData
+            repositoryData: {
                 id: mergeRequest?.source_project_id?.toString() ?? '',
                 name: mergeRequest?.source_project_id?.toString() ?? '',
             },
@@ -3173,18 +3176,24 @@ export class GitlabService
                 mergeRequest?.reviewers?.map((r) => ({
                     id: r?.id?.toString() ?? '',
                 })) ?? [],
+            sourceRefName: mergeRequest?.source_branch ?? '', // TODO: remove, legacy, use head.ref
             head: {
                 ref: mergeRequest?.source_branch ?? '',
                 repo: {
                     id: mergeRequest?.source_project_id?.toString() ?? '',
                     name: mergeRequest?.source_project_id?.toString() ?? '',
+                    defaultBranch: '',
+                    fullName: mergeRequest?.source_project_id?.toString() ?? '',
                 },
             },
+            targetRefName: mergeRequest?.target_branch ?? '', // TODO: remove, legacy, use base.ref
             base: {
                 ref: mergeRequest?.target_branch ?? '',
                 repo: {
                     id: mergeRequest?.target_project_id?.toString() ?? '',
                     name: mergeRequest?.target_project_id?.toString() ?? '',
+                    defaultBranch: '',
+                    fullName: mergeRequest?.target_project_id?.toString() ?? '',
                 },
             },
             user: {
