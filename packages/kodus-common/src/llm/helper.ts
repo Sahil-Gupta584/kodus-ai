@@ -137,6 +137,7 @@ const getChatVertexAI = (
         verbose?: boolean;
         callbacks?: Callbacks;
         json?: boolean;
+        maxReasoningTokens?: number;
     } | null,
 ) => {
     const defaultOptions = {
@@ -149,6 +150,9 @@ const getChatVertexAI = (
         verbose: false,
         streaming: false,
         callbacks: [],
+        maxReasoningTokens:
+            MODEL_STRATEGIES[LLMModelProvider.VERTEX_GEMINI_2_5_PRO]
+                .maxReasoningTokens,
     };
 
     const finalOptions = options
@@ -173,6 +177,7 @@ const getChatVertexAI = (
         maxOutputTokens: finalOptions.maxTokens,
         verbose: finalOptions.verbose,
         callbacks: finalOptions.callbacks,
+        maxReasoningTokens: finalOptions.maxReasoningTokens,
     });
 };
 
