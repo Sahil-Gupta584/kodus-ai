@@ -10,7 +10,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 import { CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { CodeReviewSettingsLogService } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/codeReviewSettingsLog.service';
-import { GetDirectoryPathHelper } from '@/shared/utils/helpers/getDirectoryPath.helper';
+import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
 import { IntegrationModule } from './integration.module';
 import { IntegrationConfigModule } from './integrationConfig.module';
 import { ParametersModule } from './parameters.module';
@@ -36,7 +36,7 @@ import { ParametersModule } from './parameters.module';
             provide: CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
             useClass: CodeReviewSettingsLogService,
         },
-        GetDirectoryPathHelper,
+        GetAdditionalInfoHelper,
         ...PullRequestMessagesUseCases,
     ],
     exports: [

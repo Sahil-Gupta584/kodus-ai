@@ -13,8 +13,9 @@ import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ICodeReviewSettingsLogService,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
-import { GetDirectoryPathHelper } from '@/shared/utils/helpers/getDirectoryPath.helper';
+
 import { PinoLogger } from 'nestjs-pino';
+import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
 
 @Injectable()
 export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
@@ -25,7 +26,7 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
         @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
         private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
 
-        private readonly getDirectoryPathHelper: GetDirectoryPathHelper,
+        private readonly getAdditionalInfoHelper: GetAdditionalInfoHelper,
 
         private readonly logger: PinoLogger,
 
@@ -86,7 +87,7 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
                 existingEndMessage:
                     existingPullRequestMessage?.endReviewMessage,
                 directoryPath:
-                    await this.getDirectoryPathHelper.getDirectoryPathByOrganizationAndRepository(
+                    await this.getAdditionalInfoHelper.getDirectoryPathByOrganizationAndRepository(
                         pullRequestMessages.organizationId,
                         pullRequestMessages.repositoryId,
                         pullRequestMessages.directoryId,

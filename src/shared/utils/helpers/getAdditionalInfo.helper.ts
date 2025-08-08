@@ -12,7 +12,7 @@ import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-k
 import { Inject, Injectable } from '@nestjs/common';
 
 @Injectable()
-export class GetDirectoryPathHelper {
+export class GetAdditionalInfoHelper {
     constructor(
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
