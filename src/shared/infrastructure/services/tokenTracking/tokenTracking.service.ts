@@ -7,6 +7,7 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 export interface TokenUsage {
     input_tokens?: number;
     output_tokens?: number;
+    output_reasoning_tokens?: number;
     total_tokens?: number;
     model?: string;
     runId?: string;
@@ -41,6 +42,7 @@ class TokenTrackingCallbackHandler extends BaseCallbackHandler {
                 usage.input_tokens = metadata.input_tokens;
                 usage.output_tokens = metadata.output_tokens;
                 usage.total_tokens = metadata.total_tokens;
+                usage.output_reasoning_tokens = metadata.output_token_details.reasoning;
             }
 
             // Extracts model
