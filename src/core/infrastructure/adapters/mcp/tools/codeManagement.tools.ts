@@ -107,15 +107,15 @@ interface RepositoriesResponse extends BaseResponse {
 }
 
 interface PullRequestsResponse extends BaseResponse {
-    data: PullRequest[];
+    data: z.infer<typeof PullRequestSchema>[];
 }
 
 interface CommitsResponse extends BaseResponse {
     data: z.infer<typeof CommitSchema>[];
 }
 
-interface PullRequestDetailsResponse extends BaseResponse {
-    data: PullRequest | null;
+interface PullRequestResponse extends BaseResponse {
+    data: z.infer<typeof PullRequestWithFilesSchema> | null;
 }
 
 interface RepositoryFilesResponse extends BaseResponse {
@@ -481,9 +481,7 @@ export class CodeManagementTools {
                 data: z.union([PullRequestWithFilesSchema, z.null()]),
             }),
             execute: wrapToolHandler(
-                async (
-                    args: InputType,
-                ): Promise<PullRequestDetailsResponse> => {
+                async (args: InputType): Promise<PullRequestResponse> => {
                     const params = {
                         organizationAndTeamData: {
                             organizationId: args.organizationId,
