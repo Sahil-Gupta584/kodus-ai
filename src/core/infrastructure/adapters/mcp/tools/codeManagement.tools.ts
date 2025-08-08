@@ -5,10 +5,8 @@ import { PinoLoggerService } from '../../services/logger/pino.service';
 import { wrapToolHandler } from '../utils/mcp-protocol.utils';
 import { BaseResponse, McpToolDefinition } from '../types/mcp-tool.interface';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
-import {
-    PullRequests,
-    PullRequestDetails as PullRequestDetailsType,
-} from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
+import { PullRequest } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
+import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 
 const RepositorySchema = z
     .object({
@@ -32,26 +30,63 @@ const RepositorySchema = z
 
 const PullRequestSchema = z
     .object({
-        id: z
-            .union([z.string(), z.number()])
-            .transform((val) => val?.toString()),
-        author_id: z
-            .union([z.string(), z.number()])
-            .optional()
-            .transform((val) => val?.toString()),
-        author_name: z.string().optional(),
-        message: z.string().optional(),
-        created_at: z.string().optional(),
-        closed_at: z.union([z.string(), z.null()]).optional(),
-        targetRefName: z.string().optional(),
-        sourceRefName: z.string().optional(),
-        state: z.string().optional(),
-        organizationId: z.string().optional(),
-        pull_number: z.number().optional(),
-        repository: z.string().optional(),
-        repositoryId: z.string().optional(),
+        id: z.string(),
+        number: z.number(),
+        body: z.string(),
+        title: z.string(),
+        message: z.string(),
+        state: z.enum(Object.values(PullRequestState) as [PullRequestState]),
+        organizationId: z.string(),
+        repository: z.object({
+            id: z.string(),
+            name: z.string(),
+        }),
+        prURL: z.string().url(),
+        created_at: z.string(),
+        closed_at: z.string(),
+        updated_at: z.string(),
+        merged_at: z.string(),
+        participants: z.array(
+            z.object({
+                id: z.string(),
+            }),
+        ),
+        reviewers: z.array(
+            z.object({
+                id: z.string(),
+            }),
+        ),
+        head: z.object({
+            ref: z.string(),
+            repo: z.object({
+                id: z.string(),
+                name: z.string(),
+            }),
+        }),
+        base: z.object({
+            ref: z.string(),
+            repo: z.object({
+                id: z.string(),
+                name: z.string(),
+            }),
+        }),
+        user: z.object({
+            login: z.string(),
+            name: z.string(),
+            id: z.string(),
+        }),
     })
     .passthrough();
+
+const PullRequestWithFilesSchema = PullRequestSchema.extend({
+    modified_files: z
+        .array(
+            z.object({
+                filename: z.string(),
+            }),
+        )
+        .optional(),
+}).passthrough();
 
 const CommitSchema = z.any();
 
@@ -67,89 +102,12 @@ const RepositoryFileSchema = z
     })
     .passthrough();
 
-const PullRequestDetailsSchema = PullRequestSchema.extend({
-    prURL: z.union([z.string().url(), z.null()]).optional(),
-    number: z.number().optional(),
-    body: z.union([z.string(), z.null()]).optional(),
-    title: z.union([z.string(), z.null()]).optional(),
-    updated_at: z.union([z.string(), z.null()]).optional(),
-    merged_at: z.union([z.string(), z.null()]).optional(),
-
-    participants: z
-        .array(
-            z.object({
-                id: z
-                    .union([z.string(), z.number()])
-                    .transform((val) => val?.toString()),
-                approved: z.boolean().optional(),
-                state: z.string().optional(),
-                type: z.string().optional(),
-            }),
-        )
-        .optional(),
-
-    reviewers: z
-        .array(
-            z.object({
-                id: z
-                    .union([z.string(), z.number()])
-                    .transform((val) => val?.toString()),
-            }),
-        )
-        .optional(),
-
-    head: z
-        .object({
-            ref: z.union([z.string(), z.null()]).optional(),
-            repo: z
-                .object({
-                    id: z
-                        .union([z.string(), z.number(), z.null()])
-                        .optional()
-                        .transform((val) => val?.toString()),
-                    name: z.union([z.string(), z.null()]).optional(),
-                })
-                .passthrough(),
-        })
-        .passthrough()
-        .optional(),
-
-    base: z
-        .object({
-            ref: z.union([z.string(), z.null()]).optional(),
-        })
-        .passthrough()
-        .optional(),
-
-    user: z
-        .object({
-            login: z.string().optional(),
-            name: z.union([z.string(), z.null()]).optional(),
-            id: z
-                .union([z.string(), z.number(), z.null()])
-                .optional()
-                .transform((val) => val?.toString()),
-        })
-        .passthrough()
-        .optional(),
-}).passthrough();
-
-const PullRequestDetailsWithFilesSchema = PullRequestDetailsSchema.extend({
-    modified_files: z
-        .array(
-            z.object({
-                filename: z.string(),
-            }),
-        )
-        .optional(),
-}).passthrough();
-
 interface RepositoriesResponse extends BaseResponse {
     data: Repositories[];
 }
 
 interface PullRequestsResponse extends BaseResponse {
-    data: PullRequests[];
+    data: PullRequest[];
 }
 
 interface CommitsResponse extends BaseResponse {
@@ -157,7 +115,7 @@ interface CommitsResponse extends BaseResponse {
 }
 
 interface PullRequestDetailsResponse extends BaseResponse {
-    data: PullRequestDetailsType | null;
+    data: PullRequest | null;
 }
 
 interface RepositoryFilesResponse extends BaseResponse {
@@ -326,7 +284,7 @@ export class CodeManagementTools {
         return {
             name: 'list_pull_requests',
             description:
-                'List pull requests with advanced filtering (by state, repository, author, date range). Use this to find specific PRs, analyze PR patterns, or get overview of team activity. Returns PR metadata only - use get_pull_request_details for full PR content.',
+                'List pull requests with advanced filtering (by state, repository, author, date range). Use this to find specific PRs, analyze PR patterns, or get overview of team activity. Returns PR metadata only - use get_pull_request for full PR content.',
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
@@ -335,13 +293,24 @@ export class CodeManagementTools {
             }),
             execute: wrapToolHandler(
                 async (args: InputType): Promise<PullRequestsResponse> => {
-                    const params = {
+                    const params: Parameters<
+                        typeof this.codeManagementService.getPullRequests
+                    >[0] = {
                         organizationAndTeamData: {
                             organizationId: args.organizationId,
                             teamId: args.teamId,
                         },
-                        filters: args.filters,
+                        filters: {
+                            state: args.filters?.state
+                                ? PullRequestState[
+                                      args.filters.state.toUpperCase()
+                                  ]
+                                : undefined,
+                            startDate: new Date(args.filters?.startDate),
+                            endDate: new Date(args.filters?.endDate),
+                        },
                     };
+
                     const pullRequests =
                         await this.codeManagementService.getPullRequests(
                             params,
@@ -464,7 +433,7 @@ export class CodeManagementTools {
         };
     }
 
-    getPullRequestDetails(): McpToolDefinition {
+    getPullRequest(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -502,14 +471,14 @@ export class CodeManagementTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'get_pull_request_details',
+            name: 'get_pull_request',
             description:
                 'Get complete details of a specific pull request including description, commits, reviews, and list of modified files. Use this when you need full PR context - NOT for file content (use get_pull_request_file_content for that).',
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
                 count: z.number(),
-                data: z.union([PullRequestDetailsWithFilesSchema, z.null()]),
+                data: z.union([PullRequestWithFilesSchema, z.null()]),
             }),
             execute: wrapToolHandler(
                 async (
@@ -528,9 +497,7 @@ export class CodeManagementTools {
                     };
 
                     const details =
-                        await this.codeManagementService.getPullRequestDetails(
-                            params,
-                        );
+                        await this.codeManagementService.getPullRequest(params);
 
                     if (!details) {
                         return {
@@ -1041,7 +1008,7 @@ export class CodeManagementTools {
             this.listRepositories(),
             this.listPullRequests(),
             this.listCommits(),
-            this.getPullRequestDetails(),
+            this.getPullRequest(),
             this.getRepositoryFiles(),
             this.getRepositoryContent(),
             //TODO: Uncomment this when we have a way to get the languages

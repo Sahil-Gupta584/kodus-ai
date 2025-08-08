@@ -129,15 +129,14 @@ export class RunCodeReviewAutomationUseCase {
             if (!pullRequest) {
                 // try to get the PR details from the code management when it's a github issue
                 if (platformType === PlatformType.GITHUB) {
-                    pullRequestData =
-                        await this.codeManagement.getPullRequestDetails({
-                            organizationAndTeamData,
-                            repository: {
-                                id: repository.id,
-                                name: repository.name,
-                            },
-                            prNumber: sanitizedPayload?.issue?.number,
-                        });
+                    pullRequestData = await this.codeManagement.getPullRequest({
+                        organizationAndTeamData,
+                        repository: {
+                            id: repository.id,
+                            name: repository.name,
+                        },
+                        prNumber: sanitizedPayload?.issue?.number,
+                    });
                 }
                 // if it's still not possible to get the PR details, return
                 if (!pullRequestData) {

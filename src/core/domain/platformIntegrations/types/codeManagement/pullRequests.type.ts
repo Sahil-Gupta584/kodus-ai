@@ -2,23 +2,42 @@ import { Repository } from '@/config/types/general/codeReview.type';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 import { RestEndpointMethodTypes } from '@octokit/rest';
 
-export type PullRequestDetails =
-    RestEndpointMethodTypes['pulls']['get']['response']['data'];
-
-export type PullRequests = {
+export type PullRequest = {
     id: string;
-    author_id: string;
-    author_name: string;
+    number: number;
+    body: string;
+    title: string;
     message: string;
-    created_at?: string;
-    closed_at?: string;
-    targetRefName?: string;
-    sourceRefName?: string;
     state: PullRequestState;
-    organizationId?: string;
-    pull_number?: number;
-    repository?: string;
-    repositoryId?: string;
+    organizationId: string;
+    repository: {
+        id: string;
+        name: string;
+    };
+    prURL: string;
+    created_at: string;
+    closed_at: string;
+    updated_at: string;
+    merged_at: string;
+    participants: {
+        id: string;
+    }[];
+    reviewers: {
+        id: string;
+    }[];
+    head: {
+        ref: string;
+        repo: { id: string; name: string };
+    };
+    base: {
+        ref: string;
+        repo: { id: string; name: string };
+    };
+    user: {
+        login: string;
+        name: string;
+        id: string;
+    };
 };
 
 export type PullRequestFile = {
@@ -39,7 +58,7 @@ export type PullRequestWithFiles = {
     pull_number: number;
     state: string;
     title: string;
-    repository: string | { id: string, name: string };
+    repository: string | { id: string; name: string };
     repositoryData?: Repository;
     pullRequestFiles: PullRequestFile[] | null;
 };
@@ -55,56 +74,56 @@ export type PullRequestReviewComment = {
         id?: string | number;
         name?: string;
         username?: string;
-    }
+    };
     createdAt?: string;
     updatedAt?: string;
-}
+};
 
 export type ReactionsInComments = {
     reactions: {
         thumbsUp: number;
         thumbsDown: number;
-    }
+    };
     comment: {
         id: string;
         body: string;
         pull_request_review_id: string;
-    }
+    };
     pullRequest: {
         id: string;
         number: number;
         repository: {
             id: string;
             fullName: string;
-        }
-    }
-}
+        };
+    };
+};
 
 export type PullRequestsWithChangesRequested = {
     title: string;
     number: number;
     reviewDecision: PullRequestReviewState;
-}
+};
 
 // For now it's only relevant for github
 export enum PullRequestReviewState {
-    COMMENTED = "COMMENTED",
-    PENDING = "PENDING",
-    APPROVED = "APPROVED",
-    CHANGES_REQUESTED = "CHANGES_REQUESTED",
-    DISMISSED = "DISMISSED"
+    COMMENTED = 'COMMENTED',
+    PENDING = 'PENDING',
+    APPROVED = 'APPROVED',
+    CHANGES_REQUESTED = 'CHANGES_REQUESTED',
+    DISMISSED = 'DISMISSED',
 }
 
 export type OneSentenceSummaryItem = {
     id?: number;
     oneSentenceSummary: string;
-}
+};
 
-export type PullRequestAuthor={
+export type PullRequestAuthor = {
     id: string;
     name: string;
     contributions?: number;
-}
+};
 
 export type AuthorContributions = {
     [key: string]: {
@@ -112,4 +131,4 @@ export type AuthorContributions = {
         name: string;
         count: number;
     };
-}
+};

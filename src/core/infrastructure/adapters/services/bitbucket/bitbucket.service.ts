@@ -3,7 +3,6 @@ import { IBitbucketService } from '@/core/domain/bitbucket/contracts/bitbucket.s
 import { IntegrationConfigEntity } from '@/core/domain/integrationConfigs/entities/integration-config.entity';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
 import {
-    PullRequests,
     PullRequestWithFiles,
     PullRequestCodeReviewTime,
     PullRequestFile,
@@ -13,6 +12,7 @@ import {
     PullRequestReviewState,
     ReactionsInComments,
     PullRequestAuthor,
+    PullRequest,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
@@ -123,8 +123,8 @@ export class BitbucketService
             const pullRequests = await this.getPullRequests({
                 organizationAndTeamData: params.organizationAndTeamData,
                 filters: {
-                    startDate: endDate.toISOString(), // Reversing the dates to fetch the last 15 days
-                    endDate: startDate.toISOString(),
+                    startDate: endDate, // Reversing the dates to fetch the last 15 days
+                    endDate: startDate,
                 },
             });
 
@@ -132,8 +132,8 @@ export class BitbucketService
             const authorContributions = pullRequests.reduce<
                 Record<string, AuthorContribution>
             >((acc, pr) => {
-                const authorId = pr.author_id;
-                const authorName = pr.author_name;
+                const authorId = pr.user.id;
+                const authorName = pr.user.name || pr.user.login || pr.user.id;
 
                 if (!authorId) {
                     this.logger.warn({
@@ -142,7 +142,7 @@ export class BitbucketService
                         metadata: {
                             organizationAndTeamData:
                                 params?.organizationAndTeamData,
-                            pullRequest: pr?.pull_number,
+                            pullRequest: pr?.number,
                         },
                     });
                     return acc;
@@ -166,7 +166,7 @@ export class BitbucketService
             ).sort((a, b) => a.name.localeCompare(b.name));
 
             return sortedAuthors.map((author) => ({
-                id: this.sanitizeUUId(author.id.toString()),
+                id: this.sanitizeUUID(author.id.toString()),
                 name: author.name,
             }));
         } catch (error) {
@@ -231,7 +231,7 @@ export class BitbucketService
                         if (new Date(pr.created_on) < since) continue;
 
                         if (pr.author?.uuid) {
-                            const userId = this.sanitizeUUId(pr.author.uuid);
+                            const userId = this.sanitizeUUID(pr.author.uuid);
 
                             if (!authorsSet.has(userId)) {
                                 authorsSet.add(userId);
@@ -374,151 +374,174 @@ export class BitbucketService
         }
     }
 
+    /**
+     * Retrieves pull requests from Bitbucket based on the provided parameters.
+     * @param params - The parameters for fetching pull requests.
+     * @param params.organizationAndTeamData - The organization and team data.
+     * @param params.repository - Optional filter for a specific repository name.
+     * @param params.filters - Optional filters for dates, state, author, and branch.
+     * @returns A promise that resolves to an array of transformed PullRequest objects.
+     */
     async getPullRequests(params: {
         organizationAndTeamData: OrganizationAndTeamData;
+        repository?: string;
         filters?: {
-            startDate?: string;
-            endDate?: string;
-            assignFilter?: any;
+            startDate?: Date;
+            endDate?: Date;
             state?: PullRequestState;
-            includeChanges?: boolean;
-            pullRequestNumbers?: number[];
+            author?: string;
+            branch?: string;
         };
-    }): Promise<PullRequests[]> {
+    }): Promise<PullRequest[]> {
+        const { organizationAndTeamData, repository, filters = {} } = params;
+
         try {
-            const { organizationAndTeamData } = params;
-
             if (!organizationAndTeamData.organizationId) {
-                return null;
-            }
+                this.logger.warn({
+                    message:
+                        'Organization ID is required to fetch pull requests',
+                    context: BitbucketService.name,
+                    metadata: params,
+                });
 
-            const filters = params?.filters ?? {};
+                return [];
+            }
 
             const bitbucketAuthDetail = await this.getAuthDetails(
                 organizationAndTeamData,
             );
 
-            const repositories = <Repositories[]>(
+            const allRepositories = <Repositories[]>(
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(
                     organizationAndTeamData,
                     IntegrationConfigKey.REPOSITORIES,
                 )
             );
 
-            if (!bitbucketAuthDetail || !repositories) {
-                return null;
+            if (
+                !bitbucketAuthDetail ||
+                !allRepositories ||
+                allRepositories.length === 0
+            ) {
+                this.logger.warn({
+                    message: 'Bitbucket auth details or repositories not found',
+                    context: BitbucketService.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            let reposToProcess = allRepositories;
+
+            if (repository) {
+                const foundRepo = allRepositories.find(
+                    (r) => r.name === repository,
+                );
+
+                if (!foundRepo) {
+                    this.logger.warn({
+                        message: `Repository ${repository} not found in the list of repositories.`,
+                        context: BitbucketService.name,
+                        metadata: params,
+                    });
+
+                    return [];
+                }
+                reposToProcess = [foundRepo];
             }
 
             const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
 
-            let pullRequests: Array<
-                Schema.Pullrequest & { repository: string }
-            > = [];
-
-            const results = await Promise.all(
-                repositories.map(async (repo) => {
-                    const prs = await bitbucketAPI.pullrequests
-                        .list({
-                            repo_slug: `{${repo.id}}`,
-                            workspace: `{${repo.workspaceId}}`,
-                            fields: '+values.participants,+values.reviewers',
-                        })
-                        .then((res) =>
-                            this.getPaginatedResults(bitbucketAPI, res),
-                        );
-
-                    return prs?.map((item) => ({
-                        ...item,
-                        repository: repo?.name,
-                    }));
+            const promises = reposToProcess.map((r) =>
+                this.getPullRequestsByRepo({
+                    bitbucketAPI,
+                    repo: r,
+                    filters,
                 }),
             );
 
-            pullRequests = results.flat();
+            const results = await Promise.all(promises);
+            const rawPullRequests = results.flat();
 
-            if (filters && filters?.state === 'open') {
-                pullRequests = pullRequests.filter((pr) => pr.state === 'OPEN');
-            }
-
-            const stateMap = {
-                OPEN: PullRequestState.OPENED,
-                MERGED: PullRequestState.CLOSED,
-            };
-
-            return pullRequests
-                .sort((a, b) => {
-                    return (
-                        new Date(b.created_on).getTime() -
-                        new Date(a.created_on).getTime()
-                    );
-                })
-                .map((pr) => {
-                    return {
-                        id: pr.id?.toString(),
-                        author_id: this.sanitizeUUId(
-                            pr.author?.uuid?.toString(),
-                        ),
-                        author_name: pr.author?.display_name,
-                        author_created_at: pr.created_on,
-                        repository: pr?.repository,
-                        repositoryId: this.sanitizeUUId(
-                            pr?.source?.repository?.uuid,
-                        ),
-                        message: pr.summary?.raw,
-                        state: stateMap[pr.state] || PullRequestState.ALL,
-                        prURL: pr.links?.html?.href,
-                        organizationId:
-                            params?.organizationAndTeamData?.organizationId,
-                        pull_number: pr.id,
-                        number: pr.id,
-                        body: pr.summary?.raw,
-                        title: pr.title,
-                        created_at: pr.created_on,
-                        updated_at: pr.updated_on,
-                        merged_at: pr.updated_on,
-                        participants: pr.participants,
-                        reviewers: pr.reviewers.map((reviewer) => ({
-                            ...reviewer,
-                            uuid: this.sanitizeUUId(reviewer.uuid),
-                        })),
-                        head: {
-                            ref: pr.source?.branch?.name,
-                            repo: {
-                                id: this.sanitizeUUId(
-                                    pr.source?.repository?.uuid,
-                                ),
-                                name: pr.source?.repository?.name,
-                            },
-                        },
-                        base: {
-                            ref: pr.destination?.branch?.name,
-                        },
-                        user: {
-                            login: pr.author?.display_name ?? '',
-                            name: pr.author?.display_name,
-                            id: this.sanitizeUUId(pr.author?.uuid),
-                        },
-                    };
-                });
+            return rawPullRequests.map((rawPr) =>
+                this.transformPullRequest(rawPr, organizationAndTeamData),
+            );
         } catch (error) {
             this.logger.error({
-                message: 'Error to get pull requests',
+                message: 'Error fetching pull requests from Bitbucket',
                 context: BitbucketService.name,
-                serviceName: 'BitbucketService getPullRequests',
-                error: error,
-                metadata: {
-                    params,
-                },
+                error,
+                metadata: params,
             });
             return [];
         }
     }
 
-    async getPullRequestDetails(params: {
+    /**
+     * Retrieves pull requests from a specific Bitbucket repository.
+     * @param params - The parameters for fetching, including the API instance, repository object, and filters.
+     * @returns A promise that resolves to an array of raw pull request data.
+     */
+    private async getPullRequestsByRepo(params: {
+        bitbucketAPI: InstanceType<typeof Bitbucket>;
+        repo: Repositories;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            state?: PullRequestState;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<Schema.Pullrequest[]> {
+        const { bitbucketAPI, repo, filters = {} } = params;
+        const { startDate, endDate, state, author, branch } = filters;
+
+        const response = await bitbucketAPI.pullrequests.list({
+            repo_slug: `{${repo.name}}`,
+            workspace: `{${repo.workspaceId}}`,
+            state: state ? this._prStateMapReversed.get(state) : undefined,
+            sort: '-created_on', // Sort by creation date, descending
+            fields: '+values.participants,+values.reviewers',
+        });
+
+        const pullRequests = await this.getPaginatedResults(
+            bitbucketAPI,
+            response,
+        );
+
+        return pullRequests.filter((pr) => {
+            let isValid = true;
+
+            if (isValid && startDate) {
+                isValid = new Date(pr.created_on) >= startDate;
+            }
+
+            if (isValid && endDate) {
+                isValid = new Date(pr.created_on) <= endDate;
+            }
+
+            if (isValid && author) {
+                isValid =
+                    pr?.author?.display_name?.toLowerCase() ===
+                    author.toLowerCase();
+            }
+
+            if (isValid && branch) {
+                isValid =
+                    pr.destination?.branch?.name?.toLowerCase() ===
+                    branch.toLowerCase();
+            }
+
+            return isValid;
+        });
+    }
+
+    async getPullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        repository: { id: string; name: string };
+        repository: Partial<Repository>;
         prNumber: number;
-    }): Promise<any | null> {
+    }): Promise<PullRequest | null> {
         try {
             const { organizationAndTeamData, repository, prNumber } = params;
 
@@ -558,56 +581,10 @@ export class BitbucketService
                 })
             ).data;
 
-            const prData = {
-                id: prDetails.id.toString(),
-                author_id: this.sanitizeUUId(
-                    prDetails.author?.uuid?.toString(),
-                ),
-                author_name: prDetails.author?.display_name,
-                repository: repository.name,
-                repositoryId: this.sanitizeUUId(
-                    prDetails.source?.repository?.uuid,
-                ),
-                message: prDetails.summary?.raw,
-                state: prDetails.state,
-                prURL: prDetails.links?.html?.href,
-                organizationId: organizationAndTeamData.organizationId,
-                pull_number: prDetails.id,
-                number: prDetails.id,
-                body: prDetails.summary?.raw,
-                title: prDetails.title,
-                created_at: prDetails.created_on,
-                updated_at: prDetails.updated_on,
-                merged_at: prDetails.updated_on,
-                participants: prDetails.participants.map((participant) => ({
-                    id: this.sanitizeUUId(participant.user.uuid),
-                    approved: participant.approved,
-                    state: participant.state,
-                    type: participant.type,
-                })),
-                reviewers: prDetails.reviewers.map((reviewer) => ({
-                    id: this.sanitizeUUId(reviewer.uuid),
-                })),
-                head: {
-                    ref: prDetails.source?.branch?.name,
-                    repo: {
-                        id: this.sanitizeUUId(
-                            prDetails.source?.repository?.uuid,
-                        ),
-                        name: prDetails.source?.repository?.name,
-                    },
-                },
-                base: {
-                    ref: prDetails.destination?.branch?.name,
-                },
-                user: {
-                    login: prDetails.author?.display_name ?? '',
-                    name: prDetails.author?.display_name,
-                    id: this.sanitizeUUId(prDetails.author?.uuid),
-                },
-            };
-
-            return prData;
+            return this.transformPullRequest(
+                prDetails,
+                organizationAndTeamData,
+            );
         } catch (error) {
             this.logger.error({
                 message: 'Error to get pull request details',
@@ -712,7 +689,7 @@ export class BitbucketService
         const { slug, uuid: workspaceUuid } = workspace;
 
         return {
-            id: this.sanitizeUUId(uuid),
+            id: this.sanitizeUUID(uuid),
             name: name ?? '',
             http_url: links?.html?.href ?? '',
             avatar_url: links?.avatar?.href ?? '',
@@ -723,9 +700,9 @@ export class BitbucketService
                     (repository) => repository?.name === name,
                 ) ?? false,
             default_branch: mainbranch?.name ?? '',
-            workspaceId: this.sanitizeUUId(workspaceUuid),
+            workspaceId: this.sanitizeUUID(workspaceUuid),
             project: {
-                id: this.sanitizeUUId(project?.uuid),
+                id: this.sanitizeUUID(project?.uuid),
                 name: project?.name ?? '',
             },
         };
@@ -862,7 +839,7 @@ export class BitbucketService
                 permissions.forEach((permission) => {
                     uniqueMembers.add({
                         name: permission.user.display_name,
-                        id: this.sanitizeUUId(permission.user.uuid),
+                        id: this.sanitizeUUID(permission.user.uuid),
                     });
                 });
             });
@@ -971,10 +948,8 @@ export class BitbucketService
             const prs = await this.getPullRequests({
                 organizationAndTeamData,
                 filters: {
-                    startDate: moment()
-                        .subtract(90, 'days')
-                        .format('YYYY-MM-DD'),
-                    endDate: moment().format('YYYY-MM-DD'),
+                    startDate: moment().subtract(90, 'days').toDate(),
+                    endDate: moment().toDate(),
                 },
             });
 
@@ -1332,7 +1307,7 @@ export class BitbucketService
             branch?: string;
         };
     }): Promise<Commit[]> {
-        const { organizationAndTeamData, repository, filters } = params;
+        const { organizationAndTeamData, repository, filters = {} } = params;
 
         try {
             const bitbucketAuthDetail = await this.getAuthDetails(
@@ -1385,14 +1360,16 @@ export class BitbucketService
                     bitbucketAPI,
                     workspaceId: repo.workspaceId,
                     repoId: repo.id,
-                    filters: filters || {},
+                    filters,
                 }),
             );
 
             const results = await Promise.all(promises);
             const rawCommits = results.flat();
 
-            return rawCommits.map((rawCommit) => this.formatCommit(rawCommit));
+            return rawCommits.map((rawCommit) =>
+                this.transformCommit(rawCommit),
+            );
         } catch (error) {
             this.logger.error({
                 message: 'Error fetching commits from Bitbucket',
@@ -1402,34 +1379,6 @@ export class BitbucketService
             });
             return [];
         }
-    }
-
-    /**
-     * Formats a raw commit from the Bitbucket API into the standard Commit interface.
-     * @param rawCommit The raw commit data from Bitbucket.
-     * @returns A formatted Commit object.
-     */
-    private formatCommit(rawCommit: Schema.Commit): Commit {
-        const [name, email] = this.extractUsernameEmail(rawCommit?.author);
-
-        return {
-            sha: rawCommit.hash ?? '',
-            commit: {
-                author: {
-                    id: this.sanitizeUUId(rawCommit.author?.user?.uuid) ?? '',
-                    name: name ?? '',
-                    email: email ?? '',
-                    date: rawCommit.date ?? '',
-                },
-                message: rawCommit.message ?? '',
-            },
-            parents:
-                rawCommit.parents
-                    ?.map((parent) => ({
-                        sha: parent.hash ?? '',
-                    }))
-                    .filter((parent) => parent.sha) ?? [],
-        };
     }
 
     /**
@@ -1448,7 +1397,7 @@ export class BitbucketService
             branch?: string;
         };
     }): Promise<Schema.Commit[]> {
-        const { bitbucketAPI, workspaceId, repoId, filters } = params;
+        const { bitbucketAPI, workspaceId, repoId, filters = {} } = params;
         const { startDate, endDate, author, branch } = filters;
 
         const initialResponse = await bitbucketAPI.commits.list({
@@ -1465,16 +1414,15 @@ export class BitbucketService
         const filteredCommits = commits.filter((commit) => {
             let isValid = true;
 
-            if (startDate) {
-                isValid =
-                    isValid && new Date(commit.date) >= new Date(startDate);
+            if (isValid && startDate) {
+                isValid = new Date(commit.date) >= new Date(startDate);
             }
-            if (endDate) {
-                isValid = isValid && new Date(commit.date) <= new Date(endDate);
+            if (isValid && endDate) {
+                isValid = new Date(commit.date) <= new Date(endDate);
             }
-            if (author) {
+            if (isValid && author) {
                 const [name] = this.extractUsernameEmail(commit.author);
-                isValid = isValid && name === author;
+                isValid = name === author;
             }
             return isValid;
         });
@@ -1924,7 +1872,7 @@ export class BitbucketService
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string };
         prNumber: number;
-    }): Promise<PullRequests | null> {
+    }): Promise<PullRequest | null> {
         try {
             const { organizationAndTeamData, repository, prNumber } = params;
 
@@ -1992,7 +1940,7 @@ export class BitbucketService
                         message: commit?.message,
                         created_at: commit?.date,
                         author: {
-                            id: this.sanitizeUUId(commit?.author?.user?.uuid),
+                            id: this.sanitizeUUID(commit?.author?.user?.uuid),
                             username: commit?.author?.user?.nickname,
                             name,
                             email,
@@ -2401,7 +2349,7 @@ export class BitbucketService
                     parent: comment?.parent, // present if the comment is a replies to another comment.
                     replies: comment?.replies,
                     author: {
-                        id: this.sanitizeUUId(comment?.user?.uuid),
+                        id: this.sanitizeUUID(comment?.user?.uuid),
                         username: comment?.user?.display_name,
                         name: comment?.user?.display_name,
                     },
@@ -3395,7 +3343,7 @@ export class BitbucketService
                 createdAt: comment?.created_on,
                 originalCommit: comment?.pullrequest?.source?.commit?.hash,
                 author: {
-                    id: this.sanitizeUUId(comment?.user?.uuid),
+                    id: this.sanitizeUUID(comment?.user?.uuid),
                     username: comment?.user?.display_name,
                     name: comment?.user?.display_name,
                 },
@@ -3458,11 +3406,7 @@ export class BitbucketService
                 .then((res) => this.getPaginatedResults(bitbucketAPI, res));
 
             return pullRequests.map((pr) =>
-                this.transformPullRequest(
-                    pr,
-                    repository.name,
-                    organizationAndTeamData.organizationId,
-                ),
+                this.transformPullRequest(pr, organizationAndTeamData),
             );
         } catch (error) {
             this.logger.error({
@@ -3587,7 +3531,7 @@ export class BitbucketService
                         updatedAt: comment?.updated_on,
                         isResolved: comment.resolution ? true : false,
                         author: {
-                            id: this.sanitizeUUId(comment?.user?.uuid) ?? '',
+                            id: this.sanitizeUUID(comment?.user?.uuid) ?? '',
                             username: comment?.user?.display_name ?? '',
                             name: comment?.user?.display_name ?? '',
                         },
@@ -3737,7 +3681,7 @@ export class BitbucketService
 
     /** Bitbucket's API returns IDs with curly braces around them (e.g. "{123}").
     This function removes the curly braces. */
-    private sanitizeUUId(id: string) {
+    private sanitizeUUID(id: string) {
         return id?.replace(/[{}]/g, '');
     }
 
@@ -3760,57 +3704,6 @@ export class BitbucketService
 
     private convertDiff(diff: string) {
         return diff.split('\n').slice(4).join('\n');
-    }
-
-    private transformPullRequest(
-        pr: Schema.Pullrequest,
-        repository: string,
-        organizationId: string,
-    ): PullRequests & any {
-        const stateMap = {
-            OPEN: PullRequestState.OPENED,
-            MERGED: PullRequestState.CLOSED,
-        };
-
-        return {
-            id: pr.id?.toString(),
-            author_id: this.sanitizeUUId(pr.author?.uuid?.toString()),
-            author_name: pr.author?.display_name,
-            author_created_at: pr.created_on,
-            repository: repository,
-            repositoryId: this.sanitizeUUId(pr?.source?.repository?.uuid),
-            message: pr.summary?.raw,
-            state: stateMap[pr.state] || PullRequestState.ALL,
-            prURL: pr.links?.html?.href,
-            organizationId: organizationId,
-            pull_number: pr.id,
-            number: pr.id,
-            body: pr.summary?.raw,
-            title: pr.title,
-            created_at: pr.created_on,
-            updated_at: pr.updated_on,
-            merged_at: pr.updated_on,
-            participants: pr.participants,
-            reviewers: pr.reviewers.map((reviewer) => ({
-                ...reviewer,
-                uuid: this.sanitizeUUId(reviewer.uuid),
-            })),
-            head: {
-                ref: pr.source?.branch?.name,
-                repo: {
-                    id: this.sanitizeUUId(pr.source?.repository?.uuid),
-                    name: pr.source?.repository?.name,
-                },
-            },
-            base: {
-                ref: pr.destination?.branch?.name,
-            },
-            user: {
-                login: pr.author?.display_name ?? '',
-                name: pr.author?.display_name,
-                id: this.sanitizeUUId(pr.author?.uuid),
-            },
-        };
     }
 
     async deleteWebhook(params: {
@@ -3952,5 +3845,133 @@ export class BitbucketService
             | 'SPAM';
     }): Promise<any | null> {
         throw new Error('Method not implemented.');
+    }
+
+    //#region Transformers
+
+    /**
+     * Transforms a raw commit from the Bitbucket API into the standard Commit interface.
+     * @param rawCommit The raw commit data from Bitbucket.
+     * @returns A Commit object.
+     */
+    private transformCommit(rawCommit: Schema.Commit): Commit {
+        const [name, email] = this.extractUsernameEmail(rawCommit?.author);
+
+        return {
+            sha: rawCommit.hash ?? '',
+            commit: {
+                author: {
+                    id: this.sanitizeUUID(rawCommit.author?.user?.uuid) ?? '',
+                    name: name ?? '',
+                    email: email ?? '',
+                    date: rawCommit.date ?? '',
+                },
+                message: rawCommit.message ?? '',
+            },
+            parents:
+                rawCommit.parents
+                    ?.map((parent) => ({
+                        sha: parent.hash ?? '',
+                    }))
+                    .filter((parent) => parent.sha) ?? [],
+        };
+    }
+
+    private readonly _prStateMap = new Map<
+        Schema.Pullrequest['state'],
+        PullRequestState
+    >([
+        ['OPEN', PullRequestState.OPENED],
+        ['MERGED', PullRequestState.MERGED],
+        ['DECLINED', PullRequestState.CLOSED],
+        ['SUPERSEDED', PullRequestState.CLOSED],
+    ]);
+
+    private readonly _prStateMapReversed = new Map<
+        PullRequestState,
+        Schema.Pullrequest['state']
+    >([
+        [PullRequestState.OPENED, 'OPEN'],
+        [PullRequestState.MERGED, 'MERGED'],
+        [PullRequestState.CLOSED, 'DECLINED'],
+    ]);
+
+    private readonly _prClosedStates: Array<Schema.Pullrequest['state']> = [
+        'DECLINED',
+        'SUPERSEDED',
+        'MERGED',
+    ];
+
+    /**
+     * Transforms a raw pull request object from the Bitbucket API into the standard PullRequest interface.
+     * @param pullRequest - The raw pull request data from the Bitbucket API.
+     * @param organizationAndTeamData - The organization and team context.
+     * @returns A PullRequest object.
+     */
+    private transformPullRequest(
+        pullRequest: Schema.Pullrequest,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): PullRequest {
+        return {
+            id: pullRequest?.id?.toString() ?? '',
+            number: pullRequest?.id ?? -1,
+            organizationId: organizationAndTeamData?.organizationId ?? '',
+            title: pullRequest?.title ?? '',
+            body: pullRequest?.summary?.raw ?? '',
+            state:
+                this._prStateMap.get(pullRequest?.state) ??
+                PullRequestState.ALL,
+            prURL: pullRequest?.links?.html?.href ?? '',
+            repository: {
+                id:
+                    this.sanitizeUUID(
+                        pullRequest?.source?.repository?.uuid ?? '',
+                    ) ?? '',
+                name: pullRequest?.source?.repository?.name ?? '',
+            },
+            message: pullRequest?.title ?? '',
+            created_at: pullRequest?.created_on ?? '',
+            closed_at: this._prClosedStates.includes(pullRequest?.state)
+                ? (pullRequest?.updated_on ?? '')
+                : '',
+            updated_at: pullRequest?.updated_on ?? '',
+            merged_at:
+                pullRequest?.state === 'MERGED'
+                    ? (pullRequest?.updated_on ?? '')
+                    : '',
+            participants:
+                pullRequest?.participants?.map((p) => ({
+                    id: this.sanitizeUUID(p?.user?.uuid ?? '') ?? '',
+                })) ?? [],
+            reviewers:
+                pullRequest?.reviewers?.map((r) => ({
+                    id: this.sanitizeUUID(r?.uuid ?? '') ?? '',
+                })) ?? [],
+            head: {
+                ref: pullRequest?.source?.branch?.name ?? '',
+                repo: {
+                    id:
+                        this.sanitizeUUID(
+                            pullRequest?.source?.repository?.uuid ?? '',
+                        ) ?? '',
+                    name: pullRequest?.source?.repository?.name ?? '',
+                },
+            },
+            base: {
+                ref: pullRequest?.destination?.branch?.name ?? '',
+                repo: {
+                    id:
+                        this.sanitizeUUID(
+                            pullRequest?.destination?.repository?.uuid ?? '',
+                        ) ?? '',
+                    name: pullRequest?.destination?.repository?.name ?? '',
+                },
+            },
+            user: {
+                login: pullRequest?.author?.display_name ?? '',
+                name: pullRequest?.author?.display_name ?? '',
+                id: this.sanitizeUUID(pullRequest?.author?.uuid ?? '') ?? '',
+            },
+        };
     }
 }

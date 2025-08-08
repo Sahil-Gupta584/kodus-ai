@@ -2,9 +2,8 @@ import { ICodeManagementService } from '@/core/domain/platformIntegrations/inter
 import {
     PullRequestAuthor,
     PullRequestCodeReviewTime,
-    PullRequestDetails,
+    PullRequest,
     PullRequestReviewComment,
-    PullRequests,
     PullRequestWithFiles,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
@@ -14,9 +13,10 @@ import { IntegrationServiceDecorator } from '@/shared/utils/decorators/integrati
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 
 import {
-    Camelize,
     CommitSchema,
+    ExpandedMergeRequestSchema,
     Gitlab,
+    MergeRequestSchema,
     MergeRequestSchemaWithBasicLabels,
 } from '@gitbeaker/rest';
 import axios from 'axios';
@@ -346,10 +346,8 @@ export class GitlabService
             const prs = await this.getPullRequests({
                 organizationAndTeamData: params.organizationAndTeamData,
                 filters: {
-                    startDate: moment()
-                        .subtract(90, 'days')
-                        .format('YYYY-MM-DD'),
-                    endDate: moment().format('YYYY-MM-DD'),
+                    startDate: moment().subtract(90, 'days').toDate(),
+                    endDate: moment().toDate(),
                 },
             });
 
@@ -755,97 +753,140 @@ export class GitlabService
         }
     }
 
+    /**
+     * Retrieves merge requests from GitLab based on the provided parameters.
+     * @param params - The parameters for fetching merge requests.
+     * @param params.organizationAndTeamData - The organization and team data.
+     * @param params.repository - Optional filter for a specific repository name.
+     * @param params.filters - Optional filters for dates, state, author, and branch.
+     * @returns A promise that resolves to an array of transformed PullRequest objects.
+     */
     async getPullRequests(params: {
         organizationAndTeamData: OrganizationAndTeamData;
+        repository?: string;
         filters?: {
-            startDate?: string;
-            endDate?: string;
-            assignFilter?: any;
+            startDate?: Date;
+            endDate?: Date;
             state?: PullRequestState;
-            includeChanges?: boolean;
-            pullRequestNumbers?: number[];
+            author?: string;
+            branch?: string;
         };
-    }): Promise<PullRequests[]> {
+    }): Promise<PullRequest[]> {
+        const { organizationAndTeamData, repository, filters = {} } = params;
+
         try {
-            if (!params?.organizationAndTeamData.organizationId) {
-                return null;
+            if (!organizationAndTeamData.organizationId) {
+                this.logger.warn({
+                    message:
+                        'Organization ID is required to fetch pull requests.',
+                    context: GitlabService.name,
+                    metadata: params,
+                });
+                return [];
             }
 
-            const filters = params?.filters ?? {};
-            const { startDate, endDate } = filters || {};
-
             const gitlabAuthDetail = await this.getAuthDetails(
-                params.organizationAndTeamData,
+                organizationAndTeamData,
             );
 
-            const repositories = <Repositories[]>(
+            const allRepositories = <Repositories[]>(
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(
-                    params?.organizationAndTeamData,
+                    organizationAndTeamData,
                     IntegrationConfigKey.REPOSITORIES,
                 )
             );
 
-            if (!gitlabAuthDetail || !repositories) {
-                return null;
+            if (
+                !gitlabAuthDetail ||
+                !allRepositories ||
+                allRepositories.length === 0
+            ) {
+                this.logger.warn({
+                    message: 'GitLab auth details or repositories not found.',
+                    context: GitlabService.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            let reposToProcess = allRepositories;
+
+            if (repository) {
+                const foundRepo = allRepositories.find(
+                    (r) => r.name === repository,
+                );
+
+                if (!foundRepo) {
+                    this.logger.warn({
+                        message: `Repository ${repository} not found in the list of repositories.`,
+                        context: GitlabService.name,
+                        metadata: params,
+                    });
+                    return [];
+                }
+                reposToProcess = [foundRepo];
             }
 
             const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
 
-            let pullRequests = [];
+            const promises = reposToProcess.map((r) =>
+                this.getMergeRequestsByRepo({
+                    gitlabAPI,
+                    repo: r,
+                    filters,
+                }),
+            );
 
-            for (const repo of repositories) {
-                const pr = await gitlabAPI.MergeRequests.all({
-                    projectId: repo.id,
-                    createdAfter: startDate, // TODO: remove
-                    createdBefore: endDate,
-                });
+            const results = await Promise.all(promises);
+            const rawMergeRequests = results.flat();
 
-                pullRequests.push(
-                    ...pr?.map((item) => ({
-                        ...item,
-                        repository: repo?.name,
-                        repositoryId: repo?.id,
-                    })),
-                );
-            }
-
-            if (filters && filters?.state === 'open') {
-                pullRequests = pullRequests.filter(
-                    (pr: any) => pr.state === GitlabPullRequestState.OPENED,
-                );
-            }
-
-            return pullRequests
-                .sort((a, b) => {
-                    return (
-                        new Date(b.created_at).getTime() -
-                        new Date(a.created_at).getTime()
-                    );
-                })
-                .map((pr: MergeRequestSchemaWithBasicLabels) => ({
-                    id: pr.id?.toString(),
-                    author_id: pr.author?.id.toString(),
-                    author_name: pr.author?.name,
-                    author_created_at: pr.created_at,
-                    repository: (pr?.repository as string) ?? '',
-                    repositoryId: (pr?.repositoryId as string) ?? '',
-                    message: pr.description,
-                    state:
-                        pr.state === GitlabPullRequestState.OPENED
-                            ? PullRequestState.OPENED
-                            : pr.state === GitlabPullRequestState.CLOSED
-                              ? PullRequestState.CLOSED
-                              : PullRequestState.ALL,
-                    pull_number: pr.iid,
-                    project_id: pr.project_id,
-                    prURL: pr.web_url,
-                    organizationId:
-                        params?.organizationAndTeamData?.organizationId,
-                }));
+            return rawMergeRequests.map((rawMr) =>
+                this.transformPullRequest(rawMr, organizationAndTeamData),
+            );
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Error fetching merge requests from GitLab',
+                context: GitlabService.name,
+                error,
+                metadata: params,
+            });
             return [];
         }
+    }
+
+    /**
+     * Retrieves merge requests from a specific GitLab repository.
+     * @param params - The parameters for fetching, including the API instance, repository object, and filters.
+     * @returns A promise that resolves to an array of raw merge request data, augmented with repository info.
+     */
+    private async getMergeRequestsByRepo(params: {
+        gitlabAPI: InstanceType<typeof Gitlab<false>>; // false refers to camelize option
+        repo: Repositories;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            state?: PullRequestState;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<MergeRequestSchema[]> {
+        const { gitlabAPI, repo, filters = {} } = params;
+        const { startDate, endDate, state, author, branch } = filters;
+
+        const mergeRequests = await gitlabAPI.MergeRequests.all({
+            projectId: repo.id,
+            state: state ? this._prStateMapReverse.get(state) : undefined,
+            sort: 'desc',
+            orderBy: 'created_at',
+            createdAfter: startDate?.toISOString(),
+            createdBefore: endDate?.toISOString(),
+            authorUsername: author,
+            targetBranch: branch,
+            perPage: 100,
+        });
+
+        return mergeRequests;
     }
 
     /**
@@ -870,7 +911,7 @@ export class GitlabService
             branch?: string;
         };
     }): Promise<Commit[]> {
-        const { organizationAndTeamData, repository, filters } = params;
+        const { organizationAndTeamData, repository, filters = {} } = params;
 
         try {
             const gitlabAuthDetail = await this.getAuthDetails(
@@ -917,20 +958,21 @@ export class GitlabService
             }
 
             const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
-            const { startDate, endDate, author, branch } = filters || {};
 
             const promises = reposToProcess.map((repo) =>
                 this.getCommitsByRepo({
                     gitlabAPI,
                     projectId: repo.id,
-                    filters: { startDate, endDate, author, branch },
+                    filters,
                 }),
             );
 
             const results = await Promise.all(promises);
             const rawCommits = results.flat();
 
-            return rawCommits.map((rawCommit) => this.formatCommit(rawCommit));
+            return rawCommits.map((rawCommit) =>
+                this.transformCommit(rawCommit),
+            );
         } catch (error) {
             this.logger.error({
                 message: 'Error fetching commits from GitLab',
@@ -940,40 +982,6 @@ export class GitlabService
             });
             return [];
         }
-    }
-
-    /**
-     * Formats a raw commit object from the GitLab API into the standard Commit interface.
-     * @param rawCommit - The raw commit data from the GitLab API.
-     * @returns A formatted Commit object.
-     */
-    private formatCommit(rawCommit: CommitSchema): Commit {
-        return {
-            sha: rawCommit.id ?? '',
-            commit: {
-                author: {
-                    id: '', // The author object in a GitLab commit doesn't have a user ID.
-                    name:
-                        rawCommit.author_name ?? rawCommit.committer_name ?? '',
-                    email:
-                        rawCommit.author_email ??
-                        rawCommit.committer_email ??
-                        '',
-                    date:
-                        rawCommit.created_at ??
-                        rawCommit.authored_date ??
-                        rawCommit.committed_date ??
-                        '',
-                },
-                message: rawCommit.message ?? '',
-            },
-            parents:
-                rawCommit.parent_ids
-                    ?.map((parentId) => ({
-                        sha: parentId ?? '',
-                    }))
-                    .filter((parent) => parent.sha) ?? [],
-        };
     }
 
     /**
@@ -991,14 +999,14 @@ export class GitlabService
             branch?: string;
         };
     }): Promise<CommitSchema[]> {
-        const { gitlabAPI, projectId, filters } = params;
-        const { startDate, endDate, author, branch } = filters || {};
+        const { gitlabAPI, projectId, filters = {} } = params;
+        const { startDate, endDate, author, branch } = filters;
 
         const commits = await gitlabAPI.Commits.all(projectId, {
-            since: startDate ? startDate.toISOString() : undefined,
-            until: endDate ? endDate.toISOString() : undefined,
-            author: author ? author : undefined, // doesn't seem to work
-            refName: branch ? branch : undefined,
+            since: startDate?.toISOString(),
+            until: endDate?.toISOString(),
+            author: author, // doesn't seem to work
+            refName: branch,
             perPage: 100,
             all: true,
         });
@@ -3028,11 +3036,11 @@ export class GitlabService
         throw new Error('Method not implemented.');
     }
 
-    async getPullRequestDetails(params: {
+    async getPullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: Partial<Repository>;
         prNumber: number;
-    }): Promise<any | null> {
+    }): Promise<PullRequest | null> {
         try {
             const { organizationAndTeamData, repository, prNumber } = params;
 
@@ -3055,51 +3063,10 @@ export class GitlabService
                 return null;
             }
 
-            const prData = {
-                id: mergeRequest.id.toString(),
-                author_id: mergeRequest.author?.id?.toString(),
-                author_name: mergeRequest.author?.name,
-                repository: repository.name,
-                repositoryId: mergeRequest.source_project_id?.toString(),
-                message: mergeRequest.description,
-                state: mergeRequest.state,
-                prURL: mergeRequest.web_url,
-                organizationId: organizationAndTeamData.organizationId,
-                pull_number: mergeRequest.id,
-                number: mergeRequest.id,
-                body: mergeRequest.description,
-                title: mergeRequest.title,
-                created_at: mergeRequest.created_at,
-                updated_at: mergeRequest.updated_at,
-                merged_at: mergeRequest.updated_at,
-                participants: {
-                    id: mergeRequest.author?.id?.toString(),
-                },
-                reviewers: mergeRequest.reviewers.map((reviewer) => ({
-                    id: reviewer.id,
-                })),
-                head: {
-                    ref: mergeRequest.source_branch,
-                    repo: {
-                        id: mergeRequest.source_project_id,
-                        name: mergeRequest.source_project_id?.toString(),
-                    },
-                },
-                base: {
-                    ref: mergeRequest.target_branch,
-                    repo: {
-                        id: mergeRequest.target_project_id,
-                        name: mergeRequest.target_project_id?.toString(),
-                    },
-                },
-                user: {
-                    login: mergeRequest.author?.username,
-                    name: mergeRequest.author?.name,
-                    id: mergeRequest.author?.id?.toString(),
-                },
-            };
-
-            return prData;
+            return this.transformPullRequest(
+                mergeRequest,
+                organizationAndTeamData,
+            );
         } catch (error) {
             this.logger.error({
                 message: `Error retrieving pull request details for #${params.prNumber}`,
@@ -3110,5 +3077,121 @@ export class GitlabService
             });
             return null;
         }
+    }
+
+    //#region Transformers
+
+    /**
+     * Transforms a raw commit object from the GitLab API into the standard Commit interface.
+     * @param rawCommit - The raw commit data from the GitLab API.
+     * @returns A Commit object.
+     */
+    private transformCommit(rawCommit: CommitSchema): Commit {
+        return {
+            sha: rawCommit.id ?? '',
+            commit: {
+                author: {
+                    id: '', // The author object in a GitLab commit doesn't have a user ID.
+                    name:
+                        rawCommit.author_name ?? rawCommit.committer_name ?? '',
+                    email:
+                        rawCommit.author_email ??
+                        rawCommit.committer_email ??
+                        '',
+                    date:
+                        rawCommit.created_at ??
+                        rawCommit.authored_date ??
+                        rawCommit.committed_date ??
+                        '',
+                },
+                message: rawCommit.message ?? '',
+            },
+            parents:
+                rawCommit.parent_ids
+                    ?.map((parentId) => ({
+                        sha: parentId ?? '',
+                    }))
+                    .filter((parent) => parent.sha) ?? [],
+        };
+    }
+
+    private readonly _prStateMap = new Map<
+        GitlabPullRequestState,
+        PullRequestState
+    >([
+        [GitlabPullRequestState.OPENED, PullRequestState.OPENED],
+        [GitlabPullRequestState.MERGED, PullRequestState.MERGED],
+        [GitlabPullRequestState.CLOSED, PullRequestState.CLOSED],
+        [GitlabPullRequestState.LOCKED, PullRequestState.CLOSED],
+    ]);
+
+    private readonly _prStateMapReverse = new Map<
+        PullRequestState,
+        GitlabPullRequestState
+    >([
+        [PullRequestState.OPENED, GitlabPullRequestState.OPENED],
+        [PullRequestState.MERGED, GitlabPullRequestState.MERGED],
+        [PullRequestState.CLOSED, GitlabPullRequestState.CLOSED],
+    ]);
+
+    /**
+     * Transforms a raw merge request object from the Gitlab API into the standard PullRequest interface.
+     * @param mergeRequest - The raw merge request data from the Gitlab API.
+     * @param organizationAndTeamData - The organization and team context.
+     * @returns A PullRequest object.
+     */
+    private transformPullRequest(
+        mergeRequest: MergeRequestSchema,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): PullRequest {
+        return {
+            id: mergeRequest?.id?.toString() ?? '',
+            number: mergeRequest?.id ?? -1,
+            organizationId: organizationAndTeamData?.organizationId ?? '',
+            title: mergeRequest?.title ?? '',
+            body: mergeRequest?.description ?? '',
+            state:
+                this._prStateMap.get(
+                    mergeRequest?.state as GitlabPullRequestState,
+                ) ?? PullRequestState.ALL,
+            prURL: mergeRequest?.web_url ?? '',
+            repository: {
+                id: mergeRequest?.source_project_id?.toString() ?? '',
+                name: mergeRequest?.source_project_id?.toString() ?? '',
+            },
+            message: mergeRequest?.title ?? '',
+            created_at: mergeRequest?.created_at ?? '',
+            closed_at: mergeRequest?.closed_at ?? '',
+            updated_at: mergeRequest?.updated_at ?? '',
+            merged_at: mergeRequest?.merged_at ?? '',
+            participants: [
+                {
+                    id: mergeRequest?.author?.id?.toString() ?? '',
+                },
+            ],
+            reviewers:
+                mergeRequest?.reviewers?.map((r) => ({
+                    id: r?.id?.toString() ?? '',
+                })) ?? [],
+            head: {
+                ref: mergeRequest?.source_branch ?? '',
+                repo: {
+                    id: mergeRequest?.source_project_id?.toString() ?? '',
+                    name: mergeRequest?.source_project_id?.toString() ?? '',
+                },
+            },
+            base: {
+                ref: mergeRequest?.target_branch ?? '',
+                repo: {
+                    id: mergeRequest?.target_project_id?.toString() ?? '',
+                    name: mergeRequest?.target_project_id?.toString() ?? '',
+                },
+            },
+            user: {
+                login: mergeRequest?.author?.username ?? '',
+                name: mergeRequest?.author?.name ?? '',
+                id: mergeRequest?.author?.id?.toString() ?? '',
+            },
+        };
     }
 }

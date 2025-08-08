@@ -80,35 +80,38 @@ export class AzureReposRequestHelper {
         token: string;
         projectId: string;
         repositoryId: string;
-        startDate?: string;
-        endDate?: string;
-        status?: AzurePRStatus;
+        searchCriteria?: {
+            status?: AzurePRStatus;
+            creatorId?: string;
+            sourceRefName?: string;
+            minTime?: string;
+            maxTime?: string;
+        };
     }): Promise<AzureRepoPullRequest[]> {
-        const instance = await this.azureRequest(params);
+        const {
+            orgName,
+            token,
+            projectId,
+            repositoryId,
+            searchCriteria = {},
+        } = params;
 
-        const { status } = params;
+        const instance = await this.azureRequest({ orgName, token });
 
-        const searchStatus = status ?? AzurePRStatus.ALL;
+        const apiPath = `/${projectId}/_apis/git/repositories/${repositoryId}/pullrequests`;
 
-        const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests?api-version=7.1&searchCriteria.status=${searchStatus}`,
-        );
+        let queryParams: Record<string, string> = {
+            'api-version': '7.1',
+        };
 
-        const pullRequests = data?.value ?? [];
-
-        if (pullRequests.length < 1 || (!params.startDate && !params.endDate)) {
-            return pullRequests;
+        if (searchCriteria) {
+            const dynamicParams = this._buildSearchParams(searchCriteria);
+            queryParams = { ...queryParams, ...dynamicParams };
         }
 
-        const start = params.startDate
-            ? new Date(params.startDate).getTime()
-            : null;
-        const end = params.endDate ? new Date(params.endDate).getTime() : null;
+        const { data } = await instance.get(apiPath, { params: queryParams });
 
-        return pullRequests.filter((pr) => {
-            const created = new Date(pr.creationDate).getTime();
-            return (!start || created >= start) && (!end || created <= end);
-        });
+        return data?.value ?? [];
     }
 
     async getPullRequestComments(params: {
@@ -441,8 +444,13 @@ export class AzureReposRequestHelper {
             };
         };
     }): Promise<AzureRepoCommit[]> {
-        const { orgName, token, projectId, repositoryId, searchCriteria } =
-            params;
+        const {
+            orgName,
+            token,
+            projectId,
+            repositoryId,
+            searchCriteria = {},
+        } = params;
 
         const instance = await this.azureRequest({ orgName, token });
 

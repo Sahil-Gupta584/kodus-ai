@@ -216,7 +216,7 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
 
                     if (teamData?.organizationAndTeamData) {
                         pullRequestData =
-                            await this.codeManagement.getPullRequestDetails({
+                            await this.codeManagement.getPullRequest({
                                 organizationAndTeamData:
                                     teamData?.organizationAndTeamData,
                                 repository,

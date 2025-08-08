@@ -6,8 +6,8 @@ import {
 } from '@/core/domain/integrations/contracts/integration.service.contracts';
 import {
     PullRequestAuthor,
+    PullRequest,
     PullRequestReviewComment,
-    PullRequests,
     PullRequestsWithChangesRequested,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
@@ -25,6 +25,7 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 
 @Injectable()
 export class CodeManagementService implements ICodeManagementService {
@@ -224,10 +225,17 @@ export class CodeManagementService implements ICodeManagementService {
     async getPullRequests(
         params: {
             organizationAndTeamData: OrganizationAndTeamData;
-            filters: any;
+            repository?: string;
+            filters?: {
+                startDate?: Date;
+                endDate?: Date;
+                state?: PullRequestState;
+                author?: string;
+                branch?: string;
+            };
         },
         type?: PlatformType,
-    ): Promise<PullRequests[]> {
+    ): Promise<PullRequest[]> {
         if (!type) {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
@@ -581,14 +589,14 @@ export class CodeManagementService implements ICodeManagementService {
         return codeManagementService.createResponseToComment(params);
     }
 
-    async getPullRequestDetails(
+    async getPullRequest(
         params: {
             organizationAndTeamData: OrganizationAndTeamData;
             repository: Partial<Repository>;
             prNumber: number;
         },
         type?: PlatformType,
-    ) {
+    ): Promise<PullRequest | null> {
         if (!type) {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
@@ -598,7 +606,7 @@ export class CodeManagementService implements ICodeManagementService {
         const codeManagementService =
             this.platformIntegrationFactory.getCodeManagementService(type);
 
-        return codeManagementService.getPullRequestDetails(params);
+        return codeManagementService.getPullRequest(params);
     }
 
     async updateDescriptionInPullRequest(

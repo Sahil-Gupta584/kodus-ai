@@ -30,11 +30,10 @@ import {
     OneSentenceSummaryItem,
     PullRequestAuthor,
     PullRequestCodeReviewTime,
-    PullRequestDetails,
+    PullRequest,
     PullRequestFile,
     PullRequestReviewComment,
     PullRequestReviewState,
-    PullRequests,
     PullRequestsWithChangesRequested,
     PullRequestWithFiles,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
@@ -596,7 +595,7 @@ export class GithubService
             branch?: string;
         };
     }): Promise<Commit[]> {
-        const { organizationAndTeamData, repository, filters } = params;
+        const { organizationAndTeamData, repository, filters = {} } = params;
 
         try {
             const githubAuthDetail = await this.getGithubAuthDetails(
@@ -646,21 +645,22 @@ export class GithubService
 
             const octokit = await this.instanceOctokit(organizationAndTeamData);
             const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
-            const { startDate, endDate, author, branch } = filters || {};
 
             const promises = reposToProcess.map((repo) =>
                 this.getCommitsByRepo({
                     octokit,
                     owner,
                     repo: repo.name,
-                    filters: { startDate, endDate, author, branch },
+                    filters,
                 }),
             );
 
             const results = await Promise.all(promises);
             const rawCommits = results.flat();
 
-            return rawCommits.map((rawCommit) => this.formatCommit(rawCommit));
+            return rawCommits.map((rawCommit) =>
+                this.transformCommit(rawCommit),
+            );
         } catch (error) {
             this.logger.error({
                 message: 'Error fetching commits from GitHub',
@@ -668,41 +668,9 @@ export class GithubService
                 error,
                 metadata: params,
             });
+
             return [];
         }
-    }
-
-    /**
-     * Formats a raw commit object from the Github API into the standard Commit interface.
-     * @param rawCommit - The raw commit data from the Github API.
-     * @returns A formatted Commit object.
-     */
-    private formatCommit(
-        rawCommit:
-            | RestEndpointMethodTypes['repos']['getCommit']['response']['data']
-            | RestEndpointMethodTypes['repos']['listCommits']['response']['data'][number],
-    ): Commit {
-        return {
-            sha: rawCommit.sha ?? '',
-            commit: {
-                author: {
-                    id:
-                        rawCommit.author?.id?.toString() ??
-                        rawCommit.committer?.id?.toString() ??
-                        '',
-                    date: rawCommit.commit?.author?.date ?? '',
-                    email: rawCommit.commit?.author?.email ?? '',
-                    name: rawCommit.commit?.author?.name ?? '',
-                },
-                message: rawCommit.commit?.message ?? '',
-            },
-            parents:
-                rawCommit.parents
-                    ?.map((parent) => ({
-                        sha: parent?.sha ?? '',
-                    }))
-                    .filter((parent) => parent.sha) ?? [],
-        };
     }
 
     /**
@@ -724,16 +692,16 @@ export class GithubService
         | RestEndpointMethodTypes['repos']['listCommits']['response']['data']
         | RestEndpointMethodTypes['repos']['getCommit']['response']['data'][]
     > {
-        const { octokit, owner, repo, filters } = params;
-        const { startDate, endDate, author, branch } = filters || {};
+        const { octokit, owner, repo, filters = {} } = params;
+        const { startDate, endDate, author, branch } = filters;
 
         const commits = await octokit.paginate(octokit.rest.repos.listCommits, {
             owner,
             repo,
-            author: author ? author : undefined,
-            sha: branch ? branch : undefined,
-            since: startDate ? startDate.toISOString() : undefined,
-            until: endDate ? endDate.toISOString() : undefined,
+            author: author,
+            sha: branch,
+            since: startDate?.toISOString(),
+            until: endDate?.toISOString(),
             per_page: 100,
         });
 
@@ -795,199 +763,164 @@ export class GithubService
         };
     }
 
+    /**
+     * Retrieves pull requests from GitHub based on the provided parameters.
+     * @param params - The parameters for fetching pull requests, including organization and team data, repository filters, and pull request filters.
+     * @param params.organizationAndTeamData - The organization and team data containing organizationId and teamId.
+     * @param params.repository - Optional repository filter to fetch pull requests from a specific repository.
+     * @param params.filters - Optional filters for pull requests, including startDate, endDate, state, author, and branch.
+     * @param params.filters.startDate - The start date for filtering pull requests.
+     * @param params.filters.endDate - The end date for filtering pull requests.
+     * @param params.filters.state - The state of the pull requests to filter (e.g., 'open', 'closed', 'all').
+     * @param params.filters.author - The author of the pull requests to filter.
+     * @param params.filters.branch - The branch from which to fetch pull requests.
+     * @returns A promise that resolves to an array of PullRequest objects.
+     */
     async getPullRequests(params: {
         organizationAndTeamData: OrganizationAndTeamData;
+        repository?: string;
         filters?: {
-            startDate?: string;
-            endDate?: string;
-            assignFilter?: any;
+            startDate?: Date;
+            endDate?: Date;
             state?: PullRequestState;
-            includeChanges?: boolean;
-            pullRequestNumbers?: number[];
+            author?: string;
+            branch?: string;
         };
-    }): Promise<PullRequests[]> {
+    }): Promise<PullRequest[]> {
+        const { organizationAndTeamData, repository, filters = {} } = params;
+
         try {
-            if (!params?.organizationAndTeamData.organizationId) return null;
-
-            const filters = params?.filters ?? {};
-
-            const githubAuthDetail = await this.getGithubAuthDetails(
-                params.organizationAndTeamData,
-            );
-            const allRepositories =
-                await this.findOneByOrganizationAndTeamDataAndConfigKey(
-                    params?.organizationAndTeamData,
-                    IntegrationConfigKey.REPOSITORIES,
-                );
-
-            if (!githubAuthDetail || !allRepositories) {
-                return null;
-            }
-
-            const octokit = await this.instanceOctokit(
-                params?.organizationAndTeamData,
-            );
-            const { startDate, endDate, includeChanges, pullRequestNumbers } =
-                filters || {};
-
-            const assigneeFilter = filters.assignFilter;
-            let filteredMembers;
-
-            if (assigneeFilter) {
-                filteredMembers = await this.filterMembers(
-                    params?.organizationAndTeamData,
-                    assigneeFilter,
-                );
-            }
-
-            let pullRequests = [];
-
-            if (pullRequestNumbers && pullRequestNumbers?.length > 0) {
-                for (const repo of allRepositories) {
-                    for (const number of pullRequestNumbers) {
-                        try {
-                            const prResponse = await octokit.rest.pulls.get({
-                                owner: githubAuthDetail?.org,
-                                repo: repo.name,
-                                pull_number: number,
-                            });
-
-                            const pr = prResponse.data;
-
-                            if (pr) {
-                                const pullRequestData: PullRequestData = {
-                                    id: pr.id,
-                                    repository: repo.name,
-                                    repositoryId: repo.id,
-                                    pull_number: pr.number,
-                                    author_id: pr.user.id,
-                                    author_name: pr.user.login,
-                                    author_created_at: pr.created_at,
-                                    message: pr.title,
-                                    state: pr.state,
-                                };
-
-                                // Apply additional filters if necessary
-                                if (
-                                    (filters.state &&
-                                        filters.state !== 'all' &&
-                                        pr.state !== filters.state) ||
-                                    (filteredMembers &&
-                                        !filteredMembers.includes(
-                                            pr.user.login,
-                                        ))
-                                ) {
-                                    continue; // Skip this PR
-                                }
-
-                                if (includeChanges) {
-                                    const changesResponse =
-                                        await octokit.rest.pulls.listFiles({
-                                            owner: githubAuthDetail?.org,
-                                            repo: repo.name,
-                                            pull_number: pr.number,
-                                        });
-                                    pullRequestData.changes =
-                                        changesResponse.data.map((file) => ({
-                                            filename: file.filename,
-                                            additions: file.additions,
-                                            deletions: file.deletions,
-                                            changes: file.changes,
-                                            patch: file.patch,
-                                        }));
-                                }
-
-                                pullRequests.push(pullRequestData);
-                            }
-                        } catch (error) {
-                            if (error.status === 404) {
-                                // Pull request not found in this repository, continue searching
-                                continue;
-                            } else {
-                                console.error(
-                                    `Error fetching PR #${number} in repo ${repo.name}:`,
-                                    error.message,
-                                );
-                            }
-                        }
-                    }
-                }
-            } else {
-                // Create a map for quick repository lookup by name
-                const repositoryMap = new Map<string, string | number>(
-                    allRepositories.map((repo) => [repo.name, repo.id]),
-                );
-
-                // Fetch all pull requests across all repositories
-                const promises = allRepositories.map(async (repo) => {
-                    return await this.getAllPrMessages(
-                        octokit,
-                        githubAuthDetail?.org,
-                        repo.name,
-                        startDate,
-                        endDate,
-                        filters.state || 'all',
-                        filteredMembers,
-                    );
+            if (!organizationAndTeamData.organizationId) {
+                this.logger.warn({
+                    message:
+                        'Organization ID is required to fetch pull requests.',
+                    context: GithubService.name,
+                    metadata: params,
                 });
 
-                const results = await Promise.all(promises);
-
-                // Process the pull requests
-                pullRequests = await Promise.all(
-                    results
-                        .flat()
-                        .sort((a, b) => {
-                            return (
-                                new Date(b.created_at).getTime() -
-                                new Date(a.created_at).getTime()
-                            );
-                        })
-                        .map(async (pr) => {
-                            const repositoryId =
-                                repositoryMap.get(pr.repository) ||
-                                pr.repository; // Fallback to repository name if ID not found
-
-                            const pullRequestData: PullRequestData = {
-                                id: pr.id,
-                                repository: pr.repository,
-                                repositoryId: repositoryId,
-                                pull_number: pr.number,
-                                author_id: pr.user.id,
-                                author_name: pr.user.login,
-                                author_created_at: pr.created_at,
-                                message: pr.title,
-                                state: pr.state,
-                                prURL: pr.pull_request.html_url,
-                            };
-
-                            if (includeChanges) {
-                                const changesResponse =
-                                    await octokit.rest.pulls.listFiles({
-                                        owner: githubAuthDetail?.org,
-                                        repo: pr.repository,
-                                        pull_number: pr.number,
-                                    });
-                                pullRequestData.changes =
-                                    changesResponse.data.map((file) => ({
-                                        filename: file.filename,
-                                        additions: file.additions,
-                                        deletions: file.deletions,
-                                        changes: file.changes,
-                                        patch: file.patch,
-                                    }));
-                            }
-
-                            return pullRequestData;
-                        }),
-                );
+                return [];
             }
 
-            return pullRequests;
-        } catch (err) {
-            console.error(err);
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                organizationAndTeamData,
+            );
+            const allRepositories = <Repositories[]>(
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                )
+            );
+
+            if (
+                !githubAuthDetail ||
+                !allRepositories ||
+                allRepositories.length === 0
+            ) {
+                this.logger.warn({
+                    message: 'GitHub auth details or repositories not found.',
+                    context: GithubService.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            let reposToProcess = allRepositories;
+
+            if (repository) {
+                const foundRepo = allRepositories.find(
+                    (r) => r.name === repository,
+                );
+
+                if (!foundRepo) {
+                    this.logger.warn({
+                        message: `Repository ${repository} not found in the list of repositories.`,
+                        context: GithubService.name,
+                        metadata: params,
+                    });
+
+                    return [];
+                }
+
+                reposToProcess = [foundRepo];
+            }
+
+            const octokit = await this.instanceOctokit(organizationAndTeamData);
+            const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
+
+            const promises = reposToProcess.map((r) =>
+                this.getPullRequestsByRepo({
+                    octokit,
+                    owner,
+                    repo: r.name,
+                    filters,
+                }),
+            );
+
+            const results = await Promise.all(promises);
+            const rawPullRequests = results.flat();
+
+            return rawPullRequests.map((rawPr) =>
+                this.transformPullRequest(rawPr, organizationAndTeamData),
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Error fetching pull requests from GitHub',
+                context: GithubService.name,
+                error,
+                metadata: params,
+            });
+
             return [];
         }
+    }
+
+    /**
+     * Retrieves pull requests from a specific GitHub repository based on the provided parameters.
+     * @param params - The parameters for fetching pull requests, including the Octokit instance, owner, repository name, and optional filters.
+     * @returns A promise that resolves to an array of pull request data.
+     */
+    private async getPullRequestsByRepo(params: {
+        octokit: Octokit;
+        owner: string;
+        repo: string;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            state?: PullRequestState;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<
+        | RestEndpointMethodTypes['pulls']['list']['response']['data']
+        | RestEndpointMethodTypes['pulls']['get']['response']['data'][]
+    > {
+        const { octokit, owner, repo, filters = {} } = params;
+        const { startDate, endDate, state, author, branch } = filters;
+
+        const pullRequests = await octokit.paginate(octokit.rest.pulls.list, {
+            owner,
+            repo,
+            state: state ? this._prStateMapReverse.get(state) : undefined,
+            base: branch,
+            sort: 'created',
+            direction: 'desc',
+            since: startDate?.toISOString(),
+            until: endDate?.toISOString(),
+            per_page: 100,
+        });
+
+        return pullRequests.filter((pr) => {
+            let isValid = true;
+
+            if (author) {
+                isValid =
+                    isValid &&
+                    pr.user?.login.toLowerCase() === author.toLowerCase();
+            }
+
+            return isValid;
+        });
     }
 
     async getPullRequestAuthors(params: {
@@ -3545,24 +3478,46 @@ export class GithubService
         return response.data;
     }
 
-    async getPullRequestDetails(
-        params: any,
-    ): Promise<PullRequestDetails | null> {
-        const githubAuthDetail = await this.getGithubAuthDetails(
-            params.organizationAndTeamData,
-        );
+    async getPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<PullRequest | null> {
+        const { organizationAndTeamData, repository, prNumber } = params;
 
-        const octokit = await this.instanceOctokit(
-            params.organizationAndTeamData,
-        );
+        try {
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                organizationAndTeamData,
+            );
 
-        const response = await octokit.pulls.get({
-            owner: githubAuthDetail.org, // Name of the organization or user
-            repo: params.repository.name, // Repository name
-            pull_number: params.prNumber, // Pull Request ID
-        });
+            const octokit = await this.instanceOctokit(organizationAndTeamData);
 
-        return response.data;
+            const response = await octokit.pulls.get({
+                owner: githubAuthDetail.org, // Name of the organization or user
+                repo: repository.name, // Repository name
+                pull_number: prNumber, // Pull Request ID
+            });
+
+            if (!response || !response.data) {
+                return null;
+            }
+
+            return this.transformPullRequest(
+                response.data,
+                organizationAndTeamData,
+            );
+        } catch (error) {
+            this.logger.error({
+                message: `Error retrieving pull request details for PR#${prNumber}`,
+                context: GithubService.name,
+                error,
+                metadata: {
+                    ...params,
+                },
+            });
+
+            return null;
+        }
     }
 
     async createPullRequestWebhook(params: any) {
@@ -4273,7 +4228,7 @@ export class GithubService
             startDate: string;
             endDate: string;
         };
-    }): Promise<any[]> {
+    }): Promise<PullRequest[]> {
         try {
             const { organizationAndTeamData, repository, filters } = params;
 
@@ -4308,17 +4263,9 @@ export class GithubService
                         (!endDate || prDate.isSameOrBefore(endDate, 'day'))
                     );
                 })
-                .map((pr) => ({
-                    id: pr.id,
-                    repository: repository.name,
-                    repositoryId: repository.id,
-                    pull_number: pr.number,
-                    author_id: pr.user.id,
-                    author_name: pr.user.login,
-                    author_created_at: pr.created_at,
-                    message: pr.title,
-                    state: pr.state,
-                }));
+                .map((pr) =>
+                    this.transformPullRequest(pr, organizationAndTeamData),
+                );
         } catch (error) {
             this.logger.error({
                 message: 'Error to get pull requests by repository',
@@ -4642,5 +4589,119 @@ export class GithubService
         }
 
         return Promise.resolve(commentBody.trim());
+    }
+
+    //#region Transformers
+
+    /**
+     * Transforms a raw commit object from the Github API into the standard Commit interface.
+     * @param rawCommit - The raw commit data from the Github API.
+     * @returns A Commit object.
+     */
+    private transformCommit(
+        rawCommit:
+            | RestEndpointMethodTypes['repos']['getCommit']['response']['data']
+            | RestEndpointMethodTypes['repos']['listCommits']['response']['data'][number],
+    ): Commit {
+        return {
+            sha: rawCommit.sha ?? '',
+            commit: {
+                author: {
+                    id:
+                        rawCommit.author?.id?.toString() ??
+                        rawCommit.committer?.id?.toString() ??
+                        '',
+                    date: rawCommit.commit?.author?.date ?? '',
+                    email: rawCommit.commit?.author?.email ?? '',
+                    name: rawCommit.commit?.author?.name ?? '',
+                },
+                message: rawCommit.commit?.message ?? '',
+            },
+            parents:
+                rawCommit.parents
+                    ?.map((parent) => ({
+                        sha: parent?.sha ?? '',
+                    }))
+                    .filter((parent) => parent.sha) ?? [],
+        };
+    }
+
+    private readonly _prStateMap = new Map<
+        RestEndpointMethodTypes['pulls']['get']['response']['data']['state'],
+        PullRequestState
+    >([
+        ['open', PullRequestState.OPENED],
+        ['closed', PullRequestState.CLOSED],
+    ]);
+
+    private readonly _prStateMapReverse = new Map<
+        PullRequestState,
+        RestEndpointMethodTypes['pulls']['get']['response']['data']['state']
+    >([
+        [PullRequestState.OPENED, 'open'],
+        [PullRequestState.CLOSED, 'closed'],
+    ]);
+
+    /**
+     * Transforms a raw pull request object from the Github API into the standard PullRequest interface.
+     * @param pullRequest - The raw pull request data from the Github API.
+     * @param organizationAndTeamData - The organization and team context.
+     * @returns A PullRequest object.
+     */
+    private transformPullRequest(
+        pullRequest:
+            | RestEndpointMethodTypes['pulls']['get']['response']['data']
+            | RestEndpointMethodTypes['pulls']['list']['response']['data'][number],
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): PullRequest {
+        return {
+            id: pullRequest?.id?.toString() ?? '',
+            number: pullRequest?.number ?? -1,
+            organizationId: organizationAndTeamData?.organizationId ?? '',
+            title: pullRequest?.title ?? '',
+            body: pullRequest?.body ?? '',
+            state:
+                this._prStateMap.get(
+                    pullRequest?.state as RestEndpointMethodTypes['pulls']['get']['response']['data']['state'],
+                ) ?? PullRequestState.ALL,
+            prURL: pullRequest?.html_url ?? '',
+            repository: {
+                id: pullRequest?.base?.repo?.id?.toString() ?? '',
+                name: pullRequest?.base?.repo?.full_name ?? '',
+            },
+            message: pullRequest?.title ?? '',
+            created_at: pullRequest?.created_at ?? '',
+            closed_at: pullRequest?.closed_at ?? '',
+            updated_at: pullRequest?.updated_at ?? '',
+            merged_at: pullRequest?.merged_at ?? '',
+            participants: [
+                {
+                    id: pullRequest?.user?.id?.toString() ?? '',
+                },
+            ],
+            reviewers:
+                pullRequest?.requested_reviewers?.map((r) => ({
+                    id: r?.id?.toString() ?? '',
+                })) ?? [],
+            head: {
+                ref: pullRequest?.head?.ref ?? '',
+                repo: {
+                    id: pullRequest?.head?.repo?.id?.toString() ?? '',
+                    name: pullRequest?.head?.repo?.full_name ?? '',
+                },
+            },
+            base: {
+                ref: pullRequest?.base?.ref ?? '',
+                repo: {
+                    id: pullRequest?.base?.repo?.id?.toString() ?? '',
+                    name: pullRequest?.base?.repo?.full_name ?? '',
+                },
+            },
+            user: {
+                login: pullRequest?.user?.login ?? '',
+                name: pullRequest?.user?.name ?? '',
+                id: pullRequest?.user?.id?.toString() ?? '',
+            },
+        };
     }
 }

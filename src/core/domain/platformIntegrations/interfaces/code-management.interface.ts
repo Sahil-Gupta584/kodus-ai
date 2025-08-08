@@ -4,9 +4,8 @@ import { Organization } from '../types/codeManagement/organization.type';
 import {
     PullRequestAuthor,
     PullRequestCodeReviewTime,
-    PullRequestDetails,
+    PullRequest,
     PullRequestReviewComment,
-    PullRequests,
     PullRequestsWithChangesRequested,
     PullRequestWithFiles,
 } from '../types/codeManagement/pullRequests.type';
@@ -22,15 +21,26 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { GitCloneParams } from '../types/codeManagement/gitCloneParams.type';
 import { Commit } from '@/config/types/general/commit.type';
+import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 
 export interface ICodeManagementService
     extends ICommonPlatformIntegrationService {
-    getPullRequests(params: any): Promise<PullRequests[]>;
-    getPullRequestDetails(params: {
+    getPullRequests(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository?: string;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            state?: PullRequestState;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<PullRequest[]>;
+    getPullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: Partial<Repository>;
         prNumber: number;
-    }): Promise<PullRequestDetails | null>;
+    }): Promise<PullRequest | null>;
     getRepositories(params: any): Promise<Repositories[]>;
     getWorkflows(params: any): Promise<Workflow[]>;
     getListMembers(
