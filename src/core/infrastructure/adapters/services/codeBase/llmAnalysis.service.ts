@@ -40,6 +40,7 @@ interface TokenUsage {
     model?: string;
     runId?: string;
     parentRunId?: string;
+    output_reasoning_tokens?: number;
 }
 
 // Handler for token tracking
@@ -63,6 +64,7 @@ class TokenTrackingHandler extends BaseCallbackHandler {
                 usage.input_tokens = metadata.input_tokens;
                 usage.output_tokens = metadata.output_tokens;
                 usage.total_tokens = metadata.total_tokens;
+                usage.output_reasoning_tokens = metadata.output_token_details.reasoning;
             }
 
             // Extracts model
@@ -270,6 +272,14 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             analysisResult.codeReviewModelUsed = {
                 generateSuggestions: provider,
             };
+
+            const tokenUsages = this.tokenTracker.getTokenUsages();
+            await this.logTokenUsage({
+                tokenUsages,
+                organizationAndTeamData,
+                prNumber,
+                analysis,
+            });
 
             return analysisResult;
         } catch (error) {
@@ -518,6 +528,9 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
 
             const provider = LLMModelProvider.GEMINI_2_5_PRO;
             const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+
+            this.tokenTracker.reset();
+
             const payload = {
                 fileContent: file?.fileContent,
                 relevantContent,
