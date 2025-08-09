@@ -17,6 +17,7 @@ import {
     RepositoriesLogHandler,
     RepositoriesLogParams,
     RepositoryConfigRemovalParams,
+    DirectoryConfigRemovalParams,
 } from './repositoriesLog.handler';
 import {
     IntegrationLogHandler,
@@ -83,6 +84,14 @@ export class CodeReviewSettingsLogService
         params: RepositoryConfigRemovalParams,
     ): Promise<void> {
         await this.repositoriesLogHandler.logRepositoryConfigurationRemoval(
+            params,
+        );
+    }
+
+    public async registerDirectoryConfigurationRemoval(
+        params: DirectoryConfigRemovalParams,
+    ): Promise<void> {
+        await this.repositoriesLogHandler.logDirectoryConfigurationRemoval(
             params,
         );
     }

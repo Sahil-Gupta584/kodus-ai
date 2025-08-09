@@ -239,8 +239,8 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
         });
 
         try {
-            // Reutilizando o log de remoção de configuração de repositório por enquanto
-            this.codeReviewSettingsLogService.registerRepositoryConfigurationRemoval(
+            // Log específico de remoção de diretório
+            await this.codeReviewSettingsLogService.registerDirectoryConfigurationRemoval(
                 {
                     organizationAndTeamData,
                     userInfo: {
@@ -250,6 +250,10 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
                     repository: {
                         id: repository.id,
                         name: repository.name,
+                    },
+                    directory: {
+                        id: directoryToRemove.id,
+                        path: directoryToRemove.path,
                     },
                     actionType: ActionType.DELETE,
                 },

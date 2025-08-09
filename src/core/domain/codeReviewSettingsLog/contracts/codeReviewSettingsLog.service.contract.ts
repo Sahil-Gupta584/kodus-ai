@@ -3,7 +3,7 @@ import { CodeReviewConfigLogParams } from '@/core/infrastructure/adapters/servic
 import { IntegrationLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/integrationLog.handler';
 import { KodyRuleLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/kodyRulesLog.handler';
 import { PullRequestMessagesLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/pullRequestMessageLog.handler';
-import { RepositoriesLogParams, RepositoryConfigRemovalParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/repositoriesLog.handler';
+import { RepositoriesLogParams, RepositoryConfigRemovalParams, DirectoryConfigRemovalParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/repositoriesLog.handler';
 import { UserStatusLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/userStatusLog.handler';
 
 export const CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN = Symbol(
@@ -19,6 +19,9 @@ export interface ICodeReviewSettingsLogService
     registerRepositoriesLog(params: RepositoriesLogParams): Promise<void>;
     registerRepositoryConfigurationRemoval(
         params: RepositoryConfigRemovalParams,
+    ): Promise<void>;
+    registerDirectoryConfigurationRemoval(
+        params: DirectoryConfigRemovalParams,
     ): Promise<void>;
     registerIntegrationLog(params: IntegrationLogParams): Promise<void>;
     registerUserStatusLog(params: UserStatusLogParams): Promise<void>;
