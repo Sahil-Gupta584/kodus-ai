@@ -87,7 +87,6 @@ export class AzureReposService
             | 'getListOfValidReviews'
             | 'getPullRequestsWithChangesRequested'
             | 'getAuthenticationOAuthToken'
-            | 'getRepositoryAllFiles'
             | 'mergePullRequest'
             | 'getUserById'
         >
@@ -106,6 +105,67 @@ export class AzureReposService
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
         private readonly configService: ConfigService,
     ) {}
+
+    async getRepositoryAllFiles(params: {
+        repository: string;
+        organizationName: string;
+        branch: string;
+        organizationAndTeamData: OrganizationAndTeamData;
+        filePatterns?: string[];
+        excludePatterns?: string[];
+        maxFiles?: number;
+    }): Promise<any[]> {
+        try {
+            const auth = await this.getAuthDetails(params.organizationAndTeamData);
+            if (!auth) return [];
+
+            // Repositórios configurados para o time
+            const repos = (await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                params.organizationAndTeamData,
+                IntegrationConfigKey.REPOSITORIES,
+            )) as Repositories[];
+
+            const repo = repos?.find(
+                (r) => r?.name === params.repository || r?.id === params.repository,
+            );
+            if (!repo?.project?.id) return [];
+
+            const items = await this.azureReposRequestHelper.listRepositoryItemsRecursive({
+                orgName: auth.orgName,
+                token: auth.token,
+                projectId: repo.project.id,
+                repositoryId: repo.id,
+                branch: params.branch,
+            });
+
+            let files = items.map((it) => ({ path: it.path, type: 'blob', size: it.size, sha: it.objectId }));
+            if (params.filePatterns?.length) {
+                files = files.filter((f) => params.filePatterns!.some((p) => this.matchGlobPattern(f.path, p)));
+            }
+            if (params.excludePatterns?.length) {
+                files = files.filter((f) => !params.excludePatterns!.some((p) => this.matchGlobPattern(f.path, p)));
+            }
+            if (params.maxFiles && params.maxFiles > 0) files = files.slice(0, params.maxFiles);
+            return files;
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to get repository files (Azure Repos)',
+                context: AzureReposService.name,
+                error,
+                metadata: params,
+            });
+            return [];
+        }
+    }
+
+    private matchGlobPattern(path: string, pattern: string): boolean {
+        const regexPattern = pattern
+            .replace(/\./g, '\\.')
+            .replace(/\*/g, '.*')
+            .replace(/\?/g, '.')
+            .replace(/\[.*?\]/g, (m) => `[${m.slice(1, -1)}]`);
+        return new RegExp(`^${regexPattern}$`).test(path);
+    }
 
     async getPullRequestAuthors(params: {
         organizationAndTeamData: OrganizationAndTeamData;

@@ -9,9 +9,11 @@ import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.us
 import { ChatWithKodyFromGitUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/chatWithKodyFromGit.use-case';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { createHash } from 'crypto';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
+import { KodyRulesSyncService } from '../../services/kodyRules/kody-rules-sync.service';
 
 @Injectable()
 export class AzureReposPullRequestHandler implements IWebhookEventHandler {
@@ -22,6 +24,8 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
         private readonly chatWithKodyFromGitUseCase: ChatWithKodyFromGitUseCase,
         private readonly cacheService: CacheService,
         private readonly generateIssuesFromPrClosedUseCase: GenerateIssuesFromPrClosedUseCase,
+        private readonly kodyRulesSyncService: KodyRulesSyncService,
+        private readonly codeManagement: CodeManagementService,
     ) {}
 
     /**
@@ -108,6 +112,50 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                     break;
                 case 'git.pullrequest.merge.attempted':
                     await this.savePullRequestUseCase.execute(params);
+                    // If merged, trigger sync
+                    try {
+                        const merged = params?.payload?.resource?.mergeStatus === 'succeeded' || params?.payload?.resource?.status === 'completed';
+                        if (merged) {
+                            const repository = {
+                                id: params?.payload?.resource?.repository?.id,
+                                name: params?.payload?.resource?.repository?.name,
+                                fullName: params?.payload?.resource?.repository?.name,
+                            } as any;
+
+                            const orgData = await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview({
+                                repository: { id: repository.id, name: repository.name },
+                                platformType: PlatformType.AZURE_REPOS,
+                            });
+                            if (orgData?.organizationAndTeamData) {
+                                const baseRefFull = params?.payload?.resource?.targetRefName; // refs/heads/main
+                                const baseRef = baseRefFull?.replace('refs/heads/', '') || baseRefFull;
+                                const defaultBranch = await this.codeManagement.getDefaultBranch({
+                                    organizationAndTeamData: orgData.organizationAndTeamData,
+                                    repository: { id: repository.id, name: repository.name },
+                                });
+                                if (baseRef !== defaultBranch) {
+                                    return;
+                                }
+                                const changedFiles = await this.codeManagement.getFilesByPullRequestId({
+                                    organizationAndTeamData: orgData.organizationAndTeamData,
+                                    repository: { id: repository.id, name: repository.name },
+                                    prNumber: params?.payload?.resource?.pullRequestId,
+                                });
+                                await this.kodyRulesSyncService.syncFromChangedFiles({
+                                    organizationAndTeamData: orgData.organizationAndTeamData,
+                                    repository,
+                                    pullRequestNumber: params?.payload?.resource?.pullRequestId,
+                                    files: changedFiles || [],
+                                });
+                            }
+                        }
+                    } catch (e) {
+                        this.logger.error({
+                            message: 'Failed to sync Kody Rules after PR merge',
+                            context: AzureReposPullRequestHandler.name,
+                            error: e,
+                        });
+                    }
                     break;
                 default:
                     this.logger.warn({

@@ -232,13 +232,17 @@ export class ConversationAgentProvider {
             },
         );
 
-        const correlationId = result?.context?.correlationId || '';
-        const teste = correlationId as string;
-
-        // ✅ Ver timeline completo!
-        const timeline = this.orchestration.getExecutionTimeline(teste);
-        console.log(timeline);
-
+        // Optional timeline (dev only). Guarded to avoid test failures
+        const correlationId = result?.context?.correlationId as string | undefined;
+        if (correlationId && typeof (this.orchestration as any)?.getExecutionTimeline === 'function') {
+            try {
+                const timeline = (this.orchestration as any).getExecutionTimeline(correlationId);
+                if (process.env.NODE_ENV !== 'test') {
+                    console.log(timeline);
+                }
+            } catch {}
+        }
+        
         return typeof result.result === 'string'
             ? result.result
             : JSON.stringify(result.result);

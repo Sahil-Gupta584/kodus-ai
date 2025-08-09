@@ -11,6 +11,7 @@ import { ChatWithKodyFromGitUseCase } from '@/core/application/use-cases/platfor
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
+import { KodyRulesSyncService } from '../../services/kodyRules/kody-rules-sync.service';
 
 /**
  * Handler for GitHub webhook events.
@@ -25,6 +26,7 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
         private readonly chatWithKodyFromGitUseCase: ChatWithKodyFromGitUseCase,
         private readonly codeManagement: CodeManagementService,
         private readonly generateIssuesFromPrClosedUseCase: GenerateIssuesFromPrClosedUseCase,
+        private readonly kodyRulesSyncService: KodyRulesSyncService,
     ) {}
 
     public canHandle(params: IWebhookEventParams): boolean {
@@ -111,6 +113,51 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
 
             if (payload?.action === 'closed') {
                 await this.generateIssuesFromPrClosedUseCase.execute(params);
+
+                // If merged into default branch, trigger Kody Rules sync for main
+                const merged = payload?.pull_request?.merged === true;
+                const baseRef = payload?.pull_request?.base?.ref;
+                if (merged && baseRef) {
+                    try {
+                        const repository = {
+                            id: String(payload?.repository?.id),
+                            name: payload?.repository?.name,
+                            fullName: payload?.repository?.full_name,
+                        };
+                        const organizationAndTeamData = await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview({
+                            repository: { id: String(payload?.repository?.id), name: payload?.repository?.name },
+                            platformType: PlatformType.GITHUB,
+                        });
+                        if (organizationAndTeamData?.organizationAndTeamData) {
+                            // validate default branch
+                            const defaultBranch = await this.codeManagement.getDefaultBranch({
+                                organizationAndTeamData: organizationAndTeamData.organizationAndTeamData,
+                                repository: { id: repository.id, name: repository.name },
+                            });
+                            if (baseRef !== defaultBranch) {
+                                return;
+                            }
+                            // fetch changed files
+                            const changedFiles = await this.codeManagement.getFilesByPullRequestId({
+                                organizationAndTeamData: organizationAndTeamData.organizationAndTeamData,
+                                repository: { id: repository.id, name: repository.name },
+                                prNumber: payload?.pull_request?.number,
+                            });
+                            await this.kodyRulesSyncService.syncFromChangedFiles({
+                                organizationAndTeamData: organizationAndTeamData.organizationAndTeamData,
+                                repository,
+                                pullRequestNumber: payload?.pull_request?.number,
+                                files: changedFiles || [],
+                            });
+                        }
+                    } catch (e) {
+                        this.logger.error({
+                            message: 'Failed to sync Kody Rules after PR merge',
+                            context: GitHubPullRequestHandler.name,
+                            error: e,
+                        });
+                    }
+                }
             }
             return;
         } catch (error) {

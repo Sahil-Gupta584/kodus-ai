@@ -43,6 +43,10 @@ export class CreateKodyRuleDto {
     @IsString()
     path: string;
 
+    @IsOptional()
+    @IsString()
+    sourcePath?: string;
+
     @IsNotEmpty()
     @IsEnum(KodyRuleSeverity)
     severity: KodyRuleSeverity;

@@ -87,7 +87,6 @@ export class BitbucketService
             | 'getDataForCalculateDeployFrequency'
             | 'getCommitsByReleaseMode'
             | 'getAuthenticationOAuthToken'
-            | 'getRepositoryAllFiles'
         >
 {
     constructor(
@@ -180,6 +179,56 @@ export class BitbucketService
             });
             throw error;
         }
+    }
+
+    async getRepositoryAllFiles(params: {
+        repository: string; // slug
+        organizationName: string; // workspace
+        branch: string;
+        organizationAndTeamData: OrganizationAndTeamData;
+        filePatterns?: string[];
+        excludePatterns?: string[];
+        maxFiles?: number;
+    }): Promise<any[]> {
+        try {
+            const auth = await this.getAuthDetails(params.organizationAndTeamData);
+            if (!auth) return [];
+            // Fallback approach (no direct listing available via typed client):
+            // Try to use configured metadata (if available), else return empty and let cron/webhooks handle sync when possible.
+            const repos = (await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                params.organizationAndTeamData,
+                IntegrationConfigKey.REPOSITORIES,
+            )) as any[];
+            const repo = repos?.find((r) => r?.name === params.repository || r?.id === params.repository);
+            let files = (repo?.tree || [])
+                .filter((i: any) => i?.path)
+                .map((i: any) => ({ path: i.path, type: 'blob', size: i.size, sha: undefined }));
+            if (params.filePatterns?.length) {
+                files = files.filter((f) => params.filePatterns!.some((p) => this.matchGlobPattern(f.path, p)));
+            }
+            if (params.excludePatterns?.length) {
+                files = files.filter((f) => !params.excludePatterns!.some((p) => this.matchGlobPattern(f.path, p)));
+            }
+            if (params.maxFiles && params.maxFiles > 0) files = files.slice(0, params.maxFiles);
+            return files;
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to get repository files (Bitbucket)',
+                context: BitbucketService.name,
+                error,
+                metadata: params,
+            });
+            return [];
+        }
+    }
+
+    private matchGlobPattern(path: string, pattern: string): boolean {
+        const regexPattern = pattern
+            .replace(/\./g, '\\.')
+            .replace(/\*/g, '.*')
+            .replace(/\?/g, '.')
+            .replace(/\[.*?\]/g, (m) => `[${m.slice(1, -1)}]`);
+        return new RegExp(`^${regexPattern}$`).test(path);
     }
 
     async getPullRequestAuthors_OLD(params: {

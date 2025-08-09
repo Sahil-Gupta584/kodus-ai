@@ -854,4 +854,26 @@ export class AzureReposRequestHelper {
                 return 'changed';
         }
     }
+
+    /**
+     * Lists repository items recursively at a given branch (default branch or specific ref)
+     */
+    async listRepositoryItemsRecursive(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        branch: string;
+    }): Promise<Array<{ path: string; objectId: string; size?: number }>> {
+        const instance = await this.azureRequest(params);
+        const { data } = await instance.get(
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/items?recursionLevel=Full&version=${encodeURIComponent(
+                params.branch,
+            )}&versionType=branch&includeLinks=false&api-version=7.1`,
+        );
+        const values = (data?.value || []) as any[];
+        return values
+            .filter((v) => v?.gitObjectType === 'blob')
+            .map((v) => ({ path: String(v?.path || '').replace(/^\//, ''), objectId: v?.objectId, size: v?.size }));
+    }
 }

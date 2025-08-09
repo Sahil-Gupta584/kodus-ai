@@ -10,6 +10,8 @@ import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.us
 import { ChatWithKodyFromGitUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/chatWithKodyFromGit.use-case';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
+import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
+import { KodyRulesSyncService } from '../../services/kodyRules/kody-rules-sync.service';
 
 /**
  * Handler for GitLab webhook events.
@@ -23,6 +25,8 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
         private readonly runCodeReviewAutomationUseCase: RunCodeReviewAutomationUseCase,
         private readonly chatWithKodyFromGitUseCase: ChatWithKodyFromGitUseCase,
         private readonly generateIssuesFromPrClosedUseCase: GenerateIssuesFromPrClosedUseCase,
+        private readonly kodyRulesSyncService: KodyRulesSyncService,
+        private readonly codeManagement: CodeManagementService,
     ) {}
 
     /**
@@ -82,10 +86,49 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                 // Intentionally not awaiting this, as per original logic
                 this.runCodeReviewAutomationUseCase.execute(params);
 
-                if (
-                    payload?.object_attributes?.action === 'merge'
-                ) {
+                if (payload?.object_attributes?.action === 'merge') {
                     await this.generateIssuesFromPrClosedUseCase.execute(params);
+
+                    // Sync Kody Rules after merge into target branch
+                    try {
+                        const repository = {
+                            id: String(payload?.project?.id),
+                            name: payload?.project?.path,
+                            fullName: payload?.project?.path_with_namespace,
+                        } as any;
+
+                        const orgData = await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview({
+                            repository: { id: String(payload?.project?.id), name: payload?.project?.path },
+                            platformType: PlatformType.GITLAB,
+                        });
+                        if (orgData?.organizationAndTeamData) {
+                            const baseRef = payload?.object_attributes?.target_branch;
+                            const defaultBranch = await this.codeManagement.getDefaultBranch({
+                                organizationAndTeamData: orgData.organizationAndTeamData,
+                                repository: { id: repository.id, name: repository.name },
+                            });
+                            if (baseRef !== defaultBranch) {
+                                return;
+                            }
+                            const changedFiles = await this.codeManagement.getFilesByPullRequestId({
+                                organizationAndTeamData: orgData.organizationAndTeamData,
+                                repository: { id: repository.id, name: repository.name },
+                                prNumber: payload?.object_attributes?.iid,
+                            });
+                            await this.kodyRulesSyncService.syncFromChangedFiles({
+                                organizationAndTeamData: orgData.organizationAndTeamData,
+                                repository,
+                                pullRequestNumber: payload?.object_attributes?.iid,
+                                files: changedFiles || [],
+                            });
+                        }
+                    } catch (e) {
+                        this.logger.error({
+                            message: 'Failed to sync Kody Rules after MR merge',
+                            context: GitLabMergeRequestHandler.name,
+                            error: e,
+                        });
+                    }
                 }
 
                 return;

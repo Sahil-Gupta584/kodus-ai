@@ -35,6 +35,7 @@ import { KodyLearningCronProvider } from '@/core/infrastructure/adapters/service
 import { KodyRulesModule } from './kodyRules.module';
 import { PullRequestsModule } from './pullRequests.module';
 import { CheckIfPRCanBeApprovedCronProvider } from '@/core/infrastructure/adapters/services/cron/CheckIfPRCanBeApproved.cron';
+import { KodyRulesSyncCronProvider } from '@/core/infrastructure/adapters/services/cron/kodyRulesSync.cron';
 
 @Module({
     imports: [
@@ -76,6 +77,7 @@ import { CheckIfPRCanBeApprovedCronProvider } from '@/core/infrastructure/adapte
         CodeReviewFeedbackCronProvider,
         KodyLearningCronProvider,
         CheckIfPRCanBeApprovedCronProvider
+        ,KodyRulesSyncCronProvider
     ],
     exports: [
         MetricsCronProvider,
@@ -89,7 +91,8 @@ import { CheckIfPRCanBeApprovedCronProvider } from '@/core/infrastructure/adapte
         OrganizationMetricsCronProvider,
         WeeklyExecutiveCheckinCronProvider,
         CodeReviewFeedbackCronProvider,
-        CheckIfPRCanBeApprovedCronProvider
+        CheckIfPRCanBeApprovedCronProvider,
+        KodyRulesSyncCronProvider
     ],
 })
 export class CronModule { }
