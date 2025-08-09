@@ -10,6 +10,7 @@ import {
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
+import { PinoLoggerService } from '../logger/pino.service';
 
 export interface ChangedDataToExport {
     actionDescription: string;
@@ -41,6 +42,7 @@ export class UnifiedLogHandler {
         @Inject(CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN)
         private readonly codeReviewSettingsLogRepository: ICodeReviewSettingsLogRepository,
         private readonly getAdditionalInfoHelper: GetAdditionalInfoHelper,
+        private readonly logger: PinoLoggerService,
     ) {}
 
     public async logAction(params: UnifiedLogParams): Promise<void> {
@@ -84,7 +86,6 @@ export class UnifiedLogHandler {
             );
         }
 
-
         await this.codeReviewSettingsLogRepository.create({
             organizationId: organizationAndTeamData.organizationId,
             teamId: organizationAndTeamData.teamId,
@@ -113,19 +114,37 @@ export class UnifiedLogHandler {
             changedData,
         } = params;
 
-        if (configLevel === ConfigLevel.REPOSITORY) {
-            repository.name = await this.getRepositoryAdditionalInfo(
-                repository?.id,
-                organizationAndTeamData.organizationId,
-            );
+        try {
+            if (configLevel === ConfigLevel.REPOSITORY) {
+                repository.name = await this.getRepositoryAdditionalInfo(
+                    repository?.id,
+                    organizationAndTeamData.organizationId,
+                );
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting repository additional info',
+                context: UnifiedLogHandler.name,
+                error: error,
+            });
+            repository.name = 'Unknown';
         }
 
-        if (configLevel === ConfigLevel.DIRECTORY) {
-            directory.path = await this.getDirectoryAdditionalInfo(
-                directory?.id,
-                repository?.id,
-                organizationAndTeamData.organizationId,
-            );
+        try {
+            if (configLevel === ConfigLevel.DIRECTORY) {
+                directory.path = await this.getDirectoryAdditionalInfo(
+                    directory?.id,
+                    repository?.id,
+                    organizationAndTeamData.organizationId,
+                );
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting directory additional info',
+                context: UnifiedLogHandler.name,
+                error: error,
+            });
+            directory.path = 'Unknown';
         }
 
         await this.codeReviewSettingsLogRepository.create({
@@ -321,7 +340,7 @@ export class UnifiedLogHandler {
             directoryPath = directoryPathParam;
         }
 
-        return  directoryPath ;
+        return directoryPath;
     }
 
     private async getRepositoryAdditionalInfo(
@@ -346,7 +365,6 @@ export class UnifiedLogHandler {
 
         return repositoryName;
     }
-
 
     private async getDirectoryPath(
         directoryId: string,
