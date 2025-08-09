@@ -37,10 +37,12 @@ export class PullRequestMessagesController {
     @Get('/find-by-directory-id')
     public async findByDirectoryId(
         @Query('directoryId') directoryId: string,
+        @Query('repositoryId') repositoryId: string,
         @Query('organizationId') organizationId: string,
     ) {
         return await this.findByDirectoryIdPullRequestMessagesUseCase.execute(
             directoryId,
+            repositoryId,
             organizationId,
         );
     }

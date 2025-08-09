@@ -13,13 +13,14 @@ export class FindByDirectoryIdPullRequestMessagesUseCase implements IUseCase {
         private readonly pullRequestMessagesService: IPullRequestMessagesService,
     ) {}
 
-    async execute(directoryId: string, organizationId: string) {
-        if (!directoryId || !organizationId) {
+    async execute(directoryId: string, repositoryId: string, organizationId: string) {
+        if (!directoryId || !repositoryId || !organizationId) {
             throw new Error('Directory ID and organization ID are required');
         }
 
         const result = await this.pullRequestMessagesService.findOne({
             organizationId,
+            repositoryId,
             directoryId,
             configLevel: ConfigLevel.DIRECTORY,
         });
