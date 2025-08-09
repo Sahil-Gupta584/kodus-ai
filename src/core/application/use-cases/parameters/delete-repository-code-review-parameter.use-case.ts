@@ -207,10 +207,21 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
 
         // Atualizar o array de repositórios com o repositório modificado
         const updatedRepositories = (codeReviewConfigValue.repositories || []).map(
-            (repo: any) =>
-                repo.id === repositoryId
-                    ? { ...repo, directories: updatedDirectories }
-                    : repo,
+            (repo: any) => {
+                if (repo.id === repositoryId) {
+                    const updatedRepo = { ...repo };
+
+                    // Se não há mais diretórios, remover a propriedade directories
+                    if (updatedDirectories.length === 0) {
+                        delete updatedRepo.directories;
+                    } else {
+                        updatedRepo.directories = updatedDirectories;
+                    }
+
+                    return updatedRepo;
+                }
+                return repo;
+            }
         );
 
         // Atualizar a configuração com os repositórios atualizados
