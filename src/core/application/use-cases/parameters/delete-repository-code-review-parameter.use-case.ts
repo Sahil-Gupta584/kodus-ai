@@ -66,7 +66,14 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
 
             let updatedData;
 
-            if (repositoryId && !directoryId) {
+            if (repositoryId && directoryId) {
+                updatedData = await this.deleteDirectoryConfig(
+                    organizationAndTeamData,
+                    codeReviewConfigValue,
+                    repositoryId,
+                    directoryId,
+                );
+            } else if (repositoryId && !directoryId) {
                 updatedData = await this.deleteRepositoryConfig(
                     organizationAndTeamData,
                     codeReviewConfigValue,
@@ -163,6 +170,102 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
                 error: error,
                 metadata: {
                     organizationAndTeamData,
+                },
+            });
+            return updated;
+        }
+    }
+
+    private async deleteDirectoryConfig(
+        organizationAndTeamData: OrganizationAndTeamData,
+        codeReviewConfigValue: any,
+        repositoryId: string,
+        directoryId: string,
+    ) {
+        // Encontrar o repositório alvo
+        const repository = codeReviewConfigValue.repositories?.find(
+            (repo: any) => repo.id === repositoryId,
+        );
+
+        if (!repository) {
+            throw new Error('Repository not found in configuration');
+        }
+
+        // Verificar se o diretório existe
+        const directoryToRemove = repository.directories?.find(
+            (dir: any) => dir.id === directoryId,
+        );
+
+        if (!directoryToRemove) {
+            throw new Error('Directory not found in configuration');
+        }
+
+        // Remover o diretório específico do repositório
+        const updatedDirectories = (repository.directories || []).filter(
+            (dir: any) => dir.id !== directoryId,
+        );
+
+        // Atualizar o array de repositórios com o repositório modificado
+        const updatedRepositories = (codeReviewConfigValue.repositories || []).map(
+            (repo: any) =>
+                repo.id === repositoryId
+                    ? { ...repo, directories: updatedDirectories }
+                    : repo,
+        );
+
+        // Atualizar a configuração com os repositórios atualizados
+        const updatedConfigValue = {
+            ...codeReviewConfigValue,
+            repositories: updatedRepositories,
+        };
+
+        const updated = await this.parametersService.createOrUpdateConfig(
+            ParametersKey.CODE_REVIEW_CONFIG,
+            updatedConfigValue,
+            organizationAndTeamData,
+        );
+
+        this.logger.log({
+            message:
+                'Directory removed from repository configuration successfully',
+            context: DeleteRepositoryCodeReviewParameterUseCase.name,
+            serviceName: 'DeleteRepositoryCodeReviewParameterUseCase',
+            metadata: {
+                repositoryId,
+                directoryId,
+                organizationAndTeamData,
+                remainingDirectories: updatedDirectories.length,
+            },
+        });
+
+        try {
+            // Reutilizando o log de remoção de configuração de repositório por enquanto
+            this.codeReviewSettingsLogService.registerRepositoryConfigurationRemoval(
+                {
+                    organizationAndTeamData,
+                    userInfo: {
+                        userId: this.request.user.uuid,
+                        userEmail: this.request.user.email,
+                    },
+                    repository: {
+                        id: repository.id,
+                        name: repository.name,
+                    },
+                    actionType: ActionType.DELETE,
+                },
+            );
+            return updated;
+        } catch (error) {
+            this.logger.error({
+                message:
+                    'Could not delete directory from repository configuration',
+                context: DeleteRepositoryCodeReviewParameterUseCase.name,
+                serviceName: 'DeleteRepositoryCodeReviewParameterUseCase',
+                error: error,
+                metadata: {
+                    organizationAndTeamData,
+                    repositoryId,
+                    directoryId,
                 },
             });
             return updated;
