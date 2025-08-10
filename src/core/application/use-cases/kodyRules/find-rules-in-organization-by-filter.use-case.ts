@@ -5,7 +5,6 @@ import {
 import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { Inject, Injectable } from '@nestjs/common';
-import { REQUEST } from '@nestjs/core';
 
 @Injectable()
 export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase {
@@ -20,11 +19,12 @@ export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase {
         organizationId: string,
         filter: Partial<IKodyRule>,
         repositoryId?: string,
+        directoryId?: string,
     ) {
         try {
             const existingRules = await this.kodyRulesService.find({
                 organizationId,
-                rules: [{ repositoryId }],
+                rules: [{ repositoryId, directoryId }],
             });
 
             if (!existingRules || existingRules.length === 0) {
