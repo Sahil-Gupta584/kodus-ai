@@ -22,7 +22,7 @@ export interface TelemetryConfig {
     // Sampling configuration
     sampling: {
         rate: number; // 0.0 to 1.0
-        strategy: 'probabilistic' | 'rate-limiting' | 'parent-based';
+        strategy: 'probabilistic';
     };
 
     // Custom attributes applied to all spans
@@ -39,6 +39,17 @@ export interface TelemetryConfig {
 
     // External tracer integration
     externalTracer?: Tracer;
+
+    // Privacy flags
+    privacy?: {
+        includeSensitiveData?: boolean;
+    };
+
+    // Span timeout behavior (apenas para InMemoryTracer)
+    spanTimeouts?: {
+        enabled?: boolean; // default: true
+        maxDurationMs?: number; // default: 5m
+    };
 }
 
 /**
@@ -129,11 +140,17 @@ export interface Metrics {
  * High-performance in-memory tracer implementation
  */
 class InMemoryTracer implements Tracer {
+    private enableSpanTimeouts: boolean;
     private activeSpans = new Map<string, InMemorySpan>();
     private completedSpans: InMemorySpan[] = [];
     private maxSpanHistory = 1000;
     private spanTimeouts = new Map<string, NodeJS.Timeout>();
-    private readonly maxSpanDuration = 5 * 60 * 1000; // 5 minutes
+    private maxSpanDuration = 5 * 60 * 1000; // 5 minutes
+
+    constructor(options?: { enabled?: boolean; maxDurationMs?: number }) {
+        this.enableSpanTimeouts = options?.enabled ?? true;
+        this.maxSpanDuration = options?.maxDurationMs ?? this.maxSpanDuration;
+    }
 
     startSpan(name: string, options?: SpanOptions): Span {
         const spanId = this.generateSpanId();
@@ -158,14 +175,18 @@ class InMemoryTracer implements Tracer {
         this.activeSpans.set(spanId, span);
 
         // Set timeout to prevent spans from staying active forever
-        const timeout = setTimeout(() => {
-            if (this.activeSpans.has(spanId)) {
-                span.setStatus({ code: 'timeout', message: 'Span timed out' });
-                span.end();
-            }
-        }, this.maxSpanDuration);
-
-        this.spanTimeouts.set(spanId, timeout);
+        if (this.enableSpanTimeouts) {
+            const timeout = setTimeout(() => {
+                if (this.activeSpans.has(spanId)) {
+                    span.setStatus({
+                        code: 'timeout',
+                        message: 'Span timed out',
+                    });
+                    span.end();
+                }
+            }, this.maxSpanDuration);
+            this.spanTimeouts.set(spanId, timeout);
+        }
 
         return span;
     }
@@ -223,14 +244,36 @@ class InMemoryTracer implements Tracer {
         }
     }
 
+    updateOptions(options: {
+        enabled?: boolean;
+        maxDurationMs?: number;
+    }): void {
+        if (typeof options.enabled === 'boolean') {
+            this.enableSpanTimeouts = options.enabled;
+        }
+        if (typeof options.maxDurationMs === 'number') {
+            this.maxSpanDuration = options.maxDurationMs;
+        }
+    }
+
+    private generateIdWithPrefix(
+        prefix: string,
+        base: 'correlation' | 'call',
+    ): string {
+        const id =
+            base === 'correlation'
+                ? IdGenerator.correlationId()
+                : IdGenerator.callId();
+        const idx = id.indexOf('_');
+        return idx > 0 ? `${prefix}${id.slice(idx)}` : `${prefix}_${id}`;
+    }
+
     private generateTraceId(): string {
-        // Use IdGenerator for consistency
-        return IdGenerator.correlationId().replace('corr_', 'trace_');
+        return this.generateIdWithPrefix('trace', 'correlation');
     }
 
     private generateSpanId(): string {
-        // Use IdGenerator for consistency
-        return IdGenerator.callId().replace('call_', 'span_');
+        return this.generateIdWithPrefix('span', 'call');
     }
 
     getCompletedSpans(): ReadonlyArray<InMemorySpan> {
@@ -433,6 +476,24 @@ export class TelemetrySystem {
     private tracer: Tracer;
     private metrics: Metrics;
     private currentSpan?: Span;
+    private static asyncContext?: import('node:async_hooks').AsyncLocalStorage<Span>;
+    private contextProvider?: () =>
+        | {
+              tenantId?: string;
+              correlationId?: string;
+              executionId?: string;
+          }
+        | undefined;
+    private spanInfo = new WeakMap<
+        Span,
+        {
+            name: string;
+            attributes: Record<string, string | number | boolean>;
+            startTime: number;
+        }
+    >();
+    private processors: Array<(items: TraceItem[]) => void | Promise<void>> =
+        [];
 
     constructor(config: Partial<TelemetryConfig> = {}) {
         this.config = {
@@ -449,8 +510,35 @@ export class TelemetrySystem {
             ...config,
         };
 
-        this.tracer = config.externalTracer || new InMemoryTracer();
+        this.tracer =
+            config.externalTracer ||
+            new InMemoryTracer({
+                enabled: config.spanTimeouts?.enabled ?? true,
+                maxDurationMs:
+                    config.spanTimeouts?.maxDurationMs ?? 5 * 60 * 1000,
+            });
+        // Async context for safer propagation (optional)
+        // AsyncLocalStorage só no Node. Carregamento dinâmico ESM-friendly.
+        (async () => {
+            try {
+                const asyncHooks = (await import(
+                    'node:async_hooks'
+                )) as typeof import('node:async_hooks');
+                TelemetrySystem.asyncContext =
+                    new asyncHooks.AsyncLocalStorage<Span>();
+            } catch {
+                // ambientes sem async_hooks (browser/workers) seguem com currentSpan simples
+            }
+        })().catch(() => {});
         this.metrics = new InMemoryMetrics();
+
+        // Env override: allow disabling tracing entirely
+        if (
+            process.env.KODUS_DISABLE_TRACING === 'true' ||
+            process.env.KODUS_DISABLE_TRACING === '1'
+        ) {
+            this.config.enabled = false;
+        }
     }
 
     /**
@@ -475,15 +563,30 @@ export class TelemetrySystem {
             return createNoOpSpan();
         }
 
+        // Derive parent from current span if not explicitly provided
+        const parentContext =
+            options?.parent || this.currentSpan?.getSpanContext();
+
+        const finalAttributes: Record<string, string | number | boolean> = {
+            serviceName: this.config.serviceName,
+            serviceVersion: this.config.serviceVersion || 'unknown',
+            environment: this.config.environment || 'development',
+            ...this.config.globalAttributes,
+            ...options?.attributes,
+        };
+
         const span = this.tracer.startSpan(name, {
             ...options,
-            attributes: {
-                serviceName: this.config.serviceName,
-                serviceVersion: this.config.serviceVersion || 'unknown',
-                environment: this.config.environment || 'development',
-                ...this.config.globalAttributes,
-                ...options?.attributes,
-            },
+            parent: parentContext,
+            attributes: finalAttributes,
+        });
+
+        // Track span info for processors/exporters
+        const startTime = options?.startTime || Date.now();
+        this.spanInfo.set(span, {
+            name,
+            attributes: finalAttributes,
+            startTime,
         });
 
         return span;
@@ -525,11 +628,39 @@ export class TelemetrySystem {
         this.currentSpan = span;
 
         try {
-            const result = await fn();
-            return result;
+            const runner = async () => await fn();
+            if (TelemetrySystem.asyncContext) {
+                return await new Promise<T>((resolve, reject) => {
+                    TelemetrySystem.asyncContext!.run(span, () => {
+                        Promise.resolve().then(runner).then(resolve, reject);
+                    });
+                });
+            }
+            return await runner();
         } finally {
             span.end();
             this.currentSpan = previousSpan;
+
+            // Dispatch to processors
+            const info = this.spanInfo.get(span);
+            if (info) {
+                const item: TraceItem = {
+                    name: info.name,
+                    context: span.getSpanContext(),
+                    attributes: info.attributes,
+                    startTime: info.startTime,
+                    endTime: Date.now(),
+                };
+                // Fire and forget; processors should be robust
+                for (const proc of this.processors) {
+                    try {
+                        void proc([item]);
+                    } catch {
+                        // ignore
+                    }
+                }
+                this.spanInfo.delete(span);
+            }
         }
     }
 
@@ -537,7 +668,7 @@ export class TelemetrySystem {
      * Get the current active span
      */
     getCurrentSpan(): Span | undefined {
-        return this.currentSpan;
+        return TelemetrySystem.asyncContext?.getStore() || this.currentSpan;
     }
 
     /**
@@ -569,6 +700,40 @@ export class TelemetrySystem {
     }
 
     /**
+     * Provider de contexto para atributos padrão de spans (ex.: tenant/correlation)
+     */
+    setContextProvider(
+        provider:
+            | (() =>
+                  | {
+                        tenantId?: string;
+                        correlationId?: string;
+                        executionId?: string;
+                    }
+                  | undefined)
+            | undefined,
+    ): void {
+        this.contextProvider = provider;
+    }
+
+    /**
+     * Atributos derivados do contexto atual
+     */
+    getContextAttributes(): Record<string, string | number | boolean> {
+        const attributes: Record<string, string | number | boolean> = {};
+        try {
+            const ctx = this.contextProvider?.();
+            if (ctx?.tenantId) attributes['tenant.id'] = ctx.tenantId;
+            if (ctx?.correlationId)
+                attributes['correlation.id'] = ctx.correlationId;
+            if (ctx?.executionId) attributes['execution.id'] = ctx.executionId;
+        } catch {
+            // ignore provider errors
+        }
+        return attributes;
+    }
+
+    /**
      * Update configuration
      */
     updateConfig(config: Partial<TelemetryConfig>): void {
@@ -581,6 +746,157 @@ export class TelemetrySystem {
     getConfig(): TelemetryConfig {
         return { ...this.config };
     }
+
+    /**
+     * Add a trace processor (exporter-like)
+     */
+    addTraceProcessor(
+        processor: (items: TraceItem[]) => void | Promise<void>,
+    ): void {
+        this.processors.push(processor);
+    }
+
+    /**
+     * Replace trace processors
+     */
+    setTraceProcessors(
+        processors: Array<(items: TraceItem[]) => void | Promise<void>>,
+    ): void {
+        this.processors = [...processors];
+    }
+
+    /**
+     * Force flush (useful in serverless/browser)
+     */
+    async forceFlush(): Promise<void> {
+        // Delegar se external tracer suportar flush
+        const tracerAny = this.tracer as unknown as {
+            forceFlush?: () => Promise<void> | void;
+            flush?: () => Promise<void> | void;
+        };
+        if (typeof tracerAny.forceFlush === 'function') {
+            await Promise.resolve(tracerAny.forceFlush());
+        } else if (typeof tracerAny.flush === 'function') {
+            await Promise.resolve(tracerAny.flush());
+        }
+    }
+}
+
+// Public types for processors
+export interface TraceItem {
+    name: string;
+    context: SpanContext;
+    attributes: Record<string, string | number | boolean>;
+    startTime: number;
+    endTime: number;
+}
+
+// ============================================================================
+// DOMAIN SPAN HELPERS (padronizam nomes e atributos)
+// ============================================================================
+
+export type AgentPhase = 'think' | 'act' | 'observe';
+
+export interface AgentSpanAttributes {
+    agentName: string;
+    tenantId?: string;
+    correlationId?: string;
+    iteration?: number;
+    attributes?: Record<string, string | number | boolean>;
+}
+
+export function startAgentSpan(
+    telemetry: TelemetrySystem,
+    phase: AgentPhase,
+    attrs: AgentSpanAttributes,
+): Span {
+    const attributes: Record<string, string | number | boolean> = {};
+    attributes['agent.name'] = attrs.agentName;
+    if (attrs.tenantId) attributes['tenant.id'] = attrs.tenantId;
+    if (attrs.correlationId) attributes['correlation.id'] = attrs.correlationId;
+    if (typeof attrs.iteration === 'number')
+        attributes['iteration'] = attrs.iteration;
+    if (attrs.attributes) Object.assign(attributes, attrs.attributes);
+    return telemetry.startSpan(`agent.${phase}`, { attributes });
+}
+
+export interface ToolSpanAttributes {
+    toolName: string;
+    callId?: string;
+    timeoutMs?: number;
+    tenantId?: string;
+    correlationId?: string;
+    attributes?: Record<string, string | number | boolean>;
+}
+
+export function startToolSpan(
+    telemetry: TelemetrySystem,
+    attrs: ToolSpanAttributes,
+): Span {
+    const attributes: Record<string, string | number | boolean> = {
+        ...telemetry.getContextAttributes(),
+    };
+    attributes['tool.name'] = attrs.toolName;
+    if (attrs.callId) attributes['callId'] = attrs.callId;
+    if (typeof attrs.timeoutMs === 'number')
+        attributes['timeoutMs'] = attrs.timeoutMs;
+    if (attrs.tenantId) attributes['tenant.id'] = attrs.tenantId;
+    if (attrs.correlationId) attributes['correlation.id'] = attrs.correlationId;
+    if (attrs.attributes) Object.assign(attributes, attrs.attributes);
+    return telemetry.startSpan('tool.execute', { attributes });
+}
+
+export interface LLMSpanAttributes {
+    model?: string;
+    technique?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    // Parâmetros de request
+    temperature?: number;
+    topP?: number;
+    maxTokens?: number;
+    tenantId?: string;
+    correlationId?: string;
+    attributes?: Record<string, string | number | boolean>;
+}
+
+export function startLLMSpan(
+    telemetry: TelemetrySystem,
+    attrs: LLMSpanAttributes,
+): Span {
+    const attributes: Record<string, string | number | boolean> = {
+        ...telemetry.getContextAttributes(),
+    };
+
+    // Convenções gen_ai.* (mantemos legacy também para compatibilidade)
+    if (attrs.model) {
+        attributes['gen_ai.model.name'] = attrs.model;
+        attributes['model'] = attrs.model; // legacy
+    }
+    if (attrs.technique) {
+        attributes['gen_ai.technique'] = attrs.technique;
+        attributes['technique'] = attrs.technique; // legacy
+    }
+    if (typeof attrs.temperature === 'number')
+        attributes['gen_ai.request.temperature'] = attrs.temperature;
+    if (typeof attrs.topP === 'number')
+        attributes['gen_ai.request.top_p'] = attrs.topP;
+    if (typeof attrs.maxTokens === 'number')
+        attributes['gen_ai.request.max_tokens'] = attrs.maxTokens;
+
+    if (typeof attrs.inputTokens === 'number') {
+        attributes['gen_ai.usage.input_tokens'] = attrs.inputTokens;
+        attributes['inputTokens'] = attrs.inputTokens; // legacy
+    }
+    if (typeof attrs.outputTokens === 'number') {
+        attributes['gen_ai.usage.output_tokens'] = attrs.outputTokens;
+        attributes['outputTokens'] = attrs.outputTokens; // legacy
+    }
+
+    if (attrs.tenantId) attributes['tenant.id'] = attrs.tenantId;
+    if (attrs.correlationId) attributes['correlation.id'] = attrs.correlationId;
+    if (attrs.attributes) Object.assign(attributes, attrs.attributes);
+    return telemetry.startSpan('llm.generation', { attributes });
 }
 
 /**

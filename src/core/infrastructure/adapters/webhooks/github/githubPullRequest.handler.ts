@@ -247,7 +247,8 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
 
             // For pull_request_review_comment that is not a start-review command
             if (
-                event === 'pull_request_review_comment' &&
+                (event === 'pull_request_review_comment' ||
+                    event === 'issue_comment') &&
                 !hasReviewMarker &&
                 !isStartCommand &&
                 kodyMentionPattern.test(comment.body)

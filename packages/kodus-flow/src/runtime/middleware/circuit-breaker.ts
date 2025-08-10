@@ -11,6 +11,7 @@ import type {
     CircuitResult,
 } from '../core/circuit-breaker.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
+import { createLogger } from '../../observability/index.js';
 import type { Event } from '../../core/types/events.js';
 import type { EventHandler } from '../../core/types/common-types.js';
 
@@ -244,7 +245,8 @@ export const circuitBreakerUtils = {
      * Callback padrão para rejeições
      */
     defaultOnRejected: (event: unknown, result: CircuitResult<unknown>) => {
-        console.warn('Circuit breaker rejected operation:', {
+        const logger = createLogger('circuit-breaker');
+        logger.warn('Circuit breaker rejected operation', {
             event,
             circuit: result.state,
             error: result.error?.message,

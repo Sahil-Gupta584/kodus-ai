@@ -11,6 +11,7 @@
 
 import { createLogger } from '../observability/index.js';
 import { getObservability } from '../observability/index.js';
+import { withObservability } from '../runtime/middleware/index.js';
 import { KernelError } from '../core/errors.js';
 
 import { ContextStateService } from '../core/context/index.js';
@@ -393,11 +394,22 @@ export class ExecutionKernel {
                     }
 
                     // 2. Initialize runtime with simplified configuration
+                    const baseMiddleware = [
+                        ...(this.config.runtimeConfig?.middleware || []),
+                    ];
+
+                    // Inject observability middleware first (if enabled)
+                    const middleware = [
+                        withObservability(undefined),
+                        ...baseMiddleware,
+                    ];
+
                     const runtimeConfig: RuntimeConfig = {
                         ...this.config.runtimeConfig,
                         persistor: this.persistor,
                         executionId: this.state.id,
                         tenantId: this.config.tenantId,
+                        middleware,
                     };
 
                     this.runtime = createRuntime(

@@ -7,13 +7,19 @@ import {
     MCPServerConfig,
     PersistorType,
     MongoDBPersistorConfig,
+    getObservability,
+    createOtelTracerAdapter,
 } from '@kodus/flow';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseConnection } from '@/config/types';
 import { ConnectionString } from 'connection-string';
-import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
+import {
+    LLMProviderService,
+    LLMModelProvider,
+    PromptRunnerService,
+} from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class ConversationAgentProvider {
@@ -28,6 +34,7 @@ export class ConversationAgentProvider {
         private readonly configService: ConfigService,
         private readonly llmProviderService: LLMProviderService,
         private readonly mcpManagerService?: MCPManagerService,
+        private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.config =
             this.configService.get<DatabaseConnection>('mongoDatabase');
@@ -39,8 +46,8 @@ export class ConversationAgentProvider {
             model: LLMModelProvider.GEMINI_2_5_PRO,
             temperature: 0,
             maxTokens: 8000,
-            maxReasoningTokens: 800,
-        }) as any;
+            maxReasoningTokens: 129,
+        });
 
         function sanitizeName(name: string) {
             const cleaned = name.replace(/[^\w.\-]/g, '_');
@@ -49,55 +56,110 @@ export class ConversationAgentProvider {
 
         const wrappedLLM = {
             async call(messages: any[], options: any = {}) {
-                const lcMessages = messages.map((m) => ({
-                    type:
-                        m.role === 'system'
-                            ? 'system'
-                            : m.role === 'user'
-                              ? 'human'
-                              : 'ai',
-                    content: m.content,
-                }));
+                const provider = LLMModelProvider.GEMINI_2_5_PRO;
+                const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-                let model = base;
-                if (options.tools?.length) {
-                    const toolDefs = options.tools.map((t: any) => ({
-                        type: 'function',
-                        function: {
-                            name: sanitizeName(t.name),
-                            description: t.description ?? '',
-                            parameters: {
-                                ...t.parameters,
-                                additionalProperties: false,
-                            },
-                        },
-                    }));
+                const analysis = await this.promptRunnerService
+                    .builder()
+                    .setProviders({
+                        main: provider,
+                        fallback: fallbackProvider,
+                    })
+                    .setParser(ParserType.STRING)
+                    .setLLMJsonMode(true)
+                    .setPayload(baseContext)
+                    .addPrompt({
+                        prompt: prompt_codereview_system_gemini,
+                        role: PromptRole.SYSTEM,
+                        scope: PromptScope.MAIN,
+                    })
+                    .addPrompt({
+                        prompt: prompt_codereview_user_gemini,
+                        role: PromptRole.USER,
+                        scope: PromptScope.MAIN,
+                    })
+                    .addPrompt({
+                        prompt: prompt_codereview_user_deepseek,
+                        role: PromptRole.USER,
+                        scope: PromptScope.FALLBACK,
+                    })
+                    .setTemperature(0)
+                    .addCallbacks([this.tokenTracker])
+                    .setRunName('analyzeCodeWithAI')
+                    .execute();
 
-                    const bindOpts: any = {};
-                    if (options.toolChoice) {
-                        bindOpts.tool_choice = options.toolChoice;
-                    }
+                const analysisResult =
+                    this.llmResponseProcessor.processResponse(
+                        organizationAndTeamData,
+                        prNumber,
+                        analysis,
+                    );
 
-                    model = (base as any).bindTools(toolDefs, bindOpts);
+                if (!analysisResult) {
+                    return null;
                 }
 
-                const resp = await model.invoke(lcMessages, {
-                    stop: options.stop,
-                    maxTokens: options.maxTokens,
-                    temperature: options.temperature,
-                });
-
-                return {
-                    content: resp.content,
-                    usage: resp.usage ?? {
-                        promptTokens: 0,
-                        completionTokens: 0,
-                        totalTokens: 0,
-                    },
-                    tool_calls: resp.tool_calls,
+                analysisResult.codeReviewModelUsed = {
+                    generateSuggestions: provider,
                 };
+
+                return analysisResult;
             },
         };
+
+        // const wrappedLLM = {
+        //     async call(messages: any[], options: any = {}) {
+        //         const lcMessages = messages.map((m) => ({
+        //             type:
+        //                 m.role === 'system'
+        //                     ? 'system'
+        //                     : m.role === 'user'
+        //                       ? 'human'
+        //                       : 'ai',
+        //             content: m.content,
+        //         }));
+
+        //         let model = base;
+        //         if (options.tools?.length) {
+        //             const toolDefs = options.tools.map((t: any) => ({
+        //                 type: 'function',
+        //                 function: {
+        //                     name: sanitizeName(t.name),
+        //                     description: t.description ?? '',
+        //                     parameters: {
+        //                         ...t.parameters,
+        //                         additionalProperties: false,
+        //                     },
+        //                 },
+        //             }));
+
+        //             const bindOpts: any = {};
+        //             if (options.toolChoice) {
+        //                 bindOpts.tool_choice = options.toolChoice;
+        //             }
+
+        //             model = (base as any).bindTools(toolDefs, bindOpts);
+        //         }
+
+        //         const resp = await model.invoke(lcMessages, {
+        //             stop: options.stop,
+        //             temperature: options.temperature,
+        //             maxReasoningTokens: options.maxReasoningTokens,
+        //         });
+
+        //         console.log(resp.response_metadata);
+
+        //         return {
+        //             content: resp.content,
+        //             usage: resp.usage ?? {
+        //                 promptTokens: 0,
+        //                 completionTokens: 0,
+        //                 totalTokens: 0,
+        //             },
+        //             tool_calls: resp.tool_calls,
+        //         };
+        //     },
+        // };
 
         return createDirectLLMAdapter(wrappedLLM);
     }
@@ -133,7 +195,7 @@ export class ConversationAgentProvider {
         });
     }
 
-    private createOrchestration() {
+    private async createOrchestration() {
         let uri = new ConnectionString('', {
             user: this.config.username,
             password: this.config.password,
@@ -147,11 +209,31 @@ export class ConversationAgentProvider {
             this.config,
         );
 
-        this.orchestration = createOrchestration({
+        const externalTracer = await createOtelTracerAdapter();
+
+        this.orchestration = await createOrchestration({
             tenantId: 'kodus-agent-conversation',
-            enableObservability: true,
             llmAdapter: this.llmAdapter,
             mcpAdapter: this.mcpAdapter,
+            observability: {
+                logging: { enabled: true, level: 'info' },
+                telemetry: {
+                    enabled: true,
+                    serviceName: 'kodus-service',
+                    sampling: { rate: 1, strategy: 'probabilistic' },
+                    externalTracer,
+                    privacy: { includeSensitiveData: false },
+                    spanTimeouts: {
+                        enabled: true,
+                        maxDurationMs: 5 * 60 * 1000,
+                    },
+                },
+                correlation: {
+                    enabled: true,
+                    generateIds: true,
+                    propagateContext: true,
+                },
+            },
             // storage: {
             //     memory: {
             //         type: 'mongodb',
@@ -178,7 +260,7 @@ export class ConversationAgentProvider {
     // -------------------------------------------------------------------------
     private async initialize(organizationAndTeamData: OrganizationAndTeamData) {
         await this.createMCPAdapter(organizationAndTeamData);
-        this.createOrchestration();
+        await this.createOrchestration();
 
         // 1️⃣ conecta MCP (opcional)
         try {
@@ -189,7 +271,7 @@ export class ConversationAgentProvider {
         }
 
         await this.orchestration.createAgent({
-            name: 'conversational-agent',
+            name: 'kodus-conversational-agent',
             planner: 'plan-execute',
             identity: {
                 description:
@@ -221,7 +303,7 @@ export class ConversationAgentProvider {
         await this.initialize(organizationAndTeamData);
 
         const result = await this.orchestration.callAgent(
-            'conversational-agent',
+            'kodus-conversational-agent',
             prompt,
             {
                 thread: thread,
@@ -231,13 +313,6 @@ export class ConversationAgentProvider {
                 },
             },
         );
-
-        const correlationId = result?.context?.correlationId || '';
-        const teste = correlationId as string;
-
-        // ✅ Ver timeline completo!
-        const timeline = this.orchestration.getExecutionTimeline(teste);
-        console.log(timeline);
 
         return typeof result.result === 'string'
             ? result.result

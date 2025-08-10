@@ -8,7 +8,7 @@
  * - Monitoring: Production resource monitoring and health checks
  * - Debugging: Development debugging and introspection tools
  * - Timeline: Execution timeline tracking and visualization
- * - Event Bus: Centralized event processing system
+ * - (Removido) Event Bus
  */
 
 import type { Event } from '../core/types/events.js';
@@ -20,20 +20,29 @@ import dns from 'dns';
 export * from './telemetry.js';
 export * from './monitoring.js';
 export * from './debugging.js';
-export * from './observable.js';
-export * from './execution-timeline.js';
-export * from './timeline-viewer.js';
+export {
+    createOtelTracerAdapter,
+    OtelTracerAdapter,
+    setupOtelTracing,
+    type SetupOtelTracingOptions,
+} from './otel-adapter.js';
+// Helpers de domínio para spans
+export {
+    startAgentSpan,
+    startToolSpan,
+    startLLMSpan,
+    type AgentPhase,
+    type AgentSpanAttributes,
+    type ToolSpanAttributes,
+    type LLMSpanAttributes,
+} from './telemetry.js';
+// Removed: functional observable and timeline
 
-// Re-export new integrated system
-export * from './integrated-observability.js';
-export * from './core-logger.js';
-export * from './event-bus.js';
-export * from './unified-config.js';
-export * from './memory-leak-detector.js';
+// Core exports (simplificados)
 
 // Re-export logger types and interfaces (backward compatibility)
 export type { LogLevel, LogContext } from './logger.js';
-export { createLogger } from './logger.js';
+export { createLogger, setLoggerProvider, type Logger } from './logger.js';
 
 // Import key classes and functions
 import {
@@ -41,6 +50,7 @@ import {
     type Logger,
     type LogLevel,
     type LogContext,
+    setLogContextProvider,
 } from './logger.js';
 import {
     getTelemetry,
@@ -267,7 +277,11 @@ export class ObservabilitySystem implements ObservabilityInterface {
     // Component instances
     public readonly logger: Logger;
     public readonly telemetry: TelemetrySystem;
-    public readonly monitor: ResourceMonitor | null;
+    public readonly monitor: ResourceMonitor | null = null;
+    private setMonitor(system: ResourceMonitor | null): void {
+        (this as unknown as { monitor: ResourceMonitor | null }).monitor =
+            system;
+    }
     public readonly debug: DebugSystem;
 
     constructor(config: Partial<ObservabilityConfig> = {}) {
@@ -284,8 +298,73 @@ export class ObservabilitySystem implements ObservabilityInterface {
         // Initialize components
         this.logger = createLogger('observability', this.config.logging?.level);
         this.telemetry = getTelemetry(this.config.telemetry);
-        this.monitor = getLayeredMetricsSystem() || null;
+        // Propagar contexto para atributos default de spans
+        this.telemetry.setContextProvider(() => {
+            const ctx = this.getContext();
+            return ctx
+                ? {
+                      tenantId: ctx.tenantId,
+                      correlationId: ctx.correlationId,
+                      executionId: ctx.executionId,
+                  }
+                : undefined;
+        });
+        // Auto-init metrics if enabled and not present (DX)
+        if (this.config.monitoring?.enabled) {
+            const existing = getLayeredMetricsSystem();
+            if (existing) {
+                this.setMonitor(existing);
+            } else {
+                // Lazy schedule init to avoid await in ctor
+                this.setMonitor(null);
+                const doInit = async () => {
+                    try {
+                        const { ensureMetricsSystem } = await import(
+                            './monitoring.js'
+                        );
+                        this.setMonitor(
+                            ensureMetricsSystem({
+                                enabled: true,
+                                collectionIntervalMs:
+                                    this.config.monitoring
+                                        ?.collectionIntervalMs ?? 30000,
+                                retentionPeriodMs:
+                                    this.config.monitoring?.retentionPeriodMs ??
+                                    24 * 60 * 60 * 1000,
+                                enableRealTime:
+                                    this.config.monitoring?.enableRealTime ??
+                                    true,
+                                enableHistorical:
+                                    this.config.monitoring?.enableHistorical ??
+                                    true,
+                                maxMetricsHistory:
+                                    this.config.monitoring?.maxMetricsHistory ??
+                                    1000,
+                                exportFormats: this.config.monitoring
+                                    ?.exportFormats ?? ['json'],
+                            }),
+                        );
+                    } catch {
+                        // ignore
+                    }
+                };
+                void doInit();
+            }
+        } else {
+            this.setMonitor(null);
+        }
         this.debug = getGlobalDebugSystem(this.config.debugging);
+
+        // Inject automatic correlation into logs
+        setLogContextProvider(() => {
+            const ctx = this.getContext();
+            if (!ctx) return undefined;
+            return {
+                correlationId: ctx.correlationId,
+                tenantId: ctx.tenantId,
+                executionId: ctx.executionId,
+            };
+        });
 
         this.logger.info('Observability system initialized', {
             environment: this.config.environment,
@@ -368,12 +447,15 @@ export class ObservabilitySystem implements ObservabilityInterface {
         }
 
         // Start telemetry span
+        const rootAttributes: Record<string, string | number | boolean> = {};
+        if (execContext?.correlationId)
+            rootAttributes['correlation.id'] = execContext.correlationId;
+        if (execContext?.tenantId)
+            rootAttributes['tenant.id'] = execContext.tenantId;
+        if (execContext?.executionId)
+            rootAttributes['execution.id'] = execContext.executionId;
         const span = this.telemetry.startSpan(name, {
-            attributes: {
-                correlationId: execContext?.correlationId || 'unknown',
-                tenantId: execContext?.tenantId || 'unknown',
-                executionId: execContext?.executionId || 'unknown',
-            },
+            attributes: rootAttributes,
         });
 
         // Start debug measurement
@@ -384,7 +466,11 @@ export class ObservabilitySystem implements ObservabilityInterface {
         const startTime = Date.now();
 
         try {
-            const result = await this.telemetry.withSpan(span, fn);
+            const result = await this.telemetry.withSpan(span, async () => {
+                const r = await fn();
+                span.setStatus({ code: 'ok' });
+                return r;
+            });
 
             const duration = Date.now() - startTime;
             this.debug.endMeasurement(measurementId);
@@ -435,16 +521,18 @@ export class ObservabilitySystem implements ObservabilityInterface {
         );
 
         // Record in telemetry
-        this.telemetry.recordMetric(
-            'histogram',
-            `measurement.${category}`,
-            measurement.duration!,
-            {
-                name,
-            },
-        );
+        if (measurement && typeof measurement.duration === 'number') {
+            this.telemetry.recordMetric(
+                'histogram',
+                `measurement.${category}`,
+                measurement.duration,
+                {
+                    name,
+                },
+            );
+        }
 
-        return { result, duration: measurement.duration! };
+        return { result, duration: (measurement && measurement.duration) ?? 0 };
     }
 
     /**
@@ -625,7 +713,10 @@ export class ObservabilitySystem implements ObservabilityInterface {
      * Flush all components
      */
     async flush(): Promise<void> {
-        await Promise.allSettled([this.debug.flush()]);
+        await Promise.allSettled([
+            this.debug.flush(),
+            this.telemetry.forceFlush(),
+        ]);
 
         this.logger.debug('Observability system flushed');
     }
@@ -998,6 +1089,49 @@ export function createObservabilityMiddleware(
     };
 }
 
+/**
+ * Gracefully shutdown observability (flush + dispose)
+ */
+export async function shutdownObservability(): Promise<void> {
+    const obs = getObservability();
+    try {
+        await obs.flush();
+    } finally {
+        await obs.dispose();
+    }
+}
+
+/**
+ * Apply error details to a span with consistent attributes and status
+ */
+export function applyErrorToSpan(
+    span: import('./telemetry.js').Span,
+    error: unknown,
+    attributes?: Record<string, string | number | boolean>,
+): void {
+    const err = error instanceof Error ? error : new Error(String(error));
+
+    const errorAttributes: Record<string, string | number | boolean> = {
+        ...(attributes || {}),
+    };
+    errorAttributes['error.name'] = err.name;
+    errorAttributes['error.message'] = err.message;
+    span.setAttributes(errorAttributes);
+    span.recordException(err);
+    span.setStatus({ code: 'error', message: err.message });
+}
+
+/**
+ * Mark span as successful with optional attributes
+ */
+export function markSpanOk(
+    span: import('./telemetry.js').Span,
+    attributes?: Record<string, string | number | boolean>,
+): void {
+    if (attributes) span.setAttributes(attributes);
+    span.setStatus({ code: 'ok' });
+}
+
 // ============================================================================
 // INTEGRATED SYSTEM HELPERS
 // ============================================================================
@@ -1015,12 +1149,10 @@ export function createObservabilityMiddleware(
  */
 export async function setupIntegratedObservability(
     environment: 'development' | 'production' | 'test' = 'development',
-    overrides?: Partial<
-        import('./unified-config.js').UnifiedObservabilityConfig
-    >,
+    overrides?: Partial<ObservabilityConfig>,
 ) {
-    const { quickSetup } = await import('./integrated-observability.js');
-    return await quickSetup(environment, overrides);
+    const obs = getObservability({ environment, ...overrides });
+    return obs;
 }
 
 /**
@@ -1037,12 +1169,10 @@ export async function setupIntegratedObservability(
  * ```
  */
 export async function setupProductionObservability(
-    overrides?: Partial<
-        import('./unified-config.js').UnifiedObservabilityConfig
-    >,
+    overrides?: Partial<ObservabilityConfig>,
 ) {
-    const { productionSetup } = await import('./integrated-observability.js');
-    return await productionSetup(overrides);
+    const obs = getObservability({ environment: 'production', ...overrides });
+    return obs;
 }
 
 /**
@@ -1059,10 +1189,8 @@ export async function setupProductionObservability(
  * ```
  */
 export async function setupDebugObservability(
-    overrides?: Partial<
-        import('./unified-config.js').UnifiedObservabilityConfig
-    >,
+    overrides?: Partial<ObservabilityConfig>,
 ) {
-    const { debugSetup } = await import('./integrated-observability.js');
-    return await debugSetup(overrides);
+    const obs = getObservability({ environment: 'development', ...overrides });
+    return obs;
 }

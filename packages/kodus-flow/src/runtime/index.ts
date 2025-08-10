@@ -283,7 +283,9 @@ export function createRuntime(
         maxQueueDepth: queueSize,
         enableObservability,
         batchSize,
-        enableAutoScaling: false, // ALWAYS disabled to prevent memory loops
+        enableAutoScaling: false, // ensure stable behavior for tests and prod
+        enableGlobalConcurrency: true,
+        maxProcessedEvents: 10000,
 
         // Persistence (enabled by default with in-memory persistor)
         enablePersistence: !!persistor,
@@ -292,12 +294,7 @@ export function createRuntime(
         persistCriticalEvents: true,
         criticalEventPrefixes: ['agent.', 'workflow.', 'kernel.'],
 
-        // Retry settings (sensible defaults)
-        enableRetry: true,
-        maxRetries,
-        baseRetryDelay: 1000,
-        maxRetryDelay: 30000,
-        enableJitter: true,
+        // Retry settings removed from EventQueue (handled externally if needed)
 
         // Event Store integration
         enableEventStore,
@@ -330,6 +327,10 @@ export function createRuntime(
         observability,
         memoryMonitor,
     );
+    // Start memory monitor unless explicitly disabled
+    if (memoryMonitor?.enabled !== false) {
+        memoryMonitorInstance.start();
+    }
 
     // ACK tracking para delivery guarantees
     const pendingAcks = new Map<
@@ -338,6 +339,10 @@ export function createRuntime(
     >();
 
     // Cleanup de ACKs expirados
+    const ackSweepIntervalMs = Math.max(
+        100,
+        Math.min(5000, Math.floor(ackTimeout / 2)),
+    );
     const ackCleanupInterval = setInterval(() => {
         const now = Date.now();
         for (const [eventId, ackInfo] of pendingAcks.entries()) {
@@ -395,7 +400,7 @@ export function createRuntime(
                 }
             }
         }
-    }, 5000);
+    }, ackSweepIntervalMs);
 
     return {
         // Event handling
@@ -676,6 +681,20 @@ export function createRuntime(
             const ackInfo = pendingAcks.get(eventId);
             if (ackInfo) {
                 pendingAcks.delete(eventId);
+                // Mark event as processed in EventStore if available
+                if (eventStore) {
+                    try {
+                        await eventStore.markEventsProcessed([eventId]);
+                    } catch (err) {
+                        if (enableObservability) {
+                            observability.logger.error(
+                                'Failed to mark event as processed in EventStore',
+                                err as Error,
+                                { eventId },
+                            );
+                        }
+                    }
+                }
                 if (enableObservability) {
                     observability.logger.debug(
                         '✅ RUNTIME - Event acknowledged (ACK)',
@@ -884,6 +903,8 @@ export function createRuntime(
                 eventProcessor.cleanup(),
                 streamManager.cleanup(),
             ]);
+            // Ensure queue resources are released
+            eventQueue.destroy();
         },
     };
 }

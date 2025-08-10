@@ -1,16 +1,17 @@
-import { createLogger } from '../../observability/index.js';
+import {
+    createLogger,
+    getObservability,
+    startAgentSpan,
+    startToolSpan,
+    applyErrorToSpan,
+    markSpanOk,
+} from '../../observability/index.js';
 import { CircuitBreaker } from '../../runtime/core/circuit-breaker.js';
 import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import { contextBuilder } from '../../core/context/context-builder.js';
-import {
-    getTimelineManager,
-    type TrackingContext,
-    type ExecutionTimeline,
-} from '../../observability/execution-timeline.js';
-import { createTimelineViewer } from '../../observability/timeline-viewer.js';
-import { EVENT_TYPES } from '../../core/types/events.js';
+// Timeline removida
 import type {
     AgentContext,
     TenantId,
@@ -486,15 +487,8 @@ export abstract class AgentCore<
                 );
             }
 
-            // Include timeline in result
-            const timelineData = correlationId
-                ? {
-                      ascii: this.getExecutionTimeline(correlationId),
-                      report: this.getExecutionReport(correlationId),
-                      json: this.exportTimelineJSON(correlationId),
-                      csv: this.exportTimelineCSV(correlationId),
-                  }
-                : null;
+            // Timeline removida
+            const timelineData = null;
 
             return {
                 success: true,
@@ -584,6 +578,7 @@ export abstract class AgentCore<
         updatedInput?: unknown;
     }> {
         const { correlationId } = context.agentExecutionOptions || {};
+        const obs = getObservability();
 
         const events: AnyEvent[] = [];
         let toolUsed = false;
@@ -668,17 +663,26 @@ export abstract class AgentCore<
                         correlationId,
                     });
 
-                    // ✅ Execute tool via events instead of direct call
-                    const toolResult = this.kernelHandler
-                        ? await this.kernelHandler.requestToolExecution(
-                              toolName,
-                              toolInput,
-                              { correlationId },
-                          )
-                        : await this.toolEngine.executeTool(
-                              toolName,
-                              toolInput,
-                          );
+                    // ✅ Observability: trace tool execution with span
+                    const toolResult = await obs.telemetry.withSpan(
+                        startToolSpan(obs.telemetry, {
+                            toolName,
+                            timeoutMs: this.config.toolTimeout,
+                            tenantId: context.tenantId,
+                            correlationId: context.correlationId,
+                        }),
+                        async () =>
+                            this.kernelHandler
+                                ? await this.kernelHandler.requestToolExecution(
+                                      toolName,
+                                      toolInput,
+                                      { correlationId },
+                                  )
+                                : await this.toolEngine!.executeTool(
+                                      toolName,
+                                      toolInput,
+                                  ),
+                    );
 
                     // Update context with tool result
                     await context.executionRuntime.setState(
@@ -4024,38 +4028,9 @@ export abstract class AgentCore<
         let iterations = 0;
         const maxIterations = this.config.maxThinkingIterations || 15;
         const inputString = String(input);
+        const obs = getObservability();
 
-        // 🎯 TIMELINE: Initialize timeline tracking
-        const timelineManager = getTimelineManager();
-        const trackingContext: TrackingContext = {
-            executionId: context.invocationId,
-            correlationId: context.correlationId,
-            agentName: this.config.agentName,
-            operationName: 'executeThinkActObserve',
-            metadata: {
-                input:
-                    typeof input === 'string'
-                        ? input.substring(0, 100)
-                        : 'complex-input',
-                maxIterations,
-            },
-        };
-
-        // Initialize timeline for this execution
-        timelineManager.createTimeline(trackingContext);
-
-        // Track execution start
-        timelineManager.trackEvent(
-            context.invocationId,
-            EVENT_TYPES.AGENT_STARTED,
-            { input: inputString },
-            {
-                metadata: {
-                    agentName: this.config.agentName,
-                    phase: 'initialization',
-                },
-            },
-        );
+        // NOTE: Timeline removida — tracing cobre início de execução
 
         // ✅ NEW: Use ContextBuilder - initialize execution history
         const executionHistory: Array<{
@@ -4092,34 +4067,32 @@ export abstract class AgentCore<
                     ?.getKernelByNamespace('agent');
                 const initialEventCount = kernel?.getState().eventCount || 0;
 
-                // 1. THINK - Planner decides next action
-                timelineManager.trackEvent(
-                    context.invocationId,
-                    EVENT_TYPES.AGENT_THINKING,
-                    { iteration: iterations, input: inputString },
-                    { metadata: { phase: 'thinking', iteration: iterations } },
-                );
+                // NOTE: Timeline removida — use spans
 
                 const thinkStartTime = Date.now();
-                const thought = await this.think(plannerInput);
-                const thinkDuration = Date.now() - thinkStartTime;
-
-                timelineManager.trackEvent(
-                    context.invocationId,
-                    EVENT_TYPES.AGENT_THOUGHT,
-                    {
-                        reasoning: thought.reasoning,
-                        action: thought.action,
-                        iteration: iterations,
-                    },
-                    {
-                        duration: thinkDuration,
-                        metadata: {
-                            phase: 'thought-complete',
-                            iteration: iterations,
-                        },
+                const thinkSpan = startAgentSpan(obs.telemetry, 'think', {
+                    agentName: this.config.agentName || 'unknown',
+                    correlationId: context.correlationId || 'unknown',
+                    iteration: iterations,
+                });
+                const thought = await obs.telemetry.withSpan(
+                    thinkSpan,
+                    async () => {
+                        try {
+                            const res = await this.think(plannerInput);
+                            markSpanOk(thinkSpan);
+                            return res;
+                        } catch (err) {
+                            applyErrorToSpan(thinkSpan, err, {
+                                phase: 'think',
+                            });
+                            throw err;
+                        }
                     },
                 );
+                const thinkDuration = Date.now() - thinkStartTime;
+
+                // NOTE: Timeline removida — use spans
 
                 // 2. ACT - Execute the decided action
                 const actStartTime = Date.now();
@@ -4127,69 +4100,63 @@ export abstract class AgentCore<
                     throw new Error('Thought action is undefined');
                 }
 
-                timelineManager.trackEvent(
-                    context.invocationId,
-                    EVENT_TYPES.TOOL_CALL,
-                    {
-                        action: thought.action,
-                        iteration: iterations,
-                    },
-                    { metadata: { phase: 'acting', iteration: iterations } },
-                );
+                // NOTE: Timeline removida — use spans
 
-                const result = await this.act(thought.action);
+                const actSpan = startAgentSpan(obs.telemetry, 'act', {
+                    agentName: this.config.agentName || 'unknown',
+                    correlationId: context.correlationId || 'unknown',
+                    iteration: iterations,
+                    attributes: {
+                        actionType: thought.action?.type || 'unknown',
+                    },
+                });
+                const result = await obs.telemetry.withSpan(
+                    actSpan,
+                    async () => {
+                        try {
+                            const res = await this.act(thought.action);
+                            markSpanOk(actSpan);
+                            return res;
+                        } catch (err) {
+                            applyErrorToSpan(actSpan, err, { phase: 'act' });
+                            throw err;
+                        }
+                    },
+                );
                 const actDuration = Date.now() - actStartTime;
 
-                timelineManager.trackEvent(
-                    context.invocationId,
-                    result.type === 'error'
-                        ? EVENT_TYPES.TOOL_ERROR
-                        : EVENT_TYPES.TOOL_RESULT,
-                    {
-                        result:
-                            result.type === 'error'
-                                ? result.error
-                                : result.content,
-                        action: thought.action,
-                        iteration: iterations,
-                    },
-                    {
-                        duration: actDuration,
-                        metadata: {
-                            phase: 'action-complete',
-                            iteration: iterations,
-                            success: result.type !== 'error',
-                        },
-                    },
-                );
+                // NOTE: Timeline removida — use spans
 
                 // ✅ REMOVER: Debugger statement
                 //
                 // 3. OBSERVE - Analyze result and decide if continue
                 const observeStartTime = Date.now();
-                const observation = await this.observe(result, plannerInput);
-                const observeDuration = Date.now() - observeStartTime;
-
-                // Track observation phase
-                timelineManager.trackEvent(
-                    context.invocationId,
-                    observation.isComplete
-                        ? EVENT_TYPES.AGENT_COMPLETED
-                        : EVENT_TYPES.AGENT_THINKING,
-                    {
-                        observation: observation.feedback,
-                        isComplete: observation.isComplete,
-                        iteration: iterations,
-                    },
-                    {
-                        duration: observeDuration,
-                        metadata: {
-                            phase: 'observation-complete',
-                            iteration: iterations,
-                            willContinue: !observation.isComplete,
-                        },
+                const observeSpan = startAgentSpan(obs.telemetry, 'observe', {
+                    agentName: this.config.agentName || 'unknown',
+                    correlationId: context.correlationId || 'unknown',
+                    iteration: iterations,
+                });
+                const observation = await obs.telemetry.withSpan(
+                    observeSpan,
+                    async () => {
+                        try {
+                            const res = await this.observe(
+                                result,
+                                plannerInput,
+                            );
+                            markSpanOk(observeSpan);
+                            return res;
+                        } catch (err) {
+                            applyErrorToSpan(observeSpan, err, {
+                                phase: 'observe',
+                            });
+                            throw err;
+                        }
                     },
                 );
+                const observeDuration = Date.now() - observeStartTime;
+
+                // NOTE: Timeline removida — use spans
 
                 // ✅ REMOVER: Debugger statement
                 //
@@ -4297,23 +4264,7 @@ export abstract class AgentCore<
 
                 // 5. CHECK - Early termination conditions
                 if (observation.isComplete) {
-                    // Track successful completion
-                    timelineManager.trackEvent(
-                        context.invocationId,
-                        EVENT_TYPES.AGENT_COMPLETED,
-                        {
-                            finalResult: observation.feedback,
-                            totalIterations: iterations,
-                            executionHistory: executionHistory.length,
-                        },
-                        {
-                            metadata: {
-                                phase: 'execution-complete',
-                                success: true,
-                                reason: 'task-completed',
-                            },
-                        },
-                    );
+                    // NOTE: Timeline removida — use spans
 
                     // ✅ STORE: Save execution insights to Memory for future use
                     await this.storeExecutionInsights(
@@ -5204,48 +5155,34 @@ export abstract class AgentCore<
     /**
      * Obter timeline visual ASCII para o usuário
      */
-    public getExecutionTimeline(
-        correlationId: string,
-        format: 'ascii' | 'detailed' | 'compact' = 'ascii',
-    ): string {
-        const viewer = createTimelineViewer();
-        return viewer.showTimeline(correlationId, {
-            format,
-            showData: true,
-            showPerformance: true,
-        });
-    }
+    // Timeline removida
 
     /**
      * Obter relatório completo de execução
      */
-    public getExecutionReport(correlationId: string): string {
-        const viewer = createTimelineViewer();
-        return viewer.generateReport(correlationId);
+    public getExecutionReport(_correlationId: string): string {
+        return '';
     }
 
     /**
      * Exportar timeline como JSON estruturado
      */
-    public exportTimelineJSON(correlationId: string): string {
-        const viewer = createTimelineViewer();
-        return viewer.exportToJSON(correlationId);
+    public exportTimelineJSON(_correlationId: string): string {
+        return '{}';
     }
 
     /**
      * Exportar timeline como CSV para análise
      */
-    public exportTimelineCSV(correlationId: string): string {
-        const viewer = createTimelineViewer();
-        return viewer.exportToCSV(correlationId);
+    public exportTimelineCSV(_correlationId: string): string {
+        return '';
     }
 
     /**
      * Obter timeline raw do TimelineManager
      */
-    public getRawTimeline(executionId: string): ExecutionTimeline | undefined {
-        const timelineManager = getTimelineManager();
-        return timelineManager.getTimeline(executionId);
+    public getRawTimeline(_executionId: string): undefined {
+        return undefined;
     }
 
     // ──────────────────────────────────────────────────────────────────────────────

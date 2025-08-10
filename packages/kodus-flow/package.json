@@ -77,6 +77,12 @@
         "zod-from-json-schema": "^0.4.2"
     },
     "devDependencies": {
+        "@opentelemetry/api": "^1.9.0",
+        "@opentelemetry/exporter-trace-otlp-http": "^0.203.0",
+        "@opentelemetry/resources": "^2.0.1",
+        "@opentelemetry/sdk-trace-base": "^2.0.1",
+        "@opentelemetry/sdk-trace-node": "^2.0.1",
+        "@opentelemetry/semantic-conventions": "^1.36.0",
         "@types/ajv": "^1.0.4",
         "@types/events": "^3.0.3",
         "@types/node": "^24.2.0",
@@ -100,6 +106,14 @@
         "vite": "^7.0.6",
         "vite-tsconfig-paths": "^5.1.4",
         "vitest": "^3.2.4"
+    },
+    "peerDependencies": {
+        "@opentelemetry/api": "^1.9.0"
+    },
+    "peerDependenciesMeta": {
+        "@opentelemetry/api": {
+            "optional": true
+        }
     },
     "engines": {
         "node": ">=18.0.0"

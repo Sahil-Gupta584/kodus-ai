@@ -1,4 +1,5 @@
-import { createLogger } from '../observability/index.js';
+import { createLogger, getObservability } from '../observability/index.js';
+import type { ObservabilityConfig } from '../observability/index.js';
 import { EngineError } from '../core/errors.js';
 import { ToolEngine } from '../engine/tools/tool-engine.js';
 import { defineTool } from '../core/types/tool-types.js';
@@ -9,17 +10,13 @@ import { IdGenerator } from '../utils/id-generator.js';
 import { createDefaultMultiKernelHandler } from '../engine/core/multi-kernel-handler.js';
 import { ContextBuilder } from '../core/context/context-builder.js';
 
-// ✅ NEW: Timeline imports
-import { getTimelineManager } from '../observability/execution-timeline.js';
-import { createTimelineViewer } from '../observability/timeline-viewer.js';
-import type { ExecutionTimeline } from '../observability/execution-timeline.js';
+// Timeline removida
 
 import type { LLMAdapter } from '../adapters/llm/index.js';
 import type { PlannerType } from '../engine/planning/planner-factory.js';
 import type {
     AgentDefinition,
     AgentExecutionOptions,
-    AgentExecutionResult,
 } from '../core/types/agent-types.js';
 import { agentIdentitySchema } from '../core/types/agent-types.js';
 import type { AgentCoreConfig } from '../engine/agents/agent-core.js';
@@ -94,6 +91,9 @@ export interface OrchestrationConfig {
         };
     };
 
+    // ✅ NEW: Observability programática (sem depender de env)
+    observability?: Partial<ObservabilityConfig>;
+
     // ✅ DEPRECATED: Legacy persistorConfig (for backward compatibility)
     /** @deprecated Use storage.persistor instead */
     persistorConfig?: {
@@ -150,7 +150,6 @@ export interface OrchestrationResult<T = unknown> {
     result?: T;
     error?: string;
     context: Record<string, unknown>;
-    duration: number;
     metadata?: Record<string, unknown>;
 }
 
@@ -167,6 +166,10 @@ export class SDKOrchestrator {
     private kernelHandler?: ReturnType<typeof createDefaultMultiKernelHandler>;
 
     constructor(config: OrchestrationConfig) {
+        // Apply observability configuration early (updates global system)
+        if (config.observability) {
+            getObservability(config.observability);
+        }
         // LLM é OBRIGATÓRIO!
         if (!config.llmAdapter) {
             throw new EngineError(
@@ -202,6 +205,9 @@ const orchestrator = new SDKOrchestrator({
             // ✅ NEW: Clean storage config
             storage: config.storage || {},
 
+            // ✅ NEW: Observability config (default vazio)
+            observability: config.observability || {},
+
             // ✅ BACKWARD COMPATIBILITY: Keep legacy persistorConfig
             persistorConfig: config.persistorConfig ||
                 config.storage?.persistor || {
@@ -216,7 +222,6 @@ const orchestrator = new SDKOrchestrator({
         this.mcpAdapter = config.mcpAdapter;
         this.toolEngine = new ToolEngine();
 
-        // ✅ Configure ContextBuilder with storage configuration
         this.logger.info(
             'About to configure ContextBuilder with storage config',
             {
@@ -226,7 +231,6 @@ const orchestrator = new SDKOrchestrator({
         );
         this.configureContextBuilder();
 
-        // Initialize multi-kernel handler with separate kernels for observability and agent execution
         this.kernelHandler = createDefaultMultiKernelHandler(
             this.config.tenantId,
             {
@@ -376,6 +380,11 @@ const orchestrator = new SDKOrchestrator({
     ): Promise<OrchestrationResult<unknown>> {
         const startTime = Date.now();
         const correlationId = IdGenerator.correlationId();
+        const obs = getObservability();
+        const obsContext = obs.createContext(correlationId);
+        obsContext.tenantId = this.config.tenantId;
+        obsContext.metadata = { agentName };
+        obs.setContext(obsContext);
 
         this.logger.info('🚀 SDK ORCHESTRATOR - Agent execution started', {
             agentName,
@@ -456,8 +465,6 @@ const orchestrator = new SDKOrchestrator({
                 tenantId: this.config.tenantId,
             } as AgentExecutionOptions;
 
-            let result: AgentExecutionResult<unknown>;
-
             this.logger.info('⚡ SDK ORCHESTRATOR - Starting agent execution', {
                 agentName,
                 correlationId,
@@ -471,41 +478,66 @@ const orchestrator = new SDKOrchestrator({
                 },
             });
 
-            if (agentData.instance instanceof AgentEngine) {
-                this.logger.debug(
-                    '🔧 SDK ORCHESTRATOR - Executing via AgentEngine',
-                    {
-                        agentName,
-                        correlationId,
-                        trace: {
-                            source: 'sdk-orchestrator',
-                            step: 'agent-engine-execute',
-                            timestamp: Date.now(),
-                        },
-                    },
-                );
-                result = await agentData.instance.execute(
-                    input,
-                    executionOptions,
-                );
-            } else if (agentData.instance instanceof AgentExecutor) {
-                this.logger.debug(
-                    '🔧 SDK ORCHESTRATOR - Executing via AgentExecutor (workflow)',
-                    {
-                        agentName,
-                        correlationId,
-                        trace: {
-                            source: 'sdk-orchestrator',
-                            step: 'agent-executor-execute',
-                            timestamp: Date.now(),
-                        },
-                    },
-                );
-                result = await agentData.instance.executeViaWorkflow(
-                    input,
-                    executionOptions,
-                );
-            } else {
+            // Root trace with error recording
+            const result = await obs.trace(
+                'orchestration.call_agent',
+                async () => {
+                    if (agentData.instance instanceof AgentEngine) {
+                        this.logger.debug(
+                            '🔧 SDK ORCHESTRATOR - Executing via AgentEngine',
+                            {
+                                agentName,
+                                correlationId,
+                                trace: {
+                                    source: 'sdk-orchestrator',
+                                    step: 'agent-engine-execute',
+                                    timestamp: Date.now(),
+                                },
+                            },
+                        );
+                        return await agentData.instance.execute(
+                            input,
+                            executionOptions,
+                        );
+                    }
+                    if (agentData.instance instanceof AgentExecutor) {
+                        this.logger.debug(
+                            '🔧 SDK ORCHESTRATOR - Executing via AgentExecutor (workflow)',
+                            {
+                                agentName,
+                                correlationId,
+                                trace: {
+                                    source: 'sdk-orchestrator',
+                                    step: 'agent-executor-execute',
+                                    timestamp: Date.now(),
+                                },
+                            },
+                        );
+                        return await agentData.instance.executeViaWorkflow(
+                            input,
+                            executionOptions,
+                        );
+                    }
+
+                    // Unknown instance type
+                    return Promise.reject(
+                        new EngineError(
+                            'AGENT_ERROR',
+                            `Unknown agent instance type for '${agentName}'`,
+                        ),
+                    );
+                },
+                {
+                    correlationId,
+                    tenantId: this.config.tenantId,
+                    metadata: { agentName },
+                },
+            );
+
+            if (
+                !(agentData.instance instanceof AgentEngine) &&
+                !(agentData.instance instanceof AgentExecutor)
+            ) {
                 this.logger.error(
                     '❌ SDK ORCHESTRATOR - Unknown agent instance type',
                     new Error(`Unknown agent instance type for '${agentName}'`),
@@ -553,12 +585,10 @@ const orchestrator = new SDKOrchestrator({
                     correlationId,
                     threadId: thread.id,
                     duration,
-                },
-                duration,
-                metadata: {
-                    agentName,
-                    correlationId,
                     executionMode: agentData.config.executionMode,
+                },
+                metadata: {
+                    ...result?.metadata,
                 },
             };
         } catch (error) {
@@ -593,7 +623,6 @@ const orchestrator = new SDKOrchestrator({
                     correlationId,
                     duration,
                 },
-                duration,
                 metadata: {
                     agentName,
                     correlationId,
@@ -603,6 +632,9 @@ const orchestrator = new SDKOrchestrator({
                             : 'Unknown error',
                 },
             };
+        } finally {
+            // Clear context to avoid leaking across executions
+            obs.clearContext();
         }
     }
 
@@ -669,7 +701,6 @@ const orchestrator = new SDKOrchestrator({
                     correlationId,
                     duration,
                 },
-                duration,
                 metadata: {
                     toolName,
                     correlationId,
@@ -691,7 +722,6 @@ const orchestrator = new SDKOrchestrator({
                     correlationId,
                     duration,
                 },
-                duration,
                 metadata: {
                     toolName,
                     correlationId,
@@ -1046,123 +1076,6 @@ const orchestrator = new SDKOrchestrator({
                 error as Error,
             );
         }
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 🕐 TIMELINE MANAGEMENT - Acesso ao timeline de execução
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Obter timeline de execução formatado
-     */
-    getExecutionTimeline(
-        correlationId: string,
-        format: 'ascii' | 'detailed' | 'compact' = 'ascii',
-    ): string {
-        const timelineManager = getTimelineManager();
-        const timeline = timelineManager.getTimeline(correlationId);
-
-        if (!timeline) {
-            return `❌ Timeline não encontrado para correlationId: ${correlationId}`;
-        }
-
-        const viewer = createTimelineViewer();
-        return viewer.showTimeline(correlationId, {
-            format,
-            showData: true,
-            showPerformance: true,
-        });
-    }
-
-    /**
-     * Obter relatório completo de execução
-     */
-    getExecutionReport(correlationId: string): string {
-        const timelineManager = getTimelineManager();
-        const timeline = timelineManager.getTimeline(correlationId);
-
-        if (!timeline) {
-            return `❌ Timeline não encontrado para correlationId: ${correlationId}`;
-        }
-
-        const viewer = createTimelineViewer();
-        return viewer.generateReport(correlationId);
-    }
-
-    /**
-     * Obter timeline raw para análise programática
-     */
-    getRawTimeline(correlationId: string): ExecutionTimeline | undefined {
-        const timelineManager = getTimelineManager();
-        return timelineManager.getTimeline(correlationId);
-    }
-
-    /**
-     * Exportar timeline como JSON
-     */
-    exportTimelineJSON(correlationId: string): string {
-        const timelineManager = getTimelineManager();
-        const timeline = timelineManager.getTimeline(correlationId);
-
-        if (!timeline) {
-            return `❌ Timeline não encontrado para correlationId: ${correlationId}`;
-        }
-
-        const viewer = createTimelineViewer();
-        return viewer.exportToJSON(correlationId);
-    }
-
-    /**
-     * Exportar timeline como CSV
-     */
-    exportTimelineCSV(correlationId: string): string {
-        const timelineManager = getTimelineManager();
-        const timeline = timelineManager.getTimeline(correlationId);
-
-        if (!timeline) {
-            return `❌ Timeline não encontrado para correlationId: ${correlationId}`;
-        }
-
-        const viewer = createTimelineViewer();
-        return viewer.exportToCSV(correlationId);
-    }
-
-    /**
-     * Listar todas as execuções ativas com timeline
-     */
-    getActiveExecutions(): Array<{
-        correlationId: string;
-        agentName: string;
-        status: string;
-        startTime: number;
-        duration?: number;
-        entryCount: number;
-    }> {
-        const timelineManager = getTimelineManager();
-        return timelineManager.getAllTimelines().map((timeline) => ({
-            correlationId: timeline.correlationId,
-            agentName: (timeline.metadata?.agentName as string) || 'unknown',
-            status: timeline.currentState,
-            startTime: timeline.startTime,
-            duration: timeline.totalDuration,
-            entryCount: timeline.entries.length,
-        }));
-    }
-
-    /**
-     * Limpar timelines antigos (cleanup)
-     */
-    cleanupOldTimelines(maxAgeMs: number = 24 * 60 * 60 * 1000): number {
-        const timelineManager = getTimelineManager();
-        return timelineManager.cleanupOldTimelines(maxAgeMs);
-    }
-
-    /**
-     * Verificar se timeline existe
-     */
-    hasTimeline(correlationId: string): boolean {
-        const timelineManager = getTimelineManager();
-        return timelineManager.getTimeline(correlationId) !== undefined;
     }
 }
 

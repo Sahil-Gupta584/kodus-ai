@@ -770,3 +770,13 @@ export function getLayeredMetricsSystem(): LayeredMetricsSystem | null {
 export function setLayeredMetricsSystem(system: LayeredMetricsSystem): void {
     globalMetricsSystem = system;
 }
+
+// Bootstrap simples: inicia sistema global se ainda não existir (DX)
+export function ensureMetricsSystem(
+    config: MetricsConfig,
+): LayeredMetricsSystem {
+    if (!globalMetricsSystem) {
+        globalMetricsSystem = new LayeredMetricsSystem(config);
+    }
+    return globalMetricsSystem;
+}
