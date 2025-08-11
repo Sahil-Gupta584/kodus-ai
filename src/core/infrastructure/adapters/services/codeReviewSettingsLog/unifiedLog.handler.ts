@@ -71,14 +71,14 @@ export class UnifiedLogHandler {
                 userInfo,
             });
 
-        if (configLevel === ConfigLevel.REPOSITORY) {
+        if (configLevel === ConfigLevel.REPOSITORY && !repository?.name) {
             repository.name = await this.getRepositoryAdditionalInfo(
                 repository?.id,
                 organizationAndTeamData.organizationId,
             );
         }
 
-        if (configLevel === ConfigLevel.DIRECTORY) {
+        if (configLevel === ConfigLevel.DIRECTORY && !directory?.path) {
             directory.path = await this.getDirectoryAdditionalInfo(
                 directory?.id,
                 repository?.id,
@@ -115,7 +115,7 @@ export class UnifiedLogHandler {
         } = params;
 
         try {
-            if (configLevel === ConfigLevel.REPOSITORY) {
+            if (configLevel === ConfigLevel.REPOSITORY && !repository?.name) {
                 repository.name = await this.getRepositoryAdditionalInfo(
                     repository?.id,
                     organizationAndTeamData.organizationId,
@@ -131,7 +131,7 @@ export class UnifiedLogHandler {
         }
 
         try {
-            if (configLevel === ConfigLevel.DIRECTORY) {
+            if (configLevel === ConfigLevel.DIRECTORY && !directory?.path) {
                 directory.path = await this.getDirectoryAdditionalInfo(
                     directory?.id,
                     repository?.id,
