@@ -258,7 +258,10 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                     id: repository.id,
                     name: repository.name,
                 },
-                //directoryPath: currentDirectoryConfig.path,
+                directory: {
+                    id: currentDirectoryConfig.id,
+                    path: currentDirectoryConfig.path,
+                },
             });
         } catch (error) {
             this.logger.error({
