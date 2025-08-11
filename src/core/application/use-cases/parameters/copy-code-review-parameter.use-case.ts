@@ -221,6 +221,9 @@ export class CopyCodeReviewParameterUseCase {
             id: targetRepository.id,
             name: targetRepository.name,
             isSelected: true,
+            ...(targetRepository.directories && {
+                directories: targetRepository.directories,
+            }),
         };
 
         const updatedRepositories = codeReviewConfigValue.repositories.map(
