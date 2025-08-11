@@ -278,7 +278,8 @@ export class KodyRulesSyncService {
                 .builder()
                 .setProviders({
                     main: LLMModelProvider.NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT,
-                    fallback: LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507,
+                    fallback:
+                        LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507,
                 })
                 .setParser<Array<Partial<CreateKodyRuleDto>>>(ParserType.JSON)
                 .setLLMJsonMode(true)
