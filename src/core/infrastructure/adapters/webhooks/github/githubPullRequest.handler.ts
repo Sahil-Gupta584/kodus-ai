@@ -225,9 +225,35 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                         });
 
                         pullRequestData = {
-                            // TODO: test
                             ...data,
-                            pull_request: data,
+                            pull_request: {
+                                ...data,
+                                repository: {
+                                    id: repository.id,
+                                    name: repository.name,
+                                },
+                                head: {
+                                    ref: data?.head?.ref,
+                                    repo: {
+                                        fullName: data?.head?.repo?.fullName,
+                                    },
+                                },
+                                base: {
+                                    ref: data?.base?.ref,
+                                    repo: {
+                                        fullName: data?.base?.repo?.fullName,
+                                        defaultBranch:
+                                            data?.base?.repo?.defaultBranch,
+                                    },
+                                },
+                                title: data?.title,
+                                body: data?.body,
+                                user: {
+                                    id: data?.user?.id,
+                                    login: data?.user?.login,
+                                    name: data?.user?.name,
+                                },
+                            },
                         };
                     }
                 }
