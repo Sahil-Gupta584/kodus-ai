@@ -35,7 +35,18 @@ export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase {
                 return [...acc, ...entity.rules];
             }, []);
 
-            const rules = allRules.filter((rule) => {
+            let filteredRules = allRules;
+
+            if (repositoryId && !directoryId) {
+                filteredRules = allRules.filter((rule) => !rule.directoryId);
+            } else if (repositoryId && directoryId) {
+                filteredRules = allRules.filter(
+                    (rule) => rule.directoryId === directoryId,
+                );
+            }
+
+            // Aplica o filtro personalizado passado como parâmetro
+            const rules = filteredRules.filter((rule) => {
                 for (const key in filter) {
                     if (rule[key] !== filter[key]) {
                         return false;
