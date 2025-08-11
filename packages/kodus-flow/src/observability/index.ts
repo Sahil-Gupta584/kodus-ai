@@ -20,12 +20,7 @@ import dns from 'dns';
 export * from './telemetry.js';
 export * from './monitoring.js';
 export * from './debugging.js';
-export {
-    createOtelTracerAdapter,
-    OtelTracerAdapter,
-    setupOtelTracing,
-    type SetupOtelTracingOptions,
-} from './otel-adapter.js';
+export { createOtelTracerAdapter, OtelTracerAdapter } from './otel-adapter.js';
 // Helpers de domínio para spans
 export {
     startAgentSpan,

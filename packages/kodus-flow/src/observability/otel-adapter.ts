@@ -152,7 +152,7 @@ export async function createOtelTracerAdapter(): Promise<OtelTracerAdapter> {
  * Opções para configurar o SDK do OpenTelemetry (Node) com OTLP HTTP Exporter.
  * Mantemos os tipos leves para evitar dependência de tipos do OTEL no core.
  */
-export interface SetupOtelTracingOptions {
+/* export interface SetupOtelTracingOptions {
     exporterUrl: string;
     headers?: string | Record<string, string>;
     serviceName?: string;
@@ -164,21 +164,9 @@ export interface SetupOtelTracingOptions {
     maxExportBatchSize?: number; // default: 512
     scheduledDelayMillis?: number; // default: 2000
     exportTimeoutMillis?: number; // default: 10000
-}
+} */
 
-function parseHeaders(
-    input?: string | Record<string, string>,
-): Record<string, string> | undefined {
-    if (!input) return undefined;
-    if (typeof input !== 'string') return input;
-    // Suporta formato "a=b,c=d" (OTEL padrão em env var)
-    const headers: Record<string, string> = {};
-    for (const pair of input.split(',')) {
-        const [k, v] = pair.split('=').map((s) => s?.trim());
-        if (k && typeof v === 'string') headers[k] = v;
-    }
-    return Object.keys(headers).length > 0 ? headers : undefined;
-}
+// (removido) parseHeaders
 
 /**
  * Configura o SDK do OpenTelemetry em Node (Provider + BatchSpanProcessor + OTLP Exporter)
@@ -190,7 +178,7 @@ function parseHeaders(
  *            @opentelemetry/exporter-trace-otlp-http @opentelemetry/resources \
  *            @opentelemetry/semantic-conventions
  */
-export async function setupOtelTracing(
+/* export async function setupOtelTracing(
     options: SetupOtelTracingOptions,
 ): Promise<OtelTracerAdapter> {
     const {
@@ -210,7 +198,7 @@ export async function setupOtelTracing(
     try {
         // Imports dinâmicos (sem tipos para evitar acoplamento do core)
         const traceNodeMod = (await import(
-            '@opentelemetry/sdk-trace-node'
+            '@opentelemetry/' + 'sdk-trace-node'
         )) as unknown;
         const nodeTracerProviderCtor = (
             traceNodeMod as Record<string, unknown>
@@ -220,7 +208,7 @@ export async function setupOtelTracing(
         };
 
         const traceBaseMod = (await import(
-            '@opentelemetry/sdk-trace-base'
+            '@opentelemetry/' + 'sdk-trace-base'
         )) as unknown;
         const batchSpanProcessorCtor = (
             traceBaseMod as Record<string, unknown>
@@ -242,14 +230,14 @@ export async function setupOtelTracing(
         ] as new () => unknown;
 
         const exporterMod = (await import(
-            '@opentelemetry/exporter-trace-otlp-http'
+            '@opentelemetry/' + 'exporter-trace-otlp-http'
         )) as unknown;
         const otlpTraceExporterCtor = (exporterMod as Record<string, unknown>)[
             'OTLPTraceExporter'
         ] as new (cfg: unknown) => unknown;
 
         const resourcesMod = (await import(
-            '@opentelemetry/resources'
+            '@opentelemetry/' + 'resources'
         )) as unknown;
         const resourceCtor = (resourcesMod as Record<string, unknown>)[
             'Resource'
@@ -312,4 +300,4 @@ export async function setupOtelTracing(
         error.message = `${error.message}\n${hint}`;
         throw error;
     }
-}
+} */

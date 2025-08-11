@@ -81,7 +81,6 @@ export {
     createLogger,
     setLoggerProvider,
     createOtelTracerAdapter,
-    setupOtelTracing,
     shutdownObservability,
 } from './observability/index.js';
 

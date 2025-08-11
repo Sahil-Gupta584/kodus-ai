@@ -3,22 +3,15 @@
 Para captura 100% de spans em alta escala, use OpenTelemetry com o BatchSpanProcessor + OTLP exporter:
 
 ```ts
-import { getObservability, setupOtelTracing } from './src/observability/index.js';
+import { getObservability, createOtelTracerAdapter } from './src/observability/index.js';
 
-// 1) Setup do OTEL
-const tracerAdapter = await setupOtelTracing({
-  exporterUrl: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
-  maxQueueSize: 20480,
-  maxExportBatchSize: 512,
-  scheduledDelayMillis: 2000,
-  exportTimeoutMillis: 10000,
-});
-
-// 2) Plug no ObservabilitySystem
+// 1) Configure o SDK OTEL no host (fora deste exemplo)
+// 2) Crie o adapter e plugue no ObservabilitySystem
+const tracerAdapter = await createOtelTracerAdapter();
 const obs = getObservability({
   telemetry: {
     enabled: true,
-    sampling: { rate: 1, strategy: 'probabilistic' }, // habilite 1.0 apenas quando necessário
+    sampling: { rate: 1, strategy: 'probabilistic' },
     externalTracer: tracerAdapter,
     privacy: { includeSensitiveData: false },
   },

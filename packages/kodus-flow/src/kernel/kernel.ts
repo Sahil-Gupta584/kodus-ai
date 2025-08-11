@@ -1800,7 +1800,9 @@ export class ExecutionKernel {
             throw new Error('Runtime not initialized');
         }
 
-        return this.config.runtimeConfig?.middleware?.map((m) => m.name) || [];
+        const names =
+            this.config.runtimeConfig?.middleware?.map((m) => m.name) || [];
+        return names.filter((n): n is string => typeof n === 'string');
     }
 
     // ===== MEMORY MANAGEMENT =====
