@@ -45,6 +45,11 @@ export class AddLibraryKodyRulesDto {
     @IsString({ each: true })
     repositoriesIds: string[];
 
+    @IsArray()
+    @IsString({ each: true })
+    @IsOptional()
+    directoriesIds?: string[];
+
     @IsOptional()
     @IsArray()
     @ValidateNested({ each: true })
