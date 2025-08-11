@@ -158,20 +158,11 @@ function separateMiddlewares(middlewares: Middleware[]): {
     const handlerMiddlewares: Middleware[] = [];
 
     for (const middleware of middlewares) {
-        // Identificar middlewares de pipeline por nome da função ou toString
-        const middlewareStr = middleware.toString();
-        if (
-            middlewareStr.includes('withRetry') ||
-            middlewareStr.includes('withTimeout') ||
-            middlewareStr.includes('withConcurrency') ||
-            middlewareStr.includes('withSchedule') ||
-            middlewareStr.includes('withRetryWrapped') ||
-            middlewareStr.includes('withTimeoutWrapped') ||
-            middlewareStr.includes('withConcurrencyWrapped')
-        ) {
+        const kind = middleware.kind;
+        if (kind === 'pipeline') {
             pipelineMiddlewares.push(middleware);
         } else {
-            // Middlewares de handler: validate, etc.
+            // Default para 'handler' quando não especificado
             handlerMiddlewares.push(middleware);
         }
     }

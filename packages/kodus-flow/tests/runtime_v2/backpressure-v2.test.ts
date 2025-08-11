@@ -24,7 +24,6 @@ describe.sequential('EventQueue V2 - Backpressure', () => {
         expect(stats.size).toBe(5);
         // Em getStats, o flag é cacheado no último shouldActivateBackpressure()
         // Chamamos manualmente para definir o cache antes de assert
-        // @ts-ignore
         queue['shouldActivateBackpressure']?.();
         expect(queue.getStats().backpressureActive).toBe(true);
     });

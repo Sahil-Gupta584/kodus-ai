@@ -23,13 +23,6 @@ describe.sequential('EventQueue V2 - Basic operations', () => {
 
         const e1 = createEvent('v2.queue.1', { a: 1 });
         await queue.enqueue(e1);
-        // cleaned debug
-        // debug: inspect internal queue ids if size != 1
-        const internalQueue = (
-            queue as unknown as { queue: Array<{ event: { id: string } }> }
-        ).queue;
-        // eslint-disable-next-line no-console
-        // cleaned debug
         expect(queue.getStats().size).toBe(1);
 
         const peeked = queue.peek();
@@ -65,9 +58,9 @@ describe.sequential('EventQueue V2 - Basic operations', () => {
         await queue.enqueue(med, 1);
         await queue.enqueue(high, 2);
 
-        const order: Array<ReturnType<typeof createEvent>> = [] as any;
+        const order: ReturnType<typeof createEvent>[] = [];
         const count = await queue.processBatch(async (e) => {
-            order.push(e as any);
+            order.push(e as ReturnType<typeof createEvent>);
         });
         expect(count).toBe(3);
         expect(order).toEqual([high, med, low]);

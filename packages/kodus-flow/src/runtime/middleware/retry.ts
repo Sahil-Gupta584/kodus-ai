@@ -3,7 +3,7 @@ import type { Event } from '../../core/types/events.js';
 import type { RetryOptions } from '../../core/types/retry-types.js';
 import { KernelError } from '../../core/errors.js';
 import { getActiveSpan } from '../../observability/index.js'; // span helper
-import type { MiddlewareFactoryType } from './types.js';
+import type { Middleware, MiddlewareFactoryType } from './types.js';
 
 const DEFAULT: RetryOptions = {
     maxRetries: 3,
@@ -67,7 +67,7 @@ export const withRetry: MiddlewareFactoryType<Partial<RetryOptions>, Event> = (
 ) => {
     const cfg: RetryOptions = { ...DEFAULT, ...opts };
 
-    return function <E extends Event, R = Event | void>(
+    const middleware = function <E extends Event, R = Event | void>(
         handler: (ev: E, signal?: AbortSignal) => Promise<R> | R,
     ) {
         const wrapped = async function withRetryWrapped(
@@ -80,7 +80,6 @@ export const withRetry: MiddlewareFactoryType<Partial<RetryOptions>, Event> = (
 
             while (true) {
                 try {
-                    // Chamar handler apenas com o evento, ignorando signal se não for aceito
                     if (handler.length === 1) {
                         return await (handler as (ev: E) => Promise<R> | R)(ev);
                     } else {
@@ -90,7 +89,6 @@ export const withRetry: MiddlewareFactoryType<Partial<RetryOptions>, Event> = (
                     attempt++;
                     span?.setAttribute('retry.attempt', attempt);
 
-                    /* 1. limite de tentativas / tempo total */
                     if (
                         attempt > cfg.maxRetries ||
                         Date.now() - started > cfg.maxTotalMs
@@ -105,17 +103,14 @@ export const withRetry: MiddlewareFactoryType<Partial<RetryOptions>, Event> = (
                         );
                     }
 
-                    /* 2. não é erro retryable → repropaga */
                     if (!isRetryable(err, cfg)) throw err;
 
-                    /* 3. métrica segura */
                     if (hasCostCtx(ev)) {
                         const cost =
                             ev.ctx!.cost ?? (ev.ctx!.cost = { retries: 0 });
                         cost.retries += 1;
                     }
 
-                    /* 4. backoff */
                     const delay = backoff(attempt, cfg);
                     await new Promise<void>((res, rej) => {
                         const t = setTimeout(res, delay);
@@ -136,5 +131,10 @@ export const withRetry: MiddlewareFactoryType<Partial<RetryOptions>, Event> = (
         };
 
         return wrapped;
-    };
+    } as Middleware<Event>;
+
+    middleware.kind = 'pipeline';
+    middleware.name = 'withRetry';
+
+    return middleware;
 };

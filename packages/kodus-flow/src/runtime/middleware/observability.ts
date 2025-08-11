@@ -5,7 +5,7 @@
 
 import type { Event } from '../../core/types/events.js';
 import type { EventHandler } from '../../core/types/common-types.js';
-import type { MiddlewareFactoryType } from './types.js';
+import type { Middleware, MiddlewareFactoryType } from './types.js';
 import {
     getObservability,
     applyErrorToSpan,
@@ -35,7 +35,9 @@ export const withObservability: MiddlewareFactoryType<
         ? new Set(options.excludeEventTypes)
         : undefined;
 
-    return <T extends Event>(handler: EventHandler<T>): EventHandler<T> => {
+    const middleware = (<T extends Event>(
+        handler: EventHandler<T>,
+    ): EventHandler<T> => {
         return async (event: T) => {
             const obs = getObservability();
 
@@ -86,5 +88,10 @@ export const withObservability: MiddlewareFactoryType<
                 throw error;
             }
         };
-    };
+    }) as Middleware<Event>;
+
+    middleware.kind = 'handler';
+    middleware.name = 'withObservability';
+
+    return middleware;
 };

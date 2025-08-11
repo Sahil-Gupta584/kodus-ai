@@ -34,7 +34,6 @@ export class ConversationAgentProvider {
         private readonly configService: ConfigService,
         private readonly llmProviderService: LLMProviderService,
         private readonly mcpManagerService?: MCPManagerService,
-        private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.config =
             this.configService.get<DatabaseConnection>('mongoDatabase');
@@ -56,110 +55,57 @@ export class ConversationAgentProvider {
 
         const wrappedLLM = {
             async call(messages: any[], options: any = {}) {
-                const provider = LLMModelProvider.GEMINI_2_5_PRO;
-                const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+                const lcMessages = messages.map((m) => ({
+                    type:
+                        m.role === 'system'
+                            ? 'system'
+                            : m.role === 'user'
+                              ? 'human'
+                              : 'ai',
+                    content: m.content,
+                }));
 
-                const analysis = await this.promptRunnerService
-                    .builder()
-                    .setProviders({
-                        main: provider,
-                        fallback: fallbackProvider,
-                    })
-                    .setParser(ParserType.STRING)
-                    .setLLMJsonMode(true)
-                    .setPayload(baseContext)
-                    .addPrompt({
-                        prompt: prompt_codereview_system_gemini,
-                        role: PromptRole.SYSTEM,
-                        scope: PromptScope.MAIN,
-                    })
-                    .addPrompt({
-                        prompt: prompt_codereview_user_gemini,
-                        role: PromptRole.USER,
-                        scope: PromptScope.MAIN,
-                    })
-                    .addPrompt({
-                        prompt: prompt_codereview_user_deepseek,
-                        role: PromptRole.USER,
-                        scope: PromptScope.FALLBACK,
-                    })
-                    .setTemperature(0)
-                    .addCallbacks([this.tokenTracker])
-                    .setRunName('analyzeCodeWithAI')
-                    .execute();
+                let model = base;
+                if (options.tools?.length) {
+                    const toolDefs = options.tools.map((t: any) => ({
+                        type: 'function',
+                        function: {
+                            name: sanitizeName(t.name),
+                            description: t.description ?? '',
+                            parameters: {
+                                ...t.parameters,
+                                additionalProperties: false,
+                            },
+                        },
+                    }));
 
-                const analysisResult =
-                    this.llmResponseProcessor.processResponse(
-                        organizationAndTeamData,
-                        prNumber,
-                        analysis,
-                    );
+                    const bindOpts: any = {};
+                    if (options.toolChoice) {
+                        bindOpts.tool_choice = options.toolChoice;
+                    }
 
-                if (!analysisResult) {
-                    return null;
+                    model = (base as any).bindTools(toolDefs, bindOpts);
                 }
 
-                analysisResult.codeReviewModelUsed = {
-                    generateSuggestions: provider,
-                };
+                const resp = await model.invoke(lcMessages, {
+                    stop: options.stop,
+                    temperature: options.temperature,
+                    maxReasoningTokens: options.maxReasoningTokens,
+                });
 
-                return analysisResult;
+                console.log(resp.response_metadata);
+
+                return {
+                    content: resp.content,
+                    usage: resp.usage ?? {
+                        promptTokens: 0,
+                        completionTokens: 0,
+                        totalTokens: 0,
+                    },
+                    tool_calls: resp.tool_calls,
+                };
             },
         };
-
-        // const wrappedLLM = {
-        //     async call(messages: any[], options: any = {}) {
-        //         const lcMessages = messages.map((m) => ({
-        //             type:
-        //                 m.role === 'system'
-        //                     ? 'system'
-        //                     : m.role === 'user'
-        //                       ? 'human'
-        //                       : 'ai',
-        //             content: m.content,
-        //         }));
-
-        //         let model = base;
-        //         if (options.tools?.length) {
-        //             const toolDefs = options.tools.map((t: any) => ({
-        //                 type: 'function',
-        //                 function: {
-        //                     name: sanitizeName(t.name),
-        //                     description: t.description ?? '',
-        //                     parameters: {
-        //                         ...t.parameters,
-        //                         additionalProperties: false,
-        //                     },
-        //                 },
-        //             }));
-
-        //             const bindOpts: any = {};
-        //             if (options.toolChoice) {
-        //                 bindOpts.tool_choice = options.toolChoice;
-        //             }
-
-        //             model = (base as any).bindTools(toolDefs, bindOpts);
-        //         }
-
-        //         const resp = await model.invoke(lcMessages, {
-        //             stop: options.stop,
-        //             temperature: options.temperature,
-        //             maxReasoningTokens: options.maxReasoningTokens,
-        //         });
-
-        //         console.log(resp.response_metadata);
-
-        //         return {
-        //             content: resp.content,
-        //             usage: resp.usage ?? {
-        //                 promptTokens: 0,
-        //                 completionTokens: 0,
-        //                 totalTokens: 0,
-        //             },
-        //             tool_calls: resp.tool_calls,
-        //         };
-        //     },
-        // };
 
         return createDirectLLMAdapter(wrappedLLM);
     }

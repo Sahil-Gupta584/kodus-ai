@@ -4,7 +4,7 @@
  * Integra o Circuit Breaker com o sistema de middleware do runtime
  */
 
-import type { MiddlewareFactoryType } from './types.js';
+import type { Middleware, MiddlewareFactoryType } from './types.js';
 import { CircuitBreaker } from '../core/circuit-breaker.js';
 import type {
     CircuitBreakerConfig,
@@ -105,7 +105,9 @@ export const circuitBreakerMiddleware: MiddlewareFactoryType<
     CircuitBreakerMiddlewareConfig,
     Event
 > = (config: CircuitBreakerMiddlewareConfig) => {
-    return <T extends Event>(handler: EventHandler<T>): EventHandler<T> => {
+    const middleware = (<T extends Event>(
+        handler: EventHandler<T>,
+    ): EventHandler<T> => {
         // Criar observability mock simples
         const mockObservability = {
             logger: {
@@ -183,7 +185,12 @@ export const circuitBreakerMiddleware: MiddlewareFactoryType<
             // Retornar resultado
             return result.result;
         };
-    };
+    }) as Middleware<Event>;
+
+    middleware.kind = 'pipeline';
+    middleware.name = 'circuitBreaker';
+
+    return middleware;
 };
 
 /**

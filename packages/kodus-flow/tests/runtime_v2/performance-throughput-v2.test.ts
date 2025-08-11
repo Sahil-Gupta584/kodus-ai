@@ -57,8 +57,8 @@ describe.sequential('Runtime V2 - Performance/Throughput', () => {
 
         // Throughput mínimo razoável para ambiente de teste (evita flakiness)
         const throughput = (TOTAL / Math.max(1, elapsedMs)) * 1000; // ev/s
-        // Expectativa conservadora para ambientes CI: >= 800 ev/s
-        expect(throughput).toBeGreaterThanOrEqual(800);
+        // Expectativa mais exigente para ambientes CI: >= 1200 ev/s
+        expect(throughput).toBeGreaterThanOrEqual(1200);
 
         // Garantir que enfileiramento foi rápido o suficiente (não bloco)
         expect(enqueueMs).toBeLessThan(5000);

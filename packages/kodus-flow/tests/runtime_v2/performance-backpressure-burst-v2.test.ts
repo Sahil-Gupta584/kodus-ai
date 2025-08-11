@@ -33,7 +33,6 @@ describe.sequential('Runtime V2 - Performance Burst with Backpressure', () => {
 
         // Ler backpressure antes de drenar (forçar atualização do cache)
         const q = runtime.getEnhancedQueue?.();
-        // @ts-ignore
         q?.['shouldActivateBackpressure']?.();
         const stats = q?.getStats() as { backpressureActive: boolean };
         expect(stats.backpressureActive).toBe(true);

@@ -1,5 +1,6 @@
 // runtime/middleware/concurrency.ts
 import type { Event } from '../../core/types/events.js';
+import type { Middleware } from './types.js';
 
 export interface ConcurrencyOptions {
     maxConcurrent: number;
@@ -71,7 +72,7 @@ const manager = new ConcurrencyManager();
 export function withConcurrency(opts: Partial<ConcurrencyOptions> = {}) {
     const cfg = { ...DEFAULT_OPTS, ...opts };
 
-    return function <E extends Event, R = Event | void>(
+    const middleware = function <E extends Event, R = Event | void>(
         handler: (ev: E) => Promise<R> | R,
     ) {
         const withConcurrencyWrapped = async function wrapped(
@@ -107,5 +108,10 @@ export function withConcurrency(opts: Partial<ConcurrencyOptions> = {}) {
         };
 
         return withConcurrencyWrapped;
-    };
+    } as Middleware<Event>;
+
+    middleware.kind = 'pipeline';
+    middleware.name = 'withConcurrency';
+
+    return middleware;
 }
