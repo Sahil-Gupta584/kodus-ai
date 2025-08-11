@@ -277,8 +277,8 @@ export class KodyRulesSyncService {
             const result = await this.promptRunner
                 .builder()
                 .setProviders({
-                    main: LLMModelProvider.GEMINI_2_5_PRO,
-                    fallback: LLMModelProvider.GEMINI_2_5_FLASH,
+                    main: LLMModelProvider.NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT,
+                    fallback: LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507,
                 })
                 .setParser<Array<Partial<CreateKodyRuleDto>>>(ParserType.JSON)
                 .setLLMJsonMode(true)
@@ -286,16 +286,6 @@ export class KodyRulesSyncService {
                     filePath: params.filePath,
                     repositoryId: params.repositoryId,
                     content: params.content,
-                    schema: {
-                        title: 'string',
-                        rule: 'string',
-                        path: 'string', // GLOB de aplicação (ex: "services/**")
-                        sourcePath: 'string', // arquivo de origem da regra
-                        severity: ['low', 'medium', 'high', 'critical'],
-                        scope: ['file', 'pull-request'], // optional no prompt, mas listado aqui
-                        status: ['active', 'pending', 'rejected', 'deleted'], // optional
-                        examples: [{ snippet: 'string', isCorrect: 'boolean' }],
-                    },
                 })
                 .addPrompt({
                     role: PromptRole.SYSTEM,
@@ -350,8 +340,7 @@ export class KodyRulesSyncService {
                     })
                     .addPrompt({
                         role: PromptRole.SYSTEM,
-                        prompt:
-                            'Return ONLY the JSON array for the rules, without code fences. No explanations.',
+                        prompt: 'Return ONLY the JSON array for the rules, without code fences. No explanations.',
                     })
                     .addPrompt({
                         role: PromptRole.USER,

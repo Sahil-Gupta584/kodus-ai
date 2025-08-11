@@ -181,7 +181,7 @@ const getChatVertexAI = (
     });
 };
 
-const getDeepseekByNovitaAI = (
+const getNovitaAI = (
     options?: {
         model?: string;
         temperature?: number;
@@ -239,9 +239,11 @@ export enum LLMModelProvider {
     VERTEX_GEMINI_2_5_FLASH = 'vertex:gemini-2.5-flash',
     VERTEX_CLAUDE_3_5_SONNET = 'vertex:claude-3-5-sonnet-v2@20241022',
 
-    // Deepseek Models
+    // Novita Models
     NOVITA_DEEPSEEK_V3 = 'novita:deepseek-v3',
     NOVITA_DEEPSEEK_V3_0324 = 'novita:deepseek-v3-0324',
+    NOVITA_QWEN3_235B_A22B_THINKING_2507 = 'novita:qwen3-235b-a22b-thinking-2507',
+    NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT = 'novita:moonshotai/kimi-k2-instruct',
 }
 
 type ChatAnthropicOptions = ConstructorParameters<typeof ChatAnthropic>[0];
@@ -363,14 +365,26 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     // Deepseek
     [LLMModelProvider.NOVITA_DEEPSEEK_V3]: {
         provider: 'novita',
-        factory: getDeepseekByNovitaAI,
+        factory: getNovitaAI,
         modelName: 'deepseek/deepseek_v3',
         defaultMaxTokens: 20000,
     },
     [LLMModelProvider.NOVITA_DEEPSEEK_V3_0324]: {
         provider: 'novita',
-        factory: getDeepseekByNovitaAI,
+        factory: getNovitaAI,
         modelName: 'deepseek/deepseek-v3-0324',
+        defaultMaxTokens: 20000,
+    },
+    [LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507]: {
+        provider: 'novita',
+        factory: getNovitaAI,
+        modelName: 'qwen/qwen3-235b-a22b-thinking-2507',
+        defaultMaxTokens: 20000,
+    },
+    [LLMModelProvider.NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT]: {
+        provider: 'novita',
+        factory: getNovitaAI,
+        modelName: 'moonshotai/kimi-k2-instruct',
         defaultMaxTokens: 20000,
     },
 };
