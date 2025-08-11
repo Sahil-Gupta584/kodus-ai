@@ -15,4 +15,9 @@ export interface IKodyRulesService extends IKodyRulesRepository {
     ): Promise<Partial<IKodyRule> | IKodyRule | null>;
 
     getLibraryKodyRules(filters?: KodyRuleFilters): Promise<any | null>;
+
+    findRulesByDirectory(
+        organizationId: string,
+        directoryId: string,
+    ): Promise<Partial<IKodyRule>[]>;
 }

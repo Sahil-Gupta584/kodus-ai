@@ -80,6 +80,26 @@ export class KodyRulesService implements IKodyRulesService {
         return this.kodyRulesRepository.findByOrganizationId(organizationId);
     }
 
+    /**
+     * Busca rules específicas por organização, repositório e diretório
+     * Versão simplificada que filtra in-memory
+     */
+    async findRulesByDirectory(
+        organizationId: string,
+        directoryId: string,
+    ): Promise<Partial<IKodyRule>[]> {
+        const entity = await this.findByOrganizationId(organizationId);
+
+        if (!entity?.toObject()?.rules) {
+            return [];
+        }
+
+        return entity.toObject().rules.filter(rule =>
+            rule.directoryId === directoryId &&
+            rule.status === KodyRulesStatus.ACTIVE
+        );
+    }
+
     async update(
         uuid: string,
         updateData: Partial<IKodyRules>,
