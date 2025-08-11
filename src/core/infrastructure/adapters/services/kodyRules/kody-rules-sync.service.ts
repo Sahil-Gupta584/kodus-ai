@@ -76,6 +76,39 @@ export class KodyRulesSyncService {
         }
     }
 
+    private async deleteRuleBySourcePath(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+        sourcePath: string;
+    }): Promise<void> {
+        try {
+            const { organizationAndTeamData, repositoryId, sourcePath } = params;
+            const entity = await this.kodyRulesService.findByOrganizationId(
+                organizationAndTeamData.organizationId,
+            );
+            if (!entity) return;
+
+            const toDelete = entity.rules?.find(
+                (r) =>
+                    r?.repositoryId === repositoryId &&
+                    ((r?.sourcePath || '').split('#')[0] === sourcePath),
+            );
+            if (!toDelete?.uuid) return;
+
+            await this.kodyRulesService.deleteRuleLogically(
+                entity.uuid,
+                toDelete.uuid,
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to delete rule by sourcePath',
+                context: KodyRulesSyncService.name,
+                error,
+                metadata: params,
+            });
+        }
+    }
+
     private async findRulesBySourcePath(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId: string;
@@ -239,6 +272,12 @@ export class KodyRulesSyncService {
 
             for (const f of ruleChanges) {
                 if (f.status === 'removed') {
+                    // Delete rule corresponding to removed file
+                    await this.deleteRuleBySourcePath({
+                        organizationAndTeamData,
+                        repositoryId: repository.id,
+                        sourcePath: f.filename,
+                    });
                     continue;
                 }
 
@@ -348,7 +387,52 @@ export class KodyRulesSyncService {
                     excludePatterns: [],
                 });
 
-            if (!files?.length) return;
+            if (!files?.length) {
+                // No rule files in main -> delete all existing repo rules
+                const entity = await this.kodyRulesService.findByOrganizationId(
+                    organizationAndTeamData.organizationId,
+                );
+                const repoRules = entity?.rules?.filter(
+                    (r) => r?.repositoryId === repository.id,
+                );
+                for (const r of repoRules || []) {
+                    if (!r?.uuid) continue;
+                    await this.kodyRulesService.deleteRuleLogically(
+                        entity!.uuid,
+                        r.uuid,
+                    );
+                }
+                return;
+            }
+
+            // Reconcile deletions: remove rules whose files no longer exist
+            try {
+                const currentPaths = new Set<string>(
+                    files.map((f) => (f.path || '').split('#')[0]),
+                );
+                const entity = await this.kodyRulesService.findByOrganizationId(
+                    organizationAndTeamData.organizationId,
+                );
+                const repoRules = entity?.rules?.filter(
+                    (r) => r?.repositoryId === repository.id,
+                );
+                for (const r of repoRules || []) {
+                    const basePath = (r?.sourcePath || '').split('#')[0];
+                    if (!currentPaths.has(basePath) && r?.uuid) {
+                        await this.kodyRulesService.deleteRuleLogically(
+                            entity!.uuid,
+                            r.uuid,
+                        );
+                    }
+                }
+            } catch (reconError) {
+                this.logger.error({
+                    message: 'Failed to reconcile deletions on main sync',
+                    context: KodyRulesSyncService.name,
+                    error: reconError,
+                    metadata: params,
+                });
+            }
 
             for (const file of files) {
                 const contentResp =
