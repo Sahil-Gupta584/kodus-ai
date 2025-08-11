@@ -107,13 +107,24 @@ export class KodyRulesSyncService {
                         ? Buffer.from(rawContent, 'base64').toString('utf-8')
                         : rawContent;
 
-                const rules = await this.convertFileToKodyRules({
+                 const rules = await this.convertFileToKodyRules({
                     filePath: f.filename,
                     repositoryId: repository.id,
                     content: decoded,
                 });
 
-                for (const rule of rules) {
+                 if (!Array.isArray(rules) || rules.length === 0) {
+                     this.logger.warn({
+                         message: 'No rules parsed from changed file',
+                         context: KodyRulesSyncService.name,
+                         metadata: { file: f.filename },
+                     });
+                     continue;
+                 }
+
+                for (const rule of rules.filter(
+                    (r) => r && typeof r === 'object' && r.title && r.rule,
+                )) {
                     const dto: CreateKodyRuleDto = {
                         uuid: rule.uuid,
                         title: rule.title,

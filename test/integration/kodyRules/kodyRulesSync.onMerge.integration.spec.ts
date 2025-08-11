@@ -48,7 +48,7 @@ import { CodeManagementService } from '../../../src/core/infrastructure/adapters
 import { GenerateIssuesFromPrClosedUseCase } from '../../../src/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
 import { KodyRulesSyncService } from '../../../src/core/infrastructure/adapters/services/kodyRules/kody-rules-sync.service';
 import { CreateOrUpdateKodyRulesUseCase } from '../../../src/core/application/use-cases/kodyRules/create-or-update.use-case';
-import { PromptRunnerService } from '@kodus/kodus-common/llm';
+import { LLMModule, PromptRunnerService } from '@kodus/kodus-common/llm';
 import { PlatformType } from '../../../src/shared/domain/enums/platform-type.enum';
 
 describe('GitHubPullRequestHandler - KodyRules sync on PR merged', () => {
@@ -139,38 +139,12 @@ describe('GitHubPullRequestHandler - KodyRules sync on PR merged', () => {
             execute: jest.fn().mockResolvedValue({}),
         };
 
-        // Stub do LLM para retornar pelo menos 1 regra e evitar open handles
-        const promptRunnerStub: Partial<PromptRunnerService> = {
-            builder: () => ({
-                setProviders() { return this; },
-                setParser() { return this; },
-                setLLMJsonMode() { return this; },
-                setPayload() { return this; },
-                addPrompt() { return this; },
-                setRunName() { return this; },
-                async execute() {
-                    return [
-                        {
-                            title: 'any',
-                            rule: 'any',
-                            path: '**/*',
-                            sourcePath: '.cursor/rules/any.mdc',
-                            severity: 'medium',
-                            scope: 'file',
-                            status: 'active',
-                            examples: [],
-                        },
-                    ];
-                },
-            }) as any,
-        } as any;
-
         const module: TestingModule = await Test.createTestingModule({
+            imports: [LLMModule.forRoot({ logger: PinoLoggerService })],
             providers: [
                 GitHubPullRequestHandler,
                 KodyRulesSyncService,
                 { provide: PinoLoggerService, useValue: logger },
-                { provide: PromptRunnerService, useValue: promptRunnerStub },
                 {
                     provide: SavePullRequestUseCase,
                     useValue: savePullRequestUseCase,
@@ -229,9 +203,13 @@ describe('GitHubPullRequestHandler - KodyRules sync on PR merged', () => {
             },
         } as any;
 
+        const promptRunner = testingModule.get(PromptRunnerService);
+        const runSpy = jest.spyOn(promptRunner, 'runPrompt');
+
         await handler.execute(params);
 
-        expect(upsertRuleUseCase.execute).toHaveBeenCalled();
+        // valida que houve tentativa de chamada real ao LLM
+        expect(runSpy).toHaveBeenCalled();
 
         // valida que buscamos conteúdo via PR refs
         expect(

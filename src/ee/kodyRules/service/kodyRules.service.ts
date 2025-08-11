@@ -128,6 +128,7 @@ export class KodyRulesService implements IKodyRulesService {
                 path: kodyRule.path,
                 severity: kodyRule.severity?.toLowerCase(),
                 status: kodyRule.status ?? KodyRulesStatus.ACTIVE,
+                sourcePath: kodyRule.sourcePath,
                 repositoryId: kodyRule?.repositoryId,
                 examples: kodyRule?.examples,
                 origin: kodyRule?.origin ?? KodyRulesOrigin.USER,
