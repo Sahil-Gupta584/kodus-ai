@@ -3135,11 +3135,30 @@ export class GitlabService
             const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
 
             const {
-                branch,
                 filePatterns,
                 excludePatterns,
                 maxFiles = 1000,
             } = filters ?? {};
+
+            let branch = filters?.branch;
+
+            if (!branch || branch.length === 0) {
+                branch = await this.getDefaultBranch({
+                    organizationAndTeamData,
+                    repository,
+                });
+
+                if (!branch) {
+                    this.logger.warn({
+                        message: 'Default branch not found for repository',
+                        context: GitlabService.name,
+                        serviceName: 'GitlabService getRepositoryAllFiles',
+                        metadata: params,
+                    });
+
+                    return [];
+                }
+            }
 
             const trees = await gitlabAPI.Repositories.allRepositoryTrees(
                 repository.id,
@@ -3153,16 +3172,15 @@ export class GitlabService
                 .filter((file) => file.type === 'blob')
                 .map((file) => this.transformRepositoryFile(file));
 
-            if (filePatterns?.length > 0) {
+            if (filePatterns && filePatterns.length > 0) {
                 files = files.filter((file) =>
-                    isFileMatchingGlob(file.filename, filePatterns),
+                    isFileMatchingGlob(file.path, filePatterns),
                 );
             }
 
-            if (excludePatterns?.length > 0) {
+            if (excludePatterns && excludePatterns.length > 0) {
                 files = files.filter(
-                    (file) =>
-                        !isFileMatchingGlob(file.filename, excludePatterns),
+                    (file) => !isFileMatchingGlob(file.path, excludePatterns),
                 );
             }
 

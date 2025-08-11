@@ -3582,11 +3582,29 @@ export class AzureReposService
             }
 
             const {
-                branch,
                 filePatterns,
                 excludePatterns,
                 maxFiles = 1000,
             } = filters ?? {};
+
+            let branch = filters?.branch;
+
+            if (!branch || branch.length === 0) {
+                branch = await this.getDefaultBranch({
+                    organizationAndTeamData,
+                    repository,
+                });
+
+                if (!branch) {
+                    this.logger.warn({
+                        message: `Default branch not found for repository ${repository.name}`,
+                        context: this.getRepositoryAllFiles.name,
+                        metadata: params,
+                    });
+
+                    return [];
+                }
+            }
 
             const fileItems =
                 await this.azureReposRequestHelper.listRepositoryFiles({
@@ -3613,16 +3631,15 @@ export class AzureReposService
                 .filter((fileItem) => !fileItem.isFolder)
                 .map((fileItem) => this.transformRepositoryFile(fileItem));
 
-            if (filePatterns) {
+            if (filePatterns && filePatterns.length > 0) {
                 files = files.filter((file) =>
-                    isFileMatchingGlob(file.filename, filePatterns),
+                    isFileMatchingGlob(file.path, filePatterns),
                 );
             }
 
-            if (excludePatterns) {
+            if (excludePatterns && excludePatterns.length > 0) {
                 files = files.filter(
-                    (file) =>
-                        !isFileMatchingGlob(file.filename, excludePatterns),
+                    (file) => !isFileMatchingGlob(file.path, excludePatterns),
                 );
             }
 

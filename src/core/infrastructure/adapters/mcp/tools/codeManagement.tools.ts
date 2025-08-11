@@ -551,16 +551,11 @@ export class CodeManagementTools {
             repository: z
                 .string()
                 .describe('Repository name or identifier to get files from'),
-            organizationName: z
-                .string()
-                .describe(
-                    'Organization name as it appears in the code management platform (e.g., GitHub org name)',
-                ),
             branch: z
                 .string()
-                .default('main')
+                .optional()
                 .describe(
-                    'Branch name to get files from (defaults to "main" if not specified)',
+                    'Branch name to get files from (defaults to default branch if not specified)',
                 ),
             filePatterns: z
                 .array(z.string())

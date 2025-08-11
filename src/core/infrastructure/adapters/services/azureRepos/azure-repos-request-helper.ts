@@ -893,13 +893,7 @@ export class AzureReposRequestHelper {
             path?: string;
         };
     }): Promise<AzureRepoFileItem[]> {
-        const {
-            orgName,
-            token,
-            projectId,
-            repositoryId,
-            filters = {},
-        } = params;
+        const { projectId, repositoryId, filters = {} } = params;
 
         const instance = await this.azureRequest(params);
 

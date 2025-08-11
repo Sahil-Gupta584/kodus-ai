@@ -3717,11 +3717,29 @@ export class GithubService
             const owner = await this.getCorrectOwner(authDetails, octokit);
 
             const {
-                branch = 'main',
                 filePatterns,
                 excludePatterns,
                 maxFiles = 1000,
             } = filters ?? {};
+
+            let branch = filters?.branch;
+
+            if (!branch || branch.length === 0) {
+                branch = await this.getDefaultBranch({
+                    organizationAndTeamData,
+                    repository,
+                });
+
+                if (!branch) {
+                    this.logger.warn({
+                        message: 'Default branch not found.',
+                        context: GithubService.name,
+                        metadata: params,
+                    });
+
+                    return [];
+                }
+            }
 
             const { data: tree } = await octokit.rest.git.getTree({
                 owner,
@@ -3744,13 +3762,13 @@ export class GithubService
                 .filter((item) => item.type === 'blob')
                 .map((item) => this.transformRepositoryFile(item));
 
-            if (filePatterns?.length) {
+            if (filePatterns && filePatterns.length > 0) {
                 files = files.filter((file) =>
                     isFileMatchingGlob(file.path, filePatterns),
                 );
             }
 
-            if (excludePatterns?.length) {
+            if (excludePatterns && excludePatterns.length > 0) {
                 files = files.filter(
                     (file) => !isFileMatchingGlob(file.path, excludePatterns),
                 );

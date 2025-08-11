@@ -3915,19 +3915,28 @@ export class BitbucketService
 
             let branch = filters?.branch;
 
-            if (!branch) {
-                const repo = await bitbucketAPI.repositories.get({
-                    repo_slug: `{${repository.id}}`,
-                    workspace: `{${workspace}}`,
+            if (!branch || branch.length === 0) {
+                branch = await this.getDefaultBranch({
+                    organizationAndTeamData,
+                    repository,
                 });
 
-                branch = repo.data?.mainbranch?.name;
+                if (!branch) {
+                    this.logger.warn({
+                        message: 'Default branch not found for repository',
+                        context: BitbucketService.name,
+                        metadata: { organizationAndTeamData, repository },
+                    });
+
+                    return [];
+                }
             }
 
             const commitsResponse = await bitbucketAPI.commits.list({
                 repo_slug: `{${repository.id}}`,
                 workspace: `{${workspace}}`,
-                include: filters.branch,
+                include: branch,
+                pagelen: 1,
             });
 
             const commit = commitsResponse.data.values?.[0];
@@ -3946,21 +3955,20 @@ export class BitbucketService
             );
 
             let files = fileTrees
-                .filter((file) => file.type === 'glob')
+                .filter((file) => file.type === 'commit_file')
                 .map((file) => this.transformRepositoryFile(file));
 
             const { filePatterns, excludePatterns, maxFiles = 1000 } = filters;
 
-            if (filePatterns) {
+            if (filePatterns && filePatterns.length > 0) {
                 files = files.filter((file) =>
-                    isFileMatchingGlob(file.filename, filePatterns),
+                    isFileMatchingGlob(file.path, filePatterns),
                 );
             }
 
-            if (excludePatterns) {
+            if (excludePatterns && excludePatterns.length > 0) {
                 files = files.filter(
-                    (file) =>
-                        !isFileMatchingGlob(file.filename, excludePatterns),
+                    (file) => !isFileMatchingGlob(file.path, excludePatterns),
                 );
             }
 
