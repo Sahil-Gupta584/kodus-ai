@@ -71,19 +71,43 @@ export class UnifiedLogHandler {
                 userInfo,
             });
 
-        if (configLevel === ConfigLevel.REPOSITORY && !repository?.name) {
-            repository.name = await this.getRepositoryAdditionalInfo(
-                repository?.id,
-                organizationAndTeamData.organizationId,
-            );
+        try {
+            if (configLevel === ConfigLevel.REPOSITORY && !repository?.name) {
+                repository.name = await this.getRepositoryAdditionalInfo(
+                    repository?.id,
+                    organizationAndTeamData.organizationId,
+                );
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting repository additional info',
+                context: UnifiedLogHandler.name,
+                error: error,
+            });
+
+            if (repository) {
+                repository.name = 'Unknown';
+            }
         }
 
-        if (configLevel === ConfigLevel.DIRECTORY && !directory?.path) {
-            directory.path = await this.getDirectoryAdditionalInfo(
-                directory?.id,
-                repository?.id,
-                organizationAndTeamData.organizationId,
-            );
+        try {
+            if (configLevel === ConfigLevel.DIRECTORY && !directory?.path) {
+                directory.path = await this.getDirectoryAdditionalInfo(
+                    directory?.id,
+                    repository?.id,
+                    organizationAndTeamData.organizationId,
+                );
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting directory additional info',
+                context: UnifiedLogHandler.name,
+                error: error,
+            });
+
+            if (directory) {
+                directory.path = 'Unknown';
+            }
         }
 
         await this.codeReviewSettingsLogRepository.create({
