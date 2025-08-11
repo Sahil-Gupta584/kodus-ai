@@ -832,7 +832,7 @@ export class GitlabService
 
                 if (!foundRepo) {
                     this.logger.warn({
-                        message: `Repository ${repository} not found in the list of repositories.`,
+                        message: `Repository ${repository.name} (id: ${repository.id}) not found in the list of repositories.`,
                         context: GitlabService.name,
                         metadata: params,
                     });
