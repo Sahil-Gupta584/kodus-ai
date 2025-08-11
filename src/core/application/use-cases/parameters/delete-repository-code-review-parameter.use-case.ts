@@ -15,6 +15,7 @@ import {
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 import { Request } from 'express';
+import { RepositoryWithDirectoriesException } from '@/shared/infrastructure/filters/repository-with-directories.exception';
 
 @Injectable()
 export class DeleteRepositoryCodeReviewParameterUseCase {
@@ -121,9 +122,7 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
             repositoryToRemove.directories &&
             repositoryToRemove.directories.length > 0
         ) {
-            throw new Error(
-                'Cannot delete repository with configured directories. Please delete all directories first before removing the repository.',
-            );
+            throw new RepositoryWithDirectoriesException();
         }
 
         // Remover o repositório específico do array
