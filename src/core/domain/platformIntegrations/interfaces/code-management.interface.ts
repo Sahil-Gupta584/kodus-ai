@@ -22,6 +22,7 @@ import {
 import { GitCloneParams } from '../types/codeManagement/gitCloneParams.type';
 import { Commit } from '@/config/types/general/commit.type';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
+import { RepositoryFile } from '../types/codeManagement/repositoryFile.type';
 
 export interface ICodeManagementService
     extends ICommonPlatformIntegrationService {
@@ -41,7 +42,15 @@ export interface ICodeManagementService
         repository: Partial<Repository>;
         prNumber: number;
     }): Promise<PullRequest | null>;
-    getRepositories(params: any): Promise<Repositories[]>;
+    getRepositories(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        filters?: {
+            archived?: boolean;
+            organizationSelected?: string;
+            visibility?: 'all' | 'public' | 'private';
+            language?: string;
+        };
+    }): Promise<Repositories[]>;
     getWorkflows(params: any): Promise<Workflow[]>;
     getListMembers(
         params: any,
@@ -95,7 +104,19 @@ export interface ICodeManagementService
     getAuthenticationOAuthToken(params: any): Promise<string>;
     countReactions(params: any): Promise<any[]>;
     getLanguageRepository(params: any): Promise<any | null>;
-    getRepositoryAllFiles(params: any): Promise<any>;
+    getRepositoryAllFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: {
+            id: string;
+            name: string;
+        };
+        filters?: {
+            branch?: string;
+            filePatterns?: string[];
+            excludePatterns?: string[];
+            maxFiles?: number;
+        };
+    }): Promise<RepositoryFile[]>;
     getCloneParams(params: any): Promise<GitCloneParams>;
     mergePullRequest(params: any): Promise<any>;
     approvePullRequest(params: any): Promise<any>;

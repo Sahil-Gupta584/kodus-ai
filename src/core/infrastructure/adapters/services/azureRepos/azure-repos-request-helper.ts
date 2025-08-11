@@ -15,6 +15,7 @@ import {
     AzureRepoSubscription,
     AzureRepoCommentType,
     AzureRepoReviewerWithVote,
+    AzureRepoFileItem,
 } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
 import { decrypt } from '@/shared/utils/crypto';
 import { FileChange } from '@/config/types/general/codeReview.type';
@@ -80,10 +81,10 @@ export class AzureReposRequestHelper {
         token: string;
         projectId: string;
         repositoryId: string;
-        searchCriteria?: {
+        filters?: {
             status?: AzurePRStatus;
-            creatorId?: string;
-            sourceRefName?: string;
+            author?: string;
+            branch?: string;
             minTime?: string;
             maxTime?: string;
         };
@@ -93,7 +94,7 @@ export class AzureReposRequestHelper {
             token,
             projectId,
             repositoryId,
-            searchCriteria = {},
+            filters = {},
         } = params;
 
         const instance = await this.azureRequest({ orgName, token });
@@ -104,8 +105,19 @@ export class AzureReposRequestHelper {
             'api-version': '7.1',
         };
 
-        if (searchCriteria) {
-            const dynamicParams = this._buildSearchParams(searchCriteria);
+        if (filters) {
+            const searchCriteria = {
+                status: filters.status,
+                creatorId: filters.author,
+                sourceRefName: filters.branch,
+                minTime: filters.minTime,
+                maxTime: filters.maxTime,
+            };
+
+            const dynamicParams = this._buildQueryParams(
+                searchCriteria,
+                'searchCriteria',
+            );
             queryParams = { ...queryParams, ...dynamicParams };
         }
 
@@ -435,13 +447,11 @@ export class AzureReposRequestHelper {
         token: string;
         projectId: string;
         repositoryId: string;
-        searchCriteria?: {
+        filters?: {
             author?: string;
             fromDate?: string;
             toDate?: string;
-            itemVersion?: {
-                version: string;
-            };
+            branch?: string;
         };
     }): Promise<AzureRepoCommit[]> {
         const {
@@ -449,7 +459,7 @@ export class AzureReposRequestHelper {
             token,
             projectId,
             repositoryId,
-            searchCriteria = {},
+            filters = {},
         } = params;
 
         const instance = await this.azureRequest({ orgName, token });
@@ -460,8 +470,21 @@ export class AzureReposRequestHelper {
             'api-version': '7.1',
         };
 
-        if (searchCriteria) {
-            const dynamicParams = this._buildSearchParams(searchCriteria);
+        if (filters) {
+            const searchCriteria = {
+                author: filters.author,
+                fromDate: filters.fromDate,
+                toDate: filters.toDate,
+                itemVersion: {
+                    version: filters.branch,
+                    versionType: filters.branch ? 'branch' : undefined,
+                },
+            };
+
+            const dynamicParams = this._buildQueryParams(
+                searchCriteria,
+                'searchCriteria',
+            );
             queryParams = { ...queryParams, ...dynamicParams };
         }
 
@@ -860,6 +883,47 @@ export class AzureReposRequestHelper {
         return preferredUser ?? users[0] ?? null;
     }
 
+    async listRepositoryFiles(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        filters?: {
+            branch?: string;
+            path?: string;
+        };
+    }): Promise<AzureRepoFileItem[]> {
+        const {
+            orgName,
+            token,
+            projectId,
+            repositoryId,
+            filters = {},
+        } = params;
+
+        const instance = await this.azureRequest(params);
+
+        const apiPath = `/${projectId}/_apis/git/repositories/${repositoryId}/items`;
+
+        const query = {
+            'api-version': '7.1',
+            'recursionLevel': 'full',
+            '$format': 'json',
+            'includeContentMetadata': 'true',
+            'versionDescriptor': {
+                version: filters?.branch,
+                versionType: filters?.branch ? 'branch' : undefined,
+            },
+            'scopePath': filters?.path,
+        };
+
+        const queryParams = this._buildQueryParams(query);
+
+        const { data } = await instance.get(apiPath, { params: queryParams });
+
+        return data?.value ?? [];
+    }
+
     mapAzureStatusToFileChangeStatus(status: string): FileChange['status'] {
         switch (status.toLowerCase()) {
             case 'add':
@@ -890,9 +954,9 @@ export class AzureReposRequestHelper {
      * @param prefix The base key to prefix nested properties with.
      * @returns A flat object with dot-notated keys.
      */
-    private _buildSearchParams(
+    private _buildQueryParams(
         obj: Record<string, any>,
-        prefix = 'searchCriteria',
+        prefix?: string,
     ): Record<string, string> {
         const params: Record<string, string> = {};
 
@@ -902,11 +966,16 @@ export class AzureReposRequestHelper {
                 continue;
             }
 
-            const newKey = `${prefix}.${key}`;
+            const newKey = prefix ? `${prefix}.${key}` : key;
 
             // If the value is a nested object, recurse deeper
             if (typeof value === 'object' && !Array.isArray(value)) {
-                const nestedParams = this._buildSearchParams(value, newKey);
+                const nestedParams = this._buildQueryParams(value, newKey);
+
+                if (Object.keys(nestedParams).length === 0) {
+                    continue; // Skip empty nested objects
+                }
+
                 Object.assign(params, nestedParams); // Merge the results
             } else {
                 // Otherwise, it's a primitive value, so add it

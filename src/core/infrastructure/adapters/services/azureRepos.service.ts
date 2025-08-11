@@ -55,6 +55,7 @@ import { ICodeManagementService } from '@/core/domain/platformIntegrations/inter
 import {
     AzurePullRequestVote,
     AzureRepoCommit,
+    AzureRepoFileItem,
     AzureRepoPRThread,
     EventConfig,
 } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
@@ -73,6 +74,8 @@ import {
 } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
 import { ConfigService } from '@nestjs/config';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
+import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
@@ -89,7 +92,6 @@ export class AzureReposService
             | 'getListOfValidReviews'
             | 'getPullRequestsWithChangesRequested'
             | 'getAuthenticationOAuthToken'
-            | 'getRepositoryAllFiles'
             | 'mergePullRequest'
             | 'getUserById'
         >
@@ -1880,7 +1882,7 @@ export class AzureReposService
                     token,
                     projectId,
                     repositoryId: repository.id,
-                    searchCriteria: {
+                    filters: {
                         minTime: filters?.startDate,
                         maxTime: filters?.endDate,
                     },
@@ -2038,9 +2040,9 @@ export class AzureReposService
             token,
             projectId,
             repositoryId,
-            searchCriteria: {
-                creatorId: author,
-                sourceRefName: branch,
+            filters: {
+                author,
+                branch,
                 status: state ? this._prStateMapReversed.get(state) : undefined,
                 maxTime: endDate ? endDate.toISOString() : undefined,
                 minTime: startDate ? startDate.toISOString() : undefined,
@@ -2097,7 +2099,7 @@ export class AzureReposService
                                 token,
                                 projectId: repo.project.id,
                                 repositoryId: repo.id,
-                                searchCriteria: {
+                                filters: {
                                     minTime: startDate,
                                     maxTime: endDate,
                                     status: normalizedStatus,
@@ -2277,7 +2279,15 @@ export class AzureReposService
         }
     }
 
-    async getRepositories(params: any): Promise<Repositories[]> {
+    async getRepositories(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        filters?: {
+            archived?: boolean;
+            organizationSelected?: string;
+            visibility?: 'all' | 'public' | 'private';
+            language?: string;
+        };
+    }): Promise<Repositories[]> {
         try {
             const { organizationAndTeamData } = params;
 
@@ -2498,9 +2508,9 @@ export class AzureReposService
             token,
             projectId,
             repositoryId,
-            searchCriteria: {
-                author: author,
-                itemVersion: branch ? { version: branch } : undefined,
+            filters: {
+                author,
+                branch,
                 fromDate: startDate?.toISOString(),
                 toDate: endDate?.toISOString(),
             },
@@ -3523,6 +3533,126 @@ export class AzureReposService
         }
     }
 
+    async getRepositoryAllFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        filters?: {
+            branch?: string;
+            filePatterns?: string[];
+            excludePatterns?: string[];
+            maxFiles?: number;
+        };
+    }): Promise<RepositoryFile[]> {
+        try {
+            const {
+                organizationAndTeamData,
+                repository,
+                filters = {},
+            } = params;
+
+            const authDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!authDetails) {
+                this.logger.warn({
+                    message: `No auth details found for organization ${organizationAndTeamData.organizationId}`,
+                    context: this.getRepositoryAllFiles.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            const { orgName, token } = authDetails;
+
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            if (!projectId) {
+                this.logger.warn({
+                    message: `Project ID not found for repository ${repository.name}`,
+                    context: this.getRepositoryAllFiles.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            const {
+                branch,
+                filePatterns,
+                excludePatterns,
+                maxFiles = 1000,
+            } = filters ?? {};
+
+            const fileItems =
+                await this.azureReposRequestHelper.listRepositoryFiles({
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: repository.id,
+                    filters: {
+                        branch,
+                    },
+                });
+
+            if (!fileItems || fileItems.length === 0) {
+                this.logger.warn({
+                    message: `No files found in repository ${repository.name}`,
+                    context: this.getRepositoryAllFiles.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            let files = fileItems
+                .filter((fileItem) => !fileItem.isFolder)
+                .map((fileItem) => this.transformRepositoryFile(fileItem));
+
+            if (filePatterns) {
+                files = files.filter((file) =>
+                    isFileMatchingGlob(file.filename, filePatterns),
+                );
+            }
+
+            if (excludePatterns) {
+                files = files.filter(
+                    (file) =>
+                        !isFileMatchingGlob(file.filename, excludePatterns),
+                );
+            }
+
+            if (maxFiles > 0) {
+                files = files.slice(0, maxFiles);
+            }
+
+            this.logger.log({
+                message: `Retrieved ${files.length} files from repository ${repository.name}`,
+                context: this.getRepositoryAllFiles.name,
+                metadata: {
+                    organizationAndTeamData,
+                    repository: repository.name,
+                    filters,
+                },
+            });
+
+            return files;
+        } catch (error) {
+            this.logger.error({
+                message: `Error getting all files for repository ${params.repository.name}`,
+                context: this.getRepositoryAllFiles.name,
+                error: error,
+                metadata: { params },
+            });
+
+            return [];
+        }
+    }
+
     //#region Transformers
 
     /**
@@ -3643,6 +3773,16 @@ export class AzureReposService
                 name: pr?.createdBy?.displayName ?? '',
                 id: pr?.createdBy?.id ?? '',
             },
+        };
+    }
+
+    private transformRepositoryFile(file: AzureRepoFileItem): RepositoryFile {
+        return {
+            filename: file?.path?.split('/').pop() ?? '',
+            sha: file?.objectId ?? '',
+            path: file?.path ?? '',
+            size: -1, // Size not available in Azure Repo FileItem
+            type: file?.gitObjectType ?? 'blob',
         };
     }
 }

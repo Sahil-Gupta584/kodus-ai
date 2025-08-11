@@ -71,6 +71,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { AuthorContribution } from '@/core/domain/pullRequests/interfaces/authorContributor.interface';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
+import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -87,7 +89,6 @@ export class BitbucketService
             | 'getDataForCalculateDeployFrequency'
             | 'getCommitsByReleaseMode'
             | 'getAuthenticationOAuthToken'
-            | 'getRepositoryAllFiles'
         >
 {
     constructor(
@@ -601,6 +602,12 @@ export class BitbucketService
 
     async getRepositories(params: {
         organizationAndTeamData: OrganizationAndTeamData;
+        filters?: {
+            archived?: boolean;
+            organizationSelected?: string;
+            visibility?: 'all' | 'public' | 'private';
+            language?: string;
+        };
     }): Promise<Repositories[]> {
         try {
             const { organizationAndTeamData } = params;
@@ -3847,6 +3854,146 @@ export class BitbucketService
         throw new Error('Method not implemented.');
     }
 
+    async getRepositoryAllFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        filters?: {
+            branch?: string;
+            filePatterns?: string[];
+            excludePatterns?: string[];
+            maxFiles?: number;
+        };
+    }): Promise<RepositoryFile[]> {
+        try {
+            const {
+                organizationAndTeamData,
+                repository,
+                filters = {},
+            } = params;
+
+            if (!repository?.id) {
+                this.logger.warn({
+                    message: 'Repository ID is required to get files',
+                    context: BitbucketService.name,
+                    metadata: { organizationAndTeamData, repository },
+                });
+
+                return [];
+            }
+
+            const bitbucketAuthDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!bitbucketAuthDetails) {
+                this.logger.warn({
+                    message: 'Bitbucket auth details not found',
+                    context: BitbucketService.name,
+                    metadata: { organizationAndTeamData, repository },
+                });
+
+                return [];
+            }
+
+            const workspace = await this.getWorkspaceFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            if (!workspace) {
+                this.logger.warn({
+                    message: 'Workspace not found for repository',
+                    context: BitbucketService.name,
+                    metadata: { organizationAndTeamData, repository },
+                });
+
+                return [];
+            }
+
+            const bitbucketAPI =
+                this.instanceBitbucketApi(bitbucketAuthDetails);
+
+            let branch = filters?.branch;
+
+            if (!branch) {
+                const repo = await bitbucketAPI.repositories.get({
+                    repo_slug: `{${repository.id}}`,
+                    workspace: `{${workspace}}`,
+                });
+
+                branch = repo.data?.mainbranch?.name;
+            }
+
+            const commitsResponse = await bitbucketAPI.commits.list({
+                repo_slug: `{${repository.id}}`,
+                workspace: `{${workspace}}`,
+                include: filters.branch,
+            });
+
+            const commit = commitsResponse.data.values?.[0];
+
+            const fileResponse = await bitbucketAPI.source.read({
+                repo_slug: `{${repository.id}}`,
+                workspace: `{${workspace}}`,
+                commit: commit?.hash,
+                path: '/',
+                max_depth: 999,
+            });
+
+            const fileTrees = await this.getPaginatedResults(
+                bitbucketAPI,
+                fileResponse,
+            );
+
+            let files = fileTrees
+                .filter((file) => file.type === 'glob')
+                .map((file) => this.transformRepositoryFile(file));
+
+            const { filePatterns, excludePatterns, maxFiles = 1000 } = filters;
+
+            if (filePatterns) {
+                files = files.filter((file) =>
+                    isFileMatchingGlob(file.filename, filePatterns),
+                );
+            }
+
+            if (excludePatterns) {
+                files = files.filter(
+                    (file) =>
+                        !isFileMatchingGlob(file.filename, excludePatterns),
+                );
+            }
+
+            if (maxFiles > 0) {
+                files = files.slice(0, maxFiles);
+            }
+
+            this.logger.log({
+                message: `Retrieved ${files.length} files from repository ${repository.name}`,
+                context: BitbucketService.name,
+                serviceName: 'BitbucketService getRepositoryAllFiles',
+                metadata: {
+                    params,
+                    totalFilesFound: fileTrees.length,
+                },
+            });
+
+            return files;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error to get repository files',
+                context: BitbucketService.name,
+                serviceName: 'BitbucketService getRepositoryAllFiles',
+                error: error,
+                metadata: {
+                    params,
+                },
+            });
+
+            return [];
+        }
+    }
+
     //#region Transformers
 
     /**
@@ -3988,6 +4135,16 @@ export class BitbucketService
                 name: pullRequest?.author?.display_name ?? '',
                 id: this.sanitizeUUID(pullRequest?.author?.uuid ?? '') ?? '',
             },
+        };
+    }
+
+    private transformRepositoryFile(file: Schema.Treeentry): RepositoryFile {
+        return {
+            filename: file?.path?.split('/').pop() ?? '',
+            sha: file?.commit?.hash ?? '',
+            size: -1, // Bitbucket does not provide file size in the tree entry
+            path: file?.path ?? '',
+            type: file?.type ?? 'blob',
         };
     }
 }

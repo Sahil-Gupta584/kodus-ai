@@ -81,6 +81,11 @@ import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.
 import { ConfigService } from '@nestjs/config';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
+import {
+    RepositoryFile,
+    RepositoryFileWithContent,
+} from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
+import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
 
 interface GitHubAuthResponse {
     token: string;
@@ -1063,7 +1068,15 @@ export class GithubService
         });
     }
 
-    async getRepositories(params: any): Promise<Repositories[]> {
+    async getRepositories(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        filters?: {
+            archived?: boolean;
+            organizationSelected?: string;
+            visibility?: 'all' | 'public' | 'private';
+            language?: string;
+        };
+    }): Promise<Repositories[]> {
         try {
             const githubAuthDetail = await this.getGithubAuthDetails(
                 params.organizationAndTeamData,
@@ -3657,63 +3670,108 @@ export class GithubService
     }
 
     async getRepositoryAllFiles(params: {
-        repository: string;
-        organizationName: string;
-        branch: string;
         organizationAndTeamData: OrganizationAndTeamData;
-        filePatterns?: string[];
-        excludePatterns?: string[];
-        maxFiles?: number;
-    }): Promise<any> {
+        repository: {
+            id: string;
+            name: string;
+        };
+        filters?: {
+            branch?: string;
+            filePatterns?: string[];
+            excludePatterns?: string[];
+            maxFiles?: number;
+        };
+    }): Promise<RepositoryFile[]> {
         try {
-            const { organizationName, repository, organizationAndTeamData } =
-                params;
+            const {
+                repository,
+                organizationAndTeamData,
+                filters = {},
+            } = params;
+
+            if (!repository?.name) {
+                this.logger.warn({
+                    message: 'Repository name is required.',
+                    context: GithubService.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            const authDetails = await this.getGithubAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!authDetails) {
+                this.logger.warn({
+                    message: 'GitHub authentication details not found.',
+                    context: GithubService.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
 
             const octokit = await this.instanceOctokit(organizationAndTeamData);
+            const owner = await this.getCorrectOwner(authDetails, octokit);
+
+            const {
+                branch = 'main',
+                filePatterns,
+                excludePatterns,
+                maxFiles = 1000,
+            } = filters ?? {};
 
             const { data: tree } = await octokit.rest.git.getTree({
-                owner: organizationName,
-                repo: repository,
-                tree_sha: params.branch,
+                owner,
+                repo: repository.name,
+                tree_sha: branch,
                 recursive: 'true',
             });
 
             if (!tree.tree) {
+                this.logger.warn({
+                    message: 'No files found in the repository tree.',
+                    context: GithubService.name,
+                    metadata: params,
+                });
+
                 return [];
             }
 
             let files = tree.tree
                 .filter((item) => item.type === 'blob')
-                .map((item) => ({
-                    path: item.path,
-                    type: item.type,
-                    size: item.size,
-                    sha: item.sha,
-                }));
+                .map((item) => this.transformRepositoryFile(item));
 
-            // Apply file pattern filters
-            if (params.filePatterns?.length) {
+            if (filePatterns?.length) {
                 files = files.filter((file) =>
-                    params.filePatterns.some((pattern) =>
-                        this.matchGlobPattern(file.path, pattern),
-                    ),
+                    isFileMatchingGlob(file.path, filePatterns),
                 );
             }
 
-            // Apply exclusion filters
-            if (params.excludePatterns?.length) {
+            if (excludePatterns?.length) {
                 files = files.filter(
-                    (file) =>
-                        !params.excludePatterns.some((pattern) =>
-                            this.matchGlobPattern(file.path, pattern),
-                        ),
+                    (file) => !isFileMatchingGlob(file.path, excludePatterns),
                 );
             }
 
-            // Limit the number of files if necessary
-            if (params.maxFiles && params.maxFiles > 0) {
-                files = files.slice(0, params.maxFiles);
+            if (maxFiles > 0) {
+                files = files.slice(0, maxFiles);
             }
+
+            this.logger.log({
+                message: `Retrieved ${files.length} files from repository ${repository.name}`,
+                context: GithubService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    repository: repository.name,
+                    branch,
+                    filePatterns,
+                    excludePatterns,
+                    maxFiles,
+                },
+            });
 
             return files;
         } catch (error) {
@@ -3723,66 +3781,73 @@ export class GithubService
                 error: error.message,
                 metadata: params,
             });
+
             return [];
         }
     }
 
-    private matchGlobPattern(path: string, pattern: string): boolean {
-        const regexPattern = pattern
-            .replace(/\*/g, '.*')
-            .replace(/\?/g, '.')
-            .replace(/\[.*?\]/g, (match) => `[${match.slice(1, -1)}]`);
-        return new RegExp(`^${regexPattern}$`).test(path);
-    }
-
     async getRepositoryAllFilesWithContent(params: {
-        repository: string;
-        organizationName: string;
-        branch: string;
         organizationAndTeamData: OrganizationAndTeamData;
-        filePatterns?: string[];
-        excludePatterns?: string[];
-        maxFiles?: number;
-    }): Promise<any> {
+        repository: {
+            id: string;
+            name: string;
+        };
+        filters?: {
+            branch?: string;
+            filePatterns?: string[];
+            excludePatterns?: string[];
+            maxFiles?: number;
+        };
+    }): Promise<RepositoryFileWithContent[]> {
         try {
-            const { organizationName, repository, organizationAndTeamData } =
-                params;
+            const {
+                organizationAndTeamData,
+                repository,
+                filters = {},
+            } = params;
+
+            if (!repository?.name) {
+                this.logger.warn({
+                    message: 'Repository name is required.',
+                    context: GithubService.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            const authDetails = await this.getGithubAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!authDetails) {
+                this.logger.warn({
+                    message: 'GitHub authentication details not found.',
+                    context: GithubService.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
             const octokit = await this.instanceOctokit(organizationAndTeamData);
+            const owner = await this.getCorrectOwner(authDetails, octokit);
 
             const files = await this.getRepositoryAllFiles(params);
 
-            const filesWithContent = await Promise.all(
-                files.map(async (file) => {
-                    try {
-                        const { data } = await octokit.rest.repos.getContent({
-                            owner: organizationName,
-                            repo: repository,
-                            path: file.path,
-                            ref: params.branch,
-                        });
+            const { branch = 'main' } = filters ?? {};
 
-                        if ('content' in data) {
-                            return {
-                                ...file,
-                                content: Buffer.from(
-                                    data.content,
-                                    'base64',
-                                ).toString('utf-8'),
-                            };
-                        }
-
-                        return file;
-                    } catch (error) {
-                        this.logger.error({
-                            message: 'Failed to get file content',
-                            context: 'GithubService',
-                            error: error.message,
-                            metadata: { file, params },
-                        });
-                        return file;
-                    }
+            const promises = files.map((file) =>
+                this.getFileWithContent({
+                    file,
+                    octokit,
+                    owner,
+                    repo: repository.name,
+                    branch,
                 }),
             );
+
+            const filesWithContent = await Promise.all(promises);
 
             return filesWithContent;
         } catch (error) {
@@ -3792,8 +3857,49 @@ export class GithubService
                 error: error.message,
                 metadata: params,
             });
+
             return [];
         }
+    }
+
+    private async getFileWithContent(params: {
+        file: RepositoryFile;
+        octokit: Octokit;
+        owner: string;
+        repo: string;
+        branch: string;
+    }): Promise<RepositoryFileWithContent> {
+        const { file, octokit, owner, repo, branch } = params;
+
+        const fileWithContent = {
+            ...file,
+            content: null,
+        };
+
+        try {
+            const { data } = await octokit.rest.repos.getContent({
+                owner,
+                repo,
+                path: file.path,
+                ref: branch,
+            });
+
+            if ('content' in data) {
+                fileWithContent.content = Buffer.from(
+                    data.content,
+                    'base64',
+                ).toString('utf-8');
+            }
+        } catch (error) {
+            this.logger.error({
+                message: `Failed to get content for file ${file.path}`,
+                context: GithubService.name,
+                error: error.message,
+                metadata: { file, owner, repo, branch },
+            });
+        }
+
+        return fileWithContent;
     }
 
     async mergePullRequest(params: {
@@ -4713,6 +4819,18 @@ export class GithubService
                 name: pullRequest?.user?.name ?? '',
                 id: pullRequest?.user?.id?.toString() ?? '',
             },
+        };
+    }
+
+    private transformRepositoryFile(
+        file: RestEndpointMethodTypes['git']['getTree']['response']['data']['tree'][number],
+    ): RepositoryFile {
+        return {
+            filename: file?.path?.split('/').pop() ?? '',
+            sha: file?.sha ?? '',
+            size: file?.size ?? -1,
+            path: file?.path ?? '',
+            type: file?.type ?? 'blob',
         };
     }
 }

@@ -103,17 +103,15 @@ const CommitSchema = z.any();
 const RepositoryFileSchema = z
     .object({
         path: z.string(),
-        content: z.string().optional(),
         sha: z.string().optional(),
         size: z.number().optional(),
         type: z.string().optional(),
-        encoding: z.string().optional(),
         filename: z.string().optional(),
     })
     .passthrough();
 
 interface RepositoriesResponse extends BaseResponse {
-    data: Repositories[];
+    data: z.infer<typeof RepositorySchema>[];
 }
 
 interface PullRequestsResponse extends BaseResponse {
@@ -223,7 +221,7 @@ export class CodeManagementTools {
                         ...args.filters,
                     };
 
-                    const repositories: Repositories[] = (
+                    const repositories = (
                         await this.codeManagementService.getRepositories(params)
                     ).filter((repo) => repo.selected === true);
 
@@ -598,18 +596,25 @@ export class CodeManagementTools {
             }),
             execute: wrapToolHandler(
                 async (args: InputType): Promise<RepositoryFilesResponse> => {
-                    const params = {
-                        repository: args.repository,
-                        organizationName: args.organizationName,
-                        branch: args.branch,
+                    const params: Parameters<
+                        typeof this.codeManagementService.getRepositoryAllFiles
+                    >[0] = {
                         organizationAndTeamData: {
                             organizationId: args.organizationId,
                             teamId: args.teamId,
                         },
-                        filePatterns: args.filePatterns,
-                        excludePatterns: args.excludePatterns,
-                        maxFiles: args.maxFiles,
+                        repository: {
+                            id: args.repository,
+                            name: args.repository,
+                        },
+                        filters: {
+                            branch: args.branch,
+                            filePatterns: args.filePatterns,
+                            excludePatterns: args.excludePatterns,
+                            maxFiles: args.maxFiles,
+                        },
                     };
+
                     const files =
                         await this.codeManagementService.getRepositoryAllFiles(
                             params,

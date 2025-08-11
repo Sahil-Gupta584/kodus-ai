@@ -18,6 +18,7 @@ import {
     Gitlab,
     MergeRequestSchema,
     MergeRequestSchemaWithBasicLabels,
+    RepositoryTreeSchema,
 } from '@gitbeaker/rest';
 import axios from 'axios';
 import {
@@ -71,6 +72,8 @@ import { KODY_CODE_REVIEW_COMPLETED_MARKER } from '@/shared/utils/codeManagement
 import { ConfigService } from '@nestjs/config';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
+import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
+import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
@@ -82,7 +85,6 @@ export class GitlabService
             | 'getPullRequestsWithChangesRequested'
             | 'getListOfValidReviews'
             | 'getPullRequestReviewThreads'
-            | 'getRepositoryAllFiles'
             | 'getAuthenticationOAuthToken'
             | 'getCommitsByReleaseMode'
             | 'getDataForCalculateDeployFrequency'
@@ -607,7 +609,15 @@ export class GitlabService
         );
     }
 
-    async getRepositories(params: any): Promise<Repositories[]> {
+    async getRepositories(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        filters?: {
+            archived?: boolean;
+            organizationSelected?: string;
+            visibility?: 'all' | 'public' | 'private';
+            language?: string;
+        };
+    }): Promise<Repositories[]> {
         try {
             const gitlabAuthDetail = await this.getAuthDetails(
                 params.organizationAndTeamData,
@@ -3079,6 +3089,101 @@ export class GitlabService
         }
     }
 
+    async getRepositoryAllFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        filters?: {
+            branch?: string;
+            filePatterns?: string[];
+            excludePatterns?: string[];
+            maxFiles?: number;
+        };
+    }): Promise<RepositoryFile[]> {
+        try {
+            const {
+                organizationAndTeamData,
+                repository,
+                filters = {},
+            } = params;
+
+            if (!repository?.id) {
+                this.logger.warn({
+                    message: 'Repository ID is required to get all files',
+                    context: GitlabService.name,
+                    serviceName: 'GitlabService getRepositoryAllFiles',
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!gitlabAuthDetail) {
+                this.logger.warn({
+                    message: 'GitLab authentication details not found',
+                    context: GitlabService.name,
+                    serviceName: 'GitlabService getRepositoryAllFiles',
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const {
+                branch,
+                filePatterns,
+                excludePatterns,
+                maxFiles = 1000,
+            } = filters ?? {};
+
+            const trees = await gitlabAPI.Repositories.allRepositoryTrees(
+                repository.id,
+                {
+                    ref: branch,
+                    recursive: true,
+                },
+            );
+
+            let files = trees
+                .filter((file) => file.type === 'blob')
+                .map((file) => this.transformRepositoryFile(file));
+
+            if (filePatterns?.length > 0) {
+                files = files.filter((file) =>
+                    isFileMatchingGlob(file.filename, filePatterns),
+                );
+            }
+
+            if (excludePatterns?.length > 0) {
+                files = files.filter(
+                    (file) =>
+                        !isFileMatchingGlob(file.filename, excludePatterns),
+                );
+            }
+
+            if (maxFiles > 0) {
+                files = files.slice(0, maxFiles);
+            }
+
+            return files;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error retrieving all files from repository',
+                context: GitlabService.name,
+                serviceName: 'GitlabService getRepositoryAllFiles',
+                error: error.message,
+                metadata: params,
+            });
+
+            return [];
+        }
+    }
+
     //#region Transformers
 
     /**
@@ -3201,6 +3306,18 @@ export class GitlabService
                 name: mergeRequest?.author?.name ?? '',
                 id: mergeRequest?.author?.id?.toString() ?? '',
             },
+        };
+    }
+
+    private transformRepositoryFile(
+        file: RepositoryTreeSchema,
+    ): RepositoryFile {
+        return {
+            filename: file?.path?.split('/').pop() ?? '',
+            sha: file?.id ?? '',
+            size: -1, // GitLab does not provide file size in the tree entry
+            path: file?.path ?? '',
+            type: file?.type ?? 'blob',
         };
     }
 }

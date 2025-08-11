@@ -240,3 +240,37 @@ export interface AzureRepoReviewerWithVote {
     vote: number; // int16
     votedFor: any;
 }
+
+export type AzureRepoFileItem = {
+    commitId?: string;
+    content?: string;
+    contentMetadata?: FileContentMetadata;
+    gitObjectType?: GitObjectType;
+    isFolder?: boolean;
+    isSymLink?: boolean;
+    objectId?: string;
+    originalObjectId?: string;
+    path?: string;
+    url?: string;
+};
+
+export type FileContentMetadata = {
+    contentType?: string;
+    encoding?: number;
+    extension?: string;
+    fileName?: string;
+    isBinary?: boolean;
+    isImage?: boolean;
+    vsLink?: string;
+};
+
+export enum GitObjectType {
+    bad = 'bad',
+    commit = 'commit',
+    tree = 'tree',
+    blob = 'blob',
+    tag = 'tag',
+    ext2 = 'ext2',
+    ofsDelta = 'ofsDelta',
+    refDelta = 'refDelta',
+}

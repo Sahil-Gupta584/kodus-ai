@@ -26,6 +26,7 @@ import {
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
+import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 
 @Injectable()
 export class CodeManagementService implements ICodeManagementService {
@@ -86,7 +87,15 @@ export class CodeManagementService implements ICodeManagementService {
     }
 
     async getRepositories(
-        params: any,
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            filters?: {
+                archived?: boolean;
+                organizationSelected?: string;
+                visibility?: 'all' | 'public' | 'private';
+                language?: string;
+            };
+        },
         type?: PlatformType,
     ): Promise<Repositories[]> {
         if (!type) {
@@ -696,16 +705,20 @@ export class CodeManagementService implements ICodeManagementService {
 
     async getRepositoryAllFiles(
         params: {
-            repository: string;
-            organizationName: string;
-            branch: string;
             organizationAndTeamData: OrganizationAndTeamData;
-            filePatterns?: string[];
-            excludePatterns?: string[];
-            maxFiles?: number;
+            repository: {
+                id: string;
+                name: string;
+            };
+            filters?: {
+                branch?: string;
+                filePatterns?: string[];
+                excludePatterns?: string[];
+                maxFiles?: number;
+            };
         },
         type?: PlatformType,
-    ) {
+    ): Promise<RepositoryFile[]> {
         if (!type) {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
