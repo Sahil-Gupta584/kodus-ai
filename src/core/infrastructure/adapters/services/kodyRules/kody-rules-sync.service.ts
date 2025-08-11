@@ -7,6 +7,7 @@ import { CreateOrUpdateKodyRulesUseCase } from '@/core/application/use-cases/kod
 import {
     KodyRulesOrigin,
     KodyRulesScope,
+    IKodyRule,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import {
     CreateKodyRuleDto,
@@ -14,11 +15,16 @@ import {
 } from '@/core/infrastructure/http/dtos/create-kody-rule.dto';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import {
+    IKodyRulesService,
+    KODY_RULES_SERVICE_TOKEN,
+} from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
+import {
     PromptRunnerService,
     ParserType,
     PromptRole,
     LLMModelProvider,
 } from '@kodus/kodus-common/llm';
+import { createHash } from 'crypto';
 
 type SyncTarget = {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -38,7 +44,157 @@ export class KodyRulesSyncService {
         private readonly logger: PinoLoggerService,
         @Inject(CreateOrUpdateKodyRulesUseCase)
         private readonly upsertRule: CreateOrUpdateKodyRulesUseCase,
+        @Inject(KODY_RULES_SERVICE_TOKEN)
+        private readonly kodyRulesService: IKodyRulesService,
     ) {}
+
+    private async findRuleBySourcePath(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+        sourcePath: string;
+    }): Promise<Partial<{ uuid: string }> | null> {
+        try {
+            const { organizationAndTeamData, repositoryId, sourcePath } =
+                params;
+            const existing = await this.kodyRulesService.findByOrganizationId(
+                organizationAndTeamData.organizationId,
+            );
+            const found = existing?.rules?.find(
+                (r) =>
+                    r?.repositoryId === repositoryId &&
+                    r?.sourcePath === sourcePath,
+            );
+            return found ? { uuid: found.uuid } : null;
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to find rule by sourcePath',
+                context: KodyRulesSyncService.name,
+                error,
+                metadata: params,
+            });
+            return null;
+        }
+    }
+
+    private async findRulesBySourcePath(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+        sourcePath: string;
+    }): Promise<Partial<IKodyRule>[]> {
+        try {
+            const { organizationAndTeamData, repositoryId, sourcePath } = params;
+            const existing = await this.kodyRulesService.findByOrganizationId(
+                organizationAndTeamData.organizationId,
+            );
+            return (
+                existing?.rules?.filter(
+                    (r) => r?.repositoryId === repositoryId && r?.sourcePath === sourcePath,
+                ) || []
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to list rules by sourcePath',
+                context: KodyRulesSyncService.name,
+                error,
+                metadata: params,
+            });
+            return [];
+        }
+    }
+
+    private normalizeTitle(input?: string): string {
+        return (input || '').trim().toLowerCase();
+    }
+
+    private normalizeRuleText(input?: string): string {
+        if (!input) return '';
+        return input
+            .replace(/\r\n/g, '\n')
+            .replace(/\t/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+    }
+
+    private normalizeSnippet(input?: string): string {
+        if (!input) return '';
+        return input
+            .replace(/\r\n/g, '\n')
+            .replace(/[\s\u00A0]+/g, ' ')
+            .trim()
+            .toLowerCase();
+    }
+
+    private computeAnchorFromSnippet(snippet?: string): string | undefined {
+        const norm = this.normalizeSnippet(snippet);
+        if (!norm) return undefined;
+        const hash = createHash('sha1').update(norm).digest('hex').slice(0, 16);
+        return `s=${hash}`;
+    }
+
+    private extractAnchorFromSourcePath(sourcePath?: string): string | undefined {
+        if (!sourcePath) return undefined;
+        const idx = sourcePath.indexOf('#');
+        if (idx < 0) return undefined;
+        const suffix = sourcePath.slice(idx + 1);
+        return suffix || undefined;
+    }
+
+    private matchExistingUuid(
+        existing: Partial<IKodyRule>[],
+        candidate: Pick<CreateKodyRuleDto, 'title' | 'rule' | 'path'> & {
+            anchor?: string;
+        },
+    ): string | undefined {
+        if (candidate.anchor) {
+            const matchedByAnchor = existing.find((r) => {
+                const a = this.extractAnchorFromSourcePath(r.sourcePath);
+                return a && a === candidate.anchor;
+            });
+            if (matchedByAnchor?.uuid) return matchedByAnchor.uuid;
+        }
+
+        const title = this.normalizeTitle(candidate.title);
+        const ruleText = this.normalizeRuleText(candidate.rule);
+
+        const byTitle = existing.find(
+            (r) => this.normalizeTitle(r.title) === title,
+        );
+        if (byTitle?.uuid) return byTitle.uuid;
+
+        const byRule = existing.find(
+            (r) => this.normalizeRuleText(r.rule) === ruleText,
+        );
+        if (byRule?.uuid) return byRule.uuid;
+
+        if (candidate.path) {
+            const byTitleAndPath = existing.find(
+                (r) =>
+                    this.normalizeTitle(r.title) === title &&
+                    (r.path || '').toLowerCase() === (candidate.path || '').toLowerCase(),
+            );
+            if (byTitleAndPath?.uuid) return byTitleAndPath.uuid;
+        }
+
+        // Fuzzy fallback: Jaccard similarity over token sets of rule text
+        const tokenize = (s: string) =>
+            this.normalizeRuleText(s)
+                .split(/[^a-z0-9]+/i)
+                .filter(Boolean);
+        const candTokens = new Set(tokenize(candidate.rule || ''));
+        let best: { uuid?: string; score: number } = { score: 0 };
+        for (const r of existing) {
+            const exTokens = new Set(tokenize(r.rule || ''));
+            const inter = new Set([...candTokens].filter((t) => exTokens.has(t)));
+            const union = new Set([...candTokens, ...exTokens]);
+            const score = union.size ? inter.size / union.size : 0;
+            if (score > best.score) best = { uuid: r.uuid, score };
+        }
+        // Threshold tweakable; start conservative to avoid wrong merges
+        if (best.uuid && best.score >= 0.6) return best.uuid;
+
+        return undefined;
+    }
 
     async syncFromChangedFiles(params: {
         organizationAndTeamData: OrganizationAndTeamData;
@@ -57,7 +213,6 @@ export class KodyRulesSyncService {
             files,
         } = params;
         try {
-            // obter detalhes da PR para extrair head/base refs (GitHub, GitLab, Bitbucket) e também suportar Azure via number
             const prDetails =
                 await this.codeManagementService.getPullRequestByNumber({
                     organizationAndTeamData,
@@ -71,7 +226,7 @@ export class KodyRulesSyncService {
                 head: head ? { ref: head } : undefined,
                 base: base ? { ref: base } : undefined,
             };
-            // filtra pelos padrões usando picomatch (cobre ** corretamente e arquivos iniciados por ponto)
+
             const patterns = [...RULE_FILE_PATTERNS];
             const isRuleFile = (fp?: string) =>
                 !!fp && isFileMatchingGlob(fp, patterns);
@@ -84,9 +239,13 @@ export class KodyRulesSyncService {
 
             for (const f of ruleChanges) {
                 if (f.status === 'removed') {
-                    // Remoção: deixar para fluxo atual (exclusão/inativação já existente via UI/cron)
                     continue;
                 }
+
+                const sourcePathLookup =
+                    f.status === 'renamed' && f.previous_filename
+                        ? f.previous_filename
+                        : f.filename;
 
                 const contentResp =
                     await this.codeManagementService.getRepositoryContentFile({
@@ -107,49 +266,57 @@ export class KodyRulesSyncService {
                         ? Buffer.from(rawContent, 'base64').toString('utf-8')
                         : rawContent;
 
-                 const rules = await this.convertFileToKodyRules({
+                const rules = await this.convertFileToKodyRules({
                     filePath: f.filename,
                     repositoryId: repository.id,
                     content: decoded,
                 });
 
-                 if (!Array.isArray(rules) || rules.length === 0) {
-                     this.logger.warn({
-                         message: 'No rules parsed from changed file',
-                         context: KodyRulesSyncService.name,
-                         metadata: { file: f.filename },
-                     });
-                     continue;
-                 }
-
-                for (const rule of rules.filter(
-                    (r) => r && typeof r === 'object' && r.title && r.rule,
-                )) {
-                    const dto: CreateKodyRuleDto = {
-                        uuid: rule.uuid,
-                        title: rule.title,
-                        rule: rule.rule,
-                        path: rule.path ?? f.filename,
-                        sourcePath: f.filename,
-                        severity:
-                            (rule.severity?.toLowerCase?.() as KodyRuleSeverity) ||
-                            KodyRuleSeverity.MEDIUM,
-                        repositoryId: repository.id,
-                        origin: KodyRulesOrigin.USER,
-                        status: rule.status,
-                        scope:
-                            (rule.scope as KodyRulesScope) ||
-                            KodyRulesScope.FILE,
-                        examples: Array.isArray(rule.examples)
-                            ? rule.examples
-                            : [],
-                    } as CreateKodyRuleDto;
-
-                    await this.upsertRule.execute(
-                        dto,
-                        organizationAndTeamData.organizationId,
-                    );
+                if (!Array.isArray(rules) || rules.length === 0) {
+                    this.logger.warn({
+                        message: 'No rules parsed from changed file',
+                        context: KodyRulesSyncService.name,
+                        metadata: { file: f.filename },
+                    });
+                    continue;
                 }
+
+                const oneRule = rules.find(
+                    (r) => r && typeof r === 'object' && r.title && r.rule,
+                );
+
+                if (!oneRule) continue;
+
+                const existing = sourcePathLookup
+                    ? await this.findRuleBySourcePath({
+                          organizationAndTeamData,
+                          repositoryId: repository.id,
+                          sourcePath: sourcePathLookup,
+                      })
+                    : null;
+
+                const dto: CreateKodyRuleDto = {
+                    uuid: existing?.uuid,
+                    title: oneRule.title as string,
+                    rule: oneRule.rule as string,
+                    path: (oneRule.path as string) ?? f.filename,
+                    sourcePath: f.filename,
+                    severity:
+                        ((oneRule.severity as any)?.toLowerCase?.() as KodyRuleSeverity) ||
+                        KodyRuleSeverity.MEDIUM,
+                    repositoryId: repository.id,
+                    origin: KodyRulesOrigin.USER,
+                    status: oneRule.status as any,
+                    scope: (oneRule.scope as KodyRulesScope) || KodyRulesScope.FILE,
+                    examples: Array.isArray(oneRule.examples)
+                        ? (oneRule.examples as any)
+                        : [],
+                } as CreateKodyRuleDto;
+
+                await this.upsertRule.execute(
+                    dto,
+                    organizationAndTeamData.organizationId,
+                );
             }
         } catch (error) {
             this.logger.error({
@@ -212,32 +379,32 @@ export class KodyRulesSyncService {
                     content: decoded,
                 });
 
-                for (const rule of rules) {
-                    const dto: CreateKodyRuleDto = {
-                        uuid: rule.uuid,
-                        title: rule.title,
-                        rule: rule.rule,
-                        path: rule.path ?? file.path,
-                        sourcePath: file.path,
-                        severity:
-                            (rule.severity?.toLowerCase?.() as KodyRuleSeverity) ||
-                            KodyRuleSeverity.MEDIUM,
-                        repositoryId: repository.id,
-                        origin: KodyRulesOrigin.USER,
-                        status: rule.status,
-                        scope:
-                            (rule.scope as KodyRulesScope) ||
-                            KodyRulesScope.FILE,
-                        examples: Array.isArray(rule.examples)
-                            ? rule.examples
-                            : [],
-                    } as CreateKodyRuleDto;
+                const oneRule = rules.find((r) => r && typeof r === 'object' && r.title && r.rule);
+                if (!oneRule) continue;
 
-                    await this.upsertRule.execute(
-                        dto,
-                        organizationAndTeamData.organizationId,
-                    );
-                }
+                const existing = await this.findRuleBySourcePath({
+                    organizationAndTeamData,
+                    repositoryId: repository.id,
+                    sourcePath: file.path,
+                });
+
+                const dto: CreateKodyRuleDto = {
+                    uuid: existing?.uuid,
+                    title: oneRule.title as string,
+                    rule: oneRule.rule as string,
+                    path: (oneRule.path as string) ?? file.path,
+                    sourcePath: file.path,
+                    severity:
+                        ((oneRule.severity as any)?.toLowerCase?.() as KodyRuleSeverity) ||
+                        KodyRuleSeverity.MEDIUM,
+                    repositoryId: repository.id,
+                    origin: KodyRulesOrigin.USER,
+                    status: oneRule.status as any,
+                    scope: (oneRule.scope as KodyRulesScope) || KodyRulesScope.FILE,
+                    examples: Array.isArray(oneRule.examples) ? (oneRule.examples as any) : [],
+                } as CreateKodyRuleDto;
+
+                await this.upsertRule.execute(dto, organizationAndTeamData.organizationId);
             }
         } catch (error) {
             this.logger.error({
@@ -302,16 +469,17 @@ export class KodyRulesSyncService {
                 .addPrompt({
                     role: PromptRole.SYSTEM,
                     prompt: [
-                        'Convert repository rule files (Cursor, Claude, GitHub rules, coding standards, etc.) into a JSON array of Kody Rules.',
+                        'Convert repository rule files (Cursor, Claude, GitHub rules, coding standards, etc.) into a JSON array of Kody Rules. IMPORTANT: Enforce exactly one rule per file. If multiple candidate rules exist, merge them concisely into one or pick the most representative. Return an array with a single item or [].',
                         'Output ONLY a valid JSON array. If none, output []. No comments or explanations.',
                         'Each item MUST match exactly:',
-                        '{"title": string, "rule": string, "path": string, "sourcePath": string, "severity": "low"|"medium"|"high"|"critical", "scope"?: "file"|"pull-request", "status"?: "active"|"pending"|"rejected"|"deleted", "examples": [{ "snippet": string, "isCorrect": boolean }]}',
+                        '{"title": string, "rule": string, "path": string, "sourcePath": string, "severity": "low"|"medium"|"high"|"critical", "scope"?: "file"|"pull-request", "status"?: "active"|"pending"|"rejected"|"deleted", "examples": [{ "snippet": string, "isCorrect": boolean }], "sourceSnippet"?: string}',
                         'Detection: extract a rule only if the text imposes a requirement/restriction/convention/standard.',
                         'Severity map: must/required/security/blocker → "high" or "critical"; should/warn → "medium"; tip/info/optional → "low".',
                         'Scope: "file" for code/content; "pull-request" for PR titles/descriptions/commits/reviewers/labels.',
                         'Status: "active" if mandatory; "pending" if suggestive; "deleted" if deprecated.',
                         'path (target GLOB): use declared globs/paths when present (frontmatter like "globs:" or explicit sections). If none, set "**/*". If multiple, join with commas (e.g., "services/**,api/**").',
                         'sourcePath: ALWAYS set to the exact file path provided in input.',
+                        'sourceSnippet: when possible, include an EXACT copy (verbatim) of the bullet/line/paragraph from the file that led to this rule. Do NOT paraphrase. If none is suitable, omit this key.',
                         'Examples: prefer 1 incorrect and 1 correct (minimal snippets).',
                         'Language: keep the rule language consistent with the source (EN or PT-BR).',
                         'Do NOT include keys like repositoryId, origin, createdAt, updatedAt, uuid, or any extra keys.',
@@ -352,7 +520,7 @@ export class KodyRulesSyncService {
                     })
                     .addPrompt({
                         role: PromptRole.SYSTEM,
-                        prompt: 'Return ONLY the JSON array for the rules, without code fences. No explanations.',
+                        prompt: 'Return ONLY the JSON array for the rules, without code fences. Include a "sourceSnippet" field when you can copy an exact excerpt from the file for each rule. No explanations.',
                     })
                     .addPrompt({
                         role: PromptRole.USER,
