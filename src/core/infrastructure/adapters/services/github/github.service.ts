@@ -783,7 +783,10 @@ export class GithubService
      */
     async getPullRequests(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        repository?: string;
+        repository?: {
+            id: string;
+            name: string;
+        };
         filters?: {
             startDate?: Date;
             endDate?: Date;
@@ -832,9 +835,9 @@ export class GithubService
 
             let reposToProcess = allRepositories;
 
-            if (repository) {
+            if (repository && (repository.name || repository.id)) {
                 const foundRepo = allRepositories.find(
-                    (r) => r.name === repository,
+                    (r) => r.name === repository.name || r.id === repository.id,
                 );
 
                 if (!foundRepo) {
@@ -906,7 +909,9 @@ export class GithubService
         const pullRequests = await octokit.paginate(octokit.rest.pulls.list, {
             owner,
             repo,
-            state: state ? this._prStateMapReverse.get(state) : undefined,
+            state: state
+                ? this._prStateMapReverse.get(state)
+                : this._prStateMapReverse.get(PullRequestState.ALL),
             base: branch,
             sort: 'created',
             direction: 'desc',
@@ -4760,10 +4765,12 @@ export class GithubService
 
     private readonly _prStateMapReverse = new Map<
         PullRequestState,
-        RestEndpointMethodTypes['pulls']['get']['response']['data']['state']
+        RestEndpointMethodTypes['pulls']['list']['parameters']['state']
     >([
         [PullRequestState.OPENED, 'open'],
+        [PullRequestState.MERGED, 'closed'], // GitHub does not have a separate 'merged' state, so we map it to 'closed'
         [PullRequestState.CLOSED, 'closed'],
+        [PullRequestState.ALL, 'all'],
     ]);
 
     /**
@@ -4790,11 +4797,17 @@ export class GithubService
                     pullRequest?.state as RestEndpointMethodTypes['pulls']['get']['response']['data']['state'],
                 ) ?? PullRequestState.ALL,
             prURL: pullRequest?.html_url ?? '',
-            repository: pullRequest?.base?.repo?.full_name ?? '', // TODO: remove, legacy, use repositoryData
+            repository:
+                pullRequest?.base?.repo?.full_name ??
+                pullRequest?.base?.repo?.name ??
+                '', // TODO: remove, legacy, use repositoryData
             repositoryId: pullRequest?.base?.repo?.id?.toString() ?? '', // TODO: remove, legacy, use repositoryData
             repositoryData: {
                 id: pullRequest?.base?.repo?.id?.toString() ?? '',
-                name: pullRequest?.base?.repo?.full_name ?? '',
+                name:
+                    pullRequest?.base?.repo?.full_name ??
+                    pullRequest?.base?.repo?.name ??
+                    '',
             },
             message: pullRequest?.title ?? '',
             created_at: pullRequest?.created_at ?? '',
@@ -4815,7 +4828,7 @@ export class GithubService
                 ref: pullRequest?.head?.ref ?? '',
                 repo: {
                     id: pullRequest?.head?.repo?.id?.toString() ?? '',
-                    name: pullRequest?.head?.repo?.full_name ?? '',
+                    name: pullRequest?.head?.repo?.name ?? '',
                     defaultBranch:
                         pullRequest?.head?.repo?.default_branch ?? '',
                     fullName: pullRequest?.head?.repo?.full_name ?? '',
@@ -4826,7 +4839,7 @@ export class GithubService
                 ref: pullRequest?.base?.ref ?? '',
                 repo: {
                     id: pullRequest?.base?.repo?.id?.toString() ?? '',
-                    name: pullRequest?.base?.repo?.full_name ?? '',
+                    name: pullRequest?.base?.repo?.name ?? '',
                     defaultBranch:
                         pullRequest?.base?.repo?.default_branch ?? '',
                     fullName: pullRequest?.base?.repo?.full_name ?? '',

@@ -1916,7 +1916,10 @@ export class AzureReposService
      */
     async getPullRequests(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        repository?: string;
+        repository?: {
+            id: string;
+            name: string;
+        };
         filters?: {
             startDate?: Date;
             endDate?: Date;
@@ -1964,9 +1967,9 @@ export class AzureReposService
 
             let reposToProcess = allRepositories;
 
-            if (repository) {
+            if (repository && (repository.name || repository.id)) {
                 const foundRepo = allRepositories.find(
-                    (r) => r.name === repository,
+                    (r) => r.name === repository.name || r.id === repository.id,
                 );
 
                 if (!foundRepo) {
@@ -2043,7 +2046,9 @@ export class AzureReposService
             filters: {
                 author,
                 branch,
-                status: state ? this._prStateMapReversed.get(state) : undefined,
+                status: state
+                    ? this._prStateMapReversed.get(state)
+                    : this._prStateMapReversed.get(PullRequestState.ALL),
                 maxTime: endDate ? endDate.toISOString() : undefined,
                 minTime: startDate ? startDate.toISOString() : undefined,
             },
@@ -3711,6 +3716,7 @@ export class AzureReposService
         [PullRequestState.OPENED, AzurePRStatus.ACTIVE],
         [PullRequestState.MERGED, AzurePRStatus.COMPLETED],
         [PullRequestState.CLOSED, AzurePRStatus.ABANDONED],
+        [PullRequestState.ALL, AzurePRStatus.ALL],
     ]);
 
     private readonly _prClosedStates: Array<AzurePRStatus> = [

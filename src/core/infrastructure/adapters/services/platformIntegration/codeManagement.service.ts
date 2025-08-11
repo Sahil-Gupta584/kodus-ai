@@ -234,7 +234,10 @@ export class CodeManagementService implements ICodeManagementService {
     async getPullRequests(
         params: {
             organizationAndTeamData: OrganizationAndTeamData;
-            repository?: string;
+            repository?: {
+                id: string;
+                name: string;
+            };
             filters?: {
                 startDate?: Date;
                 endDate?: Date;

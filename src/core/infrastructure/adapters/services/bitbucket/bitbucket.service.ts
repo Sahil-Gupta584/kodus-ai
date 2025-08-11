@@ -385,7 +385,10 @@ export class BitbucketService
      */
     async getPullRequests(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        repository?: string;
+        repository?: {
+            id: string;
+            name: string;
+        };
         filters?: {
             startDate?: Date;
             endDate?: Date;
@@ -435,9 +438,9 @@ export class BitbucketService
 
             let reposToProcess = allRepositories;
 
-            if (repository) {
+            if (repository && (repository.name || repository.id)) {
                 const foundRepo = allRepositories.find(
-                    (r) => r.name === repository,
+                    (r) => r.name === repository.name || r.id === repository.id,
                 );
 
                 if (!foundRepo) {
@@ -498,10 +501,36 @@ export class BitbucketService
         const { bitbucketAPI, repo, filters = {} } = params;
         const { startDate, endDate, state, author, branch } = filters;
 
+        // see https://github.com/MunifTanjim/node-bitbucket/issues/74
+        bitbucketAPI.pullrequests.list =
+            // @ts-ignore
+            bitbucketAPI.pullrequests.list.defaults({
+                request: {
+                    validate: {
+                        state: {
+                            enum: undefined,
+                            type: 'array',
+                            items: {
+                                enum: [
+                                    'OPEN',
+                                    'DECLINED',
+                                    'MERGED',
+                                    'SUPERSEDED',
+                                ],
+                                type: 'string',
+                            },
+                        },
+                    },
+                },
+            });
+
         const response = await bitbucketAPI.pullrequests.list({
-            repo_slug: `{${repo.name}}`,
+            repo_slug: `{${repo.id}}`,
             workspace: `{${repo.workspaceId}}`,
-            state: state ? this._prStateMapReversed.get(state) : undefined,
+            // @ts-ignore - see above
+            state: state
+                ? this._prStateMapReversed.get(state)
+                : this._prStateMapReversed.get(PullRequestState.ALL), // get all states if not specified
             sort: '-created_on', // Sort by creation date, descending
             fields: '+values.participants,+values.reviewers',
         });
@@ -4044,11 +4073,12 @@ export class BitbucketService
 
     private readonly _prStateMapReversed = new Map<
         PullRequestState,
-        Schema.Pullrequest['state']
+        Schema.Pullrequest['state'][]
     >([
-        [PullRequestState.OPENED, 'OPEN'],
-        [PullRequestState.MERGED, 'MERGED'],
-        [PullRequestState.CLOSED, 'DECLINED'],
+        [PullRequestState.OPENED, ['OPEN']],
+        [PullRequestState.MERGED, ['MERGED']],
+        [PullRequestState.CLOSED, ['DECLINED']],
+        [PullRequestState.ALL, ['OPEN', 'MERGED', 'DECLINED', 'SUPERSEDED']],
     ]);
 
     private readonly _prClosedStates: Array<Schema.Pullrequest['state']> = [
@@ -4078,7 +4108,10 @@ export class BitbucketService
                 this._prStateMap.get(pullRequest?.state) ??
                 PullRequestState.ALL,
             prURL: pullRequest?.links?.html?.href ?? '',
-            repository: pullRequest?.source?.repository?.name ?? '', // TODO: remove, legacy, use repositoryData
+            repository:
+                pullRequest?.source?.repository?.full_name ??
+                pullRequest?.source?.repository?.name ??
+                '', // TODO: remove, legacy, use repositoryData
             repositoryId:
                 this.sanitizeUUID(
                     pullRequest?.source?.repository?.uuid ?? '',
@@ -4088,7 +4121,10 @@ export class BitbucketService
                     this.sanitizeUUID(
                         pullRequest?.source?.repository?.uuid ?? '',
                     ) ?? '',
-                name: pullRequest?.source?.repository?.name ?? '',
+                name:
+                    pullRequest?.source?.repository?.full_name ??
+                    pullRequest?.source?.repository?.name ??
+                    '',
             },
             message: pullRequest?.title ?? '',
             created_at: pullRequest?.created_on ?? '',

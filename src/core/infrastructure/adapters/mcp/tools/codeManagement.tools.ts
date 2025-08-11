@@ -252,16 +252,27 @@ export class CodeManagementTools {
             filters: z
                 .object({
                     state: z
-                        .enum(['open', 'closed', 'merged'])
+                        .enum(['opened', 'closed', 'merged'])
                         .optional()
                         .describe(
-                            'PR state filter: "open" (active PRs awaiting review), "closed" (rejected/abandoned PRs), "merged" (accepted and merged PRs)',
+                            'PR state filter: "opened" (active PRs awaiting review), "closed" (rejected/abandoned PRs), "merged" (accepted and merged PRs). If not specified returns PR in any state',
                         ),
                     repository: z
-                        .string()
+                        .object({
+                            id: z
+                                .string()
+                                .describe(
+                                    'Repository unique identifier (UUID or platform-specific ID)',
+                                ),
+                            name: z
+                                .string()
+                                .describe(
+                                    'Repository name (e.g., "my-awesome-project")',
+                                ),
+                        })
                         .optional()
                         .describe(
-                            'Repository name or ID to filter PRs from a specific repository only',
+                            'Specific repository to filter PRs by. If not provided, returns PRs from all accessible repositories',
                         ),
                     author: z
                         .string()
@@ -282,6 +293,7 @@ export class CodeManagementTools {
                             'ISO date string (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ) to filter PRs created before this date',
                         ),
                 })
+                .optional()
                 .describe(
                     'Filter criteria to narrow down pull request results',
                 ),
@@ -308,14 +320,23 @@ export class CodeManagementTools {
                             organizationId: args.organizationId,
                             teamId: args.teamId,
                         },
+                        repository: {
+                            id: args.filters?.repository?.id,
+                            name: args.filters?.repository?.name,
+                        },
                         filters: {
                             state: args.filters?.state
                                 ? PullRequestState[
                                       args.filters.state.toUpperCase()
                                   ]
                                 : undefined,
-                            startDate: new Date(args.filters?.startDate),
-                            endDate: new Date(args.filters?.endDate),
+                            startDate: args.filters?.startDate
+                                ? new Date(args.filters.startDate)
+                                : undefined,
+                            endDate: args.filters?.endDate
+                                ? new Date(args.filters.endDate)
+                                : undefined,
+                            author: args.filters?.author,
                         },
                     };
 
@@ -549,8 +570,21 @@ export class CodeManagementTools {
                     'Team UUID - unique identifier for the team within the organization',
                 ),
             repository: z
-                .string()
-                .describe('Repository name or identifier to get files from'),
+                .object({
+                    id: z
+                        .string()
+                        .describe(
+                            'Repository unique identifier (UUID or platform-specific ID)',
+                        ),
+                    name: z
+                        .string()
+                        .describe(
+                            'Repository name (e.g., "my-awesome-project")',
+                        ),
+                })
+                .describe(
+                    'Repository information to get file tree/listing from',
+                ),
             branch: z
                 .string()
                 .optional()
@@ -561,13 +595,13 @@ export class CodeManagementTools {
                 .array(z.string())
                 .optional()
                 .describe(
-                    'Array of glob patterns to include specific files (e.g., ["*.ts", "src/**/*.js"])',
+                    'Array of glob patterns to include specific files (e.g., ["**/*.ts", "src/**/*.js"]). Always matched against full filepath',
                 ),
             excludePatterns: z
                 .array(z.string())
                 .optional()
                 .describe(
-                    'Array of glob patterns to exclude files (e.g., ["node_modules/**", "*.log"])',
+                    'Array of glob patterns to exclude files (e.g., ["node_modules/**", "**/*.log"]). Always matched against full filepath',
                 ),
             maxFiles: z
                 .number()
@@ -599,8 +633,8 @@ export class CodeManagementTools {
                             teamId: args.teamId,
                         },
                         repository: {
-                            id: args.repository,
-                            name: args.repository,
+                            id: args.repository.id,
+                            name: args.repository.name,
                         },
                         filters: {
                             branch: args.branch,

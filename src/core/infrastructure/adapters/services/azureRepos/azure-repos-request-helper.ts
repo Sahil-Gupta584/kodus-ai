@@ -899,14 +899,17 @@ export class AzureReposRequestHelper {
 
         const apiPath = `/${projectId}/_apis/git/repositories/${repositoryId}/items`;
 
+        const branch = filters?.branch
+            ? filters.branch.replace('refs/heads/', '')
+            : undefined;
+
         const query = {
             'api-version': '7.1',
             'recursionLevel': 'full',
-            '$format': 'json',
             'includeContentMetadata': 'true',
             'versionDescriptor': {
-                version: filters?.branch,
-                versionType: filters?.branch ? 'branch' : undefined,
+                version: branch,
+                versionType: branch ? 'branch' : undefined,
             },
             'scopePath': filters?.path,
         };

@@ -773,7 +773,10 @@ export class GitlabService
      */
     async getPullRequests(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        repository?: string;
+        repository?: {
+            id: string;
+            name: string;
+        };
         filters?: {
             startDate?: Date;
             endDate?: Date;
@@ -822,9 +825,9 @@ export class GitlabService
 
             let reposToProcess = allRepositories;
 
-            if (repository) {
+            if (repository && (repository.name || repository.id)) {
                 const foundRepo = allRepositories.find(
-                    (r) => r.name === repository,
+                    (r) => r.name === repository.name || r.id === repository.id,
                 );
 
                 if (!foundRepo) {
@@ -840,20 +843,22 @@ export class GitlabService
 
             const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
 
-            const promises = reposToProcess.map((r) =>
-                this.getMergeRequestsByRepo({
+            const promises = reposToProcess.map(async (r) => {
+                const mrs = await this.getMergeRequestsByRepo({
                     gitlabAPI,
                     repo: r,
                     filters,
-                }),
-            );
+                });
+
+                return mrs.map((mr) =>
+                    this.transformPullRequest(mr, r, organizationAndTeamData),
+                );
+            });
 
             const results = await Promise.all(promises);
-            const rawMergeRequests = results.flat();
+            const mergeRequests = results.flat();
 
-            return rawMergeRequests.map((rawMr) =>
-                this.transformPullRequest(rawMr, organizationAndTeamData),
-            );
+            return mergeRequests;
         } catch (error) {
             this.logger.error({
                 message: 'Error fetching merge requests from GitLab',
@@ -886,7 +891,10 @@ export class GitlabService
 
         const mergeRequests = await gitlabAPI.MergeRequests.all({
             projectId: repo.id,
-            state: state ? this._prStateMapReverse.get(state) : undefined,
+            // @ts-ignore - value 'all' is valid according to GitLab API docs
+            state: state
+                ? this._prStateMapReverse.get(state)
+                : this._prStateMapReverse.get(PullRequestState.ALL),
             sort: 'desc',
             orderBy: 'created_at',
             createdAfter: startDate?.toISOString(),
@@ -3075,6 +3083,7 @@ export class GitlabService
 
             return this.transformPullRequest(
                 mergeRequest,
+                repository,
                 organizationAndTeamData,
             );
         } catch (error) {
@@ -3250,11 +3259,12 @@ export class GitlabService
 
     private readonly _prStateMapReverse = new Map<
         PullRequestState,
-        GitlabPullRequestState
+        GitlabPullRequestState | string
     >([
         [PullRequestState.OPENED, GitlabPullRequestState.OPENED],
         [PullRequestState.MERGED, GitlabPullRequestState.MERGED],
         [PullRequestState.CLOSED, GitlabPullRequestState.CLOSED],
+        [PullRequestState.ALL, 'all'],
     ]);
 
     /**
@@ -3265,6 +3275,7 @@ export class GitlabService
      */
     private transformPullRequest(
         mergeRequest: MergeRequestSchema,
+        repository: Partial<Repositories>,
         organizationAndTeamData: OrganizationAndTeamData,
     ): PullRequest {
         return {
@@ -3279,11 +3290,11 @@ export class GitlabService
                     mergeRequest?.state as GitlabPullRequestState,
                 ) ?? PullRequestState.ALL,
             prURL: mergeRequest?.web_url ?? '',
-            repository: mergeRequest?.source_project_id?.toString() ?? '', // TODO: remove, legacy, use repositoryData
-            repositoryId: mergeRequest?.source_project_id?.toString() ?? '', // TODO: remove, legacy, use repositoryData
+            repository: repository?.name ?? '', // TODO: remove, legacy, use repositoryData
+            repositoryId: repository?.id ?? '', // TODO: remove, legacy, use repositoryData
             repositoryData: {
-                id: mergeRequest?.source_project_id?.toString() ?? '',
-                name: mergeRequest?.source_project_id?.toString() ?? '',
+                id: repository?.id ?? '',
+                name: repository?.name ?? '',
             },
             message: mergeRequest?.title ?? '',
             created_at: mergeRequest?.created_at ?? '',
@@ -3304,19 +3315,19 @@ export class GitlabService
                 ref: mergeRequest?.source_branch ?? '',
                 repo: {
                     id: mergeRequest?.source_project_id?.toString() ?? '',
-                    name: mergeRequest?.source_project_id?.toString() ?? '',
+                    name: '',
                     defaultBranch: '',
-                    fullName: mergeRequest?.source_project_id?.toString() ?? '',
+                    fullName: '',
                 },
             },
             targetRefName: mergeRequest?.target_branch ?? '', // TODO: remove, legacy, use base.ref
             base: {
                 ref: mergeRequest?.target_branch ?? '',
                 repo: {
-                    id: mergeRequest?.target_project_id?.toString() ?? '',
-                    name: mergeRequest?.target_project_id?.toString() ?? '',
-                    defaultBranch: '',
-                    fullName: mergeRequest?.target_project_id?.toString() ?? '',
+                    id: repository?.id ?? '',
+                    name: repository?.name ?? '',
+                    defaultBranch: repository?.default_branch ?? '',
+                    fullName: repository?.name ?? '',
                 },
             },
             user: {
