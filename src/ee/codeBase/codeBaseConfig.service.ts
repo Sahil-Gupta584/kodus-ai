@@ -968,12 +968,24 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 return this.getConfig(organizationAndTeamData, repository);
             }
 
+            // Função para normalizar paths (remover barra inicial para comparação consistente)
+            const normalizePath = (path: string): string => {
+                return path.startsWith('/') ? path.substring(1) : path;
+            };
+
             // Encontrar diretórios configurados que são afetados pelos arquivos alterados
             const matchingDirectories = repoConfig.directories.filter(
                 (dir: any) => {
-                    return affectedPaths.some((filePath: string) =>
-                        filePath === dir.path || filePath.startsWith(dir.path + '/'),
-                    );
+                    const normalizedDirPath = normalizePath(dir.path);
+                    return affectedPaths.some((filePath: string) => {
+                        const normalizedFilePath = normalizePath(filePath);
+                        return (
+                            normalizedFilePath === normalizedDirPath ||
+                            normalizedFilePath.startsWith(
+                                normalizedDirPath + '/',
+                            )
+                        );
+                    });
                 },
             );
 
@@ -1018,7 +1030,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             const [
                 language,
                 defaultBranch,
-                kodyRulesEntity,
+                kodyRulesForDirectory,
                 reviewModeConfig,
                 kodyFineTuningConfig,
             ] = await Promise.all([
@@ -1027,17 +1039,16 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     organizationAndTeamData,
                 ),
                 this.getDefaultBranch(organizationAndTeamData, repository),
-                this.kodyRulesService.findByOrganizationId(
+                this.kodyRulesService.findRulesByDirectory(
                     organizationAndTeamData.organizationId,
+                    directoryConfig.id,
                 ),
                 this.getReviewModeConfigParameter(organizationAndTeamData),
                 this.getKodyFineTuningConfigParameter(organizationAndTeamData),
             ]);
 
-            const kodyRules = this.kodyRulesValidationService.filterKodyRules(
-                kodyRulesEntity?.toObject()?.rules,
-                repository.id,
-            );
+            // As rules já vêm filtradas para o diretório específico
+            const kodyRules = kodyRulesForDirectory;
 
             const config: CodeReviewConfig = {
                 ignorePaths: directoryConfig.ignorePaths || [],
