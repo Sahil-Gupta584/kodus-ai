@@ -62,7 +62,7 @@ export class GetAdditionalInfoHelper {
 
                     if (foundRepository) {
                         // 4. Retornar o teamId dessa integration config
-                        return config.team?.uuid;
+                        return config?.team?.uuid;
                     }
                 }
             }
