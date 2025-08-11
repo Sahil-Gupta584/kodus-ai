@@ -127,7 +127,9 @@ export class UnifiedLogHandler {
                 context: UnifiedLogHandler.name,
                 error: error,
             });
-            repository.name = 'Unknown';
+            if (repository) {
+                repository.name = 'Unknown';
+            }
         }
 
         try {
@@ -144,7 +146,9 @@ export class UnifiedLogHandler {
                 context: UnifiedLogHandler.name,
                 error: error,
             });
-            directory.path = 'Unknown';
+            if (directory) {
+                directory.path = 'Unknown';
+            }
         }
 
         await this.codeReviewSettingsLogRepository.create({
