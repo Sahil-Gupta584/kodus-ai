@@ -445,7 +445,7 @@ export class BitbucketService
 
                 if (!foundRepo) {
                     this.logger.warn({
-                        message: `Repository ${repository} not found in the list of repositories.`,
+                        message: `Repository ${repository.name} (id: ${repository.id}) not found in the list of repositories.`,
                         context: BitbucketService.name,
                         metadata: params,
                     });
@@ -3717,7 +3717,7 @@ export class BitbucketService
 
     /** Bitbucket's API returns IDs with curly braces around them (e.g. "{123}").
     This function removes the curly braces. */
-    private sanitizeUUID(id: string) {
+    private sanitizeUUID(id: string): string {
         return id?.replace(/[{}]/g, '');
     }
 
@@ -3970,6 +3970,16 @@ export class BitbucketService
 
             const commit = commitsResponse.data.values?.[0];
 
+            if (!commit || !commit.hash) {
+                this.logger.warn({
+                    message: `No commit found on branch ${branch} for repository ${repository.name}`,
+                    context: BitbucketService.name,
+                    metadata: { organizationAndTeamData, repository, branch },
+                });
+
+                return [];
+            }
+
             const fileResponse = await bitbucketAPI.source.read({
                 repo_slug: `{${repository.id}}`,
                 workspace: `{${workspace}}`,
@@ -3989,24 +3999,33 @@ export class BitbucketService
 
             const { filePatterns, excludePatterns, maxFiles = 1000 } = filters;
 
-            if (filePatterns && filePatterns.length > 0) {
-                files = files.filter((file) =>
-                    isFileMatchingGlob(file.path, filePatterns),
-                );
-            }
+            const filteredFiles: RepositoryFile[] = [];
+            for (const file of files) {
+                if (maxFiles > 0 && filteredFiles.length >= maxFiles) {
+                    break;
+                }
 
-            if (excludePatterns && excludePatterns.length > 0) {
-                files = files.filter(
-                    (file) => !isFileMatchingGlob(file.path, excludePatterns),
-                );
-            }
+                if (
+                    filePatterns &&
+                    filePatterns.length > 0 &&
+                    !isFileMatchingGlob(file.path, filePatterns)
+                ) {
+                    continue;
+                }
 
-            if (maxFiles > 0) {
-                files = files.slice(0, maxFiles);
+                if (
+                    excludePatterns &&
+                    excludePatterns.length > 0 &&
+                    isFileMatchingGlob(file.path, excludePatterns)
+                ) {
+                    continue;
+                }
+
+                filteredFiles.push(file);
             }
 
             this.logger.log({
-                message: `Retrieved ${files.length} files from repository ${repository.name}`,
+                message: `Retrieved ${filteredFiles.length} files from repository ${repository.name}`,
                 context: BitbucketService.name,
                 serviceName: 'BitbucketService getRepositoryAllFiles',
                 metadata: {
@@ -4015,7 +4034,7 @@ export class BitbucketService
                 },
             });
 
-            return files;
+            return filteredFiles;
         } catch (error) {
             this.logger.error({
                 message: 'Error to get repository files',
@@ -4185,7 +4204,7 @@ export class BitbucketService
     private transformRepositoryFile(file: Schema.Treeentry): RepositoryFile {
         return {
             filename: file?.path?.split('/').pop() ?? '',
-            sha: file?.commit?.hash ?? '',
+            sha: '', // Bitbucket does not provide file SHA in the tree entry
             size: -1, // Bitbucket does not provide file size in the tree entry
             path: file?.path ?? '',
             type: file?.type ?? 'blob',

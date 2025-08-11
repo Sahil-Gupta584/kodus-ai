@@ -224,6 +224,19 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                             prNumber: payload.issue.number,
                         });
 
+                        if (!data) {
+                            this.logger.error({
+                                message: `Could not fetch pull request details for PR#${payload.issue.number} in repository ${repository.name}`,
+                                serviceName: GitHubPullRequestHandler.name,
+                                metadata: {
+                                    prNumber,
+                                    repository,
+                                },
+                                context: GitHubPullRequestHandler.name,
+                            });
+                            return;
+                        }
+
                         pullRequestData = {
                             ...data,
                             pull_request: {

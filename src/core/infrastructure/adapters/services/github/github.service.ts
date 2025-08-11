@@ -3767,24 +3767,33 @@ export class GithubService
                 .filter((item) => item.type === 'blob')
                 .map((item) => this.transformRepositoryFile(item));
 
-            if (filePatterns && filePatterns.length > 0) {
-                files = files.filter((file) =>
-                    isFileMatchingGlob(file.path, filePatterns),
-                );
-            }
+            const filteredFiles: RepositoryFile[] = [];
+            for (const file of files) {
+                if (maxFiles > 0 && filteredFiles.length >= maxFiles) {
+                    break;
+                }
 
-            if (excludePatterns && excludePatterns.length > 0) {
-                files = files.filter(
-                    (file) => !isFileMatchingGlob(file.path, excludePatterns),
-                );
-            }
+                if (
+                    filePatterns &&
+                    filePatterns.length > 0 &&
+                    !isFileMatchingGlob(file.path, filePatterns)
+                ) {
+                    continue;
+                }
 
-            if (maxFiles > 0) {
-                files = files.slice(0, maxFiles);
+                if (
+                    excludePatterns &&
+                    excludePatterns.length > 0 &&
+                    isFileMatchingGlob(file.path, excludePatterns)
+                ) {
+                    continue;
+                }
+
+                filteredFiles.push(file);
             }
 
             this.logger.log({
-                message: `Retrieved ${files.length} files from repository ${repository.name}`,
+                message: `Retrieved ${filteredFiles.length} files from repository ${repository.name}`,
                 context: GithubService.name,
                 metadata: {
                     organizationAndTeamData,
@@ -3796,7 +3805,7 @@ export class GithubService
                 },
             });
 
-            return files;
+            return filteredFiles;
         } catch (error) {
             this.logger.error({
                 message: 'Failed to get repository files',
@@ -3856,9 +3865,39 @@ export class GithubService
             const octokit = await this.instanceOctokit(organizationAndTeamData);
             const owner = await this.getCorrectOwner(authDetails, octokit);
 
-            const files = await this.getRepositoryAllFiles(params);
+            let { branch } = filters ?? {};
 
-            const { branch = 'main' } = filters ?? {};
+            if (!branch || branch.length === 0) {
+                branch = await this.getDefaultBranch({
+                    organizationAndTeamData,
+                    repository,
+                });
+
+                if (!branch) {
+                    this.logger.warn({
+                        message: 'Default branch not found.',
+                        context: GithubService.name,
+                        metadata: params,
+                    });
+
+                    return [];
+                }
+            }
+
+            const files = await this.getRepositoryAllFiles({
+                ...params,
+                filters: { ...filters, branch },
+            });
+
+            if (!files || files.length === 0) {
+                this.logger.warn({
+                    message: 'No files found in the repository.',
+                    context: GithubService.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
 
             const promises = files.map((file) =>
                 this.getFileWithContent({

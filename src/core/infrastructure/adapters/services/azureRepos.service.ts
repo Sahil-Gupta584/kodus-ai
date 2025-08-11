@@ -1974,7 +1974,7 @@ export class AzureReposService
 
                 if (!foundRepo) {
                     this.logger.warn({
-                        message: `Repository ${repository} not found in the list of repositories.`,
+                        message: `Repository ${repository.name} (id: ${repository.id}) not found in the list of repositories.`,
                         context: AzureReposService.name,
                         metadata: params,
                     });
@@ -3636,24 +3636,33 @@ export class AzureReposService
                 .filter((fileItem) => !fileItem.isFolder)
                 .map((fileItem) => this.transformRepositoryFile(fileItem));
 
-            if (filePatterns && filePatterns.length > 0) {
-                files = files.filter((file) =>
-                    isFileMatchingGlob(file.path, filePatterns),
-                );
-            }
+            const filteredFiles: RepositoryFile[] = [];
+            for (const file of files) {
+                if (maxFiles > 0 && filteredFiles.length >= maxFiles) {
+                    break;
+                }
 
-            if (excludePatterns && excludePatterns.length > 0) {
-                files = files.filter(
-                    (file) => !isFileMatchingGlob(file.path, excludePatterns),
-                );
-            }
+                if (
+                    filePatterns &&
+                    filePatterns.length > 0 &&
+                    !isFileMatchingGlob(file.path, filePatterns)
+                ) {
+                    continue;
+                }
 
-            if (maxFiles > 0) {
-                files = files.slice(0, maxFiles);
+                if (
+                    excludePatterns &&
+                    excludePatterns.length > 0 &&
+                    isFileMatchingGlob(file.path, excludePatterns)
+                ) {
+                    continue;
+                }
+
+                filteredFiles.push(file);
             }
 
             this.logger.log({
-                message: `Retrieved ${files.length} files from repository ${repository.name}`,
+                message: `Retrieved ${filteredFiles.length} files from repository ${repository.name} after filtering`,
                 context: this.getRepositoryAllFiles.name,
                 metadata: {
                     organizationAndTeamData,
@@ -3662,7 +3671,7 @@ export class AzureReposService
                 },
             });
 
-            return files;
+            return filteredFiles;
         } catch (error) {
             this.logger.error({
                 message: `Error getting all files for repository ${params.repository.name}`,

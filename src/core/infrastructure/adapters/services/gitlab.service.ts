@@ -3181,23 +3181,42 @@ export class GitlabService
                 .filter((file) => file.type === 'blob')
                 .map((file) => this.transformRepositoryFile(file));
 
-            if (filePatterns && filePatterns.length > 0) {
-                files = files.filter((file) =>
-                    isFileMatchingGlob(file.path, filePatterns),
-                );
+            const filteredFiles: RepositoryFile[] = [];
+            for (const file of files) {
+                if (maxFiles > 0 && filteredFiles.length >= maxFiles) {
+                    break;
+                }
+
+                if (
+                    filePatterns &&
+                    filePatterns.length > 0 &&
+                    !isFileMatchingGlob(file.path, filePatterns)
+                ) {
+                    continue;
+                }
+
+                if (
+                    excludePatterns &&
+                    excludePatterns.length > 0 &&
+                    isFileMatchingGlob(file.path, excludePatterns)
+                ) {
+                    continue;
+                }
+
+                filteredFiles.push(file);
             }
 
-            if (excludePatterns && excludePatterns.length > 0) {
-                files = files.filter(
-                    (file) => !isFileMatchingGlob(file.path, excludePatterns),
-                );
-            }
+            this.logger.log({
+                message: `Retrieved ${filteredFiles.length} files from repository`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService getRepositoryAllFiles',
+                metadata: {
+                    ...params,
+                    retrievedFilesCount: filteredFiles.length,
+                },
+            });
 
-            if (maxFiles > 0) {
-                files = files.slice(0, maxFiles);
-            }
-
-            return files;
+            return filteredFiles;
         } catch (error) {
             this.logger.error({
                 message: 'Error retrieving all files from repository',
