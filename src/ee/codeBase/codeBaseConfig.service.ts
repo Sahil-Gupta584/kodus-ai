@@ -1041,6 +1041,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 this.getDefaultBranch(organizationAndTeamData, repository),
                 this.kodyRulesService.findRulesByDirectory(
                     organizationAndTeamData.organizationId,
+                    repository.id,
                     directoryConfig.id,
                 ),
                 this.getReviewModeConfigParameter(organizationAndTeamData),

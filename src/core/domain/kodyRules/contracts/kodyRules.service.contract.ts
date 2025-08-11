@@ -18,6 +18,7 @@ export interface IKodyRulesService extends IKodyRulesRepository {
 
     findRulesByDirectory(
         organizationId: string,
+        repositoryId: string,
         directoryId: string,
     ): Promise<Partial<IKodyRule>[]>;
 }

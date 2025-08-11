@@ -20,6 +20,16 @@ export enum KodyRuleSeverity {
     CRITICAL = 'critical',
 }
 
+export class DirectoryInfoDto {
+    @IsNotEmpty()
+    @IsString()
+    directoryId: string;
+
+    @IsNotEmpty()
+    @IsString()
+    repositoryId: string;
+}
+
 export class AddLibraryKodyRulesDto {
     @IsOptional()
     @IsString()
@@ -46,9 +56,10 @@ export class AddLibraryKodyRulesDto {
     repositoriesIds: string[];
 
     @IsArray()
-    @IsString({ each: true })
+    @ValidateNested({ each: true })
+    @Type(() => DirectoryInfoDto)
     @IsOptional()
-    directoriesIds?: string[];
+    directoriesInfo?: DirectoryInfoDto[];
 
     @IsOptional()
     @IsArray()

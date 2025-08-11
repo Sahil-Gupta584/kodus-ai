@@ -54,14 +54,15 @@ export class AddLibraryKodyRulesUseCase {
             }
 
             // Processar diretórios se existirem
-            if (libraryKodyRules?.directoriesIds && libraryKodyRules?.directoriesIds?.length > 0) {
-                for await (const directoryId of libraryKodyRules.directoriesIds) {
+            if (libraryKodyRules?.directoriesInfo && libraryKodyRules?.directoriesInfo?.length > 0) {
+                for await (const directoryInfo of libraryKodyRules.directoriesInfo) {
                     const kodyRule: CreateKodyRuleDto = {
                         title: libraryKodyRules.title,
                         rule: libraryKodyRules.rule,
                         path: libraryKodyRules.path,
                         severity: libraryKodyRules.severity,
-                        directoryId: directoryId,
+                        repositoryId: directoryInfo.repositoryId,
+                        directoryId: directoryInfo.directoryId,
                         examples: libraryKodyRules.examples,
                         origin: KodyRulesOrigin.LIBRARY,
                     };

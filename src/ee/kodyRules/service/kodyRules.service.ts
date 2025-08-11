@@ -86,6 +86,7 @@ export class KodyRulesService implements IKodyRulesService {
      */
     async findRulesByDirectory(
         organizationId: string,
+        repositoryId: string,
         directoryId: string,
     ): Promise<Partial<IKodyRule>[]> {
         const entity = await this.findByOrganizationId(organizationId);
@@ -95,6 +96,7 @@ export class KodyRulesService implements IKodyRulesService {
         }
 
         return entity.toObject().rules.filter(rule =>
+            rule.repositoryId === repositoryId &&
             rule.directoryId === directoryId &&
             rule.status === KodyRulesStatus.ACTIVE
         );
