@@ -3299,7 +3299,7 @@ export class GitlabService
     ): PullRequest {
         return {
             id: mergeRequest?.id?.toString() ?? '',
-            number: mergeRequest?.id ?? -1,
+            number: mergeRequest?.iid ?? -1,
             pull_number: mergeRequest?.iid ?? -1, // TODO: remove, legacy, use number
             organizationId: organizationAndTeamData?.organizationId ?? '',
             title: mergeRequest?.title ?? '',
