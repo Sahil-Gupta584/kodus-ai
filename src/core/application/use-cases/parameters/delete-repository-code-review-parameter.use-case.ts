@@ -116,6 +116,16 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
             throw new Error('Repository not found in configuration');
         }
 
+        // Verificar se o repositório possui diretórios configurados
+        if (
+            repositoryToRemove.directories &&
+            repositoryToRemove.directories.length > 0
+        ) {
+            throw new Error(
+                'Cannot delete repository with configured directories. Please delete all directories first before removing the repository.',
+            );
+        }
+
         // Remover o repositório específico do array
         const updatedRepositories = codeReviewConfigValue.repositories.filter(
             (repository: any) => repository.id !== repositoryId,
@@ -206,23 +216,23 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
         );
 
         // Atualizar o array de repositórios com o repositório modificado
-        const updatedRepositories = (codeReviewConfigValue.repositories || []).map(
-            (repo: any) => {
-                if (repo.id === repositoryId) {
-                    const updatedRepo = { ...repo };
+        const updatedRepositories = (
+            codeReviewConfigValue.repositories || []
+        ).map((repo: any) => {
+            if (repo.id === repositoryId) {
+                const updatedRepo = { ...repo };
 
-                    // Se não há mais diretórios, remover a propriedade directories
-                    if (updatedDirectories.length === 0) {
-                        delete updatedRepo.directories;
-                    } else {
-                        updatedRepo.directories = updatedDirectories;
-                    }
-
-                    return updatedRepo;
+                // Se não há mais diretórios, remover a propriedade directories
+                if (updatedDirectories.length === 0) {
+                    delete updatedRepo.directories;
+                } else {
+                    updatedRepo.directories = updatedDirectories;
                 }
-                return repo;
+
+                return updatedRepo;
             }
-        );
+            return repo;
+        });
 
         // Atualizar a configuração com os repositórios atualizados
         const updatedConfigValue = {
