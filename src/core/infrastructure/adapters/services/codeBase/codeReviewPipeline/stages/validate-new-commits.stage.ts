@@ -31,6 +31,7 @@ export class ValidateNewCommitsStage extends BasePipelineStage<CodeReviewPipelin
     protected override async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
+        // Buscar execução anterior para verificar se há commits novos
         const lastExecution =
             await this.automationExecutionService.findLatestExecutionByFilters({
                 status: AutomationStatus.SUCCESS,
@@ -39,10 +40,51 @@ export class ValidateNewCommitsStage extends BasePipelineStage<CodeReviewPipelin
                 repositoryId: context?.repository?.id,
             });
 
-        if (!lastExecution?.dataExecution?.lastAnalyzedCommit) {
+        let lastAnalyzedCommit: string | undefined;
+        let lastExecutionResult: any;
+
+        if (lastExecution?.dataExecution?.lastAnalyzedCommit) {
+            lastAnalyzedCommit = lastExecution.dataExecution.lastAnalyzedCommit;
+            lastExecutionResult = {
+                commentId: lastExecution?.dataExecution?.commentId,
+                noteId: lastExecution?.dataExecution?.noteId,
+                threadId: lastExecution?.dataExecution?.threadId,
+                lastAnalyzedCommit: lastAnalyzedCommit,
+            };
+
             this.logger.log({
-                message:
-                    'No last analyzed commit found, skipping commit validation',
+                message: `Found last analyzed commit: ${lastAnalyzedCommit}`,
+                context: this.stageName,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    repository: context.repository.name,
+                    pullRequestNumber: context.pullRequest.number,
+                },
+            });
+        } else {
+            this.logger.log({
+                message: 'No last analyzed commit found, analyzing all commits',
+                context: this.stageName,
+                metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    repository: context.repository.name,
+                    pullRequestNumber: context.pullRequest.number,
+                },
+            });
+        }
+
+        // Buscar commits novos (ou todos se for primeira execução)
+        const commits =
+            await this.pullRequestHandlerService.getNewCommitsSinceLastExecution(
+                context.organizationAndTeamData,
+                context.repository,
+                context.pullRequest,
+                lastAnalyzedCommit,
+            );
+
+        if (!commits || commits?.length === 0) {
+            this.logger.warn({
+                message: 'No new commits found since last execution',
                 context: this.stageName,
                 metadata: {
                     organizationAndTeamData: context.organizationAndTeamData,
@@ -51,56 +93,25 @@ export class ValidateNewCommitsStage extends BasePipelineStage<CodeReviewPipelin
                 },
             });
 
-            return context;
-        }
-
-        const lastExecutionResult = {
-            commentId: lastExecution?.dataExecution?.commentId,
-            noteId: lastExecution?.dataExecution?.noteId,
-            threadId: lastExecution?.dataExecution?.threadId,
-            lastAnalyzedCommit:
-                lastExecution?.dataExecution?.lastAnalyzedCommit,
-        };
-
-        const updatedContext = this.updateContext(context, (draft) => {
-            draft.lastExecution = lastExecutionResult;
-        });
-
-        const commits =
-            await this.pullRequestHandlerService.getNewCommitsSinceLastExecution(
-                updatedContext.organizationAndTeamData,
-                updatedContext.repository,
-                updatedContext.pullRequest,
-                lastExecutionResult.lastAnalyzedCommit,
-            );
-
-        if (!commits || commits?.length === 0) {
-            this.logger.warn({
-                message: 'No new commits found since last execution',
-                context: this.stageName,
-                metadata: {
-                    organizationAndTeamData:
-                        updatedContext.organizationAndTeamData,
-                    repository: updatedContext.repository.name,
-                    pullRequestNumber: updatedContext.pullRequest.number,
-                },
-            });
-
-            return this.updateContext(updatedContext, (draft) => {
+            return this.updateContext(context, (draft) => {
                 draft.status = PipelineStatus.SKIP;
+                if (lastExecutionResult) {
+                    draft.lastExecution = lastExecutionResult;
+                }
             });
         }
 
         this.logger.log({
-            message: `Fetched ${commits.length} new commits for PR#${updatedContext.pullRequest.number}`,
+            message: `Fetched ${commits.length} new commits for PR#${context.pullRequest.number}`,
             context: this.stageName,
             metadata: {
-                organizationAndTeamData: updatedContext.organizationAndTeamData,
-                repository: updatedContext.repository.name,
-                pullRequestNumber: updatedContext.pullRequest.number,
+                organizationAndTeamData: context.organizationAndTeamData,
+                repository: context.repository.name,
+                pullRequestNumber: context.pullRequest.number,
             },
         });
 
+        // Verificar se são apenas commits de merge
         let isOnlyMerge = false;
 
         const mergeCommits = commits.filter(
@@ -159,31 +170,37 @@ export class ValidateNewCommitsStage extends BasePipelineStage<CodeReviewPipelin
 
         if (isOnlyMerge) {
             this.logger.warn({
-                message: `Skipping code review for PR#${updatedContext.pullRequest.number} - Only merge commits found`,
+                message: `Skipping code review for PR#${context.pullRequest.number} - Only merge commits found`,
                 context: this.stageName,
                 metadata: {
-                    organizationAndTeamData:
-                        updatedContext.organizationAndTeamData,
-                    repository: updatedContext.repository.name,
-                    pullRequestNumber: updatedContext.pullRequest.number,
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    repository: context.repository.name,
+                    pullRequestNumber: context.pullRequest.number,
                 },
             });
 
-            return this.updateContext(updatedContext, (draft) => {
+            return this.updateContext(context, (draft) => {
                 draft.status = PipelineStatus.SKIP;
+                if (lastExecutionResult) {
+                    draft.lastExecution = lastExecutionResult;
+                }
             });
         }
 
         this.logger.log({
-            message: `Processing ${commits.length} commits for PR#${updatedContext.pullRequest.number}`,
+            message: `Processing ${commits.length} commits for PR#${context.pullRequest.number}`,
             context: this.stageName,
             metadata: {
-                organizationAndTeamData: updatedContext.organizationAndTeamData,
-                repository: updatedContext.repository.name,
-                pullRequestNumber: updatedContext.pullRequest.number,
+                organizationAndTeamData: context.organizationAndTeamData,
+                repository: context.repository.name,
+                pullRequestNumber: context.pullRequest.number,
             },
         });
 
-        return updatedContext;
+        return this.updateContext(context, (draft) => {
+            if (lastExecutionResult) {
+                draft.lastExecution = lastExecutionResult;
+            }
+        });
     }
 }

@@ -10,6 +10,7 @@ export enum ConfigLevel {
     MAIN = 'main',
     GLOBAL = 'global',
     REPOSITORY = 'repository',
+    DIRECTORY = 'directory',
 }
 
 export type ChangedData = {

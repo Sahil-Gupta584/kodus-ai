@@ -69,3 +69,5 @@ yalc.lock
 # packages
 # .packages
 #packages/kodus-flow/
+
+test.json
