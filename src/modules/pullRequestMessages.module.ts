@@ -14,6 +14,7 @@ import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInf
 import { IntegrationModule } from './integration.module';
 import { IntegrationConfigModule } from './integrationConfig.module';
 import { ParametersModule } from './parameters.module';
+import { DeleteByRepositoryOrDirectoryPullRequestMessagesUseCase } from '@/core/application/use-cases/pullRequestMessages/delete-by-repository-or-directory.use-case';
 
 @Module({
     imports: [
@@ -43,6 +44,7 @@ import { ParametersModule } from './parameters.module';
         PULL_REQUEST_MESSAGES_REPOSITORY_TOKEN,
         PULL_REQUEST_MESSAGES_SERVICE_TOKEN,
         CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+        DeleteByRepositoryOrDirectoryPullRequestMessagesUseCase,
     ],
     controllers: [PullRequestMessagesController],
 })

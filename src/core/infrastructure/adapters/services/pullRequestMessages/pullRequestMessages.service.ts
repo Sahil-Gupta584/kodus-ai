@@ -42,4 +42,8 @@ export class PullRequestMessagesService implements IPullRequestMessagesService {
     async findById(uuid: string): Promise<PullRequestMessagesEntity | null> {
         return this.pullRequestMessagesRepository.findById(uuid);
     }
+
+    async deleteByFilter(filter: Partial<IPullRequestMessages>): Promise<boolean> {
+        return this.pullRequestMessagesRepository.deleteByFilter(filter);
+    }
 }

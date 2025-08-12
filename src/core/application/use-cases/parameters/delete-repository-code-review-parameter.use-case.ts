@@ -13,9 +13,10 @@ import {
     ICodeReviewSettingsLogService,
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
-import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
+import { ActionType, ConfigLevel } from '@/config/types/general/codeReviewSettingsLog.type';
 import { Request } from 'express';
 import { RepositoryWithDirectoriesException } from '@/shared/infrastructure/filters/repository-with-directories.exception';
+import { DeleteByRepositoryOrDirectoryPullRequestMessagesUseCase } from '../pullRequestMessages/delete-by-repository-or-directory.use-case';
 
 @Injectable()
 export class DeleteRepositoryCodeReviewParameterUseCase {
@@ -25,6 +26,8 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
 
         @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
         private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
+        private readonly deletePullRequestMessagesUseCase: DeleteByRepositoryOrDirectoryPullRequestMessagesUseCase,
 
         private readonly logger: PinoLoggerService,
 
@@ -155,6 +158,22 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
         });
 
         try {
+            // Deletar pull request messages relacionadas ao repositório
+            const prMessageDeleted = await this.deletePullRequestMessagesUseCase.execute({
+                organizationId: organizationAndTeamData.organizationId,
+                repositoryId: repositoryId,
+            });
+
+            this.logger.log({
+                message: 'Pull request messages deletion completed for repository',
+                context: DeleteRepositoryCodeReviewParameterUseCase.name,
+                metadata: {
+                    repositoryId,
+                    organizationAndTeamData,
+                    prMessageDeleted,
+                },
+            });
+
             this.codeReviewSettingsLogService.registerRepositoryConfigurationRemoval(
                 {
                     organizationAndTeamData,
@@ -259,6 +278,24 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
         });
 
         try {
+            // Deletar pull request messages relacionadas ao diretório
+            const prMessageDeleted = await this.deletePullRequestMessagesUseCase.execute({
+                organizationId: organizationAndTeamData.organizationId,
+                repositoryId: repositoryId,
+                directoryId: directoryId,
+            });
+
+            this.logger.log({
+                message: 'Pull request messages deletion completed for directory',
+                context: DeleteRepositoryCodeReviewParameterUseCase.name,
+                metadata: {
+                    repositoryId,
+                    directoryId,
+                    organizationAndTeamData,
+                    prMessageDeleted,
+                },
+            });
+
             // Log específico de remoção de diretório
             await this.codeReviewSettingsLogService.registerDirectoryConfigurationRemoval(
                 {

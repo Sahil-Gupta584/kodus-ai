@@ -42,6 +42,11 @@ export class PullRequestMessagesRepository
         await this.pullRequestMessagesModel.findByIdAndDelete(uuid);
     }
 
+    async deleteByFilter(filter: Partial<IPullRequestMessages>): Promise<boolean> {
+        const result = await this.pullRequestMessagesModel.findOneAndDelete(filter);
+        return result !== null;
+    }
+
     async find(
         filter?: Partial<IPullRequestMessages>,
     ): Promise<PullRequestMessagesEntity[]> {

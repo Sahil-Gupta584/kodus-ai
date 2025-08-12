@@ -16,6 +16,8 @@ export interface IPullRequestMessagesRepository {
 
     delete(uuid: string): Promise<void>;
 
+    deleteByFilter(filter: Partial<IPullRequestMessages>): Promise<boolean>;
+
     find(
         filter?: Partial<IPullRequestMessages>,
     ): Promise<PullRequestMessagesEntity[]>;
