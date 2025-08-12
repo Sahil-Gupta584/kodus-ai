@@ -1,9 +1,13 @@
-import { IsString } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class DeleteRepositoryCodeReviewParameterDto {
     @IsString()
-    repositoryId: string;
+    teamId: string;
 
     @IsString()
-    teamId: string;
+    repositoryId: string;
+
+    @IsOptional()
+    @IsString()
+    directoryId: string;
 }

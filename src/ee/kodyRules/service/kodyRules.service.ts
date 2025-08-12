@@ -80,6 +80,28 @@ export class KodyRulesService implements IKodyRulesService {
         return this.kodyRulesRepository.findByOrganizationId(organizationId);
     }
 
+    /**
+     * Busca rules específicas por organização, repositório e diretório
+     * Versão simplificada que filtra in-memory
+     */
+    async findRulesByDirectory(
+        organizationId: string,
+        repositoryId: string,
+        directoryId: string,
+    ): Promise<Partial<IKodyRule>[]> {
+        const entity = await this.findByOrganizationId(organizationId);
+
+        if (!entity?.toObject()?.rules) {
+            return [];
+        }
+
+        return entity.toObject().rules.filter(rule =>
+            rule.repositoryId === repositoryId &&
+            rule.directoryId === directoryId &&
+            rule.status === KodyRulesStatus.ACTIVE
+        );
+    }
+
     async update(
         uuid: string,
         updateData: Partial<IKodyRules>,
@@ -186,6 +208,7 @@ export class KodyRulesService implements IKodyRulesService {
                 severity: kodyRule.severity?.toLowerCase(),
                 status: kodyRule.status ?? KodyRulesStatus.ACTIVE,
                 repositoryId: kodyRule?.repositoryId,
+                directoryId: kodyRule?.directoryId,
                 examples: kodyRule?.examples,
                 origin: kodyRule?.origin,
                 scope: kodyRule?.scope ?? KodyRulesScope.FILE,
@@ -208,6 +231,7 @@ export class KodyRulesService implements IKodyRulesService {
                             ? ActionType.CLONE
                             : ActionType.CREATE,
                     repository: { id: newRule.repositoryId },
+                    directory: { id: newRule.directoryId },
                     oldRule: undefined,
                     newRule: newRule,
                     ruleTitle: newRule.title,
@@ -256,6 +280,7 @@ export class KodyRulesService implements IKodyRulesService {
                 userInfo,
                 actionType: ActionType.EDIT,
                 repository: { id: updatedRule.repositoryId },
+                directory: { id: updatedRule.directoryId },
                 oldRule: existingRule,
                 newRule: updatedRule,
                 ruleTitle: updatedRule.title,
@@ -268,6 +293,7 @@ export class KodyRulesService implements IKodyRulesService {
                 metadata: {
                     organizationAndTeamData: organizationAndTeamData,
                     repositoryId: updatedRule.repositoryId,
+                    directoryId: updatedRule?.directoryId,
                 },
             });
         }

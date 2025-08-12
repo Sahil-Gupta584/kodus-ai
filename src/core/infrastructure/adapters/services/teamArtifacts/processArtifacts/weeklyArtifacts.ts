@@ -99,80 +99,80 @@ export class WeeklyOrSprintArtifacts {
         }
     }
 
-    private async getCommitsByUsersAndPeriod(
-        teamMembers: IMembers[],
-        period: { startDate: string; endDate: string },
-        organizationAndTeamData: OrganizationAndTeamDataDto,
-    ) {
-        const filters = {
-            startDate: new Date(
-                new Date(period.endDate).setDate(
-                    new Date(period.endDate).getDate() - 30,
-                ),
-            )
-                .toISOString()
-                .slice(0, 16),
-            endDate: period.endDate,
-        };
+    // private async getCommitsByUsersAndPeriod(
+    //     teamMembers: IMembers[],
+    //     period: { startDate: string; endDate: string },
+    //     organizationAndTeamData: OrganizationAndTeamDataDto,
+    // ) {
+    //     const filters = {
+    //         startDate: new Date(
+    //             new Date(period.endDate).setDate(
+    //                 new Date(period.endDate).getDate() - 30,
+    //             ),
+    //         )
+    //             .toISOString()
+    //             .slice(0, 16),
+    //         endDate: period.endDate,
+    //     };
 
-        const commits = await this.codeManagementService.getCommits({
-            filters,
-            organizationAndTeamData,
-        });
+    //     const commits = await this.codeManagementService.getCommits({
+    //         filters,
+    //         organizationAndTeamData,
+    //     });
 
-        if (commits?.length === 0) {
-            return [];
-        }
+    //     if (commits?.length === 0) {
+    //         return [];
+    //     }
 
-        const commitsByUser = {};
+    //     const commitsByUser = {};
 
-        teamMembers.forEach((member) => {
-            commitsByUser[member?.codeManagement?.id] = {
-                id: member?.codeManagement?.id?.toString(),
-                name: member?.name,
-                codeManagementName: member?.codeManagement?.name,
-                commits: [],
-            };
-        });
+    //     teamMembers.forEach((member) => {
+    //         commitsByUser[member?.codeManagement?.id] = {
+    //             id: member?.codeManagement?.id?.toString(),
+    //             name: member?.name,
+    //             codeManagementName: member?.codeManagement?.name,
+    //             commits: [],
+    //         };
+    //     });
 
-        commits.forEach((item) => {
-            let found = false;
+    //     commits.forEach((item) => {
+    //         let found = false;
 
-            if (
-                item.commit.author.id &&
-                commitsByUser.hasOwnProperty(item.commit.author.id)
-            ) {
-                commitsByUser[item.commit.author.id].commits.push({
-                    id: item.sha,
-                    authorId: item.commit.author.id,
-                    authorName: item.commit.author.name,
-                    createdAt: item.commit.author.date,
-                    message: item.commit.message,
-                });
-                found = true;
-            }
+    //         if (
+    //             item.commit.author.id &&
+    //             commitsByUser.hasOwnProperty(item.commit.author.id)
+    //         ) {
+    //             commitsByUser[item.commit.author.id].commits.push({
+    //                 id: item.sha,
+    //                 authorId: item.commit.author.id,
+    //                 authorName: item.commit.author.name,
+    //                 createdAt: item.commit.author.date,
+    //                 message: item.commit.message,
+    //             });
+    //             found = true;
+    //         }
 
-            if (!found) {
-                for (let userId in commitsByUser) {
-                    if (
-                        commitsByUser[userId].codeManagementName ===
-                        item.commit.author.id
-                    ) {
-                        commitsByUser[userId].commits.push({
-                            id: item.sha,
-                            authorId: item.commit.author.id,
-                            authorName: item.commit.author.name,
-                            createdAt: item.commit.author.date,
-                            message: item.commit.message,
-                        });
-                        break;
-                    }
-                }
-            }
-        });
+    //         if (!found) {
+    //             for (let userId in commitsByUser) {
+    //                 if (
+    //                     commitsByUser[userId].codeManagementName ===
+    //                     item.commit.author.id
+    //                 ) {
+    //                     commitsByUser[userId].commits.push({
+    //                         id: item.sha,
+    //                         authorId: item.commit.author.id,
+    //                         authorName: item.commit.author.name,
+    //                         createdAt: item.commit.author.date,
+    //                         message: item.commit.message,
+    //                     });
+    //                     break;
+    //                 }
+    //             }
+    //         }
+    //     });
 
-        const groupedCommits = Object.values(commitsByUser);
+    //     const groupedCommits = Object.values(commitsByUser);
 
-        return groupedCommits;
-    }
+    //     return groupedCommits;
+    // }
 }

@@ -142,6 +142,10 @@ class CodeReviewConfigWithoutLLMProviderDto {
     name?: string;
 
     @IsOptional()
+    @IsString()
+    path?: string;
+
+    @IsOptional()
     @IsBoolean()
     isSelected?: boolean;
 
@@ -210,4 +214,8 @@ export class CreateOrUpdateCodeReviewParameterDto {
     @IsString()
     @IsOptional()
     repositoryId?: string;
+
+    @IsString()
+    @IsOptional()
+    directoryId?: string;
 }

@@ -22,6 +22,10 @@ export class CodeReviewSettingsLogEntity
         id: string;
         name?: string;
     };
+    private readonly _directory?: {
+        id: string;
+        path?: string;
+    };
     private readonly _changedData: ChangedData[];
     private readonly _createdAt?: Date;
     private readonly _updatedAt?: Date;
@@ -34,6 +38,7 @@ export class CodeReviewSettingsLogEntity
         this._userInfo = codeReviewSettingsLog.userInfo;
         this._configLevel = codeReviewSettingsLog.configLevel;
         this._repository = codeReviewSettingsLog.repository;
+        this._directory = codeReviewSettingsLog.directory;
         this._changedData = codeReviewSettingsLog.changedData;
         this._createdAt = codeReviewSettingsLog.createdAt;
         this._updatedAt = codeReviewSettingsLog.updatedAt;
@@ -48,6 +53,7 @@ export class CodeReviewSettingsLogEntity
             userInfo: this._userInfo,
             configLevel: this._configLevel,
             repository: this._repository,
+            directory: this._directory,
             changedData: this._changedData,
             createdAt: this._createdAt,
             updatedAt: this._updatedAt,
@@ -63,6 +69,7 @@ export class CodeReviewSettingsLogEntity
             userInfo: this._userInfo,
             configLevel: this._configLevel,
             repository: this._repository,
+            directory: this._directory,
             changedData: this._changedData,
             createdAt: this._createdAt,
             updatedAt: this._updatedAt,
@@ -101,6 +108,13 @@ export class CodeReviewSettingsLogEntity
         name?: string;
     } {
         return this._repository;
+    }
+
+    get directory(): {
+        id: string;
+        path?: string;
+    } {
+        return this._directory;
     }
 
     get changedData(): ChangedData[] {

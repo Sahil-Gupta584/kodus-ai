@@ -15,6 +15,7 @@ import {
     AzureRepoSubscription,
     AzureRepoCommentType,
     AzureRepoReviewerWithVote,
+    AzureRepoFileItem,
 } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
 import { decrypt } from '@/shared/utils/crypto';
 import { FileChange } from '@/config/types/general/codeReview.type';
@@ -80,35 +81,49 @@ export class AzureReposRequestHelper {
         token: string;
         projectId: string;
         repositoryId: string;
-        startDate?: string;
-        endDate?: string;
-        status?: AzurePRStatus;
+        filters?: {
+            status?: AzurePRStatus;
+            author?: string;
+            branch?: string;
+            minTime?: string;
+            maxTime?: string;
+        };
     }): Promise<AzureRepoPullRequest[]> {
-        const instance = await this.azureRequest(params);
+        const {
+            orgName,
+            token,
+            projectId,
+            repositoryId,
+            filters = {},
+        } = params;
 
-        const { status } = params;
+        const instance = await this.azureRequest({ orgName, token });
 
-        const searchStatus = status ?? AzurePRStatus.ALL;
+        const apiPath = `/${projectId}/_apis/git/repositories/${repositoryId}/pullrequests`;
 
-        const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullrequests?api-version=7.1&searchCriteria.status=${searchStatus}`,
-        );
+        let queryParams: Record<string, string> = {
+            'api-version': '7.1',
+        };
 
-        const pullRequests = data?.value ?? [];
+        if (filters) {
+            const searchCriteria = {
+                status: filters.status,
+                creatorId: filters.author,
+                sourceRefName: filters.branch,
+                minTime: filters.minTime,
+                maxTime: filters.maxTime,
+            };
 
-        if (pullRequests.length < 1 || (!params.startDate && !params.endDate)) {
-            return pullRequests;
+            const dynamicParams = this._buildQueryParams(
+                searchCriteria,
+                'searchCriteria',
+            );
+            queryParams = { ...queryParams, ...dynamicParams };
         }
 
-        const start = params.startDate
-            ? new Date(params.startDate).getTime()
-            : null;
-        const end = params.endDate ? new Date(params.endDate).getTime() : null;
+        const { data } = await instance.get(apiPath, { params: queryParams });
 
-        return pullRequests.filter((pr) => {
-            const created = new Date(pr.creationDate).getTime();
-            return (!start || created >= start) && (!end || created <= end);
-        });
+        return data?.value ?? [];
     }
 
     async getPullRequestComments(params: {
@@ -432,13 +447,50 @@ export class AzureReposRequestHelper {
         token: string;
         projectId: string;
         repositoryId: string;
+        filters?: {
+            author?: string;
+            fromDate?: string;
+            toDate?: string;
+            branch?: string;
+        };
     }): Promise<AzureRepoCommit[]> {
-        const instance = await this.azureRequest(params);
+        const {
+            orgName,
+            token,
+            projectId,
+            repositoryId,
+            filters = {},
+        } = params;
 
-        const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/commits?api-version=7.1`,
-        );
-        return data?.value;
+        const instance = await this.azureRequest({ orgName, token });
+
+        const apiPath = `/${projectId}/_apis/git/repositories/${repositoryId}/commits`;
+
+        let queryParams: Record<string, string> = {
+            'api-version': '7.1',
+        };
+
+        if (filters) {
+            const searchCriteria = {
+                author: filters.author,
+                fromDate: filters.fromDate,
+                toDate: filters.toDate,
+                itemVersion: {
+                    version: filters.branch,
+                    versionType: filters.branch ? 'branch' : undefined,
+                },
+            };
+
+            const dynamicParams = this._buildQueryParams(
+                searchCriteria,
+                'searchCriteria',
+            );
+            queryParams = { ...queryParams, ...dynamicParams };
+        }
+
+        const { data } = await instance.get(apiPath, { params: queryParams });
+
+        return data?.value ?? [];
     }
 
     async getFileDiff(params: {
@@ -831,6 +883,44 @@ export class AzureReposRequestHelper {
         return preferredUser ?? users[0] ?? null;
     }
 
+    async listRepositoryFiles(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        filters?: {
+            branch?: string;
+            path?: string;
+        };
+    }): Promise<AzureRepoFileItem[]> {
+        const { projectId, repositoryId, filters = {} } = params;
+
+        const instance = await this.azureRequest(params);
+
+        const apiPath = `/${projectId}/_apis/git/repositories/${repositoryId}/items`;
+
+        const branch = filters?.branch
+            ? filters.branch.replace('refs/heads/', '')
+            : undefined;
+
+        const query = {
+            'api-version': '7.1',
+            'recursionLevel': 'full',
+            'includeContentMetadata': 'true',
+            'versionDescriptor': {
+                version: branch,
+                versionType: branch ? 'branch' : undefined,
+            },
+            'scopePath': filters?.path,
+        };
+
+        const queryParams = this._buildQueryParams(query);
+
+        const { data } = await instance.get(apiPath, { params: queryParams });
+
+        return data?.value ?? [];
+    }
+
     mapAzureStatusToFileChangeStatus(status: string): FileChange['status'] {
         switch (status.toLowerCase()) {
             case 'add':
@@ -853,6 +943,69 @@ export class AzureReposRequestHelper {
             default:
                 return 'changed';
         }
+    }
+
+    /**
+     * Recursively builds a flat parameter object from a nested criteria object.
+     * @param obj The object to flatten (e.g., searchCriteria).
+     * @param prefix The base key to prefix nested properties with.
+     * @returns A flat object with dot-notated keys.
+     */
+    private _buildQueryParams(
+        obj: Record<string, any>,
+        prefix?: string,
+    ): Record<string, string> {
+        const params: Record<string, string> = {};
+
+        for (const [key, value] of Object.entries(obj)) {
+            // Skip null or undefined values
+            if (value === null || value === undefined) {
+                continue;
+            }
+
+            const newKey = prefix ? `${prefix}.${key}` : key;
+
+            // If the value is a nested object, recurse deeper
+            if (typeof value === 'object' && !Array.isArray(value)) {
+                const nestedParams = this._buildQueryParams(value, newKey);
+
+                if (Object.keys(nestedParams).length === 0) {
+                    continue; // Skip empty nested objects
+                }
+
+                Object.assign(params, nestedParams); // Merge the results
+            } else {
+                // Otherwise, it's a primitive value, so add it
+                params[newKey] = String(value);
+            }
+        }
+
+        return params;
+    }
+
+    async getRepositoryTree(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        recursive?: boolean;
+        scopePath?: string;
+    }): Promise<any[]> {
+        const instance = await this.azureRequest(params);
+
+        const queryParams = new URLSearchParams();
+        queryParams.append('api-version', '7.1');
+        queryParams.append('recursionLevel', params.recursive ? 'full' : 'oneLevel');
+
+        if (params.scopePath) {
+            queryParams.append('scopePath', params.scopePath);
+        }
+
+        const { data } = await instance.get(
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/items?${queryParams.toString()}`
+        );
+
+        return data?.value || [];
     }
 
     /**

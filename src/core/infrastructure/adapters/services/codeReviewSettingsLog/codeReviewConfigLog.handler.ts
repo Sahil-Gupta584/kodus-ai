@@ -156,6 +156,7 @@ export class CodeReviewConfigLogHandler {
             actionType: params.actionType,
             configLevel: params.configLevel,
             repository: params.repository,
+            directory: params?.directory,
             changedData,
         });
     }

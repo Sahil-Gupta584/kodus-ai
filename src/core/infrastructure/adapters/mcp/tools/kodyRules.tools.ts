@@ -95,6 +95,7 @@ export class KodyRulesTools {
                             updatedAt: z.date().optional(),
                             reason: z.string().nullable().optional(),
                             scope: z.nativeEnum(KodyRulesScope).optional(),
+                            directoryId: z.string().optional(),
                         })
                         .passthrough(),
                 ),
@@ -178,6 +179,7 @@ export class KodyRulesTools {
                             updatedAt: z.date().optional(),
                             reason: z.string().nullable().optional(),
                             scope: z.nativeEnum(KodyRulesScope).optional(),
+                            directoryId: z.string().optional(),
                         })
                         .passthrough(),
                 ),
@@ -280,6 +282,12 @@ export class KodyRulesTools {
                         .describe(
                             'Array of code examples to help understand and apply the rule',
                         ),
+                    directoryId: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Directory unique identifier - used with FILE scope to target specific directory',
+                        ),
                 })
                 .describe(
                     'Complete rule definition with title, description, scope, and examples',
@@ -327,6 +335,10 @@ export class KodyRulesTools {
                             path:
                                 (args.kodyRule.scope === KodyRulesScope.FILE
                                     ? args.kodyRule.path
+                                    : '') || '',
+                            directoryId:
+                                (args.kodyRule.scope === KodyRulesScope.FILE
+                                    ? args.kodyRule.directoryId
                                     : '') || '',
                         },
                     };

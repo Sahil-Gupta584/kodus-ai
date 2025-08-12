@@ -25,6 +25,7 @@ export interface IKodyRule {
     updatedAt?: Date;
     reason?: string | null;
     scope?: KodyRulesScope;
+    directoryId?: string;
 }
 
 export interface IKodyRulesExtendedContext {
