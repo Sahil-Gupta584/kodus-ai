@@ -112,6 +112,19 @@ export interface QueueItem {
 }
 
 /**
+ * Snapshot simplificado de itens na fila (para debug/observabilidade)
+ */
+export interface QueueItemSnapshot {
+    eventId: string;
+    eventType: string;
+    priority: number;
+    retryCount: number;
+    timestamp: number;
+    correlationId?: string;
+    tenantId?: string;
+}
+
+/**
  * Semáforo para controle de concorrência
  */
 class Semaphore {
@@ -1558,6 +1571,24 @@ export class EventQueue {
         // Stats are returned to caller; avoid console output in library
 
         return stats;
+    }
+
+    /**
+     * Obter um snapshot dos itens atualmente na fila (ordem de processamento)
+     * Retorna apenas metadados seguros para inspeção.
+     */
+    getQueueSnapshot(limit: number = 50): QueueItemSnapshot[] {
+        const sliceEnd = Math.min(limit, this.queue.length);
+        const items = this.queue.slice(0, sliceEnd);
+        return items.map((qi) => ({
+            eventId: qi.event.id,
+            eventType: qi.event.type,
+            priority: qi.priority,
+            retryCount: qi.retryCount,
+            timestamp: qi.timestamp,
+            correlationId: qi.event.metadata?.correlationId,
+            tenantId: qi.event.metadata?.tenantId,
+        }));
     }
 
     /**

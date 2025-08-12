@@ -98,7 +98,7 @@ export class ConversationAgentProvider {
 
                 return {
                     content: resp.content,
-                    usage: resp.usage ?? {
+                    usage: resp.response_metadata ?? {
                         promptTokens: 0,
                         completionTokens: 0,
                         totalTokens: 0,

@@ -146,6 +146,121 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         try {
+            // Build structured XML-like context blocks first
+            const { agentContext } = context;
+            if (!agentContext) {
+                return '';
+            }
+            const blocks: string[] = [];
+
+            // 1) Observations from memory (relevant knowledge)
+            const memories = await agentContext.memory.search(context.input, 3);
+            if (memories && memories.length > 0) {
+                for (const mem of memories) {
+                    const s =
+                        typeof mem === 'string'
+                            ? mem
+                            : JSON.stringify(mem, null, 2);
+                    blocks.push(`<observation>\n${s}\n</observation>`);
+                }
+            }
+
+            // 2) Recent session entries (tool calls/results, messages, errors, planning events)
+            const sessionHistory = await agentContext.session.getHistory();
+            if (sessionHistory && sessionHistory.length > 0) {
+                const recent = sessionHistory.slice(-3);
+                for (const entry of recent) {
+                    const entryObj = entry as Record<string, unknown>;
+                    const input = entryObj.input as
+                        | Record<string, unknown>
+                        | undefined;
+                    const output = entryObj.output as
+                        | Record<string, unknown>
+                        | undefined;
+
+                    // Tool call + result
+                    if (input?.type === 'tool_call') {
+                        const toolName =
+                            (input.toolName as string) || 'unknown_tool';
+                        const params = input.params ?? {};
+                        blocks.push(
+                            `<action name="${toolName}">\n${JSON.stringify(
+                                params,
+                                null,
+                                2,
+                            )}\n</action>`,
+                        );
+
+                        if (output?.type === 'tool_result') {
+                            const result = output.result ?? {};
+                            blocks.push(
+                                `<result name="${toolName}">\n${JSON.stringify(
+                                    result,
+                                    null,
+                                    2,
+                                )}\n</result>`,
+                            );
+                        }
+                    }
+
+                    // Human/assistant messages
+                    if (input?.type === 'message') {
+                        const role = (input.role as string) || 'user';
+                        const contentVal = input.content;
+                        const content =
+                            typeof contentVal === 'string'
+                                ? contentVal
+                                : JSON.stringify(contentVal ?? {}, null, 2);
+                        blocks.push(
+                            role === 'user'
+                                ? `<human>\n${content}\n</human>`
+                                : `<assistant>\n${content}\n</assistant>`,
+                        );
+                    }
+
+                    // Errors
+                    if (
+                        input?.type === 'error' ||
+                        output?.type === 'error_details'
+                    ) {
+                        const message =
+                            (output?.message as string) ||
+                            (input?.['message'] as string) ||
+                            'Unknown error';
+                        const stack = (output?.stack as string) || undefined;
+                        const payload = stack
+                            ? { message, stack }
+                            : { message };
+                        blocks.push(
+                            `<error>\n${JSON.stringify(payload, null, 2)}\n</error>`,
+                        );
+                    }
+
+                    // Planning events as observations
+                    if (input?.type === 'plan_created') {
+                        const goal = input.goal as string | undefined;
+                        const payload = goal
+                            ? { event: 'plan_created', goal }
+                            : { event: 'plan_created' };
+                        blocks.push(
+                            `<observation>\n${JSON.stringify(payload, null, 2)}\n</observation>`,
+                        );
+                    }
+                    if (input?.type === 'plan_completed') {
+                        blocks.push(
+                            `<observation>\n${JSON.stringify(
+                                { event: 'plan_completed' },
+                                null,
+                                2,
+                            )}\n</observation>`,
+                        );
+                    }
+                }
+            }
+
+            if (blocks.length > 0) {
+                return blocks.join('\n\n');
+            }
             const executionResults = context.history.map((h) => h.result);
 
             const synthesisContext: ResponseSynthesisContext = {

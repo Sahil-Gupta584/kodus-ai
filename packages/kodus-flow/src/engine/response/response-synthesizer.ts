@@ -56,9 +56,6 @@ export interface SynthesizedResponse {
     /** Resposta final conversacional para o usuário */
     content: string;
 
-    /** Confiança na qualidade da resposta (0.0-1.0) */
-    confidence: number;
-
     /** Se precisa de mais clarificação do usuário */
     needsClarification: boolean;
 
@@ -121,15 +118,8 @@ export class ResponseSynthesizer {
                 analysis,
             );
 
-            // 4. Calcular confiança na resposta
-            const confidence = this.calculateResponseConfidence(
-                context,
-                analysis,
-            );
-
             const response: SynthesizedResponse = {
                 content: synthesizedContent,
-                confidence,
                 needsClarification: analysis.hasAmbiguousResults,
                 includesError: analysis.hasErrors,
                 metadata: {
@@ -247,22 +237,56 @@ export class ResponseSynthesizer {
             typeof ResponseSynthesizer.prototype.analyzeExecutionResults
         >,
     ): Promise<string> {
-        const prompt = `Given the user's request and the execution results, provide a clear and helpful response.
+        const prompt = `
+You are the Final Responder. Your job is to turn tool **EXECUTION RESULTS** into a clear answer to the **USER REQUEST**.
+
+## Inputs
+- USER REQUEST: the user's original message.
+- EXECUTION RESULTS: a JSON array of tool outputs (may be empty or partially failing).
+
+## Output rules
+- Reply in the **same language** as the user.
+- Be **direct, specific, and concise**. Pull only what matters from EXECUTION RESULTS.
+- If a tool error occurred or results are empty/partial, **state it briefly** and suggest the next step.
+- **Never** invent IDs, Identificators, links, numbers, or facts that aren't in EXECUTION RESULTS or the request.
+- Do **not** mention internal planning, tools, or chain-of-thought.
+
+## Missing-info detector (agnostic)
+If the user asked you to deliver/post something to an **external destination** (e.g., workspace, page, channel, document, issue) and the EXECUTION RESULTS / CONTEXT do **not** include the required **resource identifier(s)** (such as a URL/ID/path/project key):
+1) Provide the analysis/summary locally in your reply, and
+2) Ask **exactly** for the minimum missing field(s) in **one short question**:
+   - If the request names a platform but not the identifier → ask only for the identifier:
+     “To proceed, please share the destination’s identifier (for that platform), e.g., a URL or ID.”
+   - If the request does **not** name a platform → ask for both:
+     “Which destination should I use? Please provide the platform and the resource identifier (URL or ID).”
+Do not guess platforms or IDs. Do not claim the action was performed.
+
+## Structure
+1) **Brief confirmation** of what was asked.
+2) **What we found**: 3–8 bullets of concrete facts from EXECUTION RESULTS (titles, states, links, key diffs/values).
+3) **(Optional) Ready-to-share snippet**: a clean, copy-pastable message the user can post elsewhere.
+4) **Next step**:
+   - If anything is missing to complete the request, ask for it in **one line** (per the rules above).
+   - Otherwise, say you’re ready to proceed.
+
+## Formatting
+- Use short headings and bullets; avoid long paragraphs.
+- If a URL appears in EXECUTION RESULTS, you may include it verbatim.
+- If there’s a diff or code, include a **small excerpt (≤20 lines)** or summarize it.
+
+## Safety & Tone
+- Neutral, helpful, professional.
+- No placeholders like “TBD”.
+- No apologies unless there’s a real error.
+
+Now produce the response using USER REQUEST and EXECUTION RESULTS.
 
 USER REQUEST: "${context.originalQuery}"
 
 EXECUTION RESULTS:
 ${analysis.rawResults.length > 0 ? JSON.stringify(analysis.rawResults, null, 2) : 'No data found.'}
 ${analysis.errors.length > 0 ? `\nERRORS:\n${analysis.errors.join('\n')}` : ''}
-
-INSTRUCTIONS:
-- Answer in the same language as the user's request
-- Extract and present the relevant information from the results
-- Be direct and specific about what was found
-- If there are errors, explain them simply
-- Focus on answering the user's question with the actual data
-
-Response:`;
+`;
 
         try {
             const response = await this.llmAdapter.call({
@@ -464,39 +488,6 @@ Response:`;
     }
 
     /**
-     * Calcula confiança na qualidade da resposta
-     */
-    private calculateResponseConfidence(
-        context: ResponseSynthesisContext,
-        analysis: ReturnType<
-            typeof ResponseSynthesizer.prototype.analyzeExecutionResults
-        >,
-    ): number {
-        let confidence = 0.5; // Base
-
-        // Bonus por resultados
-        confidence += Math.min(analysis.rawResults.length * 0.1, 0.3);
-
-        // Bonus por alta taxa de sucesso
-        confidence += analysis.successRate * 0.3;
-
-        // Penalty por erros
-        confidence -= Math.min(analysis.errors.length * 0.1, 0.2);
-
-        // Penalty por resultados ambíguos
-        if (analysis.hasAmbiguousResults) {
-            confidence -= 0.2;
-        }
-
-        // Bonus se completou todos os steps
-        if (context.metadata.completedSteps === context.metadata.totalSteps) {
-            confidence += 0.1;
-        }
-
-        return Math.max(0.1, Math.min(1.0, confidence));
-    }
-
-    /**
      * ✅ REFACTORED: Fallback response returns raw error data
      */
     private createFallbackResponse(
@@ -517,7 +508,6 @@ Response:`;
 
         return {
             content: JSON.stringify(errorResponse, null, 2),
-            confidence: 0.1,
             needsClarification: true,
             includesError: true,
             metadata: {
