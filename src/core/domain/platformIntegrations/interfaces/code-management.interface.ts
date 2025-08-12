@@ -4,9 +4,8 @@ import { Organization } from '../types/codeManagement/organization.type';
 import {
     PullRequestAuthor,
     PullRequestCodeReviewTime,
-    PullRequestDetails,
+    PullRequest,
     PullRequestReviewComment,
-    PullRequests,
     PullRequestsWithChangesRequested,
     PullRequestWithFiles,
 } from '../types/codeManagement/pullRequests.type';
@@ -21,16 +20,40 @@ import {
     ReviewComment,
 } from '@/config/types/general/codeReview.type';
 import { GitCloneParams } from '../types/codeManagement/gitCloneParams.type';
+import { Commit } from '@/config/types/general/commit.type';
+import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
+import { RepositoryFile } from '../types/codeManagement/repositoryFile.type';
 
 export interface ICodeManagementService
     extends ICommonPlatformIntegrationService {
-    getPullRequests(params: any): Promise<PullRequests[]>;
-    getPullRequestDetails(params: {
+    getPullRequests(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository?: {
+            id: string;
+            name: string;
+        };
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            state?: PullRequestState;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<PullRequest[]>;
+    getPullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: Partial<Repository>;
         prNumber: number;
-    }): Promise<PullRequestDetails | null>;
-    getRepositories(params: any): Promise<Repositories[]>;
+    }): Promise<PullRequest | null>;
+    getRepositories(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        filters?: {
+            archived?: boolean;
+            organizationSelected?: string;
+            visibility?: 'all' | 'public' | 'private';
+            language?: string;
+        };
+    }): Promise<Repositories[]>;
     getWorkflows(params: any): Promise<Workflow[]>;
     getListMembers(
         params: any,
@@ -39,7 +62,16 @@ export interface ICodeManagementService
     getCommitsByReleaseMode(params: any): Promise<CommitLeadTimeForChange[]>;
     getPullRequestsWithFiles(params): Promise<PullRequestWithFiles[] | null>;
     getPullRequestsForRTTM(params): Promise<PullRequestCodeReviewTime[] | null>;
-    getCommits(params: any): Promise<any>;
+    getCommits(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository?: Partial<Repository>;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<Commit[]>;
     getOrganizations(params: any): Promise<Organization[]>;
 
     getFilesByPullRequestId(params): Promise<any[] | null>;
@@ -75,7 +107,19 @@ export interface ICodeManagementService
     getAuthenticationOAuthToken(params: any): Promise<string>;
     countReactions(params: any): Promise<any[]>;
     getLanguageRepository(params: any): Promise<any | null>;
-    getRepositoryAllFiles(params: any): Promise<any>;
+    getRepositoryAllFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: {
+            id: string;
+            name: string;
+        };
+        filters?: {
+            branch?: string;
+            filePatterns?: string[];
+            excludePatterns?: string[];
+            maxFiles?: number;
+        };
+    }): Promise<RepositoryFile[]>;
     getCloneParams(params: any): Promise<GitCloneParams>;
     mergePullRequest(params: any): Promise<any>;
     approvePullRequest(params: any): Promise<any>;

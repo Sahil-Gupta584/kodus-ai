@@ -28,6 +28,8 @@ import {
     LICENSE_SERVICE_TOKEN,
 } from '@/ee/license/interfaces/license.interface';
 import { environment } from '@/ee/configs/environment';
+import { PullRequest } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
+import { IMappedPullRequest } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-common.type';
 
 @Injectable()
 export class RunCodeReviewAutomationUseCase {
@@ -129,21 +131,52 @@ export class RunCodeReviewAutomationUseCase {
             if (!pullRequest) {
                 // try to get the PR details from the code management when it's a github issue
                 if (platformType === PlatformType.GITHUB) {
-                    pullRequestData =
-                        await this.codeManagement.getPullRequestDetails({
-                            organizationAndTeamData,
-                            repository: {
-                                id: repository.id,
-                                name: repository.name,
-                            },
-                            prNumber: sanitizedPayload?.issue?.number,
-                        });
+                    pullRequestData = await this.codeManagement.getPullRequest({
+                        organizationAndTeamData,
+                        repository: {
+                            id: repository.id,
+                            name: repository.name,
+                        },
+                        prNumber: sanitizedPayload?.issue?.number,
+                    });
                 }
+
                 // if it's still not possible to get the PR details, return
                 if (!pullRequestData) {
                     return;
                 }
+
+                // adjust it so it looks like the output from mapped platform
+                pullRequestData = {
+                    ...pullRequestData,
+                    repository: {
+                        id: repository.id,
+                        name: repository.name,
+                    },
+                    head: {
+                        ref: pullRequestData?.head?.ref,
+                        repo: {
+                            fullName: pullRequestData?.head?.repo?.fullName,
+                        },
+                    },
+                    base: {
+                        ref: pullRequestData?.base?.ref,
+                        repo: {
+                            fullName: pullRequestData?.base?.repo?.fullName,
+                            defaultBranch:
+                                pullRequestData?.base?.repo?.defaultBranch,
+                        },
+                    },
+                    title: pullRequestData?.title,
+                    body: pullRequestData?.body,
+                    user: {
+                        id: pullRequestData?.user?.id,
+                        login: pullRequestData?.user?.login,
+                        name: pullRequestData?.user?.name,
+                    },
+                };
             }
+
             pullRequestData = pullRequestData ?? pullRequest;
 
             let repositoryData = repository;
