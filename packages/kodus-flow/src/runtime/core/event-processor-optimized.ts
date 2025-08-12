@@ -664,4 +664,38 @@ export class OptimizedEventProcessor {
         this.eventBuffer = createCircularBuffer<AnyEvent>(10000);
         this.processingDepth = 0;
     }
+
+    /**
+     * Get a snapshot of the most recently processed events (for observability)
+     */
+    getRecentEvents(limit: number = 50): Array<{
+        eventId: string;
+        eventType: string;
+        timestamp: number;
+        correlationId?: string;
+    }> {
+        const result: Array<{
+            eventId: string;
+            eventType: string;
+            timestamp: number;
+            correlationId?: string;
+        }> = [];
+
+        const count = Math.min(limit, this.eventBuffer.size);
+        for (let i = 0; i < count; i++) {
+            const index =
+                (this.eventBuffer.tail - 1 - i + this.eventBuffer.capacity) %
+                this.eventBuffer.capacity;
+            const ev = this.eventBuffer.items[index];
+            if (!ev) continue;
+            result.push({
+                eventId: ev.id,
+                eventType: ev.type,
+                timestamp: ev.ts,
+                correlationId: ev.metadata?.correlationId,
+            });
+        }
+
+        return result;
+    }
 }

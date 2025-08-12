@@ -193,6 +193,12 @@ export interface Runtime {
 
     // Statistics
     getStats(): Record<string, unknown>;
+    getRecentEvents?(limit?: number): Array<{
+        eventId: string;
+        eventType: string;
+        timestamp: number;
+        correlationId?: string;
+    }>;
 
     // Enhanced queue access (if available)
     getEnhancedQueue?(): EventQueue | null;
@@ -947,6 +953,21 @@ export function createRuntime(
                     tenantId: tenantId || 'default',
                 },
             };
+        },
+
+        // Recent events processed by the event processor (observability)
+        getRecentEvents: (limit: number = 50) => {
+            try {
+                return eventProcessor.getRecentEvents(limit);
+            } catch (err) {
+                if (enableObservability) {
+                    observability.logger.error(
+                        'Failed to get recent events snapshot',
+                        err as Error,
+                    );
+                }
+                return [];
+            }
         },
 
         // Enhanced queue access (unified EventQueue now)

@@ -469,6 +469,22 @@ export class ExecutionKernel {
                         tenantId: this.state.tenantId,
                     });
 
+                    // 9. Processar imediatamente para evitar ACK pendente/requeue
+                    try {
+                        await this.runtime.process(true);
+                    } catch (procErr) {
+                        this.logger.warn(
+                            'Failed to process events after KERNEL_STARTED emit',
+                            {
+                                error:
+                                    procErr instanceof Error
+                                        ? procErr.message
+                                        : String(procErr),
+                                kernelId: this.state.id,
+                            },
+                        );
+                    }
+
                     return this.workflowContext;
                 } catch (error) {
                     // ROLLBACK COMPLETO em caso de erro

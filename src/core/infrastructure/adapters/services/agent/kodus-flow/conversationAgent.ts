@@ -220,10 +220,19 @@ export class ConversationAgentProvider {
 
         await this.orchestration.createAgent({
             name: 'kodus-conversational-agent',
-            planner: 'plan-execute',
             identity: {
                 description:
                     'Agente de conversação para interações com usuários.',
+            },
+            plannerOptions: {
+                planner: 'plan-execute',
+                replanPolicy: {
+                    missingInput: 'replan', // não pergunta; tenta replanejar
+                    toolUnavailable: 'replan', // idem para ferramenta ausente
+                    maxReplansPerPlan: 1, // evita loops
+                    planTtlMs: 60_000, // TTL do plano
+                    budget: { maxMs: 60_000, maxToolCalls: 10 },
+                },
             },
         });
     }

@@ -173,11 +173,23 @@ export interface PlanningResult {
         tool?: string;
         arguments?: Record<string, unknown>;
         dependencies?: string[];
-        type: 'analysis' | 'action' | 'decision' | 'observation';
+        type:
+            | 'analysis'
+            | 'action'
+            | 'decision'
+            | 'observation'
+            | 'verification';
     }>;
     reasoning: string;
     complexity: 'simple' | 'medium' | 'complex';
     estimatedTime?: number;
+    signals?: {
+        needs?: string[];
+        noDiscoveryPath?: string[];
+        errors?: string[];
+        suggestedNextStep?: string;
+    };
+    audit?: string[];
 }
 
 export interface RoutingResult {

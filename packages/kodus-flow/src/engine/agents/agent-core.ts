@@ -84,6 +84,7 @@ import {
     isToolResult,
     StepExecution,
 } from '../planning/planner-factory.js';
+import { ReplanPolicyConfig } from '../planning/strategies/plan-execute-planner.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🧩 CORE CONFIGURATION
@@ -118,7 +119,6 @@ export interface AgentCoreConfig {
     maxChainDepth?: number;
     enableDelegation?: boolean;
 
-    // Multi-Agent Support (AVANÇADO)
     enableAdvancedCoordination?: boolean;
     enableMessaging?: boolean;
     enableMetrics?: boolean;
@@ -126,21 +126,14 @@ export interface AgentCoreConfig {
     deliveryRetryInterval?: number;
     defaultMaxAttempts?: number;
 
-    // Tool Integration
     enableTools?: boolean;
     toolTimeout?: number;
     maxToolRetries?: number;
 
-    // Kernel Integration - sempre habilitado
     enableKernelIntegration?: boolean;
 
-    // Factory customization moved to ContextBuilder level
-
-    // Planner options
     plannerOptions?: {
-        replanPolicy?: Partial<
-            import('../planning/strategies/plan-execute-planner.js').ReplanPolicyConfig
-        >;
+        replanPolicy?: Partial<ReplanPolicyConfig>;
     };
 }
 
