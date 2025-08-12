@@ -71,6 +71,7 @@ import { KODY_CRITICAL_ISSUE_COMMENT_MARKER } from '@/shared/utils/codeManagemen
 import { AzurePRStatus } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
 import { ConfigService } from '@nestjs/config';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { globMatch } from '@/shared/utils/glob-match';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
@@ -140,10 +141,10 @@ export class AzureReposService
 
             let files = items.map((it) => ({ path: it.path, type: 'blob', size: it.size, sha: it.objectId }));
             if (params.filePatterns?.length) {
-                files = files.filter((f) => params.filePatterns!.some((p) => this.matchGlobPattern(f.path, p)));
+                files = files.filter((f) => params.filePatterns!.some((p) => globMatch(f.path, p)));
             }
             if (params.excludePatterns?.length) {
-                files = files.filter((f) => !params.excludePatterns!.some((p) => this.matchGlobPattern(f.path, p)));
+                files = files.filter((f) => !params.excludePatterns!.some((p) => globMatch(f.path, p)));
             }
             if (params.maxFiles && params.maxFiles > 0) files = files.slice(0, params.maxFiles);
             return files;
@@ -156,15 +157,6 @@ export class AzureReposService
             });
             return [];
         }
-    }
-
-    private matchGlobPattern(path: string, pattern: string): boolean {
-        const regexPattern = pattern
-            .replace(/\./g, '\\.')
-            .replace(/\*/g, '.*')
-            .replace(/\?/g, '.')
-            .replace(/\[.*?\]/g, (m) => `[${m.slice(1, -1)}]`);
-        return new RegExp(`^${regexPattern}$`).test(path);
     }
 
     async getPullRequestAuthors(params: {

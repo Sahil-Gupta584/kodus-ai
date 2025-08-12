@@ -66,6 +66,7 @@ import { KODY_CODE_REVIEW_COMPLETED_MARKER } from '@/shared/utils/codeManagement
 import { ConfigService } from '@nestjs/config';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
+import { globMatch } from '@/shared/utils/glob-match';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
@@ -225,10 +226,10 @@ export class GitlabService
                 .map((t) => ({ path: t.path, type: 'blob', size: undefined, sha: t.id }));
 
             if (params.filePatterns?.length) {
-                files = files.filter((f) => params.filePatterns!.some((p) => this.matchGlobPattern(f.path, p)));
+                files = files.filter((f) => params.filePatterns!.some((p) => globMatch(f.path, p)));
             }
             if (params.excludePatterns?.length) {
-                files = files.filter((f) => !params.excludePatterns!.some((p) => this.matchGlobPattern(f.path, p)));
+                files = files.filter((f) => !params.excludePatterns!.some((p) => globMatch(f.path, p)));
             }
             if (params.maxFiles && params.maxFiles > 0) files = files.slice(0, params.maxFiles);
             return files;
@@ -241,15 +242,6 @@ export class GitlabService
             });
             return [];
         }
-    }
-
-    private matchGlobPattern(path: string, pattern: string): boolean {
-        const regexPattern = pattern
-            .replace(/\./g, '\\.')
-            .replace(/\*/g, '.*')
-            .replace(/\?/g, '.')
-            .replace(/\[.*?\]/g, (m) => `[${m.slice(1, -1)}]`);
-        return new RegExp(`^${regexPattern}$`).test(path);
     }
 
     async getPullRequestByNumber(params: {

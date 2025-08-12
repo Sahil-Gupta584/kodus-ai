@@ -82,6 +82,7 @@ import { IRepository } from '@/core/domain/pullRequests/interfaces/pullRequests.
 import { ConfigService } from '@nestjs/config';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
+import { globMatch } from '@/shared/utils/glob-match';
 
 interface GitHubAuthResponse {
     token: string;
@@ -3630,7 +3631,7 @@ export class GithubService
             if (params.filePatterns?.length) {
                 files = files.filter((file) =>
                     params.filePatterns.some((pattern) =>
-                        this.matchGlobPattern(file.path, pattern),
+                        globMatch(file.path, pattern),
                     ),
                 );
             }
@@ -3640,7 +3641,7 @@ export class GithubService
                 files = files.filter(
                     (file) =>
                         !params.excludePatterns.some((pattern) =>
-                            this.matchGlobPattern(file.path, pattern),
+                            globMatch(file.path, pattern),
                         ),
                 );
             }
@@ -3660,14 +3661,6 @@ export class GithubService
             });
             return [];
         }
-    }
-
-    private matchGlobPattern(path: string, pattern: string): boolean {
-        const regexPattern = pattern
-            .replace(/\*/g, '.*')
-            .replace(/\?/g, '.')
-            .replace(/\[.*?\]/g, (match) => `[${match.slice(1, -1)}]`);
-        return new RegExp(`^${regexPattern}$`).test(path);
     }
 
     async getRepositoryAllFilesWithContent(params: {

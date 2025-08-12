@@ -71,6 +71,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { AuthorContribution } from '@/core/domain/pullRequests/interfaces/authorContributor.interface';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { globMatch } from '@/shared/utils/glob-match';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -204,10 +205,10 @@ export class BitbucketService
                 .filter((i: any) => i?.path)
                 .map((i: any) => ({ path: i.path, type: 'blob', size: i.size, sha: undefined }));
             if (params.filePatterns?.length) {
-                files = files.filter((f) => params.filePatterns!.some((p) => this.matchGlobPattern(f.path, p)));
+                files = files.filter((f) => params.filePatterns!.some((p) => globMatch(f.path, p)));
             }
             if (params.excludePatterns?.length) {
-                files = files.filter((f) => !params.excludePatterns!.some((p) => this.matchGlobPattern(f.path, p)));
+                files = files.filter((f) => !params.excludePatterns!.some((p) => globMatch(f.path, p)));
             }
             if (params.maxFiles && params.maxFiles > 0) files = files.slice(0, params.maxFiles);
             return files;
@@ -220,15 +221,6 @@ export class BitbucketService
             });
             return [];
         }
-    }
-
-    private matchGlobPattern(path: string, pattern: string): boolean {
-        const regexPattern = pattern
-            .replace(/\./g, '\\.')
-            .replace(/\*/g, '.*')
-            .replace(/\?/g, '.')
-            .replace(/\[.*?\]/g, (m) => `[${m.slice(1, -1)}]`);
-        return new RegExp(`^${regexPattern}$`).test(path);
     }
 
     async getPullRequestAuthors_OLD(params: {

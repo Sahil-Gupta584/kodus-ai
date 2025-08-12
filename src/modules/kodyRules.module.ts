@@ -23,6 +23,7 @@ import { KodyRulesRepository } from '@/ee/kodyRules/repository/kodyRules.reposit
 import { KodyRulesValidationService } from '@/ee/kodyRules/service/kody-rules-validation.service';
 import { KodyRulesSyncService } from '@/core/infrastructure/adapters/services/kodyRules/kody-rules-sync.service';
 import { SendRulesNotificationUseCase } from '@/core/application/use-cases/kodyRules/send-rules-notification.use-case';
+import { SyncSelectedRepositoriesKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/sync-selected-repositories.use-case';
 import { UsersModule } from './user.module';
 import { OrganizationModule } from './organization.module';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
@@ -69,6 +70,7 @@ import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
         SendRulesNotificationUseCase,
         KodyRulesValidationService,
         KodyRulesSyncService,
+        SyncSelectedRepositoriesKodyRulesUseCase,
     ],
 })
 export class KodyRulesModule {}

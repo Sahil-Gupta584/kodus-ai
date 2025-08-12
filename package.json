@@ -15,7 +15,7 @@
         "start:debug": "nest start --debug --watch",
         "start:prod": "node dist/main",
         "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-        "test": "node --max-old-space-size=4096 ./node_modules/.bin/jest --forceExit --runInBand --detectOpenHandles",
+        "test": "node --max-old-space-size=4096 ./node_modules/.bin/jest --forceExit --runInBand --detectOpenHandles --config jest.config.ts",
         "test:dev": "cross-env API_NODE_ENV=development jest --detectOpenHandles",
         "test:watch": "jest --watch",
         "test:cov": "jest --coverage",
