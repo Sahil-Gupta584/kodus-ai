@@ -36,6 +36,12 @@ export class CodeReviewSettingsLogModel extends CoreDocument {
         name?: string;
     };
 
+    @Prop({ type: Object, required: false })
+    directory: {
+        id: string;
+        path?: string;
+    };
+
     @Prop({ type: [Object], required: true })
     changedData: ChangedData[];
 }

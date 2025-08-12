@@ -36,6 +36,7 @@ import { CodeAnalysisASTCleanupStage } from '@/ee/codeReview/stages/code-analysi
 import { TeamAutomationModule } from './teamAutomation.module';
 import { PullRequestMessagesModule } from './pullRequestMessages.module';
 import { ValidateNewCommitsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/validate-new-commits.stage';
+import { ResolveConfigStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/resolve-config.stage';
 
 @Module({
     imports: [
@@ -60,6 +61,7 @@ import { ValidateNewCommitsStage } from '@/core/infrastructure/adapters/services
         // Stages
         ValidateConfigStage,
         ValidateNewCommitsStage,
+        ResolveConfigStage,
         FetchChangedFilesStage,
         InitialCommentStage,
         BatchCreationStage,
@@ -77,6 +79,7 @@ import { ValidateNewCommitsStage } from '@/core/infrastructure/adapters/services
     exports: [
         PipelineExecutor,
         ValidateConfigStage,
+        ResolveConfigStage,
         FetchChangedFilesStage,
         InitialCommentStage,
         BatchCreationStage,

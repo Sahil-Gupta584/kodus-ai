@@ -11,4 +11,5 @@ export enum PullRequestMessageStatus {
 export enum ConfigLevel {
     GLOBAL = 'global',
     REPOSITORY = 'repository',
+    DIRECTORY = 'directory',
 }

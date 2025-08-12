@@ -1,4 +1,4 @@
-import { IsString } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class CopyCodeReviewParameterDTO {
     @IsString()
@@ -6,6 +6,10 @@ export class CopyCodeReviewParameterDTO {
 
     @IsString()
     targetRepositoryId: string;
+
+    @IsString()
+    @IsOptional()
+    targetDirectoryPath: string;
 
     @IsString()
     teamId: string;

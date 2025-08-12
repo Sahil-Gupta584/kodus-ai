@@ -124,6 +124,8 @@ export class KodyRulesController {
         value: string,
         @Query('repositoryId')
         repositoryId?: string,
+        @Query('directoryId')
+        directoryId?: string,
     ) {
         if (!this.request.user.organization.uuid) {
             throw new Error('Organization ID not found');
@@ -133,6 +135,7 @@ export class KodyRulesController {
             this.request.user.organization.uuid,
             { [key]: value },
             repositoryId,
+            directoryId,
         );
     }
 

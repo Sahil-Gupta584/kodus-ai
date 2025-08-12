@@ -15,6 +15,7 @@ import { CreatePRCodeReviewUseCase } from './create-prs-code-review.use-case';
 import { GetCodeReviewStartedUseCase } from './get-code-review-started.use-case';
 import { FinishOnboardingUseCase } from './finish-onboarding.use-case';
 import { DeleteIntegrationUseCase } from './delete-integration.use-case';
+import { GetRepositoryTreeUseCase } from './get-repository-tree.use-case';
 
 export default [
     GetCodeManagementMemberListUseCase,
@@ -34,4 +35,5 @@ export default [
     GetCodeReviewStartedUseCase,
     FinishOnboardingUseCase,
     DeleteIntegrationUseCase,
+    GetRepositoryTreeUseCase,
 ];

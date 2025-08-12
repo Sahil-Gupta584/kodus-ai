@@ -4694,6 +4694,80 @@ export class GithubService
         }
     }
 
+    async getRepositoryTree(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+    }): Promise<any[]> {
+        try {
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                params.organizationAndTeamData,
+            );
+
+            if (!githubAuthDetail) {
+                return [];
+            }
+
+            const octokit = await this.instanceOctokit(
+                params.organizationAndTeamData,
+            );
+
+            // Get repositories to find the repository name by ID
+            const repositories =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    params.organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
+
+            if (!repositories) {
+                return [];
+            }
+
+            // Find the repository by ID
+            const repository = repositories.find(
+                (repo: any) => repo.id.toString() === params.repositoryId,
+            );
+
+            if (!repository) {
+                return [];
+            }
+
+            // Get repository info to find the default branch
+            const repoResponse = await octokit.rest.repos.get({
+                owner: await this.getCorrectOwner(githubAuthDetail, octokit),
+                repo: repository.name,
+            });
+
+            // Get the tree using the default branch
+            const treeResponse = await octokit.rest.git.getTree({
+                owner: await this.getCorrectOwner(githubAuthDetail, octokit),
+                repo: repository.name,
+                tree_sha: repoResponse.data.default_branch,
+                recursive: 'true',
+            });
+
+            let tree = treeResponse.data.tree;
+
+            return tree.map((item) => ({
+                path: item.path,
+                type: item.type === 'tree' ? 'directory' : 'file',
+                sha: item.sha,
+                size: item.size,
+                url: item.url,
+            }));
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting repository tree from GitHub',
+                context: GithubService.name,
+                error: error,
+                metadata: {
+                    organizationAndTeamData: params.organizationAndTeamData,
+                    repositoryId: params.repositoryId,
+                },
+            });
+            return [];
+        }
+    }
+
     formatReviewCommentBody(params: {
         suggestion: any;
         repository: { name: string; language: string };
