@@ -52,6 +52,10 @@ export class PullRequestMessagesLogHandler {
                     ? { id: params.repositoryId }
                     : undefined,
             changedData,
+            directory: {
+                id: params.directoryId,
+                path: params.directoryPath,
+            },
         });
     }
 
