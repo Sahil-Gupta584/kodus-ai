@@ -82,7 +82,8 @@ export class KodyRulesSyncService {
         sourcePath: string;
     }): Promise<void> {
         try {
-            const { organizationAndTeamData, repositoryId, sourcePath } = params;
+            const { organizationAndTeamData, repositoryId, sourcePath } =
+                params;
             const entity = await this.kodyRulesService.findByOrganizationId(
                 organizationAndTeamData.organizationId,
             );
@@ -91,7 +92,7 @@ export class KodyRulesSyncService {
             const toDelete = entity.rules?.find(
                 (r) =>
                     r?.repositoryId === repositoryId &&
-                    ((r?.sourcePath || '').split('#')[0] === sourcePath),
+                    (r?.sourcePath || '').split('#')[0] === sourcePath,
             );
             if (!toDelete?.uuid) return;
 
@@ -115,13 +116,16 @@ export class KodyRulesSyncService {
         sourcePath: string;
     }): Promise<Partial<IKodyRule>[]> {
         try {
-            const { organizationAndTeamData, repositoryId, sourcePath } = params;
+            const { organizationAndTeamData, repositoryId, sourcePath } =
+                params;
             const existing = await this.kodyRulesService.findByOrganizationId(
                 organizationAndTeamData.organizationId,
             );
             return (
                 existing?.rules?.filter(
-                    (r) => r?.repositoryId === repositoryId && r?.sourcePath === sourcePath,
+                    (r) =>
+                        r?.repositoryId === repositoryId &&
+                        r?.sourcePath === sourcePath,
                 ) || []
             );
         } catch (error) {
@@ -165,7 +169,9 @@ export class KodyRulesSyncService {
         return `s=${hash}`;
     }
 
-    private extractAnchorFromSourcePath(sourcePath?: string): string | undefined {
+    private extractAnchorFromSourcePath(
+        sourcePath?: string,
+    ): string | undefined {
         if (!sourcePath) return undefined;
         const idx = sourcePath.indexOf('#');
         if (idx < 0) return undefined;
@@ -204,7 +210,8 @@ export class KodyRulesSyncService {
             const byTitleAndPath = existing.find(
                 (r) =>
                     this.normalizeTitle(r.title) === title &&
-                    (r.path || '').toLowerCase() === (candidate.path || '').toLowerCase(),
+                    (r.path || '').toLowerCase() ===
+                        (candidate.path || '').toLowerCase(),
             );
             if (byTitleAndPath?.uuid) return byTitleAndPath.uuid;
         }
@@ -218,7 +225,9 @@ export class KodyRulesSyncService {
         let best: { uuid?: string; score: number } = { score: 0 };
         for (const r of existing) {
             const exTokens = new Set(tokenize(r.rule || ''));
-            const inter = new Set([...candTokens].filter((t) => exTokens.has(t)));
+            const inter = new Set(
+                [...candTokens].filter((t) => exTokens.has(t)),
+            );
             const union = new Set([...candTokens, ...exTokens]);
             const score = union.size ? inter.size / union.size : 0;
             if (score > best.score) best = { uuid: r.uuid, score };
@@ -341,12 +350,16 @@ export class KodyRulesSyncService {
                     path: (oneRule.path as string) ?? f.filename,
                     sourcePath: f.filename,
                     severity:
-                        ((oneRule.severity as any)?.toLowerCase?.() as KodyRuleSeverity) ||
+                        ((
+                            oneRule.severity as any
+                        )?.toLowerCase?.() as KodyRuleSeverity) ||
                         KodyRuleSeverity.MEDIUM,
                     repositoryId: repository.id,
                     origin: KodyRulesOrigin.USER,
                     status: oneRule.status as any,
-                    scope: (oneRule.scope as KodyRulesScope) || KodyRulesScope.FILE,
+                    scope:
+                        (oneRule.scope as KodyRulesScope) ||
+                        KodyRulesScope.FILE,
                     examples: Array.isArray(oneRule.examples)
                         ? (oneRule.examples as any)
                         : [],
@@ -379,12 +392,11 @@ export class KodyRulesSyncService {
             const files =
                 await this.codeManagementService.getRepositoryAllFiles({
                     organizationAndTeamData,
-                    repository: repository.name,
-                    organizationName:
-                        repository.fullName?.split('/')?.[0] || '',
-                    branch,
-                    filePatterns: [...RULE_FILE_PATTERNS],
-                    excludePatterns: [],
+                    repository: { id: repository.id, name: repository.name },
+                    filters: {
+                        branch,
+                        filePatterns: [...RULE_FILE_PATTERNS],
+                    },
                 });
 
             if (!files?.length) {
@@ -463,7 +475,9 @@ export class KodyRulesSyncService {
                     content: decoded,
                 });
 
-                const oneRule = rules.find((r) => r && typeof r === 'object' && r.title && r.rule);
+                const oneRule = rules.find(
+                    (r) => r && typeof r === 'object' && r.title && r.rule,
+                );
                 if (!oneRule) continue;
 
                 const existing = await this.findRuleBySourcePath({
@@ -479,16 +493,25 @@ export class KodyRulesSyncService {
                     path: (oneRule.path as string) ?? file.path,
                     sourcePath: file.path,
                     severity:
-                        ((oneRule.severity as any)?.toLowerCase?.() as KodyRuleSeverity) ||
+                        ((
+                            oneRule.severity as any
+                        )?.toLowerCase?.() as KodyRuleSeverity) ||
                         KodyRuleSeverity.MEDIUM,
                     repositoryId: repository.id,
                     origin: KodyRulesOrigin.USER,
                     status: oneRule.status as any,
-                    scope: (oneRule.scope as KodyRulesScope) || KodyRulesScope.FILE,
-                    examples: Array.isArray(oneRule.examples) ? (oneRule.examples as any) : [],
+                    scope:
+                        (oneRule.scope as KodyRulesScope) ||
+                        KodyRulesScope.FILE,
+                    examples: Array.isArray(oneRule.examples)
+                        ? (oneRule.examples as any)
+                        : [],
                 } as CreateKodyRuleDto;
 
-                await this.upsertRule.execute(dto, organizationAndTeamData.organizationId);
+                await this.upsertRule.execute(
+                    dto,
+                    organizationAndTeamData.organizationId,
+                );
             }
         } catch (error) {
             this.logger.error({

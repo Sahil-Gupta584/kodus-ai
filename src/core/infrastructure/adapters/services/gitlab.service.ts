@@ -197,60 +197,6 @@ export class GitlabService
         }
     }
 
-    async getRepositoryAllFiles(params: {
-        repository: string;
-        organizationName: string; // namespace or group path
-        branch: string;
-        organizationAndTeamData: OrganizationAndTeamData;
-        filePatterns?: string[];
-        excludePatterns?: string[];
-        maxFiles?: number;
-    }): Promise<any[]> {
-        try {
-            const auth = await this.getAuthDetails(params.organizationAndTeamData);
-            const gitlabAPI = this.instanceGitlabApi(auth);
-
-            // Resolve project ID using namespace/name when possible
-            const projectPath = encodeURIComponent(`${params.organizationName}/${params.repository}`);
-            const project: any = await gitlabAPI.Projects.show(projectPath).catch(async () => {
-                // fallback: search
-                const projects = (await gitlabAPI.Projects.all({ search: params.repository })) as any[];
-                return projects?.find((p) => p?.path === params.repository || p?.name === params.repository);
-            });
-
-            if (!project?.id) return [];
-
-            // Recursive tree
-            const tree = (await (gitlabAPI as any).Repositories.tree(project.id, {
-                ref: params.branch,
-                recursive: true,
-            })) as any[];
-
-            if (!Array.isArray(tree)) return [];
-
-            let files = tree
-                .filter((item) => item.type === 'blob')
-                .map((t) => ({ path: t.path, type: 'blob', size: undefined, sha: t.id }));
-
-            if (params.filePatterns?.length) {
-                files = files.filter((f) => params.filePatterns!.some((p) => globMatch(f.path, p)));
-            }
-            if (params.excludePatterns?.length) {
-                files = files.filter((f) => !params.excludePatterns!.some((p) => globMatch(f.path, p)));
-            }
-            if (params.maxFiles && params.maxFiles > 0) files = files.slice(0, params.maxFiles);
-            return files;
-        } catch (error) {
-            this.logger.error({
-                message: 'Failed to get repository files (GitLab)',
-                context: GitlabService.name,
-                error,
-                metadata: params,
-            });
-            return [];
-        }
-    }
-
     async getPullRequestByNumber(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string };
@@ -3438,9 +3384,12 @@ export class GitlabService
 
             const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
 
-            const tree = await gitlabAPI.Repositories.allRepositoryTrees(params.repositoryId, {
-                recursive: true,
-            });
+            const tree = await gitlabAPI.Repositories.allRepositoryTrees(
+                params.repositoryId,
+                {
+                    recursive: true,
+                },
+            );
 
             return tree.map((item: any) => ({
                 path: item.path,
