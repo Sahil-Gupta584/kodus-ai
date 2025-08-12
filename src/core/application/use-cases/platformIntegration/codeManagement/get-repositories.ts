@@ -26,7 +26,9 @@ export class GetRepositoriesUseCase implements IUseCase {
                         organizationId: this.request.user.organization.uuid,
                         teamId: params?.teamId,
                     },
-                    organizationSelected: params?.organizationSelected,
+                    filters: {
+                        organizationSelected: params?.organizationSelected,
+                    },
                 });
 
             if (params.isSelected !== undefined) {

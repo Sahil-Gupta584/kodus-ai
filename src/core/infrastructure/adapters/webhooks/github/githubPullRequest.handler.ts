@@ -11,6 +11,8 @@ import { ChatWithKodyFromGitUseCase } from '@/core/application/use-cases/platfor
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
+import { PullRequest } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
+import { IMappedPullRequest } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-common.type';
 
 /**
  * Handler for GitHub webhook events.
@@ -215,13 +217,57 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                         );
 
                     if (teamData?.organizationAndTeamData) {
-                        pullRequestData =
-                            await this.codeManagement.getPullRequestDetails({
-                                organizationAndTeamData:
-                                    teamData?.organizationAndTeamData,
-                                repository,
-                                prNumber: payload.issue.number,
+                        const data = await this.codeManagement.getPullRequest({
+                            organizationAndTeamData:
+                                teamData?.organizationAndTeamData,
+                            repository,
+                            prNumber: payload.issue.number,
+                        });
+
+                        if (!data) {
+                            this.logger.error({
+                                message: `Could not fetch pull request details for PR#${payload.issue.number} in repository ${repository.name}`,
+                                serviceName: GitHubPullRequestHandler.name,
+                                metadata: {
+                                    prNumber,
+                                    repository,
+                                },
+                                context: GitHubPullRequestHandler.name,
                             });
+                            return;
+                        }
+
+                        pullRequestData = {
+                            ...data,
+                            pull_request: {
+                                ...data,
+                                repository: {
+                                    id: repository.id,
+                                    name: repository.name,
+                                },
+                                head: {
+                                    ref: data?.head?.ref,
+                                    repo: {
+                                        fullName: data?.head?.repo?.fullName,
+                                    },
+                                },
+                                base: {
+                                    ref: data?.base?.ref,
+                                    repo: {
+                                        fullName: data?.base?.repo?.fullName,
+                                        defaultBranch:
+                                            data?.base?.repo?.defaultBranch,
+                                    },
+                                },
+                                title: data?.title,
+                                body: data?.body,
+                                user: {
+                                    id: data?.user?.id,
+                                    login: data?.user?.login,
+                                    name: data?.user?.name,
+                                },
+                            },
+                        };
                     }
                 }
 
