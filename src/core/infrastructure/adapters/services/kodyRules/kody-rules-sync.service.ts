@@ -295,18 +295,58 @@ export class KodyRulesSyncService {
                         ? f.previous_filename
                         : f.filename;
 
-                const contentResp =
-                    await this.codeManagementService.getRepositoryContentFile({
-                        organizationAndTeamData,
-                        repository: {
-                            id: repository.id,
-                            name: repository.name,
-                        },
-                        file: { filename: f.filename },
-                        pullRequest: pullRequestParam,
-                    });
+                const contentResp = await this.codeManagementService.getRepositoryContentFile({
+                    organizationAndTeamData,
+                    repository: {
+                        id: repository.id,
+                        name: repository.name,
+                    },
+                    file: { filename: f.filename },
+                    pullRequest: pullRequestParam,
+                });
+                // Fallbacks if the source branch was deleted on merge (e.g., GitLab):
+                // 1) Try with base as head
+                // 2) Try with default branch as head
+                let effectiveContent = contentResp;
+                if (!effectiveContent?.data?.content) {
+                    // Try base ref as head
+                    const baseRef = pullRequestParam.base?.ref;
+                    if (baseRef) {
+                        try {
+                            const baseAsHead = await this.codeManagementService.getRepositoryContentFile({
+                                organizationAndTeamData,
+                                repository: { id: repository.id, name: repository.name },
+                                file: { filename: f.filename },
+                                pullRequest: { head: { ref: baseRef } },
+                            });
+                            if (baseAsHead?.data?.content) {
+                                effectiveContent = baseAsHead;
+                            }
+                        } catch {}
+                    }
+                }
+                if (!effectiveContent?.data?.content) {
+                    // Try repository default branch as head
+                    try {
+                        const defaultBranch = await this.codeManagementService.getDefaultBranch({
+                            organizationAndTeamData,
+                            repository: { id: repository.id, name: repository.name },
+                        });
+                        if (defaultBranch) {
+                            const defAsHead = await this.codeManagementService.getRepositoryContentFile({
+                                organizationAndTeamData,
+                                repository: { id: repository.id, name: repository.name },
+                                file: { filename: f.filename },
+                                pullRequest: { head: { ref: defaultBranch } },
+                            });
+                            if (defAsHead?.data?.content) {
+                                effectiveContent = defAsHead;
+                            }
+                        }
+                    } catch {}
+                }
 
-                const rawContent = contentResp?.data?.content;
+                const rawContent = effectiveContent?.data?.content;
                 if (!rawContent) continue;
 
                 const decoded =
