@@ -15,13 +15,12 @@ import { IntegrationServiceDecorator } from '@/shared/utils/decorators/integrati
 import { BadRequestException, Inject, NotFoundException } from '@nestjs/common';
 import { PinoLoggerService } from './logger/pino.service';
 import {
-    PullRequests,
     PullRequestWithFiles,
     PullRequestReviewComment,
     OneSentenceSummaryItem,
     ReactionsInComments,
     PullRequestAuthor,
-    PullRequestDetails,
+    PullRequest,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { v4 as uuidv4, v4 } from 'uuid';
@@ -56,6 +55,7 @@ import { ICodeManagementService } from '@/core/domain/platformIntegrations/inter
 import {
     AzurePullRequestVote,
     AzureRepoCommit,
+    AzureRepoFileItem,
     AzureRepoPRThread,
     EventConfig,
 } from '@/core/domain/azureRepos/entities/azureRepoExtras.type';
@@ -68,9 +68,14 @@ import {
 } from '@/shared/utils/translations/translations';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 import { KODY_CRITICAL_ISSUE_COMMENT_MARKER } from '@/shared/utils/codeManagement/codeCommentMarkers';
-import { AzurePRStatus } from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
+import {
+    AzurePRStatus,
+    AzureRepoPullRequest,
+} from '@/core/domain/azureRepos/entities/azureRepoPullRequest.type';
 import { ConfigService } from '@nestjs/config';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
+import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
@@ -87,7 +92,6 @@ export class AzureReposService
             | 'getListOfValidReviews'
             | 'getPullRequestsWithChangesRequested'
             | 'getAuthenticationOAuthToken'
-            | 'getRepositoryAllFiles'
             | 'mergePullRequest'
             | 'getUserById'
         >
@@ -158,14 +162,17 @@ export class AzureReposService
 
                     // Para na primeira contribuição de cada usuário
                     for (const pr of prs || []) {
-                        if (pr.author_id) {
-                            const userId = pr.author_id.toString();
+                        if (pr.user && pr.user.id) {
+                            const userId = pr.user.id.toString();
 
                             if (!authorsSet.has(userId)) {
                                 authorsSet.add(userId);
                                 authorsData.set(userId, {
-                                    id: pr.author_id,
-                                    name: pr.author_name || pr.author_id,
+                                    id: userId,
+                                    name:
+                                        pr.user.name ??
+                                        pr.user.login ??
+                                        pr.user.id,
                                 });
                             }
                         }
@@ -1875,17 +1882,15 @@ export class AzureReposService
                     token,
                     projectId,
                     repositoryId: repository.id,
-                    startDate: filters?.startDate,
-                    endDate: filters?.endDate,
+                    filters: {
+                        minTime: filters?.startDate,
+                        maxTime: filters?.endDate,
+                    },
                 });
 
             return (
                 pullRequests?.map((pr) =>
-                    this.transformPullRequest(
-                        pr,
-                        repository.name,
-                        organizationAndTeamData.organizationId,
-                    ),
+                    this.transformPullRequest(pr, organizationAndTeamData),
                 ) || []
             );
         } catch (error) {
@@ -1901,103 +1906,153 @@ export class AzureReposService
         }
     }
 
+    /**
+     * Retrieves pull requests from Azure DevOps based on the provided parameters.
+     * @param params - The parameters for fetching pull requests.
+     * @param params.organizationAndTeamData - The organization and team data.
+     * @param params.repository - Optional filter for a specific repository name.
+     * @param params.filters - Optional filters for dates, state, author, and branch.
+     * @returns A promise that resolves to an array of transformed PullRequest objects.
+     */
     async getPullRequests(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        filters?: {
-            startDate?: string;
-            endDate?: string;
-            assignFilter?: any;
-            state?: PullRequestState;
-            includeChanges?: boolean;
-            pullRequestNumbers?: number[];
+        repository?: {
+            id: string;
+            name: string;
         };
-    }): Promise<PullRequests[]> {
-        try {
-            const { organizationAndTeamData, filters } = params;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            state?: PullRequestState;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<PullRequest[]> {
+        const { organizationAndTeamData, repository, filters = {} } = params;
 
+        try {
             if (!organizationAndTeamData.organizationId) {
-                return null;
+                this.logger.warn({
+                    message: 'Organization ID is missing in the parameters.',
+                    context: AzureReposService.name,
+                    metadata: params,
+                });
+                return [];
             }
 
             const azureAuthDetail = await this.getAuthDetails(
                 organizationAndTeamData,
             );
-
             const { orgName, token } = azureAuthDetail;
 
-            const repositories: Repositories[] =
+            const allRepositories = <Repositories[]>(
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(
                     organizationAndTeamData,
                     IntegrationConfigKey.REPOSITORIES,
-                );
-            if (!repositories || repositories.length === 0) {
-                return null;
+                )
+            );
+
+            if (
+                !azureAuthDetail ||
+                !allRepositories ||
+                allRepositories.length === 0
+            ) {
+                this.logger.warn({
+                    message: 'No repositories found for the organization.',
+                    context: AzureReposService.name,
+                    metadata: params,
+                });
+                return [];
             }
 
-            let allPRs: any[] = [];
+            let reposToProcess = allRepositories;
 
-            const results = await Promise.all(
-                repositories.map(async (repo) => {
-                    const prs = await this.getPullRequestsByRepository({
-                        organizationAndTeamData,
-                        repository: {
-                            id: repo.id,
-                            name: repo.name,
-                        },
-                        filters: {
-                            startDate: filters?.startDate,
-                            endDate: filters?.endDate,
-                        },
+            if (repository && (repository.name || repository.id)) {
+                const foundRepo = allRepositories.find(
+                    (r) => r.name === repository.name || r.id === repository.id,
+                );
+
+                if (!foundRepo) {
+                    this.logger.warn({
+                        message: `Repository ${repository.name} (id: ${repository.id}) not found in the list of repositories.`,
+                        context: AzureReposService.name,
+                        metadata: params,
                     });
+                    return [];
+                }
 
-                    return prs?.map((item) => ({
-                        ...item,
-                        repository: repo.name,
-                    }));
+                reposToProcess = [foundRepo];
+            }
+
+            const promises = reposToProcess.map((r) =>
+                this.getPullRequestsByRepo({
+                    orgName,
+                    token,
+                    projectId: r.project.id,
+                    repositoryId: r.id,
+                    filters,
                 }),
             );
 
-            allPRs = results.flat();
+            const results = await Promise.all(promises);
+            const rawPullRequests = results.flat();
 
-            const stateMap: Record<string, PullRequestState> = {
-                active: PullRequestState.OPENED,
-                completed: PullRequestState.MERGED,
-                abandoned: PullRequestState.CLOSED,
-            };
-
-            const transformed = allPRs.map((pr) => ({
-                ...pr,
-                state:
-                    stateMap[pr.status?.toLowerCase()] || PullRequestState.ALL,
-            }));
-
-            let finalPRs = transformed;
-            if (filters && filters.state) {
-                finalPRs = finalPRs.filter((pr) => pr.state === filters.state);
-            }
-
-            finalPRs.sort(
-                (a, b) =>
-                    new Date(b.created_at).getTime() -
-                    new Date(a.created_at).getTime(),
+            return rawPullRequests.map((rawPr) =>
+                this.transformPullRequest(rawPr, organizationAndTeamData),
             );
-
-            if (filters && filters.pullRequestNumbers) {
-                finalPRs = finalPRs.filter((pr) =>
-                    filters.pullRequestNumbers.includes(Number(pr.id)),
-                );
-            }
-
-            return finalPRs;
         } catch (error) {
             this.logger.error({
-                message: 'Error to get pull requests',
-                context: this.getPullRequests.name,
-                error: error,
-                metadata: { params },
+                message: 'Error fetching pull requests from Azure DevOps',
+                context: AzureReposService.name,
+                error,
+                metadata: params,
             });
             return [];
         }
+    }
+
+    /**
+     * Retrieves pull requests from a specific Azure DevOps repository.
+     * @param params - The parameters for fetching, including the API instance, repo info, and filters.
+     * @returns A promise that resolves to an array of raw pull request data.
+     */
+    private async getPullRequestsByRepo(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        filters: {
+            state?: PullRequestState;
+            author?: string;
+            branch?: string;
+            startDate?: Date;
+            endDate?: Date;
+        };
+    }): Promise<AzureRepoPullRequest[]> {
+        const {
+            orgName,
+            token,
+            projectId,
+            repositoryId,
+            filters = {},
+        } = params;
+        const { author, branch, state, startDate, endDate } = filters;
+
+        return await this.azureReposRequestHelper.getPullRequestsByRepo({
+            orgName,
+            token,
+            projectId,
+            repositoryId,
+            filters: {
+                author,
+                branch,
+                status: state
+                    ? this._prStateMapReversed.get(state)
+                    : this._prStateMapReversed.get(PullRequestState.ALL),
+                maxTime: endDate ? endDate.toISOString() : undefined,
+                minTime: startDate ? startDate.toISOString() : undefined,
+            },
+        });
     }
 
     async getPullRequestsWithFiles(params: {
@@ -2049,9 +2104,11 @@ export class AzureReposService
                                 token,
                                 projectId: repo.project.id,
                                 repositoryId: repo.id,
-                                startDate,
-                                endDate,
-                                status: normalizedStatus,
+                                filters: {
+                                    minTime: startDate,
+                                    maxTime: endDate,
+                                    status: normalizedStatus,
+                                },
                             },
                         );
                     return { repo, prs };
@@ -2227,7 +2284,15 @@ export class AzureReposService
         }
     }
 
-    async getRepositories(params: any): Promise<Repositories[]> {
+    async getRepositories(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        filters?: {
+            archived?: boolean;
+            organizationSelected?: string;
+            visibility?: 'all' | 'public' | 'private';
+            language?: string;
+        };
+    }): Promise<Repositories[]> {
         try {
             const { organizationAndTeamData } = params;
 
@@ -2333,87 +2398,128 @@ export class AzureReposService
 
     async getCommits(params: {
         organizationAndTeamData: OrganizationAndTeamData;
+        repository?: Partial<Repository>;
         filters?: {
-            startDate?: string;
-            endDate?: string;
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
         };
     }): Promise<Commit[]> {
-        try {
-            const { organizationAndTeamData } = params;
-            const filters = params.filters ?? {};
-            const { startDate, endDate } = filters;
+        const { organizationAndTeamData, repository, filters = {} } = params;
 
+        try {
             const azureAuthDetail = await this.getAuthDetails(
                 organizationAndTeamData,
             );
-
             const { orgName, token } = azureAuthDetail;
 
-            const repositories: Repositories[] =
+            const configuredRepositories: Repositories[] =
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(
                     organizationAndTeamData,
                     IntegrationConfigKey.REPOSITORIES,
                 );
-            if (!repositories || repositories.length === 0) {
+
+            if (
+                !azureAuthDetail ||
+                !configuredRepositories ||
+                configuredRepositories.length === 0
+            ) {
+                this.logger.warn({
+                    message:
+                        'Azure Repos auth details or repositories not found.',
+                    context: AzureReposService.name,
+                    metadata: params,
+                });
+
                 return [];
             }
 
-            const commitsByRepo = await Promise.all(
-                repositories.map(async (repo) => {
-                    return this.azureReposRequestHelper.getCommits({
-                        orgName,
-                        token,
-                        projectId: repo.project.id,
-                        repositoryId: repo.id,
+            let reposToProcess: Repositories[] = configuredRepositories;
+
+            // If a specific repository is requested, filter the list.
+            if (repository && repository.name) {
+                const foundRepo = configuredRepositories.find(
+                    (r) => r.name === repository.name,
+                );
+
+                if (!foundRepo) {
+                    this.logger.warn({
+                        message: `Repository ${repository.name} not found in the list of configured repositories.`,
+                        context: AzureReposService.name,
+                        metadata: params,
                     });
+                    return [];
+                }
+
+                reposToProcess = [foundRepo];
+            }
+
+            const promises = reposToProcess.map((repo) =>
+                this.getCommitsByRepo({
+                    orgName,
+                    token,
+                    projectId: repo.project.id,
+                    repositoryId: repo.id,
+                    filters,
                 }),
             );
 
-            const allCommits = commitsByRepo.flat();
+            const results = await Promise.all(promises);
+            const rawCommits = results.flat();
 
-            const filteredCommits = allCommits.filter((commit: any) => {
-                const commitDate = new Date(commit.author?.date).getTime();
-                const start = startDate ? new Date(startDate).getTime() : null;
-                const end = endDate ? new Date(endDate).getTime() : null;
-                return (
-                    (!start || commitDate >= start) &&
-                    (!end || commitDate <= end)
-                );
-            });
-
-            const formattedCommits: Commit[] = filteredCommits.map(
-                (commit: any) => {
-                    return {
-                        sha: commit.commitId,
-                        commit: {
-                            author: {
-                                id: commit.author?.id || '',
-                                name: commit.author?.name,
-                                email: commit.author?.email,
-                                date: commit.author?.date,
-                            },
-                            message: commit.comment,
-                        },
-                    };
-                },
+            return rawCommits.map((rawCommit) =>
+                this.transformCommit(rawCommit),
             );
-
-            const sortedCommits = formattedCommits.sort(
-                (a, b) =>
-                    new Date(b.commit.author.date).getTime() -
-                    new Date(a.commit.author.date).getTime(),
-            );
-
-            return sortedCommits;
         } catch (error) {
             this.logger.error({
-                message: 'Error to get commits',
-                context: this.getCommits.name,
+                message: 'Error fetching commits from Azure Repos',
+                context: AzureReposService.name,
                 error: error,
-                metadata: { params },
+                metadata: params,
             });
             return [];
         }
+    }
+
+    /**
+     * Fetches commits for a single Azure repository, applying server-side filters.
+     * @param params Parameters including auth, repo identifiers, and filters.
+     * @returns A promise that resolves to an array of raw commit data.
+     */
+    private async getCommitsByRepo(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        filters: {
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<AzureRepoCommit[]> {
+        const {
+            orgName,
+            token,
+            projectId,
+            repositoryId,
+            filters = {},
+        } = params;
+        const { startDate, endDate, author, branch } = filters;
+
+        return this.azureReposRequestHelper.getCommits({
+            orgName,
+            token,
+            projectId,
+            repositoryId,
+            filters: {
+                author,
+                branch,
+                fromDate: startDate?.toISOString(),
+                toDate: endDate?.toISOString(),
+            },
+        });
     }
 
     async getFilesByPullRequestId(params: {
@@ -2768,65 +2874,6 @@ export class AzureReposService
             });
             return null; // Return null to indicate failure for this specific file
         }
-    }
-
-    private transformPullRequest(
-        pr: any,
-        repository: string,
-        organizationId: string,
-    ): PullRequests & any {
-        const stateMap: Record<AzureGitPullRequestState, PullRequestState> = {
-            [AzureGitPullRequestState.ACTIVE]: PullRequestState.OPENED,
-            [AzureGitPullRequestState.COMPLETED]: PullRequestState.MERGED,
-            [AzureGitPullRequestState.ABANDONED]: PullRequestState.CLOSED,
-        };
-
-        return {
-            id: pr.pullRequestId?.toString(),
-            author_id: pr.createdBy?.id,
-            author_name: pr.createdBy?.displayName,
-            author_created_at: pr.creationDate,
-            repository,
-            repositoryId: pr.repository?.id,
-            message: pr.description,
-            state:
-                stateMap[pr.status as AzureGitPullRequestState] ||
-                PullRequestState.ALL,
-            prURL: pr?.url,
-            organizationId,
-            pull_number: pr.pullRequestId,
-            number: pr.pullRequestId,
-            body: pr.description,
-            title: pr.title,
-            created_at: pr.creationDate,
-            updated_at:
-                pr.status === 'completed' || pr.status === 'abandoned'
-                    ? pr.closedDate
-                    : pr.creationDate,
-            merged_at: pr.status === 'completed' ? pr.closedDate : null,
-            participants: [],
-            reviewers:
-                pr.reviewers?.map((reviewer) => ({
-                    ...reviewer,
-                    uuid: reviewer.id,
-                })) || [],
-            head: {
-                ref: pr.sourceRefName?.replace('refs/heads/', ''),
-                repo: {
-                    id: pr.repository?.id,
-                    name: pr.repository?.name,
-                },
-            },
-            base: {
-                ref: pr.targetRefName?.replace('refs/heads/', ''),
-            },
-            user: {
-                login:
-                    pr.createdBy?.uniqueName || pr.createdBy?.displayName || '',
-                name: pr.createdBy?.displayName,
-                id: pr.createdBy?.id,
-            },
-        };
     }
 
     private async getProjectIdFromRepository(
@@ -3426,11 +3473,11 @@ export class AzureReposService
         throw new Error('Method not implemented.');
     }
 
-    async getPullRequestDetails(params: {
+    async getPullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: Partial<Repository>;
         prNumber: number;
-    }): Promise<any | null> {
+    }): Promise<PullRequest | null> {
         const { organizationAndTeamData, repository, prNumber } = params;
 
         try {
@@ -3460,7 +3507,7 @@ export class AzureReposService
             if (!pullRequest) {
                 this.logger.warn({
                     message: `Pull request #${prNumber} not found in repository ${repository.name}`,
-                    context: this.getPullRequestDetails.name,
+                    context: this.getPullRequest.name,
                     metadata: {
                         organizationAndTeamData,
                         repository: repository.name,
@@ -3472,15 +3519,14 @@ export class AzureReposService
 
             const pr = this.transformPullRequest(
                 pullRequest,
-                repository.name,
-                organizationAndTeamData.organizationId,
+                organizationAndTeamData,
             );
 
             return pr;
         } catch (error) {
             this.logger.error({
                 message: `Error getting pull request details for #${prNumber} in repository ${repository.name}`,
-                context: this.getPullRequestDetails.name,
+                context: this.getPullRequest.name,
                 error: error,
                 metadata: {
                     organizationAndTeamData,
@@ -3490,5 +3536,285 @@ export class AzureReposService
             });
             return null; // Return null to indicate failure
         }
+    }
+
+    async getRepositoryAllFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        filters?: {
+            branch?: string;
+            filePatterns?: string[];
+            excludePatterns?: string[];
+            maxFiles?: number;
+        };
+    }): Promise<RepositoryFile[]> {
+        try {
+            const {
+                organizationAndTeamData,
+                repository,
+                filters = {},
+            } = params;
+
+            const authDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!authDetails) {
+                this.logger.warn({
+                    message: `No auth details found for organization ${organizationAndTeamData.organizationId}`,
+                    context: this.getRepositoryAllFiles.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            const { orgName, token } = authDetails;
+
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            if (!projectId) {
+                this.logger.warn({
+                    message: `Project ID not found for repository ${repository.name}`,
+                    context: this.getRepositoryAllFiles.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            const {
+                filePatterns,
+                excludePatterns,
+                maxFiles = 1000,
+            } = filters ?? {};
+
+            let branch = filters?.branch;
+
+            if (!branch || branch.length === 0) {
+                branch = await this.getDefaultBranch({
+                    organizationAndTeamData,
+                    repository,
+                });
+
+                if (!branch) {
+                    this.logger.warn({
+                        message: `Default branch not found for repository ${repository.name}`,
+                        context: this.getRepositoryAllFiles.name,
+                        metadata: params,
+                    });
+
+                    return [];
+                }
+            }
+
+            const fileItems =
+                await this.azureReposRequestHelper.listRepositoryFiles({
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: repository.id,
+                    filters: {
+                        branch,
+                    },
+                });
+
+            if (!fileItems || fileItems.length === 0) {
+                this.logger.warn({
+                    message: `No files found in repository ${repository.name}`,
+                    context: this.getRepositoryAllFiles.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            let files = fileItems
+                .filter((fileItem) => !fileItem.isFolder)
+                .map((fileItem) => this.transformRepositoryFile(fileItem));
+
+            const filteredFiles: RepositoryFile[] = [];
+            for (const file of files) {
+                if (maxFiles > 0 && filteredFiles.length >= maxFiles) {
+                    break;
+                }
+
+                if (
+                    filePatterns &&
+                    filePatterns.length > 0 &&
+                    !isFileMatchingGlob(file.path, filePatterns)
+                ) {
+                    continue;
+                }
+
+                if (
+                    excludePatterns &&
+                    excludePatterns.length > 0 &&
+                    isFileMatchingGlob(file.path, excludePatterns)
+                ) {
+                    continue;
+                }
+
+                filteredFiles.push(file);
+            }
+
+            this.logger.log({
+                message: `Retrieved ${filteredFiles.length} files from repository ${repository.name} after filtering`,
+                context: this.getRepositoryAllFiles.name,
+                metadata: {
+                    organizationAndTeamData,
+                    repository: repository.name,
+                    filters,
+                },
+            });
+
+            return filteredFiles;
+        } catch (error) {
+            this.logger.error({
+                message: `Error getting all files for repository ${params.repository.name}`,
+                context: this.getRepositoryAllFiles.name,
+                error: error,
+                metadata: { params },
+            });
+
+            return [];
+        }
+    }
+
+    //#region Transformers
+
+    /**
+     * Transforms a raw commit from the Azure DevOps API into the standard Commit interface.
+     * @param rawCommit The raw commit data from Azure Repos.
+     * @returns A Commit object.
+     */
+    private transformCommit(rawCommit: AzureRepoCommit): Commit {
+        return {
+            sha: rawCommit.commitId ?? '',
+            commit: {
+                author: {
+                    id: rawCommit.author?.id ?? '',
+                    name: rawCommit.author?.name ?? '',
+                    email: rawCommit.author?.email ?? '',
+                    date: rawCommit.author?.date?.toString() ?? '',
+                },
+                message: rawCommit.comment ?? '',
+            },
+            parents:
+                rawCommit.parents
+                    ?.map((parentSha) => ({ sha: parentSha }))
+                    .filter((parent) => parent.sha) ?? [],
+        };
+    }
+
+    private readonly _prStateMap = new Map<AzurePRStatus, PullRequestState>([
+        [AzurePRStatus.ACTIVE, PullRequestState.OPENED],
+        [AzurePRStatus.COMPLETED, PullRequestState.MERGED],
+        [AzurePRStatus.ABANDONED, PullRequestState.CLOSED],
+        [AzurePRStatus.NOT_SET, PullRequestState.ALL],
+        [AzurePRStatus.ALL, PullRequestState.ALL],
+    ]);
+
+    private readonly _prStateMapReversed = new Map<
+        PullRequestState,
+        AzurePRStatus
+    >([
+        [PullRequestState.OPENED, AzurePRStatus.ACTIVE],
+        [PullRequestState.MERGED, AzurePRStatus.COMPLETED],
+        [PullRequestState.CLOSED, AzurePRStatus.ABANDONED],
+        [PullRequestState.ALL, AzurePRStatus.ALL],
+    ]);
+
+    private readonly _prClosedStates: Array<AzurePRStatus> = [
+        AzurePRStatus.COMPLETED,
+        AzurePRStatus.ABANDONED,
+    ];
+
+    /**
+     * Transforms a raw pull request from Azure DevOps into the standard PullRequest interface.
+     * @param pr The raw pull request data from Azure Repos.
+     * @param organizationId The ID of the organization.
+     * @returns A PullRequest object.
+     */
+    private transformPullRequest(
+        pr: AzureRepoPullRequest,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): PullRequest {
+        return {
+            id: pr.pullRequestId?.toString() ?? '',
+            number: pr?.pullRequestId ?? -1,
+            pull_number: pr?.pullRequestId ?? -1, // TODO: remove, legacy, use number
+            repository: pr?.repository?.name ?? '', // TODO: remove, legacy, use repositoryData
+            repositoryId: pr?.repository?.id ?? '', // TODO: remove, legacy, use repositoryData
+            repositoryData: {
+                id: pr?.repository?.id ?? '',
+                name: pr?.repository?.name ?? '',
+            },
+            message: pr?.description ?? '',
+            state: this._prStateMap.get(pr?.status) ?? PullRequestState.ALL,
+            prURL: pr?.url ?? '',
+            organizationId: organizationAndTeamData?.organizationId ?? '',
+            body: pr?.description ?? '',
+            title: pr?.title ?? '',
+            created_at: pr?.creationDate ?? '',
+            closed_at: pr?.closedDate ?? '',
+            updated_at: this._prClosedStates.includes(pr?.status)
+                ? (pr?.closedDate ?? '')
+                : (pr?.creationDate ?? ''),
+            merged_at:
+                pr?.status === AzurePRStatus.COMPLETED
+                    ? (pr?.closedDate ?? '')
+                    : '',
+            participants: [
+                {
+                    id: pr?.createdBy?.id ?? '',
+                },
+            ],
+            reviewers:
+                pr?.reviewers?.map((reviewer) => ({
+                    id: reviewer?.id ?? '',
+                })) || [],
+            sourceRefName: pr?.sourceRefName ?? '', // TODO: remove, legacy, use head.ref
+            head: {
+                ref: pr?.sourceRefName?.replace('refs/heads/', ''),
+                repo: {
+                    id: pr?.repository?.id ?? '',
+                    name: pr?.repository?.name ?? '',
+                    defaultBranch: pr?.repository?.defaultBranch ?? '',
+                    fullName: `${pr?.repository?.name ?? ''}/${pr?.sourceRefName?.replace('refs/heads/', '')}`,
+                },
+            },
+            targetRefName: pr?.targetRefName ?? '', // TODO: remove, legacy, use base.ref
+            base: {
+                ref: pr?.targetRefName?.replace('refs/heads/', ''),
+                repo: {
+                    id: pr?.repository?.id ?? '',
+                    name: pr?.repository?.name ?? '',
+                    defaultBranch: pr?.repository?.defaultBranch ?? '',
+                    fullName: `${pr?.repository?.name ?? ''}/${pr?.targetRefName?.replace('refs/heads/', '')}`,
+                },
+            },
+            user: {
+                login:
+                    pr?.createdBy?.uniqueName ??
+                    pr.createdBy?.displayName ??
+                    '',
+                name: pr?.createdBy?.displayName ?? '',
+                id: pr?.createdBy?.id ?? '',
+            },
+        };
+    }
+
+    private transformRepositoryFile(file: AzureRepoFileItem): RepositoryFile {
+        return {
+            filename: file?.path?.split('/').pop() ?? '',
+            sha: file?.objectId ?? '',
+            path: file?.path ?? '',
+            size: -1, // Size not available in Azure Repo FileItem
+            type: file?.gitObjectType ?? 'blob',
+        };
     }
 }

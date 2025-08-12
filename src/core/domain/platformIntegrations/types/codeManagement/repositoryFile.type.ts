@@ -1,8 +1,11 @@
-export interface RepositoryFile {
+export type RepositoryFile = {
     path: string;
-    content: string;
+    type: string;
+    filename: string;
     sha: string;
     size: number;
-    type: string;
-    encoding: string;
-}
+};
+
+export type RepositoryFileWithContent = RepositoryFile & {
+    content: string;
+};
