@@ -49,6 +49,7 @@ import { CodeManagementService } from '@/core/infrastructure/adapters/services/p
 import { ICodeBaseConfigService } from '@/core/domain/codeBase/contracts/CodeBaseConfigService.contract';
 import { KodyRulesValidationService } from '../kodyRules/service/kody-rules-validation.service';
 import { ReviewCadenceType } from '@/config/types/general/codeReview.type';
+import { ConfigLevel } from '@/config/types/general/pullRequestMessages.type';
 
 interface GetKodusConfigFileResponse {
     kodusConfigFile: Omit<KodusConfigFile, 'version'> | null;
@@ -904,5 +905,228 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         return {
             enabled: enableService,
         };
+    }
+
+    // Adicionar estes métodos ao CodeBaseConfigService
+
+    /**
+     * Verifica se existem configurações por diretório para o repositório específico
+     * e retorna as configs encontradas para evitar nova busca no banco
+     */
+    async getDirectoryConfigs(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repository: { id: string; name: string },
+    ): Promise<{ hasConfigs: boolean; repoConfig?: any; parameters?: any }> {
+        try {
+            const parameters = await this.parametersService.findOne({
+                configKey: ParametersKey.CODE_REVIEW_CONFIG,
+                team: { uuid: organizationAndTeamData.teamId },
+            });
+
+            if (!parameters?.configValue?.repositories) {
+                return { hasConfigs: false };
+            }
+
+            const repoConfig = parameters.configValue.repositories.find(
+                (repo: any) => repo.id === repository.id.toString(),
+            );
+
+            const hasConfigs = !!(
+                repoConfig?.directories && repoConfig.directories.length > 0
+            );
+
+            return {
+                hasConfigs,
+                repoConfig: hasConfigs ? repoConfig : undefined,
+                parameters: hasConfigs ? parameters : undefined,
+            };
+        } catch (error) {
+            this.logger.error({
+                message: 'Error checking directory configs',
+                context: CodeBaseConfigService.name,
+                error,
+                metadata: {
+                    organizationAndTeamData,
+                    repositoryId: repository.id,
+                },
+            });
+            return { hasConfigs: false };
+        }
+    }
+
+    /**
+     * Resolve configuração baseada nos diretórios afetados pelos arquivos alterados
+     */
+    async resolveConfigByDirectories(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repository: { name: string; id: string },
+        affectedPaths: string[],
+        repoConfig: any,
+    ): Promise<CodeReviewConfig> {
+        try {
+            if (!repoConfig?.directories) {
+                return this.getConfig(organizationAndTeamData, repository);
+            }
+
+            // Função para normalizar paths (remover barra inicial para comparação consistente)
+            const normalizePath = (path: string): string => {
+                return path.startsWith('/') ? path.substring(1) : path;
+            };
+
+            // Encontrar diretórios configurados que são afetados pelos arquivos alterados
+            const matchingDirectories = repoConfig.directories.filter(
+                (dir: any) => {
+                    const normalizedDirPath = normalizePath(dir.path);
+                    return affectedPaths.some((filePath: string) => {
+                        const normalizedFilePath = normalizePath(filePath);
+                        return (
+                            normalizedFilePath === normalizedDirPath ||
+                            normalizedFilePath.startsWith(
+                                normalizedDirPath + '/',
+                            )
+                        );
+                    });
+                },
+            );
+
+            if (matchingDirectories.length === 0) {
+                // Nenhum diretório configurado afetado, usar config normal (repo ou global)
+                return this.getConfig(organizationAndTeamData, repository);
+            }
+
+            if (matchingDirectories.length === 1) {
+                // Apenas um diretório configurado afetado, usar sua config
+                return this.buildConfigFromDirectory(
+                    matchingDirectories[0],
+                    organizationAndTeamData,
+                    repository,
+                );
+            }
+
+            // Múltiplos diretórios configurados afetados, usar config do nível superior
+            return this.getConfig(organizationAndTeamData, repository);
+        } catch (error) {
+            this.logger.error({
+                message: 'Error resolving config by directories',
+                context: CodeBaseConfigService.name,
+                error,
+                metadata: { organizationAndTeamData, affectedPaths },
+            });
+
+            // Fallback para config normal
+            return this.getConfig(organizationAndTeamData, repository);
+        }
+    }
+
+    /**
+     * Constrói a configuração baseada na config de um diretório específico
+     */
+    private async buildConfigFromDirectory(
+        directoryConfig: any,
+        organizationAndTeamData: OrganizationAndTeamData,
+        repository: { name: string; id: string },
+    ): Promise<CodeReviewConfig> {
+        try {
+            const [
+                language,
+                defaultBranch,
+                kodyRulesForDirectory,
+                reviewModeConfig,
+                kodyFineTuningConfig,
+            ] = await Promise.all([
+                this.parametersService.findByKey(
+                    ParametersKey.LANGUAGE_CONFIG,
+                    organizationAndTeamData,
+                ),
+                this.getDefaultBranch(organizationAndTeamData, repository),
+                this.kodyRulesService.findRulesByDirectory(
+                    organizationAndTeamData.organizationId,
+                    repository.id,
+                    directoryConfig.id,
+                ),
+                this.getReviewModeConfigParameter(organizationAndTeamData),
+                this.getKodyFineTuningConfigParameter(organizationAndTeamData),
+            ]);
+
+            // As rules já vêm filtradas para o diretório específico
+            const kodyRules = kodyRulesForDirectory;
+
+            const config: CodeReviewConfig = {
+                ignorePaths: directoryConfig.ignorePaths || [],
+                baseBranches: directoryConfig.baseBranches?.length
+                    ? directoryConfig.baseBranches
+                    : [defaultBranch],
+                reviewOptions:
+                    directoryConfig.reviewOptions ||
+                    this.DEFAULT_CONFIG.reviewOptions,
+                summary: directoryConfig.summary || this.DEFAULT_CONFIG.summary,
+                suggestionControl:
+                    directoryConfig.suggestionControl ||
+                    this.DEFAULT_CONFIG.suggestionControl,
+                kodyRules: kodyRules,
+                ignoredTitleKeywords:
+                    directoryConfig.ignoredTitleKeywords || [],
+                automatedReviewActive:
+                    directoryConfig.automatedReviewActive ??
+                    this.DEFAULT_CONFIG.automatedReviewActive,
+                reviewCadence:
+                    directoryConfig.reviewCadence ||
+                    this.DEFAULT_CONFIG.reviewCadence,
+                languageResultPrompt:
+                    language?.configValue ||
+                    this.DEFAULT_CONFIG.languageResultPrompt,
+                reviewModeConfig,
+                kodyFineTuningConfig,
+                pullRequestApprovalActive:
+                    directoryConfig.pullRequestApprovalActive ??
+                    this.DEFAULT_CONFIG.pullRequestApprovalActive,
+                kodusConfigFileOverridesWebPreferences:
+                    directoryConfig.kodusConfigFileOverridesWebPreferences ??
+                    this.DEFAULT_CONFIG.kodusConfigFileOverridesWebPreferences,
+                isRequestChangesActive:
+                    directoryConfig.isRequestChangesActive ??
+                    this.DEFAULT_CONFIG.isRequestChangesActive,
+                kodyRulesGeneratorEnabled:
+                    directoryConfig.kodyRulesGeneratorEnabled ??
+                    this.DEFAULT_CONFIG.kodyRulesGeneratorEnabled,
+                isCommitMode:
+                    directoryConfig.isCommitMode ??
+                    this.DEFAULT_CONFIG.isCommitMode,
+                configLevel: ConfigLevel.DIRECTORY,
+                directoryId: directoryConfig.id,
+                directoryPath: directoryConfig.path,
+            };
+
+            return config;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error building config from directory',
+                context: CodeBaseConfigService.name,
+                error,
+                metadata: { directoryConfig, organizationAndTeamData },
+            });
+
+            // Fallback para config normal
+            return this.getConfig(organizationAndTeamData, repository);
+        }
+    }
+
+    /**
+     * Extrai caminhos únicos dos arquivos para identificar diretórios afetados
+     */
+    extractUniqueDirectoryPaths(files: { filename: string }[]): string[] {
+        const paths = new Set<string>();
+
+        files.forEach((file) => {
+            const parts = file.filename.split('/');
+
+            // Gerar todos os caminhos possíveis (do mais específico ao mais geral)
+            for (let i = parts.length - 1; i > 0; i--) {
+                const path = parts.slice(0, i).join('/');
+                paths.add(path);
+            }
+        });
+
+        return Array.from(paths);
     }
 }

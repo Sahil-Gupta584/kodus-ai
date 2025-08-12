@@ -53,6 +53,7 @@ import { AzureReposPullRequestHandler } from '@/core/infrastructure/adapters/web
 import { IssuesModule } from './issues.module';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 import { McpAgentModule } from './mcpAgent.module';
+import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
 @Module({
     imports: [
         forwardRef(() => IntegrationModule),
@@ -122,6 +123,7 @@ import { McpAgentModule } from './mcpAgent.module';
             provide: 'AZURE_REPOS_WEBHOOK_HANDLER',
             useExisting: AzureReposPullRequestHandler,
         },
+        GetAdditionalInfoHelper,
     ],
     controllers: [
         CodeManagementController,

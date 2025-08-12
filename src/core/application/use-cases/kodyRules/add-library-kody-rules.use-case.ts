@@ -53,6 +53,33 @@ export class AddLibraryKodyRulesUseCase {
                 results.push(result);
             }
 
+            // Processar diretórios se existirem
+            if (libraryKodyRules?.directoriesInfo && libraryKodyRules?.directoriesInfo?.length > 0) {
+                for await (const directoryInfo of libraryKodyRules.directoriesInfo) {
+                    const kodyRule: CreateKodyRuleDto = {
+                        title: libraryKodyRules.title,
+                        rule: libraryKodyRules.rule,
+                        path: libraryKodyRules.path,
+                        severity: libraryKodyRules.severity,
+                        repositoryId: directoryInfo.repositoryId,
+                        directoryId: directoryInfo.directoryId,
+                        examples: libraryKodyRules.examples,
+                        origin: KodyRulesOrigin.LIBRARY,
+                    };
+
+                    const result =
+                        await this.createOrUpdateKodyRulesUseCase.execute(
+                            kodyRule,
+                            this.request.user.organization.uuid,
+                        );
+
+                    if (!result) {
+                        throw new Error('Failed to add library Kody rule for directory');
+                    }
+                    results.push(result);
+                }
+            }
+
             return results;
         } catch (error) {
             this.logger.error({

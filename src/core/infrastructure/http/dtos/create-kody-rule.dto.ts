@@ -51,6 +51,10 @@ export class CreateKodyRuleDto {
     @IsString()
     repositoryId?: string;
 
+    @IsOptional()
+    @IsString()
+    directoryId?: string;
+
     @IsEnum(KodyRulesOrigin)
     origin: KodyRulesOrigin;
 

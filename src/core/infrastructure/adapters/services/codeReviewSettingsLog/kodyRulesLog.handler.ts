@@ -27,6 +27,7 @@ export class KodyRulesLogHandler {
             userInfo,
             actionType,
             repository,
+            directory,
             oldRule,
             newRule,
             ruleTitle,
@@ -35,7 +36,7 @@ export class KodyRulesLogHandler {
         const entityName = this.getRuleName(newRule, oldRule, ruleTitle);
         const { oldData, newData } = this.prepareRuleData(oldRule, newRule, actionType);
 
-        const configLevel = this.determineConfigLevel(repository?.id);
+        const configLevel = this.determineConfigLevel(repository?.id, directory?.id);
 
         await this.unifiedLogHandler.logAction({
             organizationAndTeamData,
@@ -43,6 +44,7 @@ export class KodyRulesLogHandler {
             actionType,
             configLevel,
             repository,
+            directory,
             entityType: 'kodyRule',
             entityName,
             oldData,
@@ -96,10 +98,18 @@ export class KodyRulesLogHandler {
         }
     }
 
-    private determineConfigLevel(repositoryId?: string): ConfigLevel {
+    private determineConfigLevel(
+        repositoryId?: string,
+        directoryId?: string,
+    ): ConfigLevel {
+        if (directoryId) {
+            return ConfigLevel.DIRECTORY;
+        }
+
         if (!repositoryId || repositoryId === 'global') {
             return ConfigLevel.GLOBAL;
         }
+
         return ConfigLevel.REPOSITORY;
     }
 }

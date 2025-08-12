@@ -982,4 +982,29 @@ export class AzureReposRequestHelper {
 
         return params;
     }
+
+    async getRepositoryTree(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        recursive?: boolean;
+        scopePath?: string;
+    }): Promise<any[]> {
+        const instance = await this.azureRequest(params);
+
+        const queryParams = new URLSearchParams();
+        queryParams.append('api-version', '7.1');
+        queryParams.append('recursionLevel', params.recursive ? 'full' : 'oneLevel');
+
+        if (params.scopePath) {
+            queryParams.append('scopePath', params.scopePath);
+        }
+
+        const { data } = await instance.get(
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/items?${queryParams.toString()}`
+        );
+
+        return data?.value || [];
+    }
 }

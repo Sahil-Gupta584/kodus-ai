@@ -18,6 +18,10 @@ import { FindCodeReviewSettingsLogsUseCase } from '@/core/application/use-cases/
 import { UserStatusLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/userStatusLog.handler';
 import { IntegrationLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/integrationLog.handler';
 import { LogModule } from './log.module';
+import { PullRequestMessagesLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/pullRequestMessageLog.handler';
+import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
+import { IntegrationModule } from './integration.module';
+import { ParametersModule } from './parameters.module';
 
 @Module({
     imports: [
@@ -25,6 +29,8 @@ import { LogModule } from './log.module';
         forwardRef(() => UsersModule),
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => TeamsModule),
+        forwardRef(() => ParametersModule),
+        forwardRef(() => IntegrationModule),
         LogModule,
     ],
     providers: [
@@ -42,8 +48,10 @@ import { LogModule } from './log.module';
         KodyRulesLogHandler,
         IntegrationLogHandler,
         UserStatusLogHandler,
+        PullRequestMessagesLogHandler,
         RegisterUserStatusLogUseCase,
         FindCodeReviewSettingsLogsUseCase,
+        GetAdditionalInfoHelper,
     ],
     exports: [
         CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,
@@ -56,6 +64,8 @@ import { LogModule } from './log.module';
         FindCodeReviewSettingsLogsUseCase,
         IntegrationLogHandler,
         UserStatusLogHandler,
+        PullRequestMessagesLogHandler,
+        GetAdditionalInfoHelper,
     ],
     controllers: [CodeReviewSettingLogController],
 })
