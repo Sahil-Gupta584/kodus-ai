@@ -125,8 +125,8 @@ export class CodeReviewTool implements ITool<any, IToolResult> {
                     await this.codeManagementService.getPullRequests({
                         organizationAndTeamData,
                         filters: {
-                            pullRequestNumbers: [prNumber],
-                            includeChanges: true,
+                            // pullRequestNumbers: [prNumber],
+                            // includeChanges: true,
                         },
                     })
                 )[0];

@@ -6,8 +6,8 @@ import {
 } from '@/core/domain/integrations/contracts/integration.service.contracts';
 import {
     PullRequestAuthor,
+    PullRequest,
     PullRequestReviewComment,
-    PullRequests,
     PullRequestsWithChangesRequested,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
@@ -25,6 +25,8 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
+import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 
 @Injectable()
 export class CodeManagementService implements ICodeManagementService {
@@ -55,7 +57,19 @@ export class CodeManagementService implements ICodeManagementService {
         }
     }
 
-    async getCommits(params: any, type?: PlatformType): Promise<Commit[]> {
+    async getCommits(
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            repository?: Partial<Repository>;
+            filters?: {
+                startDate?: Date;
+                endDate?: Date;
+                author?: string;
+                branch?: string;
+            };
+        },
+        type?: PlatformType,
+    ): Promise<Commit[]> {
         if (!type) {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
@@ -73,7 +87,15 @@ export class CodeManagementService implements ICodeManagementService {
     }
 
     async getRepositories(
-        params: any,
+        params: {
+            organizationAndTeamData: OrganizationAndTeamData;
+            filters?: {
+                archived?: boolean;
+                organizationSelected?: string;
+                visibility?: 'all' | 'public' | 'private';
+                language?: string;
+            };
+        },
         type?: PlatformType,
     ): Promise<Repositories[]> {
         if (!type) {
@@ -212,10 +234,20 @@ export class CodeManagementService implements ICodeManagementService {
     async getPullRequests(
         params: {
             organizationAndTeamData: OrganizationAndTeamData;
-            filters: any;
+            repository?: {
+                id: string;
+                name: string;
+            };
+            filters?: {
+                startDate?: Date;
+                endDate?: Date;
+                state?: PullRequestState;
+                author?: string;
+                branch?: string;
+            };
         },
         type?: PlatformType,
-    ): Promise<PullRequests[]> {
+    ): Promise<PullRequest[]> {
         if (!type) {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
@@ -569,14 +601,14 @@ export class CodeManagementService implements ICodeManagementService {
         return codeManagementService.createResponseToComment(params);
     }
 
-    async getPullRequestDetails(
+    async getPullRequest(
         params: {
             organizationAndTeamData: OrganizationAndTeamData;
             repository: Partial<Repository>;
             prNumber: number;
         },
         type?: PlatformType,
-    ) {
+    ): Promise<PullRequest | null> {
         if (!type) {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),
@@ -586,7 +618,7 @@ export class CodeManagementService implements ICodeManagementService {
         const codeManagementService =
             this.platformIntegrationFactory.getCodeManagementService(type);
 
-        return codeManagementService.getPullRequestDetails(params);
+        return codeManagementService.getPullRequest(params);
     }
 
     async updateDescriptionInPullRequest(
@@ -676,16 +708,20 @@ export class CodeManagementService implements ICodeManagementService {
 
     async getRepositoryAllFiles(
         params: {
-            repository: string;
-            organizationName: string;
-            branch: string;
             organizationAndTeamData: OrganizationAndTeamData;
-            filePatterns?: string[];
-            excludePatterns?: string[];
-            maxFiles?: number;
+            repository: {
+                id: string;
+                name: string;
+            };
+            filters?: {
+                branch?: string;
+                filePatterns?: string[];
+                excludePatterns?: string[];
+                maxFiles?: number;
+            };
         },
         type?: PlatformType,
-    ) {
+    ): Promise<RepositoryFile[]> {
         if (!type) {
             type = await this.getTypeIntegration(
                 extractOrganizationAndTeamData(params),

@@ -5,10 +5,8 @@ import { PinoLoggerService } from '../../services/logger/pino.service';
 import { wrapToolHandler } from '../utils/mcp-protocol.utils';
 import { BaseResponse, McpToolDefinition } from '../types/mcp-tool.interface';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
-import {
-    PullRequests,
-    PullRequestDetails as PullRequestDetailsType,
-} from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
+import { PullRequest } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
+import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 
 const RepositorySchema = z
     .object({
@@ -32,109 +30,65 @@ const RepositorySchema = z
 
 const PullRequestSchema = z
     .object({
-        id: z
-            .union([z.string(), z.number()])
-            .transform((val) => val?.toString()),
-        author_id: z
-            .union([z.string(), z.number()])
-            .optional()
-            .transform((val) => val?.toString()),
-        author_name: z.string().optional(),
-        message: z.string().optional(),
-        created_at: z.string().optional(),
-        closed_at: z.union([z.string(), z.null()]).optional(),
-        targetRefName: z.string().optional(),
-        sourceRefName: z.string().optional(),
-        state: z.string().optional(),
-        organizationId: z.string().optional(),
-        pull_number: z.number().optional(),
-        repository: z.string().optional(),
-        repositoryId: z.string().optional(),
+        id: z.string(),
+        number: z.number(),
+        pull_number: z.number(), // TODO: remove, legacy, use number
+        body: z.string(),
+        title: z.string(),
+        message: z.string(),
+        state: z.enum(Object.values(PullRequestState) as [PullRequestState]),
+        organizationId: z.string(),
+        repository: z.string(), // TODO: remove, legacy, use repositoryData
+        repositoryId: z.string(), // TODO: remove, legacy, use repositoryData
+        repositoryData: z.object({
+            // TODO: consider removing this, use HEAD and BASE instead
+            id: z.string(),
+            name: z.string(),
+        }),
+        prURL: z.string().url(),
+        created_at: z.string(),
+        closed_at: z.string(),
+        updated_at: z.string(),
+        merged_at: z.string(),
+        participants: z.array(
+            z.object({
+                id: z.string(),
+            }),
+        ),
+        reviewers: z.array(
+            z.object({
+                id: z.string(),
+            }),
+        ),
+        sourceRefName: z.string(), // TODO: remove, legacy, use head.ref
+        head: z.object({
+            ref: z.string(),
+            repo: z.object({
+                id: z.string(),
+                name: z.string(),
+                defaultBranch: z.string(),
+                fullName: z.string(),
+            }),
+        }),
+        targetRefName: z.string(), // TODO: remove, legacy, use base.ref
+        base: z.object({
+            ref: z.string(),
+            repo: z.object({
+                id: z.string(),
+                name: z.string(),
+                defaultBranch: z.string(),
+                fullName: z.string(),
+            }),
+        }),
+        user: z.object({
+            login: z.string(),
+            name: z.string(),
+            id: z.string(),
+        }),
     })
     .passthrough();
 
-const CommitSchema = z.any();
-
-const RepositoryFileSchema = z
-    .object({
-        path: z.string(),
-        content: z.string().optional(),
-        sha: z.string().optional(),
-        size: z.number().optional(),
-        type: z.string().optional(),
-        encoding: z.string().optional(),
-        filename: z.string().optional(),
-    })
-    .passthrough();
-
-const PullRequestDetailsSchema = PullRequestSchema.extend({
-    prURL: z.union([z.string().url(), z.null()]).optional(),
-    number: z.number().optional(),
-    body: z.union([z.string(), z.null()]).optional(),
-    title: z.union([z.string(), z.null()]).optional(),
-    updated_at: z.union([z.string(), z.null()]).optional(),
-    merged_at: z.union([z.string(), z.null()]).optional(),
-
-    participants: z
-        .array(
-            z.object({
-                id: z
-                    .union([z.string(), z.number()])
-                    .transform((val) => val?.toString()),
-                approved: z.boolean().optional(),
-                state: z.string().optional(),
-                type: z.string().optional(),
-            }),
-        )
-        .optional(),
-
-    reviewers: z
-        .array(
-            z.object({
-                id: z
-                    .union([z.string(), z.number()])
-                    .transform((val) => val?.toString()),
-            }),
-        )
-        .optional(),
-
-    head: z
-        .object({
-            ref: z.union([z.string(), z.null()]).optional(),
-            repo: z
-                .object({
-                    id: z
-                        .union([z.string(), z.number(), z.null()])
-                        .optional()
-                        .transform((val) => val?.toString()),
-                    name: z.union([z.string(), z.null()]).optional(),
-                })
-                .passthrough(),
-        })
-        .passthrough()
-        .optional(),
-
-    base: z
-        .object({
-            ref: z.union([z.string(), z.null()]).optional(),
-        })
-        .passthrough()
-        .optional(),
-
-    user: z
-        .object({
-            login: z.string().optional(),
-            name: z.union([z.string(), z.null()]).optional(),
-            id: z
-                .union([z.string(), z.number(), z.null()])
-                .optional()
-                .transform((val) => val?.toString()),
-        })
-        .passthrough()
-        .optional(),
-}).passthrough();
-
-const PullRequestDetailsWithFilesSchema = PullRequestDetailsSchema.extend({
+const PullRequestWithFilesSchema = PullRequestSchema.extend({
     modified_files: z
         .array(
             z.object({
@@ -144,20 +98,32 @@ const PullRequestDetailsWithFilesSchema = PullRequestDetailsSchema.extend({
         .optional(),
 }).passthrough();
 
+const CommitSchema = z.any();
+
+const RepositoryFileSchema = z
+    .object({
+        path: z.string(),
+        sha: z.string().optional(),
+        size: z.number().optional(),
+        type: z.string().optional(),
+        filename: z.string().optional(),
+    })
+    .passthrough();
+
 interface RepositoriesResponse extends BaseResponse {
-    data: Repositories[];
+    data: z.infer<typeof RepositorySchema>[];
 }
 
 interface PullRequestsResponse extends BaseResponse {
-    data: PullRequests[];
+    data: z.infer<typeof PullRequestSchema>[];
 }
 
 interface CommitsResponse extends BaseResponse {
     data: z.infer<typeof CommitSchema>[];
 }
 
-interface PullRequestDetailsResponse extends BaseResponse {
-    data: PullRequestDetailsType | null;
+interface PullRequestResponse extends BaseResponse {
+    data: z.infer<typeof PullRequestWithFilesSchema> | null;
 }
 
 interface RepositoryFilesResponse extends BaseResponse {
@@ -255,7 +221,7 @@ export class CodeManagementTools {
                         ...args.filters,
                     };
 
-                    const repositories: Repositories[] = (
+                    const repositories = (
                         await this.codeManagementService.getRepositories(params)
                     ).filter((repo) => repo.selected === true);
 
@@ -286,16 +252,27 @@ export class CodeManagementTools {
             filters: z
                 .object({
                     state: z
-                        .enum(['open', 'closed', 'merged'])
+                        .enum(['opened', 'closed', 'merged'])
                         .optional()
                         .describe(
-                            'PR state filter: "open" (active PRs awaiting review), "closed" (rejected/abandoned PRs), "merged" (accepted and merged PRs)',
+                            'PR state filter: "opened" (active PRs awaiting review), "closed" (rejected/abandoned PRs), "merged" (accepted and merged PRs). If not specified returns PR in any state',
                         ),
                     repository: z
-                        .string()
+                        .object({
+                            id: z
+                                .string()
+                                .describe(
+                                    'Repository unique identifier (UUID or platform-specific ID)',
+                                ),
+                            name: z
+                                .string()
+                                .describe(
+                                    'Repository name (e.g., "my-awesome-project")',
+                                ),
+                        })
                         .optional()
                         .describe(
-                            'Repository name or ID to filter PRs from a specific repository only',
+                            'Specific repository to filter PRs by. If not provided, returns PRs from all accessible repositories',
                         ),
                     author: z
                         .string()
@@ -316,6 +293,7 @@ export class CodeManagementTools {
                             'ISO date string (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ) to filter PRs created before this date',
                         ),
                 })
+                .optional()
                 .describe(
                     'Filter criteria to narrow down pull request results',
                 ),
@@ -326,7 +304,7 @@ export class CodeManagementTools {
         return {
             name: 'list_pull_requests',
             description:
-                'List pull requests with advanced filtering (by state, repository, author, date range). Use this to find specific PRs, analyze PR patterns, or get overview of team activity. Returns PR metadata only - use get_pull_request_details for full PR content.',
+                'List pull requests with advanced filtering (by state, repository, author, date range). Use this to find specific PRs, analyze PR patterns, or get overview of team activity. Returns PR metadata only - use get_pull_request for full PR content.',
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
@@ -335,13 +313,33 @@ export class CodeManagementTools {
             }),
             execute: wrapToolHandler(
                 async (args: InputType): Promise<PullRequestsResponse> => {
-                    const params = {
+                    const params: Parameters<
+                        typeof this.codeManagementService.getPullRequests
+                    >[0] = {
                         organizationAndTeamData: {
                             organizationId: args.organizationId,
                             teamId: args.teamId,
                         },
-                        filters: args.filters,
+                        repository: {
+                            id: args.filters?.repository?.id,
+                            name: args.filters?.repository?.name,
+                        },
+                        filters: {
+                            state: args.filters?.state
+                                ? PullRequestState[
+                                      args.filters.state.toUpperCase()
+                                  ]
+                                : undefined,
+                            startDate: args.filters?.startDate
+                                ? new Date(args.filters.startDate)
+                                : undefined,
+                            endDate: args.filters?.endDate
+                                ? new Date(args.filters.endDate)
+                                : undefined,
+                            author: args.filters?.author,
+                        },
                     };
+
                     const pullRequests =
                         await this.codeManagementService.getPullRequests(
                             params,
@@ -404,7 +402,7 @@ export class CodeManagementTools {
                         .string()
                         .optional()
                         .describe(
-                            'Git author name or email to filter commits by specific contributor',
+                            'Git author name to filter commits by specific contributor',
                         ),
                     branch: z
                         .string()
@@ -439,8 +437,18 @@ export class CodeManagementTools {
                             teamId: args.teamId,
                         },
                         repository: args.repository,
-                        ...args.filters,
+                        filters: {
+                            author: args.filters?.author,
+                            startDate: args.filters?.since
+                                ? new Date(args.filters.since)
+                                : undefined,
+                            endDate: args.filters?.until
+                                ? new Date(args.filters.until)
+                                : undefined,
+                            branch: args.filters?.branch,
+                        },
                     };
+
                     const commits =
                         await this.codeManagementService.getCommits(params);
 
@@ -454,7 +462,7 @@ export class CodeManagementTools {
         };
     }
 
-    getPullRequestDetails(): McpToolDefinition {
+    getPullRequest(): McpToolDefinition {
         const inputSchema = z.object({
             organizationId: z
                 .string()
@@ -492,19 +500,17 @@ export class CodeManagementTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'get_pull_request_details',
+            name: 'get_pull_request',
             description:
                 'Get complete details of a specific pull request including description, commits, reviews, and list of modified files. Use this when you need full PR context - NOT for file content (use get_pull_request_file_content for that).',
             inputSchema,
             outputSchema: z.object({
                 success: z.boolean(),
                 count: z.number(),
-                data: z.union([PullRequestDetailsWithFilesSchema, z.null()]),
+                data: z.union([PullRequestWithFilesSchema, z.null()]),
             }),
             execute: wrapToolHandler(
-                async (
-                    args: InputType,
-                ): Promise<PullRequestDetailsResponse> => {
+                async (args: InputType): Promise<PullRequestResponse> => {
                     const params = {
                         organizationAndTeamData: {
                             organizationId: args.organizationId,
@@ -518,9 +524,7 @@ export class CodeManagementTools {
                     };
 
                     const details =
-                        await this.codeManagementService.getPullRequestDetails(
-                            params,
-                        );
+                        await this.codeManagementService.getPullRequest(params);
 
                     if (!details) {
                         return {
@@ -566,30 +570,38 @@ export class CodeManagementTools {
                     'Team UUID - unique identifier for the team within the organization',
                 ),
             repository: z
-                .string()
-                .describe('Repository name or identifier to get files from'),
-            organizationName: z
-                .string()
+                .object({
+                    id: z
+                        .string()
+                        .describe(
+                            'Repository unique identifier (UUID or platform-specific ID)',
+                        ),
+                    name: z
+                        .string()
+                        .describe(
+                            'Repository name (e.g., "my-awesome-project")',
+                        ),
+                })
                 .describe(
-                    'Organization name as it appears in the code management platform (e.g., GitHub org name)',
+                    'Repository information to get file tree/listing from',
                 ),
             branch: z
                 .string()
-                .default('main')
+                .optional()
                 .describe(
-                    'Branch name to get files from (defaults to "main" if not specified)',
+                    'Branch name to get files from (defaults to default branch if not specified)',
                 ),
             filePatterns: z
                 .array(z.string())
                 .optional()
                 .describe(
-                    'Array of glob patterns to include specific files (e.g., ["*.ts", "src/**/*.js"])',
+                    'Array of glob patterns to include specific files (e.g., ["**/*.ts", "src/**/*.js"]). Always matched against full filepath',
                 ),
             excludePatterns: z
                 .array(z.string())
                 .optional()
                 .describe(
-                    'Array of glob patterns to exclude files (e.g., ["node_modules/**", "*.log"])',
+                    'Array of glob patterns to exclude files (e.g., ["node_modules/**", "**/*.log"]). Always matched against full filepath',
                 ),
             maxFiles: z
                 .number()
@@ -613,18 +625,25 @@ export class CodeManagementTools {
             }),
             execute: wrapToolHandler(
                 async (args: InputType): Promise<RepositoryFilesResponse> => {
-                    const params = {
-                        repository: args.repository,
-                        organizationName: args.organizationName,
-                        branch: args.branch,
+                    const params: Parameters<
+                        typeof this.codeManagementService.getRepositoryAllFiles
+                    >[0] = {
                         organizationAndTeamData: {
                             organizationId: args.organizationId,
                             teamId: args.teamId,
                         },
-                        filePatterns: args.filePatterns,
-                        excludePatterns: args.excludePatterns,
-                        maxFiles: args.maxFiles,
+                        repository: {
+                            id: args.repository.id,
+                            name: args.repository.name,
+                        },
+                        filters: {
+                            branch: args.branch,
+                            filePatterns: args.filePatterns,
+                            excludePatterns: args.excludePatterns,
+                            maxFiles: args.maxFiles,
+                        },
                     };
+
                     const files =
                         await this.codeManagementService.getRepositoryAllFiles(
                             params,
@@ -1031,7 +1050,7 @@ export class CodeManagementTools {
             this.listRepositories(),
             this.listPullRequests(),
             this.listCommits(),
-            this.getPullRequestDetails(),
+            this.getPullRequest(),
             this.getRepositoryFiles(),
             this.getRepositoryContent(),
             //TODO: Uncomment this when we have a way to get the languages
