@@ -134,7 +134,8 @@ export const withRetry: MiddlewareFactoryType<Partial<RetryOptions>, Event> = (
     } as Middleware<Event>;
 
     middleware.kind = 'pipeline';
-    middleware.name = 'withRetry';
+    (middleware as unknown as { displayName?: string }).displayName =
+        'withRetry';
 
     return middleware;
 };

@@ -74,7 +74,8 @@ export const withTimeout: MiddlewareFactoryType<
     }) as Middleware<Event>;
 
     middleware.kind = 'pipeline';
-    middleware.name = 'withTimeout';
+    (middleware as unknown as { displayName?: string }).displayName =
+        'withTimeout';
 
     return middleware;
 };

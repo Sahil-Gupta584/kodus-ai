@@ -63,7 +63,8 @@ export function withValidateMiddleware(
     } as Middleware<Event>;
 
     middleware.kind = 'handler';
-    middleware.name = 'withValidate';
+    (middleware as unknown as { displayName?: string }).displayName =
+        'withValidate';
 
     return middleware;
 }

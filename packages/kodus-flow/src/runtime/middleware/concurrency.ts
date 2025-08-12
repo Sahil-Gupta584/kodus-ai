@@ -111,7 +111,8 @@ export function withConcurrency(opts: Partial<ConcurrencyOptions> = {}) {
     } as Middleware<Event>;
 
     middleware.kind = 'pipeline';
-    middleware.name = 'withConcurrency';
+    (middleware as unknown as { displayName?: string }).displayName =
+        'withConcurrency';
 
     return middleware;
 }

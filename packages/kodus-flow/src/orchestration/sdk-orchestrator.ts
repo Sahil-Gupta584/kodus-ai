@@ -7,7 +7,10 @@ import { AgentEngine } from '../engine/agents/agent-engine.js';
 import { AgentExecutor } from '../engine/agents/agent-executor.js';
 import { IdGenerator } from '../utils/id-generator.js';
 
-import { createDefaultMultiKernelHandler } from '../engine/core/multi-kernel-handler.js';
+import {
+    createDefaultMultiKernelHandler,
+    createMultiKernelHandler,
+} from '../engine/core/multi-kernel-handler.js';
 import { ContextBuilder } from '../core/context/context-builder.js';
 
 // Timeline removida
@@ -94,6 +97,18 @@ export interface OrchestrationConfig {
     // ✅ NEW: Observability programática (sem depender de env)
     observability?: Partial<ObservabilityConfig>;
 
+    // ✅ NEW: Kernel performance (ex.: autoSnapshot)
+    kernel?: {
+        performance?: {
+            autoSnapshot?: {
+                enabled?: boolean;
+                intervalMs?: number;
+                eventInterval?: number;
+                useDelta?: boolean;
+            };
+        };
+    };
+
     // ✅ DEPRECATED: Legacy persistorConfig (for backward compatibility)
     /** @deprecated Use storage.persistor instead */
     persistorConfig?: {
@@ -131,6 +146,13 @@ export type AgentConfig = {
     enableState?: boolean; // Default: true
     enableMemory?: boolean; // Default: true
     timeout?: number;
+
+    // Planner options (runtime overrides)
+    plannerOptions?: {
+        replanPolicy?: Partial<
+            import('../engine/planning/strategies/plan-execute-planner.js').ReplanPolicyConfig
+        >;
+    };
 };
 
 export interface ToolConfig {
@@ -217,6 +239,8 @@ const orchestrator = new SDKOrchestrator({
                     enableDeltaCompression: true,
                     cleanupInterval: 300000,
                 },
+            // ✅ ensure kernel defaults present even if undefined in input
+            kernel: config.kernel || {},
         };
 
         this.mcpAdapter = config.mcpAdapter;
@@ -231,13 +255,36 @@ const orchestrator = new SDKOrchestrator({
         );
         this.configureContextBuilder();
 
-        this.kernelHandler = createDefaultMultiKernelHandler(
-            this.config.tenantId,
-            {
-                type: this.config.persistorConfig.type,
-                options: this.config.persistorConfig,
-            },
-        );
+        // Criar MultiKernelHandler com performance explícita quando houver configuração
+        if (this.config.kernel?.performance?.autoSnapshot) {
+            this.kernelHandler = createMultiKernelHandler({
+                tenantId: this.config.tenantId,
+                observability: { enabled: true },
+                agent: {
+                    enabled: true,
+                    performance: {
+                        enableBatching: true,
+                        enableCaching: true,
+                        autoSnapshot:
+                            this.config.kernel.performance.autoSnapshot,
+                    },
+                },
+                global: {
+                    persistorType: this.config.persistorConfig.type,
+                    persistorOptions: this.config.persistorConfig,
+                    enableCrossKernelLogging: this.config.enableObservability,
+                },
+                loopProtection: { enabled: true },
+            });
+        } else {
+            this.kernelHandler = createDefaultMultiKernelHandler(
+                this.config.tenantId,
+                {
+                    type: this.config.persistorConfig.type,
+                    options: this.config.persistorConfig,
+                },
+            );
+        }
 
         this.logger.info('Clean SDKOrchestrator initialized', {
             tenantId: this.config.tenantId,
@@ -305,6 +352,7 @@ const orchestrator = new SDKOrchestrator({
             enableKernelIntegration: true,
             debug: process.env.NODE_ENV === 'development',
             monitoring: this.config.enableObservability,
+            plannerOptions: config.plannerOptions,
         };
 
         // Create agent instance based on execution mode

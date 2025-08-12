@@ -99,6 +99,12 @@ export interface MultiKernelHandlerConfig {
         performance?: {
             enableBatching?: boolean;
             enableCaching?: boolean;
+            autoSnapshot?: {
+                enabled?: boolean;
+                intervalMs?: number;
+                eventInterval?: number;
+                useDelta?: boolean;
+            };
         };
     };
 
@@ -171,6 +177,13 @@ export class MultiKernelHandler {
     private eventCountsMutex = new SimpleMutex();
     private loopProtectionMutex = new SimpleMutex();
 
+    // Request/response aggregation to avoid per-request handler leaks
+    private pendingResponses = new Map<
+        string,
+        { resolve: (value: unknown) => void; reject: (error: Error) => void }
+    >();
+    private registeredResponseChannels = new Set<string>();
+
     constructor(config: MultiKernelHandlerConfig) {
         this.config = {
             debug: false,
@@ -234,18 +247,28 @@ export class MultiKernelHandler {
                 const agentWorkflow =
                     this.config.agent.workflow || this.createAgentWorkflow();
 
-                kernelSpecs.push(
-                    createAgentKernelSpec(
-                        'agent-execution',
-                        agentWorkflow,
-                        this.config.agent.quotas,
-                    ),
+                const agentSpec = createAgentKernelSpec(
+                    'agent-execution',
+                    agentWorkflow,
+                    this.config.agent.quotas,
                 );
+
+                // Propagar performance do handler (inclui autoSnapshot se fornecido)
+                if (this.config.agent.performance) {
+                    agentSpec.performance = {
+                        ...agentSpec.performance,
+                        ...this.config.agent.performance,
+                    };
+                }
+
+                kernelSpecs.push(agentSpec);
 
                 this.logger.info('Agent kernel spec created', {
                     needsPersistence: true,
                     needsSnapshots: true,
                     quotas: this.config.agent.quotas,
+                    autoSnapshot:
+                        this.config.agent.performance?.autoSnapshot || null,
                 });
             }
 
@@ -885,7 +908,6 @@ export class MultiKernelHandler {
             options.correlationId || this.generateCorrelationId();
         const timeout = options.timeout || 60000; // ✅ UNIFIED: 60s timeout
 
-        // ✅ Use runtime's built-in emit with ACK system
         const targetKernel = this.determineTargetKernel(requestEventType);
         const kernel = this.multiKernelManager!.getKernel(
             targetKernel === 'agent' ? 'agent-execution' : 'observability',
@@ -893,12 +915,6 @@ export class MultiKernelHandler {
 
         if (!kernel) {
             throw new Error(`Target kernel not available: ${targetKernel}`);
-        }
-
-        // ✅ Get runtime instance from kernel and use its ACK/NACK system
-        const runtime = kernel.getRuntime();
-        if (!runtime) {
-            throw new Error('Runtime not available from kernel');
         }
 
         return new Promise<TResponse>((resolve, reject) => {
@@ -936,60 +952,35 @@ export class MultiKernelHandler {
                             },
                         },
                     );
-
-                    // ✅ CORREÇÃO: Marcar eventos relacionados como críticos para evitar re-enfileiramento
+                    // Emitir um evento de timeout via Kernel (sem tocar no Runtime)
                     if (requestEventType === 'tool.execute.request') {
-                        // Emitir evento de timeout para limpeza
-                        runtime.emit('tool.execute.timeout', {
-                            data: {
-                                correlationId,
-                                toolName:
-                                    (data as { toolName?: string }).toolName ||
-                                    'unknown',
-                                timeout,
-                                error: timeoutError.message,
-                            },
-                            metadata: {
-                                correlationId,
-                                criticalError: true,
-                                timedOut: true,
-                            },
-                        });
+                        void kernel
+                            .emitEventAsync(
+                                'tool.execute.timeout' as EventType,
+                                {
+                                    correlationId,
+                                    toolName:
+                                        (data as { toolName?: string })
+                                            .toolName || 'unknown',
+                                    timeout,
+                                    error: timeoutError.message,
+                                } as EventPayloads[EventType],
+                                { correlationId, timeout },
+                            )
+                            .catch((emitErr) => {
+                                this.logger.error(
+                                    'Failed to emit timeout event',
+                                    emitErr as Error,
+                                    { correlationId },
+                                );
+                            });
                     }
 
                     reject(timeoutError);
                 }
             }, timeout);
 
-            // ✅ Register response handler using existing patterns
-            const responseHandler = (event: AnyEvent) => {
-                // ✅ CORREÇÃO: Procurar correlationId apenas em metadata (padrão Runtime)
-                const eventCorrelationId = event.metadata?.correlationId;
-
-                if (eventCorrelationId === correlationId && !responseReceived) {
-                    responseReceived = true; // ✅ CORREÇÃO: Definir aqui ANTES do cleanup
-                    cleanup();
-
-                    // ✅ Use runtime's ACK system
-                    runtime.ack(event.id).catch((error) => {
-                        this.logger.warn('Failed to ACK response event', {
-                            error,
-                            eventId: event.id,
-                        });
-                    });
-
-                    if ((event.data as { error?: string })?.error) {
-                        const responseError = new Error(
-                            (event.data as { error?: string }).error!,
-                        );
-                        reject(responseError);
-                    } else {
-                        resolve(event.data as TResponse);
-                    }
-                }
-            };
-
-            // ✅ CORREÇÃO: Registrar handler no kernel CORRETO baseado no responseEventType
+            // ✅ Registrar canal de respostas uma única vez por (kernel,eventType) e rotear por correlationId
             const responseKernel =
                 this.determineTargetKernel(responseEventType);
             const responseKernelId =
@@ -1010,28 +1001,69 @@ export class MultiKernelHandler {
                 return;
             }
 
-            this.multiKernelManager!.registerHandler(
-                responseKernelId,
-                responseEventType as EventType,
-                responseHandler,
-            );
+            const channelKey = `${responseKernelId}:${responseEventType}`;
+            if (!this.registeredResponseChannels.has(channelKey)) {
+                this.multiKernelManager!.registerHandler(
+                    responseKernelId,
+                    responseEventType as EventType,
+                    (event: AnyEvent) => {
+                        const eventCorrelationId =
+                            event.metadata?.correlationId;
+                        if (
+                            eventCorrelationId &&
+                            this.pendingResponses.has(eventCorrelationId)
+                        ) {
+                            const resolver =
+                                this.pendingResponses.get(eventCorrelationId)!;
+                            this.pendingResponses.delete(eventCorrelationId);
 
-            // ✅ Emit request using runtime's emitAsync (with built-in ACK tracking)
-            runtime
-                .emitAsync(
+                            targetKernel.ackEvent(event.id).catch((error) => {
+                                this.logger.warn(
+                                    'Failed to ACK response event',
+                                    { error, eventId: event.id },
+                                );
+                            });
+
+                            if ((event.data as { error?: string })?.error) {
+                                resolver.reject(
+                                    new Error(
+                                        (
+                                            event.data as { error?: string }
+                                        ).error!,
+                                    ),
+                                );
+                            } else {
+                                resolver.resolve(event.data as TResponse);
+                            }
+                        }
+                    },
+                );
+                this.registeredResponseChannels.add(channelKey);
+            }
+
+            // Track pending resolver for this correlationId (cast to unknown to satisfy map type)
+            this.pendingResponses.set(correlationId, {
+                resolve: (value: unknown) => resolve(value as TResponse),
+                reject: (error: Error) => reject(error),
+            });
+
+            // ✅ Emitir request via Kernel (ACK/NACK pelo Kernel/Runtime interno)
+            kernel
+                .emitEventAsync(
                     requestEventType as EventType,
                     {
                         ...data,
                         timestamp: Date.now(),
-                    },
+                    } as EventPayloads[EventType],
                     {
                         correlationId,
-                        timeout: timeout,
+                        timeout,
                     },
                 )
                 .then(async (emitResult) => {
                     if (!emitResult.success) {
                         cleanup();
+                        this.pendingResponses.delete(correlationId);
                         const emitError =
                             emitResult.error ||
                             new Error('Failed to emit request');
@@ -1066,6 +1098,7 @@ export class MultiKernelHandler {
                 })
                 .catch((error) => {
                     cleanup();
+                    this.pendingResponses.delete(correlationId);
                     this.logger.error(
                         '❌ MULTI-KERNEL REQUEST FAILED',
                         error as Error,
@@ -1313,7 +1346,7 @@ export class MultiKernelHandler {
     async ack(eventId: string): Promise<void> {
         await this.ensureInitialized();
 
-        // Get runtime from agent kernel (primary runtime)
+        // ACK via Kernel (sem tocar no Runtime)
         const agentKernel =
             this.multiKernelManager!.getKernel('agent-execution');
         if (!agentKernel) {
@@ -1321,14 +1354,8 @@ export class MultiKernelHandler {
             return;
         }
 
-        const runtime = agentKernel.getRuntime();
-        if (!runtime) {
-            this.logger.warn('Runtime not available for ACK', { eventId });
-            return;
-        }
-
         try {
-            await runtime.ack(eventId);
+            await agentKernel.ackEvent(eventId);
             this.logger.debug('Event ACK successful', { eventId });
         } catch (error) {
             this.logger.error('Failed to ACK event', error as Error, {
@@ -1344,7 +1371,7 @@ export class MultiKernelHandler {
     async nack(eventId: string, error?: Error): Promise<void> {
         await this.ensureInitialized();
 
-        // Get runtime from agent kernel (primary runtime)
+        // NACK via Kernel (sem tocar no Runtime)
         const agentKernel =
             this.multiKernelManager!.getKernel('agent-execution');
         if (!agentKernel) {
@@ -1355,17 +1382,8 @@ export class MultiKernelHandler {
             return;
         }
 
-        const runtime = agentKernel.getRuntime();
-        if (!runtime) {
-            this.logger.warn('Runtime not available for NACK', {
-                eventId,
-                error,
-            });
-            return;
-        }
-
         try {
-            await runtime.nack(eventId, error);
+            await agentKernel.nackEvent(eventId, error);
             this.logger.debug('Event NACK successful', {
                 eventId,
                 error: error?.message,

@@ -214,6 +214,12 @@ export interface KernelConfig {
         cacheSize?: number;
         enableLazyLoading?: boolean;
         contextUpdateDebounceMs?: number;
+        autoSnapshot?: {
+            enabled?: boolean;
+            intervalMs?: number;
+            eventInterval?: number;
+            useDelta?: boolean;
+        };
     };
 
     // ISOLATION & ATOMICITY
@@ -275,6 +281,8 @@ export class ExecutionKernel {
     private contextUpdateTimer: NodeJS.Timeout | null = null;
     private eventBatchQueue: Event[] = [];
     private eventBatchTimer: NodeJS.Timeout | null = null;
+    private lastSnapshotTs = 0;
+    private lastEventSnapshotCount = 0;
 
     constructor(config: KernelConfig) {
         this.config = config;
@@ -400,6 +408,7 @@ export class ExecutionKernel {
 
                     // Inject observability middleware first (if enabled)
                     const middleware = [
+                        // Ensure we pass plain options and do not mutate middleware function properties
                         withObservability(undefined),
                         ...baseMiddleware,
                     ];
@@ -967,6 +976,16 @@ export class ExecutionKernel {
      */
     private updateStateFromEvent(_event: Event): void {
         this.state.eventCount++;
+
+        // Autosnapshot baseado em contagem de eventos
+        const auto = this.config.performance?.autoSnapshot;
+        if (auto?.enabled && auto.eventInterval && auto.eventInterval > 0) {
+            this.lastEventSnapshotCount++;
+            if (this.lastEventSnapshotCount >= auto.eventInterval) {
+                this.lastEventSnapshotCount = 0;
+                void this.persistContextSnapshot('event-interval');
+            }
+        }
     }
 
     /**
@@ -1183,6 +1202,43 @@ export class ExecutionKernel {
         this.logger.debug('Context updates flushed', {
             updateCount: updates.length,
         });
+
+        // Autosnapshot baseado em tempo
+        const auto = this.config.performance?.autoSnapshot;
+        if (auto?.enabled && auto.intervalMs && auto.intervalMs > 0) {
+            const now = Date.now();
+            if (
+                !this.lastSnapshotTs ||
+                now - this.lastSnapshotTs >= auto.intervalMs
+            ) {
+                await this.persistContextSnapshot('interval');
+            }
+        }
+    }
+
+    /**
+     * Persist current context as snapshot
+     */
+    private async persistContextSnapshot(reason: string): Promise<void> {
+        try {
+            await this.flushContextUpdates();
+            const snapshot = await this.createSnapshot();
+            const useDelta =
+                this.config.performance?.autoSnapshot?.useDelta !== false;
+            await this.persistor.append(snapshot, { useDelta });
+            this.lastSnapshotTs = Date.now();
+            this.logger.info('Context snapshot persisted', {
+                reason,
+                hash: snapshot.hash,
+                eventCount: this.state.eventCount,
+                tenantId: this.state.tenantId,
+            });
+        } catch (error) {
+            this.logger.warn('Failed to persist context snapshot', {
+                errorName: (error as Error)?.name,
+                errorMessage: (error as Error)?.message,
+            });
+        }
     }
 
     /**
@@ -1473,7 +1529,8 @@ export class ExecutionKernel {
                     );
                 }
 
-                await runtime.process();
+                // Use stats-enabled processing to auto-ACK/NACK events
+                await runtime.process(true);
             },
             {
                 timeout: this.config.idempotency?.operationTimeout,
@@ -1777,7 +1834,11 @@ export class ExecutionKernel {
         }
 
         // This would require runtime to expose middleware management
-        this.logger.info('Middleware added', { middleware: middleware.name });
+        const mwName =
+            (middleware as unknown as { displayName?: string }).displayName ||
+            middleware.name ||
+            'anonymous-middleware';
+        this.logger.info('Middleware added', { middleware: mwName });
     }
 
     /**

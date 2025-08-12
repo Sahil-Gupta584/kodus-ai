@@ -188,7 +188,8 @@ export const circuitBreakerMiddleware: MiddlewareFactoryType<
     }) as Middleware<Event>;
 
     middleware.kind = 'pipeline';
-    middleware.name = 'circuitBreaker';
+    (middleware as unknown as { displayName?: string }).displayName =
+        'circuitBreaker';
 
     return middleware;
 };

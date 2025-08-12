@@ -343,10 +343,19 @@ export interface AgentContext {
 
     // Memory: Long-term storage with search
     memory: {
-        store: (content: unknown, type?: string) => Promise<void>;
+        // Retorna o id do item armazenado
+        store: (content: unknown, type?: string) => Promise<string>;
         get: (id: string) => Promise<unknown>;
         search: (query: string, limit?: number) => Promise<unknown[]>;
         getRecent: (limit?: number) => Promise<unknown[]>;
+        // Query estruturada (escopada por padrão ao contexto atual)
+        query?: (filters: {
+            type?: string;
+            key?: string;
+            since?: number;
+            until?: number;
+            limit?: number;
+        }) => Promise<unknown[]>;
     };
 
     // Session: Conversation management
@@ -830,6 +839,12 @@ export function isToolCallAction(
     action: AgentAction,
 ): action is ToolCallAction {
     return action.type === 'tool_call';
+}
+
+export function isNeedMoreInfoAction(
+    action: AgentAction,
+): action is NeedMoreInfoAction {
+    return action.type === 'need_more_info';
 }
 
 export function isParallelToolsAction(

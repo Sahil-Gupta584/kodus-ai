@@ -7,6 +7,7 @@
 import { createLogger } from '../../observability/index.js';
 import type { LLMAdapter } from '../../adapters/llm/index.js';
 import { PlanAndExecutePlanner } from './strategies/plan-execute-planner.js';
+import type { ReplanPolicyConfig } from './strategies/plan-execute-planner.js';
 import { Thread } from '../../core/types/common-types.js';
 import { AgentIdentity } from '@/core/types/agent-definition.js';
 
@@ -53,14 +54,12 @@ export interface AgentThoughtMetadata {
     plannerType?: PlannerType;
     executionTime?: number;
     retryCount?: number;
-    confidenceSource?: string;
     [key: string]: unknown;
 }
 
 export interface AgentThought {
     reasoning: string;
     action: AgentAction; // Make action required to fix compatibility
-    confidence?: number;
     metadata?: AgentThoughtMetadata;
 }
 
@@ -154,6 +153,13 @@ export interface ExecutionContextMetadata {
     thread?: Thread; // ⭐ NOVO: ID da thread para acesso ao ExecutionRuntime
     startTime?: number;
     plannerType?: PlannerType;
+    // Replan cause for observability
+    replanCause?:
+        | 'fail_window'
+        | 'ttl'
+        | 'budget'
+        | 'tool_missing'
+        | 'missing_inputs';
     // 🆕 NEW: Context quality metrics from auto-retrieval
     contextMetrics?: {
         memoryRelevance: number;
@@ -659,6 +665,7 @@ export class PlannerFactory {
     static create<T extends PlannerType>(
         type: T,
         llmAdapter: LLMAdapter,
+        options?: { replanPolicy?: Partial<ReplanPolicyConfig> },
     ): Planner {
         if (!llmAdapter) {
             throw new Error(`
@@ -680,7 +687,10 @@ Available LLM adapters: LLMAdapter with Gemini, OpenAI, etc.
 
         switch (type) {
             case 'plan-execute':
-                return new PlanAndExecutePlanner(llmAdapter);
+                const pe = new PlanAndExecutePlanner(llmAdapter);
+                if (options?.replanPolicy)
+                    pe.updateReplanPolicy(options.replanPolicy);
+                return pe;
 
             default:
                 throw new Error(`

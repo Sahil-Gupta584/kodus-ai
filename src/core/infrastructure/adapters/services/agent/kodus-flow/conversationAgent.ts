@@ -20,6 +20,7 @@ import {
     LLMModelProvider,
     PromptRunnerService,
 } from '@kodus/kodus-common/llm';
+import { startKodusOtel } from '@/config/log/otel-kodus-flow';
 
 @Injectable()
 export class ConversationAgentProvider {
@@ -45,7 +46,7 @@ export class ConversationAgentProvider {
             model: LLMModelProvider.GEMINI_2_5_PRO,
             temperature: 0,
             maxTokens: 8000,
-            maxReasoningTokens: 129,
+            maxReasoningTokens: 800,
         });
 
         function sanitizeName(name: string) {
@@ -155,6 +156,7 @@ export class ConversationAgentProvider {
             this.config,
         );
 
+        await startKodusOtel();
         const externalTracer = await createOtelTracerAdapter();
 
         this.orchestration = await createOrchestration({
@@ -165,7 +167,7 @@ export class ConversationAgentProvider {
                 logging: { enabled: true, level: 'info' },
                 telemetry: {
                     enabled: true,
-                    serviceName: 'kodus-service',
+                    serviceName: 'kodus-flow',
                     sampling: { rate: 1, strategy: 'probabilistic' },
                     externalTracer,
                     privacy: { includeSensitiveData: false },

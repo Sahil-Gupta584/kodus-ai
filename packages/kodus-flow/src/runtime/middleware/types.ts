@@ -86,7 +86,12 @@ export type Middleware<TEvent extends Event = Event> = ((
     handler: EventHandler<TEvent>,
 ) => EventHandler<TEvent>) & {
     kind?: MiddlewareKind;
+    /**
+     * DO NOT write to Function.name at runtime (read-only in many environments).
+     * Use displayName for custom labeling, and keep name as the intrinsic function name.
+     */
     name?: string;
+    displayName?: string;
 };
 
 /**

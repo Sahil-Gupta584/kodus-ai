@@ -38,6 +38,7 @@ import type {
     MixedToolsAction,
     DependencyToolsAction,
 } from '../../core/types/agent-types.js';
+import { isNeedMoreInfoAction } from '../../core/types/agent-types.js';
 
 import type { AnyEvent } from '../../core/types/events.js';
 
@@ -134,6 +135,13 @@ export interface AgentCoreConfig {
     enableKernelIntegration?: boolean;
 
     // Factory customization moved to ContextBuilder level
+
+    // Planner options
+    plannerOptions?: {
+        replanPolicy?: Partial<
+            import('../planning/strategies/plan-execute-planner.js').ReplanPolicyConfig
+        >;
+    };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1869,6 +1877,7 @@ export abstract class AgentCore<
             }
 
             try {
+                const toolStartTime = Date.now();
                 const result = this.kernelHandler
                     ? await this.kernelHandler.requestToolExecution(
                           tool.toolName,
@@ -1879,9 +1888,39 @@ export abstract class AgentCore<
                           tool.toolName as ToolId,
                           tool.arguments,
                       );
+                const duration = Date.now() - toolStartTime;
+
+                const currentStepId =
+                    context.stepExecution?.getCurrentStep()?.stepId;
+                if (currentStepId && context.stepExecution) {
+                    context.stepExecution.addToolCall(
+                        currentStepId,
+                        tool.toolName,
+                        tool.arguments,
+                        result,
+                        duration,
+                    );
+                }
+                await context.track?.toolUsage?.(
+                    tool.toolName,
+                    tool.arguments,
+                    result,
+                    true,
+                );
 
                 return [{ toolName: tool.toolName, result }];
             } catch (error) {
+                await context.track?.toolUsage?.(
+                    tool.toolName,
+                    tool.arguments,
+                    {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
+                    false,
+                );
                 const errorMessage =
                     error instanceof Error ? error.message : String(error);
                 return [{ toolName: tool.toolName, error: errorMessage }];
@@ -1894,7 +1933,7 @@ export abstract class AgentCore<
                 concurrency: toolCount,
                 reasoning: `Adaptive strategy: parallel execution for ${toolCount} tools`,
             };
-            return this.kernelHandler
+            const parallelResults = this.kernelHandler
                 ? await this.kernelHandler.request(
                       'tool.parallel.execute.request',
                       'tool.parallel.execute.response',
@@ -1910,6 +1949,43 @@ export abstract class AgentCore<
                       { correlationId },
                   )
                 : await this.toolEngine!.executeParallelTools(parallelAction);
+
+            try {
+                for (const r of parallelResults as Array<{
+                    toolName: string;
+                    result?: unknown;
+                    error?: string;
+                }>) {
+                    const input = parallelAction.tools.find(
+                        (t) => t.toolName === r.toolName,
+                    )?.arguments;
+                    const currentStepId =
+                        context.stepExecution?.getCurrentStep()?.stepId;
+                    if (currentStepId && context.stepExecution) {
+                        context.stepExecution.addToolCall(
+                            currentStepId,
+                            r.toolName,
+                            input,
+                            r.result ?? { error: r.error },
+                            0,
+                        );
+                    }
+                    await context.track?.toolUsage?.(
+                        r.toolName,
+                        input,
+                        r.result ?? { error: r.error },
+                        !r.error,
+                    );
+                }
+            } catch {
+                // best-effort
+            }
+
+            return parallelResults as Array<{
+                toolName: string;
+                result?: unknown;
+                error?: string;
+            }>;
         } else {
             // Large number of tools - execute sequentially to avoid resource issues
             const sequentialAction: SequentialToolsAction = {
@@ -1917,7 +1993,7 @@ export abstract class AgentCore<
                 tools: tools,
                 reasoning: `Adaptive strategy: sequential execution for ${toolCount} tools`,
             };
-            return this.kernelHandler
+            const sequentialResults = this.kernelHandler
                 ? await this.kernelHandler.request(
                       'tool.sequential.execute.request',
                       'tool.sequential.execute.response',
@@ -1934,6 +2010,43 @@ export abstract class AgentCore<
                 : await this.toolEngine!.executeSequentialTools(
                       sequentialAction,
                   );
+
+            try {
+                for (const r of sequentialResults as Array<{
+                    toolName: string;
+                    result?: unknown;
+                    error?: string;
+                }>) {
+                    const input = sequentialAction.tools.find(
+                        (t) => t.toolName === r.toolName,
+                    )?.arguments;
+                    const currentStepId =
+                        context.stepExecution?.getCurrentStep()?.stepId;
+                    if (currentStepId && context.stepExecution) {
+                        context.stepExecution.addToolCall(
+                            currentStepId,
+                            r.toolName,
+                            input,
+                            r.result ?? { error: r.error },
+                            0,
+                        );
+                    }
+                    await context.track?.toolUsage?.(
+                        r.toolName,
+                        input,
+                        r.result ?? { error: r.error },
+                        !r.error,
+                    );
+                }
+            } catch {
+                // best-effort
+            }
+
+            return sequentialResults as Array<{
+                toolName: string;
+                result?: unknown;
+                error?: string;
+            }>;
         }
     }
 
@@ -1989,6 +2102,37 @@ export abstract class AgentCore<
                       failFast: action.config?.failFast || false,
                   },
               );
+
+        try {
+            for (const r of results as Array<{
+                toolName: string;
+                result?: unknown;
+                error?: string;
+            }>) {
+                const input = tools.find(
+                    (t) => t.toolName === r.toolName,
+                )?.arguments;
+                const currentStepId =
+                    context.stepExecution?.getCurrentStep()?.stepId;
+                if (currentStepId && context.stepExecution) {
+                    context.stepExecution.addToolCall(
+                        currentStepId,
+                        r.toolName,
+                        input,
+                        r.result ?? { error: r.error },
+                        0,
+                    );
+                }
+                await context.track?.toolUsage?.(
+                    r.toolName,
+                    input,
+                    r.result ?? { error: r.error },
+                    !r.error,
+                );
+            }
+        } catch {
+            // best-effort
+        }
 
         return results as Array<{
             toolName: string;
@@ -3965,6 +4109,12 @@ export abstract class AgentCore<
                 this.planner = PlannerFactory.create(
                     plannerType,
                     this.llmAdapter,
+                    this.config.plannerOptions?.replanPolicy
+                        ? {
+                              replanPolicy:
+                                  this.config.plannerOptions.replanPolicy,
+                          }
+                        : undefined,
                 );
 
                 this.logger.info('Planner initialized', {
@@ -4030,9 +4180,6 @@ export abstract class AgentCore<
         const inputString = String(input);
         const obs = getObservability();
 
-        // NOTE: Timeline removida — tracing cobre início de execução
-
-        // ✅ NEW: Use ContextBuilder - initialize execution history
         const executionHistory: Array<{
             thought: AgentThought;
             action: AgentAction;
@@ -4041,9 +4188,6 @@ export abstract class AgentCore<
         }> = [];
 
         let finalExecutionContext: PlannerExecutionContext | undefined;
-
-        // 🔍 DEBUG: Show memory contents at start
-        await this.debugMemoryContents(context);
 
         while (iterations < maxIterations) {
             const plannerInput = this.createPlannerContext(
@@ -4061,13 +4205,10 @@ export abstract class AgentCore<
             }
 
             try {
-                // Get initial event count from kernel
                 const kernel = this.kernelHandler
                     ?.getMultiKernelManager()
                     ?.getKernelByNamespace('agent');
                 const initialEventCount = kernel?.getState().eventCount || 0;
-
-                // NOTE: Timeline removida — use spans
 
                 const thinkStartTime = Date.now();
                 const thinkSpan = startAgentSpan(obs.telemetry, 'think', {
@@ -4092,15 +4233,10 @@ export abstract class AgentCore<
                 );
                 const thinkDuration = Date.now() - thinkStartTime;
 
-                // NOTE: Timeline removida — use spans
-
-                // 2. ACT - Execute the decided action
                 const actStartTime = Date.now();
                 if (!thought.action) {
                     throw new Error('Thought action is undefined');
                 }
-
-                // NOTE: Timeline removida — use spans
 
                 const actSpan = startAgentSpan(obs.telemetry, 'act', {
                     agentName: this.config.agentName || 'unknown',
@@ -4125,11 +4261,6 @@ export abstract class AgentCore<
                 );
                 const actDuration = Date.now() - actStartTime;
 
-                // NOTE: Timeline removida — use spans
-
-                // ✅ REMOVER: Debugger statement
-                //
-                // 3. OBSERVE - Analyze result and decide if continue
                 const observeStartTime = Date.now();
                 const observeSpan = startAgentSpan(obs.telemetry, 'observe', {
                     agentName: this.config.agentName || 'unknown',
@@ -4156,11 +4287,6 @@ export abstract class AgentCore<
                 );
                 const observeDuration = Date.now() - observeStartTime;
 
-                // NOTE: Timeline removida — use spans
-
-                // ✅ REMOVER: Debugger statement
-                //
-                // ✅ NEW: Add to execution history directly
                 executionHistory.push({
                     thought,
                     action: thought.action,
@@ -4168,7 +4294,6 @@ export abstract class AgentCore<
                     observation,
                 });
 
-                // ✅ CORRECT: Add to session history (conversation context)
                 await context.session.addEntry(
                     {
                         type: 'execution_step',
@@ -4227,7 +4352,6 @@ export abstract class AgentCore<
                     actDuration,
                     observeDuration,
                     actionType: thought.action?.type || 'unknown',
-                    confidence: thought.confidence,
                     isComplete: observation.isComplete,
                     shouldContinue: observation.shouldContinue,
                     eventsGenerated,
@@ -4395,7 +4519,7 @@ export abstract class AgentCore<
             }
 
             // ✅ IMPROVED: Generic helpful message instead of technical error
-            const friendlyMessage = `Desculpe, tive algumas dificuldades para processar completamente sua solicitação. Tentei ${iterations} vezes, mas encontrei alguns problemas técnicos. Posso tentar de uma forma diferente se você quiser reformular sua pergunta?`;
+            const friendlyMessage = `Sorry, I had trouble fully processing your request. I tried ${iterations} times but ran into some technical issues. If you can rephrase or provide more details, I can try again in a different way.`;
 
             return friendlyMessage as TOutput;
         }
@@ -4427,66 +4551,13 @@ export abstract class AgentCore<
                 };
             }
 
-            // ✅ REMOVER: Chamadas que dependem de contexto não disponível
-            // NEW: Parallel tools action
-            // if (action.type === 'parallel_tools') {
-            //     const results = await this.processParallelToolsAction(
-            //         action as ParallelToolsAction,
-            //         this.getCurrentAgentContext(),
-            //     );
-            //     return {
-            //         type: 'tool_results',
-            //         content: results,
-            //     };
-            // }
-
-            // NEW: Sequential tools action
-            // if (action.type === 'sequential_tools') {
-            //     const results = await this.processSequentialToolsAction(
-            //         action as SequentialToolsAction,
-            //         this.getCurrentAgentContext(),
-            //     );
-            //     return {
-            //         type: 'tool_results',
-            //         content: results,
-            //     };
-            // }
-
-            // NEW: Conditional tools action
-            // if (action.type === 'conditional_tools') {
-            //     const results = await this.processConditionalToolsAction(
-            //         action as ConditionalToolsAction,
-            //         this.getCurrentAgentContext(),
-            //     );
-            //     return {
-            //         type: 'tool_results',
-            //         content: results,
-            //     };
-            // }
-
-            // NEW: Mixed tools action
-            // if (action.type === 'mixed_tools') {
-            //     const results = await this.processMixedToolsAction(
-            //         action as MixedToolsAction,
-            //         this.getCurrentAgentContext(),
-            //     );
-            //     return {
-            //         type: 'tool_results',
-            //         content: results,
-            //     };
-            // }
-
-            // NEW: Dependency tools action
-            // if (action.type === 'dependency_tools') {
-            //     const results = await this.processDependencyToolsAction(
-            //         action as DependencyToolsAction,
-            //         this.getCurrentAgentContext(),
-            //     );
-            //     return {
-            //         type: 'tool_results',
-            //         content: results,
-            //     };
-            // }
+            if (isNeedMoreInfoAction(action)) {
+                // Convert to a user-facing question so orchestrator can prompt the user
+                return {
+                    type: 'final_answer',
+                    content: action.question,
+                };
+            }
 
             throw new Error(`Unknown action type: ${action.type}`);
         } catch (error) {
@@ -4890,39 +4961,11 @@ export abstract class AgentCore<
             return true;
         }
 
-        // Check for low confidence patterns
-        const confidences = recent
-            .map((h) => h.thought.confidence)
-            .filter((c): c is number => c !== undefined);
-
-        if (confidences.length >= 2) {
-            const avgConfidence =
-                confidences.reduce((a, b) => a + b, 0) / confidences.length;
-            if (avgConfidence < 0.3) {
-                this.logger.warn('Low confidence pattern detected', {
-                    averageConfidence: avgConfidence,
-                    confidences,
-                });
-                return true;
-            }
-        }
+        // Removed confidence-based stagnation check
 
         return false;
     }
 
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 🚀 CONVERSATIONAL SHORTCUT UTILITIES
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    // ✅ REMOVED: isConversationalAction and extractDirectResponse methods
-    // These have been replaced by Response Synthesizer logic for final_answer actions
-
-    // Removed createExecutionContext and updateExecutionContext - no longer needed
-    // Context is now created inline in executeThinkActObserve loop
-
-    /**
-     * Get planner info for debugging
-     */
     getPlannerInfo(): {
         type?: PlannerType;
         llmProvider?: string;
@@ -5060,51 +5103,6 @@ export abstract class AgentCore<
                     `Action: ${JSON.stringify(entry.action)} -> Result: ${JSON.stringify(entry.result)}`,
             )
             .join('\n');
-    }
-
-    /**
-     * Debug helper: List what's stored in memory
-     */
-    private async debugMemoryContents(
-        agentContext: AgentContext,
-    ): Promise<void> {
-        try {
-            // Get recent memories
-            const recentMemories = await agentContext.memory.getRecent(10);
-
-            this.logger.info('🧠 MEMORY DEBUG - Recent contents:', {
-                memoryCount: recentMemories.length,
-                memories: recentMemories.map((memory, index) => ({
-                    index: index + 1,
-                    content:
-                        typeof memory === 'string'
-                            ? memory.substring(0, 100) + '...'
-                            : JSON.stringify(memory).substring(0, 100) + '...',
-                    type: typeof memory,
-                })),
-            });
-
-            // Try to search for execution steps specifically
-            const executionMemories = await agentContext.memory.search(
-                'execution_step',
-                5,
-            );
-
-            this.logger.info('🔍 MEMORY DEBUG - Execution steps:', {
-                executionStepCount: executionMemories.length,
-                steps: executionMemories.map((step, index) => ({
-                    index: index + 1,
-                    preview:
-                        typeof step === 'string'
-                            ? step.substring(0, 100) + '...'
-                            : JSON.stringify(step).substring(0, 100) + '...',
-                })),
-            });
-        } catch (error) {
-            this.logger.warn('Failed to debug memory contents', {
-                error: (error as Error).message,
-            });
-        }
     }
 
     /**

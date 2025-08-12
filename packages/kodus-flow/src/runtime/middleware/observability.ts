@@ -91,7 +91,9 @@ export const withObservability: MiddlewareFactoryType<
     }) as Middleware<Event>;
 
     middleware.kind = 'handler';
-    middleware.name = 'withObservability';
+    // Avoid assigning to Function.name (read-only). Use displayName instead.
+    (middleware as unknown as { displayName?: string }).displayName =
+        'withObservability';
 
     return middleware;
 };

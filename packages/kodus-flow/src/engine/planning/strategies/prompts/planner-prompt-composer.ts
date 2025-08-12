@@ -202,6 +202,12 @@ export class PlannerPromptComposer {
         return `
 ## TOOL USAGE INSTRUCTIONS
 
+### 0) CONTRACT (read first)
+- **NO PLACEHOLDERS**: never invent IDs/strings (e.g., "123...", "TBD"). If a REQUIRED param cannot be obtained from CONTEXT or via a discovery tool, return **\`plan: []\`** and emit **\`NEEDS-INPUT:<param>\`** in \`reasoning\`.
+- **NO QUERY SYNTAX IN \`argsTemplate\`**: only literals, CONTEXT values, or \`{{step-id.result...}}\`. Do not embed JSONPath/JMESPath filters.
+- **IDENTIFIER DISCOVERY FIRST**: if a tool requires an identifier (e.g., \`...Id\`, \`path\`, \`channel\`), and it is not in CONTEXT, add a prior list/search/get-all step to obtain it. If no such tool exists, stop with **\`NO-DISCOVERY-PATH:<id-name>\`**.
+- **AUDIT:INPUTS per step**: list the source of every REQUIRED param (\`CONTEXT | {{step-id.result...}} | literal\`). If any would be a placeholder, the plan must be empty with \`NEEDS-INPUT\`.
+
 **1) PARAMS & TYPES**
 - REQUIRED params must be present and valid. If anything essential is missing, insert a prior discovery step.
 - OPTIONAL params: omit when unused (don’t send \`null\` unless the tool explicitly allows it).
@@ -255,6 +261,8 @@ You are a **planning agent** that creates **executable plans** using tools provi
 - Respond **ONLY** with valid JSON matching the schema in **Output Schema**.
 - Each \`tool\` **MUST** be one of the runtime tool names (no invented actions).
 - Do **not** use unsupported actions or fictitious parameters.
+- **NO PLACEHOLDERS**: Do **not** invent IDs/strings (e.g., "123...", "TBD"). If a **REQUIRED** parameter cannot be obtained from CONTEXT or via a discovery tool, return **\`plan: []\`** and add **\`NEEDS-INPUT:<param>\`** to \`reasoning\`.
+- **NO QUERY SYNTAX**: In \`argsTemplate\`, only use literals, **CONTEXT** values, or \`{{step-id.result...}}\`. Do **not** embed JSONPath/JMESPath/filters (e.g., \`items[?(@.name==...)]\`).
 
 ## EXCEPTIONS (highest priority)
 - If the request can be answered entirely from **CONTEXT** or is simple social talk (greetings/thanks):
@@ -296,18 +304,27 @@ Keep correct \`dependsOn\` and set \`parallel: true\`.
 If a step lacks required inputs, first add a discovery step.
 If a tool returns no results, choose an alternative whose description plausibly satisfies the need.
 Use \`{}\` for optional filters.
+If a **REQUIRED** parameter is missing **and there is no** discovery tool in the catalog to obtain it, **stop**: return **\`plan: []\`** and add \`NEEDS-INPUT:<param>\` in \`reasoning\`. **Never** use placeholders.
 
 **Pattern 7 — AUDIT-lite (MANDATORY when selecting tools)**
 Before finalizing the plan, scan the runtime tool catalog and list **only**:
 - the tools you **selected** (with a short reason based on description), and
 - up to **2** close alternatives you **did not** select (with one-phrase reasons).
 Prefix each line in \`reasoning\` with **"AUDIT:"**.
+Additionally, for each step include one line **\`AUDIT:INPUTS\`** that lists the source of **every REQUIRED parameter** (\`CONTEXT | {{step-id.result...}} | literal\`). If any source would be a placeholder, the plan must be empty with \`NEEDS-INPUT\`.
+
+**Pattern 8 — Identifier Discovery First**
+When a tool requires an identifier (e.g., \`conversationId\`, \`channelId\`, \`repositoryId\`) that is not in **CONTEXT**:
+- 1: First select a discovery tool (list/search/get-all) that yields that ID and **use it**;
+- 2: If no discovery path exists, **do not** fabricate values. Return **\`plan: []\`** with \`NEEDS-INPUT:<id-name>\`.
 
 ## TOOL USAGE INSTRUCTIONS
 - Use **exact** tool names and parameter shapes from the runtime catalog.
 - **REQUIRED** fields must be present and valid; add a discovery step if something essential is missing.
 - Dates: ISO 8601 (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:mm:ssZ\`).
 - Prefer fewer calls: if **CONTEXT** already has the answer, return **EMPTY PLAN \`[]\`**.
+- **Parameter semantics (provider-agnostic)**:
+  - **Messaging platforms**: Sending a message generally requires a **conversation/channel identifier** (not a user identifier). Resolve this identifier via CONTEXT or a discovery/open-conversation tool. If the request is for a 1:1/direct message and no conversation/channel ID exists yet, only plan a step to **open/create a direct conversation** if such a tool is present in the catalog; otherwise return **\`plan: []\`** with \`NEEDS-INPUT:conversationId\` or choose a known public channel if appropriate.
 
 ## PARAMETER SOURCES (priority order)
 1) **CONTEXT** (if the final value is present, **do not** call a tool)
@@ -367,6 +384,8 @@ Return **only** this JSON (no prose):
   "reasoning": [
     "<concise step-by-step thought process>",
     "<why this approach was chosen>",
+    "AUDIT:INPUTS <step-id> - <param>=<CONTEXT|{{step-id.result...}}|literal>, ...",
+    "If a required param cannot be discovered or resolved: NEEDS-INPUT:<param>",
     "AUDIT: <toolName> selected - <short quote/summary from description>",
     "AUDIT: <altToolName> not_selected - <short reason>"
   ]
