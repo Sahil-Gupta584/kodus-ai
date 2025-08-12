@@ -15,6 +15,16 @@ describe('globMatch', () => {
         expect(isFileMatchingGlob('.gitignore', [pattern])).toBe(false);
     });
 
+    it('matches when provider returns a leading slash', () => {
+        const pattern = '.cursor/rules/**/*.mdc';
+        expect(
+            isFileMatchingGlob('/.cursor/rules/accessibility.mdc', [pattern]),
+        ).toBe(true);
+        expect(
+            isFileMatchingGlob('/.cursor/rules/sub/dir/file.mdc', [pattern]),
+        ).toBe(true);
+    });
+
     it('matches nested folders with **', () => {
         const pattern = '.cursor/rules/**/*.mdc';
         expect(

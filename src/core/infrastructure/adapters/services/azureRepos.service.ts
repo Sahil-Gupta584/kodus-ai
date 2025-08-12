@@ -973,30 +973,93 @@ export class AzureReposService
                 repository.id,
             );
 
-            const commits =
-                await this.azureReposRequestHelper.getCommitsForPullRequest({
-                    orgName,
-                    token,
-                    projectId,
-                    repositoryId: repository.id,
-                    prId: pullRequest.number,
-                });
+            // Prefer PR commit when a PR number is present; otherwise, use branch (head/base/default)
+            let content: { content: string } | null = null;
 
-            const latestCommit = commits[commits.length - 1]; // assume ordenação crescente
+            const prNumber: number | undefined = (pullRequest as any)?.number;
+            if (typeof prNumber === 'number' && !Number.isNaN(prNumber)) {
+                try {
+                    const commits =
+                        await this.azureReposRequestHelper.getCommitsForPullRequest({
+                            orgName,
+                            token,
+                            projectId,
+                            repositoryId: repository.id,
+                            prId: prNumber,
+                        });
 
-            if (!latestCommit?.commitId) {
-                return null;
+                    const latestCommit = commits[commits.length - 1];
+
+                    if (latestCommit?.commitId) {
+                        content =
+                            await this.azureReposRequestHelper.getRepositoryContentFile({
+                                orgName,
+                                token,
+                                projectId,
+                                repositoryId: repository.id,
+                                commitId: latestCommit.commitId,
+                                filePath: file.filename,
+                            });
+                    }
+                } catch {
+                    // Ignore commit fetch errors and try branch fallback below
+                }
             }
 
-            const content =
-                await this.azureReposRequestHelper.getRepositoryContentFile({
-                    orgName,
-                    token,
-                    projectId: projectId,
-                    repositoryId: repository.id,
-                    commitId: latestCommit.commitId,
-                    filePath: file.filename,
-                });
+            if (!content) {
+                let branch: string | undefined =
+                    (pullRequest as any)?.head?.ref ||
+                    (pullRequest as any)?.base?.ref;
+                if (!branch) {
+                    try {
+                        branch = await this.getDefaultBranch({
+                            organizationAndTeamData,
+                            repository: { id: repository.id, name: repository.name },
+                        });
+                    } catch {}
+                }
+
+                if (branch) {
+                    // Normalize refs/heads/* to plain branch name for Azure Items API
+                    const normalizedBranch = branch.replace(/^refs\/heads\//, '');
+
+                    try {
+                        content = await this.azureReposRequestHelper.getRepositoryContentFile({
+                            orgName,
+                            token,
+                            projectId,
+                            repositoryId: repository.id,
+                            branch: normalizedBranch,
+                            filePath: file.filename,
+                        });
+                    } catch (e: any) {
+                        // Fallback: if branch lookup fails (e.g. deleted or PR merged), try latest PR commit again
+                        const prNumberFallback: number | undefined = (pullRequest as any)?.number;
+                        if (typeof prNumberFallback === 'number' && !Number.isNaN(prNumberFallback)) {
+                            try {
+                                const commitsFallback = await this.azureReposRequestHelper.getCommitsForPullRequest({
+                                    orgName,
+                                    token,
+                                    projectId,
+                                    repositoryId: repository.id,
+                                    prId: prNumberFallback,
+                                });
+                                const latestCommitFallback = commitsFallback?.[commitsFallback.length - 1];
+                                if (latestCommitFallback?.commitId) {
+                                    content = await this.azureReposRequestHelper.getRepositoryContentFile({
+                                        orgName,
+                                        token,
+                                        projectId,
+                                        repositoryId: repository.id,
+                                        commitId: latestCommitFallback.commitId,
+                                        filePath: file.filename,
+                                    });
+                                }
+                            } catch {}
+                        }
+                    }
+                }
+            }
 
             return {
                 data: {

@@ -733,15 +733,32 @@ export class AzureReposRequestHelper {
         token: string;
         projectId: string;
         repositoryId: string;
-        commitId: string;
         filePath: string;
+        commitId?: string;
+        branch?: string;
     }): Promise<{ content: string } | null> {
         const instance = await this.azureRequest(params);
 
+        // Azure DevOps expects plain branch names for versionDescriptor.version.
+        // Normalize typical refs (e.g., "refs/heads/main" -> "main").
+        const normalizedBranch = params.branch?.replace(/^refs\/heads\//, '');
+
+        const versionQuery = normalizedBranch
+            ? `versionDescriptor.version=${encodeURIComponent(normalizedBranch)}&versionDescriptor.versionType=branch`
+            : params.commitId
+              ? `versionDescriptor.version=${encodeURIComponent(params.commitId)}&versionDescriptor.versionType=commit`
+              : '';
+
+        const queryParts = [
+            `path=${encodeURIComponent(params.filePath)}`,
+            versionQuery,
+            'includeContent=true',
+            'resolveLfs=true',
+            'api-version=7.1',
+        ].filter(Boolean);
+
         const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/items?path=${encodeURIComponent(
-                params.filePath,
-            )}&versionDescriptor.version=${params.commitId}&versionDescriptor.versionType=commit&includeContent=true&resolveLfs=true&api-version=7.1`,
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/items?${queryParts.join('&')}`,
         );
 
         return {

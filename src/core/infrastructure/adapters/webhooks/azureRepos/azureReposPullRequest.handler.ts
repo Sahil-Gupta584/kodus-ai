@@ -108,45 +108,73 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                 case 'git.pullrequest.updated':
                     await this.savePullRequestUseCase.execute(params);
                     this.runCodeReviewAutomationUseCase.execute(params);
-                    await this.generateIssuesFromPrClosedUseCase.execute(params);
-                    break;
-                case 'git.pullrequest.merge.attempted':
-                    await this.savePullRequestUseCase.execute(params);
-                    // If merged, trigger sync
+                    await this.generateIssuesFromPrClosedUseCase.execute(
+                        params,
+                    );
+
                     try {
-                        const merged = params?.payload?.resource?.mergeStatus === 'succeeded' || params?.payload?.resource?.status === 'completed';
-                        if (merged) {
+                        if (params?.payload?.resource?.status === 'completed') {
                             const repository = {
                                 id: params?.payload?.resource?.repository?.id,
-                                name: params?.payload?.resource?.repository?.name,
-                                fullName: params?.payload?.resource?.repository?.name,
+                                name: params?.payload?.resource?.repository
+                                    ?.name,
+                                fullName:
+                                    params?.payload?.resource?.repository?.name,
                             } as any;
 
-                            const orgData = await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview({
-                                repository: { id: repository.id, name: repository.name },
-                                platformType: PlatformType.AZURE_REPOS,
-                            });
+                            const orgData =
+                                await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview(
+                                    {
+                                        repository: {
+                                            id: repository.id,
+                                            name: repository.name,
+                                        },
+                                        platformType: PlatformType.AZURE_REPOS,
+                                    },
+                                );
                             if (orgData?.organizationAndTeamData) {
-                                const baseRefFull = params?.payload?.resource?.targetRefName; // refs/heads/main
-                                const baseRef = baseRefFull?.replace('refs/heads/', '') || baseRefFull;
-                                const defaultBranch = await this.codeManagement.getDefaultBranch({
-                                    organizationAndTeamData: orgData.organizationAndTeamData,
-                                    repository: { id: repository.id, name: repository.name },
-                                });
-                                if (baseRef !== defaultBranch) {
+                                const baseRefFull =
+                                    params?.payload?.resource?.targetRefName; // refs/heads/main
+                                const baseRef =
+                                    baseRefFull?.replace('refs/heads/', '') ||
+                                    baseRefFull;
+                                const defaultBranch =
+                                    await this.codeManagement.getDefaultBranch({
+                                        organizationAndTeamData:
+                                            orgData.organizationAndTeamData,
+                                        repository: {
+                                            id: repository.id,
+                                            name: repository.name,
+                                        },
+                                    });
+                                if (baseRefFull !== defaultBranch) {
                                     return;
                                 }
-                                const changedFiles = await this.codeManagement.getFilesByPullRequestId({
-                                    organizationAndTeamData: orgData.organizationAndTeamData,
-                                    repository: { id: repository.id, name: repository.name },
-                                    prNumber: params?.payload?.resource?.pullRequestId,
-                                });
-                                await this.kodyRulesSyncService.syncFromChangedFiles({
-                                    organizationAndTeamData: orgData.organizationAndTeamData,
-                                    repository,
-                                    pullRequestNumber: params?.payload?.resource?.pullRequestId,
-                                    files: changedFiles || [],
-                                });
+                                const changedFiles =
+                                    await this.codeManagement.getFilesByPullRequestId(
+                                        {
+                                            organizationAndTeamData:
+                                                orgData.organizationAndTeamData,
+                                            repository: {
+                                                id: repository.id,
+                                                name: repository.name,
+                                            },
+                                            prNumber:
+                                                params?.payload?.resource
+                                                    ?.pullRequestId,
+                                        },
+                                    );
+                                await this.kodyRulesSyncService.syncFromChangedFiles(
+                                    {
+                                        organizationAndTeamData:
+                                            orgData.organizationAndTeamData,
+                                        repository,
+                                        pullRequestNumber:
+                                            params?.payload?.resource
+                                                ?.pullRequestId,
+                                        files: changedFiles || [],
+                                    },
+                                );
                             }
                         }
                     } catch (e) {
@@ -156,6 +184,10 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                             error: e,
                         });
                     }
+
+                    break;
+                case 'git.pullrequest.merge.attempted':
+                    await this.savePullRequestUseCase.execute(params);
                     break;
                 default:
                     this.logger.warn({
