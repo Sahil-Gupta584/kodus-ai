@@ -39,13 +39,13 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
 
         const isCommitRun = Boolean(lastExecution);
         const commitBehaviour =
-            codeReviewConfig.summary.behaviourForNewCommits ??
+            codeReviewConfig?.summary?.behaviourForNewCommits ??
             BehaviourForNewCommits.NONE;
 
         const shouldGenerateOrUpdateSummary =
-            (!isCommitRun && codeReviewConfig.summary.generatePRSummary) ||
+            (!isCommitRun && codeReviewConfig?.summary?.generatePRSummary) ||
             (isCommitRun &&
-                codeReviewConfig.summary.generatePRSummary &&
+                codeReviewConfig?.summary?.generatePRSummary &&
                 commitBehaviour !== BehaviourForNewCommits.NONE);
 
         if (
@@ -63,6 +63,11 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             this.logger.log({
                 message: `Generating summary for PR#${pullRequest.number}`,
                 context: this.stageName,
+                metadata: {
+                        organizationAndTeamData,
+                        prNumber: context.pullRequest.number,
+                        repository: context.repository,
+                    },
             });
 
             const changedFiles = context.changedFiles.map((file) => ({

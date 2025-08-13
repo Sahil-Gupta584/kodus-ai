@@ -40,7 +40,8 @@
             "required": [
                 "generatePRSummary",
                 "customInstructions",
-                "behaviourForExistingDescription"
+                "behaviourForExistingDescription",
+                "behaviourForNewCommits"
             ],
             "additionalProperties": false
         },
