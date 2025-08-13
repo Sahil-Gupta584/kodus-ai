@@ -15,6 +15,7 @@ import { IntegrationModule } from './integration.module';
 import { GenerateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/generate-code-review-paremeter.use-case';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 import { PullRequestMessagesModule } from './pullRequestMessages.module';
+import { UpdateOrCreateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/update-or-create-code-review-parameter-use-case';
 
 @Module({
     imports: [
@@ -44,6 +45,7 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
         PARAMETERS_REPOSITORY_TOKEN,
         CreateOrUpdateParametersUseCase,
         GenerateCodeReviewParameterUseCase,
+        UpdateOrCreateCodeReviewParameterUseCase,
     ],
 })
 export class ParametersModule {}

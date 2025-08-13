@@ -25,6 +25,8 @@ import {
     LLMModelProvider,
 } from '@kodus/kodus-common/llm';
 import { createHash } from 'crypto';
+import { UpdateOrCreateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/update-or-create-code-review-parameter-use-case';
+import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 
 type SyncTarget = {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -46,6 +48,7 @@ export class KodyRulesSyncService {
         private readonly upsertRule: CreateOrUpdateKodyRulesUseCase,
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
+        private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
     ) {}
 
     private async findRuleBySourcePath(params: {
@@ -405,10 +408,27 @@ export class KodyRulesSyncService {
                         : [],
                 } as CreateKodyRuleDto;
 
-                await this.upsertRule.execute(
+                const result = await this.upsertRule.execute(
                     dto,
                     organizationAndTeamData.organizationId,
                 );
+
+                try {
+                    await this.updateOrCreateCodeReviewParameterUseCase.execute({
+                        organizationAndTeamData,
+                        configValue: {
+                            kodyRules: [],
+                        } as any,
+                        repositoryId: repository.id,
+                    });
+                } catch (paramError) {
+                    this.logger.error({
+                        message: 'Failed to ensure CODE_REVIEW_CONFIG after rule sync (PR files)',
+                        context: KodyRulesSyncService.name,
+                        error: paramError,
+                        metadata: { repositoryId: repository.id, file: f.filename },
+                    });
+                }
             }
         } catch (error) {
             this.logger.error({
@@ -548,10 +568,27 @@ export class KodyRulesSyncService {
                         : [],
                 } as CreateKodyRuleDto;
 
-                await this.upsertRule.execute(
+                const result = await this.upsertRule.execute(
                     dto,
                     organizationAndTeamData.organizationId,
                 );
+
+                try {
+                    await this.updateOrCreateCodeReviewParameterUseCase.execute({
+                        organizationAndTeamData,
+                        configValue: {
+                            kodyRules: [],
+                        } as any,
+                        repositoryId: repository.id,
+                    });
+                } catch (paramError) {
+                    this.logger.error({
+                        message: 'Failed to ensure CODE_REVIEW_CONFIG after rule sync (main)',
+                        context: KodyRulesSyncService.name,
+                        error: paramError,
+                        metadata: { repositoryId: repository.id, file: file.path },
+                    });
+                }
             }
         } catch (error) {
             this.logger.error({
