@@ -14,6 +14,7 @@ import {
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import {
     BehaviourForExistingDescription,
+    BehaviourForNewCommits,
     CodeReviewConfigWithoutLLMProvider,
     GroupingModeSuggestions,
     LimitationType,
@@ -146,6 +147,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             customInstructions: '',
             behaviourForExistingDescription:
                 BehaviourForExistingDescription.CONCATENATE,
+            behaviourForNewCommits: BehaviourForNewCommits.NONE,
         };
     }
 

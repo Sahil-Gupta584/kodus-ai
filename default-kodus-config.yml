@@ -3,6 +3,7 @@ summary:
     generatePRSummary: true
     customInstructions: ''
     behaviourForExistingDescription: 'concatenate'
+    behaviourForNewCommits: 'none'
 ignorePaths:
     - 'yarn.lock'
     - 'package-lock.json'

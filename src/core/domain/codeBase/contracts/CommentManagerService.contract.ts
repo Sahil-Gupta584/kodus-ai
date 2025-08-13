@@ -33,6 +33,7 @@ export interface ICommentManagerService {
         organizationAndTeamData: OrganizationAndTeamData,
         languageResultPrompt: string,
         summaryConfig: SummaryConfig,
+        isCommitRun?: boolean,
     ): Promise<string>;
 
     updateOverallComment(

@@ -12,6 +12,7 @@ import {
     CommentResult,
     CodeSuggestion,
     ClusteringType,
+    BehaviourForNewCommits,
 } from '@/config/types/general/codeReview.type';
 import { prompt_repeated_suggestion_clustering_system } from '@/shared/utils/langchainCommon/prompts/repeatedCodeReviewSuggestionClustering';
 import { LLMResponseProcessor } from './utils/transforms/llmResponseProcessor.transform';
@@ -71,6 +72,7 @@ export class CommentManagerService implements ICommentManagerService {
         organizationAndTeamData: OrganizationAndTeamData,
         languageResultPrompt: string,
         summaryConfig: SummaryConfig,
+        isCommitRun: boolean,
     ): Promise<string> {
         if (!summaryConfig?.generatePRSummary) {
             return null;
@@ -110,6 +112,7 @@ export class CommentManagerService implements ICommentManagerService {
 
                 // Adds the existing description only for COMPLEMENT mode
                 if (
+                    !isCommitRun &&
                     updatedPR?.body &&
                     summaryConfig?.behaviourForExistingDescription ===
                         BehaviourForExistingDescription.COMPLEMENT
@@ -188,29 +191,79 @@ export class CommentManagerService implements ICommentManagerService {
                         'No result returned from generateSummaryPR',
                     );
                 }
+                const newSummary = result || 'No summary generated';
+                const startMarker = '<!-- kody-pr-summary:start -->';
+                const endMarker = '<!-- kody-pr-summary:end -->';
+                const blockRegex =
+                    /<!-- kody-pr-summary:start -->([\s\S]*?)<!-- kody-pr-summary:end -->/;
 
                 let finalDescription = result || 'No comment generated';
 
-                // Apply CONCATENATE behavior if necessary
-                if (
-                    updatedPR?.body &&
-                    summaryConfig?.behaviourForExistingDescription ===
-                        BehaviourForExistingDescription.CONCATENATE
-                ) {
-                    // Log for debugging
-                    this.logger.log({
-                        message: `GenerateSummaryPR: Concatenate behavior for PR#${pullRequest?.number}. Before concatenate`,
-                        context: CommentManagerService.name,
-                        metadata: {
-                            organizationAndTeamData,
-                            pullRequestNumber: pullRequest?.number,
-                            repositoryId: repository?.id,
-                            summaryConfig,
-                            body: updatedPR?.body,
-                        },
-                    });
+                if (isCommitRun) {
+                    const commitBehaviour =
+                        summaryConfig?.behaviourForNewCommits ??
+                        BehaviourForNewCommits.NONE;
 
-                    finalDescription = `${updatedPR.body}\n\n---\n\n${finalDescription}`;
+                    const existingBody = updatedPR?.body || '';
+                    const match = existingBody.match(blockRegex);
+
+                    switch (commitBehaviour) {
+                        case BehaviourForNewCommits.NONE:
+                            // Do nothing
+                            break;
+                        case BehaviourForNewCommits.REPLACE:
+                            if (match) {
+                                // Replace inside block
+                                finalDescription = existingBody.replace(
+                                    blockRegex,
+                                    `${startMarker}\n${newSummary}\n${endMarker}`,
+                                );
+                            } else {
+                                // No block — replace whole body
+                                finalDescription = `${startMarker}\n${newSummary}\n${endMarker}`;
+                            }
+                            break;
+                        case BehaviourForNewCommits.CONCATENATE:
+                            if (match) {
+                                const currentBlockContent = match[1].trim();
+                                finalDescription = existingBody.replace(
+                                    blockRegex,
+                                    `${startMarker}\n${currentBlockContent}\n\n---\n\n${newSummary}\n${endMarker}`,
+                                );
+                            } else {
+                                // No block — append new one
+                                finalDescription = `${existingBody}\n\n${startMarker}\n${newSummary}\n${endMarker}`;
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                }
+
+                if (!isCommitRun) {
+                    finalDescription = `${startMarker}\n${newSummary}\n${endMarker}`;
+
+                    // Apply CONCATENATE behavior if necessary
+                    if (
+                        updatedPR?.body &&
+                        summaryConfig?.behaviourForExistingDescription ===
+                            BehaviourForExistingDescription.CONCATENATE
+                    ) {
+                        // Log for debugging
+                        this.logger.log({
+                            message: `GenerateSummaryPR: Concatenate behavior for PR#${pullRequest?.number}. Before concatenate`,
+                            context: CommentManagerService.name,
+                            metadata: {
+                                organizationAndTeamData,
+                                pullRequestNumber: pullRequest?.number,
+                                repositoryId: repository?.id,
+                                summaryConfig,
+                                body: updatedPR?.body,
+                            },
+                        });
+
+                        finalDescription = `${updatedPR.body}\n\n---\n\n${finalDescription}`;
+                    }
                 }
 
                 // Log for debugging
