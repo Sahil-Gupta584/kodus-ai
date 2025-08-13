@@ -450,14 +450,18 @@ export class PlanExecutor {
             const replansCount = Number(
                 (plan.metadata as Record<string, unknown>)?.replansCount ?? 0,
             );
-            const maxReplans = 1; // ✅ PADRÃO DO EXECUTOR (configurável depois)
+            const maxReplans = 5; // ✅ PADRÃO DO EXECUTOR (configurável depois)
 
             if (replansCount >= maxReplans) {
                 // ✅ LIMITE ATINGIDO - PARAR LOOP
                 resultType = 'execution_complete';
                 feedback = `Replan limit reached (${replansCount}/${maxReplans}). Cannot continue with missing inputs: ${JSON.stringify(signals?.needs)}`;
             } else {
-                // ✅ AINDA PODE REPLAN
+                // ✅ AINDA PODE REPLAN - INCREMENTAR CONTADOR
+                if (!plan.metadata) plan.metadata = {};
+                (plan.metadata as Record<string, unknown>).replansCount =
+                    replansCount + 1;
+
                 resultType = 'needs_replan';
                 feedback = `Plan needs replanning due to signals. Success: ${successfulSteps.length}, Failed: ${failedSteps.length}, Signals: ${JSON.stringify(signals)}`;
             }

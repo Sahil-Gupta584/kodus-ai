@@ -4319,16 +4319,57 @@ export abstract class AgentCore<
 
                     if (isReWOOMode) {
                         // ✅ ReWOO: Direct decision from PlanExecutor
-                        observation = {
-                            isComplete: obsRes.type === 'execution_complete',
-                            isSuccessful: obsRes.type === 'execution_complete',
-                            feedback: obsRes.feedback,
-                            shouldContinue: obsRes.type === 'needs_replan',
-                            suggestedNextAction:
-                                obsRes.type === 'needs_replan'
-                                    ? 'Replan with preserved context'
-                                    : undefined,
-                        };
+                        // BUT: If execution_complete with 0 steps, use analyzeResult for final response
+                        if (
+                            obsRes.type === 'execution_complete' &&
+                            obsRes.totalSteps === 0
+                        ) {
+                            // 🎯 SPECIAL CASE: Empty plan - use analyzeResult for final response
+                            const observeSpan = startAgentSpan(
+                                obs.telemetry,
+                                'observe',
+                                {
+                                    agentName:
+                                        this.config.agentName || 'unknown',
+                                    correlationId:
+                                        context.correlationId || 'unknown',
+                                    iteration: iterations,
+                                },
+                            );
+
+                            observation = await obs.telemetry.withSpan(
+                                observeSpan,
+                                async () => {
+                                    try {
+                                        const res = await this.observe(
+                                            planResult,
+                                            plannerInput,
+                                        );
+                                        markSpanOk(observeSpan);
+                                        return res;
+                                    } catch (err) {
+                                        applyErrorToSpan(observeSpan, err, {
+                                            phase: 'observe',
+                                        });
+                                        throw err;
+                                    }
+                                },
+                            );
+                        } else {
+                            // ✅ Normal ReWOO: Direct decision from PlanExecutor
+                            observation = {
+                                isComplete:
+                                    obsRes.type === 'execution_complete',
+                                isSuccessful:
+                                    obsRes.type === 'execution_complete',
+                                feedback: obsRes.feedback,
+                                shouldContinue: obsRes.type === 'needs_replan',
+                                suggestedNextAction:
+                                    obsRes.type === 'needs_replan'
+                                        ? 'Replan with preserved context'
+                                        : undefined,
+                            };
+                        }
                     } else {
                         // 🔄 Legacy: Use planner analysis
                         const observeSpan = startAgentSpan(
@@ -4411,8 +4452,18 @@ export abstract class AgentCore<
                         observation,
                     );
 
-                    if (observation.isComplete || !shouldContinue) {
-                        break;
+                    // ✅ CORRIGIDO: Para execute_plan, continuar para gerar resposta final
+                    if (isExecutePlanAction(thought.action)) {
+                        // Para execute_plan, só quebra se for erro
+                        if (planResult.type === 'error') {
+                            break;
+                        }
+                        // Se executou com sucesso, continua para o planner gerar resposta
+                    } else {
+                        // Para outras ações, quebra se completo
+                        if (observation.isComplete || !shouldContinue) {
+                            break;
+                        }
                     }
 
                     iterations++;

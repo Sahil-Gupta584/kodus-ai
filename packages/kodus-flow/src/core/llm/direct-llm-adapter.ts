@@ -564,7 +564,19 @@ Please analyze semantic similarity and select the most appropriate tool.`,
     ): PlanningResult {
         const llmValidated = validateLLMResponse(response);
 
-        let extractedSteps = [];
+        let extractedSteps: Array<{
+            id: string;
+            description: string;
+            tool?: string;
+            arguments?: Record<string, unknown>;
+            dependencies?: string[];
+            type:
+                | 'analysis'
+                | 'action'
+                | 'decision'
+                | 'observation'
+                | 'verification';
+        }> = [];
         let extractedReasoning = '';
         let extractedSignals: Record<string, unknown> = {};
         let extractedAudit: string[] = [];

@@ -202,7 +202,18 @@ export class PlannerPromptComposer {
             '## ✅ TASK\nCreate an executable plan using the available tools above.',
         );
 
-        return sections.join('\n\n');
+        const finalPrompt = sections.join('\n\n');
+
+        // ✅ DEBUG: Log prompt size
+        console.log('🔍 PROMPT SIZE:', {
+            totalLength: finalPrompt.length,
+            sections: sections.length,
+            additionalContextSize: context.additionalContext
+                ? JSON.stringify(context.additionalContext).length
+                : 0,
+        });
+
+        return finalPrompt;
     }
 
     /**
@@ -1380,6 +1391,13 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
     ): string {
         const sections: string[] = ['## 🔍 ADDITIONAL INFO'];
 
+        // ✅ SIMPLES: JSON.stringify em tudo
+        const formatValue = (value: unknown): string => {
+            if (value === null) return 'null';
+            if (value === undefined) return 'undefined';
+            return JSON.stringify(value, null, 2);
+        };
+
         // Handle user context generically
         if (additionalContext.userContext) {
             const userCtx = additionalContext.userContext as Record<
@@ -1391,12 +1409,7 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
             // Process all user context fields dynamically
             Object.entries(userCtx).forEach(([key, value]) => {
                 if (value !== undefined && value !== null) {
-                    if (typeof value === 'object') {
-                        // For nested objects, show key and type
-                        sections.push(`**${key}:** [Object]`);
-                    } else {
-                        sections.push(`**${key}:** ${value}`);
-                    }
+                    sections.push(`**${key}:** ${formatValue(value)}`);
                 }
             });
         }
@@ -1412,11 +1425,7 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
             // Process all agent identity fields dynamically
             Object.entries(identity).forEach(([key, value]) => {
                 if (value !== undefined && value !== null) {
-                    if (typeof value === 'object') {
-                        sections.push(`**${key}:** [Object]`);
-                    } else {
-                        sections.push(`**${key}:** ${value}`);
-                    }
+                    sections.push(`**${key}:** ${formatValue(value)}`);
                 }
             });
         }
@@ -1434,11 +1443,10 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
                 return (
                     !skipFields.includes(key) &&
                     value !== undefined &&
-                    value !== null &&
-                    typeof value !== 'object'
+                    value !== null
                 );
             })
-            .map(([key, value]) => `**${key}:** ${value}`);
+            .map(([key, value]) => `**${key}:** ${formatValue(value)}`);
 
         if (metadataFields.length > 0) {
             sections.push('### 📋 METADATA');

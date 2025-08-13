@@ -95,6 +95,8 @@ export class ConversationAgentProvider {
                     maxReasoningTokens: options.maxReasoningTokens,
                 });
 
+                console.log('LLM response:', JSON.stringify(resp, null, 2));
+
                 return {
                     content: resp.content,
                     usage: resp.usage_metadata ?? {
@@ -228,7 +230,7 @@ export class ConversationAgentProvider {
                 replanPolicy: {
                     missingInput: 'replan', // não pergunta; tenta replanejar
                     toolUnavailable: 'replan', // idem para ferramenta ausente
-                    maxReplansPerPlan: 1, // evita loops
+                    maxReplansPerPlan: 3, // evita loops
                     planTtlMs: 60_000, // TTL do plano
                     budget: { maxMs: 60_000, maxToolCalls: 10 },
                 },

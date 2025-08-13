@@ -2185,6 +2185,14 @@ export class PlanAndExecutePlanner implements Planner {
         const dependencyValidation = this.validatePlanDependencies(tempPlan);
 
         if (invalidSteps.length > 0 || !dependencyValidation.isValid) {
+            // ✅ DEBUG: Log validation errors
+            this.logger.warn('Plan validation failed', {
+                invalidSteps: invalidSteps.length,
+                dependencyValid: dependencyValidation.isValid,
+                dependencyErrors: dependencyValidation.errors,
+                convertedSteps: convertedSteps.length,
+            });
+
             let errorMessage =
                 'I could not create an executable plan. I found the following problems:\n\n';
 
