@@ -10,7 +10,7 @@ import { CircuitBreaker } from '../../runtime/core/circuit-breaker.js';
 import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
-import { contextBuilder } from '../../core/context/context-builder.js';
+import { ContextBuilder } from '../../core/context/context-builder.js';
 // Timeline removida
 import type {
     AgentContext,
@@ -377,7 +377,7 @@ export abstract class AgentCore<
 
         // ✅ NEW: Configure ToolEngine in ContextBuilder if available
         if (this.toolEngine) {
-            contextBuilder.setToolEngine(this.toolEngine);
+            ContextBuilder.getInstance().setToolEngine(this.toolEngine);
             this.logger.info('ToolEngine configured in ContextBuilder', {
                 toolCount: this.toolEngine.listTools().length,
             });
@@ -1492,7 +1492,8 @@ export abstract class AgentCore<
         };
 
         // 1. Create base context via ContextBuilder
-        const context = await contextBuilder.createAgentContext(config);
+        const context =
+            await ContextBuilder.getInstance().createAgentContext(config);
 
         // 2. ✅ ELEGANT: Enrich context with AgentDefinition data
         if (this.singleAgentDefinition?.identity) {
@@ -2569,7 +2570,7 @@ export abstract class AgentCore<
         this.toolEngine = toolEngine;
 
         // Configure ToolEngine in ContextBuilder
-        contextBuilder.setToolEngine(toolEngine);
+        ContextBuilder.getInstance().setToolEngine(toolEngine);
 
         // Inject KernelHandler if available
         if (this.kernelHandler) {

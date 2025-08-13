@@ -31,10 +31,17 @@ export interface ContextBuilderConfig {
         };
     };
     session?: SessionConfig;
+    snapshot?: {
+        adapterType?: StorageType;
+        adapterConfig?: {
+            connectionString?: string;
+            options?: Record<string, unknown>;
+        };
+    };
 }
 
 export class ContextBuilder {
-    private static instance: ContextBuilder;
+    private static instance: ContextBuilder | undefined;
     private readonly logger = createLogger('ContextBuilder');
     private readonly _config: ContextBuilderConfig;
 
@@ -69,6 +76,7 @@ export class ContextBuilder {
         this.logger.info('ContextBuilder initialized', {
             memoryConfig: config.memory ? 'configured' : 'default',
             sessionConfig: config.session ? 'configured' : 'default',
+            snapshotConfig: config.snapshot ? 'configured' : 'default',
         });
     }
 
@@ -89,8 +97,10 @@ export class ContextBuilder {
             config,
             hasMemory: !!config.memory,
             hasSession: !!config.session,
+            hasSnapshot: !!config.snapshot,
             memoryAdapterType: config.memory?.adapterType,
             sessionAdapterType: config.session?.adapterType,
+            snapshotAdapterType: config.snapshot?.adapterType,
         });
 
         ContextBuilder.resetInstance();
@@ -519,10 +529,8 @@ export class ContextBuilder {
     }
 }
 
-export const contextBuilder = ContextBuilder.getInstance();
-
 export const createAgentContext = (
     options: AgentExecutionOptions,
 ): Promise<AgentContext> => {
-    return contextBuilder.createAgentContext(options);
+    return ContextBuilder.getInstance().createAgentContext(options);
 };
