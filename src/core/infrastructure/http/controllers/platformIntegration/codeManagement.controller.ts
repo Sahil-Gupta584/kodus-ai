@@ -168,6 +168,7 @@ export class CodeManagementController {
         @Query()
         query: {
             organizationId: string;
+            teamId: string;
             repositoryId: string;
             treeType?: RepositoryTreeType;
         },
