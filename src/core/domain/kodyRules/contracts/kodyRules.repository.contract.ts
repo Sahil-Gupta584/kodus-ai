@@ -1,5 +1,5 @@
 import { KodyRulesEntity } from '../entities/kodyRules.entity';
-import { IKodyRule, IKodyRules } from '../interfaces/kodyRules.interface';
+import { IKodyRule, IKodyRules, KodyRulesStatus } from '../interfaces/kodyRules.interface';
 
 export const KODY_RULES_REPOSITORY_TOKEN = Symbol('KodyRulesRepository');
 
@@ -37,5 +37,11 @@ export interface IKodyRulesRepository {
     deleteRuleLogically(
         uuid: string,
         ruleId: string,
+    ): Promise<KodyRulesEntity | null>;
+    updateRulesStatusByFilter(
+        organizationId: string,
+        repositoryId: string,
+        directoryId?: string,
+        newStatus?: KodyRulesStatus,
     ): Promise<KodyRulesEntity | null>;
 }
