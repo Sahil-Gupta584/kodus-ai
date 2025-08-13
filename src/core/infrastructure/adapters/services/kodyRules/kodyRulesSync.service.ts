@@ -205,7 +205,10 @@ export class KodyRulesSyncService {
                 this.logger.log({
                     message: 'IDE rules sync disabled by CODE_REVIEW_CONFIG',
                     context: KodyRulesSyncService.name,
-                    metadata: { repositoryId: repository.id },
+                    metadata: {
+                        repositoryId: repository.id,
+                        organizationAndTeamData,
+                    },
                 });
                 return;
             }
@@ -447,53 +450,6 @@ export class KodyRulesSyncService {
                         filePatterns: [...RULE_FILE_PATTERNS],
                     },
                 });
-
-            if (!files?.length) {
-                // No rule files in main -> delete all existing repo rules
-                const entity = await this.kodyRulesService.findByOrganizationId(
-                    organizationAndTeamData.organizationId,
-                );
-                const repoRules = entity?.rules?.filter(
-                    (r) => r?.repositoryId === repository.id,
-                );
-                for (const r of repoRules || []) {
-                    if (!r?.uuid) continue;
-                    await this.kodyRulesService.deleteRuleLogically(
-                        entity!.uuid,
-                        r.uuid,
-                    );
-                }
-                return;
-            }
-
-            // Reconcile deletions: remove rules whose files no longer exist
-            try {
-                const currentPaths = new Set<string>(
-                    files.map((f) => (f.path || '').split('#')[0]),
-                );
-                const entity = await this.kodyRulesService.findByOrganizationId(
-                    organizationAndTeamData.organizationId,
-                );
-                const repoRules = entity?.rules?.filter(
-                    (r) => r?.repositoryId === repository.id,
-                );
-                for (const r of repoRules || []) {
-                    const basePath = (r?.sourcePath || '').split('#')[0];
-                    if (!currentPaths.has(basePath) && r?.uuid) {
-                        await this.kodyRulesService.deleteRuleLogically(
-                            entity!.uuid,
-                            r.uuid,
-                        );
-                    }
-                }
-            } catch (reconError) {
-                this.logger.error({
-                    message: 'Failed to reconcile deletions on main sync',
-                    context: KodyRulesSyncService.name,
-                    error: reconError,
-                    metadata: params,
-                });
-            }
 
             for (const file of files) {
                 const contentResp =

@@ -21,7 +21,7 @@ import { KodyRulesValidationModule } from '@/ee/kodyRules/kody-rules-validation.
 import { KodyRulesService } from '@/ee/kodyRules/service/kodyRules.service';
 import { KodyRulesRepository } from '@/ee/kodyRules/repository/kodyRules.repository';
 import { KodyRulesValidationService } from '@/ee/kodyRules/service/kody-rules-validation.service';
-import { KodyRulesSyncService } from '@/core/infrastructure/adapters/services/kodyRules/kody-rules-sync.service';
+import { KodyRulesSyncService } from '@/core/infrastructure/adapters/services/kodyRules/kodyRulesSync.service';
 import { SendRulesNotificationUseCase } from '@/core/application/use-cases/kodyRules/send-rules-notification.use-case';
 import { SyncSelectedRepositoriesKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/sync-selected-repositories.use-case';
 import { UsersModule } from './user.module';

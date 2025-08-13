@@ -11,7 +11,7 @@ import { ChatWithKodyFromGitUseCase } from '@/core/application/use-cases/platfor
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
-import { KodyRulesSyncService } from '../../services/kodyRules/kody-rules-sync.service';
+import { KodyRulesSyncService } from '../../services/kodyRules/kodyRulesSync.service';
 
 /**
  * Handler for GitLab webhook events.
@@ -78,6 +78,23 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
             metadata: { mrNumber, mrUrl },
         });
 
+        const repository = {
+            id: String(payload?.project?.id),
+            name: payload?.project?.path,
+            fullName: payload?.project?.path_with_namespace,
+        } as any;
+
+        const orgData =
+            await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview(
+                {
+                    repository: {
+                        id: String(payload?.project?.id),
+                        name: payload?.project?.path,
+                    },
+                    platformType: PlatformType.GITLAB,
+                },
+            );
+
         try {
             // Check if we should trigger code review based on the MR action
             if (this.shouldTriggerCodeReviewForGitLab(payload)) {
@@ -87,40 +104,50 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                 this.runCodeReviewAutomationUseCase.execute(params);
 
                 if (payload?.object_attributes?.action === 'merge') {
-                    await this.generateIssuesFromPrClosedUseCase.execute(params);
+                    await this.generateIssuesFromPrClosedUseCase.execute(
+                        params,
+                    );
 
                     // Sync Kody Rules after merge into target branch
                     try {
-                        const repository = {
-                            id: String(payload?.project?.id),
-                            name: payload?.project?.path,
-                            fullName: payload?.project?.path_with_namespace,
-                        } as any;
-
-                        const orgData = await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview({
-                            repository: { id: String(payload?.project?.id), name: payload?.project?.path },
-                            platformType: PlatformType.GITLAB,
-                        });
                         if (orgData?.organizationAndTeamData) {
-                            const baseRef = payload?.object_attributes?.target_branch;
-                            const defaultBranch = await this.codeManagement.getDefaultBranch({
-                                organizationAndTeamData: orgData.organizationAndTeamData,
-                                repository: { id: repository.id, name: repository.name },
-                            });
+                            const baseRef =
+                                payload?.object_attributes?.target_branch;
+                            const defaultBranch =
+                                await this.codeManagement.getDefaultBranch({
+                                    organizationAndTeamData:
+                                        orgData.organizationAndTeamData,
+                                    repository: {
+                                        id: repository.id,
+                                        name: repository.name,
+                                    },
+                                });
                             if (baseRef !== defaultBranch) {
                                 return;
                             }
-                            const changedFiles = await this.codeManagement.getFilesByPullRequestId({
-                                organizationAndTeamData: orgData.organizationAndTeamData,
-                                repository: { id: repository.id, name: repository.name },
-                                prNumber: payload?.object_attributes?.iid,
-                            });
-                            await this.kodyRulesSyncService.syncFromChangedFiles({
-                                organizationAndTeamData: orgData.organizationAndTeamData,
-                                repository,
-                                pullRequestNumber: payload?.object_attributes?.iid,
-                                files: changedFiles || [],
-                            });
+                            const changedFiles =
+                                await this.codeManagement.getFilesByPullRequestId(
+                                    {
+                                        organizationAndTeamData:
+                                            orgData.organizationAndTeamData,
+                                        repository: {
+                                            id: repository.id,
+                                            name: repository.name,
+                                        },
+                                        prNumber:
+                                            payload?.object_attributes?.iid,
+                                    },
+                                );
+                            await this.kodyRulesSyncService.syncFromChangedFiles(
+                                {
+                                    organizationAndTeamData:
+                                        orgData.organizationAndTeamData,
+                                    repository,
+                                    pullRequestNumber:
+                                        payload?.object_attributes?.iid,
+                                    files: changedFiles || [],
+                                },
+                            );
                         }
                     } catch (e) {
                         this.logger.error({
@@ -140,10 +167,10 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                 // For closed or merged MRs, just save the state without triggering automation
                 await this.savePullRequestUseCase.execute(params);
 
-                if (
-                    payload?.object_attributes?.action === 'merge'
-                ) {
-                    await this.generateIssuesFromPrClosedUseCase.execute(params);
+                if (payload?.object_attributes?.action === 'merge') {
+                    await this.generateIssuesFromPrClosedUseCase.execute(
+                        params,
+                    );
                 }
 
                 return;
@@ -152,7 +179,11 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
             this.logger.error({
                 context: GitLabMergeRequestHandler.name,
                 serviceName: GitLabMergeRequestHandler.name,
-                metadata: { mrNumber, mrUrl },
+                metadata: {
+                    mrNumber,
+                    mrUrl,
+                    organizationAndTeamData: orgData?.organizationAndTeamData,
+                },
                 message: `Error processing GitLab merge request #${mrNumber}: ${error.message}`,
                 error,
             });

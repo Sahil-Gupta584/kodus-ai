@@ -3,7 +3,7 @@ import { REQUEST } from '@nestjs/core';
 import { Request } from 'express';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
-import { KodyRulesSyncService } from '@/core/infrastructure/adapters/services/kodyRules/kody-rules-sync.service';
+import { KodyRulesSyncService } from '@/core/infrastructure/adapters/services/kodyRules/kodyRulesSync.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 @Injectable()
@@ -59,7 +59,10 @@ export class SyncSelectedRepositoriesKodyRulesUseCase {
                 message: 'Failed to sync selected repositories Kody Rules',
                 context: SyncSelectedRepositoriesKodyRulesUseCase.name,
                 error,
-                metadata: params,
+                metadata: {
+                    organizationAndTeamData,
+                    params,
+                },
             });
         }
     }

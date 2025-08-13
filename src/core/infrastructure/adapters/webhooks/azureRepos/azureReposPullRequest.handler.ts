@@ -13,7 +13,7 @@ import { CodeManagementService } from '@/core/infrastructure/adapters/services/p
 import { createHash } from 'crypto';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
-import { KodyRulesSyncService } from '../../services/kodyRules/kody-rules-sync.service';
+import { KodyRulesSyncService } from '../../services/kodyRules/kodyRulesSync.service';
 
 @Injectable()
 export class AzureReposPullRequestHandler implements IWebhookEventHandler {
@@ -102,6 +102,23 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
             message: `Processing Azure Repos event '${eventType}' for PR ID: ${prId} in repo ${repoName}`,
         });
 
+        const repository = {
+            id: params?.payload?.resource?.repository?.id,
+            name: params?.payload?.resource?.repository?.name,
+            fullName: params?.payload?.resource?.repository?.name,
+        } as any;
+
+        const orgData =
+            await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview(
+                {
+                    repository: {
+                        id: repository.id,
+                        name: repository.name,
+                    },
+                    platformType: PlatformType.AZURE_REPOS,
+                },
+            );
+
         try {
             switch (eventType) {
                 case 'git.pullrequest.created':
@@ -114,24 +131,6 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
 
                     try {
                         if (params?.payload?.resource?.status === 'completed') {
-                            const repository = {
-                                id: params?.payload?.resource?.repository?.id,
-                                name: params?.payload?.resource?.repository
-                                    ?.name,
-                                fullName:
-                                    params?.payload?.resource?.repository?.name,
-                            } as any;
-
-                            const orgData =
-                                await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview(
-                                    {
-                                        repository: {
-                                            id: repository.id,
-                                            name: repository.name,
-                                        },
-                                        platformType: PlatformType.AZURE_REPOS,
-                                    },
-                                );
                             if (orgData?.organizationAndTeamData) {
                                 const baseRefFull =
                                     params?.payload?.resource?.targetRefName; // refs/heads/main
@@ -182,6 +181,13 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                             message: 'Failed to sync Kody Rules after PR merge',
                             context: AzureReposPullRequestHandler.name,
                             error: e,
+                            metadata: {
+                                prId,
+                                eventType,
+                                repoName,
+                                organizationAndTeamData:
+                                    orgData?.organizationAndTeamData,
+                            },
                         });
                     }
 
@@ -204,6 +210,7 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                     prId,
                     eventType,
                     repoName,
+                    organizationAndTeamData: orgData?.organizationAndTeamData,
                 },
                 message: `Successfully processed Azure Repos event '${eventType}' for PR ID: ${prId}`,
             });
@@ -215,6 +222,7 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                     prId,
                     eventType,
                     repoName,
+                    organizationAndTeamData: orgData?.organizationAndTeamData,
                 },
                 message: `Error processing Azure Repos pull request #${prId}: ${error.message}`,
                 error,
