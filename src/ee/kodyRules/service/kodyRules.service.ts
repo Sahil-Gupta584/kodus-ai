@@ -311,6 +311,50 @@ export class KodyRulesService implements IKodyRulesService {
         return this.kodyRulesRepository.deleteRule(uuid, ruleId);
     }
 
+    async updateRulesStatusByFilter(
+        organizationId: string,
+        repositoryId: string,
+        directoryId?: string,
+        newStatus: KodyRulesStatus = KodyRulesStatus.DELETED,
+    ): Promise<KodyRulesEntity | null> {
+        try {
+            const result = await this.kodyRulesRepository.updateRulesStatusByFilter(
+                organizationId,
+                repositoryId,
+                directoryId,
+                newStatus,
+            );
+
+            if (result) {
+                this.logger.log({
+                    message: 'Kody rules status updated successfully by filter',
+                    context: KodyRulesService.name,
+                    metadata: {
+                        organizationId,
+                        repositoryId,
+                        directoryId,
+                        newStatus,
+                    },
+                });
+            }
+
+            return result;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error updating Kody rules status by filter',
+                context: KodyRulesService.name,
+                error: error,
+                metadata: {
+                    organizationId,
+                    repositoryId,
+                    directoryId,
+                    newStatus,
+                },
+            });
+            throw error;
+        }
+    }
+
     async deleteRuleLogically(
         uuid: string,
         ruleId: string,
