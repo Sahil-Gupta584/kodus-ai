@@ -207,6 +207,18 @@ export class CommentManagerService implements ICommentManagerService {
                     const existingBody = updatedPR?.body || '';
                     const match = existingBody.match(blockRegex);
 
+                    this.logger.log({
+                        message: `UpdateSummaryPR: ${commitBehaviour} behavior for PR#${pullRequest?.number}`,
+                        context: CommentManagerService.name,
+                        metadata: {
+                            organizationAndTeamData,
+                            pullRequestNumber: pullRequest?.number,
+                            repositoryId: repository?.id,
+                            summaryConfig,
+                            body: updatedPR?.body,
+                        },
+                    });
+
                     switch (commitBehaviour) {
                         case BehaviourForNewCommits.NONE:
                             // Do nothing
