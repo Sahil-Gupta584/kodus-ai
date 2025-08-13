@@ -70,7 +70,7 @@ export class GetPRsUseCase implements IUseCase {
     }
 
     private getLimitedPrsByRepo(pullRequests: PullRequest[]): PullRequest[] {
-        const numberOfPRsPerRepo = 5;
+        const numberOfPRsPerRepo = 20;
 
         const groupedPRsByRepo = pullRequests?.reduce(
             (acc, pr) => {
