@@ -171,13 +171,6 @@ export class KodyRulesSyncService {
             .toLowerCase();
     }
 
-    private computeAnchorFromSnippet(snippet?: string): string | undefined {
-        const norm = this.normalizeSnippet(snippet);
-        if (!norm) return undefined;
-        const hash = createHash('sha1').update(norm).digest('hex').slice(0, 16);
-        return `s=${hash}`;
-    }
-
     private extractAnchorFromSourcePath(
         sourcePath?: string,
     ): string | undefined {
@@ -186,65 +179,6 @@ export class KodyRulesSyncService {
         if (idx < 0) return undefined;
         const suffix = sourcePath.slice(idx + 1);
         return suffix || undefined;
-    }
-
-    private matchExistingUuid(
-        existing: Partial<IKodyRule>[],
-        candidate: Pick<CreateKodyRuleDto, 'title' | 'rule' | 'path'> & {
-            anchor?: string;
-        },
-    ): string | undefined {
-        if (candidate.anchor) {
-            const matchedByAnchor = existing.find((r) => {
-                const a = this.extractAnchorFromSourcePath(r.sourcePath);
-                return a && a === candidate.anchor;
-            });
-            if (matchedByAnchor?.uuid) return matchedByAnchor.uuid;
-        }
-
-        const title = this.normalizeTitle(candidate.title);
-        const ruleText = this.normalizeRuleText(candidate.rule);
-
-        const byTitle = existing.find(
-            (r) => this.normalizeTitle(r.title) === title,
-        );
-        if (byTitle?.uuid) return byTitle.uuid;
-
-        const byRule = existing.find(
-            (r) => this.normalizeRuleText(r.rule) === ruleText,
-        );
-        if (byRule?.uuid) return byRule.uuid;
-
-        if (candidate.path) {
-            const byTitleAndPath = existing.find(
-                (r) =>
-                    this.normalizeTitle(r.title) === title &&
-                    (r.path || '').toLowerCase() ===
-                        (candidate.path || '').toLowerCase(),
-            );
-            if (byTitleAndPath?.uuid) return byTitleAndPath.uuid;
-        }
-
-        // Fuzzy fallback: Jaccard similarity over token sets of rule text
-        const tokenize = (s: string) =>
-            this.normalizeRuleText(s)
-                .split(/[^a-z0-9]+/i)
-                .filter(Boolean);
-        const candTokens = new Set(tokenize(candidate.rule || ''));
-        let best: { uuid?: string; score: number } = { score: 0 };
-        for (const r of existing) {
-            const exTokens = new Set(tokenize(r.rule || ''));
-            const inter = new Set(
-                [...candTokens].filter((t) => exTokens.has(t)),
-            );
-            const union = new Set([...candTokens, ...exTokens]);
-            const score = union.size ? inter.size / union.size : 0;
-            if (score > best.score) best = { uuid: r.uuid, score };
-        }
-        // Threshold tweakable; start conservative to avoid wrong merges
-        if (best.uuid && best.score >= 0.6) return best.uuid;
-
-        return undefined;
     }
 
     async syncFromChangedFiles(params: {
@@ -316,15 +250,16 @@ export class KodyRulesSyncService {
                         ? f.previous_filename
                         : f.filename;
 
-                const contentResp = await this.codeManagementService.getRepositoryContentFile({
-                    organizationAndTeamData,
-                    repository: {
-                        id: repository.id,
-                        name: repository.name,
-                    },
-                    file: { filename: f.filename },
-                    pullRequest: pullRequestParam,
-                });
+                const contentResp =
+                    await this.codeManagementService.getRepositoryContentFile({
+                        organizationAndTeamData,
+                        repository: {
+                            id: repository.id,
+                            name: repository.name,
+                        },
+                        file: { filename: f.filename },
+                        pullRequest: pullRequestParam,
+                    });
                 // Fallbacks if the source branch was deleted on merge (e.g., GitLab):
                 // 1) Try with base as head
                 // 2) Try with default branch as head
@@ -334,12 +269,18 @@ export class KodyRulesSyncService {
                     const baseRef = pullRequestParam.base?.ref;
                     if (baseRef) {
                         try {
-                            const baseAsHead = await this.codeManagementService.getRepositoryContentFile({
-                                organizationAndTeamData,
-                                repository: { id: repository.id, name: repository.name },
-                                file: { filename: f.filename },
-                                pullRequest: { head: { ref: baseRef } },
-                            });
+                            const baseAsHead =
+                                await this.codeManagementService.getRepositoryContentFile(
+                                    {
+                                        organizationAndTeamData,
+                                        repository: {
+                                            id: repository.id,
+                                            name: repository.name,
+                                        },
+                                        file: { filename: f.filename },
+                                        pullRequest: { head: { ref: baseRef } },
+                                    },
+                                );
                             if (baseAsHead?.data?.content) {
                                 effectiveContent = baseAsHead;
                             }
@@ -349,17 +290,29 @@ export class KodyRulesSyncService {
                 if (!effectiveContent?.data?.content) {
                     // Try repository default branch as head
                     try {
-                        const defaultBranch = await this.codeManagementService.getDefaultBranch({
-                            organizationAndTeamData,
-                            repository: { id: repository.id, name: repository.name },
-                        });
-                        if (defaultBranch) {
-                            const defAsHead = await this.codeManagementService.getRepositoryContentFile({
+                        const defaultBranch =
+                            await this.codeManagementService.getDefaultBranch({
                                 organizationAndTeamData,
-                                repository: { id: repository.id, name: repository.name },
-                                file: { filename: f.filename },
-                                pullRequest: { head: { ref: defaultBranch } },
+                                repository: {
+                                    id: repository.id,
+                                    name: repository.name,
+                                },
                             });
+                        if (defaultBranch) {
+                            const defAsHead =
+                                await this.codeManagementService.getRepositoryContentFile(
+                                    {
+                                        organizationAndTeamData,
+                                        repository: {
+                                            id: repository.id,
+                                            name: repository.name,
+                                        },
+                                        file: { filename: f.filename },
+                                        pullRequest: {
+                                            head: { ref: defaultBranch },
+                                        },
+                                    },
+                                );
                             if (defAsHead?.data?.content) {
                                 effectiveContent = defAsHead;
                             }
@@ -432,19 +385,25 @@ export class KodyRulesSyncService {
                 );
 
                 try {
-                    await this.updateOrCreateCodeReviewParameterUseCase.execute({
-                        organizationAndTeamData,
-                        configValue: {
-                            kodyRules: [],
-                        } as any,
-                        repositoryId: repository.id,
-                    });
+                    await this.updateOrCreateCodeReviewParameterUseCase.execute(
+                        {
+                            organizationAndTeamData,
+                            configValue: {
+                                kodyRules: [],
+                            } as any,
+                            repositoryId: repository.id,
+                        },
+                    );
                 } catch (paramError) {
                     this.logger.error({
-                        message: 'Failed to ensure CODE_REVIEW_CONFIG after rule sync (PR files)',
+                        message:
+                            'Failed to ensure CODE_REVIEW_CONFIG after rule sync (PR files)',
                         context: KodyRulesSyncService.name,
                         error: paramError,
-                        metadata: { repositoryId: repository.id, file: f.filename },
+                        metadata: {
+                            repositoryId: repository.id,
+                            file: f.filename,
+                        },
                     });
                 }
             }
@@ -604,19 +563,25 @@ export class KodyRulesSyncService {
                 );
 
                 try {
-                    await this.updateOrCreateCodeReviewParameterUseCase.execute({
-                        organizationAndTeamData,
-                        configValue: {
-                            kodyRules: [],
-                        } as any,
-                        repositoryId: repository.id,
-                    });
+                    await this.updateOrCreateCodeReviewParameterUseCase.execute(
+                        {
+                            organizationAndTeamData,
+                            configValue: {
+                                kodyRules: [],
+                            } as any,
+                            repositoryId: repository.id,
+                        },
+                    );
                 } catch (paramError) {
                     this.logger.error({
-                        message: 'Failed to ensure CODE_REVIEW_CONFIG after rule sync (main)',
+                        message:
+                            'Failed to ensure CODE_REVIEW_CONFIG after rule sync (main)',
                         context: KodyRulesSyncService.name,
                         error: paramError,
-                        metadata: { repositoryId: repository.id, file: file.path },
+                        metadata: {
+                            repositoryId: repository.id,
+                            file: file.path,
+                        },
                     });
                 }
             }
