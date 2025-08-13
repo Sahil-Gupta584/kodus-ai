@@ -17,6 +17,11 @@ import { ActionType, ConfigLevel } from '@/config/types/general/codeReviewSettin
 import { Request } from 'express';
 import { RepositoryWithDirectoriesException } from '@/shared/infrastructure/filters/repository-with-directories.exception';
 import { DeleteByRepositoryOrDirectoryPullRequestMessagesUseCase } from '../pullRequestMessages/delete-by-repository-or-directory.use-case';
+import {
+    IKodyRulesService,
+    KODY_RULES_SERVICE_TOKEN,
+} from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
+import { KodyRulesStatus } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 
 @Injectable()
 export class DeleteRepositoryCodeReviewParameterUseCase {
@@ -28,6 +33,9 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
         private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
 
         private readonly deletePullRequestMessagesUseCase: DeleteByRepositoryOrDirectoryPullRequestMessagesUseCase,
+
+        @Inject(KODY_RULES_SERVICE_TOKEN)
+        private readonly kodyRulesService: IKodyRulesService,
 
         private readonly logger: PinoLoggerService,
 
@@ -129,8 +137,16 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
         }
 
         // Remover o repositório específico do array
-        const updatedRepositories = codeReviewConfigValue.repositories.filter(
-            (repository: any) => repository.id !== repositoryId,
+        const updatedRepositories = codeReviewConfigValue.repositories.map(
+            (repository: any) => {
+                if (repository.id === repositoryId) {
+                    return {
+                        id: repository.id,
+                        name: repository.name,
+                    };
+                }
+                return repository;
+            },
         );
 
         // Atualizar a configuração com os repositórios filtrados
@@ -173,6 +189,37 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
                     prMessageDeleted,
                 },
             });
+
+            // Atualizar status das Kody Rules do repositório para inactive
+            try {
+                const kodyRulesUpdated = await this.kodyRulesService.updateRulesStatusByFilter(
+                    organizationAndTeamData.organizationId,
+                    repositoryId,
+                    undefined,
+                    KodyRulesStatus.DELETED,
+                );
+
+                this.logger.log({
+                    message: 'Kody rules status updated for deleted repository',
+                    context: DeleteRepositoryCodeReviewParameterUseCase.name,
+                    metadata: {
+                        repositoryId,
+                        organizationAndTeamData,
+                        kodyRulesUpdated: !!kodyRulesUpdated,
+                    },
+                });
+            } catch (kodyRulesError) {
+                this.logger.error({
+                    message: 'Error updating Kody rules status for deleted repository',
+                    context: DeleteRepositoryCodeReviewParameterUseCase.name,
+                    error: kodyRulesError,
+                    metadata: {
+                        repositoryId,
+                        organizationAndTeamData,
+                    },
+                });
+                // Não falhar o processo principal se houver erro nas Kody Rules
+            }
 
             this.codeReviewSettingsLogService.registerRepositoryConfigurationRemoval(
                 {
@@ -295,6 +342,39 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
                     prMessageDeleted,
                 },
             });
+
+            // Atualizar status das Kody Rules do diretório para inactive
+            try {
+                const kodyRulesUpdated = await this.kodyRulesService.updateRulesStatusByFilter(
+                    organizationAndTeamData.organizationId,
+                    repositoryId,
+                    directoryId,
+                    KodyRulesStatus.DELETED,
+                );
+
+                this.logger.log({
+                    message: 'Kody rules status updated for deleted directory',
+                    context: DeleteRepositoryCodeReviewParameterUseCase.name,
+                    metadata: {
+                        repositoryId,
+                        directoryId,
+                        organizationAndTeamData,
+                        kodyRulesUpdated: !!kodyRulesUpdated,
+                    },
+                });
+            } catch (kodyRulesError) {
+                this.logger.error({
+                    message: 'Error updating Kody rules status for deleted directory',
+                    context: DeleteRepositoryCodeReviewParameterUseCase.name,
+                    error: kodyRulesError,
+                    metadata: {
+                        repositoryId,
+                        directoryId,
+                        organizationAndTeamData,
+                    },
+                });
+                // Não falhar o processo principal se houver erro nas Kody Rules
+            }
 
             // Log específico de remoção de diretório
             await this.codeReviewSettingsLogService.registerDirectoryConfigurationRemoval(
