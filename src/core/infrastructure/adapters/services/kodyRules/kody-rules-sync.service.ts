@@ -27,6 +27,10 @@ import {
 import { createHash } from 'crypto';
 import { UpdateOrCreateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/update-or-create-code-review-parameter-use-case';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
+import {
+    IParametersService,
+    PARAMETERS_SERVICE_TOKEN,
+} from '@/core/domain/parameters/contracts/parameters.service.contract';
 
 type SyncTarget = {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -49,6 +53,8 @@ export class KodyRulesSyncService {
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
+        @Inject(PARAMETERS_SERVICE_TOKEN)
+        private readonly parametersService: IParametersService,
     ) {}
 
     private async findRuleBySourcePath(params: {
@@ -258,6 +264,18 @@ export class KodyRulesSyncService {
             files,
         } = params;
         try {
+            const syncEnabled = await this.isIdeRulesSyncEnabled(
+                organizationAndTeamData,
+            );
+            if (!syncEnabled) {
+                this.logger.log({
+                    message: 'IDE rules sync disabled by CODE_REVIEW_CONFIG',
+                    context: KodyRulesSyncService.name,
+                    metadata: { repositoryId: repository.id },
+                });
+                return;
+            }
+
             const prDetails =
                 await this.codeManagementService.getPullRequestByNumber({
                     organizationAndTeamData,
@@ -443,6 +461,18 @@ export class KodyRulesSyncService {
     async syncRepositoryMain(params: SyncTarget): Promise<void> {
         const { organizationAndTeamData, repository } = params;
         try {
+            const syncEnabled = await this.isIdeRulesSyncEnabled(
+                organizationAndTeamData,
+            );
+            if (!syncEnabled) {
+                this.logger.log({
+                    message: 'IDE rules sync disabled by CODE_REVIEW_CONFIG',
+                    context: KodyRulesSyncService.name,
+                    metadata: { repositoryId: repository.id },
+                });
+                return;
+            }
+
             const branch = await this.codeManagementService.getDefaultBranch({
                 organizationAndTeamData,
                 repository,
@@ -597,6 +627,21 @@ export class KodyRulesSyncService {
                 error,
                 metadata: params,
             });
+        }
+    }
+
+    private async isIdeRulesSyncEnabled(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<boolean> {
+        try {
+            const cfg = await this.parametersService.findByKey(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                organizationAndTeamData,
+            );
+            const enabled = cfg?.configValue?.global?.ideRulesSyncEnabled;
+            return enabled !== false;
+        } catch {
+            return true;
         }
     }
 
