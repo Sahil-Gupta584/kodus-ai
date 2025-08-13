@@ -1,4 +1,5 @@
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { PullRequest } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
@@ -33,8 +34,8 @@ export class GetPRsUseCase implements IUseCase {
             const today = new Date(Date.now());
 
             const defaultFilter = {
-                startDate: thirtyDaysAgo.toISOString().split('T')[0],
-                endDate: today.toISOString().split('T')[0],
+                startDate: thirtyDaysAgo,
+                endDate: today,
             };
 
             const pullRequests =
@@ -68,34 +69,37 @@ export class GetPRsUseCase implements IUseCase {
         }
     }
 
-    private getLimitedPrsByRepo(pullRequests: any[]) {
-        const numberOfPRsPerRepo = 5;
+    private getLimitedPrsByRepo(pullRequests: PullRequest[]): PullRequest[] {
+        const numberOfPRsPerRepo = 20;
 
-        const groupedPRsByRepo = pullRequests?.reduce((acc, pr) => {
-            if (!acc[pr.repository]) {
-                acc[pr.repository] = [];
-            }
+        const groupedPRsByRepo = pullRequests?.reduce(
+            (acc, pr) => {
+                if (!acc[pr.repositoryData.name]) {
+                    acc[pr.repositoryData.name] = [];
+                }
 
-            acc[pr.repository].push(pr);
-            return acc;
-        }, {});
+                acc[pr.repositoryData.name].push(pr);
+                return acc;
+            },
+            {} as Record<string, PullRequest[]>,
+        );
 
-        const filteredPRs = [];
+        const filteredPRs = [] as PullRequest[];
 
-        Object.values(groupedPRsByRepo).forEach((repoPRs: any[]) => {
+        Object.values(groupedPRsByRepo).forEach((repoPRs) => {
             filteredPRs.push(...repoPRs.splice(0, numberOfPRsPerRepo));
         });
 
         return filteredPRs;
     }
 
-    private getFilteredPRs(pullRequests: any[]) {
+    private getFilteredPRs(pullRequests: PullRequest[]) {
         const filteredPrs = pullRequests.map((pr) => {
-            const id = pr?.project_id || pr?.repositoryId || pr.id;
+            const id = pr?.id ?? pr?.repositoryData.id;
             return {
                 id,
-                repository: pr.repository,
-                pull_number: pr.pull_number,
+                repository: pr.repositoryData,
+                pull_number: pr.number,
                 title: pr?.message || pr?.title,
                 url: pr.prURL,
             };

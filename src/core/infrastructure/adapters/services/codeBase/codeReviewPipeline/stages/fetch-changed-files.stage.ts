@@ -1,14 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { BasePipelineStage } from '../../../pipeline/base-stage.abstract';
 import {
-    AUTOMATION_EXECUTION_SERVICE_TOKEN,
-    IAutomationExecutionService,
-} from '@/core/domain/automation/contracts/automation-execution.service';
-import {
     IPullRequestManagerService,
     PULL_REQUEST_MANAGER_SERVICE_TOKEN,
 } from '@/core/domain/codeBase/contracts/PullRequestManagerService.contract';
-import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
 import { PipelineStatus } from '../../../pipeline/interfaces/pipeline-context.interface';
 import { PinoLoggerService } from '../../../logger/pino.service';
@@ -25,11 +20,8 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
     private maxFilesToAnalyze = 500;
 
     constructor(
-        @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
-        private automationExecutionService: IAutomationExecutionService,
         @Inject(PULL_REQUEST_MANAGER_SERVICE_TOKEN)
         private pullRequestHandlerService: IPullRequestManagerService,
-
         private logger: PinoLoggerService,
     ) {
         super();
@@ -38,11 +30,26 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
     protected async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
+        if (!context.codeReviewConfig) {
+            this.logger.error({
+                message: 'No config found in context',
+                context: this.stageName,
+                metadata: {
+                    prNumber: context?.pullRequest?.number,
+                    repositoryName: context?.repository?.name,
+                },
+            });
+
+            return this.updateContext(context, (draft) => {
+                draft.status = PipelineStatus.SKIP;
+            });
+        }
+
         const files = await this.pullRequestHandlerService.getChangedFiles(
             context.organizationAndTeamData,
             context.repository,
             context.pullRequest,
-            context?.codeReviewConfig?.ignorePaths,
+            context.codeReviewConfig.ignorePaths,
             context?.lastExecution?.lastAnalyzedCommit,
         );
 
@@ -52,12 +59,25 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
                 context: FetchChangedFilesStage.name,
                 metadata: {
                     organizationAndTeamData: context?.organizationAndTeamData,
+                    filesCount: files?.length || 0,
+                    ignorePaths: context.codeReviewConfig.ignorePaths,
                 },
             });
             return this.updateContext(context, (draft) => {
                 draft.status = PipelineStatus.SKIP;
             });
         }
+
+        this.logger.log({
+            message: `Found ${files.length} files to analyze for PR#${context.pullRequest.number}`,
+            context: this.stageName,
+            metadata: {
+                organizationAndTeamData: context.organizationAndTeamData,
+                repository: context.repository.name,
+                pullRequestNumber: context.pullRequest.number,
+                filesCount: files.length,
+            },
+        });
 
         const filesWithLineNumbers = this.prepareFilesWithLineNumbers(files);
 

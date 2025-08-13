@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { ITool, ToolExecutionContext } from '../../interfaces/ITool.interface';
 import { IToolResult } from '@/core/domain/agents/interfaces/toolResult.interface';
-import { PullRequests } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { CodeManagementService } from '../../../../platformIntegration/codeManagement.service';
 import { STRING_TIME_INTERVAL } from '@/core/domain/integrationConfigs/enums/stringTimeInterval.enum';
 import * as moment from 'moment-timezone';
 import { PinoLoggerService } from '../../../../logger/pino.service';
+import { PullRequest } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 
 const toolDefinition = {
     tool_name: 'GetPullRequestsTool',
@@ -194,7 +194,7 @@ export class GetPullRequestsTool implements ITool<any, IToolResult> {
         }
     }
 
-    private formatReturnToPrompt(pullRequests: PullRequests[]): string {
+    private formatReturnToPrompt(pullRequests: PullRequest[]): string {
         return `Pull Requests:\n${JSON.stringify(pullRequests)}`;
     }
 

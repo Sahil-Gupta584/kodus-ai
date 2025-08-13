@@ -14,6 +14,7 @@ import { PlatformIntegrationModule } from './platformIntegration.module';
 import { IntegrationModule } from './integration.module';
 import { GenerateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/generate-code-review-paremeter.use-case';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
+import { PullRequestMessagesModule } from './pullRequestMessages.module';
 
 @Module({
     imports: [
@@ -23,6 +24,7 @@ import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
         forwardRef(() => PlatformIntegrationModule),
         forwardRef(() => IntegrationModule),
         forwardRef(() => CodeReviewSettingsLogModule),
+        forwardRef(() => PullRequestMessagesModule),
     ],
     providers: [
         ...UseCases,

@@ -36,6 +36,7 @@ interface Body {
     organizationAndTeamData: OrganizationAndTeamData;
     configValue: any;
     repositoryId?: string;
+    directoryId?: string;
 }
 
 interface ICodeRepository {
@@ -48,18 +49,22 @@ interface ICodeRepository {
     organizationName: string;
     selected: string;
     visibility: 'private' | 'public';
+    directories: Array<any>;
 }
 
 interface IFilteredCodeRepository {
     id: string;
     name: string;
     isSelected: boolean;
+    directories: Array<any>;
+    directoryId?: string;
 }
 
 interface IRepositoryCodeReviewConfig
     extends CodeReviewConfigWithoutLLMProvider {
     id: string;
     name: string;
+    directories: Array<any>;
 }
 interface ICodeReviewParameter {
     global: CodeReviewConfigWithoutLLMProvider;
@@ -92,7 +97,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
     async execute(body: Body): Promise<ParametersEntity | boolean> {
         try {
-            const { organizationAndTeamData, configValue, repositoryId } = body;
+            const { organizationAndTeamData, configValue, repositoryId, directoryId } = body;
 
             if (!organizationAndTeamData.organizationId) {
                 organizationAndTeamData.organizationId =
@@ -121,23 +126,154 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 filteredRepositoryInfo,
             );
 
-            if (!repositoryId) {
-                return await this.updateGlobalConfig(
+            // Se tem directoryId, atualiza configuração de diretório
+            if (directoryId) {
+                return await this.updateDirectoryConfig(
                     organizationAndTeamData,
                     codeReviewConfigs,
+                    repositoryId,
+                    directoryId,
                     configValue,
                 );
             }
 
-            return await this.updateSpecificRepositoryConfig(
+            // Se tem repositoryId, atualiza configuração de repositório
+            if (repositoryId) {
+                return await this.updateSpecificRepositoryConfig(
+                    organizationAndTeamData,
+                    codeReviewConfigs,
+                    repositoryId,
+                    configValue,
+                );
+            }
+
+            // Senão, atualiza configuração global
+            return await this.updateGlobalConfig(
                 organizationAndTeamData,
                 codeReviewConfigs,
-                repositoryId,
                 configValue,
             );
         } catch (error) {
             this.handleError(error, body);
             throw new Error('Error creating or updating parameters');
+        }
+    }
+
+    private async updateDirectoryConfig(
+        organizationAndTeamData: OrganizationAndTeamData,
+        codeReviewConfigs: ICodeReviewParameter,
+        repositoryId: string,
+        directoryId: string,
+        configValue: CodeReviewConfigWithoutLLMProvider,
+    ) {
+        const targetRepository = codeReviewConfigs.repositories.find(
+            (repository: any) => repository.id === repositoryId,
+        );
+
+        if (!targetRepository || !targetRepository.directories) {
+            throw new Error('Repository or directories not found');
+        }
+
+        const currentDirectoryConfig = targetRepository.directories.find(
+            (directory: any) => directory.id === directoryId,
+        );
+
+        if (!currentDirectoryConfig) {
+            throw new Error('Directory configuration not found');
+        }
+
+        const updatedDirectories = targetRepository.directories.map(
+            (directory: any) => {
+                if (directory.id === directoryId) {
+                    return {
+                        ...directory,
+                        ...configValue,
+                        summary: {
+                            ...this.getDefaultPRSummaryConfig(),
+                            ...directory.summary,
+                            ...configValue?.summary,
+                        },
+                        suggestionControl: {
+                            ...this.getDefaultSuggestionControlConfig(),
+                            ...directory.suggestionControl,
+                            ...configValue?.suggestionControl,
+                        },
+                        isSelected: true,
+                    };
+                }
+                return directory;
+            },
+        );
+
+        const updatedRepositories = codeReviewConfigs.repositories.map(
+            (repository: any) => {
+                if (repository.id === repositoryId) {
+                    return {
+                        ...repository,
+                        directories: updatedDirectories,
+                    };
+                }
+                return repository;
+            },
+        );
+
+        const updatedCodeReviewConfigValue = {
+            repositories: updatedRepositories,
+            global: codeReviewConfigs.global,
+        };
+
+        await this.parametersService.createOrUpdateConfig(
+            ParametersKey.CODE_REVIEW_CONFIG,
+            updatedCodeReviewConfigValue,
+            organizationAndTeamData,
+        );
+
+        await this.logDirectoryUpdate(
+            organizationAndTeamData,
+            currentDirectoryConfig,
+            configValue,
+            targetRepository,
+        );
+
+        return true;
+    }
+
+    private async logDirectoryUpdate(
+        organizationAndTeamData: OrganizationAndTeamData,
+        currentDirectoryConfig: any,
+        newConfig: CodeReviewConfigWithoutLLMProvider,
+        repository: any,
+    ) {
+        try {
+            this.codeReviewSettingsLogService.registerCodeReviewConfigLog({
+                organizationAndTeamData,
+                userInfo: {
+                    userId: this.request.user.uuid,
+                    userEmail: this.request.user.email,
+                },
+                oldConfig: currentDirectoryConfig,
+                newConfig: newConfig,
+                actionType: ActionType.EDIT,
+                configLevel: ConfigLevel.DIRECTORY,
+                repository: {
+                    id: repository.id,
+                    name: repository.name,
+                },
+                directory: {
+                    id: currentDirectoryConfig.id,
+                    path: currentDirectoryConfig.path,
+                },
+            });
+        } catch (error) {
+            this.logger.error({
+                message: 'Error saving code review settings log for directory',
+                error: error,
+                context: UpdateOrCreateCodeReviewParameterUseCase.name,
+                metadata: {
+                    organizationAndTeamData: organizationAndTeamData,
+                    functionName: 'updateDirectoryConfig',
+                },
+            });
         }
     }
 
@@ -191,6 +327,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             id: repository.id,
             name: repository.name,
             isSelected: false,
+            directories: repository.directories,
         }));
     }
 

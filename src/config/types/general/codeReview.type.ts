@@ -9,6 +9,7 @@ import { LLMModelProvider } from '@kodus/kodus-common/llm';
 import { GetImpactAnalysisResponse } from '@kodus/kodus-proto/ast';
 import { TaskStatus } from '@kodus/kodus-proto/task';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { ConfigLevel } from './pullRequestMessages.type';
 
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
@@ -287,6 +288,9 @@ export type CodeReviewConfig = {
     reviewModeConfig?: ReviewModeConfig;
     kodyFineTuningConfig?: KodyFineTuningConfig;
     isCommitMode?: boolean;
+    configLevel?: ConfigLevel;
+    directoryId?: string;
+    directoryPath?: string;
 };
 
 export type CodeReviewConfigWithoutLLMProvider = Omit<

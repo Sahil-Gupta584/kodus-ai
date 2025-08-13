@@ -1,15 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { BasePipelineStage } from '../../../pipeline/base-stage.abstract';
 import {
-    CODE_BASE_CONFIG_SERVICE_TOKEN,
-    ICodeBaseConfigService,
-} from '@/core/domain/codeBase/contracts/CodeBaseConfigService.contract';
-import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,
     IAutomationExecutionService,
 } from '@/core/domain/automation/contracts/automation-execution.service';
 import {
-    CodeReviewConfig,
     AutomaticReviewStatus,
     ReviewCadenceType,
     ReviewCadenceState,
@@ -25,12 +20,8 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
     stageName = 'ValidateConfigStage';
 
     constructor(
-        @Inject(CODE_BASE_CONFIG_SERVICE_TOKEN)
-        private codeBaseConfigService: ICodeBaseConfigService,
-
         @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
         private automationExecutionService: IAutomationExecutionService,
-
         private codeManagementService: CodeManagementService,
         private logger: PinoLoggerService,
     ) {
@@ -41,13 +32,22 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
         try {
-            const config: CodeReviewConfig =
-                await this.codeBaseConfigService.getConfig(
-                    context.organizationAndTeamData,
-                    { name: context.repository.name, id: context.repository.id },
-                );
+            if (!context.codeReviewConfig) {
+                this.logger.error({
+                    message: 'No config found in context',
+                    context: this.stageName,
+                    metadata: {
+                        prNumber: context?.pullRequest?.number,
+                        repositoryName: context?.repository?.name,
+                    },
+                });
 
-            const cadenceResult = await this.evaluateReviewCadence(context, config);
+                return this.updateContext(context, (draft) => {
+                    draft.status = PipelineStatus.SKIP;
+                });
+            }
+
+            const cadenceResult = await this.evaluateReviewCadence(context);
 
             if (!cadenceResult.shouldProcess) {
                 this.logger.warn({
@@ -58,31 +58,29 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                         prNumber: context?.pullRequest?.number,
                         repositoryName: context?.repository?.name,
                         id: context?.repository?.id,
-                        organizationAndTeamData: context?.organizationAndTeamData,
+                        organizationAndTeamData:
+                            context?.organizationAndTeamData,
                         reviewCadence:
-                            config?.reviewCadence?.type ||
+                            context.codeReviewConfig?.reviewCadence?.type ||
                             ReviewCadenceType.AUTOMATIC,
                     },
                 });
 
-                // Se foi pausado por auto_pause, registrar execução SKIPPED
                 if (cadenceResult.shouldSaveSkipped) {
                     await this.saveSkippedExecution(
                         context,
-                        config,
                         cadenceResult.automaticReviewStatus,
                     );
                 }
 
                 return this.updateContext(context, (draft) => {
                     draft.status = PipelineStatus.SKIP;
-                    draft.codeReviewConfig = config;
                 });
             }
 
             return this.updateContext(context, (draft) => {
-                draft.codeReviewConfig = config;
-                draft.automaticReviewStatus = cadenceResult.automaticReviewStatus;
+                draft.automaticReviewStatus =
+                    cadenceResult.automaticReviewStatus;
             });
         } catch (error) {
             this.logger.error({
@@ -96,28 +94,22 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 },
             });
 
-            const config: CodeReviewConfig =
-            await this.codeBaseConfigService.getConfig(
-                context.organizationAndTeamData,
-                { name: context.repository.name, id: context.repository.id },
-            );
-
             return this.updateContext(context, (draft) => {
                 draft.status = PipelineStatus.SKIP;
-                draft.codeReviewConfig = config;
             });
         }
     }
 
     private async evaluateReviewCadence(
         context: CodeReviewPipelineContext,
-        config: CodeReviewConfig,
     ): Promise<{
         shouldProcess: boolean;
         reason: string;
         shouldSaveSkipped: boolean;
         automaticReviewStatus?: AutomaticReviewStatus;
     }> {
+        const config = context.codeReviewConfig!;
+
         // Validações básicas primeiro
         const basicValidation = this.shouldProcessPR(
             context.pullRequest.title,
@@ -134,7 +126,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             };
         }
 
-        // Se reviewCadence não está configurado, assume automatic (retrocompatibilidade)
         const cadenceType =
             config?.reviewCadence?.type || ReviewCadenceType.AUTOMATIC;
 
@@ -177,7 +168,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 return await this.handleAutoPauseMode(context, config);
 
             default:
-                // Fallback para automatic
                 return await this.handleAutomaticMode(context);
         }
     }
@@ -190,7 +180,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         shouldSaveSkipped: boolean;
         automaticReviewStatus?: AutomaticReviewStatus;
     }> {
-        // Modo automático: sempre processa (comportamento atual)
         return {
             shouldProcess: true,
             reason: 'Processing in automatic mode',
@@ -210,12 +199,10 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         shouldSaveSkipped: boolean;
         automaticReviewStatus?: AutomaticReviewStatus;
     }> {
-        // Verificar se já existe review para este PR
         const hasExistingReview =
             await this.hasExistingSuccessfulReview(context);
 
         if (!hasExistingReview) {
-            // Primeira review: sempre processa
             return {
                 shouldProcess: true,
                 reason: 'Processing first review in manual mode',
@@ -229,7 +216,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
 
         const currentStatus = await this.getCurrentPRStatus(context);
 
-        // Já existe review: só processa com comando manual
         return {
             shouldProcess: false,
             reason: `PR #${context.pullRequest.number} skipped - manual mode requires @kody start-review command`,
@@ -243,19 +229,17 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
 
     private async handleAutoPauseMode(
         context: CodeReviewPipelineContext,
-        config: CodeReviewConfig,
+        config: any,
     ): Promise<{
         shouldProcess: boolean;
         reason: string;
         shouldSaveSkipped: boolean;
         automaticReviewStatus?: AutomaticReviewStatus;
     }> {
-        // Verificar se já existe review para este PR
         const hasExistingReview =
             await this.hasExistingSuccessfulReview(context);
 
         if (!hasExistingReview) {
-            // Primeira review: sempre processa
             return {
                 shouldProcess: true,
                 reason: 'Processing first review in auto-pause mode',
@@ -267,7 +251,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             };
         }
 
-        // Verificar se está pausado
         const currentStatus = await this.getCurrentPRStatus(context);
         if (currentStatus === ReviewCadenceState.PAUSED) {
             return {
@@ -281,11 +264,9 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             };
         }
 
-        // Verificar se deve pausar por burst de pushes
         const shouldPause = await this.shouldPauseForBurst(context, config);
 
         if (shouldPause) {
-            // Criar comentário de pausa
             const pauseCommentId = await this.createPauseComment(context);
 
             return {
@@ -302,7 +283,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             };
         }
 
-        // Continua processando normalmente
         return {
             shouldProcess: true,
             reason: 'Processing in auto-pause mode',
@@ -331,7 +311,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
     private async getCurrentPRStatus(
         context: CodeReviewPipelineContext,
     ): Promise<ReviewCadenceState> {
-        // Buscar a execução mais recente para determinar o status atual
         const latestExecution =
             await this.automationExecutionService.findLatestExecutionByFilters({
                 teamAutomation: { uuid: context.teamAutomationId },
@@ -351,19 +330,16 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
 
     private async shouldPauseForBurst(
         context: CodeReviewPipelineContext,
-        config: CodeReviewConfig,
+        config: any,
     ): Promise<boolean> {
         const pushesToTrigger = config.reviewCadence?.pushesToTrigger || 3;
         const timeWindowMinutes = config.reviewCadence?.timeWindow || 15;
 
-        // Buscar execuções SUCCESS recentes
         const timeWindowStart = new Date();
         timeWindowStart.setMinutes(
             timeWindowStart.getMinutes() - timeWindowMinutes,
         );
 
-        // Para isso funcionar, precisaria modificar o método findLatestExecutionByFilters
-        // para aceitar filtro de data. Por agora, vou simular a lógica
         const recentExecutions = await this.getRecentSuccessfulExecutions(
             context,
             timeWindowStart,
@@ -385,25 +361,14 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                     context.teamAutomationId,
                 );
 
-            if (!executions) {
+            if (
+                !executions ||
+                !context?.repository?.id ||
+                !context?.pullRequest?.number
+            ) {
                 return [];
             }
 
-            if (!context?.repository?.id || !context?.pullRequest?.number) {
-                this.logger.warn({
-                    message:
-                        'Repository ID or PR number is missing, cannot get recent executions.',
-                    context: ValidateConfigStage.name,
-                    metadata: {
-                        organizationAndTeamData:
-                            context.organizationAndTeamData,
-                        prNumber: context.pullRequest.number,
-                    },
-                });
-                return [];
-            }
-
-            // Filtrar apenas execuções SUCCESS para o mesmo PR e repositório
             return executions?.filter(
                 (execution) =>
                     execution.status === AutomationStatus.SUCCESS &&
@@ -416,11 +381,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 message: `Failed to get recent executions for PR #${context.pullRequest.number}`,
                 context: ValidateConfigStage.name,
                 error,
-                metadata: {
-                    organizationAndTeamData: context.organizationAndTeamData,
-                    prNumber: context.pullRequest.number,
-                    repositoryId: context.repository?.id,
-                },
             });
             return [];
         }
@@ -441,27 +401,12 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                     body: commentBody,
                 });
 
-            this.logger.log({
-                message: `Created pause comment for PR #${context.pullRequest.number}`,
-                context: ValidateConfigStage.name,
-                metadata: {
-                    prNumber: context.pullRequest.number,
-                    repositoryName: context.repository.name,
-                    commentId: comment?.id,
-                },
-            });
-
             return comment?.id || null;
         } catch (error) {
             this.logger.error({
                 message: `Failed to create pause comment for PR #${context.pullRequest.number}`,
                 context: ValidateConfigStage.name,
                 error,
-                metadata: {
-                    organizationAndTeamData: context.organizationAndTeamData,
-                    prNumber: context.pullRequest.number,
-                    repositoryId: context.repository?.id,
-                },
             });
             return null;
         }
@@ -469,7 +414,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
 
     private async saveSkippedExecution(
         context: CodeReviewPipelineContext,
-        config: CodeReviewConfig,
         automaticReviewStatus?: AutomaticReviewStatus,
     ): Promise<void> {
         try {
@@ -491,11 +435,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 message: `Failed to save skipped execution for PR #${context.pullRequest.number}`,
                 context: ValidateConfigStage.name,
                 error,
-                metadata: {
-                    organizationAndTeamData: context.organizationAndTeamData,
-                    prNumber: context.pullRequest.number,
-                    repositoryId: context.repository?.id,
-                },
             });
         }
     }
@@ -503,7 +442,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
     private shouldProcessPR(
         title: string,
         baseBranch: string,
-        config: CodeReviewConfig,
+        config: any,
         origin: string,
     ): boolean {
         if (origin === 'command') {
@@ -515,7 +454,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         }
 
         if (
-            config?.ignoredTitleKeywords?.some((keyword) =>
+            config?.ignoredTitleKeywords?.some((keyword: string) =>
                 title?.toLowerCase().includes(keyword.toLowerCase()),
             )
         ) {

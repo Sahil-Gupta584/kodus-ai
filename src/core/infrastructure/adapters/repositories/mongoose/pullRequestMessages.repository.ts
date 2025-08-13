@@ -42,6 +42,19 @@ export class PullRequestMessagesRepository
         await this.pullRequestMessagesModel.findByIdAndDelete(uuid);
     }
 
+    async deleteByFilter(filter: Partial<IPullRequestMessages>): Promise<boolean> {
+        if (!filter || Object.keys(filter).length === 0) {
+            return false;
+        }
+
+        if (!filter.organizationId && !filter.repositoryId && !filter.configLevel) {
+            throw new Error('OrganizationId, repositoryId and configLevel are required');
+        }
+
+        const result = await this.pullRequestMessagesModel.findOneAndDelete(filter).select({ _id: 1 });
+        return result !== null;
+    }
+
     async find(
         filter?: Partial<IPullRequestMessages>,
     ): Promise<PullRequestMessagesEntity[]> {

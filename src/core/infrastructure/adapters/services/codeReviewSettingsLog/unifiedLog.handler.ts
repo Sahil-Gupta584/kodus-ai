@@ -9,6 +9,8 @@ import {
     UserInfo,
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
+import { PinoLoggerService } from '../logger/pino.service';
 
 export interface ChangedDataToExport {
     actionDescription: string;
@@ -23,6 +25,7 @@ export interface BaseLogParams {
     actionType: ActionType;
     configLevel?: ConfigLevel;
     repository?: { id: string; name?: string };
+    directory?: { id: string; path?: string };
 }
 
 export interface UnifiedLogParams extends BaseLogParams {
@@ -38,6 +41,8 @@ export class UnifiedLogHandler {
     constructor(
         @Inject(CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN)
         private readonly codeReviewSettingsLogRepository: ICodeReviewSettingsLogRepository,
+        private readonly getAdditionalInfoHelper: GetAdditionalInfoHelper,
+        private readonly logger: PinoLoggerService,
     ) {}
 
     public async logAction(params: UnifiedLogParams): Promise<void> {
@@ -47,6 +52,7 @@ export class UnifiedLogHandler {
             actionType,
             configLevel,
             repository,
+            directory,
             entityType,
             entityName,
             oldData,
@@ -65,6 +71,45 @@ export class UnifiedLogHandler {
                 userInfo,
             });
 
+        try {
+            if (configLevel === ConfigLevel.REPOSITORY && !repository?.name) {
+                repository.name = await this.getRepositoryAdditionalInfo(
+                    repository?.id,
+                    organizationAndTeamData.organizationId,
+                );
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting repository additional info',
+                context: UnifiedLogHandler.name,
+                error: error,
+            });
+
+            if (repository) {
+                repository.name = 'Unknown';
+            }
+        }
+
+        try {
+            if (configLevel === ConfigLevel.DIRECTORY && !directory?.path) {
+                directory.path = await this.getDirectoryAdditionalInfo(
+                    directory?.id,
+                    repository?.id,
+                    organizationAndTeamData.organizationId,
+                );
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting directory additional info',
+                context: UnifiedLogHandler.name,
+                error: error,
+            });
+
+            if (directory) {
+                directory.path = 'Unknown';
+            }
+        }
+
         await this.codeReviewSettingsLogRepository.create({
             organizationId: organizationAndTeamData.organizationId,
             teamId: organizationAndTeamData.teamId,
@@ -75,6 +120,7 @@ export class UnifiedLogHandler {
             },
             configLevel,
             repository,
+            directory,
             changedData,
         });
     }
@@ -88,8 +134,46 @@ export class UnifiedLogHandler {
             actionType,
             configLevel,
             repository,
+            directory,
             changedData,
         } = params;
+
+        try {
+            if (configLevel === ConfigLevel.REPOSITORY && !repository?.name) {
+                repository.name = await this.getRepositoryAdditionalInfo(
+                    repository?.id,
+                    organizationAndTeamData.organizationId,
+                );
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting repository additional info',
+                context: UnifiedLogHandler.name,
+                error: error,
+            });
+            if (repository) {
+                repository.name = 'Unknown';
+            }
+        }
+
+        try {
+            if (configLevel === ConfigLevel.DIRECTORY && !directory?.path) {
+                directory.path = await this.getDirectoryAdditionalInfo(
+                    directory?.id,
+                    repository?.id,
+                    organizationAndTeamData.organizationId,
+                );
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting directory additional info',
+                context: UnifiedLogHandler.name,
+                error: error,
+            });
+            if (directory) {
+                directory.path = 'Unknown';
+            }
+        }
 
         await this.codeReviewSettingsLogRepository.create({
             organizationId: organizationAndTeamData.organizationId,
@@ -101,6 +185,7 @@ export class UnifiedLogHandler {
             },
             configLevel,
             repository,
+            directory,
             changedData,
         });
     }
@@ -261,10 +346,77 @@ export class UnifiedLogHandler {
         return String(value);
     }
 
-    public static determineConfigLevel(repositoryId?: string): ConfigLevel {
-        if (!repositoryId || repositoryId === 'global') {
-            return ConfigLevel.GLOBAL;
+    private async getDirectoryAdditionalInfo(
+        directoryId: string,
+        repositoryId: string,
+        organizationId: string,
+        directoryPathParam?: string,
+    ): Promise<string> {
+        if (!directoryId || !repositoryId || !organizationId) {
+            return '';
         }
-        return ConfigLevel.REPOSITORY;
+
+        let directoryPath = '';
+
+        if (!directoryPathParam) {
+            directoryPath = await this.getDirectoryPath(
+                directoryId,
+                repositoryId,
+                organizationId,
+            );
+        } else {
+            directoryPath = directoryPathParam;
+        }
+
+        return directoryPath;
+    }
+
+    private async getRepositoryAdditionalInfo(
+        repositoryId: string,
+        organizationId: string,
+        repositoryNameParam?: string,
+    ): Promise<string> {
+        if (!repositoryId || !organizationId) {
+            return '';
+        }
+
+        let repositoryName = '';
+
+        if (!repositoryNameParam) {
+            repositoryName = await this.getRepositoryName(
+                repositoryId,
+                organizationId,
+            );
+        } else {
+            repositoryName = repositoryNameParam;
+        }
+
+        return repositoryName;
+    }
+
+    private async getDirectoryPath(
+        directoryId: string,
+        repositoryId: string,
+        organizationId: string,
+    ): Promise<string> {
+        const directoryPath =
+            await this.getAdditionalInfoHelper.getDirectoryPathByOrganizationAndRepository(
+                organizationId,
+                repositoryId,
+                directoryId,
+            );
+        return directoryPath;
+    }
+
+    private async getRepositoryName(
+        repositoryId: string,
+        organizationId: string,
+    ): Promise<string> {
+        const repositoryName =
+            await this.getAdditionalInfoHelper.getRepositoryNameByOrganizationAndRepository(
+                organizationId,
+                repositoryId,
+            );
+        return repositoryName;
     }
 }

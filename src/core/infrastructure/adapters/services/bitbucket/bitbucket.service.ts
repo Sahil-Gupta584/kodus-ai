@@ -3,7 +3,6 @@ import { IBitbucketService } from '@/core/domain/bitbucket/contracts/bitbucket.s
 import { IntegrationConfigEntity } from '@/core/domain/integrationConfigs/entities/integration-config.entity';
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
 import {
-    PullRequests,
     PullRequestWithFiles,
     PullRequestCodeReviewTime,
     PullRequestFile,
@@ -13,6 +12,7 @@ import {
     PullRequestReviewState,
     ReactionsInComments,
     PullRequestAuthor,
+    PullRequest,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
@@ -71,6 +71,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { AuthorContribution } from '@/core/domain/pullRequests/interfaces/authorContributor.interface';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
+import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
+import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -87,7 +89,6 @@ export class BitbucketService
             | 'getDataForCalculateDeployFrequency'
             | 'getCommitsByReleaseMode'
             | 'getAuthenticationOAuthToken'
-            | 'getRepositoryAllFiles'
         >
 {
     constructor(
@@ -123,8 +124,8 @@ export class BitbucketService
             const pullRequests = await this.getPullRequests({
                 organizationAndTeamData: params.organizationAndTeamData,
                 filters: {
-                    startDate: endDate.toISOString(), // Reversing the dates to fetch the last 15 days
-                    endDate: startDate.toISOString(),
+                    startDate: endDate, // Reversing the dates to fetch the last 15 days
+                    endDate: startDate,
                 },
             });
 
@@ -132,8 +133,8 @@ export class BitbucketService
             const authorContributions = pullRequests.reduce<
                 Record<string, AuthorContribution>
             >((acc, pr) => {
-                const authorId = pr.author_id;
-                const authorName = pr.author_name;
+                const authorId = pr.user.id;
+                const authorName = pr.user.name || pr.user.login || pr.user.id;
 
                 if (!authorId) {
                     this.logger.warn({
@@ -142,7 +143,7 @@ export class BitbucketService
                         metadata: {
                             organizationAndTeamData:
                                 params?.organizationAndTeamData,
-                            pullRequest: pr?.pull_number,
+                            pullRequest: pr?.number,
                         },
                     });
                     return acc;
@@ -166,7 +167,7 @@ export class BitbucketService
             ).sort((a, b) => a.name.localeCompare(b.name));
 
             return sortedAuthors.map((author) => ({
-                id: this.sanitizeUUId(author.id.toString()),
+                id: this.sanitizeUUID(author.id.toString()),
                 name: author.name,
             }));
         } catch (error) {
@@ -231,7 +232,7 @@ export class BitbucketService
                         if (new Date(pr.created_on) < since) continue;
 
                         if (pr.author?.uuid) {
-                            const userId = this.sanitizeUUId(pr.author.uuid);
+                            const userId = this.sanitizeUUID(pr.author.uuid);
 
                             if (!authorsSet.has(userId)) {
                                 authorsSet.add(userId);
@@ -374,151 +375,203 @@ export class BitbucketService
         }
     }
 
+    /**
+     * Retrieves pull requests from Bitbucket based on the provided parameters.
+     * @param params - The parameters for fetching pull requests.
+     * @param params.organizationAndTeamData - The organization and team data.
+     * @param params.repository - Optional filter for a specific repository name.
+     * @param params.filters - Optional filters for dates, state, author, and branch.
+     * @returns A promise that resolves to an array of transformed PullRequest objects.
+     */
     async getPullRequests(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        filters?: {
-            startDate?: string;
-            endDate?: string;
-            assignFilter?: any;
-            state?: PullRequestState;
-            includeChanges?: boolean;
-            pullRequestNumbers?: number[];
+        repository?: {
+            id: string;
+            name: string;
         };
-    }): Promise<PullRequests[]> {
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            state?: PullRequestState;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<PullRequest[]> {
+        const { organizationAndTeamData, repository, filters = {} } = params;
+
         try {
-            const { organizationAndTeamData } = params;
-
             if (!organizationAndTeamData.organizationId) {
-                return null;
-            }
+                this.logger.warn({
+                    message:
+                        'Organization ID is required to fetch pull requests',
+                    context: BitbucketService.name,
+                    metadata: params,
+                });
 
-            const filters = params?.filters ?? {};
+                return [];
+            }
 
             const bitbucketAuthDetail = await this.getAuthDetails(
                 organizationAndTeamData,
             );
 
-            const repositories = <Repositories[]>(
+            const allRepositories = <Repositories[]>(
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(
                     organizationAndTeamData,
                     IntegrationConfigKey.REPOSITORIES,
                 )
             );
 
-            if (!bitbucketAuthDetail || !repositories) {
-                return null;
+            if (
+                !bitbucketAuthDetail ||
+                !allRepositories ||
+                allRepositories.length === 0
+            ) {
+                this.logger.warn({
+                    message: 'Bitbucket auth details or repositories not found',
+                    context: BitbucketService.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            let reposToProcess = allRepositories;
+
+            if (repository && (repository.name || repository.id)) {
+                const foundRepo = allRepositories.find(
+                    (r) => r.name === repository.name || r.id === repository.id,
+                );
+
+                if (!foundRepo) {
+                    this.logger.warn({
+                        message: `Repository ${repository.name} (id: ${repository.id}) not found in the list of repositories.`,
+                        context: BitbucketService.name,
+                        metadata: params,
+                    });
+
+                    return [];
+                }
+                reposToProcess = [foundRepo];
             }
 
             const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
 
-            let pullRequests: Array<
-                Schema.Pullrequest & { repository: string }
-            > = [];
-
-            const results = await Promise.all(
-                repositories.map(async (repo) => {
-                    const prs = await bitbucketAPI.pullrequests
-                        .list({
-                            repo_slug: `{${repo.id}}`,
-                            workspace: `{${repo.workspaceId}}`,
-                            fields: '+values.participants,+values.reviewers',
-                        })
-                        .then((res) =>
-                            this.getPaginatedResults(bitbucketAPI, res),
-                        );
-
-                    return prs?.map((item) => ({
-                        ...item,
-                        repository: repo?.name,
-                    }));
+            const promises = reposToProcess.map((r) =>
+                this.getPullRequestsByRepo({
+                    bitbucketAPI,
+                    repo: r,
+                    filters,
                 }),
             );
 
-            pullRequests = results.flat();
+            const results = await Promise.all(promises);
+            const rawPullRequests = results.flat();
 
-            if (filters && filters?.state === 'open') {
-                pullRequests = pullRequests.filter((pr) => pr.state === 'OPEN');
-            }
-
-            const stateMap = {
-                OPEN: PullRequestState.OPENED,
-                MERGED: PullRequestState.CLOSED,
-            };
-
-            return pullRequests
-                .sort((a, b) => {
-                    return (
-                        new Date(b.created_on).getTime() -
-                        new Date(a.created_on).getTime()
-                    );
-                })
-                .map((pr) => {
-                    return {
-                        id: pr.id?.toString(),
-                        author_id: this.sanitizeUUId(
-                            pr.author?.uuid?.toString(),
-                        ),
-                        author_name: pr.author?.display_name,
-                        author_created_at: pr.created_on,
-                        repository: pr?.repository,
-                        repositoryId: this.sanitizeUUId(
-                            pr?.source?.repository?.uuid,
-                        ),
-                        message: pr.summary?.raw,
-                        state: stateMap[pr.state] || PullRequestState.ALL,
-                        prURL: pr.links?.html?.href,
-                        organizationId:
-                            params?.organizationAndTeamData?.organizationId,
-                        pull_number: pr.id,
-                        number: pr.id,
-                        body: pr.summary?.raw,
-                        title: pr.title,
-                        created_at: pr.created_on,
-                        updated_at: pr.updated_on,
-                        merged_at: pr.updated_on,
-                        participants: pr.participants,
-                        reviewers: pr.reviewers.map((reviewer) => ({
-                            ...reviewer,
-                            uuid: this.sanitizeUUId(reviewer.uuid),
-                        })),
-                        head: {
-                            ref: pr.source?.branch?.name,
-                            repo: {
-                                id: this.sanitizeUUId(
-                                    pr.source?.repository?.uuid,
-                                ),
-                                name: pr.source?.repository?.name,
-                            },
-                        },
-                        base: {
-                            ref: pr.destination?.branch?.name,
-                        },
-                        user: {
-                            login: pr.author?.display_name ?? '',
-                            name: pr.author?.display_name,
-                            id: this.sanitizeUUId(pr.author?.uuid),
-                        },
-                    };
-                });
+            return rawPullRequests.map((rawPr) =>
+                this.transformPullRequest(rawPr, organizationAndTeamData),
+            );
         } catch (error) {
             this.logger.error({
-                message: 'Error to get pull requests',
+                message: 'Error fetching pull requests from Bitbucket',
                 context: BitbucketService.name,
-                serviceName: 'BitbucketService getPullRequests',
-                error: error,
-                metadata: {
-                    params,
-                },
+                error,
+                metadata: params,
             });
             return [];
         }
     }
 
-    async getPullRequestDetails(params: {
+    /**
+     * Retrieves pull requests from a specific Bitbucket repository.
+     * @param params - The parameters for fetching, including the API instance, repository object, and filters.
+     * @returns A promise that resolves to an array of raw pull request data.
+     */
+    private async getPullRequestsByRepo(params: {
+        bitbucketAPI: InstanceType<typeof Bitbucket>;
+        repo: Repositories;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            state?: PullRequestState;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<Schema.Pullrequest[]> {
+        const { bitbucketAPI, repo, filters = {} } = params;
+        const { startDate, endDate, state, author, branch } = filters;
+
+        // see https://github.com/MunifTanjim/node-bitbucket/issues/74
+        bitbucketAPI.pullrequests.list =
+            // @ts-ignore
+            bitbucketAPI.pullrequests.list.defaults({
+                request: {
+                    validate: {
+                        state: {
+                            enum: undefined,
+                            type: 'array',
+                            items: {
+                                enum: [
+                                    'OPEN',
+                                    'DECLINED',
+                                    'MERGED',
+                                    'SUPERSEDED',
+                                ],
+                                type: 'string',
+                            },
+                        },
+                    },
+                },
+            });
+
+        const response = await bitbucketAPI.pullrequests.list({
+            repo_slug: `{${repo.id}}`,
+            workspace: `{${repo.workspaceId}}`,
+            // @ts-ignore - see above
+            state: state
+                ? this._prStateMapReversed.get(state)
+                : this._prStateMapReversed.get(PullRequestState.ALL), // get all states if not specified
+            sort: '-created_on', // Sort by creation date, descending
+            fields: '+values.participants,+values.reviewers',
+        });
+
+        const pullRequests = await this.getPaginatedResults(
+            bitbucketAPI,
+            response,
+        );
+
+        return pullRequests.filter((pr) => {
+            let isValid = true;
+
+            if (isValid && startDate) {
+                isValid = new Date(pr.created_on) >= startDate;
+            }
+
+            if (isValid && endDate) {
+                isValid = new Date(pr.created_on) <= endDate;
+            }
+
+            if (isValid && author) {
+                isValid =
+                    pr?.author?.display_name?.toLowerCase() ===
+                    author.toLowerCase();
+            }
+
+            if (isValid && branch) {
+                isValid =
+                    pr.destination?.branch?.name?.toLowerCase() ===
+                    branch.toLowerCase();
+            }
+
+            return isValid;
+        });
+    }
+
+    async getPullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        repository: { id: string; name: string };
+        repository: Partial<Repository>;
         prNumber: number;
-    }): Promise<any | null> {
+    }): Promise<PullRequest | null> {
         try {
             const { organizationAndTeamData, repository, prNumber } = params;
 
@@ -558,56 +611,10 @@ export class BitbucketService
                 })
             ).data;
 
-            const prData = {
-                id: prDetails.id.toString(),
-                author_id: this.sanitizeUUId(
-                    prDetails.author?.uuid?.toString(),
-                ),
-                author_name: prDetails.author?.display_name,
-                repository: repository.name,
-                repositoryId: this.sanitizeUUId(
-                    prDetails.source?.repository?.uuid,
-                ),
-                message: prDetails.summary?.raw,
-                state: prDetails.state,
-                prURL: prDetails.links?.html?.href,
-                organizationId: organizationAndTeamData.organizationId,
-                pull_number: prDetails.id,
-                number: prDetails.id,
-                body: prDetails.summary?.raw,
-                title: prDetails.title,
-                created_at: prDetails.created_on,
-                updated_at: prDetails.updated_on,
-                merged_at: prDetails.updated_on,
-                participants: prDetails.participants.map((participant) => ({
-                    id: this.sanitizeUUId(participant.user.uuid),
-                    approved: participant.approved,
-                    state: participant.state,
-                    type: participant.type,
-                })),
-                reviewers: prDetails.reviewers.map((reviewer) => ({
-                    id: this.sanitizeUUId(reviewer.uuid),
-                })),
-                head: {
-                    ref: prDetails.source?.branch?.name,
-                    repo: {
-                        id: this.sanitizeUUId(
-                            prDetails.source?.repository?.uuid,
-                        ),
-                        name: prDetails.source?.repository?.name,
-                    },
-                },
-                base: {
-                    ref: prDetails.destination?.branch?.name,
-                },
-                user: {
-                    login: prDetails.author?.display_name ?? '',
-                    name: prDetails.author?.display_name,
-                    id: this.sanitizeUUId(prDetails.author?.uuid),
-                },
-            };
-
-            return prData;
+            return this.transformPullRequest(
+                prDetails,
+                organizationAndTeamData,
+            );
         } catch (error) {
             this.logger.error({
                 message: 'Error to get pull request details',
@@ -624,6 +631,12 @@ export class BitbucketService
 
     async getRepositories(params: {
         organizationAndTeamData: OrganizationAndTeamData;
+        filters?: {
+            archived?: boolean;
+            organizationSelected?: string;
+            visibility?: 'all' | 'public' | 'private';
+            language?: string;
+        };
     }): Promise<Repositories[]> {
         try {
             const { organizationAndTeamData } = params;
@@ -712,7 +725,7 @@ export class BitbucketService
         const { slug, uuid: workspaceUuid } = workspace;
 
         return {
-            id: this.sanitizeUUId(uuid),
+            id: this.sanitizeUUID(uuid),
             name: name ?? '',
             http_url: links?.html?.href ?? '',
             avatar_url: links?.avatar?.href ?? '',
@@ -723,9 +736,9 @@ export class BitbucketService
                     (repository) => repository?.name === name,
                 ) ?? false,
             default_branch: mainbranch?.name ?? '',
-            workspaceId: this.sanitizeUUId(workspaceUuid),
+            workspaceId: this.sanitizeUUID(workspaceUuid),
             project: {
-                id: this.sanitizeUUId(project?.uuid),
+                id: this.sanitizeUUID(project?.uuid),
                 name: project?.name ?? '',
             },
         };
@@ -862,7 +875,7 @@ export class BitbucketService
                 permissions.forEach((permission) => {
                     uniqueMembers.add({
                         name: permission.user.display_name,
-                        id: this.sanitizeUUId(permission.user.uuid),
+                        id: this.sanitizeUUID(permission.user.uuid),
                     });
                 });
             });
@@ -971,10 +984,8 @@ export class BitbucketService
             const prs = await this.getPullRequests({
                 organizationAndTeamData,
                 filters: {
-                    startDate: moment()
-                        .subtract(90, 'days')
-                        .format('YYYY-MM-DD'),
-                    endDate: moment().format('YYYY-MM-DD'),
+                    startDate: moment().subtract(90, 'days').toDate(),
+                    endDate: moment().toDate(),
                 },
             });
 
@@ -1310,91 +1321,149 @@ export class BitbucketService
         }
     }
 
+    /**
+     * Fetches all commits from Gitlab based on the provided parameters.
+     * @param params - The parameters for fetching commits, including organization and team data, repository filters, and commit filters.
+     * @param params.organizationAndTeamData - The organization and team data containing organizationId and teamId.
+     * @param params.repository - Optional repository filter to fetch commits from a specific repository.
+     * @param params.filters - Optional filters for commits, including startDate, endDate, author, and branch.
+     * @param params.filters.startDate - The start date for filtering commits.
+     * @param params.filters.endDate - The end date for filtering commits.
+     * @param params.filters.author - The author of the commits to filter.
+     * @param params.filters.branch - The branch from which to fetch commits.
+     * @returns A promise that resolves to an array of Commit objects.
+     */
     async getCommits(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        filters?: any;
+        repository?: Partial<Repository>;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
+        };
     }): Promise<Commit[]> {
+        const { organizationAndTeamData, repository, filters = {} } = params;
+
         try {
-            const { organizationAndTeamData } = params;
-
-            const filters = params?.filters ?? {};
-
             const bitbucketAuthDetail = await this.getAuthDetails(
                 organizationAndTeamData,
             );
 
-            const repositories = <Repositories[]>(
+            const configuredRepositories = <Repositories[]>(
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(
                     organizationAndTeamData,
                     IntegrationConfigKey.REPOSITORIES,
                 )
             );
 
-            if (!bitbucketAuthDetail || !repositories) {
-                return null;
+            if (
+                !bitbucketAuthDetail ||
+                !configuredRepositories ||
+                configuredRepositories.length === 0
+            ) {
+                this.logger.warn({
+                    message:
+                        'Bitbucket auth details or repositories not found.',
+                    context: BitbucketService.name,
+                    metadata: params,
+                });
+                return [];
+            }
+
+            let reposToProcess: Repositories[] = configuredRepositories;
+
+            if (repository && repository.name) {
+                const foundRepo = configuredRepositories.find(
+                    (r) => r.name === repository.name,
+                );
+
+                if (!foundRepo) {
+                    this.logger.warn({
+                        message: `Repository ${repository.name} not found in the list of configured repositories.`,
+                        context: BitbucketService.name,
+                        metadata: params,
+                    });
+                    return [];
+                }
+                reposToProcess = [foundRepo];
             }
 
             const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
 
-            const { startDate, endDate } = filters || {};
-
-            const commitsByRepo = await Promise.all(
-                repositories.map((repo) =>
-                    bitbucketAPI.commits
-                        .list({
-                            repo_slug: `{${repo.id}}`,
-                            workspace: `{${repo.workspaceId}}`,
-                        })
-                        .then((res) =>
-                            this.getPaginatedResults(bitbucketAPI, res),
-                        ),
-                ),
+            const promises = reposToProcess.map((repo) =>
+                this.getCommitsByRepo({
+                    bitbucketAPI,
+                    workspaceId: repo.workspaceId,
+                    repoId: repo.id,
+                    filters,
+                }),
             );
 
-            const filteredCommits = commitsByRepo.flatMap((commits) =>
-                commits.filter(
-                    (commit) =>
-                        (!startDate || new Date(commit.date) >= startDate) &&
-                        (!endDate || new Date(commit.date) <= endDate),
-                ),
+            const results = await Promise.all(promises);
+            const rawCommits = results.flat();
+
+            return rawCommits.map((rawCommit) =>
+                this.transformCommit(rawCommit),
             );
-
-            const formattedCommits: Commit[] = filteredCommits.map((commit) => {
-                const [name, email] = this.extractUsernameEmail(commit?.author);
-
-                return {
-                    sha: commit.hash,
-                    commit: {
-                        author: {
-                            id: this.sanitizeUUId(commit.author?.user?.uuid),
-                            name,
-                            email,
-                            date: commit.date,
-                        },
-                        message: commit.message,
-                    },
-                };
-            });
-
-            const sortedCommits = formattedCommits.sort(
-                (a, b) =>
-                    new Date(b.commit.author.date).getTime() -
-                    new Date(a.commit.author.date).getTime(),
-            );
-
-            return sortedCommits;
         } catch (error) {
             this.logger.error({
-                message: 'Error to get commits',
+                message: 'Error fetching commits from Bitbucket',
                 context: BitbucketService.name,
-                serviceName: 'BitbucketService getCommits',
                 error: error,
-                metadata: {
-                    params,
-                },
+                metadata: params,
             });
             return [];
         }
+    }
+
+    /**
+     * Fetches and filters commits for a single Bitbucket repository.
+     * @param params Parameters including the API client, repo identifiers, and filters.
+     * @returns A promise that resolves to an array of raw commit data.
+     */
+    private async getCommitsByRepo(params: {
+        bitbucketAPI: InstanceType<typeof Bitbucket>;
+        workspaceId: string;
+        repoId: string;
+        filters: {
+            startDate?: Date;
+            endDate?: Date;
+            author?: string;
+            branch?: string;
+        };
+    }): Promise<Schema.Commit[]> {
+        const { bitbucketAPI, workspaceId, repoId, filters = {} } = params;
+        const { startDate, endDate, author, branch } = filters;
+
+        const initialResponse = await bitbucketAPI.commits.list({
+            repo_slug: `{${repoId}}`,
+            workspace: `{${workspaceId}}`,
+            include: branch ? branch : undefined,
+        });
+
+        const commits = await this.getPaginatedResults(
+            bitbucketAPI,
+            initialResponse,
+        );
+
+        const filteredCommits = commits.filter((commit) => {
+            let isValid = true;
+
+            if (isValid && startDate) {
+                isValid = new Date(commit.date) >= new Date(startDate);
+            }
+            if (isValid && endDate) {
+                isValid = new Date(commit.date) <= new Date(endDate);
+            }
+            if (isValid && author) {
+                const [name] = this.extractUsernameEmail(commit.author);
+                isValid = name === author;
+            }
+            return isValid;
+        });
+
+        return filteredCommits;
     }
 
     async getFilesByPullRequestId(params: {
@@ -1839,7 +1908,7 @@ export class BitbucketService
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { name: string; id: string };
         prNumber: number;
-    }): Promise<PullRequests | null> {
+    }): Promise<PullRequest | null> {
         try {
             const { organizationAndTeamData, repository, prNumber } = params;
 
@@ -1907,7 +1976,7 @@ export class BitbucketService
                         message: commit?.message,
                         created_at: commit?.date,
                         author: {
-                            id: this.sanitizeUUId(commit?.author?.user?.uuid),
+                            id: this.sanitizeUUID(commit?.author?.user?.uuid),
                             username: commit?.author?.user?.nickname,
                             name,
                             email,
@@ -2316,7 +2385,7 @@ export class BitbucketService
                     parent: comment?.parent, // present if the comment is a replies to another comment.
                     replies: comment?.replies,
                     author: {
-                        id: this.sanitizeUUId(comment?.user?.uuid),
+                        id: this.sanitizeUUID(comment?.user?.uuid),
                         username: comment?.user?.display_name,
                         name: comment?.user?.display_name,
                     },
@@ -3310,7 +3379,7 @@ export class BitbucketService
                 createdAt: comment?.created_on,
                 originalCommit: comment?.pullrequest?.source?.commit?.hash,
                 author: {
-                    id: this.sanitizeUUId(comment?.user?.uuid),
+                    id: this.sanitizeUUID(comment?.user?.uuid),
                     username: comment?.user?.display_name,
                     name: comment?.user?.display_name,
                 },
@@ -3373,11 +3442,7 @@ export class BitbucketService
                 .then((res) => this.getPaginatedResults(bitbucketAPI, res));
 
             return pullRequests.map((pr) =>
-                this.transformPullRequest(
-                    pr,
-                    repository.name,
-                    organizationAndTeamData.organizationId,
-                ),
+                this.transformPullRequest(pr, organizationAndTeamData),
             );
         } catch (error) {
             this.logger.error({
@@ -3502,7 +3567,7 @@ export class BitbucketService
                         updatedAt: comment?.updated_on,
                         isResolved: comment.resolution ? true : false,
                         author: {
-                            id: this.sanitizeUUId(comment?.user?.uuid) ?? '',
+                            id: this.sanitizeUUID(comment?.user?.uuid) ?? '',
                             username: comment?.user?.display_name ?? '',
                             name: comment?.user?.display_name ?? '',
                         },
@@ -3652,7 +3717,7 @@ export class BitbucketService
 
     /** Bitbucket's API returns IDs with curly braces around them (e.g. "{123}").
     This function removes the curly braces. */
-    private sanitizeUUId(id: string) {
+    private sanitizeUUID(id: string): string {
         return id?.replace(/[{}]/g, '');
     }
 
@@ -3675,57 +3740,6 @@ export class BitbucketService
 
     private convertDiff(diff: string) {
         return diff.split('\n').slice(4).join('\n');
-    }
-
-    private transformPullRequest(
-        pr: Schema.Pullrequest,
-        repository: string,
-        organizationId: string,
-    ): PullRequests & any {
-        const stateMap = {
-            OPEN: PullRequestState.OPENED,
-            MERGED: PullRequestState.CLOSED,
-        };
-
-        return {
-            id: pr.id?.toString(),
-            author_id: this.sanitizeUUId(pr.author?.uuid?.toString()),
-            author_name: pr.author?.display_name,
-            author_created_at: pr.created_on,
-            repository: repository,
-            repositoryId: this.sanitizeUUId(pr?.source?.repository?.uuid),
-            message: pr.summary?.raw,
-            state: stateMap[pr.state] || PullRequestState.ALL,
-            prURL: pr.links?.html?.href,
-            organizationId: organizationId,
-            pull_number: pr.id,
-            number: pr.id,
-            body: pr.summary?.raw,
-            title: pr.title,
-            created_at: pr.created_on,
-            updated_at: pr.updated_on,
-            merged_at: pr.updated_on,
-            participants: pr.participants,
-            reviewers: pr.reviewers.map((reviewer) => ({
-                ...reviewer,
-                uuid: this.sanitizeUUId(reviewer.uuid),
-            })),
-            head: {
-                ref: pr.source?.branch?.name,
-                repo: {
-                    id: this.sanitizeUUId(pr.source?.repository?.uuid),
-                    name: pr.source?.repository?.name,
-                },
-            },
-            base: {
-                ref: pr.destination?.branch?.name,
-            },
-            user: {
-                login: pr.author?.display_name ?? '',
-                name: pr.author?.display_name,
-                id: this.sanitizeUUId(pr.author?.uuid),
-            },
-        };
     }
 
     async deleteWebhook(params: {
@@ -3855,7 +3869,341 @@ export class BitbucketService
         return Promise.resolve(commentBody.trim());
     }
 
-    minimizeComment(params: {
+    async getRepositoryTree(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+        treeType?: 'all' | 'directories' | 'files';
+    }): Promise<any[]> {
+        try {
+            const {
+                organizationAndTeamData,
+                repositoryId,
+                treeType = 'all',
+            } = params;
+
+            const bitbucketAuthDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            if (!bitbucketAuthDetails) {
+                this.logger.error({
+                    message: 'Bitbucket auth details not found',
+                    context: this.getRepositoryTree.name,
+                    metadata: { organizationAndTeamData, repositoryId },
+                });
+                return [];
+            }
+
+            const workspace = await this.getWorkspaceFromRepository(
+                organizationAndTeamData,
+                repositoryId,
+            );
+
+            if (!workspace) {
+                this.logger.error({
+                    message:
+                        'Workspace not found for Bitbucket repository tree',
+                    context: this.getRepositoryTree.name,
+                    metadata: { organizationAndTeamData, repositoryId },
+                });
+                return [];
+            }
+
+            // Buscar recursivamente com max_depth - mais eficiente que navegação manual
+            const allItems = await this.getRepositoryTreeWithMaxDepth(
+                bitbucketAuthDetails,
+                workspace,
+                repositoryId,
+            );
+
+            // Filtrar baseado no treeType
+            if (treeType === 'directories') {
+                return allItems.filter(
+                    (item: any) => item.type === 'directory',
+                );
+            } else if (treeType === 'files') {
+                return allItems.filter((item: any) => item.type === 'file');
+            }
+
+            return allItems;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting repository tree from Bitbucket',
+                context: this.getRepositoryTree.name,
+                error: error,
+                metadata: {
+                    organizationAndTeamData: params.organizationAndTeamData,
+                    repositoryId: params.repositoryId,
+                    treeType: params.treeType,
+                },
+            });
+            return [];
+        }
+    }
+
+    /**
+     * Método principal que usa max_depth através do SDK do Bitbucket (que já cuida da auth)
+     * Muito mais eficiente que navegação manual - usa o recurso nativo do Bitbucket API
+     */
+    private async getRepositoryTreeWithMaxDepth(
+        bitbucketAuthDetails: any,
+        workspace: string,
+        repositoryId: string,
+        maxDepth: number = 10, // Evitar timeout, pode ajustar conforme necessário
+    ): Promise<any[]> {
+        try {
+            const bitbucketAPI =
+                this.instanceBitbucketApi(bitbucketAuthDetails);
+            const allItems: any[] = [];
+            let hasNext = true;
+            let nextPageUrl: string | null = null;
+            let pageNum = 1;
+
+            while (hasNext) {
+                let response: any;
+
+                if (nextPageUrl) {
+                    // Usar a URL da próxima página diretamente
+                    response = await bitbucketAPI.request({
+                        url: nextPageUrl,
+                        method: 'GET',
+                    });
+                } else {
+                    // Primeira requisição - usar request direto com query params
+                    const queryParams = new URLSearchParams({
+                        max_depth: maxDepth.toString(),
+                        pagelen: '100',
+                        page: pageNum.toString(),
+                    });
+
+                    const url = `/repositories/${workspace}/${repositoryId}/src/HEAD/?${queryParams.toString()}`;
+
+                    this.logger.debug({
+                        message: `Calling Bitbucket API: ${url}`,
+                        context: 'getRepositoryTreeWithMaxDepth',
+                        metadata: {
+                            workspace,
+                            repositoryId,
+                            maxDepth,
+                            pageNum,
+                        },
+                    });
+
+                    response = await bitbucketAPI.request({
+                        url: url,
+                        method: 'GET',
+                    });
+                }
+
+                const items = response.data?.values || [];
+
+                this.logger.debug({
+                    message: `Fetching Bitbucket tree page ${pageNum} - found ${items.length} items`,
+                    context: 'getRepositoryTreeWithMaxDepth',
+                    metadata: {
+                        workspace,
+                        repositoryId,
+                        maxDepth,
+                        pageNum,
+                        itemsCount: items.length,
+                    },
+                });
+
+                for (const item of items) {
+                    // Normalizar o formato para ser compatível com GitHub
+                    const normalizedItem = {
+                        path: item.path,
+                        type:
+                            item.type === 'commit_directory'
+                                ? 'directory'
+                                : 'file',
+                        sha: item.commit?.hash || '',
+                        size: item.size || undefined,
+                        url: item.links?.self?.href || '',
+                        commit: item.commit, // Manter dados do commit se necessário
+                    };
+
+                    allItems.push(normalizedItem);
+                }
+
+                // Verificar se há próxima página
+                nextPageUrl = response.data?.next || null;
+                hasNext = !!nextPageUrl;
+                pageNum++;
+
+                // Proteção contra loops infinitos
+                if (pageNum > 1000) {
+                    this.logger.warn({
+                        message:
+                            'Too many pages in Bitbucket tree, stopping pagination',
+                        context: 'getRepositoryTreeWithMaxDepth',
+                        metadata: { workspace, repositoryId, pageNum },
+                    });
+                    break;
+                }
+            }
+
+            this.logger.debug({
+                message: `Successfully fetched Bitbucket tree with ${allItems.length} items`,
+                context: 'getRepositoryTreeWithMaxDepth',
+                metadata: {
+                    workspace,
+                    repositoryId,
+                    totalItems: allItems.length,
+                    pages: pageNum - 1,
+                },
+            });
+
+            return allItems;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting repository tree with max_depth',
+                context: 'getRepositoryTreeWithMaxDepth',
+                error: error,
+                metadata: { workspace, repositoryId, maxDepth },
+            });
+
+            // Se max_depth falhar (timeout 555), tentar com profundidade menor
+            if (
+                error instanceof Error &&
+                error.message.includes('555') &&
+                maxDepth > 3
+            ) {
+                this.logger.warn({
+                    message: 'Retrying with smaller max_depth due to timeout',
+                    context: 'getRepositoryTreeWithMaxDepth',
+                    metadata: {
+                        workspace,
+                        repositoryId,
+                        previousMaxDepth: maxDepth,
+                        newMaxDepth: 3,
+                    },
+                });
+
+                return await this.getRepositoryTreeWithMaxDepth(
+                    bitbucketAuthDetails,
+                    workspace,
+                    repositoryId,
+                    3, // Tentar com profundidade menor
+                );
+            }
+
+            // Se der erro, tentar o método recursivo fallback
+            this.logger.warn({
+                message:
+                    'Falling back to recursive method due to max_depth failure',
+                context: 'getRepositoryTreeWithMaxDepth',
+                metadata: { workspace, repositoryId },
+            });
+
+            const bitbucketAPI =
+                this.instanceBitbucketApi(bitbucketAuthDetails);
+            return await this.getRepositoryTreeRecursiveFallback(
+                bitbucketAPI,
+                workspace,
+                repositoryId,
+                '', // currentPath vazio para começar da raiz
+                [], // allItems vazio
+                undefined, // commitHash será pego da resposta inicial
+            );
+        }
+    }
+
+    private async getRepositoryTreeRecursiveFallback(
+        bitbucketAPI: any,
+        workspace: string,
+        repositoryId: string,
+        currentPath: string = '',
+        allItems: any[] = [],
+        commitHash?: string, // ADICIONADO: commit hash para resolver o erro
+    ): Promise<any[]> {
+        try {
+            let response: any;
+            let hasNext = true;
+            let currentApiCall: any;
+
+            if (currentPath && commitHash) {
+                // Para subdiretórios - usar source.read com commit hash
+                currentApiCall = () =>
+                    bitbucketAPI.source.read({
+                        repo_slug: `{${repositoryId}}`,
+                        workspace: `{${workspace}}`,
+                        commit: commitHash, // ADICIONADO: resolver o erro "parameter required: 'commit'"
+                        path: currentPath,
+                        pagelen: 100,
+                    });
+            } else {
+                // Para raiz - usar source.readRoot
+                currentApiCall = () =>
+                    bitbucketAPI.source.readRoot({
+                        repo_slug: `{${repositoryId}}`,
+                        workspace: `{${workspace}}`,
+                        pagelen: 100,
+                    });
+            }
+
+            while (hasNext) {
+                response = await currentApiCall();
+                const items = response.data?.values || [];
+
+                for (const item of items) {
+                    // Normalizar o formato do item para ser compatível com o GitHub
+                    const normalizedItem = {
+                        path: item.path,
+                        type:
+                            item.type === 'commit_directory'
+                                ? 'directory'
+                                : 'file',
+                        sha: item.commit?.hash || '',
+                        size: item.size || undefined,
+                        url: item.links?.self?.href || '',
+                        commit: item.commit,
+                    };
+
+                    allItems.push(normalizedItem);
+
+                    // Se for um diretório, buscar recursivamente
+                    if (item.type === 'commit_directory') {
+                        const currentCommitHash =
+                            commitHash || item.commit?.hash; // Usar o commit do item se não tiver
+
+                        await this.getRepositoryTreeRecursiveFallback(
+                            bitbucketAPI,
+                            workspace,
+                            repositoryId,
+                            item.path,
+                            allItems,
+                            currentCommitHash, // PASSAR o commit hash para subdiretórios
+                        );
+                    }
+                }
+
+                // Verificar se há próxima página no mesmo nível
+                const nextUrl = response.data?.next;
+                if (nextUrl) {
+                    // Usar a URL da próxima página
+                    currentApiCall = () =>
+                        bitbucketAPI.request({
+                            url: nextUrl,
+                            method: 'GET',
+                        });
+                } else {
+                    hasNext = false;
+                }
+            }
+
+            return allItems;
+        } catch (error) {
+            this.logger.error({
+                message: `Error getting repository tree recursively for path: ${currentPath}`,
+                context: 'getRepositoryTreeRecursiveFallback',
+                error: error,
+                metadata: { workspace, repositoryId, currentPath, commitHash },
+            });
+            return allItems; // Retorna o que já foi coletado até agora
+        }
+    }
+
+    minimizeComment(_params: {
         organizationAndTeamData: OrganizationAndTeamData;
         commentId: string;
         reason?:
@@ -3867,5 +4215,333 @@ export class BitbucketService
             | 'SPAM';
     }): Promise<any | null> {
         throw new Error('Method not implemented.');
+    }
+
+    async getRepositoryAllFiles(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        filters?: {
+            branch?: string;
+            filePatterns?: string[];
+            excludePatterns?: string[];
+            maxFiles?: number;
+        };
+    }): Promise<RepositoryFile[]> {
+        try {
+            const {
+                organizationAndTeamData,
+                repository,
+                filters = {},
+            } = params;
+
+            if (!repository?.id) {
+                this.logger.warn({
+                    message: 'Repository ID is required to get files',
+                    context: BitbucketService.name,
+                    metadata: { organizationAndTeamData, repository },
+                });
+
+                return [];
+            }
+
+            const bitbucketAuthDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!bitbucketAuthDetails) {
+                this.logger.warn({
+                    message: 'Bitbucket auth details not found',
+                    context: BitbucketService.name,
+                    metadata: { organizationAndTeamData, repository },
+                });
+
+                return [];
+            }
+
+            const workspace = await this.getWorkspaceFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            if (!workspace) {
+                this.logger.warn({
+                    message: 'Workspace not found for repository',
+                    context: BitbucketService.name,
+                    metadata: { organizationAndTeamData, repository },
+                });
+
+                return [];
+            }
+
+            const bitbucketAPI =
+                this.instanceBitbucketApi(bitbucketAuthDetails);
+
+            let branch = filters?.branch;
+
+            if (!branch || branch.length === 0) {
+                branch = await this.getDefaultBranch({
+                    organizationAndTeamData,
+                    repository,
+                });
+
+                if (!branch) {
+                    this.logger.warn({
+                        message: 'Default branch not found for repository',
+                        context: BitbucketService.name,
+                        metadata: { organizationAndTeamData, repository },
+                    });
+
+                    return [];
+                }
+            }
+
+            const commitsResponse = await bitbucketAPI.commits.list({
+                repo_slug: `{${repository.id}}`,
+                workspace: `{${workspace}}`,
+                include: branch,
+                pagelen: 1,
+            });
+
+            const commit = commitsResponse.data.values?.[0];
+
+            if (!commit || !commit.hash) {
+                this.logger.warn({
+                    message: `No commit found on branch ${branch} for repository ${repository.name}`,
+                    context: BitbucketService.name,
+                    metadata: { organizationAndTeamData, repository, branch },
+                });
+
+                return [];
+            }
+
+            const fileResponse = await bitbucketAPI.source.read({
+                repo_slug: `{${repository.id}}`,
+                workspace: `{${workspace}}`,
+                commit: commit?.hash,
+                path: '/',
+                max_depth: 999,
+            });
+
+            const fileTrees = await this.getPaginatedResults(
+                bitbucketAPI,
+                fileResponse,
+            );
+
+            let files = fileTrees
+                .filter((file) => file.type === 'commit_file')
+                .map((file) => this.transformRepositoryFile(file));
+
+            const { filePatterns, excludePatterns, maxFiles = 1000 } = filters;
+
+            const filteredFiles: RepositoryFile[] = [];
+            for (const file of files) {
+                if (maxFiles > 0 && filteredFiles.length >= maxFiles) {
+                    break;
+                }
+
+                if (
+                    filePatterns &&
+                    filePatterns.length > 0 &&
+                    !isFileMatchingGlob(file.path, filePatterns)
+                ) {
+                    continue;
+                }
+
+                if (
+                    excludePatterns &&
+                    excludePatterns.length > 0 &&
+                    isFileMatchingGlob(file.path, excludePatterns)
+                ) {
+                    continue;
+                }
+
+                filteredFiles.push(file);
+            }
+
+            this.logger.log({
+                message: `Retrieved ${filteredFiles.length} files from repository ${repository.name}`,
+                context: BitbucketService.name,
+                serviceName: 'BitbucketService getRepositoryAllFiles',
+                metadata: {
+                    params,
+                    totalFilesFound: fileTrees.length,
+                },
+            });
+
+            return filteredFiles;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error to get repository files',
+                context: BitbucketService.name,
+                serviceName: 'BitbucketService getRepositoryAllFiles',
+                error: error,
+                metadata: {
+                    params,
+                },
+            });
+
+            return [];
+        }
+    }
+
+    //#region Transformers
+
+    /**
+     * Transforms a raw commit from the Bitbucket API into the standard Commit interface.
+     * @param rawCommit The raw commit data from Bitbucket.
+     * @returns A Commit object.
+     */
+    private transformCommit(rawCommit: Schema.Commit): Commit {
+        const [name, email] = this.extractUsernameEmail(rawCommit?.author);
+
+        return {
+            sha: rawCommit.hash ?? '',
+            commit: {
+                author: {
+                    id: this.sanitizeUUID(rawCommit.author?.user?.uuid) ?? '',
+                    name: name ?? '',
+                    email: email ?? '',
+                    date: rawCommit.date ?? '',
+                },
+                message: rawCommit.message ?? '',
+            },
+            parents:
+                rawCommit.parents
+                    ?.map((parent) => ({
+                        sha: parent.hash ?? '',
+                    }))
+                    .filter((parent) => parent.sha) ?? [],
+        };
+    }
+
+    private readonly _prStateMap = new Map<
+        Schema.Pullrequest['state'],
+        PullRequestState
+    >([
+        ['OPEN', PullRequestState.OPENED],
+        ['MERGED', PullRequestState.MERGED],
+        ['DECLINED', PullRequestState.CLOSED],
+        ['SUPERSEDED', PullRequestState.CLOSED],
+    ]);
+
+    private readonly _prStateMapReversed = new Map<
+        PullRequestState,
+        Schema.Pullrequest['state'][]
+    >([
+        [PullRequestState.OPENED, ['OPEN']],
+        [PullRequestState.MERGED, ['MERGED']],
+        [PullRequestState.CLOSED, ['DECLINED']],
+        [PullRequestState.ALL, ['OPEN', 'MERGED', 'DECLINED', 'SUPERSEDED']],
+    ]);
+
+    private readonly _prClosedStates: Array<Schema.Pullrequest['state']> = [
+        'DECLINED',
+        'SUPERSEDED',
+        'MERGED',
+    ];
+
+    /**
+     * Transforms a raw pull request object from the Bitbucket API into the standard PullRequest interface.
+     * @param pullRequest - The raw pull request data from the Bitbucket API.
+     * @param organizationAndTeamData - The organization and team context.
+     * @returns A PullRequest object.
+     */
+    private transformPullRequest(
+        pullRequest: Schema.Pullrequest,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): PullRequest {
+        return {
+            id: pullRequest?.id?.toString() ?? '',
+            number: pullRequest?.id ?? -1,
+            pull_number: pullRequest?.id ?? -1, // TODO: remove, legacy, use number
+            organizationId: organizationAndTeamData?.organizationId ?? '',
+            title: pullRequest?.title ?? '',
+            body: pullRequest?.summary?.raw ?? '',
+            state:
+                this._prStateMap.get(pullRequest?.state) ??
+                PullRequestState.ALL,
+            prURL: pullRequest?.links?.html?.href ?? '',
+            repository:
+                pullRequest?.source?.repository?.full_name ??
+                pullRequest?.source?.repository?.name ??
+                '', // TODO: remove, legacy, use repositoryData
+            repositoryId:
+                this.sanitizeUUID(
+                    pullRequest?.source?.repository?.uuid ?? '',
+                ) ?? '', // TODO: remove, legacy, use repositoryData
+            repositoryData: {
+                id:
+                    this.sanitizeUUID(
+                        pullRequest?.source?.repository?.uuid ?? '',
+                    ) ?? '',
+                name:
+                    pullRequest?.source?.repository?.full_name ??
+                    pullRequest?.source?.repository?.name ??
+                    '',
+            },
+            message: pullRequest?.title ?? '',
+            created_at: pullRequest?.created_on ?? '',
+            closed_at: this._prClosedStates.includes(pullRequest?.state)
+                ? (pullRequest?.updated_on ?? '')
+                : '',
+            updated_at: pullRequest?.updated_on ?? '',
+            merged_at:
+                pullRequest?.state === 'MERGED'
+                    ? (pullRequest?.updated_on ?? '')
+                    : '',
+            participants:
+                pullRequest?.participants?.map((p) => ({
+                    id: this.sanitizeUUID(p?.user?.uuid ?? '') ?? '',
+                })) ?? [],
+            reviewers:
+                pullRequest?.reviewers?.map((r) => ({
+                    id: this.sanitizeUUID(r?.uuid ?? '') ?? '',
+                })) ?? [],
+            sourceRefName: pullRequest?.source?.branch?.name ?? '', // TODO: remove, legacy, use head.ref
+            head: {
+                ref: pullRequest?.source?.branch?.name ?? '',
+                repo: {
+                    id:
+                        this.sanitizeUUID(
+                            pullRequest?.source?.repository?.uuid ?? '',
+                        ) ?? '',
+                    name: pullRequest?.source?.repository?.name ?? '',
+                    defaultBranch:
+                        pullRequest?.source?.repository?.mainbranch?.name ?? '',
+                    fullName: pullRequest?.source?.repository?.full_name ?? '',
+                },
+            },
+            targetRefName: pullRequest?.destination?.branch?.name ?? '', // TODO: remove, legacy, use base.ref
+            base: {
+                ref: pullRequest?.destination?.branch?.name ?? '',
+                repo: {
+                    id:
+                        this.sanitizeUUID(
+                            pullRequest?.destination?.repository?.uuid ?? '',
+                        ) ?? '',
+                    name: pullRequest?.destination?.repository?.name ?? '',
+                    defaultBranch:
+                        pullRequest?.destination?.repository?.mainbranch
+                            ?.name ?? '',
+                    fullName:
+                        pullRequest?.destination?.repository?.full_name ?? '',
+                },
+            },
+            user: {
+                login: pullRequest?.author?.display_name ?? '',
+                name: pullRequest?.author?.display_name ?? '',
+                id: this.sanitizeUUID(pullRequest?.author?.uuid ?? '') ?? '',
+            },
+        };
+    }
+
+    private transformRepositoryFile(file: Schema.Treeentry): RepositoryFile {
+        return {
+            filename: file?.path?.split('/').pop() ?? '',
+            sha: '', // Bitbucket does not provide file SHA in the tree entry
+            size: -1, // Bitbucket does not provide file size in the tree entry
+            path: file?.path ?? '',
+            type: file?.type ?? 'blob',
+        };
     }
 }
