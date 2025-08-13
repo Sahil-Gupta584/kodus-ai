@@ -468,11 +468,6 @@ export function validatePlanningResponse(response: unknown): PlanningResult {
             reasoning:
                 (planDataRecord?.reasoning as string) ||
                 'No reasoning provided',
-            complexity:
-                (planDataRecord?.complexity as
-                    | 'simple'
-                    | 'medium'
-                    | 'complex') || 'medium',
         };
 
         // Validate recovered data
@@ -504,7 +499,6 @@ export function validatePlanningResponse(response: unknown): PlanningResult {
             goal: 'Failed to parse response',
             steps: [],
             reasoning: error instanceof Error ? error.message : 'Unknown error',
-            complexity: 'simple',
         };
     }
 }

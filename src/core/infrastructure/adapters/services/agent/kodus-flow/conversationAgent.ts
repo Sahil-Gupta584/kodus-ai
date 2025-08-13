@@ -47,6 +47,7 @@ export class ConversationAgentProvider {
             temperature: 0,
             maxTokens: 8000,
             maxReasoningTokens: 800,
+            jsonMode: true,
         });
 
         function sanitizeName(name: string) {
@@ -94,11 +95,9 @@ export class ConversationAgentProvider {
                     maxReasoningTokens: options.maxReasoningTokens,
                 });
 
-                console.log(resp.response_metadata);
-
                 return {
                     content: resp.content,
-                    usage: resp.response_metadata ?? {
+                    usage: resp.usage_metadata ?? {
                         promptTokens: 0,
                         completionTokens: 0,
                         totalTokens: 0,

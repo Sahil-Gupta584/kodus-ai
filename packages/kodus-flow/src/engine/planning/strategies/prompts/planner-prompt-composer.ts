@@ -200,59 +200,84 @@ export class PlannerPromptComposer {
      */
     private getToolUsageInstructions(): string {
         return `
-## TOOL USAGE INSTRUCTIONS
+            ## TOOL USAGE INSTRUCTIONS
 
-### 0) CONTRACT (read first)
-- **NO PLACEHOLDERS**: never invent IDs/strings (e.g., "123...", "TBD"). If a REQUIRED param cannot be obtained from CONTEXT or via a discovery tool, return **"plan": []** and emit **NEEDS-INPUT:<param>** in "reasoning".
-- **NO QUERY/INDEX SYNTAX IN \`argsTemplate\`**: only literals, CONTEXT values, or \`{{step-id.result...}}\`. Do **not** embed JSONPath/JMESPath/filters or array indices (e.g., \`[0]\`, \`items[?(@.name==...)]\`).
-- **IDENTIFIER DISCOVERY FIRST**: if a tool requires an identifier (any param that denotes a resource identity, e.g., \`...Id\`, \`id\`, \`path\`, \`channel\`), and it’s not in CONTEXT, add a prior list/search/get-all step to obtain it. If no such tool exists, stop with **NO-DISCOVERY-PATH:<id-name>**.
-- **AUDIT:INPUTS per step**: list the source of every REQUIRED param (\`CONTEXT | {{step-id.result...}} | literal\`). If any would be a placeholder, the plan must be empty with **NEEDS-INPUT**.
+            ### 0) CONTRACT (read first)
+            - **NO PLACEHOLDERS**: never invent IDs/strings (e.g., "123...", "TBD"). If a REQUIRED param cannot be obtained from CONTEXT or via a discovery tool, return "plan": [] and emit NEEDS-INPUT:<param> in "reasoning".
+            - **NO CONTEXT PATHS IN \`argsTemplate\`**: when sourcing from CONTEXT, inline the resolved literal value; never output strings like "CONTEXT.foo.bar" in \`argsTemplate\`.
+            - **NO QUERY/INDEX SYNTAX IN \`argsTemplate\`**: only literals or {{step-id.result...}}. Do not embed JSONPath/JMESPath/filters or array indices (e.g., [0], items[?(@.name==...)]).
+            - **TOOL NAME MUST MATCH EXACT RUNTIME NAME**: preserve dots/dashes/casing.
+            - **AUDIT:INPUTS per step**: list the source of every REQUIRED param (CONTEXT | {{step-id.result...}} | literal). If any would be a placeholder, the plan must be empty with NEEDS-INPUT.
 
-### 1) PARAMS & TYPES
-- REQUIRED params must be present and valid. If anything essential is missing, insert a prior discovery step.
-- OPTIONAL params: omit when unused (don’t send \`null\` unless the tool explicitly allows it).
-- Types: match the tool spec exactly (string/number/boolean). **Booleans unquoted (true/false); numbers unquoted; don’t coerce.**
-- Dates: ISO 8601 (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:mm:ssZ\`). Prefer timezone-aware; use \`Z\` for UTC.
+            ### 1) PARAMS & TYPES
+            - REQUIRED params must be present and valid. If anything essential is missing, insert a prior discovery step.
+            - OPTIONAL params: omit when unused (don’t send \`null\` unless the tool explicitly allows it).
+            - Types: match the tool spec exactly (string/number/boolean). **Booleans unquoted (true/false); numbers unquoted; don’t coerce.**
+            - Dates: ISO 8601 (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:mm:ssZ\`). Prefer timezone-aware; use \`Z\` for UTC.
 
-### 2) SOURCES OF VALUES (priority)
-1. **CONTEXT** → if the final value is present, **do not** call a tool.
-2. **Previous step results** → \`{{step-id.result...}}\`.
-3. **Direct literals**.
+            ### 2) SOURCES OF VALUES (priority)
+            1. **CONTEXT** → if the final value is present, **do not** call a tool.
+            2. **Previous step results** → \`{{step-id.result...}}\`.
+            3. **Direct literals**.
 
-### 3) TOOL SELECTION
-- Choose by **verb + entity + return type** (e.g., list → \`objects[]\`, get → \`object\`, update → mutation result).
-- If multiple tools fit, pick the **most specific** with **fewest required params**.
-- If IDs/paths are unknown, start with a **discovery** tool (list/search/get-all).
+            ### 3) ARRAY/COLLECTION SELECTION RULE
+            - Never use indices/filters inside \`{{...}}\` (e.g., \`{{search.result.items[0].id}}\` is forbidden).
+            - If a step yields multiple candidates and no selection tool exists, stop with **NEEDS-INPUT:<identifier>**.
+            - If a selection/discovery tool exists, add that step first to obtain a single identifier, then reference it (e.g., \`{{select-item.result.id}}\`).
 
-### 4) PLANNING & ORDER
-- **Discovery → Analysis → Action**.
-- Include only the **minimum** steps needed.
-- Use stable, unique kebab-case \`id\`s. Each step’s \`description\` states intent and key inputs.
+            ### 4) TOOL SELECTION
+            - Choose by **verb + entity + return type** (e.g., list → \`objects[]\`, get → \`object\`, update → mutation result).
+            - If multiple tools fit, pick the **most specific** with **fewest required params**.
+            - If IDs/paths are unknown, start with a **discovery** tool (list/search/get-all).
 
-### 5) PARALLELISM & FAN-OUT
-- Mark \`parallel: true\` only for **independent, read-only** steps.
-- For collections, fan-out up to **5** steps (**MAX_FANOUT=5**); merge results later.
+            ### 5) PLANNING & ORDER
+            - **Discovery → Analysis → Action**.
+            - Include only the **minimum** steps needed.
+            - Use stable, unique kebab-case \`id\`s. Each step’s \`description\` states intent and key inputs.
+            - Every step MUST include a boolean \`parallel\` key.
 
-### 5) FALLBACKS & RETRIES
-- If a step returns empty/not found/validation error, add a fallback: relax filters or try an alternative discovery tool.
-- For transient errors (timeouts/429/5xx), plan **one** retry with **exponential backoff + jitter**; otherwise continue via the next viable path.
+            ### 6) PARALLELISM & FAN-OUT
+            - Mark \`parallel: true\` only for **independent, read-only** steps.
+            - For collections, fan-out up to **5** steps (**MAX_FANOUT=5**); merge results later.
 
-### 6) MUTATIONS & SIDE-EFFECTS
-- Prefer **idempotency**: if the tool supports it, include an \`idempotencyKey\`/\`nonce\` to make mutations replay-safe.
-- Avoid destructive actions unless clearly requested by the user or CONTEXT; use “dry-run”/“validate-only” flags when available.
-- Follow **least privilege**: pass only required fields, never secrets/PII.
+            ### 7) FALLBACKS & RETRIES
+            - If a step returns empty/not found/validation error, add a fallback: relax filters or try an alternative discovery tool.
+            - For transient errors (timeouts/429/5xx), plan **one** retry with **exponential backoff + jitter**; otherwise continue via the next viable path.
 
-### 7) SAFETY, COST & PRIVACY
-- Never include secrets/PII in params. Pass only what is required.
-- Prefer fewer calls: if CONTEXT already has the answer, return **EMPTY PLAN []**.
-- Stop early when success criteria are met.
+            ### 8) MUTATIONS & SIDE-EFFECTS
+            - Prefer **idempotency**: if the tool supports it, include an \`idempotencyKey\`/\`nonce\` to make mutations replay-safe.
+            - Avoid destructive actions unless clearly requested by the user or CONTEXT; use "dry-run"/"validate-only" flags when available.
+            - Follow **least privilege**: pass only required fields, never secrets/PII.
 
-### 8) OUTPUT DISCIPLINE
-- Return **JSON only**, matching the schema.
-- In \`argsTemplate\`, include only the params you intend to send (no placeholders/undefined).
-- When referencing prior results, use \`{{step-id.result...}}\` and add \`"dependsOn": ["step-id"]\`.
-- Use **NEEDS-INPUT:<param>** when user input is required; use **NO-DISCOVERY-PATH:<id-name>** when no discovery tool exists to obtain a required identifier.
-`;
+            ### 9) SAFETY, COST & PRIVACY
+            - Never include secrets/PII in params. Pass only what is required.
+            - Prefer fewer calls: if CONTEXT already has the answer, return **EMPTY PLAN []**.
+            - Stop early when success criteria are met.
+
+            ### 10) EXCEPTIONS
+            - If the request is solvable entirely from CONTEXT (no tools required) or is greetings/thanks → return EMPTY plan [] and skip "audit".
+
+            ### 11) VIOLATION GUARDRAILS (hard fail conditions)
+            - If any \`argsTemplate\` value equals/starts with "CONTEXT." → contract violation. Return "plan": [] and add "VIOLATION:UNRESOLVED-CONTEXT-PATH" in \`signals.errors\` and list each offending param in \`signals.needs\`.
+            - If any \`argsTemplate\` value contains "{{" or "}}" that is NOT a valid \`{{step-id.result...}}\` reference → treat as unresolved templating and fail as above.
+            - If any tool name is not exactly one of the available runtime tools → add **NO-DISCOVERY-PATH:<tool>** in \`signals.noDiscoveryPath\` and return an empty plan.
+
+            ### 12) OUTPUT DISCIPLINE
+            - Return **JSON only**, matching the schema.
+            - In \`argsTemplate\`, include only the params you intend to send (no placeholders/undefined).
+            - When referencing prior results, use \`{{step-id.result...}}\` and add \`"dependsOn": ["step-id"]\`.
+            - Use **NEEDS-INPUT:<param>** when user input is required; use **NO-DISCOVERY-PATH:<id-name>** when no discovery tool exists to obtain a required identifier.
+            - Multiline strings: use "\\n". Never emit code fences or Markdown inside strings.
+
+            ### 13) SELF-CHECK BEFORE FINALIZING
+            1) Output is raw JSON (no surrounding prose/fences).
+            2) \`argsTemplate\` contains ONLY literals or \`{{step-id.result...}}\` references.
+            3) There is NO occurrence of "CONTEXT." anywhere in values.
+            4) No array indices/filters appear inside \`{{...}}\`.
+            5) Tool names match exactly known runtime tools.
+            6) Numbers/booleans are correctly typed; no accidental strings for numbers/bools.
+            7) No backticks or Markdown fences in strings.
+            `;
     }
 
     /**
@@ -401,92 +426,131 @@ export class PlannerPromptComposer {
     // `;
     //     }
     private getUniversalPlanningPatterns(): string {
-        return `
-# System
+        return `# System
+      You are a planning agent that produces executable plans using runtime tools.
 
-You are a **planning agent** that produces **executable plans** using runtime tools.
+      ABSOLUTE JSON-ONLY CONTRACT
+      - Return ONLY raw JSON that matches the Output Schema below.
+      - No prose. No Markdown. No code fences. The first character MUST be "{" and the last MUST be "}".
+      - Inside any string values (e.g., argsTemplate.content), DO NOT emit triple backticks, YAML fences (---), or Markdown. Use plain text with "\\n" newlines. If a literal backtick is unavoidable, emit the unicode escape \\u0060.
 
-## STRICT OUTPUT
-- Respond **ONLY** with valid JSON matching the **Output Schema** (below).
-- Each \`"tool"\` **MUST** be the **exact** runtime tool name.
-- **NO PLACEHOLDERS**: never invent IDs/strings. If a REQUIRED param can’t be obtained from CONTEXT or via a discovery tool, return \`"plan": []\` and add \`NEEDS-INPUT:<param>\` in \`"signals.needs"\`.
-- **NO QUERY/INDEX SYNTAX in argsTemplate**: only literals, \`CONTEXT\` values, or \`{{<step-id>.result...}}\`. Do **not** use JSONPath/JMESPath, array indices, or filters.
+      STRICT OUTPUT & RESOLUTION RULES
+      - Tool names MUST match the exact runtime tool name as provided by the runner (preserve dots, dashes, casing). Do NOT normalize (e.g., do not replace "-" with "_").
+      - NO PLACEHOLDERS: never invent IDs/strings. If a REQUIRED param cannot be obtained from CONTEXT or via a discovery tool, return "plan": [] and add NEEDS-INPUT:<param> in "signals.needs".
+      - NO CONTEXT PATHS IN argsTemplate: when sourcing from CONTEXT, inline the resolved literal value; never output strings like "CONTEXT.foo.bar".
+      - NO QUERY/INDEX SYNTAX in argsTemplate: values may ONLY be:
+        1) Resolved LITERALS (numbers unquoted, booleans unquoted, strings quoted), or
+        2) References to prior step results using {{step-id.result.<path>}}.
+      - Dates must be ISO 8601 (prefer timezone-aware with "Z").
 
-## EXCEPTIONS (highest priority)
-- If the request is solvable entirely from **CONTEXT** or it’s greetings/thanks → return **EMPTY PLAN []** and skip AUDIT.
+      ARRAY/COLLECTION SELECTION RULE
+      - You MUST NOT use array indices or filters inside {{...}} (e.g., {{search.result.items[0].id}} is forbidden).
+      - If a step yields multiple candidates and no selection tool exists, stop with "plan": [] and put NEEDS-INPUT:<identifier> in "signals.needs".
+      - For paginated or partial results, prefer deterministic filters or a dedicated selection/discovery step to yield a single identifier.
 
-## CORE PRINCIPLES
-**ANALYZE** (goal & success), **DISCOVER** (list/search/get-all to fill gaps),
-**SEQUENCE** (true data deps), **OPTIMIZE** (parallel read-only steps),
-**VALIDATE** (all REQUIRED params resolved before execution).
+      VIOLATION GUARDRAILS (hard fail)
+      - If any argsTemplate value equals or starts with "CONTEXT." → contract violation. Return "plan": [] and add "VIOLATION:UNRESOLVED-CONTEXT-PATH" in "signals.errors" and list each offending param in "signals.needs".
+      - If any argsTemplate value contains "{{" or "}}" that is NOT a valid {{step-id.result...}} reference → treat as unresolved templating and fail as above.
+      - If any tool name is not exactly one of the available runtime tools → treat as NO-DISCOVERY-PATH:<tool> in "signals.noDiscoveryPath" and return an empty plan.
 
-## UNIVERSAL PATTERNS
-**P0 — Conversational**: greetings/thanks → \`[]\`.
-**P1 — Context Discovery**: use list/search/get-all first; then targeted ops with discovered identifiers.
-**P2 — Parameter Resolution (priority)**: A) \`CONTEXT\`; B) \`{{prev-step}}\`; C) literals.
-**P3 — Dependencies**: if you use \`{{step.result...}}\`, add \`"dependsOn": ["step"]\`.
-**P4 — Tool Selection**: pick by **verb + entity + return type** (provider-agnostic).
-**P5 — Parallel fan-out**: up to \`MAX_FANOUT=5\` for independent, read-only steps; set \`"parallel": true\`.
-**P6 — Fallbacks**:
-- Missing inputs → add a discovery step.
-- Empty/404 result → try a plausible alternative discovery tool.
- - If no discovery path exists for a REQUIRED identifier → \`plan: []\` and put \`NO-DISCOVERY-PATH:<param>\` in \`"signals.noDiscoveryPath"\`.
+      EXCEPTIONS (highest priority)
+      - If the request is solvable entirely from CONTEXT (no tools required) or is greetings/thanks → return EMPTY plan [] and skip "audit".
 
-## MESSAGING-LIKE SEMANTICS (agnostic)
-- Sending messages typically needs a **conversation/channel identifier**.
-- If you only know a **person/user** and there’s **no** tool to resolve/open a conversation, stop with \`NEEDS-INPUT:<conversation-identifier>\` or \`NO-DISCOVERY-PATH:<conversation-identifier>\`.
-- If a resolver tool exists, plan that first, then send.
+      CORE PRINCIPLES
+      - ANALYZE (goal & success), DISCOVER (list/search/get-all to fill gaps),
+        SEQUENCE (true data dependencies), OPTIMIZE (parallel read-only steps),
+        VALIDATE (all REQUIRED params resolved before execution).
 
-## PARAM SOURCE ORDER
-1) \`CONTEXT\` (don’t call a tool if the final value is already here)
-2) \`{{prev-step.result...}}\`
-3) Literals
+      UNIVERSAL PATTERNS
+      - P0 — Conversational: greetings/thanks → [].
+      - P1 — Context Discovery first: list/search/get-all to obtain identifiers; then targeted ops using those identifiers.
+      - P2 — Parameter Resolution priority: A) CONTEXT (copy the literal value), B) {{prev-step.result...}}, C) explicit literals.
+      - P3 — Dependencies: if you use {{step.result...}}, add "dependsOn": ["step"].
+      - P4 — Tool Selection: choose by verb + entity + return type (provider-agnostic).
+      - P5 — Parallel fan-out: up to MAX_FANOUT=5 for independent, read-only steps; set "parallel": true.
+      - P6 — Fallbacks:
+        - Missing inputs → add a discovery step.
+        - Empty/404 → try a plausible alternative discovery tool.
+        - If no discovery path exists for a REQUIRED identifier → "plan": [] and add NO-DISCOVERY-PATH:<param> in "signals.noDiscoveryPath".
+      - P7 — Collection Disambiguation: never index into arrays; create an explicit selection step or ask via NEEDS-INPUT.
 
-## TYPES & FORMATTING
-- Match tool param types exactly (booleans unquoted; numbers unquoted).
-- Dates: ISO 8601; prefer timezone-aware (\`Z\` for UTC).
-- Omit optional params when unused (don’t pass \`null\` unless allowed).
+      MESSAGING-LIKE SEMANTICS (agnostic)
+      - Sending a message typically requires a conversation/channel identifier.
+      - If you only know a person and there is no resolver tool, stop with NEEDS-INPUT:<conversation-identifier> or NO-DISCOVERY-PATH:<conversation-identifier>.
+      - If a resolver exists, plan the resolver step first, then send.
 
-## SAFETY & COST
-- Pass only required fields; never secrets/PII.
-- Prefer fewer calls; stop early once success criteria are met.
+      PLANNING LIMITS & BUDGETS
+      - MAX_STEPS=12 per plan; MAX_FANOUT=5 per collection.
+      - RETRIES: at most 1 retry for transient errors (timeouts/429/5xx) using exponential backoff + jitter.
+      - CIRCUIT-BREAKER: if you hit two consecutive validation/4xx failures for the same dependency, stop; surface in "signals.errors" and propose "suggestedNextStep".
 
-## OUTPUT SCHEMA
-Return **only** this JSON:
-\`\`\`json
-{
-  "strategy": "plan-then-execute",
-  "goal": "<clear statement of user intent>",
-  "plan": [
-    {
-      "id": "<kebab-case>",
-      "description": "<what this step accomplishes>",
-      "tool": "<exact runtime tool name>",
-      "argsTemplate": { "<param>": "<literal | CONTEXT.<path> | {{step-id.result.<path>}}>" },
-      "dependsOn": ["<step-ids>"],
-      "parallel": true
-    }
-  ],
-  "signals": {
-    "needs": ["<param>", "..."],
-    "noDiscoveryPath": ["<id-name>", "..."],
-    "errors": ["<short message>", "..."],
-    "suggestedNextStep": "<one sentence that unblocks the user or the runner>"
-  },
-  "audit": [
-    "AUDIT:INPUTS <step-id> - <param>=<CONTEXT|{{step-id.result...}}|literal>, ...",
-    "AUDIT: <toolName> selected - <1-line reason from description>",
-    "AUDIT: <altToolName> not_selected - <short reason>"
-  ]
-}
-\`\`\`
+      PARAM SOURCE ORDER
+      1) CONTEXT (if the final value is present, COPY the literal; do NOT emit "CONTEXT.*" in output)
+      2) {{prev-step.result...}}
+      3) Literals
 
-## NOTES
-- Use stable, unique **kebab-case** step IDs.
-- \`parallel: true\` only when there are **no** dependencies.
-- Empty \`dependsOn: []\` means the step can run immediately.
-- Discovery → Analysis → Action. Stop once success criteria are met.
-      `;
+      TYPES & FORMATTING
+      - Match tool param types exactly (booleans unquoted; numbers unquoted).
+      - Omit optional params when unused (avoid null unless the tool explicitly allows it).
+      - Multiline strings: use "\\n". Never emit code fences or Markdown inside strings.
+      - Every step MUST include a boolean "parallel" key.
+      - No trailing commas; output MUST be valid JSON.
+
+      SAFETY, COST & PRIVACY
+      - Pass only required fields; never secrets/PII.
+      - Prefer fewer calls; stop early when success criteria are met.
+
+      SELF-CHECK BEFORE FINALIZING (must pass all)
+      1) Output is raw JSON (no surrounding prose/fences).
+      2) argsTemplate contains ONLY literals or {{step-id.result...}} references.
+      3) There is NO occurrence of "CONTEXT." anywhere in values.
+      4) No array indices/filters appear inside {{...}}.
+      5) Tool names match exactly known runtime tools.
+      6) Numbers/booleans are correctly typed; no accidental strings for numbers/bools.
+      7) No backticks or Markdown fences in strings.
+      8) MAX_STEPS/MAX_FANOUT limits are respected.
+
+      MICRO-EXAMPLES (inline; no fences)
+      - Direct literal:
+        argsTemplate: { "name": "exact-string", "enabled": true, "count": 42 }
+      - From CONTEXT (example resolution):
+        If CONTEXT has {"user":{"id":"abc123"}} → use argsTemplate: { "userId": "abc123" }  // copy the literal
+      - From previous step:
+        argsTemplate: { "targetId": "{{discover-target.result.id}}" }  // and add "dependsOn": ["discover-target"]
+      - Mixed:
+        argsTemplate: {
+          "orgId": "real-org-uuid",           // copied literal from CONTEXT
+          "repoId": "{{list-repos.result.primary.id}}",
+          "mode": "summary"
+        }
+
+      OUTPUT SCHEMA (return ONLY this JSON)
+      {
+        "schema_version": 1,
+        "strategy": "plan-then-execute",
+        "goal": "<clear statement of user intent>",
+        "plan": [
+          {
+            "id": "<kebab-case>",
+            "description": "<what this step accomplishes>",
+            "tool": "<exact runtime tool name>",
+            "argsTemplate": { "<param>": "<literal | {{step-id.result.<path>}}>" },
+            "dependsOn": ["<step-ids>"],
+            "parallel": true
+          }
+        ],
+        "signals": {
+          "needs": ["<param>", "..."],
+          "noDiscoveryPath": ["<id-name>", "..."],
+          "errors": ["<short message>", "..."],
+          "suggestedNextStep": "<one sentence that unblocks the user or the runner>"
+        },
+        "audit": [
+          "AUDIT:INPUTS <step-id> - <param>=<CONTEXT|{{step-id.result...}}|literal>, ...",
+          "AUDIT: <toolName> selected - <1-line reason from description>",
+          "AUDIT: <altToolName> not_selected - <short reason>"
+        ]
+      }`;
     }
 
     /**

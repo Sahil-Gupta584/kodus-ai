@@ -38,7 +38,10 @@ import type {
     MixedToolsAction,
     DependencyToolsAction,
 } from '../../core/types/agent-types.js';
-import { isNeedMoreInfoAction } from '../../core/types/agent-types.js';
+import {
+    isNeedMoreInfoAction,
+    isExecutePlanAction,
+} from '../../core/types/agent-types.js';
 
 import type { AnyEvent } from '../../core/types/events.js';
 
@@ -84,7 +87,10 @@ import {
     isToolResult,
     StepExecution,
 } from '../planning/planner-factory.js';
-import { ReplanPolicyConfig } from '../planning/strategies/plan-execute-planner.js';
+import {
+    ExecutionPlan,
+    ReplanPolicyConfig,
+} from '@/core/types/planning-shared.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🧩 CORE CONFIGURATION
@@ -4181,6 +4187,9 @@ export abstract class AgentCore<
         }> = [];
 
         let finalExecutionContext: PlannerExecutionContext | undefined;
+        let previousExecution:
+            | PlannerExecutionContext['previousExecution']
+            | undefined;
 
         while (iterations < maxIterations) {
             const plannerInput = this.createPlannerContext(
@@ -4190,6 +4199,11 @@ export abstract class AgentCore<
                 maxIterations,
                 context,
             );
+
+            // 🚀 NEW: Inject previousExecution if available
+            if (previousExecution) {
+                Object.assign(plannerInput, { previousExecution });
+            }
 
             finalExecutionContext = plannerInput;
 
@@ -4226,9 +4240,161 @@ export abstract class AgentCore<
                 );
                 const thinkDuration = Date.now() - thinkStartTime;
 
+                // execute_plan handled below in normal loop
+
                 const actStartTime = Date.now();
                 if (!thought.action) {
                     throw new Error('Thought action is undefined');
+                }
+
+                // NEW: execute_plan in the original loop (no suffix)
+                if (isExecutePlanAction(thought.action)) {
+                    const { PlanExecutor: planExecutor } = await import(
+                        '../planning/executor/plan-executor.js'
+                    );
+                    const plan = this.planner.getPlanForContext?.(plannerInput);
+
+                    if (!plan) {
+                        throw new Error('No plan available for execute_plan');
+                    }
+
+                    const act = (action: AgentAction) => this.act(action);
+
+                    const resolveArgs = (
+                        rawArgs: Record<string, unknown>,
+                        stepList: unknown[],
+                        contextForResolution: PlannerExecutionContext,
+                    ) =>
+                        this.planner!.resolveArgs
+                            ? this.planner!.resolveArgs(
+                                  rawArgs,
+                                  stepList,
+                                  contextForResolution,
+                              )
+                            : Promise.resolve({ args: rawArgs, missing: [] });
+
+                    const executor = new planExecutor(
+                        act,
+                        resolveArgs,
+                        { enableReWOO: true }, // Enable pure ReWOO mode
+                    );
+
+                    const obsRes = await executor.run(
+                        plan as ExecutionPlan,
+                        plannerInput,
+                    );
+
+                    // 🚀 NEW: Use rich context for replanning
+                    const isComplete = obsRes.type === 'execution_complete';
+                    const shouldContinue = obsRes.type === 'needs_replan';
+
+                    // 🎯 RICH CONTEXT: Store complete execution result for next iteration
+                    if (shouldContinue && obsRes.replanContext) {
+                        // 🚀 NEW: Store previousExecution for next iteration
+                        previousExecution = {
+                            plan: plan as ExecutionPlan,
+                            result: obsRes,
+                            preservedSteps: obsRes.replanContext.preservedSteps,
+                            failureAnalysis: {
+                                primaryCause:
+                                    obsRes.replanContext.failurePatterns[0] ||
+                                    'Unknown failure',
+                                failurePatterns:
+                                    obsRes.replanContext.failurePatterns,
+                                affectedSteps: obsRes.failedSteps,
+                            },
+                        };
+                    }
+
+                    // 🚀 NEW: Process plan execution result through observe
+                    const planResult: ActionResult = isComplete
+                        ? { type: 'final_answer', content: obsRes.feedback }
+                        : { type: 'error', error: obsRes.feedback };
+
+                    const observeSpan = startAgentSpan(
+                        obs.telemetry,
+                        'observe',
+                        {
+                            agentName: this.config.agentName || 'unknown',
+                            correlationId: context.correlationId || 'unknown',
+                            iteration: iterations,
+                        },
+                    );
+
+                    const observation = await obs.telemetry.withSpan(
+                        observeSpan,
+                        async () => {
+                            try {
+                                const res = await this.observe(
+                                    planResult,
+                                    plannerInput,
+                                );
+                                markSpanOk(observeSpan);
+                                return res;
+                            } catch (err) {
+                                applyErrorToSpan(observeSpan, err, {
+                                    phase: 'observe',
+                                });
+                                throw err;
+                            }
+                        },
+                    );
+                    // const observeDuration = Date.now() - observeStartTime; // Not used in this context
+
+                    executionHistory.push({
+                        thought,
+                        action: thought.action,
+                        result: planResult,
+                        observation,
+                    });
+
+                    await context.session.addEntry(
+                        {
+                            type: 'execution_step',
+                            iteration: iterations,
+                            thought: thought.reasoning,
+                            action: thought.action,
+                        },
+                        {
+                            type: 'execution_result',
+                            result:
+                                planResult.type === 'error'
+                                    ? { error: planResult.error }
+                                    : planResult.content,
+                            observation: observation.feedback,
+                            isComplete: observation.isComplete,
+                            timestamp: Date.now(),
+                        },
+                    );
+
+                    // ✅ STATE: Update working memory with current execution state
+                    await context.state.set(
+                        'execution',
+                        'last_action',
+                        thought.action,
+                    );
+                    await context.state.set(
+                        'execution',
+                        'current_iteration',
+                        iterations,
+                    );
+                    await context.state.set(
+                        'execution',
+                        'last_result',
+                        planResult,
+                    );
+                    await context.state.set(
+                        'execution',
+                        'last_observation',
+                        observation,
+                    );
+
+                    if (observation.isComplete || !shouldContinue) {
+                        break;
+                    }
+
+                    iterations++;
+                    continue;
                 }
 
                 const actSpan = startAgentSpan(obs.telemetry, 'act', {
@@ -4239,6 +4405,7 @@ export abstract class AgentCore<
                         actionType: thought.action?.type || 'unknown',
                     },
                 });
+
                 const result = await obs.telemetry.withSpan(
                     actSpan,
                     async () => {
@@ -4339,7 +4506,7 @@ export abstract class AgentCore<
                 const eventsGenerated = finalEventCount - initialEventCount;
 
                 // Enhanced logging with performance metrics
-                this.logger.debug('Think→Act→Observe iteration completed', {
+                this.logger.info('Think→Act→Observe iteration completed', {
                     iteration: iterations,
                     thinkDuration,
                     actDuration,
