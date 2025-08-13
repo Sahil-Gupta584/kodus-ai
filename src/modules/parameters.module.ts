@@ -15,6 +15,9 @@ import { IntegrationModule } from './integration.module';
 import { GenerateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/generate-code-review-paremeter.use-case';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 import { PullRequestMessagesModule } from './pullRequestMessages.module';
+import { KodyRulesModule } from './kodyRules.module';
+import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
+import { KodyRulesService } from '@/ee/kodyRules/service/kodyRules.service';
 
 @Module({
     imports: [
@@ -25,6 +28,7 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
         forwardRef(() => IntegrationModule),
         forwardRef(() => CodeReviewSettingsLogModule),
         forwardRef(() => PullRequestMessagesModule),
+        forwardRef(() => KodyRulesModule),
     ],
     providers: [
         ...UseCases,
@@ -37,11 +41,16 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
             provide: PARAMETERS_REPOSITORY_TOKEN,
             useClass: ParametersRepository,
         },
+        {
+            provide: KODY_RULES_SERVICE_TOKEN,
+            useClass: KodyRulesService,
+        },
     ],
     controllers: [ParametersController],
     exports: [
         PARAMETERS_SERVICE_TOKEN,
         PARAMETERS_REPOSITORY_TOKEN,
+        KODY_RULES_SERVICE_TOKEN,
         CreateOrUpdateParametersUseCase,
         GenerateCodeReviewParameterUseCase,
     ],
