@@ -10,7 +10,6 @@ import type { TraceItem } from '../../src/observability/telemetry.js';
 
 describe('Runtime Middleware - withObservability', () => {
     it('cria span por evento e registra exceções', async () => {
-        process.env.KODUS_DISABLE_TRACING = '0';
         const obs = getObservability({
             telemetry: {
                 enabled: true,

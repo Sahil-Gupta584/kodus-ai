@@ -369,7 +369,8 @@ export class PlanExecutor {
         const hasSignalsProblems =
             (signals?.needs?.length || 0) > 0 ||
             (signals?.noDiscoveryPath?.length || 0) > 0 ||
-            (signals?.errors?.length || 0) > 0;
+            (signals?.errors?.length || 0) > 0 ||
+            !!signals?.suggestedNextStep;
 
         await this.emitSessionEvent(
             context,
@@ -443,19 +444,35 @@ export class PlanExecutor {
         let resultType: PlanExecutionResult['type'];
         let feedback: string;
 
-        if (
+        // 🎯 CORRIGIDO: Check signals FIRST, then execution status
+        if (hasSignalsProblems) {
+            // ✅ VERIFICAR LIMITE DE REPLANS ANTES DE REPLAN
+            const replansCount = Number(
+                (plan.metadata as Record<string, unknown>)?.replansCount ?? 0,
+            );
+            const maxReplans = 1; // ✅ PADRÃO DO EXECUTOR (configurável depois)
+
+            if (replansCount >= maxReplans) {
+                // ✅ LIMITE ATINGIDO - PARAR LOOP
+                resultType = 'execution_complete';
+                feedback = `Replan limit reached (${replansCount}/${maxReplans}). Cannot continue with missing inputs: ${JSON.stringify(signals?.needs)}`;
+            } else {
+                // ✅ AINDA PODE REPLAN
+                resultType = 'needs_replan';
+                feedback = `Plan needs replanning due to signals. Success: ${successfulSteps.length}, Failed: ${failedSteps.length}, Signals: ${JSON.stringify(signals)}`;
+            }
+        } else if (
             failedSteps.length === 0 &&
             successfulSteps.length === plan.steps.length
         ) {
-            // Perfect execution - all steps completed successfully
+            // Perfect execution - all steps completed successfully AND no signals
             resultType = 'execution_complete';
             feedback = `Plan executed successfully. Completed ${successfulSteps.length}/${plan.steps.length} steps.`;
         } else if (
-            hasSignalsProblems ||
             failedSteps.length > 0 ||
             (allStepsProcessed && skippedSteps.length > 0)
         ) {
-            // Need replan due to failures, signals, or skipped steps
+            // Need replan due to failures or skipped steps
             resultType = 'needs_replan';
             feedback = `Plan needs replanning. Success: ${successfulSteps.length}, Failed: ${failedSteps.length}, Skipped: ${skippedSteps.length}`;
         } else if (

@@ -22,7 +22,6 @@ describe('ObservabilitySystem - Integração', () => {
     let errorSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
-        process.env.KODUS_DISABLE_TRACING = '0';
         logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
         debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
         warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -120,7 +119,6 @@ describe('ObservabilitySystem - Integração', () => {
     });
 
     it('instrumenta handler genérico via createObservabilityMiddleware', async () => {
-        process.env.KODUS_DISABLE_TRACING = '0';
         const obs = getObservability({
             environment: 'development',
             telemetry: {

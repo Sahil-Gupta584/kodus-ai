@@ -629,4 +629,332 @@ describe('🚀 ReWOO Unit Tests', () => {
             ).toBe('Invalid input provided');
         });
     });
+
+    test('deve fazer replan quando há signals mesmo com todos steps executados com sucesso', async () => {
+        const mockAct = async (action: AgentAction): Promise<ActionResult> => {
+            return {
+                type: 'tool_result',
+                content: {
+                    result: { result: 'success' },
+                    toolName:
+                        (action as { toolName?: string }).toolName || 'unknown',
+                    metadata: { correlationId: 'test' },
+                    eventId: 'test-event',
+                    tenantId: 'test-tenant',
+                    operationId: 'test-op',
+                    timestamp: Date.now(),
+                },
+            };
+        };
+
+        const mockResolveArgs = async (): Promise<{
+            args: Record<string, unknown>;
+            missing: string[];
+        }> => {
+            return { args: {}, missing: [] };
+        };
+
+        const executor = new PlanExecutor(mockAct, mockResolveArgs, {
+            enableReWOO: true,
+        });
+
+        const plan: ExecutionPlan = {
+            id: 'test-plan',
+            goal: 'Test plan with signals',
+            strategy: 'plan-execute',
+            reasoning: 'Test reasoning',
+            steps: [
+                {
+                    id: 'step-1',
+                    description: 'Step 1',
+                    type: 'action',
+                    tool: 'test_tool',
+                    arguments: {},
+                    dependencies: [],
+                    status: 'pending',
+                    parallel: false,
+                    optional: false,
+                    retry: 0,
+                    retryCount: 0,
+                    maxRetries: 3,
+                },
+            ],
+            status: 'executing',
+            currentStepIndex: 0,
+            metadata: {
+                signals: {
+                    needs: ['more_user_info'],
+                    suggestedNextStep: 'get_user_preferences',
+                    errors: [],
+                    noDiscoveryPath: [],
+                },
+            },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+        };
+
+        const context = {
+            agentContext: {
+                session: {
+                    addEntry: vi.fn(),
+                },
+                stepExecution: {
+                    addContextOperation: vi.fn(),
+                    updateStep: vi.fn(),
+                    getCurrentStep: vi.fn(),
+                },
+                sessionId: 'test-session',
+                tenantId: 'test-tenant',
+                correlationId: 'test-correlation',
+                thread: { id: 'test-thread', metadata: {} },
+                state: {
+                    set: vi.fn(),
+                    get: vi.fn(),
+                    clear: vi.fn(),
+                    getNamespace: vi.fn(),
+                },
+                memory: {
+                    add: vi.fn(),
+                    search: vi.fn(),
+                    store: vi.fn(),
+                    get: vi.fn(),
+                    getRecent: vi.fn(),
+                },
+                kernel: { getState: vi.fn() },
+                signal: new AbortController().signal,
+                availableTools: [],
+                agentName: 'test-agent',
+                invocationId: 'test-invocation',
+                track: vi.fn(),
+                cleanup: vi.fn(),
+                executionRuntime: { startTime: Date.now() },
+            },
+            history: [],
+            iterations: 1,
+            plannerMetadata: { startTime: Date.now() },
+            input: 'test',
+            isComplete: false,
+            maxIterations: 5,
+            update: vi.fn(),
+            getCurrentSituation: vi.fn(),
+            getFinalResult: vi.fn(),
+        } as unknown as PlannerExecutionContext;
+
+        const result = await executor.run(plan, context);
+
+        // ✅ Deve fazer replan mesmo com steps executados com sucesso
+        expect(result.type).toBe('needs_replan');
+        expect(result.hasSignalsProblems).toBe(true);
+        expect(result.signals?.needs).toContain('more_user_info');
+        expect(result.signals?.suggestedNextStep).toBe('get_user_preferences');
+        expect(result.successfulSteps).toContain('step-1');
+        expect(result.failedSteps).toHaveLength(0);
+        expect(result.feedback).toContain('signals');
+    });
+
+    test('deve fazer replan quando há apenas suggestedNextStep sem outros signals', async () => {
+        const mockAct = async (_action: AgentAction): Promise<ActionResult> => {
+            return {
+                type: 'tool_result',
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify({
+                            data: { result: 'success' },
+                            error: null,
+                            successful: true,
+                            logId: 'test-log',
+                        }),
+                    },
+                ],
+                metadata: { correlationId: 'test' },
+            };
+        };
+
+        const mockResolveArgs = async (): Promise<{
+            args: Record<string, unknown>;
+            missing: string[];
+        }> => {
+            return { args: {}, missing: [] };
+        };
+
+        const executor = new PlanExecutor(mockAct, mockResolveArgs, {
+            enableReWOO: true,
+        });
+
+        const plan: ExecutionPlan = {
+            id: 'test-plan',
+            goal: 'Test plan with suggestedNextStep only',
+            strategy: 'plan-execute',
+            reasoning: 'Test reasoning for suggestedNextStep',
+            steps: [
+                {
+                    id: 'step-1',
+                    description: 'Step 1',
+                    type: 'action',
+                    tool: 'test_tool',
+                    arguments: {},
+                    dependencies: [],
+                    status: 'pending',
+                    parallel: false,
+                    optional: false,
+                    retry: 0,
+                    retryCount: 0,
+                    maxRetries: 3,
+                },
+            ],
+            status: 'executing',
+            currentStepIndex: 0,
+            metadata: {
+                signals: {
+                    needs: [], // Vazio
+                    suggestedNextStep: 'get_user_preferences', // Apenas isso
+                    errors: [], // Vazio
+                    noDiscoveryPath: [], // Vazio
+                },
+            },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+        };
+
+        const context = {
+            agentContext: {
+                session: {
+                    addEntry: vi.fn(),
+                },
+                stepExecution: {
+                    addContextOperation: vi.fn(),
+                    updateStep: vi.fn(),
+                    getCurrentStep: vi.fn(),
+                },
+            },
+            history: [],
+            iterations: 1,
+            plannerMetadata: { startTime: Date.now() },
+            input: 'test',
+            isComplete: false,
+            maxIterations: 5,
+            update: vi.fn(),
+            getCurrentSituation: vi.fn(),
+            getFinalResult: vi.fn(),
+        } as unknown as PlannerExecutionContext;
+
+        const result = await executor.run(plan, context);
+
+        // ✅ Deve fazer replan mesmo com apenas suggestedNextStep
+        expect(result.type).toBe('needs_replan');
+        expect(result.hasSignalsProblems).toBe(true);
+        expect(result.signals?.suggestedNextStep).toBe('get_user_preferences');
+        expect(result.signals?.needs).toHaveLength(0);
+        expect(result.signals?.errors).toHaveLength(0);
+        expect(result.successfulSteps).toContain('step-1');
+        expect(result.failedSteps).toHaveLength(0);
+        expect(result.feedback).toContain('signals');
+    });
+
+    it('should respect maxReplansPerPlan limit and stop infinite loop', async () => {
+        const mockAct = async (_action: AgentAction): Promise<ActionResult> => {
+            return {
+                type: 'tool_result',
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify({
+                            data: { result: 'success' },
+                            error: null,
+                            successful: true,
+                            logId: 'test-log',
+                        }),
+                    },
+                ],
+                metadata: { correlationId: 'test' },
+            };
+        };
+
+        const mockResolveArgs = async (): Promise<{
+            args: Record<string, unknown>;
+            missing: string[];
+        }> => {
+            return { args: {}, missing: ['user_preferences'] }; // ✅ SEMPRE FALTANDO INPUT
+        };
+
+        const executor = new PlanExecutor(mockAct, mockResolveArgs, {
+            enableReWOO: true,
+        });
+
+        const plan: ExecutionPlan = {
+            id: 'test-plan',
+            goal: 'Test plan with maxReplansPerPlan limit',
+            strategy: 'plan-execute',
+            reasoning: 'Test reasoning for maxReplansPerPlan',
+            steps: [
+                {
+                    id: 'step-1',
+                    description: 'Step 1',
+                    type: 'action',
+                    tool: 'test_tool',
+                    arguments: {},
+                    dependencies: [],
+                    status: 'pending',
+                    parallel: false,
+                    optional: false,
+                    retry: 0,
+                    retryCount: 0,
+                    maxRetries: 3,
+                },
+            ],
+            status: 'executing',
+            currentStepIndex: 0,
+            metadata: {
+                replansCount: 0, // ✅ COMEÇA COM 0
+                signals: {
+                    needs: ['user_preferences'], // ✅ SEMPRE FALTANDO
+                    suggestedNextStep: 'get_user_preferences',
+                    errors: [],
+                    noDiscoveryPath: [],
+                },
+            },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+        };
+
+        const context = {
+            agentContext: {
+                session: {
+                    addEntry: vi.fn(),
+                },
+                stepExecution: {
+                    addContextOperation: vi.fn(),
+                    updateStep: vi.fn(),
+                    getCurrentStep: vi.fn(),
+                },
+            },
+            history: [],
+            iterations: 1,
+            plannerMetadata: { startTime: Date.now() },
+            input: 'test',
+            isComplete: false,
+            maxIterations: 5,
+            update: vi.fn(),
+            getCurrentSituation: vi.fn(),
+            getFinalResult: vi.fn(),
+        } as unknown as PlannerExecutionContext;
+
+        // ✅ PRIMEIRA EXECUÇÃO - DEVE REPLAN
+        let result = await executor.run(plan, context);
+        expect(result.type).toBe('needs_replan');
+        expect(result.hasSignalsProblems).toBe(true);
+        expect(result.signals?.needs).toContain('user_preferences');
+
+        // ✅ SEGUNDA EXECUÇÃO - DEVE REPLAN
+        result = await executor.run(plan, context);
+        expect(result.type).toBe('needs_replan');
+        expect(result.hasSignalsProblems).toBe(true);
+
+        // ✅ TERCEIRA EXECUÇÃO - DEVE PARAR (maxReplansPerPlan = 1)
+        result = await executor.run(plan, context);
+        expect(result.type).toBe('execution_complete'); // ✅ DEVE PARAR
+        expect(result.hasSignalsProblems).toBe(false); // ✅ NÃO DEVE TER PROBLEMAS
+        expect(result.feedback).toContain('Replan limit reached'); // ✅ DEVE MENCIONAR LIMITE
+    });
 });

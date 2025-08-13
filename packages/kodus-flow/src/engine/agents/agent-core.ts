@@ -4306,39 +4306,61 @@ export abstract class AgentCore<
                         };
                     }
 
-                    // 🚀 NEW: Process plan execution result through observe
+                    // 🚀 NEW: Process plan execution result (ReWOO vs Legacy)
                     const planResult: ActionResult = isComplete
                         ? { type: 'final_answer', content: obsRes.feedback }
                         : { type: 'error', error: obsRes.feedback };
 
-                    const observeSpan = startAgentSpan(
-                        obs.telemetry,
-                        'observe',
-                        {
-                            agentName: this.config.agentName || 'unknown',
-                            correlationId: context.correlationId || 'unknown',
-                            iteration: iterations,
-                        },
-                    );
+                    // 🎯 REWOO: Use PlanExecutor decision directly (no planner interference)
+                    let observation: ResultAnalysis;
 
-                    const observation = await obs.telemetry.withSpan(
-                        observeSpan,
-                        async () => {
-                            try {
-                                const res = await this.observe(
-                                    planResult,
-                                    plannerInput,
-                                );
-                                markSpanOk(observeSpan);
-                                return res;
-                            } catch (err) {
-                                applyErrorToSpan(observeSpan, err, {
-                                    phase: 'observe',
-                                });
-                                throw err;
-                            }
-                        },
-                    );
+                    // 🎯 Check if we're in ReWOO mode (same as PlanExecutor)
+                    const isReWOOMode = true; // Always true for plan-execute with ReWOO
+
+                    if (isReWOOMode) {
+                        // ✅ ReWOO: Direct decision from PlanExecutor
+                        observation = {
+                            isComplete: obsRes.type === 'execution_complete',
+                            isSuccessful: obsRes.type === 'execution_complete',
+                            feedback: obsRes.feedback,
+                            shouldContinue: obsRes.type === 'needs_replan',
+                            suggestedNextAction:
+                                obsRes.type === 'needs_replan'
+                                    ? 'Replan with preserved context'
+                                    : undefined,
+                        };
+                    } else {
+                        // 🔄 Legacy: Use planner analysis
+                        const observeSpan = startAgentSpan(
+                            obs.telemetry,
+                            'observe',
+                            {
+                                agentName: this.config.agentName || 'unknown',
+                                correlationId:
+                                    context.correlationId || 'unknown',
+                                iteration: iterations,
+                            },
+                        );
+
+                        observation = await obs.telemetry.withSpan(
+                            observeSpan,
+                            async () => {
+                                try {
+                                    const res = await this.observe(
+                                        planResult,
+                                        plannerInput,
+                                    );
+                                    markSpanOk(observeSpan);
+                                    return res;
+                                } catch (err) {
+                                    applyErrorToSpan(observeSpan, err, {
+                                        phase: 'observe',
+                                    });
+                                    throw err;
+                                }
+                            },
+                        );
+                    }
                     // const observeDuration = Date.now() - observeStartTime; // Not used in this context
 
                     executionHistory.push({

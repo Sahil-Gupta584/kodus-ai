@@ -14,7 +14,6 @@ describe('ObservabilitySystem - Unit', () => {
     let infoSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
-        process.env.KODUS_DISABLE_TRACING = '0';
         infoSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
         vi.spyOn(console, 'debug').mockImplementation(() => {});
         vi.spyOn(console, 'warn').mockImplementation(() => {});

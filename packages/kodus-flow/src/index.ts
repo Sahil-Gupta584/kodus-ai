@@ -79,7 +79,6 @@ export type { WorkflowDefinition } from './core/types/workflow-types.js';
 export {
     getObservability,
     createLogger,
-    setLoggerProvider,
     createOtelTracerAdapter,
     shutdownObservability,
 } from './observability/index.js';

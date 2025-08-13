@@ -48,10 +48,9 @@ describe('TelemetrySystem - Extras', () => {
         expect(second.length).toBeGreaterThan(0);
     });
 
-    it('honra KODUS_DISABLE_TRACING desativando spans', async () => {
-        process.env.KODUS_DISABLE_TRACING = '1';
+    it('honra configuração programática desativando spans', async () => {
         const telLocal = new TelemetrySystem({
-            enabled: true,
+            enabled: false, // ✅ Programmatic config instead of env vars
             sampling: { rate: 1, strategy: 'probabilistic' },
         });
         const spans: string[] = [];
@@ -61,6 +60,5 @@ describe('TelemetrySystem - Extras', () => {
         const span = telLocal.startSpan('disabled.local');
         await telLocal.withSpan(span, async () => {});
         expect(spans.length).toBe(0);
-        process.env.KODUS_DISABLE_TRACING = '0';
     });
 });

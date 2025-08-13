@@ -85,7 +85,7 @@ export class PlannerPromptComposer {
         }
 
         // Compose system prompt
-        const systemPrompt = this.composeSystemPrompt();
+        const systemPrompt = this.composeSystemPrompt(context.isReplan);
 
         // Compose user prompt
         const userPrompt = this.composeUserPrompt(context);
@@ -124,11 +124,11 @@ export class PlannerPromptComposer {
     /**
      * Compose the system prompt with universal patterns and customizations
      */
-    private composeSystemPrompt(): string {
+    private composeSystemPrompt(isReplan = false): string {
         const sections: string[] = [];
 
         if (this.config.features?.includeUniversalPatterns !== false) {
-            sections.push(this.getUniversalPlanningPatterns());
+            sections.push(this.getUniversalPlanningPatterns(isReplan));
         }
 
         const additionalPatterns = this.gatherAdditionalPatterns();
@@ -164,32 +164,42 @@ export class PlannerPromptComposer {
 
         // 3. Context information
         if (context.memoryContext) {
-            sections.push(`CONTEXT:\n${context.memoryContext.trim()}`);
+            sections.push(`## 📋 CONTEXT\n${context.memoryContext.trim()}`);
         }
 
         // 4. Planning history
         if (context.planningHistory) {
             sections.push(
-                `PREVIOUS ATTEMPTS:\n${context.planningHistory.trim()}`,
+                `## 📚 PREVIOUS ATTEMPTS\n${context.planningHistory.trim()}`,
             );
         }
 
-        // 5. Additional context
+        // 5. Replan context (if this is a replan attempt)
+        if (context.replanContext || context.isReplan) {
+            sections.push(
+                this.formatReplanContext({
+                    replanContext: context.replanContext,
+                    isReplan: context.isReplan,
+                }),
+            );
+        }
+
+        // 6. Additional context (user-provided info only)
         if (
             context.additionalContext &&
             Object.keys(context.additionalContext).length > 0
         ) {
             sections.push(
-                `ADDITIONAL INFO:\n${JSON.stringify(context.additionalContext, null, 2)}`,
+                this.formatAdditionalContext(context.additionalContext),
             );
         }
 
-        // 7. The user request
-        sections.push(`USER REQUEST: "${context.goal}"`);
+        // 6. The user request
+        sections.push(`## 🎯 USER REQUEST\n"${context.goal}"`);
 
-        // 8. Final instruction
+        // 7. Final instruction
         sections.push(
-            'Create an executable plan using the available tools above.',
+            '## ✅ TASK\nCreate an executable plan using the available tools above.',
         );
 
         return sections.join('\n\n');
@@ -199,358 +209,336 @@ export class PlannerPromptComposer {
      * Instructions for using tools in the plan
      */
     private getToolUsageInstructions(): string {
-        return `
-            ## TOOL USAGE INSTRUCTIONS
+        return `## 🔧 TOOL USAGE INSTRUCTIONS
 
-            ### 0) CONTRACT (read first)
-            - **NO PLACEHOLDERS**: never invent IDs/strings (e.g., "123...", "TBD"). If a REQUIRED param cannot be obtained from CONTEXT or via a discovery tool, return "plan": [] and emit NEEDS-INPUT:<param> in "reasoning".
-            - **NO CONTEXT PATHS IN \`argsTemplate\`**: when sourcing from CONTEXT, inline the resolved literal value; never output strings like "CONTEXT.foo.bar" in \`argsTemplate\`.
-            - **NO QUERY/INDEX SYNTAX IN \`argsTemplate\`**: only literals or {{step-id.result...}}. Do not embed JSONPath/JMESPath/filters or array indices (e.g., [0], items[?(@.name==...)]).
-            - **TOOL NAME MUST MATCH EXACT RUNTIME NAME**: preserve dots/dashes/casing.
-            - **AUDIT:INPUTS per step**: list the source of every REQUIRED param (CONTEXT | {{step-id.result...}} | literal). If any would be a placeholder, the plan must be empty with NEEDS-INPUT.
+### 📋 CRITICAL CONTRACT
+- **NO PLACEHOLDERS**: Never invent IDs/strings. If required params missing → "plan": [] + NEEDS-INPUT
+- **NO CONTEXT PATHS**: Inline resolved values, never "CONTEXT.foo.bar" in argsTemplate
+- **NO ARRAY INDICES**: Never use [0], [1] inside {{...}} references
+- **EXACT TOOL NAMES**: Match runtime tool names exactly (preserve dots/dashes/casing)
 
-            ### 1) PARAMS & TYPES
-            - REQUIRED params must be present and valid. If anything essential is missing, insert a prior discovery step.
-            - OPTIONAL params: omit when unused (don’t send \`null\` unless the tool explicitly allows it).
-            - Types: match the tool spec exactly (string/number/boolean). **Booleans unquoted (true/false); numbers unquoted; don’t coerce.**
-            - Dates: ISO 8601 (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:mm:ssZ\`). Prefer timezone-aware; use \`Z\` for UTC.
+### 🎯 PARAMETER HANDLING
+- **REQUIRED**: Must be present and valid. Add discovery step if missing
+- **OPTIONAL**: Omit when unused (avoid null unless tool allows it)
+- **TYPES**: Match exactly (booleans unquoted, numbers unquoted, strings quoted)
+- **DATES**: ISO 8601 (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ)
 
-            ### 2) SOURCES OF VALUES (priority)
-            1. **CONTEXT** → if the final value is present, **do not** call a tool.
-            2. **Previous step results** → \`{{step-id.result...}}\`.
-            3. **Direct literals**.
+### 🔄 VALUE SOURCES (Priority Order)
+1. **CONTEXT** → Copy literal values directly
+2. **{{step-id.result...}}** → Previous step outputs
+3. **Literals** → Direct values
 
-            ### 3) ARRAY/COLLECTION SELECTION RULE
-            - Never use indices/filters inside \`{{...}}\` (e.g., \`{{search.result.items[0].id}}\` is forbidden).
-            - If a step yields multiple candidates and no selection tool exists, stop with **NEEDS-INPUT:<identifier>**.
-            - If a selection/discovery tool exists, add that step first to obtain a single identifier, then reference it (e.g., \`{{select-item.result.id}}\`).
+### 🛠️ TOOL SELECTION STRATEGY
+- **Discovery tools**: list, search, get-all, find, discover
+- **Read tools**: get, fetch, retrieve, show, display
+- **Action tools**: create, update, delete, send, execute
+- **Choose**: Most specific tool with fewest required params
 
-            ### 4) TOOL SELECTION
-            - Choose by **verb + entity + return type** (e.g., list → \`objects[]\`, get → \`object\`, update → mutation result).
-            - If multiple tools fit, pick the **most specific** with **fewest required params**.
-            - If IDs/paths are unknown, start with a **discovery** tool (list/search/get-all).
+### 📊 PLANNING PATTERNS
+- **Minimal steps**: Only what's needed to achieve goal
+- **Dependencies**: Use dependsOn for step ordering
+- **Parallel**: Only for independent, read-only steps (MAX_FANOUT=5)
 
-            ### 5) PLANNING & ORDER
-            - **Discovery → Analysis → Action**.
-            - Include only the **minimum** steps needed.
-            - Use stable, unique kebab-case \`id\`s. Each step’s \`description\` states intent and key inputs.
-            - Every step MUST include a boolean \`parallel\` key.
+### ⚠️ COMMON MISTAKES TO AVOID
+\`\`\`
+❌ WRONG: "userId": "john" (assuming ID exists)
+✅ RIGHT: find-user → use "{{find-user.result.id}}"
 
-            ### 6) PARALLELISM & FAN-OUT
-            - Mark \`parallel: true\` only for **independent, read-only** steps.
-            - For collections, fan-out up to **5** steps (**MAX_FANOUT=5**); merge results later.
+❌ WRONG: "{{list.items[0].id}}" (array index)
+✅ RIGHT: select-item → use "{{select-item.result.id}}"
 
-            ### 7) FALLBACKS & RETRIES
-            - If a step returns empty/not found/validation error, add a fallback: relax filters or try an alternative discovery tool.
-            - For transient errors (timeouts/429/5xx), plan **one** retry with **exponential backoff + jitter**; otherwise continue via the next viable path.
+❌ WRONG: "{{CONTEXT.user.id}}" (context path)
+✅ RIGHT: "abc123" (copy literal value)
+\`\`\`
 
-            ### 8) MUTATIONS & SIDE-EFFECTS
-            - Prefer **idempotency**: if the tool supports it, include an \`idempotencyKey\`/\`nonce\` to make mutations replay-safe.
-            - Avoid destructive actions unless clearly requested by the user or CONTEXT; use "dry-run"/"validate-only" flags when available.
-            - Follow **least privilege**: pass only required fields, never secrets/PII.
+### 🔍 AUDIT REQUIREMENTS
+For each step, include:
+- **AUDIT:INPUTS** - Source of every required param (CONTEXT | {{step-id.result...}} | literal)
+- **AUDIT:TOOL** - Why this tool was selected (1-line reason)
+- **AUDIT:ALTERNATIVE** - Why alternatives weren't chosen (if applicable)
 
-            ### 9) SAFETY, COST & PRIVACY
-            - Never include secrets/PII in params. Pass only what is required.
-            - Prefer fewer calls: if CONTEXT already has the answer, return **EMPTY PLAN []**.
-            - Stop early when success criteria are met.
+### 🚨 VIOLATION HANDLING & SIGNALS
 
-            ### 10) EXCEPTIONS
-            - If the request is solvable entirely from CONTEXT (no tools required) or is greetings/thanks → return EMPTY plan [] and skip "audit".
+**NEEDS-INPUT:<param>** - Use when user must provide data
+- **When**: Required parameter cannot be discovered from CONTEXT or tools
+- **Example**: User asks "Send message to John" but no discovery tool exists for "John"
+- **Response**: "plan": [], "signals": { "needs": ["user-identifier"] }
 
-            ### 11) VIOLATION GUARDRAILS (hard fail conditions)
-            - If any \`argsTemplate\` value equals/starts with "CONTEXT." → contract violation. Return "plan": [] and add "VIOLATION:UNRESOLVED-CONTEXT-PATH" in \`signals.errors\` and list each offending param in \`signals.needs\`.
-            - If any \`argsTemplate\` value contains "{{" or "}}" that is NOT a valid \`{{step-id.result...}}\` reference → treat as unresolved templating and fail as above.
-            - If any tool name is not exactly one of the available runtime tools → add **NO-DISCOVERY-PATH:<tool>** in \`signals.noDiscoveryPath\` and return an empty plan.
+**NO-DISCOVERY-PATH:<param>** - Use when no tool can find required data
+- **When**: Required parameter exists but no discovery tool available
+- **Example**: Need "contextId" but no list-contexts or search-contexts tool exists
+- **Response**: "plan": [], "signals": { "noDiscoveryPath": ["contextId"] }
 
-            ### 12) OUTPUT DISCIPLINE
-            - Return **JSON only**, matching the schema.
-            - In \`argsTemplate\`, include only the params you intend to send (no placeholders/undefined).
-            - When referencing prior results, use \`{{step-id.result...}}\` and add \`"dependsOn": ["step-id"]\`.
-            - Use **NEEDS-INPUT:<param>** when user input is required; use **NO-DISCOVERY-PATH:<id-name>** when no discovery tool exists to obtain a required identifier.
-            - Multiline strings: use "\\n". Never emit code fences or Markdown inside strings.
+**VIOLATION:UNRESOLVED-CONTEXT-PATH** - Use when CONTEXT path appears in output
+- **When**: You accidentally output "CONTEXT.foo.bar" instead of resolved value
+- **Example**: argsTemplate: { "userId": "{{CONTEXT.user.id}}" } ❌
+- **Correct**: argsTemplate: { "userId": "abc123" } ✅ (if CONTEXT has {"user":{"id":"abc123"}})
 
-            ### 13) SELF-CHECK BEFORE FINALIZING
-            1) Output is raw JSON (no surrounding prose/fences).
-            2) \`argsTemplate\` contains ONLY literals or \`{{step-id.result...}}\` references.
-            3) There is NO occurrence of "CONTEXT." anywhere in values.
-            4) No array indices/filters appear inside \`{{...}}\`.
-            5) Tool names match exactly known runtime tools.
-            6) Numbers/booleans are correctly typed; no accidental strings for numbers/bools.
-            7) No backticks or Markdown fences in strings.
-            `;
+**VIOLATION:UNRESOLVED-TEMPLATING** - Use when invalid template syntax
+- **When**: Template reference is malformed or references non-existent step
+- **Example**: argsTemplate: { "id": "{{step-that-doesnt-exist.result.id}}" } ❌
+- **Correct**: argsTemplate: { "id": "{{discover-context.result.id}}" } ✅
+
+**VIOLATION:UNKNOWN-TOOL** - Use when tool name doesn't exist
+- **When**: Tool name doesn't match any available runtime tool
+- **Example**: "tool": "create-super-item" but only "create-item" exists
+- **Correct**: Use exact tool name from available tools list
+
+### ✅ SELF-CHECK CHECKLIST
+1. ✅ Raw JSON output (no prose/fences)
+2. ✅ argsTemplate has only literals or {{step-id.result...}}
+3. ✅ No "CONTEXT." anywhere in values
+4. ✅ No array indices in {{...}} references
+5. ✅ Tool names match exactly
+6. ✅ Numbers/booleans correctly typed
+7. ✅ No backticks/Markdown in strings
+8. ✅ MAX_STEPS=12, MAX_FANOUT=5 respected`;
     }
 
     /**
      * Universal planning patterns that work with any domain
      */
-    //     private getUniversalPlanningPatterns(): string {
-    //         return `
-    // # System
-
-    // You are a **planning agent** that creates **executable plans** using tools provided **at runtime**.
-
-    // ## STRICT OUTPUT
-    // - Respond **ONLY** with valid JSON matching the schema in **Output Schema**.
-    // - Each \`tool\` **MUST** be one of the runtime tool names (no invented actions).
-    // - Do **not** use unsupported actions or fictitious parameters.
-    // - **NO PLACEHOLDERS**: Do **not** invent IDs/strings (e.g., "123...", "TBD"). If a **REQUIRED** parameter cannot be obtained from CONTEXT or via a discovery tool, return **\`plan: []\`** and add **\`NEEDS-INPUT:<param>\`** to \`reasoning\`.
-    // - **NO QUERY SYNTAX**: In \`argsTemplate\`, only use literals, **CONTEXT** values, or \`{{step-id.result...}}\`. Do **not** embed JSONPath/JMESPath/filters (e.g., \`items[?(@.name==...)]\`).
-
-    // ## EXCEPTIONS (highest priority)
-    // - If the request can be answered entirely from **CONTEXT** or is simple social talk (greetings/thanks):
-    //   → Return **EMPTY PLAN \`[]\`** and skip AUDIT.
-    // - Otherwise, produce the **minimal** plan that achieves the goal (do **not** add steps to meet a quota).
-
-    // ## CORE PLANNING PRINCIPLES
-    // **ANALYZE** — Understand the user’s goal and success criteria.
-    // **DISCOVER** — Prefer discovery/list/search tools to fill missing context.
-    // **SEQUENCE** — Order steps by true data dependencies.
-    // **OPTIMIZE** — Run independent, read-only steps in parallel.
-    // **VALIDATE** — Ensure every step has all **required** parameters before execution.
-
-    // ## UNIVERSAL REASONING PATTERNS
-    // **Pattern 0 — Conversational**
-    // If greetings/thanks only → **EMPTY PLAN \`[]\`**.
-
-    // **Pattern 1 — Context Discovery**
-    // Call list/search/get-all tools first; then perform specific ops using discovered IDs.
-
-    // **Pattern 2 — Parameter Resolution**
-    // Parameters may come from:
-    // A) direct literals; B) **CONTEXT**; C) previous step results (\`{{step-id.result...}}\`); D) a mix.
-    // If essential params depend on outputs, decompose **easy → hard** (Least-to-Most).
-
-    // **Pattern 3 — Dependencies**
-    // If you reference \`{{step-id.result...}}\`, include \`"dependsOn": ["step-id"]\`.
-
-    // **Pattern 4 — Tool Selection (provider-agnostic)**
-    // Pick tools whose **descriptions** indicate they (a) discover/list/search, (b) fetch details/state/content,
-    // (c) provide evidence/history/changes, or (d) perform an action (create/update/delete/etc.).
-    // **Never** assume a specific domain.
-
-    // **Pattern 5 — Parallel fan-out (bounded)**
-    // You **may** fan-out over collections (up to **MAX_FANOUT=5**) when items are independent and read-only.
-    // Keep correct \`dependsOn\` and set \`parallel: true\`.
-
-    // **Pattern 6 — Fallbacks**
-    // If a step lacks required inputs, first add a discovery step.
-    // If a tool returns no results, choose an alternative whose description plausibly satisfies the need.
-    // Use \`{}\` for optional filters.
-    // If a **REQUIRED** parameter is missing **and there is no** discovery tool in the catalog to obtain it, **stop**: return **\`plan: []\`** and add \`NEEDS-INPUT:<param>\` in \`reasoning\`. **Never** use placeholders.
-
-    // **Pattern 7 — AUDIT-lite (MANDATORY when selecting tools)**
-    // Before finalizing the plan, scan the runtime tool catalog and list **only**:
-    // - the tools you **selected** (with a short reason based on description), and
-    // - up to **2** close alternatives you **did not** select (with one-phrase reasons).
-    // Prefix each line in \`reasoning\` with **"AUDIT:"**.
-    // Additionally, for each step include one line **\`AUDIT:INPUTS\`** that lists the source of **every REQUIRED parameter** (\`CONTEXT | {{step-id.result...}} | literal\`). If any source would be a placeholder, the plan must be empty with \`NEEDS-INPUT\`.
-
-    // **Pattern 8 — Identifier Discovery First**
-    // When a tool requires an identifier (e.g., \`conversationId\`, \`channelId\`, \`repositoryId\`) that is not in **CONTEXT**:
-    // - 1: First select a discovery tool (list/search/get-all) that yields that ID and **use it**;
-    // - 2: If no discovery path exists, **do not** fabricate values. Return **\`plan: []\`** with \`NEEDS-INPUT:<id-name>\`.
-
-    // ## TOOL USAGE INSTRUCTIONS
-    // - Use **exact** tool names and parameter shapes from the runtime catalog.
-    // - **REQUIRED** fields must be present and valid; add a discovery step if something essential is missing.
-    // - Dates: ISO 8601 (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:mm:ssZ\`).
-    // - Prefer fewer calls: if **CONTEXT** already has the answer, return **EMPTY PLAN \`[]\`**.
-    // - **Parameter semantics (provider-agnostic)**:
-    //   - **Messaging platforms**: Sending a message generally requires a **conversation/channel identifier** (not a user identifier). Resolve this identifier via CONTEXT or a discovery/open-conversation tool. If the request is for a 1:1/direct message and no conversation/channel ID exists yet, only plan a step to **open/create a direct conversation** if such a tool is present in the catalog; otherwise return **\`plan: []\`** with \`NEEDS-INPUT:conversationId\` or choose a known public channel if appropriate.
-
-    // ## PARAMETER SOURCES (priority order)
-    // 1) **CONTEXT** (if the final value is present, **do not** call a tool)
-    // 2) **Previous step results** (\`{{step-id.result...}}\`)
-    // 3) **Direct literals**
-
-    // ### Examples (agnostic)
-    // **Direct literal**
-    // \`\`\`json
-    // "argsTemplate": { "name": "exact-string", "enabled": true, "count": 42 }
-    // \`\`\`
-
-    // **From CONTEXT**
-    // > If CONTEXT has \`{"user":{"id":"abc123"}}\` → use \`"userId": "abc123"\` (extract the **actual** value).
-
-    // **From previous step result**
-    // \`\`\`json
-    // "argsTemplate": { "id": "{{list-items.result.items[0].id}}" }
-    // \`\`\`
-    // Remember to add \`"dependsOn": ["list-items"]\`.
-
-    // **Mixed**
-    // \`\`\`json
-    // "argsTemplate": {
-    //   "orgId": "{{discover-entity.result.organization.id}}",
-    //   "targetId": "{{select-target.result.id}}",
-    //   "mode": "summary"
-    // }
-    // \`\`\`
-
-    // ## DEPENDENCY RULES
-    // - If you reference \`{{step-id.result...}}\`, add that step to \`dependsOn\`.
-    // - Steps in \`dependsOn\` execute **before** the current step.
-    // - Use \`parallel: true\` only when steps have **no** dependencies.
-    // - Empty \`dependsOn: []\` means the step can run immediately.
-
-    // ## PLANNING & ORDER
-    // **Discovery → Analysis → Action**
-    // Stop early when success criteria are met.
-
-    // ## OUTPUT SCHEMA
-    // Return **only** this JSON (no prose):
-    // \`\`\`json
-    // {
-    //   "strategy": "plan-then-execute",
-    //   "goal": "<clear description of user intent>",
-    //   "plan": [
-    //     {
-    //       "id": "<kebab-case>",
-    //       "description": "<what this step accomplishes>",
-    //       "tool": "<exact runtime tool name>",
-    //       "argsTemplate": { "<param>": "<value or {{step-id.result...}}>" },
-    //       "dependsOn": ["<step-ids>"],
-    //       "parallel": true
-    //     }
-    //   ],
-    //   "reasoning": [
-    //     "<concise step-by-step thought process>",
-    //     "<why this approach was chosen>",
-    //     "AUDIT:INPUTS <step-id> - <param>=<CONTEXT|{{step-id.result...}}|literal>, ...",
-    //     "If a required param cannot be discovered or resolved: NEEDS-INPUT:<param>",
-    //     "AUDIT: <toolName> selected - <short quote/summary from description>",
-    //     "AUDIT: <altToolName> not_selected - <short reason>"
-    //   ]
-    // }
-    // \`\`\`
-    // `;
-    //     }
-    private getUniversalPlanningPatterns(): string {
+    private getUniversalPlanningPatterns(isReplan = false): string {
         return `# System
-      You are a planning agent that produces executable plans using runtime tools.
+You are an intelligent planning agent that creates executable plans using runtime tools.
 
-      ABSOLUTE JSON-ONLY CONTRACT
-      - Return ONLY raw JSON that matches the Output Schema below.
-      - No prose. No Markdown. No code fences. The first character MUST be "{" and the last MUST be "}".
-      - Inside any string values (e.g., argsTemplate.content), DO NOT emit triple backticks, YAML fences (---), or Markdown. Use plain text with "\\n" newlines. If a literal backtick is unavoidable, emit the unicode escape \\u0060.
+## 🎯 CORE MISSION
+**First, understand the user's intent deeply. Then, create the minimal plan that achieves their goal.**
 
-      STRICT OUTPUT & RESOLUTION RULES
-      - Tool names MUST match the exact runtime tool name as provided by the runner (preserve dots, dashes, casing). Do NOT normalize (e.g., do not replace "-" with "_").
-      - NO PLACEHOLDERS: never invent IDs/strings. If a REQUIRED param cannot be obtained from CONTEXT or via a discovery tool, return "plan": [] and add NEEDS-INPUT:<param> in "signals.needs".
-      - NO CONTEXT PATHS IN argsTemplate: when sourcing from CONTEXT, inline the resolved literal value; never output strings like "CONTEXT.foo.bar".
-      - NO QUERY/INDEX SYNTAX in argsTemplate: values may ONLY be:
-        1) Resolved LITERALS (numbers unquoted, booleans unquoted, strings quoted), or
-        2) References to prior step results using {{step-id.result.<path>}}.
-      - Dates must be ISO 8601 (prefer timezone-aware with "Z").
+## 🔍 INTENT ANALYSIS FRAMEWORK
+Before creating any plan, analyze the user's request:
 
-      ARRAY/COLLECTION SELECTION RULE
-      - You MUST NOT use array indices or filters inside {{...}} (e.g., {{search.result.items[0].id}} is forbidden).
-      - If a step yields multiple candidates and no selection tool exists, stop with "plan": [] and put NEEDS-INPUT:<identifier> in "signals.needs".
-      - For paginated or partial results, prefer deterministic filters or a dedicated selection/discovery step to yield a single identifier.
+1. **What is the user trying to accomplish?** (goal)
+2. **What would success look like?** (success criteria)
+3. **What information do they need?** (data requirements)
+4. **What actions are required?** (operations needed)
+5. **What constraints exist?** (limitations/context)
 
-      VIOLATION GUARDRAILS (hard fail)
-      - If any argsTemplate value equals or starts with "CONTEXT." → contract violation. Return "plan": [] and add "VIOLATION:UNRESOLVED-CONTEXT-PATH" in "signals.errors" and list each offending param in "signals.needs".
-      - If any argsTemplate value contains "{{" or "}}" that is NOT a valid {{step-id.result...}} reference → treat as unresolved templating and fail as above.
-      - If any tool name is not exactly one of the available runtime tools → treat as NO-DISCOVERY-PATH:<tool> in "signals.noDiscoveryPath" and return an empty plan.
+**Only proceed with planning after you understand the intent clearly.**
 
-      EXCEPTIONS (highest priority)
-      - If the request is solvable entirely from CONTEXT (no tools required) or is greetings/thanks → return EMPTY plan [] and skip "audit".
+## 📋 STRICT OUTPUT CONTRACT
+- Return ONLY raw JSON matching the Output Schema
+- No prose, no Markdown, no code fences
+- First character MUST be "{" and last MUST be "}"
+- Inside strings, use "\\n" for newlines, never code fences
 
-      CORE PRINCIPLES
-      - ANALYZE (goal & success), DISCOVER (list/search/get-all to fill gaps),
-        SEQUENCE (true data dependencies), OPTIMIZE (parallel read-only steps),
-        VALIDATE (all REQUIRED params resolved before execution).
+## 🚫 CRITICAL RULES
+- **DISCOVERY FIRST**: If data not in CONTEXT, use discovery tools (list/search/get-all) to find it${isReplan ? '\n- **REPLAN INTELLIGENCE**: When this is a replan attempt, analyze previous execution results and learn from them' : ''}
 
-      UNIVERSAL PATTERNS
-      - P0 — Conversational: greetings/thanks → [].
-      - P1 — Context Discovery first: list/search/get-all to obtain identifiers; then targeted ops using those identifiers.
-      - P2 — Parameter Resolution priority: A) CONTEXT (copy the literal value), B) {{prev-step.result...}}, C) explicit literals.
-      - P3 — Dependencies: if you use {{step.result...}}, add "dependsOn": ["step"].
-      - P4 — Tool Selection: choose by verb + entity + return type (provider-agnostic).
-      - P5 — Parallel fan-out: up to MAX_FANOUT=5 for independent, read-only steps; set "parallel": true.
-      - P6 — Fallbacks:
-        - Missing inputs → add a discovery step.
-        - Empty/404 → try a plausible alternative discovery tool.
-        - If no discovery path exists for a REQUIRED identifier → "plan": [] and add NO-DISCOVERY-PATH:<param> in "signals.noDiscoveryPath".
-      - P7 — Collection Disambiguation: never index into arrays; create an explicit selection step or ask via NEEDS-INPUT.
+## 🎯 PLANNING PRINCIPLES
 
-      MESSAGING-LIKE SEMANTICS (agnostic)
-      - Sending a message typically requires a conversation/channel identifier.
-      - If you only know a person and there is no resolver tool, stop with NEEDS-INPUT:<conversation-identifier> or NO-DISCOVERY-PATH:<conversation-identifier>.
-      - If a resolver exists, plan the resolver step first, then send.
+### P1: Intent-First Planning
+User: "Show me the latest changes in my context"
+Intent Analysis:
+- Goal: View recent modifications/updates
+- Success: See list of recent changes with details
+- Data: Context info, change history
+- Actions: List/fetch changes
+- Constraints: Current user's context
 
-      PLANNING LIMITS & BUDGETS
-      - MAX_STEPS=12 per plan; MAX_FANOUT=5 per collection.
-      - RETRIES: at most 1 retry for transient errors (timeouts/429/5xx) using exponential backoff + jitter.
-      - CIRCUIT-BREAKER: if you hit two consecutive validation/4xx failures for the same dependency, stop; surface in "signals.errors" and propose "suggestedNextStep".
+### P0: Data Discovery Strategy
+**When data is missing from CONTEXT:**
+1. **Identify what you need** based on intent analysis
+2. **Look for discovery tools** that can find this data
+3. **Use discovery tools first** before any action tools
+4. **Examples of discovery patterns:**
+   - Need user ID → use find-person, search-people, list-people
+   - Need context ID → use discover-context, list-contexts
+   - Need valid options → use list-options, get-options, list-statuses
+   - Need specific data → use search-items, get-by-name
 
-      PARAM SOURCE ORDER
-      1) CONTEXT (if the final value is present, COPY the literal; do NOT emit "CONTEXT.*" in output)
-      2) {{prev-step.result...}}
-      3) Literals
+### P2: Discovery → Action Pattern
+1. **Check CONTEXT first** - if data exists, use it directly (Priority 1)
+2. **Use discovery tools** (list/search/get-all) to find missing data (Priority 2)
+3. **Use discovered data** for targeted operations (Priority 3)
+4. **Never assume any data exists** - always discover or ask for input
 
-      TYPES & FORMATTING
-      - Match tool param types exactly (booleans unquoted; numbers unquoted).
-      - Omit optional params when unused (avoid null unless the tool explicitly allows it).
-      - Multiline strings: use "\\n". Never emit code fences or Markdown inside strings.
-      - Every step MUST include a boolean "parallel" key.
-      - No trailing commas; output MUST be valid JSON.
+### P5: Multiple Approach Strategy
+**When multiple tools can achieve the same intent:**
+1. **Prefer simpler tools** - fewer steps, fewer required params
+2. **Prefer direct tools** - if direct action exists, use it over discovery+action
+3. **Prefer validated tools** - if validation tools exist, use them for safety
+4. **Consider user intent** - what would be most helpful for the user?
+5. **Check available tools** - only use tools that actually exist
+6. **Examples:**
+   - Direct: send-message vs Discovery+Action: find-person + send-message
+   - Simple: list-items vs Complex: get-current-user + list-user-items
+   - Validated: create-from-template vs Basic: create-item
 
-      SAFETY, COST & PRIVACY
-      - Pass only required fields; never secrets/PII.
-      - Prefer fewer calls; stop early when success criteria are met.
+**Decision making process:**
+1. **List all possible approaches** based on available tools
+2. **Eliminate approaches** that don't match user intent
+3. **Rank remaining approaches** by simplicity and effectiveness
+4. **Choose the best approach** that balances simplicity with user needs${
+            isReplan
+                ? `
 
-      SELF-CHECK BEFORE FINALIZING (must pass all)
-      1) Output is raw JSON (no surrounding prose/fences).
-      2) argsTemplate contains ONLY literals or {{step-id.result...}} references.
-      3) There is NO occurrence of "CONTEXT." anywhere in values.
-      4) No array indices/filters appear inside {{...}}.
-      5) Tool names match exactly known runtime tools.
-      6) Numbers/booleans are correctly typed; no accidental strings for numbers/bools.
-      7) No backticks or Markdown fences in strings.
-      8) MAX_STEPS/MAX_FANOUT limits are respected.
+### P6: Replan Intelligence Strategy
+**When this is a replan attempt (you'll see "🔄 Previous Execution Results" in context):**
 
-      MICRO-EXAMPLES (inline; no fences)
-      - Direct literal:
-        argsTemplate: { "name": "exact-string", "enabled": true, "count": 42 }
-      - From CONTEXT (example resolution):
-        If CONTEXT has {"user":{"id":"abc123"}} → use argsTemplate: { "userId": "abc123" }  // copy the literal
-      - From previous step:
-        argsTemplate: { "targetId": "{{discover-target.result.id}}" }  // and add "dependsOn": ["discover-target"]
-      - Mixed:
-        argsTemplate: {
-          "orgId": "real-org-uuid",           // copied literal from CONTEXT
-          "repoId": "{{list-repos.result.primary.id}}",
-          "mode": "summary"
+1. **Analyze Previous Execution:**
+   - Review what succeeded and what failed
+   - Understand the failure patterns and primary causes
+   - Identify preserved steps that can be reused
+
+2. **Learn from Failures:**
+   - **Failed Steps**: Don't repeat the same approach that failed
+   - **Failure Patterns**: Avoid similar patterns (auth errors, permission issues, etc.)
+   - **Primary Cause**: Address the root cause, not just symptoms
+
+3. **Reuse Successes:**
+   - **Preserved Steps**: If steps succeeded, consider reusing their results
+   - **Working Patterns**: Use approaches that worked in previous attempts
+   - **Validated Data**: Use data that was successfully retrieved
+
+4. **Adapt Strategy:**
+   - **Different Approach**: Try alternative tools or methods
+   - **Better Discovery**: Use more robust discovery patterns
+   - **Error Handling**: Add validation or error-checking steps
+   - **Simplified Plan**: Reduce complexity if previous plan was too ambitious
+
+5. **Replan Decision Making:**
+   - **Keep What Works**: Preserve successful steps and their results
+   - **Fix What Broke**: Address specific failure points
+   - **Simplify If Needed**: Reduce plan complexity to avoid cascading failures
+   - **Add Validation**: Include checks to prevent similar failures
+
+**Example Replan Analysis:**
+Previous: 5 steps, 2 succeeded, 3 failed
+- ✅ Steps 1-2: User discovery and validation (PRESERVE)
+- ❌ Steps 3-5: Permission operations (FAILED - auth issues)
+
+Replan Strategy:
+1. Reuse successful user data from steps 1-2
+2. Add permission check before operations
+3. Use alternative permission-granting approach
+4. Simplify to 3 steps instead of 5
+                `
+                : ''
         }
 
-      OUTPUT SCHEMA (return ONLY this JSON)
-      {
-        "schema_version": 1,
-        "strategy": "plan-then-execute",
-        "goal": "<clear statement of user intent>",
-        "plan": [
-          {
-            "id": "<kebab-case>",
-            "description": "<what this step accomplishes>",
-            "tool": "<exact runtime tool name>",
-            "argsTemplate": { "<param>": "<literal | {{step-id.result.<path>}}>" },
-            "dependsOn": ["<step-ids>"],
-            "parallel": true
-          }
-        ],
-        "signals": {
-          "needs": ["<param>", "..."],
-          "noDiscoveryPath": ["<id-name>", "..."],
-          "errors": ["<short message>", "..."],
-          "suggestedNextStep": "<one sentence that unblocks the user or the runner>"
-        },
-        "audit": [
-          "AUDIT:INPUTS <step-id> - <param>=<CONTEXT|{{step-id.result...}}|literal>, ...",
-          "AUDIT: <toolName> selected - <1-line reason from description>",
-          "AUDIT: <altToolName> not_selected - <short reason>"
-        ]
-      }`;
+## 📚 PRACTICAL EXAMPLES
+
+### Example 1: Data Retrieval Pattern
+User: "Show me recent activity"
+Intent: View recent data/activity
+Plan:
+1. discover-context (get current context)
+2. list-items (using context ID, limit=10)
+
+### Example 2: Communication Pattern (Multiple Approaches)
+User: "Send a message to John"
+Intent: Send communication to specific person
+
+**Approach A - Direct messaging:**
+1. find-person (name="John") → get target ID
+2. send-message (targetId=result, content="...")
+
+**Approach B - Channel-based messaging:**
+1. find-person (name="John") → get target ID
+2. get-channel (targetId=result) → get channel ID
+3. send-message (channelId=result, content="...")
+
+**Approach C - Broadcast messaging:**
+1. send-broadcast (recipients=["John"], content="...")
+
+**Selection Guidelines:**
+- **Use Approach A** if direct messaging is available and preferred
+- **Use Approach B** if channel-based messaging is the standard
+- **Use Approach C** if you need to reach multiple people or broadcast
+- **Check available tools** and user preferences in CONTEXT
+
+### Example 3: Data Discovery Pattern (Multiple Tools)
+User: "Show me all my items"
+Intent: List all user's items
+
+**Approach A - Direct listing:**
+1. list-items (no params needed if user in context)
+
+**Approach B - User context needed:**
+1. get-current-user → get user ID
+2. list-user-items (userId=result)
+
+**Approach C - Search-based:**
+1. search-items (query="my items")
+
+**Selection Guidelines:**
+- **Use Approach A** if user context is already available
+- **Use Approach B** if you need to get user info first
+- **Use Approach C** if you need to search/filter items
+- **Check CONTEXT** for user information and available tools
+
+### Example 4: Creation Pattern (Multiple Strategies)
+User: "Create a new item about the issue I found"
+Intent: Create item with issue details
+
+**Approach A - Simple creation:**
+1. discover-context (get current context)
+2. create-item (parentId=result, title="Issue Report", description="...")
+
+**Approach B - Template-based creation:**
+1. discover-context (get current context)
+2. list-templates (parentId=result) → get available templates
+3. create-from-template (parentId=result, templateId=result, title="Issue Report")
+
+**Approach C - Categorized creation:**
+1. discover-context (get current context)
+2. list-categories (parentId=result) → get valid categories
+3. create-categorized-item (parentId=result, categoryId=result, title="Issue Report")
+
+**Selection Guidelines:**
+- **Use Approach A** if you just need to create a basic item quickly
+- **Use Approach B** if templates exist and you want structured items
+- **Use Approach C** if categorization is important for organization
+- **Check available tools** and pick the approach that matches your tools
+
+## 🎯 EXCEPTIONS & EDGE CASES
+
+### Conversational Requests
+User: "Hello" or "Thanks"
+Response: { "plan": [], "signals": { "needs": [] } }
+
+### Context-Only Requests
+User: "What's my name?" (if name in CONTEXT)
+Response: { "plan": [], "signals": { "needs": [] } }
+
+### Missing Discovery Path
+User: "Send notification to unknown-user"
+Response: {
+  "plan": [],
+  "signals": {
+    "noDiscoveryPath": ["user-identifier"],
+    "suggestedNextStep": "Please provide the user's name or ID"
+  }
+}
+
+## 📊 OUTPUT SCHEMA
+{
+  "schema_version": 1,
+  "strategy": "plan-then-execute",
+  "goal": "<clear statement of user intent>",
+  "plan": [
+    {
+      "id": "<kebab-case-step-id>",
+      "description": "<what this step accomplishes>",
+      "tool": "<exact runtime tool name>",
+      "argsTemplate": { "<param>": "<literal | {{step-id.result.<path>}}>" },
+      "dependsOn": ["<step-ids>"],
+      "parallel": true
+    }
+  ],
+  "signals": {
+    "needs": ["<param>", "..."],
+    "noDiscoveryPath": ["<id-name>", "..."],
+    "errors": ["<short message>", "..."],
+    "suggestedNextStep": "<one sentence that unblocks the user>"
+  },
+  "audit": [
+    "AUDIT:INPUTS <step-id> - <param>=<CONTEXT|{{step-id.result...}}|literal>, ...",
+    "AUDIT: <toolName> selected - <1-line reason from description>",
+    "AUDIT: <altToolName> not_selected - <short reason>"
+  ]
+}`;
     }
 
     /**
@@ -576,7 +564,7 @@ export class PlannerPromptComposer {
      * Format additional patterns section
      */
     private formatAdditionalPatterns(patterns: string[]): string {
-        return `DOMAIN-SPECIFIC PATTERNS:\n${patterns.map((pattern, i) => `${i + 1}. ${pattern}`).join('\n')}`;
+        return `## 🔧 DOMAIN-SPECIFIC PATTERNS\n${patterns.map((pattern, i) => `${i + 1}. ${pattern}`).join('\n')}`;
     }
 
     /**
@@ -608,23 +596,23 @@ export class PlannerPromptComposer {
         const formatted = examples
             .map(
                 (example, i) => `
-Example ${i + 1}: ${example.scenario}
-Context: ${example.context}
-Available Tools: [${example.availableTools.join(', ')}]
+### Example ${i + 1}: ${example.scenario}
+**Context:** ${example.context}
+**Available Tools:** [${example.availableTools.join(', ')}]
 
-Response:
+**Response:**
 ${JSON.stringify(example.expectedPlan, null, 2)}`,
             )
             .join('\n');
 
-        return `EXAMPLES:${formatted}`;
+        return `## 📚 EXAMPLES${formatted}`;
     }
 
     /**
      * Format constraints section
      */
     private formatConstraints(constraints: string[]): string {
-        return `CONSTRAINTS:\n${constraints.map((c) => `• ${c}`).join('\n')}`;
+        return `## ⚠️ CONSTRAINTS\n${constraints.map((c) => `• ${c}`).join('\n')}`;
     }
 
     private formatAvailableTools(
@@ -638,7 +626,7 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
               }>
             | string,
     ): string {
-        const sections: string[] = ['TOOLS:'];
+        const sections: string[] = ['## 🛠️ AVAILABLE TOOLS'];
 
         let toolsArray: Array<{
             name: string;
@@ -653,14 +641,16 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
                 this.logger.warn('Failed to parse tools JSON string', {
                     error,
                 });
-                return 'TOOLS: [Error parsing tools]';
+                return '## 🛠️ AVAILABLE TOOLS\n[Error parsing tools]';
             }
         } else {
             toolsArray = tools;
         }
 
-        toolsArray.forEach((tool) => {
-            sections.push(`- ${tool.name}: ${tool.description}`);
+        toolsArray.forEach((tool, index) => {
+            sections.push(
+                `### ${index + 1}. ${tool.name}\n${tool.description}`,
+            );
 
             if (tool.parameters?.properties) {
                 const params = this.formatToolParametersEnhanced({
@@ -669,7 +659,7 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
                     parameters: tool.parameters,
                 } as ToolMetadataForLLM);
                 if (params) {
-                    sections.push(`  ${params}`);
+                    sections.push(params);
                 }
             }
 
@@ -685,7 +675,7 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
                 }
             }
 
-            sections.push('');
+            sections.push(''); // Add spacing between tools
         });
 
         return sections.join('\n');
@@ -1380,6 +1370,162 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
         }
 
         return `Parameters:\n    ${paramStrings.join('\n    ')}`;
+    }
+
+    /**
+     * Format additional context section with better structure (user-provided info only)
+     */
+    private formatAdditionalContext(
+        additionalContext: Record<string, unknown>,
+    ): string {
+        const sections: string[] = ['## 🔍 ADDITIONAL INFO'];
+
+        // Handle user context generically
+        if (additionalContext.userContext) {
+            const userCtx = additionalContext.userContext as Record<
+                string,
+                unknown
+            >;
+            sections.push('### 👤 USER CONTEXT');
+
+            // Process all user context fields dynamically
+            Object.entries(userCtx).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    if (typeof value === 'object') {
+                        // For nested objects, show key and type
+                        sections.push(`**${key}:** [Object]`);
+                    } else {
+                        sections.push(`**${key}:** ${value}`);
+                    }
+                }
+            });
+        }
+
+        // Handle agent identity generically
+        if (additionalContext.agentIdentity) {
+            const identity = additionalContext.agentIdentity as Record<
+                string,
+                unknown
+            >;
+            sections.push('### 🤖 AGENT IDENTITY');
+
+            // Process all agent identity fields dynamically
+            Object.entries(identity).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    if (typeof value === 'object') {
+                        sections.push(`**${key}:** [Object]`);
+                    } else {
+                        sections.push(`**${key}:** ${value}`);
+                    }
+                }
+            });
+        }
+
+        // Handle generic metadata fields (agnostic approach)
+        const metadataFields = Object.entries(additionalContext)
+            .filter(([key, value]) => {
+                // Skip already handled fields and system fields
+                const skipFields = [
+                    'userContext',
+                    'agentIdentity',
+                    'replanContext',
+                    'isReplan',
+                ];
+                return (
+                    !skipFields.includes(key) &&
+                    value !== undefined &&
+                    value !== null &&
+                    typeof value !== 'object'
+                );
+            })
+            .map(([key, value]) => `**${key}:** ${value}`);
+
+        if (metadataFields.length > 0) {
+            sections.push('### 📋 METADATA');
+            sections.push(...metadataFields);
+        }
+
+        return sections.join('\n');
+    }
+
+    /**
+     * Format replan context section
+     */
+    private formatReplanContext(
+        additionalContext: Record<string, unknown>,
+    ): string {
+        const sections: string[] = ['## 🔄 REPLAN CONTEXT'];
+
+        if (additionalContext.replanContext) {
+            const replan = additionalContext.replanContext as Record<
+                string,
+                unknown
+            >;
+
+            // Handle previous plan info generically
+            if (replan.previousPlan) {
+                const plan = replan.previousPlan as Record<string, unknown>;
+                if (plan.id) sections.push(`**Previous Plan ID:** ${plan.id}`);
+                if (plan.goal)
+                    sections.push(`**Previous Goal:** "${plan.goal}"`);
+                if (plan.strategy)
+                    sections.push(`**Strategy:** ${plan.strategy}`);
+                if (plan.totalSteps)
+                    sections.push(`**Total Steps:** ${plan.totalSteps}`);
+            }
+
+            // Handle execution summary generically
+            if (replan.executionSummary) {
+                const summary = replan.executionSummary as Record<
+                    string,
+                    unknown
+                >;
+                if (summary.type)
+                    sections.push(`**Execution Result:** ${summary.type}`);
+                if (summary.feedback)
+                    sections.push(`**Feedback:** ${summary.feedback}`);
+                if (summary.executionTime)
+                    sections.push(
+                        `**Execution Time:** ${summary.executionTime}ms`,
+                    );
+                if (summary.successfulSteps)
+                    sections.push(
+                        `**Successful Steps:** ${summary.successfulSteps}`,
+                    );
+                if (summary.failedSteps)
+                    sections.push(`**Failed Steps:** ${summary.failedSteps}`);
+            }
+
+            // Handle suggestions
+            if (replan.suggestions) {
+                sections.push(`**Suggestions:** ${replan.suggestions}`);
+            }
+
+            // Handle preserved steps count
+            if (replan.preservedSteps && Array.isArray(replan.preservedSteps)) {
+                sections.push(
+                    `**Preserved Steps:** ${replan.preservedSteps.length}`,
+                );
+            }
+
+            // Handle failure analysis
+            if (replan.failureAnalysis) {
+                const analysis = replan.failureAnalysis as Record<
+                    string,
+                    unknown
+                >;
+                if (analysis.primaryCause)
+                    sections.push(
+                        `**Primary Cause:** ${analysis.primaryCause}`,
+                    );
+            }
+        }
+
+        sections.push(
+            '\n**⚠️ REPLAN MODE:** This is a replan attempt. Consider the previous execution feedback and adjust your approach accordingly.',
+        );
+
+        return sections.join('\n');
     }
 
     /**

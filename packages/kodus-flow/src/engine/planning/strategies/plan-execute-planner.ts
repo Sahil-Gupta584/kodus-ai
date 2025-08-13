@@ -480,6 +480,89 @@ export class PlanAndExecutePlanner implements Planner {
 
             const contextParts: string[] = [];
 
+            // 🚀 NEW: Include previous execution results for replan context
+            if (context.previousExecution) {
+                contextParts.push('\n🔄 Previous Execution Results:');
+
+                const { plan, result, preservedSteps } =
+                    context.previousExecution;
+
+                // Previous plan summary
+                contextParts.push(`**Previous Plan:** ${plan.goal}`);
+                contextParts.push(`**Strategy:** ${plan.strategy}`);
+                contextParts.push(`**Total Steps:** ${plan.steps.length}`);
+
+                // Execution results
+                contextParts.push(`**Execution Result:** ${result.type}`);
+                contextParts.push(
+                    `**Successful Steps:** ${result.successfulSteps.length}`,
+                );
+                contextParts.push(
+                    `**Failed Steps:** ${result.failedSteps.length}`,
+                );
+                contextParts.push(
+                    `**Execution Time:** ${result.executionTime}ms`,
+                );
+
+                // Preserved steps (successful ones that can be reused)
+                if (preservedSteps.length > 0) {
+                    contextParts.push(
+                        `**Preserved Steps (${preservedSteps.length}):**`,
+                    );
+                    preservedSteps.forEach((step, i) => {
+                        contextParts.push(
+                            `  ${i + 1}. ${step.step.description} (${step.step.tool})`,
+                        );
+                        if (step.result) {
+                            const resultStr =
+                                typeof step.result === 'string'
+                                    ? step.result
+                                    : JSON.stringify(step.result);
+                            contextParts.push(
+                                `     Result: ${resultStr.substring(0, 100)}${
+                                    resultStr.length > 100 ? '...' : ''
+                                }`,
+                            );
+                        }
+                    });
+                }
+
+                // Failed steps for analysis
+                if (result.failedSteps.length > 0) {
+                    contextParts.push(
+                        `**Failed Steps (${result.failedSteps.length}):**`,
+                    );
+                    result.failedSteps.forEach((stepId, i) => {
+                        const step = plan.steps.find((s) => s.id === stepId);
+                        if (step) {
+                            contextParts.push(
+                                `  ${i + 1}. ${step.description} (${step.tool})`,
+                            );
+                        }
+                    });
+                }
+
+                // Feedback from previous execution
+                if (result.feedback) {
+                    contextParts.push(
+                        `**Previous Feedback:** ${result.feedback}`,
+                    );
+                }
+
+                // Failure analysis if available
+                if (context.previousExecution.failureAnalysis) {
+                    const analysis = context.previousExecution.failureAnalysis;
+                    contextParts.push(
+                        `**Primary Cause:** ${analysis.primaryCause}`,
+                    );
+                    if (analysis.failurePatterns.length > 0) {
+                        contextParts.push(
+                            `**Failure Patterns:** ${analysis.failurePatterns.join(', ')}`,
+                        );
+                    }
+                }
+            }
+
             const memories = await context.agentContext.memory.search(
                 currentInput,
                 3,
@@ -561,29 +644,21 @@ export class PlanAndExecutePlanner implements Planner {
                     'lastInput',
                     currentInput,
                 );
-                await context.agentContext.state.set(
-                    'planner',
-                    'lastAccess',
-                    Date.now(),
-                );
-                await context.agentContext.state.set(
-                    'planner',
-                    'contextParts',
-                    contextParts.length,
-                );
 
                 await context.agentContext.session.addEntry(
                     { type: 'memory_context_request', input: currentInput },
                     {
                         type: 'memory_context_response',
-                        parts: contextParts.length,
+                        context: contextParts.join('\n'),
                     },
                 );
             }
 
-            return contextParts.length > 0 ? contextParts.join('\n') : '';
+            return contextParts.join('\n');
         } catch (error) {
-            this.logger.error('Error getting memory context', error as Error);
+            this.logger.error('Failed to get memory context', error as Error, {
+                input: currentInput,
+            });
             return '';
         }
     }
@@ -683,6 +758,30 @@ export class PlanAndExecutePlanner implements Planner {
                 // Switch to execute_plan meta-action as default (ReWOO Plan–Execute)
                 const current = this.getCurrentPlan(context);
                 if (current) {
+                    // ✅ HANDLE FAILED PLAN DUE TO MAX REPLANS
+                    if (
+                        current.status === 'failed' &&
+                        (current.metadata as Record<string, unknown>)
+                            ?.replanCause === 'max_replans_exceeded'
+                    ) {
+                        return {
+                            reasoning:
+                                'Plan failed due to max replans exceeded. Cannot continue with missing inputs.',
+                            action: {
+                                type: 'final_answer',
+                                content:
+                                    'I cannot complete this task because I need additional information that is not available. Please provide the missing details and try again.',
+                            },
+                            metadata: {
+                                planId: current.id,
+                                replansCount: (
+                                    current.metadata as Record<string, unknown>
+                                )?.replansCount,
+                                maxReplans: this.replanPolicy.maxReplansPerPlan,
+                            },
+                        };
+                    }
+
                     return {
                         reasoning: 'Plan created. Executing…',
                         action: {
@@ -802,15 +901,16 @@ export class PlanAndExecutePlanner implements Planner {
             availableTools: this.getAvailableToolsForPlanning(context),
             memoryContext,
             planningHistory,
+            // 🎯 SEPARATED: User context only
             additionalContext: {
                 ...context.plannerMetadata,
                 agentIdentity,
                 userContext:
                     context.agentContext?.agentExecutionOptions?.userContext,
-                // 🎯 RICH CONTEXT: Include replan information
-                replanContext,
-                isReplan: !!context.previousExecution,
             },
+            // 🎯 SEPARATED: System replan context
+            replanContext,
+            isReplan: !!context.previousExecution,
             iteration: 1,
             maxIterations: 5,
         });
@@ -909,11 +1009,53 @@ export class PlanAndExecutePlanner implements Planner {
         // If planner already identified missing inputs, pause plan
         // Missing inputs detected by planner signals → mark for replanning on next think
         if (needs.length > 0) {
-            newPlan.status = 'replanning';
-            (newPlan.metadata as Record<string, unknown>) = {
-                ...(newPlan.metadata || {}),
-                replanCause: 'missing_inputs',
-            };
+            // ✅ VERIFICAR SE JÁ EXCEDEU MAX REPLANS
+            const currentPlan = this.getCurrentPlan(context);
+            const prevReplans = Number(
+                (currentPlan?.metadata as Record<string, unknown> | undefined)
+                    ?.replansCount ?? 0,
+            );
+
+            // ✅ SÓ REPLAN SE NÃO EXCEDEU LIMITE
+            if (
+                !this.replanPolicy.maxReplansPerPlan ||
+                prevReplans < this.replanPolicy.maxReplansPerPlan
+            ) {
+                newPlan.status = 'replanning';
+                (newPlan.metadata as Record<string, unknown>) = {
+                    ...(newPlan.metadata || {}),
+                    replanCause: 'missing_inputs',
+                    replansCount: prevReplans + 1, // ✅ INCREMENTAR CONTADOR
+                };
+
+                this.logger.info(
+                    'Plan marked for replanning due to missing inputs',
+                    {
+                        planId: newPlan.id,
+                        needs,
+                        replansCount: prevReplans + 1,
+                        maxReplans: this.replanPolicy.maxReplansPerPlan,
+                    },
+                );
+            } else {
+                // ✅ PARAR LOOP - LIMITE ATINGIDO
+                newPlan.status = 'failed';
+                (newPlan.metadata as Record<string, unknown>) = {
+                    ...(newPlan.metadata || {}),
+                    replanCause: 'max_replans_exceeded',
+                    replansCount: prevReplans,
+                };
+
+                this.logger.warn(
+                    'Max replans exceeded - stopping replan loop',
+                    {
+                        planId: newPlan.id,
+                        needs,
+                        replansCount: prevReplans,
+                        maxReplans: this.replanPolicy.maxReplansPerPlan,
+                    },
+                );
+            }
         }
 
         const previousPlan = this.getCurrentPlan(context);
@@ -990,6 +1132,32 @@ export class PlanAndExecutePlanner implements Planner {
 
         // Do NOT start executing here. Let the AgentCore delegate to PlanExecutor via execute_plan.
         // Return a benign thought for instrumentation only; think() will emit execute_plan next.
+
+        // ✅ HANDLE FAILED PLAN DUE TO MAX REPLANS
+        if (
+            newPlan.status === 'failed' &&
+            (newPlan.metadata as Record<string, unknown>)?.replanCause ===
+                'max_replans_exceeded'
+        ) {
+            return {
+                reasoning:
+                    'Max replans exceeded - cannot create valid plan due to missing inputs',
+                action: {
+                    type: 'final_answer',
+                    content:
+                        'I cannot complete this task because I need more information. Please provide the missing details or rephrase your request.',
+                },
+                metadata: {
+                    planId: newPlan.id,
+                    totalSteps: newPlan.steps.length,
+                    replansCount: (newPlan.metadata as Record<string, unknown>)
+                        ?.replansCount,
+                    maxReplans: this.replanPolicy.maxReplansPerPlan,
+                    needs: needs,
+                },
+            };
+        }
+
         return {
             reasoning: 'Plan created. Delegating execution to executor.',
             action: {
@@ -1665,8 +1833,31 @@ export class PlanAndExecutePlanner implements Planner {
         const currentPlan = this.getCurrentPlan(context);
         if (!currentPlan) return true;
 
-        // 1) Explicit replanning status
-        if (currentPlan.status === 'replanning') return true;
+        // 1) Explicit replanning status - VERIFICAR LIMITE DE REPLANS
+        if (currentPlan.status === 'replanning') {
+            const replansCount = Number(
+                (currentPlan.metadata as Record<string, unknown>)
+                    ?.replansCount ?? 0,
+            );
+
+            // ✅ SÓ REPLAN SE NÃO EXCEDEU LIMITE
+            if (
+                this.replanPolicy.maxReplansPerPlan &&
+                replansCount >= this.replanPolicy.maxReplansPerPlan
+            ) {
+                return false; // ❌ LIMITE ATINGIDO - NÃO REPLAN
+            }
+            return true; // ✅ AINDA PODE REPLAN
+        }
+
+        // ✅ 2) Check if plan failed due to max replans
+        if (
+            currentPlan.status === 'failed' &&
+            (currentPlan.metadata as Record<string, unknown>)?.replanCause ===
+                'max_replans_exceeded'
+        ) {
+            return false; // ✅ NÃO REPLAN - LIMITE ATINGIDO
+        }
 
         // 2) Failure window (prefer plan step statuses; fallback to history)
         const windowSize = this.replanPolicy.windowSize;
@@ -3276,22 +3467,111 @@ export class PlanAndExecutePlanner implements Planner {
         attemptedPath: string,
     ): Promise<string> {
         try {
-            const prompt = `You are a template resolution assistant. I need to extract a value from a JSON structure.
+            const prompt = `# JSON Value Extraction Assistant
 
-Template: ${template}
-Step ID: ${stepId}
-Attempted Path: ${attemptedPath}
-JSON Structure: ${JSON.stringify(stepResult, null, 2)}
+## 🎯 TASK
+Extract a specific value from a JSON structure based on a template pattern.
 
-IMPORTANT: Return ONLY the raw value as a plain string, without quotes, JSON formatting, or any other characters.
+## 📋 CONTEXT
+- **Template**: The pattern to match (e.g., "{{step-1.result.id}}")
+- **Step ID**: Identifier of the step that produced the JSON
+- **Attempted Path**: The path that was tried but failed (e.g., "result.id")
+- **JSON Structure**: The actual data to search within
 
-Examples:
-- If the value is "670345891", return: 670345891
-- If the value is "kodus-orchestrator", return: kodus-orchestrator
-- If the value is true, return: true
-- If the value is 42, return: 42
+### 🌐 REAL-WORLD DIVERSITY
+JSON responses can have ANY property naming convention:
+- **IDs**: id, uuid, guid, identifier, key, objectId, entityId, resourceId
+- **Names**: name, title, label, displayName, fullName, userName
+- **References**: ref, reference, link, url, href, endpoint
+- **Timestamps**: timestamp, createdAt, updatedAt, date, time
+- **Status**: status, state, condition, phase, stage
+- **Custom**: Any domain-specific property names
 
-If you cannot find the value, return: NOT_FOUND`;
+**Be flexible and search for ANY property that could contain the requested data!**
+
+## 🔍 EXTRACTION RULES
+
+### ✅ WHAT TO RETURN
+- **ONLY** the raw value as a plain string
+- **NO** quotes, JSON formatting, or extra characters
+- **NO** explanations, reasoning, or markdown
+- **NO** code fences or formatting
+
+### 🚫 WHAT NOT TO RETURN
+- ❌ Quoted strings: "value" → return value
+- ❌ JSON objects: {"key": "value"} → return value
+- ❌ Explanations: The value is 42 → return 42
+- ❌ Code blocks: \`\`\`42\`\`\` → return 42
+- ❌ Markdown: **42** → return 42
+
+### 🔄 FALLBACK BEHAVIOR
+- If value cannot be found → return NOT_FOUND
+- If value is null/undefined → return NOT_FOUND
+- If value is empty string → return NOT_FOUND
+
+## 📊 INPUT DATA
+
+**Template**: ${template}
+**Step ID**: ${stepId}
+**Attempted Path**: ${attemptedPath}
+**JSON Structure**:
+\`\`\`json
+${JSON.stringify(stepResult, null, 2)}
+\`\`\`
+
+## 💡 EXAMPLES
+
+### Common Property Patterns (Agnostic)
+- Input: {"id": "abc123"} → Output: abc123
+- Input: {"uuid": "550e8400-e29b-41d4-a716-446655440000"} → Output: 550e8400-e29b-41d4-a716-446655440000
+- Input: {"project_id": "proj_12345"} → Output: proj_12345
+- Input: {"requestId": "req_67890"} → Output: req_67890
+- Input: {"userIdentifier": "user_abc"} → Output: user_abc
+- Input: {"entityId": "ent_xyz"} → Output: ent_xyz
+- Input: {"resourceId": "res_789"} → Output: res_789
+- Input: {"objectId": "obj_456"} → Output: obj_456
+
+### Nested Property Patterns
+- Input: {"data": {"id": "nested_123"}} → Output: nested_123
+- Input: {"result": {"entity": {"identifier": "deep_456"}}} → Output: deep_456
+- Input: {"response": {"items": [{"id": "first_item"}]}} → Output: first_item
+
+### Various Data Types
+- Input: {"count": 42} → Output: 42
+- Input: {"enabled": true} → Output: true
+- Input: {"name": "John Doe"} → Output: John Doe
+- Input: {"email": "john@example.com"} → Output: john@example.com
+- Input: {"url": "https://api.example.com/v1/resource"} → Output: https://api.example.com/v1/resource
+- Input: {"timestamp": "2024-01-15T10:30:00Z"} → Output: 2024-01-15T10:30:00Z
+
+### Edge Cases
+- Input: {"empty": ""} → Output: NOT_FOUND
+- Input: {"null_value": null} → Output: NOT_FOUND
+- Input: {"undefined_value": undefined} → Output: NOT_FOUND
+- Input: {"array": [1, 2, 3]} → Output: [1, 2, 3]
+- Input: {"object": {"nested": "value"}} → Output: {"nested": "value"}
+
+## 🎯 EXTRACTION STRATEGY
+
+1. **Analyze** the template pattern to understand what property to extract
+2. **Search** the JSON structure for ANY property that matches the pattern (case-insensitive, flexible naming)
+3. **Handle** nested structures, arrays, and complex objects appropriately
+4. **Extract** the raw value without any formatting or quotes
+5. **Validate** the result is not null, undefined, or empty string
+6. **Return** the clean value or NOT_FOUND
+
+### 🔍 SEARCH PATTERNS (Agnostic)
+- Look for ANY property that could contain the requested data
+- Consider common naming variations: id, uuid, guid, identifier, key, name, etc.
+- Handle nested paths: data.id, result.entity.identifier, response.items[0].id
+- Be flexible with property naming conventions (camelCase, snake_case, kebab-case)
+
+## ⚡ RESPONSE FORMAT
+Return ONLY the extracted value as a plain string. No additional text, formatting, or explanation.
+
+---
+
+**EXTRACT THE VALUE NOW:**`;
 
             const response = await this.llmAdapter.call({
                 messages: [
