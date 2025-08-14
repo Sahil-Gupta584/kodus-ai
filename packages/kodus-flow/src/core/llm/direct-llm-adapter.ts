@@ -10,7 +10,13 @@
  * ✅ Mantém todas as técnicas de planning/routing
  */
 
-import { createLogger } from '../../observability/index.js';
+import {
+    createLogger,
+    getObservability,
+    startLLMSpan,
+    applyErrorToSpan,
+    markSpanOk,
+} from '../../observability/index.js';
 import { EngineError } from '../errors.js';
 import { ToolMetadataForLLM } from '../types/index.js';
 import {
@@ -167,11 +173,22 @@ export interface PlanningResult {
         tool?: string;
         arguments?: Record<string, unknown>;
         dependencies?: string[];
-        type: 'analysis' | 'action' | 'decision' | 'observation';
+        type:
+            | 'analysis'
+            | 'action'
+            | 'decision'
+            | 'observation'
+            | 'verification';
     }>;
     reasoning: string;
-    complexity: 'simple' | 'medium' | 'complex';
     estimatedTime?: number;
+    signals?: {
+        needs?: string[];
+        noDiscoveryPath?: string[];
+        errors?: string[];
+        suggestedNextStep?: string;
+    };
+    audit?: string[];
 }
 
 export interface RoutingResult {
@@ -216,6 +233,7 @@ export class DirectLLMAdapter {
             constraints?: string[];
         },
     ): Promise<PlanningResult> {
+        const obs = getObservability();
         const options: LangChainOptions = {
             ...DEFAULT_LLM_SETTINGS,
             maxTokens: TOKEN_PRESETS.REACT_COMPLEX,
@@ -247,7 +265,48 @@ export class DirectLLMAdapter {
         ];
 
         try {
-            const response = await this.llm.call(messages, options);
+            const span = startLLMSpan(obs.telemetry, {
+                model: this.llm.name || 'unknown',
+                technique,
+                temperature: options.temperature,
+                topP: options.topP,
+                maxTokens: options.maxTokens,
+            });
+
+            const response = await obs.telemetry.withSpan(span, async () => {
+                try {
+                    const res = await this.llm.call(messages, options);
+                    // Record usage if present
+                    if (typeof res !== 'string' && res?.usage) {
+                        const usage = res.usage;
+                        if (usage?.totalTokens !== undefined) {
+                            span.setAttribute(
+                                'gen_ai.usage.total_tokens',
+                                usage.totalTokens,
+                            );
+                        }
+                        if (usage?.promptTokens !== undefined) {
+                            span.setAttribute(
+                                'gen_ai.usage.input_tokens',
+                                usage.promptTokens,
+                            );
+                        }
+                        if (usage?.completionTokens !== undefined) {
+                            span.setAttribute(
+                                'gen_ai.usage.output_tokens',
+                                usage.completionTokens,
+                            );
+                        }
+                    }
+                    markSpanOk(span);
+                    return res;
+                } catch (err) {
+                    applyErrorToSpan(span, err, {
+                        model: this.llm.name || 'unknown',
+                    });
+                    throw err;
+                }
+            });
 
             return this.parseFlexiblePlanningResponse(
                 response,
@@ -319,6 +378,22 @@ export class DirectLLMAdapter {
         ];
 
         try {
+            const obs = getObservability();
+            // Definimos options antes de ler seus campos
+            const options =
+                context?.systemPrompt && context?.userPrompt
+                    ? DEFAULT_LLM_SETTINGS
+                    : this.routingStrategies.get(
+                          context?.strategy || 'llm_decision',
+                      )?.options || DEFAULT_LLM_SETTINGS;
+
+            const span = startLLMSpan(obs.telemetry, {
+                model: this.llm.name || 'unknown',
+                technique: 'route',
+                temperature: (options as LangChainOptions).temperature,
+                topP: (options as LangChainOptions).topP,
+                maxTokens: (options as LangChainOptions).maxTokens,
+            });
             this.logger.debug('Routing with LangChain LLM', {
                 hasReadyPrompts: !!(
                     context?.systemPrompt && context?.userPrompt
@@ -329,14 +404,40 @@ export class DirectLLMAdapter {
             });
 
             // ✅ SIMPLE: Direct call to LLM
-            const options =
-                context?.systemPrompt && context?.userPrompt
-                    ? DEFAULT_LLM_SETTINGS
-                    : this.routingStrategies.get(
-                          context?.strategy || 'llm_decision',
-                      )?.options || DEFAULT_LLM_SETTINGS;
 
-            const response = await this.llm.call(messages, options);
+            const response = await obs.telemetry.withSpan(span, async () => {
+                try {
+                    const res = await this.llm.call(messages, options);
+                    if (typeof res !== 'string' && res?.usage) {
+                        const usage = res.usage;
+                        if (usage?.totalTokens !== undefined) {
+                            span.setAttribute(
+                                'gen_ai.usage.total_tokens',
+                                usage.totalTokens,
+                            );
+                        }
+                        if (usage?.promptTokens !== undefined) {
+                            span.setAttribute(
+                                'gen_ai.usage.input_tokens',
+                                usage.promptTokens,
+                            );
+                        }
+                        if (usage?.completionTokens !== undefined) {
+                            span.setAttribute(
+                                'gen_ai.usage.output_tokens',
+                                usage.completionTokens,
+                            );
+                        }
+                    }
+                    markSpanOk(span);
+                    return res;
+                } catch (err) {
+                    applyErrorToSpan(span, err, {
+                        model: this.llm.name || 'unknown',
+                    });
+                    throw err;
+                }
+            });
 
             // ✅ ROBUST: Pass the entire response object for flexible parsing
             const result = this.parseSimpleRoutingResponse(response);
@@ -463,8 +564,22 @@ Please analyze semantic similarity and select the most appropriate tool.`,
     ): PlanningResult {
         const llmValidated = validateLLMResponse(response);
 
-        let extractedSteps = [];
+        let extractedSteps: Array<{
+            id: string;
+            description: string;
+            tool?: string;
+            arguments?: Record<string, unknown>;
+            dependencies?: string[];
+            type:
+                | 'analysis'
+                | 'action'
+                | 'decision'
+                | 'observation'
+                | 'verification';
+        }> = [];
         let extractedReasoning = '';
+        let extractedSignals: Record<string, unknown> = {};
+        let extractedAudit: string[] = [];
 
         if (llmValidated.toolCalls && llmValidated.toolCalls.length > 0) {
             this.logger.debug('Extracting steps from function calls', {
@@ -504,6 +619,8 @@ Please analyze semantic similarity and select the most appropriate tool.`,
             const validated = validatePlanningResponse(response);
             extractedSteps = validated.steps || [];
             extractedReasoning = validated.reasoning || '';
+            extractedSignals = validated.signals || {};
+            extractedAudit = validated.audit || [];
         }
 
         return {
@@ -511,7 +628,8 @@ Please analyze semantic similarity and select the most appropriate tool.`,
             goal,
             steps: extractedSteps,
             reasoning: extractedReasoning,
-            complexity: 'medium' as const,
+            signals: extractedSignals,
+            audit: extractedAudit,
         };
     }
 
@@ -557,6 +675,7 @@ Please analyze semantic similarity and select the most appropriate tool.`,
         temperature?: number;
         maxTokens?: number;
     }): Promise<{ content: string }> {
+        const obs = getObservability();
         const messages: LangChainMessage[] = request.messages.map((msg) => ({
             role: msg.role,
             content: msg.content,
@@ -570,7 +689,36 @@ Please analyze semantic similarity and select the most appropriate tool.`,
         };
 
         try {
-            const response = await this.llm.call(messages, options);
+            const span = startLLMSpan(obs.telemetry, {
+                model: this.llm.name || 'unknown',
+                temperature: options.temperature,
+                maxTokens: options.maxTokens,
+            });
+            const response = await obs.telemetry.withSpan(span, async () => {
+                const res = await this.llm.call(messages, options);
+                if (typeof res !== 'string' && res?.usage) {
+                    const usage = res.usage;
+                    if (usage?.totalTokens !== undefined) {
+                        span.setAttribute(
+                            'gen_ai.usage.total_tokens',
+                            usage.totalTokens,
+                        );
+                    }
+                    if (usage?.promptTokens !== undefined) {
+                        span.setAttribute(
+                            'gen_ai.usage.input_tokens',
+                            usage.promptTokens,
+                        );
+                    }
+                    if (usage?.completionTokens !== undefined) {
+                        span.setAttribute(
+                            'gen_ai.usage.output_tokens',
+                            usage.completionTokens,
+                        );
+                    }
+                }
+                return res;
+            });
             const content =
                 typeof response === 'string' ? response : response.content;
 

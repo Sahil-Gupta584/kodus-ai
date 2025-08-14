@@ -146,6 +146,43 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
         return await this.delete(`session_${sessionId}`);
     }
 
+    /**
+     * Find session by threadId (and optional tenantId)
+     * Fallback-safe: retorna null se storage não suportar query
+     */
+    async findSessionByThread(
+        threadId: string,
+        tenantId?: string,
+    ): Promise<Session | null> {
+        await this.ensureInitialized();
+        try {
+            // Tentar usar recurso específico do MongoDB adapter se disponível
+            const anyStorage = this.storage as unknown as {
+                findOneByQuery?: (
+                    query: Record<string, unknown>,
+                ) => Promise<SessionStorageItem | null>;
+            };
+
+            if (typeof anyStorage.findOneByQuery === 'function') {
+                const query: Record<string, unknown> = {};
+                query['sessionData.threadId'] = threadId;
+                query['sessionData.status'] = 'active';
+                if (tenantId) {
+                    query['sessionData.tenantId'] = tenantId;
+                }
+
+                const doc = await anyStorage.findOneByQuery!(query);
+                return doc?.sessionData ?? null;
+            }
+
+            // Fallback: se não suportar query, retorna null
+            return null;
+        } catch {
+            // Em caso de falha de conexão ou erro, retorna null sem quebrar
+            return null;
+        }
+    }
+
     private async ensureInitialized(): Promise<void> {
         if (!this.isInitialized) {
             await this.initialize();

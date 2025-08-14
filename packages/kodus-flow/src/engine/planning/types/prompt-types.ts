@@ -171,8 +171,14 @@ export interface PromptCompositionContext {
     /** Planning history from current session */
     planningHistory?: string;
 
-    /** Additional context data */
+    /** Additional context data (user-provided info only) */
     additionalContext?: Record<string, unknown>;
+
+    /** Replan context (system information about previous execution) */
+    replanContext?: Record<string, unknown>;
+
+    /** Whether this is a replan attempt */
+    isReplan?: boolean;
 
     /** Current iteration number */
     iteration?: number;

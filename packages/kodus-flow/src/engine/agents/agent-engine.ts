@@ -10,9 +10,8 @@
  * ✅ Suporte completo a tools e multi-agent
  */
 
-import { createLogger } from '../../observability/index.js';
+import { createLogger, getObservability } from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
-// import { IdGenerator } from '../../utils/id-generator.js';
 import type { ToolEngine } from '../tools/tool-engine.js';
 
 // ✅ ADICIONAR: MemoryManager para Engine Layer
@@ -92,6 +91,7 @@ export class AgentEngine<
         agentExecutionOptions?: AgentExecutionOptions,
     ): Promise<AgentExecutionResult<TOutput>> {
         const { correlationId, sessionId } = agentExecutionOptions || {};
+        const obs = getObservability();
 
         try {
             const definition = this.getDefinition();
@@ -115,10 +115,14 @@ export class AgentEngine<
                 );
             }
 
-            const result = await this.executeAgent(
-                definition,
-                input,
-                agentExecutionOptions,
+            const result = await obs.trace(
+                `agent.execute`,
+                async () =>
+                    this.executeAgent(definition, input, agentExecutionOptions),
+                {
+                    correlationId,
+                    tenantId: this.config.tenantId,
+                },
             );
 
             this.engineLogger.debug(

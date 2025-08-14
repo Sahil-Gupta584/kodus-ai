@@ -4,13 +4,14 @@
  * Integra o Circuit Breaker com o sistema de middleware do runtime
  */
 
-import type { MiddlewareFactoryType } from './types.js';
+import type { Middleware, MiddlewareFactoryType } from './types.js';
 import { CircuitBreaker } from '../core/circuit-breaker.js';
 import type {
     CircuitBreakerConfig,
     CircuitResult,
 } from '../core/circuit-breaker.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
+import { createLogger } from '../../observability/index.js';
 import type { Event } from '../../core/types/events.js';
 import type { EventHandler } from '../../core/types/common-types.js';
 
@@ -104,7 +105,9 @@ export const circuitBreakerMiddleware: MiddlewareFactoryType<
     CircuitBreakerMiddlewareConfig,
     Event
 > = (config: CircuitBreakerMiddlewareConfig) => {
-    return <T extends Event>(handler: EventHandler<T>): EventHandler<T> => {
+    const middleware = (<T extends Event>(
+        handler: EventHandler<T>,
+    ): EventHandler<T> => {
         // Criar observability mock simples
         const mockObservability = {
             logger: {
@@ -182,7 +185,13 @@ export const circuitBreakerMiddleware: MiddlewareFactoryType<
             // Retornar resultado
             return result.result;
         };
-    };
+    }) as Middleware<Event>;
+
+    middleware.kind = 'pipeline';
+    (middleware as unknown as { displayName?: string }).displayName =
+        'circuitBreaker';
+
+    return middleware;
 };
 
 /**
@@ -244,7 +253,8 @@ export const circuitBreakerUtils = {
      * Callback padrão para rejeições
      */
     defaultOnRejected: (event: unknown, result: CircuitResult<unknown>) => {
-        console.warn('Circuit breaker rejected operation:', {
+        const logger = createLogger('circuit-breaker');
+        logger.warn('Circuit breaker rejected operation', {
             event,
             circuit: result.state,
             error: result.error?.message,

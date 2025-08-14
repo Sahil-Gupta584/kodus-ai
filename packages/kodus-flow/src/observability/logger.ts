@@ -15,6 +15,25 @@ export interface LogContext {
     [key: string]: unknown;
 }
 
+type LogContextProvider = () => LogContext | undefined;
+let globalLogContextProvider: LogContextProvider | undefined;
+
+export function setLogContextProvider(
+    provider: LogContextProvider | undefined,
+): void {
+    globalLogContextProvider = provider;
+}
+
+function mergeContext(context?: LogContext): LogContext | undefined {
+    try {
+        const base = globalLogContextProvider?.();
+        if (!base) return context;
+        return { ...base, ...context };
+    } catch {
+        return context;
+    }
+}
+
 /**
  * Logger interface simples
  */
@@ -60,19 +79,19 @@ class SimpleLogger implements Logger {
     debug(message: string, context?: LogContext): void {
         if (!this.shouldLog('debug')) return;
         const formattedMessage = this.formatMessage('debug', message);
-        console.debug(formattedMessage, context);
+        console.debug(formattedMessage, mergeContext(context));
     }
 
     info(message: string, context?: LogContext): void {
         if (!this.shouldLog('info')) return;
         const formattedMessage = this.formatMessage('info', message);
-        console.log(formattedMessage, context);
+        console.log(formattedMessage, mergeContext(context));
     }
 
     warn(message: string, context?: LogContext): void {
         if (!this.shouldLog('warn')) return;
         const formattedMessage = this.formatMessage('warn', message);
-        console.warn(formattedMessage, context);
+        console.warn(formattedMessage, mergeContext(context));
     }
 
     error(message: string, error?: Error, context?: LogContext): void {
@@ -88,12 +107,14 @@ class SimpleLogger implements Logger {
             }),
         };
 
-        console.error(formattedMessage, errorContext);
+        console.error(formattedMessage, mergeContext(errorContext));
     }
 }
 
 /**
  * Criar logger para o framework
+ * ✅ SIMPLIFIED: Always use simple logger for better UX
+ * No more environment variable dependencies
  */
 export function createLogger(name: string, level?: LogLevel): Logger {
     return new SimpleLogger(name, level);

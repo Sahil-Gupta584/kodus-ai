@@ -5,6 +5,7 @@
  */
 
 import type { Event } from '../../core/types/events.js';
+import type { Middleware } from './types.js';
 import { KernelError, type KernelErrorCode } from '../../core/errors.js';
 
 // Import EventHandler type from runtime index
@@ -55,11 +56,17 @@ export function withValidateMiddleware(
     schema: SchemaLike,
     options?: ValidateOptions,
 ) {
-    return function <E extends Event>(
+    const middleware = function <E extends Event>(
         handler: EventHandler<E>,
     ): EventHandler<E> {
         return withValidate(schema, handler, options);
-    };
+    } as Middleware<Event>;
+
+    middleware.kind = 'handler';
+    (middleware as unknown as { displayName?: string }).displayName =
+        'withValidate';
+
+    return middleware;
 }
 
 /**

@@ -7,13 +7,20 @@ import {
     MCPServerConfig,
     PersistorType,
     MongoDBPersistorConfig,
+    getObservability,
+    createOtelTracerAdapter,
 } from '@kodus/flow';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseConnection } from '@/config/types';
 import { ConnectionString } from 'connection-string';
-import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
+import {
+    LLMProviderService,
+    LLMModelProvider,
+    PromptRunnerService,
+} from '@kodus/kodus-common/llm';
+import { startKodusOtel } from '@/config/log/otel-kodus-flow';
 
 @Injectable()
 export class ConversationAgentProvider {
@@ -40,7 +47,8 @@ export class ConversationAgentProvider {
             temperature: 0,
             maxTokens: 8000,
             maxReasoningTokens: 800,
-        }) as any;
+            jsonMode: true,
+        });
 
         function sanitizeName(name: string) {
             const cleaned = name.replace(/[^\w.\-]/g, '_');
@@ -83,13 +91,15 @@ export class ConversationAgentProvider {
 
                 const resp = await model.invoke(lcMessages, {
                     stop: options.stop,
-                    maxTokens: options.maxTokens,
                     temperature: options.temperature,
+                    maxReasoningTokens: options.maxReasoningTokens,
                 });
+
+                console.log('LLM response:', JSON.stringify(resp, null, 2));
 
                 return {
                     content: resp.content,
-                    usage: resp.usage ?? {
+                    usage: resp.usage_metadata ?? {
                         promptTokens: 0,
                         completionTokens: 0,
                         totalTokens: 0,
@@ -133,7 +143,7 @@ export class ConversationAgentProvider {
         });
     }
 
-    private createOrchestration() {
+    private async createOrchestration() {
         let uri = new ConnectionString('', {
             user: this.config.username,
             password: this.config.password,
@@ -147,11 +157,32 @@ export class ConversationAgentProvider {
             this.config,
         );
 
-        this.orchestration = createOrchestration({
+        await startKodusOtel();
+        const externalTracer = await createOtelTracerAdapter();
+
+        this.orchestration = await createOrchestration({
             tenantId: 'kodus-agent-conversation',
-            enableObservability: true,
             llmAdapter: this.llmAdapter,
             mcpAdapter: this.mcpAdapter,
+            observability: {
+                logging: { enabled: true, level: 'info' },
+                telemetry: {
+                    enabled: true,
+                    serviceName: 'kodus-flow',
+                    sampling: { rate: 1, strategy: 'probabilistic' },
+                    externalTracer,
+                    privacy: { includeSensitiveData: false },
+                    spanTimeouts: {
+                        enabled: true,
+                        maxDurationMs: 5 * 60 * 1000,
+                    },
+                },
+                correlation: {
+                    enabled: true,
+                    generateIds: true,
+                    propagateContext: true,
+                },
+            },
             // storage: {
             //     memory: {
             //         type: 'mongodb',
@@ -178,7 +209,7 @@ export class ConversationAgentProvider {
     // -------------------------------------------------------------------------
     private async initialize(organizationAndTeamData: OrganizationAndTeamData) {
         await this.createMCPAdapter(organizationAndTeamData);
-        this.createOrchestration();
+        await this.createOrchestration();
 
         // 1️⃣ conecta MCP (opcional)
         try {
@@ -189,11 +220,20 @@ export class ConversationAgentProvider {
         }
 
         await this.orchestration.createAgent({
-            name: 'conversational-agent',
-            planner: 'plan-execute',
+            name: 'kodus-conversational-agent',
             identity: {
                 description:
                     'Agente de conversação para interações com usuários.',
+            },
+            plannerOptions: {
+                planner: 'plan-execute',
+                replanPolicy: {
+                    missingInput: 'replan', // não pergunta; tenta replanejar
+                    toolUnavailable: 'replan', // idem para ferramenta ausente
+                    maxReplansPerPlan: 3, // evita loops
+                    planTtlMs: 60_000, // TTL do plano
+                    budget: { maxMs: 60_000, maxToolCalls: 10 },
+                },
             },
         });
     }
@@ -221,7 +261,7 @@ export class ConversationAgentProvider {
         await this.initialize(organizationAndTeamData);
 
         const result = await this.orchestration.callAgent(
-            'conversational-agent',
+            'kodus-conversational-agent',
             prompt,
             {
                 thread: thread,
@@ -231,13 +271,6 @@ export class ConversationAgentProvider {
                 },
             },
         );
-
-        const correlationId = result?.context?.correlationId || '';
-        const teste = correlationId as string;
-
-        // ✅ Ver timeline completo!
-        const timeline = this.orchestration.getExecutionTimeline(teste);
-        console.log(timeline);
 
         return typeof result.result === 'string'
             ? result.result

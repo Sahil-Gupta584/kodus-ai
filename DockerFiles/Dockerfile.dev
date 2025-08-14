@@ -59,7 +59,7 @@ RUN apt-get update && apt-get install -y git build-essential postgresql-client p
 
 # -------------------------------------------------------------
 # 3) Estágio final de desenvolvimento
-FROM --platform=linux/amd64 node:20-slim AS development
+FROM --platform=linux/amd64 node:22.14.0-slim AS development
 
 # Redefinir ARG e definir ENV neste estágio
 ARG API_CLOUD_MODE

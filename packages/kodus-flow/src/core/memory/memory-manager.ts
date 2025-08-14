@@ -377,6 +377,16 @@ export class MemoryManager {
             }
         }
 
+        // Manter índice vetorial consistente
+        try {
+            await this.vectorStore.delete(id);
+        } catch (error) {
+            logger.warn('Failed to delete vector for memory item', {
+                id,
+                error,
+            });
+        }
+
         return deleted;
     }
 
@@ -394,6 +404,13 @@ export class MemoryManager {
             } catch (error) {
                 logger.warn('Failed to clear backup adapter', { error });
             }
+        }
+
+        // Limpar índice vetorial também
+        try {
+            await this.vectorStore.clear();
+        } catch (error) {
+            logger.warn('Failed to clear vector store', { error });
         }
     }
 

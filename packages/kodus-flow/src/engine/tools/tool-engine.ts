@@ -1,4 +1,10 @@
-import { createLogger } from '../../observability/index.js';
+import {
+    createLogger,
+    getObservability,
+    startToolSpan,
+    applyErrorToSpan,
+    markSpanOk,
+} from '../../observability/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import type {
     ToolDefinition,
@@ -85,28 +91,44 @@ export class ToolEngine {
         const callId = IdGenerator.callId();
         const timeout = this.config.timeout || 60000;
         const startTime = Date.now();
+        const obs = getObservability();
 
         try {
-            // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
-            const timeoutPromise = new Promise<never>((_, reject) => {
-                setTimeout(() => {
-                    reject(
-                        new Error(`Tool execution timeout after ${timeout}ms`),
-                    );
-                }, timeout);
+            const span = startToolSpan(obs.telemetry, {
+                toolName: String(toolName),
+                callId,
             });
 
-            // Create execution promise
-            const executionPromise = this.executeToolInternal<TInput, TOutput>(
-                toolName,
-                input,
-                callId,
-            );
+            const result = await obs.telemetry.withSpan(span, async () => {
+                try {
+                    // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
+                    const timeoutPromise = new Promise<never>((_, reject) => {
+                        setTimeout(() => {
+                            reject(
+                                new Error(
+                                    `Tool execution timeout after ${timeout}ms`,
+                                ),
+                            );
+                        }, timeout);
+                    });
 
-            const result = await Promise.race([
-                executionPromise,
-                timeoutPromise,
-            ]);
+                    // Create execution promise
+                    const executionPromise = this.executeToolInternal<
+                        TInput,
+                        TOutput
+                    >(toolName, input, callId);
+
+                    const res = await Promise.race([
+                        executionPromise,
+                        timeoutPromise,
+                    ]);
+                    markSpanOk(span);
+                    return res;
+                } catch (innerError) {
+                    applyErrorToSpan(span, innerError);
+                    throw innerError;
+                }
+            });
 
             return result;
         } catch (error) {
@@ -685,29 +707,47 @@ export class ToolEngine {
         const callId = IdGenerator.callId();
         const timeout = this.config.timeout || 60000; // ✅ 60s timeout para ferramentas MCP
         const startTime = Date.now();
+        const obs = getObservability();
 
         try {
-            // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
-            const timeoutPromise = new Promise<never>((_, reject) => {
-                setTimeout(() => {
-                    reject(
-                        new Error(`Tool execution timeout after ${timeout}ms`),
-                    );
-                }, timeout);
+            const span = obs.telemetry.startSpan('tool.execute', {
+                attributes: {
+                    toolName: String(toolName),
+                    callId,
+                },
             });
 
-            // Create execution promise using executeToolInternal
-            const executionPromise = this.executeToolInternal<TInput, TOutput>(
-                toolName as ToolId,
-                input,
-                callId,
-            );
+            const result = await obs.telemetry.withSpan(span, async () => {
+                try {
+                    // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
+                    const timeoutPromise = new Promise<never>((_, reject) => {
+                        setTimeout(() => {
+                            reject(
+                                new Error(
+                                    `Tool execution timeout after ${timeout}ms`,
+                                ),
+                            );
+                        }, timeout);
+                    });
 
-            // Race between execution and timeout
-            const result = await Promise.race([
-                executionPromise,
-                timeoutPromise,
-            ]);
+                    // Create execution promise using executeToolInternal
+                    const executionPromise = this.executeToolInternal<
+                        TInput,
+                        TOutput
+                    >(toolName as ToolId, input, callId);
+
+                    // Race between execution and timeout
+                    const res = await Promise.race([
+                        executionPromise,
+                        timeoutPromise,
+                    ]);
+                    markSpanOk(span);
+                    return res;
+                } catch (innerError) {
+                    applyErrorToSpan(span, innerError);
+                    throw innerError;
+                }
+            });
 
             return result;
         } catch (error) {

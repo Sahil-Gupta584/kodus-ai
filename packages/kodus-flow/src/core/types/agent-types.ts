@@ -72,6 +72,8 @@ export const agentActionTypeSchema = z.enum([
     'final_answer',
     'need_more_info',
     'tool_call',
+    // Meta-action to trigger full plan execution by executor
+    'execute_plan',
     // Enhanced action types for multi-agent coordination
     'delegate_to_agent',
     'request_human_input',
@@ -114,6 +116,14 @@ export interface ToolCallAction extends AgentAction {
     toolName: string;
     input: unknown;
     reasoning?: string;
+}
+
+/**
+ * Meta action to delegate full plan execution to the executor
+ */
+export interface ExecutePlanAction extends AgentAction {
+    type: 'execute_plan';
+    planId: string;
 }
 
 export interface DelegateToAgentAction extends AgentAction {
@@ -343,10 +353,19 @@ export interface AgentContext {
 
     // Memory: Long-term storage with search
     memory: {
-        store: (content: unknown, type?: string) => Promise<void>;
+        // Retorna o id do item armazenado
+        store: (content: unknown, type?: string) => Promise<string>;
         get: (id: string) => Promise<unknown>;
         search: (query: string, limit?: number) => Promise<unknown[]>;
         getRecent: (limit?: number) => Promise<unknown[]>;
+        // Query estruturada (escopada por padrão ao contexto atual)
+        query?: (filters: {
+            type?: string;
+            key?: string;
+            since?: number;
+            until?: number;
+            limit?: number;
+        }) => Promise<unknown[]>;
     };
 
     // Session: Conversation management
@@ -830,6 +849,18 @@ export function isToolCallAction(
     action: AgentAction,
 ): action is ToolCallAction {
     return action.type === 'tool_call';
+}
+
+export function isNeedMoreInfoAction(
+    action: AgentAction,
+): action is NeedMoreInfoAction {
+    return action.type === 'need_more_info';
+}
+
+export function isExecutePlanAction(
+    action: AgentAction,
+): action is ExecutePlanAction {
+    return action.type === 'execute_plan';
 }
 
 export function isParallelToolsAction(
