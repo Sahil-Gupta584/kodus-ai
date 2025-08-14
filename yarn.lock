@@ -251,9 +251,9 @@
     uuid "^9.0.1"
 
 "@aws-sdk/client-sagemaker@^3.583.0":
-  version "3.866.0"
-  resolved "https://registry.yarnpkg.com/@aws-sdk/client-sagemaker/-/client-sagemaker-3.866.0.tgz#e94db36c0eef91f0c33297c38a98db6dd4f906ef"
-  integrity sha512-Wix5jvti0nloqvgvPNZFigGYCRni10fviGXuat2hnaA0VwY8MRY8oQT7CzyBuRracrLWbNiS2YaaIzKwDgn1XQ==
+  version "3.867.0"
+  resolved "https://registry.yarnpkg.com/@aws-sdk/client-sagemaker/-/client-sagemaker-3.867.0.tgz#9e6fc72773c0726d664708a507c0574c0c68d042"
+  integrity sha512-onnf2lDcacn0X0N2mD4D9HK9g8QaItTCmXQ4qcq1Vn4fE5BstlEGNAv3zQknxyALl1i0rXl1mBIe0lpzZdCVGQ==
   dependencies:
     "@aws-crypto/sha256-browser" "5.2.0"
     "@aws-crypto/sha256-js" "5.2.0"
@@ -1057,6 +1057,11 @@
   resolved "https://registry.yarnpkg.com/@bcoe/v8-coverage/-/v8-coverage-0.2.3.tgz#75a2e8b51cb758a7553d6804a5932d7aace75c39"
   integrity sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==
 
+"@borewit/text-codec@^0.1.0":
+  version "0.1.1"
+  resolved "https://registry.yarnpkg.com/@borewit/text-codec/-/text-codec-0.1.1.tgz#7e7f27092473d5eabcffef693a849f2cc48431da"
+  integrity sha512-5L/uBxmjaCIX5h8Z+uu+kA9BQLkc/Wl06UGR5ajNRxu+/XjonB5i8JpgFMrPj3LXTCPA0pv8yxUvbUi+QthGGA==
+
 "@cfworker/json-schema@^4.0.2":
   version "4.1.1"
   resolved "https://registry.yarnpkg.com/@cfworker/json-schema/-/json-schema-4.1.1.tgz#4a2a3947ee9fa7b7c24be981422831b8674c3be6"
@@ -1442,9 +1447,9 @@
   integrity sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ==
 
 "@inquirer/checkbox@^4.1.2", "@inquirer/checkbox@^4.2.0":
-  version "4.2.0"
-  resolved "https://registry.yarnpkg.com/@inquirer/checkbox/-/checkbox-4.2.0.tgz#84101e167f8ae5853c6b1f8c0aacf74c1969aef5"
-  integrity sha512-fdSw07FLJEU5vbpOPzXo5c6xmMGDzbZE2+niuDHX5N6mc6V0Ebso/q3xiHra4D73+PMsC8MJmcaZKuAAoaQsSA==
+  version "4.2.1"
+  resolved "https://registry.yarnpkg.com/@inquirer/checkbox/-/checkbox-4.2.1.tgz#45125a32f27c5cfd82a23d5ecf49b4dc137e1247"
+  integrity sha512-bevKGO6kX1eM/N+pdh9leS5L7TBF4ICrzi9a+cbWkrxeAeIcwlo/7OfWGCDERdRCI2/Q6tjltX4bt07ALHDwFw==
   dependencies:
     "@inquirer/core" "^10.1.15"
     "@inquirer/figures" "^1.0.13"
@@ -1475,12 +1480,12 @@
     yoctocolors-cjs "^2.1.2"
 
 "@inquirer/editor@^4.2.15", "@inquirer/editor@^4.2.7":
-  version "4.2.16"
-  resolved "https://registry.yarnpkg.com/@inquirer/editor/-/editor-4.2.16.tgz#ac51ab9fd22411d6e670eb03d8db09b1b1381aac"
-  integrity sha512-iSzLjT4C6YKp2DU0fr8T7a97FnRRxMO6CushJnW5ktxLNM2iNeuyUuUA5255eOLPORoGYCrVnuDOEBdGkHGkpw==
+  version "4.2.17"
+  resolved "https://registry.yarnpkg.com/@inquirer/editor/-/editor-4.2.17.tgz#5af16f6f24f62f552feb05c7bec2dc0743230584"
+  integrity sha512-r6bQLsyPSzbWrZZ9ufoWL+CztkSatnJ6uSxqd6N+o41EZC51sQeWOzI6s5jLb+xxTWxl7PlUppqm8/sow241gg==
   dependencies:
     "@inquirer/core" "^10.1.15"
-    "@inquirer/external-editor" "^1.0.0"
+    "@inquirer/external-editor" "^1.0.1"
     "@inquirer/type" "^3.0.8"
 
 "@inquirer/expand@^4.0.17", "@inquirer/expand@^4.0.9":
@@ -1492,10 +1497,10 @@
     "@inquirer/type" "^3.0.8"
     yoctocolors-cjs "^2.1.2"
 
-"@inquirer/external-editor@^1.0.0":
-  version "1.0.0"
-  resolved "https://registry.yarnpkg.com/@inquirer/external-editor/-/external-editor-1.0.0.tgz#a4b53af494049093ebc3c5c73fa949258e013cec"
-  integrity sha512-5v3YXc5ZMfL6OJqXPrX9csb4l7NlQA2doO1yynUjpUChT9hg4JcuBVP0RbsEJ/3SL/sxWEyFjT2W69ZhtoBWqg==
+"@inquirer/external-editor@^1.0.1":
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/@inquirer/external-editor/-/external-editor-1.0.1.tgz#ab0a82c5719a963fb469021cde5cd2b74fea30f8"
+  integrity sha512-Oau4yL24d2B5IL4ma4UpbQigkVhzPDXLoqy1ggK4gnHg/stmkffJE4oOXHXF3uz0UEpywG68KcyXsyYpA1Re/Q==
   dependencies:
     chardet "^2.1.0"
     iconv-lite "^0.6.3"
@@ -1904,18 +1909,15 @@
   resolved "https://registry.yarnpkg.com/@js-sdsl/ordered-map/-/ordered-map-4.4.2.tgz#9299f82874bab9e4c7f9c48d865becbfe8d6907c"
   integrity sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==
 
-"@kayahr/text-encoding@^2.0.1":
-  version "2.0.1"
-  resolved "https://registry.yarnpkg.com/@kayahr/text-encoding/-/text-encoding-2.0.1.tgz#09cfb634cefcdb580c8f9e1523a4c2d693d1ce9e"
-  integrity sha512-OUsJJVn85VrfNiiT6CSbHK2Jr9YS6tVsgQhly+EkcbYTT2SXeibU4nQNO2IzCRttKJt4zw4W60KtLifRRJBIng==
-
 "@keyv/serialize@^1.1.0":
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/@keyv/serialize/-/serialize-1.1.0.tgz#08f5d89096110fdcf778e5337362e1cd5afad70a"
   integrity sha512-RlDgexML7Z63Q8BSaqhXdCYNBy/JQnqYIwxofUrNLGCblOMHp+xux2Q8nLMLlPpgHQPoU0Do8Z6btCpRBEqZ8g==
 
-"@kodus/flow@file:.yalc/@kodus/flow":
-  version "0.1.7"
+"@kodus/flow@^0.1.9":
+  version "0.1.9"
+  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/flow/-/@kodus/flow-0.1.9.tgz#201cf93c9dc2435a1bf3ade69c13cf73fdaf4ace"
+  integrity sha512-mW6ygp5EXW4i+rjrpnQhqLC6E2vX6yZ4OMNRZd724TEBKwO3a5veJsbqJ2ui9G+tS3Z9eUfAODGLP0vY2jDLJA==
   dependencies:
     "@google/generative-ai" "^0.24.1"
     "@modelcontextprotocol/sdk" "^1.17.2"
@@ -7727,9 +7729,9 @@ langsmith@0.3.57:
     uuid "^10.0.0"
 
 langsmith@^0.3.33, langsmith@^0.3.46:
-  version "0.3.58"
-  resolved "https://registry.yarnpkg.com/langsmith/-/langsmith-0.3.58.tgz#1f6b5fc175d8abbbaaf61ca360028b0f7dc48a0c"
-  integrity sha512-bbqSVCDSF8zzl7KBvd33YpaTOuMVk05XF/WSEvP6nF17g9mt6lIVo1JM9BgC20fDTeSQ35TjMN6NS5Nl2TVC5w==
+  version "0.3.59"
+  resolved "https://registry.yarnpkg.com/langsmith/-/langsmith-0.3.59.tgz#d92cf8a8da1abefeb98f565bd5cf7ecda721ff8e"
+  integrity sha512-iODBmS3CUWCYNnmH69yj5sNAh4ySBQ/RTLIx94ZQlxsiHnnWx1cLPK4smVw4gH9Q2Mfydo8FlkN4uAN10UGOTQ==
   dependencies:
     "@types/uuid" "^10.0.0"
     chalk "^4.1.2"
@@ -9751,11 +9753,11 @@ toidentifier@1.0.1:
   integrity sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==
 
 token-types@^6.0.0:
-  version "6.1.0"
-  resolved "https://registry.yarnpkg.com/token-types/-/token-types-6.1.0.tgz#4a220f7bb2af522ebb095de7542bb9dde3033031"
-  integrity sha512-IwovPojr3nD6KBpwSdWq7zL4D9xDLMSqZm/mFweaFFXiS7mtD1qea2WKcth6lyErwZZjsavZk4AnwPJzT9/wVA==
+  version "6.1.1"
+  resolved "https://registry.yarnpkg.com/token-types/-/token-types-6.1.1.tgz#85bd0ada82939b9178ecd5285881a538c4c00fdd"
+  integrity sha512-kh9LVIWH5CnL63Ipf0jhlBIy0UsrMj/NJDfpsy1SqOXlLKEVyXXYrnFxFT1yOOYVGBSApeVnjPw/sBz5BfEjAQ==
   dependencies:
-    "@kayahr/text-encoding" "^2.0.1"
+    "@borewit/text-codec" "^0.1.0"
     "@tokenizer/token" "^0.3.0"
     ieee754 "^1.2.1"
 

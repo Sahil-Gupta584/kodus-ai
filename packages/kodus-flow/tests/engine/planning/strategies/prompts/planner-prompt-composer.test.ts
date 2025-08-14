@@ -177,8 +177,14 @@ describe('formatReplanContext', () => {
                                     data: {
                                         data: {
                                             values: [
-                                                { key: 'KC', name: 'Kody Copilot' },
-                                                { key: 'GE', name: 'Gestão Escolar' },
+                                                {
+                                                    key: 'KC',
+                                                    name: 'Kody Copilot',
+                                                },
+                                                {
+                                                    key: 'GE',
+                                                    name: 'Gestão Escolar',
+                                                },
                                             ],
                                         },
                                     },
@@ -191,11 +197,16 @@ describe('formatReplanContext', () => {
                     primaryCause: 'Missing parameters',
                     failurePatterns: ['missing_jira_key', 'missing_discord_id'],
                 },
-                suggestions: 'Please provide Jira project key and Discord channel ID',
+                suggestions:
+                    'Please provide Jira project key and Discord channel ID',
             },
         };
 
-        const result = (composer as any).formatReplanContext(additionalContext);
+        const result = (
+            composer as unknown as {
+                formatReplanContext: (context: unknown) => string;
+            }
+        ).formatReplanContext(additionalContext);
 
         expect(result).toContain('## 🔄 REPLAN CONTEXT');
         expect(result).toContain('### 📋 PREVIOUS PLAN');
@@ -206,16 +217,22 @@ describe('formatReplanContext', () => {
         expect(result).toContain('### 🎯 PRESERVED STEPS & RESULTS');
         expect(result).toContain('**Total Preserved:** 2');
         expect(result).toContain('**Step 1:** Get diff for file');
-        expect(result).toContain('**Tool:** kodus-mcp-server.get_diff_for_file');
+        expect(result).toContain(
+            '**Tool:** kodus-mcp-server.get_diff_for_file',
+        );
         expect(result).toContain('**Result:** ✅ Diff extracted (');
         expect(result).toContain('**Step 2:** List Jira projects');
         expect(result).toContain('**Tool:** jira.JIRA_GET_ALL_PROJECTS');
         expect(result).toContain('**Result:** ✅ Found 2 projects: KC, GE');
         expect(result).toContain('### 🚨 FAILURE ANALYSIS');
         expect(result).toContain('**Primary Cause:** Missing parameters');
-        expect(result).toContain('**Patterns:** missing_jira_key, missing_discord_id');
+        expect(result).toContain(
+            '**Patterns:** missing_jira_key, missing_discord_id',
+        );
         expect(result).toContain('### 💡 SUGGESTIONS');
-        expect(result).toContain('Please provide Jira project key and Discord channel ID');
+        expect(result).toContain(
+            'Please provide Jira project key and Discord channel ID',
+        );
     });
 
     it('should handle failed tool results', () => {
@@ -245,7 +262,11 @@ describe('formatReplanContext', () => {
             },
         };
 
-        const result = (composer as any).formatReplanContext(additionalContext);
+        const result = (
+            composer as unknown as {
+                formatReplanContext: (context: unknown) => string;
+            }
+        ).formatReplanContext(additionalContext);
 
         expect(result).toContain('**Step 1:** Failed step');
         expect(result).toContain('**Tool:** discord.DISCORD_SEND_MESSAGE');
@@ -275,7 +296,11 @@ describe('formatReplanContext', () => {
             },
         };
 
-        const result = (composer as any).formatReplanContext(additionalContext);
+        const result = (
+            composer as unknown as {
+                formatReplanContext: (context: unknown) => string;
+            }
+        ).formatReplanContext(additionalContext);
 
         expect(result).toContain('**Result:** ✅ Success');
         expect(result).toContain('**Result:** ❌ Failed');
