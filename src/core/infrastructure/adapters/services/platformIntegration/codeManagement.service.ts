@@ -244,6 +244,9 @@ export class CodeManagementService implements ICodeManagementService {
                 state?: PullRequestState;
                 author?: string;
                 branch?: string;
+                number?: number;
+                title?: string;
+                url?: string;
             };
         },
         type?: PlatformType,
@@ -957,6 +960,8 @@ export class CodeManagementService implements ICodeManagementService {
             filters?: {
                 startDate: string;
                 endDate: string;
+                number?: number;
+                branch?: string;
             };
         },
         type?: PlatformType,
