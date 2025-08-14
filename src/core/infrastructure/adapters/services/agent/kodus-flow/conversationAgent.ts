@@ -9,6 +9,7 @@ import {
     MongoDBPersistorConfig,
     getObservability,
     createOtelTracerAdapter,
+    DirectLLMAdapter,
 } from '@kodus/flow';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
@@ -29,7 +30,7 @@ export class ConversationAgentProvider {
     private orchestration: ReturnType<typeof createOrchestration>;
     private mcpAdapter: ReturnType<typeof createMCPAdapter>;
 
-    private llmAdapter: any;
+    private llmAdapter: DirectLLMAdapter;
 
     constructor(
         private readonly configService: ConfigService,
@@ -160,7 +161,7 @@ export class ConversationAgentProvider {
         await startKodusOtel();
         const externalTracer = await createOtelTracerAdapter();
 
-        this.orchestration = await createOrchestration({
+        this.orchestration = createOrchestration({
             tenantId: 'kodus-agent-conversation',
             llmAdapter: this.llmAdapter,
             mcpAdapter: this.mcpAdapter,
@@ -183,26 +184,26 @@ export class ConversationAgentProvider {
                     propagateContext: true,
                 },
             },
-            // storage: {
-            //     memory: {
-            //         type: 'mongodb',
-            //         connectionString: uri,
-            //         database: this.config.database,
-            //         collection: 'memories',
-            //     },
-            //     session: {
-            //         type: 'mongodb',
-            //         connectionString: uri,
-            //         database: this.config.database,
-            //         collection: 'sessions',
-            //     },
-            //     persistor: {
-            //         type: 'mongodb',
-            //         connectionString: uri,
-            //         database: this.config.database,
-            //         collection: 'snapshots',
-            //     },
-            // },
+            storage: {
+                memory: {
+                    type: 'mongodb',
+                    connectionString: uri,
+                    database: this.config.database,
+                    collection: 'memories',
+                },
+                session: {
+                    type: 'mongodb',
+                    connectionString: uri,
+                    database: this.config.database,
+                    collection: 'sessions',
+                },
+                snapshot: {
+                    type: 'mongodb',
+                    connectionString: uri,
+                    database: this.config.database,
+                    collection: 'snapshots',
+                },
+            },
         });
     }
 

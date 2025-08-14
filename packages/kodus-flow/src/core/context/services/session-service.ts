@@ -95,7 +95,9 @@ export class SessionService {
         });
 
         // Initialize asynchronously
-        this.initializeStorage();
+        this.initializeStorage().catch((e) => {
+            this.logger.error('Failed to initialize storage adapter', e);
+        });
 
         if (this.config.enableAutoCleanup) {
             this.startAutoCleanup();
@@ -302,12 +304,19 @@ export class SessionService {
     /**
      * Get session by thread ID (for ContextBuilder)
      */
-    async getSessionByThread(threadId: string): Promise<Session | undefined> {
+    async getSessionByThread(
+        threadId: string,
+        tenantId?: string,
+    ): Promise<Session | undefined> {
         await this.ensureInitialized();
 
         // Check RAM cache first
         for (const session of this.sessions.values()) {
-            if (session.threadId === threadId && session.status === 'active') {
+            if (
+                session.threadId === threadId &&
+                session.status === 'active' &&
+                (!tenantId || session.tenantId === tenantId)
+            ) {
                 return session;
             }
         }
@@ -317,7 +326,7 @@ export class SessionService {
             try {
                 const found = await this.storage.findSessionByThread(
                     threadId,
-                    undefined,
+                    tenantId,
                 );
                 if (found) {
                     // Cachear e criar state manager
