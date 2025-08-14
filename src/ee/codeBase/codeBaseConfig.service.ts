@@ -1033,6 +1033,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 kodyRulesForDirectory,
                 reviewModeConfig,
                 kodyFineTuningConfig,
+                kodyRulesEntity,
             ] = await Promise.all([
                 this.parametersService.findByKey(
                     ParametersKey.LANGUAGE_CONFIG,
@@ -1046,10 +1047,21 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 ),
                 this.getReviewModeConfigParameter(organizationAndTeamData),
                 this.getKodyFineTuningConfigParameter(organizationAndTeamData),
+                this.kodyRulesService.findByOrganizationId(
+                    organizationAndTeamData.organizationId,
+                ),
             ]);
 
-            // As rules já vêm filtradas para o diretório específico
-            const kodyRules = kodyRulesForDirectory;
+            const repositoryKodyRules =
+                this.kodyRulesValidationService.filterKodyRules(
+                    kodyRulesEntity?.toObject()?.rules,
+                    repository.id,
+                ).filter((rule) => rule?.directoryId !== directoryConfig.id);
+
+            const kodyRules = [
+                ...repositoryKodyRules,
+                ...kodyRulesForDirectory,
+            ];
 
             const config: CodeReviewConfig = {
                 ignorePaths: directoryConfig.ignorePaths || [],
