@@ -1676,7 +1676,7 @@ export class PlannerHandler {
 
         // Emit planning start event via KernelHandler
         if (this.kernelHandler) {
-            this.kernelHandler.emit('planner.start', {
+            await this.kernelHandler.emit('planner.start', {
                 eventId: event.id,
                 eventType: event.type,
                 startTime,
@@ -1762,7 +1762,7 @@ export class PlannerHandler {
 
             // Emit planning success event via KernelHandler
             if (this.kernelHandler) {
-                this.kernelHandler.emit('planner.success', {
+                await this.kernelHandler.emit('planner.success', {
                     planId: plan.id,
                     strategy: plan.strategy,
                     stepsCount: plan.steps.length,
@@ -1801,7 +1801,7 @@ export class PlannerHandler {
 
             // Emit planning error event via KernelHandler
             if (this.kernelHandler) {
-                this.kernelHandler.emit('planner.error', {
+                await this.kernelHandler.emit('planner.error', {
                     error: (error as Error).message,
                     duration: Date.now() - startTime,
                 });

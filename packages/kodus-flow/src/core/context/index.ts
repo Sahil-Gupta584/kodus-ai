@@ -7,7 +7,6 @@
 // ===== MAIN ENTRY POINT =====
 export {
     ContextBuilder,
-    contextBuilder,
     createAgentContext,
     type ContextBuilderConfig,
 } from './context-builder.js';

@@ -572,7 +572,7 @@ export class ExecutionKernel {
             this.updateStateFromEvent(event);
 
             // Check quotas after event processing
-            this.checkQuotas();
+            await this.checkQuotas();
 
             this.logger.debug('Event sent to runtime', {
                 eventType: event.type,
@@ -1098,19 +1098,19 @@ export class ExecutionKernel {
         const { maxDuration, maxMemory } = this.state.quotas;
 
         if (maxDuration) {
-            const timer = setTimeout(() => {
+            const timer = setTimeout(async () => {
                 this.logger.warn('Duration quota exceeded', {
                     maxDuration,
                     kernelId: this.state.id,
                     runtime: Date.now() - this.state.startTime,
                 });
-                this.handleQuotaExceeded('duration');
+                await this.handleQuotaExceeded('duration');
             }, maxDuration);
             this.quotaTimers.add(timer);
         }
 
         if (maxMemory) {
-            const timer = setInterval(() => {
+            const timer = setInterval(async () => {
                 const memoryUsage = process.memoryUsage().heapUsed;
                 if (memoryUsage > maxMemory) {
                     this.logger.warn('Memory quota exceeded', {
@@ -1118,7 +1118,7 @@ export class ExecutionKernel {
                         maxMemory,
                         kernelId: this.state.id,
                     });
-                    this.handleQuotaExceeded('memory');
+                    await this.handleQuotaExceeded('memory');
                 }
             }, 1000);
             this.quotaTimers.add(timer);
@@ -1345,7 +1345,7 @@ export class ExecutionKernel {
     /**
      * Check quotas
      */
-    private checkQuotas(): void {
+    private async checkQuotas(): Promise<void> {
         const { maxEvents } = this.state.quotas;
 
         if (maxEvents && this.state.eventCount >= maxEvents) {
@@ -1354,7 +1354,7 @@ export class ExecutionKernel {
                 maxEvents,
                 kernelId: this.state.id,
             });
-            this.handleQuotaExceeded('events');
+            await this.handleQuotaExceeded('events');
         }
     }
 

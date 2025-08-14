@@ -112,7 +112,7 @@ export class DeadLetterQueue {
 
         // Load persisted DLQ items if persistence is enabled
         if (this.config.enablePersistence && this.persistor && this.xcId) {
-            this.loadPersistedDLQItems();
+            void this.loadPersistedDLQItems();
         }
     }
 
