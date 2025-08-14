@@ -37,7 +37,7 @@ export {
 
 // Re-export logger types and interfaces (backward compatibility)
 export type { LogLevel, LogContext } from './logger.js';
-export { createLogger, setLoggerProvider, type Logger } from './logger.js';
+export { createLogger, type Logger } from './logger.js';
 
 // Import key classes and functions
 import {

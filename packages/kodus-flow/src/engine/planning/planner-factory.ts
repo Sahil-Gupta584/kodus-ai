@@ -47,6 +47,13 @@ export interface Planner<
         result: ActionResult,
         context: TContext,
     ): Promise<ResultAnalysis>;
+    // Optional hooks for Plan–Execute style planners
+    getPlanForContext?(context: TContext): unknown | null;
+    resolveArgs?(
+        args: Record<string, unknown>,
+        steps: unknown[],
+        context?: TContext,
+    ): Promise<{ args: Record<string, unknown>; missing: string[] }>;
 }
 
 // Specific metadata types for better type safety
@@ -252,6 +259,18 @@ export interface PlannerExecutionContext {
 
     // ✅ NEW: ContextBuilder integration - AgentContext with clean APIs
     agentContext?: import('../../core/types/agent-types.js').AgentContext;
+
+    // 🚀 NEW: Rich context from previous plan execution for intelligent replanning
+    previousExecution?: {
+        plan: import('../../core/types/planning-shared.js').ExecutionPlan;
+        result: import('../../core/types/planning-shared.js').PlanExecutionResult;
+        preservedSteps: import('../../core/types/planning-shared.js').StepExecutionResult[];
+        failureAnalysis: {
+            primaryCause: string;
+            failurePatterns: string[];
+            affectedSteps: string[];
+        };
+    };
 
     // Methods
     update(

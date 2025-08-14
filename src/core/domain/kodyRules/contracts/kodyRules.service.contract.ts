@@ -1,7 +1,8 @@
 import { IKodyRulesRepository } from './kodyRules.repository.contract';
 import { CreateKodyRuleDto } from '@/core/infrastructure/http/dtos/create-kody-rule.dto';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { IKodyRule } from '../interfaces/kodyRules.interface';
+import { IKodyRule, KodyRulesStatus } from '../interfaces/kodyRules.interface';
+import { KodyRulesEntity } from '../entities/kodyRules.entity';
 import { KodyRuleFilters } from '@/config/types/kodyRules.type';
 import { UserInfo } from '@/config/types/general/codeReviewSettingsLog.type';
 
@@ -15,4 +16,16 @@ export interface IKodyRulesService extends IKodyRulesRepository {
     ): Promise<Partial<IKodyRule> | IKodyRule | null>;
 
     getLibraryKodyRules(filters?: KodyRuleFilters): Promise<any | null>;
+
+    findRulesByDirectory(
+        organizationId: string,
+        repositoryId: string,
+        directoryId: string,
+    ): Promise<Partial<IKodyRule>[]>;
+    updateRulesStatusByFilter(
+        organizationId: string,
+        repositoryId: string,
+        directoryId?: string,
+        newStatus?: KodyRulesStatus,
+    ): Promise<KodyRulesEntity | null>;
 }

@@ -111,90 +111,13 @@ class SimpleLogger implements Logger {
     }
 }
 
-export type LoggerProvider = 'simple' | 'pino';
-let currentLoggerProvider: LoggerProvider =
-    process.env.KODUS_LOGGER === 'pino' ? 'pino' : 'simple';
-
-export function setLoggerProvider(provider: LoggerProvider): void {
-    currentLoggerProvider = provider;
-}
-
 /**
  * Criar logger para o framework
+ * ✅ SIMPLIFIED: Always use simple logger for better UX
+ * No more environment variable dependencies
  */
 export function createLogger(name: string, level?: LogLevel): Logger {
-    if (currentLoggerProvider !== 'pino') {
-        return new SimpleLogger(name, level);
-    }
-
-    // Start with simple and upgrade to pino asynchronously if available
-    const simple = new SimpleLogger(name, level);
-    let pinoLogger: {
-        debug: (obj: unknown, msg: string) => void;
-        info: (obj: unknown, msg: string) => void;
-        warn: (obj: unknown, msg: string) => void;
-        error: (obj: unknown, msg: string) => void;
-    } | null = null;
-
-    (async () => {
-        try {
-            const mod = (await import('pino')) as unknown;
-            const factory =
-                (
-                    mod as {
-                        default?: (opts: { name: string; level: string }) => {
-                            debug: (obj: unknown, msg: string) => void;
-                            info: (obj: unknown, msg: string) => void;
-                            warn: (obj: unknown, msg: string) => void;
-                            error: (obj: unknown, msg: string) => void;
-                        };
-                    }
-                ).default ||
-                (mod as (opts: { name: string; level: string }) => {
-                    debug: (obj: unknown, msg: string) => void;
-                    info: (obj: unknown, msg: string) => void;
-                    warn: (obj: unknown, msg: string) => void;
-                    error: (obj: unknown, msg: string) => void;
-                });
-            pinoLogger = factory({
-                name,
-                level: (level || 'info').toLowerCase(),
-            });
-        } catch {
-            // keep simple
-        }
-    })().catch(() => {});
-
-    const adapter: Logger = {
-        debug: (message, context) =>
-            pinoLogger
-                ? pinoLogger.debug(context || {}, message)
-                : simple.debug(message, context),
-        info: (message, context) =>
-            pinoLogger
-                ? pinoLogger.info(context || {}, message)
-                : simple.info(message, context),
-        warn: (message, context) =>
-            pinoLogger
-                ? pinoLogger.warn(context || {}, message)
-                : simple.warn(message, context),
-        error: (message, error, context) =>
-            pinoLogger
-                ? pinoLogger.error(
-                      {
-                          ...(context || {}),
-                          ...(error && {
-                              errorName: error.name,
-                              errorMessage: error.message,
-                              errorStack: error.stack,
-                          }),
-                      },
-                      message,
-                  )
-                : simple.error(message, error, context),
-    };
-
-    return adapter;
+    return new SimpleLogger(name, level);
 }
 
 /**

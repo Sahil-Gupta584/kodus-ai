@@ -174,11 +174,22 @@ export interface PlanningResult {
         tool?: string;
         arguments?: Record<string, unknown>;
         dependencies?: string[];
-        type: 'analysis' | 'action' | 'decision' | 'observation';
+        type:
+            | 'analysis'
+            | 'action'
+            | 'decision'
+            | 'observation'
+            | 'verification';
     }>;
     reasoning: string;
-    complexity: 'simple' | 'medium' | 'complex';
     estimatedTime?: number;
+    signals?: {
+        needs?: string[];
+        noDiscoveryPath?: string[];
+        errors?: string[];
+        suggestedNextStep?: string;
+    };
+    audit?: string[];
 }
 
 export interface RoutingResult {
@@ -573,8 +584,22 @@ Please analyze semantic similarity and select the most appropriate tool.`,
     ): PlanningResult {
         const llmValidated = validateLLMResponse(response);
 
-        let extractedSteps = [];
+        let extractedSteps: Array<{
+            id: string;
+            description: string;
+            tool?: string;
+            arguments?: Record<string, unknown>;
+            dependencies?: string[];
+            type:
+                | 'analysis'
+                | 'action'
+                | 'decision'
+                | 'observation'
+                | 'verification';
+        }> = [];
         let extractedReasoning = '';
+        let extractedSignals: Record<string, unknown> = {};
+        let extractedAudit: string[] = [];
 
         if (llmValidated.toolCalls && llmValidated.toolCalls.length > 0) {
             this.logger.debug('Extracting steps from function calls', {
@@ -614,6 +639,8 @@ Please analyze semantic similarity and select the most appropriate tool.`,
             const validated = validatePlanningResponse(response);
             extractedSteps = validated.steps || [];
             extractedReasoning = validated.reasoning || '';
+            extractedSignals = validated.signals || {};
+            extractedAudit = validated.audit || [];
         }
 
         return {
@@ -621,7 +648,8 @@ Please analyze semantic similarity and select the most appropriate tool.`,
             goal,
             steps: extractedSteps,
             reasoning: extractedReasoning,
-            complexity: 'medium' as const,
+            signals: extractedSignals,
+            audit: extractedAudit,
         };
     }
 

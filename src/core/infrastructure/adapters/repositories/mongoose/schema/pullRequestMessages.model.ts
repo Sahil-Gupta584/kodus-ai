@@ -54,6 +54,9 @@ export class PullRequestMessagesModel extends CoreDocument {
         content: string;
         status: PullRequestMessageStatus;
     };
+
+    @Prop({ type: String, required: false })
+    directoryId: string;
 }
 
 export const PullRequestMessagesSchema = SchemaFactory.createForClass(

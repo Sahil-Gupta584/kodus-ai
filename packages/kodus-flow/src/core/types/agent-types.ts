@@ -72,6 +72,8 @@ export const agentActionTypeSchema = z.enum([
     'final_answer',
     'need_more_info',
     'tool_call',
+    // Meta-action to trigger full plan execution by executor
+    'execute_plan',
     // Enhanced action types for multi-agent coordination
     'delegate_to_agent',
     'request_human_input',
@@ -114,6 +116,14 @@ export interface ToolCallAction extends AgentAction {
     toolName: string;
     input: unknown;
     reasoning?: string;
+}
+
+/**
+ * Meta action to delegate full plan execution to the executor
+ */
+export interface ExecutePlanAction extends AgentAction {
+    type: 'execute_plan';
+    planId: string;
 }
 
 export interface DelegateToAgentAction extends AgentAction {
@@ -845,6 +855,12 @@ export function isNeedMoreInfoAction(
     action: AgentAction,
 ): action is NeedMoreInfoAction {
     return action.type === 'need_more_info';
+}
+
+export function isExecutePlanAction(
+    action: AgentAction,
+): action is ExecutePlanAction {
+    return action.type === 'execute_plan';
 }
 
 export function isParallelToolsAction(

@@ -532,13 +532,9 @@ export class TelemetrySystem {
         })().catch(() => {});
         this.metrics = new InMemoryMetrics();
 
-        // Env override: allow disabling tracing entirely
-        if (
-            process.env.KODUS_DISABLE_TRACING === 'true' ||
-            process.env.KODUS_DISABLE_TRACING === '1'
-        ) {
-            this.config.enabled = false;
-        }
+        // ✅ REMOVED: Env override - use programmatic config instead
+        // Configuration is now handled via ObservabilityConfig.telemetry.enabled
+        // This provides better UX for framework users
     }
 
     /**

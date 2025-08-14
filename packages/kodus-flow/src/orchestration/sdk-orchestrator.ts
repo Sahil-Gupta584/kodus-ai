@@ -40,6 +40,7 @@ import { SessionId, UserContext } from '@/core/types/base-types.js';
 import { Thread } from '@/core/types/common-types.js';
 import type { PersistorType } from '../persistor/config.js';
 import type { StorageType } from '../core/storage/factory.js';
+import { ReplanPolicyConfig } from '@/engine/planning/strategies/plan-execute-planner.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🏗️ CLEAN ORCHESTRATOR INTERFACES
@@ -139,22 +140,16 @@ export interface OrchestrationConfigInternal
 export type AgentConfig = {
     name: string;
     identity: AgentIdentity;
-    planner?: PlannerType;
     maxIterations?: number;
     executionMode?: 'simple' | 'workflow';
     constraints?: string[];
-
-    // Agent capabilities - configurações do agente (não da execução)
     enableSession?: boolean; // Default: true
     enableState?: boolean; // Default: true
     enableMemory?: boolean; // Default: true
     timeout?: number;
-
-    // Planner options (runtime overrides)
     plannerOptions?: {
-        replanPolicy?: Partial<
-            import('../engine/planning/strategies/plan-execute-planner.js').ReplanPolicyConfig
-        >;
+        planner?: PlannerType;
+        replanPolicy?: Partial<ReplanPolicyConfig>;
     };
 };
 
@@ -310,7 +305,8 @@ const orchestrator = new SDKOrchestrator({
     ): Promise<AgentDefinition<unknown, unknown, unknown>> {
         this.logger.info('Creating agent', {
             name: config.name,
-            planner: config.planner || this.config.defaultPlanner,
+            planner:
+                config.plannerOptions?.planner || this.config.defaultPlanner,
             executionMode: config.executionMode || 'simple',
         });
 
@@ -348,14 +344,15 @@ const orchestrator = new SDKOrchestrator({
         const agentCoreConfig: AgentCoreConfig = {
             tenantId: this.config.tenantId,
             agentName: config.name,
-            planner: config.planner || this.config.defaultPlanner,
+            planner:
+                config?.plannerOptions?.planner || this.config.defaultPlanner,
             llmAdapter: this.config.llmAdapter, // Pass LLM adapter
             maxThinkingIterations:
                 config.maxIterations || this.config.defaultMaxIterations,
             enableKernelIntegration: true,
             debug: process.env.NODE_ENV === 'development',
             monitoring: this.config.enableObservability,
-            plannerOptions: config.plannerOptions,
+            plannerOptions: config?.plannerOptions,
         };
 
         // Create agent instance based on execution mode
@@ -372,7 +369,9 @@ const orchestrator = new SDKOrchestrator({
 
             this.logger.info('Agent created via AgentExecutor (workflow)', {
                 agentName: config.name,
-                planner: config.planner || this.config.defaultPlanner,
+                planner:
+                    config?.plannerOptions?.planner ||
+                    this.config.defaultPlanner,
             });
         } else {
             agentInstance = new AgentEngine(
@@ -383,7 +382,9 @@ const orchestrator = new SDKOrchestrator({
 
             this.logger.info('Agent created via AgentEngine (simple)', {
                 agentName: config.name,
-                planner: config.planner || this.config.defaultPlanner,
+                planner:
+                    config?.plannerOptions?.planner ||
+                    this.config.defaultPlanner,
             });
         }
 

@@ -967,6 +967,18 @@ export class MultiKernelHandler {
                                 } as EventPayloads[EventType],
                                 { correlationId, timeout },
                             )
+                            .then(async () => {
+                                try {
+                                    // Processar imediatamente para evitar ACK pendente e requeue
+                                    await this.processEvents();
+                                } catch (procErr) {
+                                    this.logger.error(
+                                        'Failed to process events after timeout emit',
+                                        procErr as Error,
+                                        { correlationId },
+                                    );
+                                }
+                            })
                             .catch((emitErr) => {
                                 this.logger.error(
                                     'Failed to emit timeout event',

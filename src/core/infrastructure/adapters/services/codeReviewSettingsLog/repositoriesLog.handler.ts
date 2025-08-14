@@ -20,6 +20,11 @@ export interface RepositoryConfigRemovalParams extends BaseLogParams {
     repository: { id: string; name: string };
 }
 
+export interface DirectoryConfigRemovalParams extends BaseLogParams {
+    repository: { id: string; name?: string };
+    directory: { id: string; path?: string };
+}
+
 @Injectable()
 export class RepositoriesLogHandler {
     constructor(private readonly unifiedLogHandler: UnifiedLogHandler) {}
@@ -104,6 +109,43 @@ export class RepositoriesLogHandler {
             actionType: ActionType.DELETE,
             configLevel: ConfigLevel.REPOSITORY,
             repository,
+            changedData,
+        });
+    }
+
+    public async logDirectoryConfigurationRemoval(
+        params: DirectoryConfigRemovalParams,
+    ): Promise<void> {
+        const { organizationAndTeamData, userInfo, repository, directory } =
+            params;
+
+        const directoryLabel = directory.path || directory.id;
+        const repositoryLabel = repository.name || repository.id;
+
+        const changedData: ChangedDataToExport[] = [
+            {
+                actionDescription: 'Directory Configuration Removed',
+                previousValue: {
+                    id: directory.id,
+                    path: directory.path,
+                    configType: 'specific',
+                },
+                currentValue: {
+                    id: directory.id,
+                    path: directory.path,
+                    configType: 'repository',
+                },
+                description: `User ${userInfo.userEmail} removed configuration for directory "${directoryLabel}" in repository "${repositoryLabel}"`,
+            },
+        ];
+
+        await this.unifiedLogHandler.saveLogEntry({
+            organizationAndTeamData,
+            userInfo,
+            actionType: ActionType.DELETE,
+            configLevel: ConfigLevel.DIRECTORY,
+            repository: { id: repository.id, name: repository.name },
+            directory: { id: directory.id, path: directory.path },
             changedData,
         });
     }

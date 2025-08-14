@@ -48,6 +48,7 @@ export class ConversationAgentProvider {
             temperature: 0,
             maxTokens: 8000,
             maxReasoningTokens: 800,
+            jsonMode: true,
         });
 
         function sanitizeName(name: string) {
@@ -95,11 +96,11 @@ export class ConversationAgentProvider {
                     maxReasoningTokens: options.maxReasoningTokens,
                 });
 
-                console.log(resp.response_metadata);
+                console.log('LLM response:', JSON.stringify(resp, null, 2));
 
                 return {
                     content: resp.content,
-                    usage: resp.usage ?? {
+                    usage: resp.usage_metadata ?? {
                         promptTokens: 0,
                         completionTokens: 0,
                         totalTokens: 0,
@@ -221,10 +222,19 @@ export class ConversationAgentProvider {
 
         await this.orchestration.createAgent({
             name: 'kodus-conversational-agent',
-            planner: 'plan-execute',
             identity: {
                 description:
                     'Agente de conversação para interações com usuários.',
+            },
+            plannerOptions: {
+                planner: 'plan-execute',
+                replanPolicy: {
+                    missingInput: 'replan', // não pergunta; tenta replanejar
+                    toolUnavailable: 'replan', // idem para ferramenta ausente
+                    maxReplansPerPlan: 3, // evita loops
+                    planTtlMs: 60_000, // TTL do plano
+                    budget: { maxMs: 60_000, maxToolCalls: 10 },
+                },
             },
         });
     }
