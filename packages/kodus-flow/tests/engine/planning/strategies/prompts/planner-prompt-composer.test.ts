@@ -127,3 +127,157 @@ describe('🔍 formatAdditionalContext - Teste Abrangente', () => {
         });
     });
 });
+
+describe('formatReplanContext', () => {
+    it('should format replan context with preserved steps and results', () => {
+        const composer = new PlannerPromptComposer({
+            customExamples: [],
+            examplesProvider: undefined,
+            patternsProvider: undefined,
+        });
+        const additionalContext = {
+            replanContext: {
+                previousPlan: {
+                    id: 'plan-123',
+                    goal: 'Test goal',
+                    strategy: 'plan-execute',
+                    totalSteps: 3,
+                },
+                executionSummary: {
+                    type: 'needs_replan',
+                    executionTime: 5000,
+                    successfulSteps: 2,
+                    failedSteps: 1,
+                    feedback: 'Some steps failed',
+                },
+                preservedSteps: [
+                    {
+                        id: 'step-1',
+                        description: 'Get diff for file',
+                        tool: 'kodus-mcp-server.get_diff_for_file',
+                        result: {
+                            type: 'tool_result',
+                            content: {
+                                result: {
+                                    successful: true,
+                                    data: '@@ -1,1 +1,1 @@\n-old\n+new',
+                                },
+                            },
+                        },
+                    },
+                    {
+                        id: 'step-2',
+                        description: 'List Jira projects',
+                        tool: 'jira.JIRA_GET_ALL_PROJECTS',
+                        result: {
+                            type: 'tool_result',
+                            content: {
+                                result: {
+                                    successful: true,
+                                    data: {
+                                        data: {
+                                            values: [
+                                                { key: 'KC', name: 'Kody Copilot' },
+                                                { key: 'GE', name: 'Gestão Escolar' },
+                                            ],
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                ],
+                failureAnalysis: {
+                    primaryCause: 'Missing parameters',
+                    failurePatterns: ['missing_jira_key', 'missing_discord_id'],
+                },
+                suggestions: 'Please provide Jira project key and Discord channel ID',
+            },
+        };
+
+        const result = (composer as any).formatReplanContext(additionalContext);
+
+        expect(result).toContain('## 🔄 REPLAN CONTEXT');
+        expect(result).toContain('### 📋 PREVIOUS PLAN');
+        expect(result).toContain('**Plan ID:** plan-123');
+        expect(result).toContain('### 📊 EXECUTION SUMMARY');
+        expect(result).toContain('**✅ Successful:** 2');
+        expect(result).toContain('**❌ Failed:** 1');
+        expect(result).toContain('### 🎯 PRESERVED STEPS & RESULTS');
+        expect(result).toContain('**Total Preserved:** 2');
+        expect(result).toContain('**Step 1:** Get diff for file');
+        expect(result).toContain('**Tool:** kodus-mcp-server.get_diff_for_file');
+        expect(result).toContain('**Result:** ✅ Diff extracted (');
+        expect(result).toContain('**Step 2:** List Jira projects');
+        expect(result).toContain('**Tool:** jira.JIRA_GET_ALL_PROJECTS');
+        expect(result).toContain('**Result:** ✅ Found 2 projects: KC, GE');
+        expect(result).toContain('### 🚨 FAILURE ANALYSIS');
+        expect(result).toContain('**Primary Cause:** Missing parameters');
+        expect(result).toContain('**Patterns:** missing_jira_key, missing_discord_id');
+        expect(result).toContain('### 💡 SUGGESTIONS');
+        expect(result).toContain('Please provide Jira project key and Discord channel ID');
+    });
+
+    it('should handle failed tool results', () => {
+        const composer = new PlannerPromptComposer({
+            customExamples: [],
+            examplesProvider: undefined,
+            patternsProvider: undefined,
+        });
+        const additionalContext = {
+            replanContext: {
+                preservedSteps: [
+                    {
+                        id: 'step-1',
+                        description: 'Failed step',
+                        tool: 'discord.DISCORD_SEND_MESSAGE',
+                        result: {
+                            type: 'tool_result',
+                            content: {
+                                result: {
+                                    successful: false,
+                                    error: 'Unknown Guild',
+                                },
+                            },
+                        },
+                    },
+                ],
+            },
+        };
+
+        const result = (composer as any).formatReplanContext(additionalContext);
+
+        expect(result).toContain('**Step 1:** Failed step');
+        expect(result).toContain('**Tool:** discord.DISCORD_SEND_MESSAGE');
+        expect(result).toContain('**Result:** ❌ Error: Unknown Guild');
+    });
+
+    it('should handle different result formats', () => {
+        const composer = new PlannerPromptComposer({
+            customExamples: [],
+            examplesProvider: undefined,
+            patternsProvider: undefined,
+        });
+        const additionalContext = {
+            replanContext: {
+                preservedSteps: [
+                    {
+                        id: 'step-1',
+                        description: 'Simple success',
+                        result: { success: true },
+                    },
+                    {
+                        id: 'step-2',
+                        description: 'Simple failure',
+                        result: { success: false },
+                    },
+                ],
+            },
+        };
+
+        const result = (composer as any).formatReplanContext(additionalContext);
+
+        expect(result).toContain('**Result:** ✅ Success');
+        expect(result).toContain('**Result:** ❌ Failed');
+    });
+});

@@ -733,7 +733,9 @@ export class PlanAndExecutePlanner implements Planner {
 
         try {
             const currentPlan = this.getCurrentPlan(context);
-            if (!currentPlan || this.shouldReplan(context)) {
+            const shouldReplan = this.shouldReplan(context);
+
+            if (!currentPlan || shouldReplan) {
                 const result = await this.createPlan(context);
 
                 // ✅ NEW: Update step execution with result
@@ -755,10 +757,8 @@ export class PlanAndExecutePlanner implements Planner {
                     });
                 }
 
-                // Switch to execute_plan meta-action as default (ReWOO Plan–Execute)
                 const current = this.getCurrentPlan(context);
                 if (current) {
-                    // ✅ HANDLE FAILED PLAN DUE TO MAX REPLANS
                     if (
                         current.status === 'failed' &&
                         (current.metadata as Record<string, unknown>)
@@ -795,11 +795,14 @@ export class PlanAndExecutePlanner implements Planner {
 
             // Default path now delegates full execution to executor
             const current = this.getCurrentPlan(context);
+
             if (current) {
                 return {
                     reasoning: 'Executing current plan',
                     action: {
-                        type: 'execute_plan' as const,
+                        type: !shouldReplan
+                            ? ('final_answer' as const)
+                            : ('execute_plan' as const),
                         planId: current.id,
                     } as AgentAction,
                 };
@@ -1130,10 +1133,6 @@ export class PlanAndExecutePlanner implements Planner {
             }
         }
 
-        // Do NOT start executing here. Let the AgentCore delegate to PlanExecutor via execute_plan.
-        // Return a benign thought for instrumentation only; think() will emit execute_plan next.
-
-        // ✅ HANDLE FAILED PLAN DUE TO MAX REPLANS
         if (
             newPlan.status === 'failed' &&
             (newPlan.metadata as Record<string, unknown>)?.replanCause ===
@@ -1831,197 +1830,32 @@ export class PlanAndExecutePlanner implements Planner {
 
     private shouldReplan(context: PlannerExecutionContext): boolean {
         const currentPlan = this.getCurrentPlan(context);
-        if (!currentPlan) return true;
 
-        // 1) Explicit replanning status - VERIFICAR LIMITE DE REPLANS
+        if (!currentPlan) {
+            return true;
+        }
+
         if (currentPlan.status === 'replanning') {
             const replansCount = Number(
                 (currentPlan.metadata as Record<string, unknown>)
                     ?.replansCount ?? 0,
             );
 
-            // ✅ SÓ REPLAN SE NÃO EXCEDEU LIMITE
             if (
                 this.replanPolicy.maxReplansPerPlan &&
                 replansCount >= this.replanPolicy.maxReplansPerPlan
             ) {
-                return false; // ❌ LIMITE ATINGIDO - NÃO REPLAN
+                return false;
             }
-            return true; // ✅ AINDA PODE REPLAN
+            return true;
         }
 
-        // ✅ 2) Check if plan failed due to max replans
         if (
             currentPlan.status === 'failed' &&
             (currentPlan.metadata as Record<string, unknown>)?.replanCause ===
                 'max_replans_exceeded'
         ) {
-            return false; // ✅ NÃO REPLAN - LIMITE ATINGIDO
-        }
-
-        // 2) Failure window (prefer plan step statuses; fallback to history)
-        const windowSize = this.replanPolicy.windowSize;
-        const startIndex = Math.max(
-            0,
-            (currentPlan.currentStepIndex ?? 0) - (windowSize - 1),
-        );
-        const recentPlanFailures = currentPlan.steps
-            .slice(startIndex, (currentPlan.currentStepIndex ?? 0) + 1)
-            .filter((s) => s.status === 'failed').length;
-        const recentHistoryFailures = context.history
-            .slice(-windowSize)
-            .filter((h) => isErrorResult(h.result)).length;
-        const recentFailures = Math.max(
-            recentPlanFailures,
-            recentHistoryFailures,
-        );
-        if (recentFailures >= this.replanPolicy.minFailures) {
-            currentPlan.metadata = {
-                ...(currentPlan.metadata || {}),
-                replanCause: 'fail_window',
-            } as Record<string, unknown>;
-            // Emit replan.started
-            Promise.resolve()
-                .then(async () => {
-                    if (!context.agentContext) return;
-                    try {
-                        const planStart = Number(
-                            (currentPlan.metadata as Record<string, unknown>)
-                                ?.startTime ?? 0,
-                        );
-                        const elapsedVal = planStart
-                            ? Date.now() - planStart
-                            : undefined;
-                        await context.agentContext.session.addEntry(
-                            {
-                                type: 'planner.replan.started',
-                                cause: 'fail_window',
-                            },
-                            {
-                                type: 'replan_details',
-                                planId: currentPlan.id,
-                                elapsedMs: elapsedVal,
-                            },
-                        );
-                    } catch {}
-                })
-                .catch(() => {});
-            return true;
-        }
-
-        // 3) Plan TTL
-        if (
-            this.replanPolicy.planTtlMs &&
-            typeof currentPlan.metadata?.startTime === 'number' &&
-            Date.now() - (currentPlan.metadata.startTime as number) >
-                this.replanPolicy.planTtlMs
-        ) {
-            currentPlan.metadata = {
-                ...(currentPlan.metadata || {}),
-                replanCause: 'ttl',
-            } as Record<string, unknown>;
-            Promise.resolve()
-                .then(async () => {
-                    if (context.agentContext) {
-                        try {
-                            await context.agentContext.session.addEntry(
-                                {
-                                    type: 'planner.replan.started',
-                                    cause: 'ttl',
-                                },
-                                {
-                                    type: 'replan_details',
-                                    planId: currentPlan.id,
-                                    elapsedMs: context.plannerMetadata
-                                        ?.startTime
-                                        ? Date.now() -
-                                          Number(
-                                              context.plannerMetadata.startTime,
-                                          )
-                                        : undefined,
-                                },
-                            );
-                        } catch {}
-                    }
-                })
-                .catch(() => {});
-            return true;
-        }
-
-        // 4) Budget (time) — use plan start to accumulate across iterations
-        const execStart = Number(
-            (currentPlan.metadata as Record<string, unknown>)?.startTime ?? 0,
-        );
-        const elapsed = execStart ? Date.now() - execStart : 0;
-        if (
-            this.replanPolicy.budget?.maxMs &&
-            elapsed > this.replanPolicy.budget.maxMs
-        ) {
-            currentPlan.metadata = {
-                ...(currentPlan.metadata || {}),
-                replanCause: 'budget',
-            } as Record<string, unknown>;
-            Promise.resolve()
-                .then(async () => {
-                    if (context.agentContext) {
-                        try {
-                            await context.agentContext.session.addEntry(
-                                {
-                                    type: 'planner.replan.started',
-                                    cause: 'budget',
-                                },
-                                {
-                                    type: 'replan_details',
-                                    planId: currentPlan.id,
-                                    elapsedMs: elapsed,
-                                },
-                            );
-                        } catch {}
-                    }
-                })
-                .catch(() => {});
-            return true;
-        }
-
-        // 5) Budget (tool calls): prefer plan steps; fallback to history
-        if (this.replanPolicy.budget?.maxToolCalls) {
-            const stepToolCalls = currentPlan.steps.filter(
-                (s) => s.status === 'completed' && s.tool && s.tool !== 'none',
-            ).length;
-            const historyToolCalls = context.history.filter(
-                (h) =>
-                    h.result.type === 'tool_result' ||
-                    h.result.type === 'tool_results',
-            ).length;
-            const toolCalls = Math.max(stepToolCalls, historyToolCalls);
-            if (toolCalls >= this.replanPolicy.budget.maxToolCalls) {
-                currentPlan.metadata = {
-                    ...(currentPlan.metadata || {}),
-                    replanCause: 'budget',
-                } as Record<string, unknown>;
-                Promise.resolve()
-                    .then(async () => {
-                        if (context.agentContext) {
-                            try {
-                                await context.agentContext.session.addEntry(
-                                    {
-                                        type: 'planner.replan.started',
-                                        cause: 'budget',
-                                    },
-                                    {
-                                        type: 'replan_details',
-                                        planId: currentPlan.id,
-                                        elapsedMs: execStart
-                                            ? Date.now() - execStart
-                                            : undefined,
-                                    },
-                                );
-                            } catch {}
-                        }
-                    })
-                    .catch(() => {});
-                return true;
-            }
+            return false;
         }
 
         return false;

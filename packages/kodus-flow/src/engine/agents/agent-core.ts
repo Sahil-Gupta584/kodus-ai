@@ -4453,18 +4453,18 @@ export abstract class AgentCore<
                     );
 
                     // ✅ CORRIGIDO: Para execute_plan, continuar para gerar resposta final
-                    if (isExecutePlanAction(thought.action)) {
-                        // Para execute_plan, só quebra se for erro
-                        if (planResult.type === 'error') {
-                            break;
-                        }
-                        // Se executou com sucesso, continua para o planner gerar resposta
-                    } else {
-                        // Para outras ações, quebra se completo
-                        if (observation.isComplete || !shouldContinue) {
-                            break;
-                        }
-                    }
+                    // if (isExecutePlanAction(thought.action)) {
+                    //     // Para execute_plan, só quebra se for erro
+                    //     // if (planResult.type === 'error') {
+                    //     //     break;
+                    //     // }
+                    //     // Se executou com sucesso, continua para o planner gerar resposta
+                    // } else {
+                    //     // Para outras ações, quebra se completo
+                    //     if (observation.isComplete || !shouldContinue) {
+                    //         break;
+                    //     }
+                    // }
 
                     iterations++;
                     continue;

@@ -23,7 +23,7 @@ export function createPlannerPromptComposer(
         features: {
             includeUniversalPatterns: true,
             includeDynamicHints: true,
-            enablePromptCaching: true,
+            enablePromptCaching: false,
         },
         behavior: {
             preferParallelExecution: true,
