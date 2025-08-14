@@ -199,7 +199,7 @@ export class FileDebugOutput implements DebugOutput {
 
     constructor(filePath: string) {
         this.filePath = filePath;
-        this.initializeStream();
+        void this.initializeStream();
     }
 
     private async initializeStream(): Promise<void> {
@@ -328,7 +328,7 @@ export class DebugSystem {
             correlationId: this.currentCorrelationId,
         };
 
-        this.writeToOutputs(entry);
+        void this.writeToOutputs(entry);
     }
 
     /**
@@ -604,10 +604,10 @@ export class DebugSystem {
     /**
      * Escrever para outputs
      */
-    private writeToOutputs(entry: DebugEntry): void {
+    private async writeToOutputs(entry: DebugEntry): Promise<void> {
         for (const output of this.outputs) {
             try {
-                output.write(entry);
+                await output.write(entry);
             } catch (error) {
                 const logger = createLogger('debug-system');
                 logger.error(

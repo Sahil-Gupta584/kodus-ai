@@ -141,10 +141,8 @@ export class ContextBuilder {
             await this.memoryManager.initialize();
 
             const threadId = options.thread?.id || 'default';
-            let session = await this.sessionService.findSessionByThread(
-                threadId,
-                options.tenantId || 'default',
-            );
+            let session =
+                await this.sessionService.getSessionByThread(threadId);
             if (!session) {
                 session = await this.sessionService.createSession(
                     options.tenantId || 'default',

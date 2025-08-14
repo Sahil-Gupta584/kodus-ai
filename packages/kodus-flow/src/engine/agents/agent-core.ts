@@ -422,7 +422,7 @@ export abstract class AgentCore<
 
         //TODO: Aqui não precisa recuperar?
         if (context.sessionId) {
-            sessionService.addConversationEntry(
+            await sessionService.addConversationEntry(
                 context.sessionId,
                 input,
                 null, // output será adicionado depois
@@ -486,7 +486,7 @@ export abstract class AgentCore<
 
             // Atualizar saída na conversa se tiver sessionId
             if (context.sessionId) {
-                sessionService.addConversationEntry(
+                await sessionService.addConversationEntry(
                     context.sessionId,
                     input,
                     result.output,
@@ -618,7 +618,7 @@ export abstract class AgentCore<
                         });
                     }
                 } else {
-                    this.kernelHandler.emit('agent.action.start', {
+                    await this.kernelHandler.emit('agent.action.start', {
                         agentName: context.agentName,
                         actionType,
                         correlationId,
@@ -777,12 +777,15 @@ export abstract class AgentCore<
                                 );
                             }
                         } else {
-                            this.kernelHandler.emit('agent.tool.completed', {
-                                agentName: context.agentName,
-                                toolName: toolName,
-                                correlationId,
-                                sessionId: context.sessionId,
-                            });
+                            await this.kernelHandler.emit(
+                                'agent.tool.completed',
+                                {
+                                    agentName: context.agentName,
+                                    toolName: toolName,
+                                    correlationId,
+                                    sessionId: context.sessionId,
+                                },
+                            );
                         }
                     }
                 } catch (error) {
@@ -817,7 +820,7 @@ export abstract class AgentCore<
                             }
                         } else {
                             // Fallback to basic emit
-                            this.kernelHandler.emit('agent.tool.error', {
+                            await this.kernelHandler.emit('agent.tool.error', {
                                 agentName: context.agentName,
                                 toolName: toolName,
                                 correlationId,
@@ -3168,8 +3171,8 @@ export abstract class AgentCore<
     private startDeliveryProcessor(): void {
         if (!this.config.enableMessaging) return;
 
-        this.deliveryIntervalId = setInterval(() => {
-            this.processDeliveryQueue();
+        this.deliveryIntervalId = setInterval(async () => {
+            await this.processDeliveryQueue();
         }, this.config.deliveryRetryInterval);
     }
 
