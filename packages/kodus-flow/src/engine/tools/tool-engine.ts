@@ -583,40 +583,35 @@ export class ToolEngine {
                 try {
                     const result = await this.executeCall(toolName, input);
 
+                    // ✅ UNIFICADO: Sempre verificar se há erro no resultado
+                    const hasError = this.checkToolResultError(result);
+                    const responseData = {
+                        ...(typeof result === 'object' && result !== null
+                            ? result
+                            : { result }),
+                        success: !hasError,
+                        toolName,
+                        metadata: {
+                            correlationId,
+                            success: !hasError,
+                            toolName,
+                        },
+                    };
+
                     if (this.kernelHandler?.emitAsync) {
                         await this.kernelHandler.emitAsync(
                             'tool.execute.response',
-                            {
-                                ...(typeof result === 'object' &&
-                                result !== null
-                                    ? result
-                                    : { result }),
-                                success: true,
-                                toolName,
-                                metadata: {
-                                    correlationId,
-                                    success: true,
-                                    toolName,
-                                },
-                            },
+                            responseData,
                             {
                                 correlationId,
                                 deliveryGuarantee: 'at-least-once',
                             },
                         );
                     } else {
-                        this.kernelHandler!.emit('tool.execute.response', {
-                            ...(typeof result === 'object' && result !== null
-                                ? result
-                                : { result }),
-                            success: true,
-                            toolName,
-                            metadata: {
-                                correlationId,
-                                success: true,
-                                toolName,
-                            },
-                        });
+                        this.kernelHandler!.emit(
+                            'tool.execute.response',
+                            responseData,
+                        );
                     }
 
                     // ✅ ACK the original event after successful processing
@@ -672,6 +667,42 @@ export class ToolEngine {
                 }
             },
         );
+    }
+
+    /**
+     * Check if tool result contains an error
+     */
+    private checkToolResultError(result: unknown): boolean {
+        if (!result || typeof result !== 'object') {
+            return false;
+        }
+
+        const resultObj = result as Record<string, unknown>;
+
+        // Check for direct error indicators
+        if (resultObj.error || resultObj.isError === true) {
+            return true;
+        }
+
+        // Check for MCP-style result structure
+        if (resultObj.result && typeof resultObj.result === 'object') {
+            const innerResult = resultObj.result as Record<string, unknown>;
+            if (innerResult.isError === true || innerResult.error) {
+                return true;
+            }
+
+            // Check for successful: false in inner result
+            if (innerResult.successful === false) {
+                return true;
+            }
+        }
+
+        // Check for success: false at top level
+        if (resultObj.success === false) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

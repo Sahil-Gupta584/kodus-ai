@@ -278,7 +278,7 @@ export class EventQueue {
         this.useGlobalConcurrency = config.enableGlobalConcurrency ?? false;
 
         // Processed events capacity
-        this.maxProcessedEvents = config.maxProcessedEvents ?? 10000;
+        this.maxProcessedEvents = config.maxProcessedEvents ?? 1000; // ✅ REDUZIDO: 1k em vez de 10k para evitar memory leaks
 
         // Future features (not implemented yet)
         // this.maxPersistedEvents = config.maxPersistedEvents ?? 1000;
@@ -1262,11 +1262,27 @@ export class EventQueue {
                     // mark processed only after success (global, after handler)
                     this.processedEvents.add(event.id);
                     if (this.processedEvents.size > this.maxProcessedEvents) {
-                        const firstEventId = this.processedEvents
-                            .values()
-                            .next().value as string | undefined;
-                        if (firstEventId) {
-                            this.processedEvents.delete(firstEventId);
+                        // ✅ MELHORADO: Cleanup mais agressivo - remover 20% dos eventos mais antigos
+                        const eventsToRemove = Math.ceil(
+                            this.maxProcessedEvents * 0.2,
+                        );
+                        const eventIds = Array.from(this.processedEvents).slice(
+                            0,
+                            eventsToRemove,
+                        );
+                        eventIds.forEach((id) =>
+                            this.processedEvents.delete(id),
+                        );
+
+                        if (this.enableObservability) {
+                            this.observability.logger.debug(
+                                '🧹 Cleaned up processed events',
+                                {
+                                    removedCount: eventsToRemove,
+                                    remainingCount: this.processedEvents.size,
+                                    maxProcessedEvents: this.maxProcessedEvents,
+                                },
+                            );
                         }
                     }
 

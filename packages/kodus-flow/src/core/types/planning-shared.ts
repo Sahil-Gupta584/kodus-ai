@@ -167,19 +167,8 @@ export interface PlanExecutionResult {
  * Replan policy configuration
  */
 export interface ReplanPolicyConfig {
-    windowSize: number;
-    minFailures: number;
-    planTtlMs?: number;
-    maxReplansPerPlan?: number;
-    allowReplanUntilIteration: number;
-    toolUnavailable: 'replan' | 'ask_user' | 'fail';
-    missingInput: 'ask_user' | 'replan';
-    budget?: {
-        maxMs?: number;
-        maxToolCalls?: number;
-        maxSteps?: number;
-        maxMemoryMb?: number;
-    };
+    maxReplans?: number; // ✅ SIMPLE: Unified replan limit
+    toolUnavailable?: 'replan' | 'ask_user' | 'fail';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

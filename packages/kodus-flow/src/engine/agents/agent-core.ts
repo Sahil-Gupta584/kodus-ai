@@ -5,6 +5,7 @@ import {
     startToolSpan,
     applyErrorToSpan,
     markSpanOk,
+    type ObservabilitySystem,
 } from '../../observability/index.js';
 import { CircuitBreaker } from '../../runtime/core/circuit-breaker.js';
 import { EngineError } from '../../core/errors.js';
@@ -91,6 +92,7 @@ import {
     ExecutionPlan,
     ReplanPolicyConfig,
 } from '@/core/types/planning-shared.js';
+import { PlanExecutor } from '../planning/executor/plan-executor.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🧩 CORE CONFIGURATION
@@ -401,126 +403,213 @@ export abstract class AgentCore<
         const executionId = IdGenerator.executionId();
         const { correlationId } = agentExecutionOptions || {};
 
-        // Create context - session will be determined by threadId, not sessionId
+        // ✅ SIMPLIFICADO: Criar contexto
         const context = await this.createAgentContext(
             agent.name,
             executionId,
             agentExecutionOptions,
         );
 
-        // 🚀 Track execution start using context tracking API
-        //TODO Porque plannerStep?
-        await context.track.plannerStep({
-            type: 'execution_start',
+        // ✅ SIMPLIFICADO: Track execution start
+        await this.trackExecutionStart(
+            context,
             executionId,
             startTime,
-            status: 'running',
-            agentName: agent.name,
             correlationId,
-        });
+        );
 
-        //TODO: Aqui não precisa recuperar?
-        if (context.sessionId) {
-            sessionService.addConversationEntry(
-                context.sessionId,
-                input,
-                null, // output será adicionado depois
-                agent.name,
-            );
-
-            // Inform ExecutionRuntime about this conversation entry
-            await context.executionRuntime?.addContextValue({
-                type: 'session',
-                key: 'conversationEntry',
-                value: {
-                    sessionId: context.sessionId,
-                    input,
-                    agentName: agent.name,
-                    timestamp: Date.now(),
-                },
-                metadata: {
-                    source: 'agent-core',
-                    action: 'conversation-start',
-                    sessionId: context.sessionId,
-                },
-            });
-        }
+        // ✅ SIMPLIFICADO: Adicionar entrada na conversa
+        await this.addConversationEntry(context, input, agent.name);
 
         try {
+            // ✅ SIMPLIFICADO: Processar thinking
             const result = await this.processAgentThinking(
                 agent,
                 input,
                 context,
             );
-
             const duration = Date.now() - startTime;
 
-            const execution = this.activeExecutions.get(executionId);
-            if (execution) {
-                execution.status = 'completed';
-            }
-
-            // 🚀 Add execution completion to ExecutionRuntime
-            if (context.executionRuntime) {
-                await context.executionRuntime.addContextValue({
-                    type: 'execution',
-                    key: 'completion',
-                    value: {
-                        executionId,
-                        duration,
-                        iterations: result.iterations,
-                        toolsUsed: result.toolsUsed,
-                        success: true, // Assume success if no error thrown
-                        status: 'completed',
-                        timestamp: Date.now(),
-                    },
-                    metadata: {
-                        source: 'agent-core',
-                        action: 'execution_completed',
-                        correlationId,
-                        agentName: agent.name,
-                    },
-                });
-            }
-
-            // Atualizar saída na conversa se tiver sessionId
-            if (context.sessionId) {
-                sessionService.addConversationEntry(
-                    context.sessionId,
-                    input,
-                    result.output,
-                    agent.name,
-                    { correlationId, executionId, success: true },
-                );
-            }
-
-            // Timeline removida
-            const timelineData = null;
-
-            return {
-                success: true,
-                data: result.output,
-                reasoning: result.reasoning,
+            // ✅ SIMPLIFICADO: Marcar como completado
+            this.markExecutionCompleted(
+                executionId,
+                context,
+                duration,
+                result,
                 correlationId,
-                sessionId: context.sessionId,
-                status: 'COMPLETED',
+            );
+
+            // ✅ SIMPLIFICADO: Atualizar conversa
+            await this.updateConversationEntry(
+                context,
+                input,
+                result.output,
+                agent.name,
+                { correlationId, executionId, success: true },
+            );
+
+            return this.buildExecutionResult(
+                result,
+                correlationId,
+                context.sessionId,
                 executionId,
                 duration,
-                metadata: {
-                    agentName: agent.name,
+                agent.name,
+            );
+        } catch (error) {
+            this.markExecutionFailed(executionId);
+            throw error;
+        }
+    }
+
+    // ✅ NOVOS MÉTODOS PRIVADOS SIMPLES
+    private async trackExecutionStart(
+        context: AgentContext,
+        executionId: string,
+        startTime: number,
+        correlationId?: string,
+    ): Promise<void> {
+        await context.track.plannerStep({
+            type: 'execution_start',
+            executionId,
+            startTime,
+            status: 'running',
+            agentName: context.agentName,
+            correlationId,
+        });
+    }
+
+    private async addConversationEntry(
+        context: AgentContext,
+        input: unknown,
+        agentName: string,
+    ): Promise<void> {
+        if (!context.sessionId) return;
+
+        sessionService.addConversationEntry(
+            context.sessionId,
+            input,
+            null,
+            agentName,
+        );
+
+        await context.executionRuntime?.addContextValue({
+            type: 'session',
+            key: 'conversationEntry',
+            value: {
+                sessionId: context.sessionId,
+                input,
+                agentName,
+                timestamp: Date.now(),
+            },
+            metadata: {
+                source: 'agent-core',
+                action: 'conversation-start',
+                sessionId: context.sessionId,
+            },
+        });
+    }
+
+    private markExecutionCompleted(
+        executionId: string,
+        context: AgentContext,
+        duration: number,
+        result: {
+            output: unknown;
+            reasoning: string;
+            iterations: number;
+            toolsUsed: number;
+            events: AnyEvent[];
+        },
+        correlationId?: string,
+    ): void {
+        const execution = this.activeExecutions.get(executionId);
+        if (execution) {
+            execution.status = 'completed';
+        }
+
+        if (context.executionRuntime) {
+            context.executionRuntime.addContextValue({
+                type: 'execution',
+                key: 'completion',
+                value: {
+                    executionId,
+                    duration,
                     iterations: result.iterations,
                     toolsUsed: result.toolsUsed,
-                    thinkingTime: duration,
-                    timeline: timelineData,
+                    success: true,
+                    status: 'completed',
+                    timestamp: Date.now(),
                 },
-            } as AgentExecutionResult<unknown> & { timeline?: unknown };
-        } catch (error) {
-            const execution = this.activeExecutions.get(executionId);
-            if (execution) {
-                execution.status = 'failed';
-            }
+                metadata: {
+                    source: 'agent-core',
+                    action: 'execution_completed',
+                    correlationId,
+                    agentName: context.agentName,
+                },
+            });
+        }
+    }
 
-            throw error;
+    private async updateConversationEntry(
+        context: AgentContext,
+        input: unknown,
+        output: unknown,
+        agentName: string,
+        metadata: {
+            correlationId?: string;
+            executionId: string;
+            success: boolean;
+        },
+    ): Promise<void> {
+        if (!context.sessionId) return;
+
+        sessionService.addConversationEntry(
+            context.sessionId,
+            input,
+            output,
+            agentName,
+            metadata,
+        );
+    }
+
+    private buildExecutionResult(
+        result: {
+            output: unknown;
+            reasoning: string;
+            iterations: number;
+            toolsUsed: number;
+            events: AnyEvent[];
+        },
+        correlationId?: string,
+        sessionId?: string,
+        executionId?: string,
+        duration?: number,
+        agentName?: string,
+    ): AgentExecutionResult<unknown> & { timeline?: unknown } {
+        return {
+            success: true,
+            data: result.output,
+            reasoning: result.reasoning,
+            correlationId,
+            sessionId,
+            status: 'COMPLETED',
+            executionId,
+            duration: duration || 0,
+            metadata: {
+                agentName: agentName || 'unknown',
+                iterations: result.iterations,
+                toolsUsed: result.toolsUsed,
+                thinkingTime: duration || 0,
+                timeline: null, // Timeline removida
+            },
+        };
+    }
+
+    private markExecutionFailed(executionId: string): void {
+        const execution = this.activeExecutions.get(executionId);
+        if (execution) {
+            execution.status = 'failed';
         }
     }
 
@@ -4174,7 +4263,7 @@ export abstract class AgentCore<
                 'Think→Act→Observe requires planner and LLM adapter. Provide llmAdapter in config.',
             );
         }
-        let iterations = 0;
+
         const maxIterations = this.config.maxThinkingIterations || 15;
         const inputString = String(input);
         const obs = getObservability();
@@ -4191,7 +4280,8 @@ export abstract class AgentCore<
             | PlannerExecutionContext['previousExecution']
             | undefined;
 
-        while (iterations < maxIterations) {
+        // ✅ SIMPLIFICADO: Loop principal
+        for (let iterations = 0; iterations < maxIterations; iterations++) {
             const plannerInput = this.createPlannerContext(
                 inputString,
                 executionHistory,
@@ -4200,7 +4290,6 @@ export abstract class AgentCore<
                 context,
             );
 
-            // 🚀 NEW: Inject previousExecution if available
             if (previousExecution) {
                 Object.assign(plannerInput, { previousExecution });
             }
@@ -4212,484 +4301,376 @@ export abstract class AgentCore<
             }
 
             try {
-                const kernel = this.kernelHandler
-                    ?.getMultiKernelManager()
-                    ?.getKernelByNamespace('agent');
-                const initialEventCount = kernel?.getState().eventCount || 0;
-
-                const thinkStartTime = Date.now();
-                const thinkSpan = startAgentSpan(obs.telemetry, 'think', {
-                    agentName: this.config.agentName || 'unknown',
-                    correlationId: context.correlationId || 'unknown',
-                    iteration: iterations,
-                });
-                const thought = await obs.telemetry.withSpan(
-                    thinkSpan,
-                    async () => {
-                        try {
-                            const res = await this.think(plannerInput);
-                            markSpanOk(thinkSpan);
-                            return res;
-                        } catch (err) {
-                            applyErrorToSpan(thinkSpan, err, {
-                                phase: 'think',
-                            });
-                            throw err;
-                        }
-                    },
-                );
-                const thinkDuration = Date.now() - thinkStartTime;
-
-                // execute_plan handled below in normal loop
-
-                const actStartTime = Date.now();
-                if (!thought.action) {
-                    throw new Error('Thought action is undefined');
-                }
-
-                // NEW: execute_plan in the original loop (no suffix)
-                if (isExecutePlanAction(thought.action)) {
-                    const { PlanExecutor: planExecutor } = await import(
-                        '../planning/executor/plan-executor.js'
-                    );
-                    const plan = this.planner.getPlanForContext?.(plannerInput);
-
-                    if (!plan) {
-                        throw new Error('No plan available for execute_plan');
-                    }
-
-                    const act = (action: AgentAction) => this.act(action);
-
-                    const resolveArgs = (
-                        rawArgs: Record<string, unknown>,
-                        stepList: unknown[],
-                        contextForResolution: PlannerExecutionContext,
-                    ) =>
-                        this.planner!.resolveArgs
-                            ? this.planner!.resolveArgs(
-                                  rawArgs,
-                                  stepList,
-                                  contextForResolution,
-                              )
-                            : Promise.resolve({ args: rawArgs, missing: [] });
-
-                    const executor = new planExecutor(
-                        act,
-                        resolveArgs,
-                        { enableReWOO: true }, // Enable pure ReWOO mode
-                    );
-
-                    const obsRes = await executor.run(
-                        plan as ExecutionPlan,
-                        plannerInput,
-                    );
-
-                    // 🚀 NEW: Use rich context for replanning
-                    const isComplete = obsRes.type === 'execution_complete';
-                    const shouldContinue = obsRes.type === 'needs_replan';
-
-                    // 🎯 RICH CONTEXT: Store complete execution result for next iteration
-                    if (shouldContinue && obsRes.replanContext) {
-                        // 🚀 NEW: Store previousExecution for next iteration
-                        previousExecution = {
-                            plan: plan as ExecutionPlan,
-                            result: obsRes,
-                            preservedSteps: obsRes.replanContext.preservedSteps,
-                            failureAnalysis: {
-                                primaryCause:
-                                    obsRes.replanContext.failurePatterns[0] ||
-                                    'Unknown failure',
-                                failurePatterns:
-                                    obsRes.replanContext.failurePatterns,
-                                affectedSteps: obsRes.failedSteps,
-                            },
-                        };
-                    }
-
-                    // 🚀 NEW: Process plan execution result (ReWOO vs Legacy)
-                    const planResult: ActionResult = isComplete
-                        ? { type: 'final_answer', content: obsRes.feedback }
-                        : { type: 'error', error: obsRes.feedback };
-
-                    // 🎯 REWOO: Use PlanExecutor decision directly (no planner interference)
-                    let observation: ResultAnalysis;
-
-                    // 🎯 Check if we're in ReWOO mode (same as PlanExecutor)
-                    const isReWOOMode = true; // Always true for plan-execute with ReWOO
-
-                    if (isReWOOMode) {
-                        // ✅ ReWOO: Direct decision from PlanExecutor
-                        // BUT: If execution_complete with 0 steps, use analyzeResult for final response
-                        if (
-                            obsRes.type === 'execution_complete' &&
-                            obsRes.totalSteps === 0
-                        ) {
-                            // 🎯 SPECIAL CASE: Empty plan - use analyzeResult for final response
-                            const observeSpan = startAgentSpan(
-                                obs.telemetry,
-                                'observe',
-                                {
-                                    agentName:
-                                        this.config.agentName || 'unknown',
-                                    correlationId:
-                                        context.correlationId || 'unknown',
-                                    iteration: iterations,
-                                },
-                            );
-
-                            observation = await obs.telemetry.withSpan(
-                                observeSpan,
-                                async () => {
-                                    try {
-                                        const res = await this.observe(
-                                            planResult,
-                                            plannerInput,
-                                        );
-                                        markSpanOk(observeSpan);
-                                        return res;
-                                    } catch (err) {
-                                        applyErrorToSpan(observeSpan, err, {
-                                            phase: 'observe',
-                                        });
-                                        throw err;
-                                    }
-                                },
-                            );
-                        } else {
-                            // ✅ Normal ReWOO: Direct decision from PlanExecutor
-                            observation = {
-                                isComplete:
-                                    obsRes.type === 'execution_complete',
-                                isSuccessful:
-                                    obsRes.type === 'execution_complete',
-                                feedback: obsRes.feedback,
-                                shouldContinue: obsRes.type === 'needs_replan',
-                                suggestedNextAction:
-                                    obsRes.type === 'needs_replan'
-                                        ? 'Replan with preserved context'
-                                        : undefined,
-                            };
-                        }
-                    } else {
-                        // 🔄 Legacy: Use planner analysis
-                        const observeSpan = startAgentSpan(
-                            obs.telemetry,
-                            'observe',
-                            {
-                                agentName: this.config.agentName || 'unknown',
-                                correlationId:
-                                    context.correlationId || 'unknown',
-                                iteration: iterations,
-                            },
-                        );
-
-                        observation = await obs.telemetry.withSpan(
-                            observeSpan,
-                            async () => {
-                                try {
-                                    const res = await this.observe(
-                                        planResult,
-                                        plannerInput,
-                                    );
-                                    markSpanOk(observeSpan);
-                                    return res;
-                                } catch (err) {
-                                    applyErrorToSpan(observeSpan, err, {
-                                        phase: 'observe',
-                                    });
-                                    throw err;
-                                }
-                            },
-                        );
-                    }
-                    // const observeDuration = Date.now() - observeStartTime; // Not used in this context
-
-                    executionHistory.push({
-                        thought,
-                        action: thought.action,
-                        result: planResult,
-                        observation,
-                    });
-
-                    await context.session.addEntry(
-                        {
-                            type: 'execution_step',
-                            iteration: iterations,
-                            thought: thought.reasoning,
-                            action: thought.action,
-                        },
-                        {
-                            type: 'execution_result',
-                            result:
-                                planResult.type === 'error'
-                                    ? { error: planResult.error }
-                                    : planResult.content,
-                            observation: observation.feedback,
-                            isComplete: observation.isComplete,
-                            timestamp: Date.now(),
-                        },
-                    );
-
-                    // ✅ STATE: Update working memory with current execution state
-                    await context.state.set(
-                        'execution',
-                        'last_action',
-                        thought.action,
-                    );
-                    await context.state.set(
-                        'execution',
-                        'current_iteration',
-                        iterations,
-                    );
-                    await context.state.set(
-                        'execution',
-                        'last_result',
-                        planResult,
-                    );
-                    await context.state.set(
-                        'execution',
-                        'last_observation',
-                        observation,
-                    );
-
-                    // ✅ CORRIGIDO: Para execute_plan, continuar para gerar resposta final
-                    // if (isExecutePlanAction(thought.action)) {
-                    //     // Para execute_plan, só quebra se for erro
-                    //     // if (planResult.type === 'error') {
-                    //     //     break;
-                    //     // }
-                    //     // Se executou com sucesso, continua para o planner gerar resposta
-                    // } else {
-                    //     // Para outras ações, quebra se completo
-                    //     if (observation.isComplete || !shouldContinue) {
-                    //         break;
-                    //     }
-                    // }
-
-                    iterations++;
-                    continue;
-                }
-
-                const actSpan = startAgentSpan(obs.telemetry, 'act', {
-                    agentName: this.config.agentName || 'unknown',
-                    correlationId: context.correlationId || 'unknown',
-                    iteration: iterations,
-                    attributes: {
-                        actionType: thought.action?.type || 'unknown',
-                    },
-                });
-
-                const result = await obs.telemetry.withSpan(
-                    actSpan,
-                    async () => {
-                        try {
-                            const res = await this.act(thought.action);
-                            markSpanOk(actSpan);
-                            return res;
-                        } catch (err) {
-                            applyErrorToSpan(actSpan, err, { phase: 'act' });
-                            throw err;
-                        }
-                    },
-                );
-                const actDuration = Date.now() - actStartTime;
-
-                const observeStartTime = Date.now();
-                const observeSpan = startAgentSpan(obs.telemetry, 'observe', {
-                    agentName: this.config.agentName || 'unknown',
-                    correlationId: context.correlationId || 'unknown',
-                    iteration: iterations,
-                });
-                const observation = await obs.telemetry.withSpan(
-                    observeSpan,
-                    async () => {
-                        try {
-                            const res = await this.observe(
-                                result,
-                                plannerInput,
-                            );
-                            markSpanOk(observeSpan);
-                            return res;
-                        } catch (err) {
-                            applyErrorToSpan(observeSpan, err, {
-                                phase: 'observe',
-                            });
-                            throw err;
-                        }
-                    },
-                );
-                const observeDuration = Date.now() - observeStartTime;
-
-                executionHistory.push({
-                    thought,
-                    action: thought.action,
-                    result,
-                    observation,
-                });
-
-                await context.session.addEntry(
-                    {
-                        type: 'execution_step',
-                        iteration: iterations,
-                        thought: thought.reasoning,
-                        action: thought.action,
-                    },
-                    {
-                        type: 'execution_result',
-                        result:
-                            result.type === 'error'
-                                ? { error: result.error }
-                                : result.content,
-                        observation: observation.feedback,
-                        isComplete: observation.isComplete,
-                        timestamp: Date.now(),
-                    },
+                // ✅ SIMPLIFICADO: Executar uma iteração
+                const iterationResult = await this.executeSingleIteration(
+                    plannerInput,
+                    iterations,
+                    obs,
+                    context,
                 );
 
-                // ✅ STATE: Update working memory with current execution state
-                await context.state.set(
-                    'execution',
-                    'last_action',
-                    thought.action,
-                );
-                await context.state.set(
-                    'execution',
-                    'current_iteration',
+                executionHistory.push(iterationResult);
+
+                // ✅ SIMPLIFICADO: Atualizar estado
+                await this.updateExecutionState(
+                    context,
+                    iterationResult,
                     iterations,
                 );
-                await context.state.set(
-                    'execution',
-                    'is_complete',
-                    observation.isComplete,
-                );
 
-                // ✅ STATE: Store current execution history in working memory
-                await context.state.set(
-                    'execution',
-                    'history',
-                    executionHistory,
-                );
-
-                iterations++;
-
-                // ✅ REMOVER: Debugger statement
-                //
-                // Get final event count from kernel
-                const finalEventCount = kernel?.getState().eventCount || 0;
-                const eventsGenerated = finalEventCount - initialEventCount;
-
-                // Enhanced logging with performance metrics
-                this.logger.info('Think→Act→Observe iteration completed', {
-                    iteration: iterations,
-                    thinkDuration,
-                    actDuration,
-                    observeDuration,
-                    actionType: thought.action?.type || 'unknown',
-                    isComplete: observation.isComplete,
-                    shouldContinue: observation.shouldContinue,
-                    eventsGenerated,
-                    totalEvents: finalEventCount,
-                });
-
-                // 🚨 CRITICAL: Check for excessive event generation
-                if (eventsGenerated > 100) {
-                    this.logger.error(
-                        'Excessive event generation detected - breaking loop',
-                        undefined,
-                        {
-                            eventsGenerated: eventsGenerated.toString(),
-                            iteration: iterations,
-                            agentName: this.config.agentName,
-                            actionType: thought.action?.type || 'unknown',
-                        },
-                    );
+                // ✅ SIMPLIFICADO: Verificar condições de parada
+                if (
+                    this.shouldStopExecution(
+                        iterationResult,
+                        iterations,
+                        plannerInput,
+                    )
+                ) {
                     break;
                 }
 
-                // 🚨 CRITICAL: Check for kernel quota approaching limit
-                if (finalEventCount > 5000) {
-                    this.logger.warn(
-                        'Kernel event count approaching quota limit - breaking loop',
-                        {
-                            finalEventCount,
-                            iteration: iterations,
-                            agentName: this.config.agentName,
-                        },
-                    );
-                    break;
-                }
-
-                // 5. CHECK - Early termination conditions
-                if (observation.isComplete) {
-                    // NOTE: Timeline removida — use spans
-
-                    // ✅ STORE: Save execution insights to Memory for future use
-                    await this.storeExecutionInsights(
-                        context,
-                        executionHistory,
-                        iterations,
-                        'completed',
-                    );
-
-                    this.logger.info('Think→Act→Observe completed', {
-                        iterations,
-                        agentName: this.config.agentName,
-                        totalDuration:
-                            Date.now() -
-                            (plannerInput.plannerMetadata.startTime as number),
-                        finalAction: thought.action?.type || 'unknown',
-                    });
-                    break;
-                }
-
-                if (!observation.shouldContinue) {
-                    // ✅ STORE: Save execution insights even when stopped by planner
-                    await this.storeExecutionInsights(
-                        context,
-                        executionHistory,
-                        iterations,
-                        'stopped',
-                    );
-
-                    this.logger.info('Think→Act→Observe stopped by planner', {
-                        iterations,
-                        reason: observation.feedback,
-                        agentName: this.config.agentName,
-                        totalDuration:
-                            Date.now() -
-                            (plannerInput.plannerMetadata.startTime as number),
-                    });
-                    break;
-                }
-
-                // Check for stagnation patterns
-                if (this.detectStagnation(plannerInput)) {
-                    // ✅ STORE: Save stagnation patterns to Memory for learning
-                    await this.storeExecutionInsights(
-                        context,
-                        executionHistory,
-                        iterations,
-                        'stagnated',
-                    );
-
-                    this.logger.warn('Stagnation detected, breaking loop', {
-                        iterations,
-                        agentName: this.config.agentName,
-                    });
-                    break;
-                }
+                // ✅ SIMPLIFICADO: Preparar para próxima iteração
+                previousExecution = this.prepareNextIteration(iterationResult);
             } catch (error) {
-                // Try to continue with error handling
                 if (iterations >= maxIterations - 1) {
                     throw error;
                 }
             }
         }
 
+        // ✅ SIMPLIFICADO: Retornar resultado final
+        return this.extractFinalResult(
+            finalExecutionContext,
+            executionHistory,
+        ) as TOutput;
+    }
+
+    // ✅ NOVOS MÉTODOS PRIVADOS SIMPLES
+    private async executeSingleIteration(
+        plannerInput: PlannerExecutionContext,
+        iterations: number,
+        obs: ObservabilitySystem,
+        context: AgentContext,
+    ): Promise<{
+        thought: AgentThought;
+        action: AgentAction;
+        result: ActionResult;
+        observation: ResultAnalysis;
+    }> {
+        const kernel = this.kernelHandler
+            ?.getMultiKernelManager()
+            ?.getKernelByNamespace('agent');
+        const initialEventCount = kernel?.getState().eventCount || 0;
+
+        // ✅ SIMPLIFICADO: Think
+        const thought = await this.executeThinkPhase(
+            plannerInput,
+            iterations,
+            obs,
+            context,
+        );
+
+        // ✅ SIMPLIFICADO: Act
+        const result = await this.executeActPhase(
+            thought,
+            iterations,
+            obs,
+            context,
+            plannerInput,
+        );
+
+        // ✅ SIMPLIFICADO: Observe
+        const observation = await this.executeObservePhase(
+            result,
+            plannerInput,
+            iterations,
+            obs,
+            context,
+        );
+
+        // ✅ SIMPLIFICADO: Logging
+        this.logIterationCompletion(
+            iterations,
+            thought,
+            result,
+            observation,
+            kernel,
+            initialEventCount,
+        );
+
+        return { thought, action: thought.action, result, observation };
+    }
+
+    private async executeThinkPhase(
+        plannerInput: PlannerExecutionContext,
+        iterations: number,
+        obs: ObservabilitySystem,
+        context: AgentContext,
+    ): Promise<AgentThought> {
+        const thinkSpan = startAgentSpan(obs.telemetry, 'think', {
+            agentName: this.config.agentName || 'unknown',
+            correlationId: context.correlationId || 'unknown',
+            iteration: iterations,
+        });
+
+        return obs.telemetry.withSpan(thinkSpan, async () => {
+            try {
+                const res = await this.think(plannerInput);
+                markSpanOk(thinkSpan);
+                return res;
+            } catch (err) {
+                applyErrorToSpan(thinkSpan, err, { phase: 'think' });
+                throw err;
+            }
+        });
+    }
+
+    private async executeActPhase(
+        thought: AgentThought,
+        iterations: number,
+        obs: ObservabilitySystem,
+        context: AgentContext,
+        plannerInput: PlannerExecutionContext,
+    ): Promise<ActionResult> {
+        if (!thought.action) {
+            throw new Error('Thought action is undefined');
+        }
+
+        // ✅ SIMPLIFICADO: Handle execute_plan action
+        if (isExecutePlanAction(thought.action)) {
+            return await this.executePlanAction(thought, context, plannerInput);
+        }
+
+        // ✅ SIMPLIFICADO: Handle regular actions
+        const actSpan = startAgentSpan(obs.telemetry, 'act', {
+            agentName: this.config.agentName || 'unknown',
+            correlationId: context.correlationId || 'unknown',
+            iteration: iterations,
+            attributes: { actionType: thought.action?.type || 'unknown' },
+        });
+
+        return obs.telemetry.withSpan(actSpan, async () => {
+            try {
+                const res = await this.act(thought.action);
+                markSpanOk(actSpan);
+                return res;
+            } catch (err) {
+                applyErrorToSpan(actSpan, err, { phase: 'act' });
+                throw err;
+            }
+        });
+    }
+
+    private async executeObservePhase(
+        result: ActionResult,
+        plannerInput: PlannerExecutionContext,
+        iterations: number,
+        obs: ObservabilitySystem,
+        context: AgentContext,
+    ): Promise<ResultAnalysis> {
+        const observeSpan = startAgentSpan(obs.telemetry, 'observe', {
+            agentName: this.config.agentName || 'unknown',
+            correlationId: context.correlationId || 'unknown',
+            iteration: iterations,
+        });
+
+        return obs.telemetry.withSpan(observeSpan, async () => {
+            try {
+                const res = await this.observe(result, plannerInput);
+                markSpanOk(observeSpan);
+                return res;
+            } catch (err) {
+                applyErrorToSpan(observeSpan, err, { phase: 'observe' });
+                throw err;
+            }
+        });
+    }
+
+    private async executePlanAction(
+        _thought: AgentThought,
+        context: AgentContext,
+        plannerContext: PlannerExecutionContext,
+    ): Promise<ActionResult> {
+        const plan = this.planner?.getPlanForContext?.(plannerContext);
+
+        if (!plan) {
+            throw new Error('No plan available for execute_plan');
+        }
+
+        // ✅ SIMPLIFICADO: Usar act diretamente com observabilidade
+        const act = async (action: AgentAction) => {
+            const obs = getObservability();
+            const actSpan = startAgentSpan(obs.telemetry, 'act', {
+                agentName: this.config.agentName || 'unknown',
+                correlationId: context.correlationId || 'unknown',
+                iteration: 0,
+                attributes: {
+                    actionType: action.type || 'unknown',
+                    source: 'plan-executor',
+                },
+            });
+
+            return obs.telemetry.withSpan(actSpan, async () => {
+                try {
+                    const res = await this.act(action);
+                    markSpanOk(actSpan);
+                    return res;
+                } catch (err) {
+                    applyErrorToSpan(actSpan, err, {
+                        phase: 'act',
+                        source: 'plan-executor',
+                    });
+                    throw err;
+                }
+            });
+        };
+
+        const resolveArgs = (
+            rawArgs: Record<string, unknown>,
+            stepList: unknown[],
+            contextForResolution: PlannerExecutionContext,
+        ) =>
+            this.planner!.resolveArgs
+                ? this.planner!.resolveArgs(
+                      rawArgs,
+                      stepList,
+                      contextForResolution,
+                  )
+                : Promise.resolve({ args: rawArgs, missing: [] });
+
+        const executor = new PlanExecutor(act, resolveArgs, {
+            enableReWOO: true,
+        });
+
+        const obsRes = await executor.run(
+            plan as ExecutionPlan,
+            plannerContext,
+        );
+
+        return obsRes.type === 'execution_complete'
+            ? { type: 'final_answer', content: obsRes.feedback }
+            : { type: 'error', error: obsRes.feedback };
+    }
+
+    private async updateExecutionState(
+        context: AgentContext,
+        iterationResult: {
+            thought: AgentThought;
+            action: AgentAction;
+            result: ActionResult;
+            observation: ResultAnalysis;
+        },
+        iterations: number,
+    ): Promise<void> {
+        await context.session.addEntry(
+            {
+                type: 'execution_step',
+                iteration: iterations,
+                thought: iterationResult.thought.reasoning,
+                action: iterationResult.action,
+            },
+            {
+                type: 'execution_result',
+                result:
+                    iterationResult.result.type === 'error'
+                        ? { error: iterationResult.result.error }
+                        : iterationResult.result.content,
+                observation: iterationResult.observation.feedback,
+                isComplete: iterationResult.observation.isComplete,
+                timestamp: Date.now(),
+            },
+        );
+
+        await context.state.set(
+            'execution',
+            'last_action',
+            iterationResult.action,
+        );
+        await context.state.set('execution', 'current_iteration', iterations);
+        await context.state.set(
+            'execution',
+            'last_result',
+            iterationResult.result,
+        );
+        await context.state.set(
+            'execution',
+            'last_observation',
+            iterationResult.observation,
+        );
+        await context.state.set(
+            'execution',
+            'is_complete',
+            iterationResult.observation.isComplete,
+        );
+    }
+
+    private shouldStopExecution(
+        iterationResult: {
+            thought: AgentThought;
+            action: AgentAction;
+            result: ActionResult;
+            observation: ResultAnalysis;
+        },
+        iterations: number,
+        plannerInput: PlannerExecutionContext,
+    ): boolean {
+        if (iterationResult.observation.isComplete) {
+            this.logger.info('Think→Act→Observe completed', {
+                iterations,
+                agentName: this.config.agentName,
+                totalDuration:
+                    Date.now() -
+                    (plannerInput.plannerMetadata.startTime as number),
+                finalAction: iterationResult.action?.type || 'unknown',
+            });
+            return true;
+        }
+
+        if (!iterationResult.observation.shouldContinue) {
+            this.logger.info('Think→Act→Observe stopped by planner', {
+                iterations,
+                reason: iterationResult.observation.feedback,
+                agentName: this.config.agentName,
+                totalDuration:
+                    Date.now() -
+                    (plannerInput.plannerMetadata.startTime as number),
+            });
+            return true;
+        }
+
+        if (this.detectStagnation(plannerInput)) {
+            this.logger.warn('Stagnation detected, breaking loop', {
+                iterations,
+                agentName: this.config.agentName,
+            });
+            return true;
+        }
+
+        return false;
+    }
+
+    private prepareNextIteration(_iterationResult: {
+        thought: AgentThought;
+        action: AgentAction;
+        result: ActionResult;
+        observation: ResultAnalysis;
+    }): PlannerExecutionContext['previousExecution'] | undefined {
+        // ✅ SIMPLIFICADO: Preparar contexto para próxima iteração se necessário
+        return undefined;
+    }
+
+    private extractFinalResult(
+        finalExecutionContext: PlannerExecutionContext | undefined,
+        executionHistory: Array<{
+            thought: AgentThought;
+            action: AgentAction;
+            result: ActionResult;
+            observation: ResultAnalysis;
+        }>,
+    ): unknown {
         const finalResult = finalExecutionContext?.getFinalResult();
 
         if (finalResult && finalResult.success) {
-            // Extract the content from the result if it's a final_answer
             const result = finalResult.result;
             if (
                 result &&
@@ -4698,63 +4679,72 @@ export abstract class AgentCore<
                 'content' in result
             ) {
                 if (result.type === 'final_answer') {
-                    return result.content as TOutput;
+                    return result.content;
                 }
             }
-            return finalResult?.result as TOutput;
-        } else {
-            // ✅ ADD: Log detalhado para debug
-            this.logger.debug('❌ THINK→ACT→OBSERVE FAILED', {
-                historyLength: finalExecutionContext?.history.length || 0,
-                iterations: iterations,
-                trace: {
-                    source: 'agent-core',
-                    step: 'think-act-observe-failed',
-                    timestamp: Date.now(),
+            return finalResult.result;
+        }
+
+        // ✅ SIMPLIFICADO: Extrair último resultado útil
+        for (let i = executionHistory.length - 1; i >= 0; i--) {
+            const entry = executionHistory[i];
+            if (
+                entry?.result &&
+                'content' in entry.result &&
+                entry.result.content
+            ) {
+                return entry.result.content;
+            }
+        }
+
+        return 'Sorry, I had trouble processing your request. Please try again with more details.';
+    }
+
+    private logIterationCompletion(
+        iterations: number,
+        thought: AgentThought,
+        _result: ActionResult,
+        observation: ResultAnalysis,
+        kernel: unknown,
+        initialEventCount: number,
+    ): void {
+        const finalEventCount =
+            (
+                kernel as { getState?: () => { eventCount: number } }
+            )?.getState?.()?.eventCount || 0;
+        const eventsGenerated = finalEventCount - initialEventCount;
+
+        this.logger.info('Think→Act→Observe iteration completed', {
+            iteration: iterations,
+            actionType: thought.action?.type || 'unknown',
+            isComplete: observation.isComplete,
+            shouldContinue: observation.shouldContinue,
+            eventsGenerated,
+            totalEvents: finalEventCount,
+        });
+
+        if (eventsGenerated > 100) {
+            this.logger.error(
+                'Excessive event generation detected - breaking loop',
+                undefined,
+                {
+                    eventsGenerated: eventsGenerated.toString(),
+                    iteration: iterations,
+                    agentName: this.config.agentName,
+                    actionType: thought.action?.type || 'unknown',
                 },
-            });
+            );
+        }
 
-            // ✅ IMPROVED: Try to extract useful information from execution history
-            let lastUsefulResult: unknown = null;
-
-            if (finalExecutionContext?.history.length) {
-                const history = finalExecutionContext.history;
-
-                // Simple approach: get the last result with content
-                for (let i = history.length - 1; i >= 0; i--) {
-                    const entry = history[i];
-                    if (entry?.result) {
-                        // Check if result has content property
-                        if ('content' in entry.result && entry.result.content) {
-                            lastUsefulResult = entry.result.content;
-                            break;
-                        }
-                    }
-                }
-
-                const lastEntry = history[history.length - 1];
-                this.logger.debug('❌ LAST EXECUTION ENTRY', {
-                    thought: lastEntry?.thought,
-                    action: lastEntry?.action,
-                    result: lastEntry?.result,
-                    observation: lastEntry?.observation,
-                    trace: {
-                        source: 'agent-core',
-                        step: 'last-execution-entry',
-                        timestamp: Date.now(),
-                    },
-                });
-            }
-
-            // ✅ IMPROVED: Return helpful partial result instead of throwing error
-            if (lastUsefulResult) {
-                return lastUsefulResult as TOutput;
-            }
-
-            // ✅ IMPROVED: Generic helpful message instead of technical error
-            const friendlyMessage = `Sorry, I had trouble fully processing your request. I tried ${iterations} times but ran into some technical issues. If you can rephrase or provide more details, I can try again in a different way.`;
-
-            return friendlyMessage as TOutput;
+        if (finalEventCount > 5000) {
+            this.logger.warn(
+                'Kernel event count approaching quota limit - breaking loop',
+                {
+                    finalEventCount,
+                    iteration: iterations,
+                    agentName: this.config.agentName,
+                },
+            );
         }
     }
 
@@ -4785,7 +4775,6 @@ export abstract class AgentCore<
             }
 
             if (isNeedMoreInfoAction(action)) {
-                // Convert to a user-facing question so orchestrator can prompt the user
                 return {
                     type: 'final_answer',
                     content: action.question,
@@ -5016,7 +5005,9 @@ export abstract class AgentCore<
         action: AgentAction,
         correlationId: string,
     ): Promise<void> {
-        if (!this.kernelHandler?.emitAsync) return;
+        if (!this.kernelHandler?.emitAsync) {
+            return;
+        }
 
         const actionType = this.getActionType(action);
         const emitResult = await this.kernelHandler.emitAsync(
@@ -5048,7 +5039,9 @@ export abstract class AgentCore<
         result: unknown,
         correlationId: string,
     ): Promise<void> {
-        if (!isToolCallAction(action) || !this.kernelHandler?.emitAsync) return;
+        if (!isToolCallAction(action) || !this.kernelHandler?.emitAsync) {
+            return;
+        }
 
         const emitResult = await this.kernelHandler.emitAsync(
             'agent.tool.completed',
@@ -5414,135 +5407,6 @@ export abstract class AgentCore<
      */
     public getRawTimeline(_executionId: string): undefined {
         return undefined;
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 🧠 MEMORY POPULATION - Auto-store execution insights
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Store execution insights to Memory for future learning
-     */
-    private async storeExecutionInsights(
-        context: AgentContext,
-        executionHistory: Array<{
-            thought: AgentThought;
-            action: AgentAction;
-            result: ActionResult;
-            observation: ResultAnalysis;
-        }>,
-        iterations: number,
-        status: 'completed' | 'stopped' | 'stagnated' | 'failed',
-    ): Promise<void> {
-        try {
-            // 1. Extract key insights from execution
-            const insights = this.extractExecutionInsights(
-                executionHistory,
-                iterations,
-                status,
-            );
-
-            // 2. Store each insight in Memory
-            for (const insight of insights) {
-                await context.memory.store(insight.content, insight.type);
-            }
-
-            this.logger.debug('Stored execution insights to Memory', {
-                insightCount: insights.length,
-                status,
-                iterations,
-                agentName: this.config.agentName,
-            });
-        } catch (error) {
-            this.logger.warn('Failed to store execution insights', {
-                error: error instanceof Error ? error.message : 'Unknown error',
-                status,
-                iterations,
-                agentName: this.config.agentName,
-            });
-        }
-    }
-
-    /**
-     * Extract meaningful insights from execution history
-     */
-    private extractExecutionInsights(
-        executionHistory: Array<{
-            thought: AgentThought;
-            action: AgentAction;
-            result: ActionResult;
-            observation: ResultAnalysis;
-        }>,
-        iterations: number,
-        status: 'completed' | 'stopped' | 'stagnated' | 'failed',
-    ): Array<{ content: string; type: string }> {
-        const insights: Array<{ content: string; type: string }> = [];
-
-        // 1. Overall execution pattern
-        insights.push({
-            content: `Execution ${status} after ${iterations} iterations. Agent: ${this.config.agentName}`,
-            type: 'execution_summary',
-        });
-
-        // 2. Tool usage patterns
-        const toolsUsed = executionHistory
-            .filter((h) => h.action.type === 'tool_call')
-            .map((h) => (h.action as unknown as { toolName: string }).toolName)
-            .filter(Boolean);
-
-        if (toolsUsed.length > 0) {
-            const toolCounts = toolsUsed.reduce(
-                (acc, tool) => {
-                    acc[tool] = (acc[tool] || 0) + 1;
-                    return acc;
-                },
-                {} as Record<string, number>,
-            );
-
-            insights.push({
-                content: `Tools used: ${Object.entries(toolCounts)
-                    .map(([tool, count]) => `${tool}(${count}x)`)
-                    .join(', ')}`,
-                type: 'tool_usage_pattern',
-            });
-        }
-
-        // 3. Error patterns
-        const errors = executionHistory
-            .filter((h) => h.result.type === 'error')
-            .map((h) => (h.result as { error: string }).error);
-
-        if (errors.length > 0) {
-            insights.push({
-                content: `Common errors: ${errors.slice(0, 3).join('; ')}`,
-                type: 'error_pattern',
-            });
-        }
-
-        // 4. Success patterns
-        if (status === 'completed') {
-            const finalObservation =
-                executionHistory[executionHistory.length - 1]?.observation;
-            if (finalObservation?.feedback) {
-                insights.push({
-                    content: `Successful approach: ${finalObservation.feedback}`,
-                    type: 'success_pattern',
-                });
-            }
-        }
-
-        // 5. Stagnation patterns
-        if (status === 'stagnated') {
-            const recentActions = executionHistory
-                .slice(-3)
-                .map((h) => h.action.type);
-            insights.push({
-                content: `Stagnation pattern: repeated actions [${recentActions.join(', ')}]`,
-                type: 'stagnation_pattern',
-            });
-        }
-
-        return insights;
     }
 }
 

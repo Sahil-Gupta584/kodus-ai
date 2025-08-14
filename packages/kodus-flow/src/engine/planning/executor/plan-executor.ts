@@ -1,7 +1,6 @@
 import type {
     AgentAction,
     ActionResult,
-    ResultAnalysis,
     PlannerExecutionContext,
 } from '../../planning/planner-factory.js';
 import type {
@@ -12,37 +11,146 @@ import type {
 } from '../../../core/types/planning-shared.js';
 import { getReadySteps } from '../../../core/types/planning-shared.js';
 
+interface PlanExecutorConfig {
+    enableReWOO?: boolean;
+    maxRetries?: number;
+    maxExecutionRounds?: number;
+}
+
+interface WrappedToolResult {
+    result: {
+        isError?: boolean;
+        content: Array<{
+            type: string;
+            text: string;
+        }>;
+    };
+}
+
+interface InnerToolResult {
+    successful?: boolean;
+    error?: string;
+    data?: Record<string, unknown>;
+}
+
+interface PlanSignals {
+    needs?: string[];
+    noDiscoveryPath?: string[];
+    errors?: string[];
+    suggestedNextStep?: string;
+}
+
+interface StepAnalysis {
+    success: boolean;
+    shouldReplan: boolean;
+}
+
+interface ExecutionSummary {
+    successfulSteps: string[];
+    failedSteps: string[];
+    skippedSteps: string[];
+    allStepsProcessed: boolean;
+    hasNoMoreExecutableSteps: boolean;
+}
+
 export class PlanExecutor {
+    private readonly maxExecutionRounds: number;
+
     constructor(
-        private act: (action: AgentAction) => Promise<ActionResult>,
-        private resolveArgs: (
+        private readonly act: (action: AgentAction) => Promise<ActionResult>,
+        private readonly resolveArgs: (
             rawArgs: Record<string, unknown>,
             stepList: PlanStep[],
             context: PlannerExecutionContext,
         ) => Promise<{ args: Record<string, unknown>; missing: string[] }>,
-        private config?: {
-            enableReWOO?: boolean; // Use rule-based analysis instead of LLM
-            maxRetries?: number;
-        },
-    ) {}
+        private readonly config: PlanExecutorConfig = {},
+    ) {
+        this.maxExecutionRounds = config.maxExecutionRounds ?? 10;
+    }
+
+    async run(
+        plan: ExecutionPlan,
+        context: PlannerExecutionContext,
+    ): Promise<PlanExecutionResult> {
+        const startTime = Date.now();
+
+        this.normalizePlanForExecution(plan);
+        await this.resumeIfWaitingInput(plan, context);
+
+        const signals = this.extractSignals(plan);
+        const hasSignalsProblems = this.hasSignalsProblems(signals);
+
+        await this.emitSessionEvent(
+            context,
+            'plan.execution.started',
+            { planId: plan.id },
+            {
+                type: 'plan_started',
+                at: Date.now(),
+                totalSteps: plan.steps.length,
+                hasSignalsProblems,
+                signals,
+            },
+        );
+
+        const executedResults = await this.executeAllPossibleSteps(
+            plan,
+            context,
+        );
+        const executionTime = Date.now() - startTime;
+
+        const summary = this.analyzeExecutionResults(plan, executedResults);
+        const { resultType, feedback } = this.determineResultType(
+            plan,
+            summary,
+            hasSignalsProblems,
+            signals,
+        );
+
+        await this.emitCompletionEvent(context, plan.id, {
+            executionTime,
+            resultType,
+            summary,
+            hasSignalsProblems,
+        });
+
+        const replanContext = this.buildReplanContext(
+            resultType,
+            executedResults,
+            summary,
+            hasSignalsProblems,
+            signals,
+        );
+
+        return {
+            type: resultType,
+            planId: plan.id,
+            strategy: plan.strategy,
+            totalSteps: plan.steps.length,
+            executedSteps: executedResults,
+            successfulSteps: summary.successfulSteps,
+            failedSteps: summary.failedSteps,
+            skippedSteps: summary.skippedSteps,
+            hasSignalsProblems,
+            signals,
+            executionTime,
+            feedback,
+            replanContext,
+        };
+    }
 
     private normalizePlanForExecution(plan: ExecutionPlan): void {
-        // Reset orphan "executing" steps to "pending" to avoid deadlocks when delegating to executor
         let firstPendingIndex = -1;
+
         for (let stepIndex = 0; stepIndex < plan.steps.length; stepIndex++) {
-            const stepCandidate = plan.steps[stepIndex];
-            if (!stepCandidate) {
-                continue;
+            const step = plan.steps[stepIndex];
+            if (!step) continue;
+
+            if (step.status === 'executing') {
+                step.status = 'pending';
             }
 
-            if (stepCandidate.status === 'executing') {
-                stepCandidate.status = 'pending';
-            }
-
-            if (
-                firstPendingIndex === -1 &&
-                stepCandidate.status === 'pending'
-            ) {
+            if (firstPendingIndex === -1 && step.status === 'pending') {
                 firstPendingIndex = stepIndex;
             }
         }
@@ -52,7 +160,6 @@ export class PlanExecutor {
         }
     }
 
-    // Emit a structured session event if session is available (best-effort)
     private async emitSessionEvent(
         context: PlannerExecutionContext,
         type: string,
@@ -64,23 +171,22 @@ export class PlanExecutor {
                 { type, ...input },
                 details ?? {},
             );
-        } catch {}
+        } catch {
+            // Silent fail for session events
+        }
     }
 
-    // Try to resume a plan paused by user input
     private async resumeIfWaitingInput(
         plan: ExecutionPlan,
         context: PlannerExecutionContext,
     ): Promise<void> {
-        if (plan.status !== 'waiting_input') {
-            return;
-        }
+        if (plan.status !== 'waiting_input') return;
 
         const nextPendingStep = plan.steps.find(
             (step) => step.status === 'pending',
         );
 
-        if (nextPendingStep && nextPendingStep.arguments) {
+        if (nextPendingStep?.arguments) {
             const argumentResolution = await this.resolveArgs(
                 nextPendingStep.arguments,
                 plan.steps,
@@ -107,217 +213,88 @@ export class PlanExecutor {
         );
     }
 
-    // 🚀 ReWOO Rule-based analysis (no LLM calls)
-    private analyzeStepResult(result: ActionResult): {
-        success: boolean;
-        shouldReplan: boolean;
-    } {
-        // 🚀 NEW: Handle wrapped tool responses properly
-        if (this.isWrappedToolResult(result)) {
-            return this.analyzeWrappedToolResult(result);
-        }
-
-        // Legacy handling for direct ActionResult
-        if (result.type === 'error') {
-            const errorContent =
-                typeof result.error === 'string'
-                    ? result.error
-                    : JSON.stringify(result.error);
-
-            // Check if error suggests replanning
-            const replanTriggers = [
-                'tool not found',
-                'tool unavailable',
-                'missing required parameter',
-                'authentication failed',
-                'permission denied',
-                'quota exceeded',
-                'service unavailable',
-                'timeout',
-                'rate limit',
-            ];
-
-            const shouldReplan = replanTriggers.some((trigger) =>
-                errorContent.toLowerCase().includes(trigger),
-            );
-
-            return { success: false, shouldReplan };
-        }
-
-        if (result.type === 'tool_result') {
-            const hasValidOutput =
-                result.content !== null &&
-                result.content !== undefined &&
-                (typeof result.content === 'string'
-                    ? result.content.trim().length > 0
-                    : typeof result.content === 'object' &&
-                        result.content !== null
-                      ? Object.keys(result.content as Record<string, unknown>)
-                            .length > 0
-                      : true);
-
-            return { success: hasValidOutput, shouldReplan: false };
-        }
-
-        if (result.type === 'final_answer') {
-            return { success: true, shouldReplan: false };
-        }
-
-        // Default: assume success
-        return { success: true, shouldReplan: false };
+    private extractSignals(plan: ExecutionPlan): PlanSignals | undefined {
+        return plan.metadata?.signals as PlanSignals | undefined;
     }
 
-    // 🚀 NEW: Check if result is wrapped tool response
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private isWrappedToolResult(result: any): boolean {
+    private hasSignalsProblems(signals: PlanSignals | undefined): boolean {
+        if (!signals) return false;
+
         return (
-            result &&
-            typeof result === 'object' &&
-            result.result &&
-            Array.isArray(result.result.content) &&
-            result.result.content.length > 0 &&
-            result.result.content[0].type === 'text' &&
-            typeof result.result.content[0].text === 'string'
+            (signals.needs?.length || 0) > 0 ||
+            (signals.noDiscoveryPath?.length || 0) > 0 ||
+            (signals.errors?.length || 0) > 0 ||
+            !!signals.suggestedNextStep
         );
     }
 
-    // 🚀 NEW: Analyze wrapped tool results properly
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private analyzeWrappedToolResult(result: any): {
-        success: boolean;
-        shouldReplan: boolean;
-    } {
-        try {
-            // Check wrapper-level error flag
-            if (result.result?.isError === true) {
-                return { success: false, shouldReplan: true };
-            }
+    private async executeAllPossibleSteps(
+        plan: ExecutionPlan,
+        context: PlannerExecutionContext,
+    ): Promise<StepExecutionResult[]> {
+        const executedResults: StepExecutionResult[] = [];
+        let executionRounds = 0;
 
-            // Parse inner JSON from content[0].text
-            const innerJsonString = result.result.content[0].text;
-            const innerResult = JSON.parse(innerJsonString);
+        while (executionRounds < this.maxExecutionRounds) {
+            const readySteps = getReadySteps(plan);
 
-            // Check inner successful flag
-            if (innerResult.successful === false) {
-                const errorMsg = innerResult.error || 'Tool execution failed';
+            if (readySteps.length === 0) break;
 
-                const replanTriggers = [
-                    'not found',
-                    'neither a page nor a database',
-                    'invalid',
-                    'permission denied',
-                    'authentication failed',
-                    'quota exceeded',
-                    'service unavailable',
-                    'timeout',
-                    'rate limit',
-                ];
-
-                const shouldReplan = replanTriggers.some((trigger) =>
-                    errorMsg.toLowerCase().includes(trigger),
+            for (const step of readySteps) {
+                const stepResult = await this.executeStepSafe(
+                    plan,
+                    step,
+                    context,
                 );
-
-                return { success: false, shouldReplan };
+                executedResults.push(stepResult);
             }
 
-            // Check if data is empty/null (might need replan)
-            if (
-                !innerResult.data ||
-                (typeof innerResult.data === 'object' &&
-                    Object.keys(innerResult.data).length === 0)
-            ) {
-                return { success: false, shouldReplan: true };
-            }
-
-            return { success: true, shouldReplan: false };
-        } catch {
-            // If we can't parse the inner JSON, treat as error
-            return { success: false, shouldReplan: true };
+            executionRounds++;
         }
+
+        return executedResults;
     }
 
-    // 🚀 Execute single step without stopping execution (ReWOO style)
     private async executeStepSafe(
         plan: ExecutionPlan,
         step: PlanStep,
         context: PlannerExecutionContext,
-        _executedResults: StepExecutionResult[],
     ): Promise<StepExecutionResult> {
         const startTime = Date.now();
 
         try {
-            // 1. Resolve arguments from previous step results
-            if (step.arguments) {
-                const argumentResolution = await this.resolveArgs(
-                    step.arguments,
-                    plan.steps,
-                    context,
-                );
-
-                step.arguments = argumentResolution.args;
-
-                if (argumentResolution.missing.length > 0) {
-                    return {
-                        stepId: step.id,
-                        step,
-                        success: false,
-                        error: `Missing inputs: ${argumentResolution.missing.join(', ')}`,
-                        executedAt: Date.now(),
-                        duration: Date.now() - startTime,
-                    };
-                }
-            }
-
-            // 2. Mark as executing and emit event
-            step.status = 'executing';
-            await this.emitSessionEvent(
+            const argumentResolution = await this.resolveStepArguments(
+                step,
+                plan,
                 context,
-                'plan.step.started',
-                { planId: plan.id, stepId: step.id },
-                {
-                    type: 'step_started',
-                    at: Date.now(),
-                    description: step.description,
-                    tool: step.tool,
-                    rewooMode: this.config?.enableReWOO || false,
-                },
             );
 
-            // 3. Execute tool action
-            const result: ActionResult =
-                step.tool && step.tool !== 'none'
-                    ? await this.act({
-                          type: 'tool_call',
-                          toolName: step.tool!,
-                          input: step.arguments ?? {},
-                      } as AgentAction)
-                    : { type: 'final_answer', content: step.description };
+            if (argumentResolution.missing.length > 0) {
+                return this.createStepResult(step, {
+                    success: false,
+                    error: `Missing inputs: ${argumentResolution.missing.join(', ')}`,
+                    startTime,
+                });
+            }
 
-            // 4. 🚀 Analyze result (ReWOO rule-based OR LLM fallback)
-            const analysis = this.config?.enableReWOO
-                ? this.analyzeStepResult(result)
-                : { success: true, shouldReplan: false }; // Will use LLM later if needed
+            step.status = 'executing';
+            await this.emitStepStartedEvent(context, plan.id, step);
 
-            // 5. Update step status and store result
+            const result = await this.executeStepAction(step);
+            const analysis = this.analyzeStepResult(result);
+
             step.status = analysis.success ? 'completed' : 'failed';
             step.result =
                 result.type === 'tool_result' ? result.content : result;
 
-            await this.emitSessionEvent(
+            await this.emitStepFinishedEvent(
                 context,
-                'plan.step.finished',
-                { planId: plan.id, stepId: step.id },
-                {
-                    type: 'step_finished',
-                    at: Date.now(),
-                    success: analysis.success,
-                    rewooMode: this.config?.enableReWOO || false,
-                },
+                plan.id,
+                step,
+                analysis.success,
             );
 
-            return {
-                stepId: step.id,
-                step,
+            return this.createStepResult(step, {
                 result,
                 success: analysis.success,
                 error: analysis.success
@@ -325,99 +302,282 @@ export class PlanExecutor {
                     : result.type === 'error'
                       ? result.error
                       : 'Step failed',
-                executedAt: Date.now(),
-                duration: Date.now() - startTime,
-            };
+                startTime,
+            });
         } catch (error) {
             step.status = 'failed';
-
             const errorMsg =
                 error instanceof Error ? error.message : String(error);
 
-            return {
-                stepId: step.id,
-                step,
+            return this.createStepResult(step, {
                 success: false,
                 error: errorMsg,
-                executedAt: Date.now(),
-                duration: Date.now() - startTime,
-            };
+                startTime,
+            });
         }
     }
 
-    // 🚀 NEW: Execute All Possible Steps, Then Replan
-    async run(
+    private async resolveStepArguments(
+        step: PlanStep,
         plan: ExecutionPlan,
         context: PlannerExecutionContext,
-    ): Promise<PlanExecutionResult> {
-        const startTime = Date.now();
-
-        this.normalizePlanForExecution(plan);
-        await this.resumeIfWaitingInput(plan, context);
-
-        // Extract signals from plan metadata
-        const signals = plan.metadata?.signals as
-            | {
-                  needs?: string[];
-                  noDiscoveryPath?: string[];
-                  errors?: string[];
-                  suggestedNextStep?: string;
-              }
-            | undefined;
-
-        // Check for immediate replan based on signals
-        const hasSignalsProblems =
-            (signals?.needs?.length || 0) > 0 ||
-            (signals?.noDiscoveryPath?.length || 0) > 0 ||
-            (signals?.errors?.length || 0) > 0 ||
-            !!signals?.suggestedNextStep;
-
-        await this.emitSessionEvent(
-            context,
-            'plan.execution.started',
-            { planId: plan.id },
-            {
-                type: 'plan_started',
-                at: Date.now(),
-                totalSteps: plan.steps.length,
-                hasSignalsProblems,
-                signals,
-            },
-        );
-
-        const executedResults: StepExecutionResult[] = [];
-        let executionRounds = 0;
-        const maxRounds = 10; // Prevent infinite loops
-
-        // 🚀 Execute ALL possible steps (multiple rounds for dependencies)
-        while (executionRounds < maxRounds) {
-            const readySteps = getReadySteps(plan);
-
-            if (readySteps.length === 0) {
-                // No more steps can be executed
-                break;
-            }
-
-            // Execute all ready steps in this round
-            const roundResults: StepExecutionResult[] = [];
-
-            for (const step of readySteps) {
-                const stepResult = await this.executeStepSafe(
-                    plan,
-                    step,
-                    context,
-                    executedResults,
-                );
-                roundResults.push(stepResult);
-                executedResults.push(stepResult);
-            }
-
-            executionRounds++;
+    ): Promise<{ args: Record<string, unknown>; missing: string[] }> {
+        if (!step.arguments) {
+            return { args: {}, missing: [] };
         }
 
-        const executionTime = Date.now() - startTime;
+        const resolution = await this.resolveArgs(
+            step.arguments,
+            plan.steps,
+            context,
+        );
 
-        // Analyze final results
+        // ✅ ADDITIONAL CHECK: Detect invalid values even after resolution
+        const invalidValues = [
+            'NOT_FOUND',
+            'MISSING',
+            'INVALID',
+            'ERROR',
+            'NULL',
+            'UNDEFINED',
+        ];
+        const additionalMissing: string[] = [];
+
+        const checkForInvalidValues = (obj: unknown): void => {
+            if (typeof obj === 'string') {
+                for (const invalidValue of invalidValues) {
+                    if (
+                        obj === invalidValue ||
+                        obj.startsWith(invalidValue + ':')
+                    ) {
+                        additionalMissing.push(obj);
+                        break;
+                    }
+                }
+            } else if (Array.isArray(obj)) {
+                obj.forEach(checkForInvalidValues);
+            } else if (obj && typeof obj === 'object') {
+                Object.values(obj as Record<string, unknown>).forEach(
+                    checkForInvalidValues,
+                );
+            }
+        };
+
+        checkForInvalidValues(resolution.args);
+
+        step.arguments = resolution.args;
+        return {
+            args: resolution.args,
+            missing: [...resolution.missing, ...additionalMissing],
+        };
+    }
+
+    private async executeStepAction(step: PlanStep): Promise<ActionResult> {
+        if (!step.tool || step.tool === 'none') {
+            return { type: 'final_answer', content: step.description };
+        }
+
+        return await this.act({
+            type: 'tool_call',
+            toolName: step.tool,
+            input: step.arguments ?? {},
+        } as AgentAction);
+    }
+
+    private createStepResult(
+        step: PlanStep,
+        options: {
+            result?: ActionResult;
+            success: boolean;
+            error?: string;
+            startTime: number;
+        },
+    ): StepExecutionResult {
+        const { result, success, error, startTime } = options;
+        const executedAt = Date.now();
+
+        return {
+            stepId: step.id,
+            step,
+            ...(result && { result }),
+            success,
+            ...(error && { error }),
+            executedAt,
+            duration: executedAt - startTime,
+        };
+    }
+
+    private async emitStepStartedEvent(
+        context: PlannerExecutionContext,
+        planId: string,
+        step: PlanStep,
+    ): Promise<void> {
+        await this.emitSessionEvent(
+            context,
+            'plan.step.started',
+            { planId, stepId: step.id },
+            {
+                type: 'step_started',
+                at: Date.now(),
+                description: step.description,
+                tool: step.tool,
+                rewooMode: this.config.enableReWOO || false,
+            },
+        );
+    }
+
+    private async emitStepFinishedEvent(
+        context: PlannerExecutionContext,
+        planId: string,
+        step: PlanStep,
+        success: boolean,
+    ): Promise<void> {
+        await this.emitSessionEvent(
+            context,
+            'plan.step.finished',
+            { planId, stepId: step.id },
+            {
+                type: 'step_finished',
+                at: Date.now(),
+                success,
+                rewooMode: this.config.enableReWOO || false,
+            },
+        );
+    }
+
+    private analyzeStepResult(result: ActionResult): StepAnalysis {
+        // ✅ DEBUG: Log para entender a estrutura do resultado
+        console.log('🔍 [PLAN-EXECUTOR] Analyzing step result:', {
+            resultType: result.type,
+            isWrapped: this.isWrappedToolResult(result),
+            resultStructure: JSON.stringify(result, null, 2).substring(0, 500),
+        });
+
+        if (this.isWrappedToolResult(result)) {
+            console.log('🔍 [PLAN-EXECUTOR] Using analyzeWrappedToolResult');
+            return this.analyzeWrappedToolResult(result);
+        }
+
+        if (result.type === 'error') {
+            console.log('🔍 [PLAN-EXECUTOR] Using analyzeErrorResult');
+            return this.analyzeErrorResult(result);
+        }
+
+        if (result.type === 'tool_result') {
+            console.log('🔍 [PLAN-EXECUTOR] Using analyzeToolResult');
+            return this.analyzeToolResult(result);
+        }
+
+        if (result.type === 'final_answer') {
+            console.log('🔍 [PLAN-EXECUTOR] Final answer - success: true');
+            return { success: true, shouldReplan: false };
+        }
+
+        console.log('🔍 [PLAN-EXECUTOR] Default case - success: true');
+        return { success: true, shouldReplan: false };
+    }
+
+    private isWrappedToolResult(result: unknown): result is WrappedToolResult {
+        return (
+            result !== null &&
+            typeof result === 'object' &&
+            'result' in result &&
+            result.result !== null &&
+            typeof result.result === 'object' &&
+            'content' in result.result &&
+            Array.isArray(result.result.content) &&
+            result.result.content.length > 0 &&
+            result.result.content[0]?.type === 'text' &&
+            typeof result.result.content[0]?.text === 'string'
+        );
+    }
+
+    private analyzeWrappedToolResult(result: WrappedToolResult): StepAnalysis {
+        try {
+            if (result.result.isError === true) {
+                return { success: false, shouldReplan: true };
+            }
+
+            const innerJsonString = result.result.content[0]?.text;
+            if (!innerJsonString) {
+                return { success: false, shouldReplan: true };
+            }
+            const innerResult = JSON.parse(innerJsonString) as InnerToolResult;
+
+            if (innerResult.successful === false) {
+                const errorMsg = innerResult.error || 'Tool execution failed';
+                const shouldReplan = this.shouldReplanForError(errorMsg);
+                return { success: false, shouldReplan };
+            }
+
+            if (!innerResult.data || this.isEmptyObject(innerResult.data)) {
+                return { success: false, shouldReplan: true };
+            }
+
+            return { success: true, shouldReplan: false };
+        } catch {
+            return { success: false, shouldReplan: true };
+        }
+    }
+
+    private analyzeErrorResult(
+        result: ActionResult & { type: 'error' },
+    ): StepAnalysis {
+        const errorContent =
+            typeof result.error === 'string'
+                ? result.error
+                : JSON.stringify(result.error);
+
+        const shouldReplan = this.shouldReplanForError(errorContent);
+        return { success: false, shouldReplan };
+    }
+
+    private analyzeToolResult(
+        result: ActionResult & { type: 'tool_result' },
+    ): StepAnalysis {
+        const hasValidOutput =
+            result.content !== null &&
+            result.content !== undefined &&
+            (typeof result.content === 'string'
+                ? result.content.trim().length > 0
+                : typeof result.content === 'object' && result.content !== null
+                  ? !this.isEmptyObject(
+                        result.content as Record<string, unknown>,
+                    )
+                  : true);
+
+        return { success: hasValidOutput, shouldReplan: false };
+    }
+
+    private shouldReplanForError(errorMessage: string): boolean {
+        const replanTriggers = [
+            'tool not found',
+            'tool unavailable',
+            'missing required parameter',
+            'authentication failed',
+            'permission denied',
+            'quota exceeded',
+            'service unavailable',
+            'timeout',
+            'rate limit',
+            'not found',
+            'neither a page nor a database',
+            'invalid',
+        ];
+
+        return replanTriggers.some((trigger) =>
+            errorMessage.toLowerCase().includes(trigger),
+        );
+    }
+
+    private isEmptyObject(obj: Record<string, unknown>): boolean {
+        return Object.keys(obj).length === 0;
+    }
+
+    private analyzeExecutionResults(
+        plan: ExecutionPlan,
+        executedResults: StepExecutionResult[],
+    ): ExecutionSummary {
         const successfulSteps = executedResults
             .filter((r) => r.success)
             .map((r) => r.stepId);
@@ -429,188 +589,191 @@ export class PlanExecutor {
             (id) => !successfulSteps.includes(id) && !failedSteps.includes(id),
         );
 
-        // Check execution completion status
         const allStepsProcessed = plan.steps.every(
             (s) =>
                 s.status === 'completed' ||
                 s.status === 'failed' ||
                 s.status === 'skipped',
         );
+
         const hasNoMoreExecutableSteps = plan.steps.every(
             (s) => s.status !== 'pending' && s.status !== 'executing',
         );
 
-        // Determine result type
-        let resultType: PlanExecutionResult['type'];
-        let feedback: string;
+        return {
+            successfulSteps,
+            failedSteps,
+            skippedSteps,
+            allStepsProcessed,
+            hasNoMoreExecutableSteps,
+        };
+    }
 
-        // 🎯 CORRIGIDO: Check signals FIRST, then execution status
+    private determineResultType(
+        plan: ExecutionPlan,
+        summary: ExecutionSummary,
+        hasSignalsProblems: boolean,
+        signals: PlanSignals | undefined,
+    ): { resultType: PlanExecutionResult['type']; feedback: string } {
         if (hasSignalsProblems) {
-            // ✅ VERIFICAR LIMITE DE REPLANS ANTES DE REPLAN
-            const replansCount = Number(
-                (plan.metadata as Record<string, unknown>)?.replansCount ?? 0,
-            );
-            const maxReplans = 5; // ✅ PADRÃO DO EXECUTOR (configurável depois)
-
-            if (replansCount >= maxReplans) {
-                // ✅ LIMITE ATINGIDO - PARAR LOOP
-                resultType = 'execution_complete';
-                feedback = `Replan limit reached (${replansCount}/${maxReplans}). Cannot continue with missing inputs: ${JSON.stringify(signals?.needs)}`;
-            } else {
-                // ✅ AINDA PODE REPLAN - INCREMENTAR CONTADOR
-                if (!plan.metadata) plan.metadata = {};
-                (plan.metadata as Record<string, unknown>).replansCount =
-                    replansCount + 1;
-
-                resultType = 'needs_replan';
-                feedback = `Plan needs replanning due to signals. Success: ${successfulSteps.length}, Failed: ${failedSteps.length}, Signals: ${JSON.stringify(signals)}`;
-            }
-        } else if (
-            failedSteps.length === 0 &&
-            successfulSteps.length === plan.steps.length
-        ) {
-            // Perfect execution - all steps completed successfully AND no signals
-            resultType = 'execution_complete';
-            feedback = `Plan executed successfully. Completed ${successfulSteps.length}/${plan.steps.length} steps.`;
-        } else if (
-            failedSteps.length > 0 ||
-            (allStepsProcessed && skippedSteps.length > 0)
-        ) {
-            // Need replan due to failures or skipped steps
-            resultType = 'needs_replan';
-            feedback = `Plan needs replanning. Success: ${successfulSteps.length}, Failed: ${failedSteps.length}, Skipped: ${skippedSteps.length}`;
-        } else if (
-            hasNoMoreExecutableSteps &&
-            successfulSteps.length < plan.steps.length
-        ) {
-            // Deadlock - no more executable steps but plan not complete
-            resultType = 'deadlock';
-            feedback = 'Execution deadlock: no more steps can be executed';
-        } else {
-            // Default case - should not normally reach here
-            resultType = 'execution_complete';
-            feedback = `Execution finished. Success: ${successfulSteps.length}, Failed: ${failedSteps.length}, Skipped: ${skippedSteps.length}`;
+            return this.handleSignalsProblems(summary, signals);
         }
 
-        // Emit completion event
+        if (
+            summary.failedSteps.length === 0 &&
+            summary.successfulSteps.length === plan.steps.length
+        ) {
+            return {
+                resultType: 'execution_complete',
+                feedback: `Plan executed successfully. Completed ${summary.successfulSteps.length}/${plan.steps.length} steps.`,
+            };
+        }
+
+        if (
+            summary.failedSteps.length > 0 ||
+            (summary.allStepsProcessed && summary.skippedSteps.length > 0)
+        ) {
+            return {
+                resultType: 'needs_replan',
+                feedback: `Plan needs replanning. Success: ${summary.successfulSteps.length}, Failed: ${summary.failedSteps.length}, Skipped: ${summary.skippedSteps.length}`,
+            };
+        }
+
+        if (
+            summary.hasNoMoreExecutableSteps &&
+            summary.successfulSteps.length < plan.steps.length
+        ) {
+            return {
+                resultType: 'deadlock',
+                feedback: 'Execution deadlock: no more steps can be executed',
+            };
+        }
+
+        return {
+            resultType: 'execution_complete',
+            feedback: `Execution finished. Success: ${summary.successfulSteps.length}, Failed: ${summary.failedSteps.length}, Skipped: ${summary.skippedSteps.length}`,
+        };
+    }
+
+    private handleSignalsProblems(
+        summary: ExecutionSummary,
+        signals: PlanSignals | undefined,
+    ): { resultType: PlanExecutionResult['type']; feedback: string } {
+        // ✅ SIMPLE: Executor just reports signals, Planner decides what to do
+        return {
+            resultType: 'needs_replan',
+            feedback: `Plan needs replanning due to signals. Success: ${summary.successfulSteps.length}, Failed: ${summary.failedSteps.length}, Signals: ${JSON.stringify(signals)}`,
+        };
+    }
+
+    private async emitCompletionEvent(
+        context: PlannerExecutionContext,
+        planId: string,
+        details: {
+            executionTime: number;
+            resultType: PlanExecutionResult['type'];
+            summary: ExecutionSummary;
+            hasSignalsProblems: boolean;
+        },
+    ): Promise<void> {
         try {
             await context.agentContext?.session.addEntry(
                 {
                     type: 'plan.execution.completed',
-                    planId: plan.id,
+                    planId,
                 },
                 {
                     type: 'plan_completed',
                     at: Date.now(),
-                    executionTime,
-                    resultType,
-                    successfulSteps: successfulSteps.length,
-                    failedSteps: failedSteps.length,
-                    skippedSteps: skippedSteps.length,
-                    hasSignalsProblems,
+                    executionTime: details.executionTime,
+                    resultType: details.resultType,
+                    successfulSteps: details.summary.successfulSteps.length,
+                    failedSteps: details.summary.failedSteps.length,
+                    skippedSteps: details.summary.skippedSteps.length,
+                    hasSignalsProblems: details.hasSignalsProblems,
                 },
             );
-        } catch {}
-
-        // 🚀 Generate rich replan context for ReWOO
-        let replanContext: PlanExecutionResult['replanContext'];
-
-        if (
-            resultType === 'needs_replan' &&
-            (failedSteps.length > 0 || hasSignalsProblems)
-        ) {
-            const preservedSteps = executedResults.filter(
-                (result) => result.success,
-            );
-            const failurePatterns: string[] = [];
-            let primaryCause = 'Unknown failure';
-
-            // Analyze failure patterns
-            executedResults
-                .filter((result) => !result.success)
-                .forEach((result) => {
-                    if (result.error) {
-                        const errorStr =
-                            typeof result.error === 'string'
-                                ? result.error
-                                : JSON.stringify(result.error);
-                        failurePatterns.push(errorStr.toLowerCase());
-
-                        // Determine primary cause from first significant error
-                        if (primaryCause === 'Unknown failure') {
-                            if (errorStr.toLowerCase().includes('invalid')) {
-                                primaryCause = 'Invalid input provided';
-                            } else if (
-                                errorStr.toLowerCase().includes('not found')
-                            ) {
-                                primaryCause = 'Resource not found';
-                            } else if (
-                                errorStr.toLowerCase().includes('permission') ||
-                                errorStr.toLowerCase().includes('auth')
-                            ) {
-                                primaryCause =
-                                    'Permission or authentication error';
-                            } else if (
-                                errorStr.toLowerCase().includes('timeout') ||
-                                errorStr.toLowerCase().includes('unavailable')
-                            ) {
-                                primaryCause = 'Service unavailable or timeout';
-                            } else {
-                                primaryCause = errorStr;
-                            }
-                        }
-                    }
-                });
-
-            // Build replan context
-            replanContext = {
-                preservedSteps,
-                failurePatterns: [...new Set(failurePatterns)], // Remove duplicates
-                primaryCause,
-                suggestedStrategy: 'plan-execute',
-                contextForReplan: {
-                    successfulSteps,
-                    failedSteps,
-                    skippedSteps,
-                    hasSignalsProblems,
-                    signals: signals || {},
-                },
-            };
+        } catch {
+            // Silent fail for completion events
         }
-
-        const finalResult = {
-            type: resultType,
-            planId: plan.id,
-            strategy: plan.strategy,
-            totalSteps: plan.steps.length,
-            executedSteps: executedResults,
-            successfulSteps,
-            failedSteps,
-            skippedSteps,
-            hasSignalsProblems,
-            signals,
-            executionTime,
-            feedback,
-            replanContext,
-        };
-
-        return finalResult;
     }
 
-    // 🔄 LEGACY: Keep for backward compatibility (transforms new result to old format)
-    async runLegacy(
-        plan: ExecutionPlan,
-        context: PlannerExecutionContext,
-    ): Promise<ResultAnalysis> {
-        const result = await this.run(plan, context);
+    private buildReplanContext(
+        resultType: PlanExecutionResult['type'],
+        executedResults: StepExecutionResult[],
+        summary: ExecutionSummary,
+        hasSignalsProblems: boolean,
+        signals: PlanSignals | undefined,
+    ): PlanExecutionResult['replanContext'] {
+        if (
+            resultType !== 'needs_replan' ||
+            (summary.failedSteps.length === 0 && !hasSignalsProblems)
+        ) {
+            return undefined;
+        }
+
+        const preservedSteps = executedResults.filter(
+            (result) => result.success,
+        );
+        const failurePatterns = this.extractFailurePatterns(executedResults);
+        const primaryCause = this.determinePrimaryCause(executedResults);
 
         return {
-            isComplete: result.type === 'execution_complete',
-            isSuccessful: result.type === 'execution_complete',
-            feedback: result.feedback,
-            shouldContinue: result.type === 'needs_replan',
-            suggestedNextAction:
-                result.type === 'needs_replan' ? 'Replan' : undefined,
+            preservedSteps,
+            failurePatterns: [...new Set(failurePatterns)],
+            primaryCause,
+            suggestedStrategy: 'plan-execute',
+            contextForReplan: {
+                successfulSteps: summary.successfulSteps,
+                failedSteps: summary.failedSteps,
+                skippedSteps: summary.skippedSteps,
+                hasSignalsProblems,
+                signals: signals || {},
+            },
         };
+    }
+
+    private extractFailurePatterns(
+        executedResults: StepExecutionResult[],
+    ): string[] {
+        return executedResults
+            .filter((result) => !result.success && result.error)
+            .map((result) => {
+                const errorStr =
+                    typeof result.error === 'string'
+                        ? result.error
+                        : JSON.stringify(result.error);
+                return errorStr.toLowerCase();
+            });
+    }
+
+    private determinePrimaryCause(
+        executedResults: StepExecutionResult[],
+    ): string {
+        const firstFailure = executedResults.find(
+            (result) => !result.success && result.error,
+        );
+        if (!firstFailure?.error) return 'Unknown failure';
+
+        const errorStr =
+            typeof firstFailure.error === 'string'
+                ? firstFailure.error
+                : JSON.stringify(firstFailure.error);
+
+        const errorLower = errorStr.toLowerCase();
+
+        if (errorLower.includes('invalid')) return 'Invalid input provided';
+        if (errorLower.includes('not found')) return 'Resource not found';
+        if (errorLower.includes('permission') || errorLower.includes('auth')) {
+            return 'Permission or authentication error';
+        }
+        if (
+            errorLower.includes('timeout') ||
+            errorLower.includes('unavailable')
+        ) {
+            return 'Service unavailable or timeout';
+        }
+
+        return errorStr;
     }
 }

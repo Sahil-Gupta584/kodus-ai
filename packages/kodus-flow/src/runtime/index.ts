@@ -253,7 +253,7 @@ export function createRuntime(
         middleware = [],
         memoryMonitor,
         enableAcks = true,
-        ackTimeout = 60000, // ✅ UNIFIED: 60s same as tool timeout
+        ackTimeout = 30000, // ✅ REDUZIDO: 30s em vez de 60s para evitar acúmulo
         maxRetries = 1,
         tenantId,
         persistor,
@@ -300,7 +300,6 @@ export function createRuntime(
         batchSize,
         enableAutoScaling: false, // ensure stable behavior for tests and prod
         enableGlobalConcurrency: true,
-        maxProcessedEvents: 10000,
 
         // Persistence (enabled by default with in-memory persistor)
         enablePersistence: !!persistor,
@@ -315,7 +314,7 @@ export function createRuntime(
         enableEventStore,
         eventStore,
 
-        // Override with any specific queue config provided
+        // Override with any specific queue config provided (incl. maxProcessedEvents if needed)
         ...queueConfig,
     });
 
@@ -356,7 +355,7 @@ export function createRuntime(
     // Cleanup de ACKs expirados
     const ackSweepIntervalMs = Math.max(
         100,
-        Math.min(5000, Math.floor(ackTimeout / 2)),
+        Math.min(3000, Math.floor(ackTimeout / 10)), // ✅ REDUZIDO: 10x mais frequente
     );
     const ackCleanupInterval = setInterval(async () => {
         const now = Date.now();

@@ -706,10 +706,11 @@ Available LLM adapters: LLMAdapter with Gemini, OpenAI, etc.
 
         switch (type) {
             case 'plan-execute':
-                const pe = new PlanAndExecutePlanner(llmAdapter);
-                if (options?.replanPolicy)
-                    pe.updateReplanPolicy(options.replanPolicy);
-                return pe;
+                return new PlanAndExecutePlanner(
+                    llmAdapter,
+                    undefined, // promptConfig
+                    options?.replanPolicy, // ✅ CENTRALIZED: Pass replan policy directly
+                );
 
             default:
                 throw new Error(`

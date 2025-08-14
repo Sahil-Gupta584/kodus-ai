@@ -464,7 +464,7 @@ export class ExecutionKernel {
                     });
 
                     // 8. Emit kernel started event via runtime (AGORA SEGURO)
-                    this.runtime.emit(EVENT_TYPES.KERNEL_STARTED, {
+                    await this.runtime.emitAsync(EVENT_TYPES.KERNEL_STARTED, {
                         kernelId: this.state.id,
                         tenantId: this.state.tenantId,
                     });
@@ -500,7 +500,12 @@ export class ExecutionKernel {
                 }
             },
             {
-                timeout: this.config.idempotency?.operationTimeout || 60000,
+                // Aumentar timeout de init para evitar 'Operation timeout' em ambientes pesados
+                timeout:
+                    this.config.idempotency?.operationTimeout &&
+                    this.config.idempotency.operationTimeout > 60000
+                        ? this.config.idempotency.operationTimeout
+                        : 120000,
                 isolation: true,
             },
         );
@@ -1549,7 +1554,12 @@ export class ExecutionKernel {
                 await runtime.process(true);
             },
             {
-                timeout: this.config.idempotency?.operationTimeout,
+                // processEvents pode demandar mais que 60s dependendo de workload
+                timeout:
+                    this.config.idempotency?.operationTimeout &&
+                    this.config.idempotency.operationTimeout > 60000
+                        ? this.config.idempotency.operationTimeout
+                        : 120000,
                 isolation: true,
             },
         );
