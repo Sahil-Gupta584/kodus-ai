@@ -464,7 +464,7 @@ export class ExecutionKernel {
                     });
 
                     // 8. Emit kernel started event via runtime (AGORA SEGURO)
-                    this.runtime.emit(EVENT_TYPES.KERNEL_STARTED, {
+                    await this.runtime.emitAsync(EVENT_TYPES.KERNEL_STARTED, {
                         kernelId: this.state.id,
                         tenantId: this.state.tenantId,
                     });
@@ -500,7 +500,12 @@ export class ExecutionKernel {
                 }
             },
             {
-                timeout: this.config.idempotency?.operationTimeout || 60000,
+                // Aumentar timeout de init para evitar 'Operation timeout' em ambientes pesados
+                timeout:
+                    this.config.idempotency?.operationTimeout &&
+                    this.config.idempotency.operationTimeout > 60000
+                        ? this.config.idempotency.operationTimeout
+                        : 120000,
                 isolation: true,
             },
         );
@@ -721,10 +726,16 @@ export class ExecutionKernel {
     /**
      * Get context value with caching
      */
-    getContext<T = unknown>(namespace: string, key: string): T | undefined {
+    getContext<T = unknown>(
+        namespace: string,
+        key: string,
+        threadId?: string,
+    ): T | undefined {
         const tenantId = this.state.tenantId;
-        const tenantContext = this.getTenantContext(tenantId);
-        const cacheKey = `${tenantId}:${namespace}:${key}`;
+        const tenantContext = this.getTenantContext(tenantId, threadId);
+        const cacheKey = threadId
+            ? `${tenantId}:${threadId}:${namespace}:${key}`
+            : `${tenantId}:${namespace}:${key}`;
 
         // Performance: Check cache first
         if (
@@ -752,10 +763,17 @@ export class ExecutionKernel {
     /**
      * Set context value with batching
      */
-    setContext(namespace: string, key: string, value: unknown): void {
+    setContext(
+        namespace: string,
+        key: string,
+        value: unknown,
+        threadId?: string,
+    ): void {
         const tenantId = this.state.tenantId;
-        const tenantContext = this.getTenantContext(tenantId);
-        const cacheKey = `${tenantId}:${namespace}:${key}`;
+        const tenantContext = this.getTenantContext(tenantId, threadId);
+        const cacheKey = threadId
+            ? `${tenantId}:${threadId}:${namespace}:${key}`
+            : `${tenantId}:${namespace}:${key}`;
 
         // Create namespace in tenant context
         if (!tenantContext[namespace]) {
@@ -789,6 +807,7 @@ export class ExecutionKernel {
 
         this.logger.debug('Context set with tenant isolation', {
             tenantId,
+            threadId,
             namespace,
             key,
             hasValue: value !== undefined,
@@ -802,10 +821,11 @@ export class ExecutionKernel {
         namespace: string,
         key: string,
         delta: number = 1,
+        threadId?: string,
     ): number {
         const currentValue =
-            (this.getContext<number>(namespace, key) || 0) + delta;
-        this.setContext(namespace, key, currentValue);
+            (this.getContext<number>(namespace, key, threadId) || 0) + delta;
+        this.setContext(namespace, key, currentValue, threadId);
         return currentValue;
     }
 
@@ -1549,7 +1569,12 @@ export class ExecutionKernel {
                 await runtime.process(true);
             },
             {
-                timeout: this.config.idempotency?.operationTimeout,
+                // processEvents pode demandar mais que 60s dependendo de workload
+                timeout:
+                    this.config.idempotency?.operationTimeout &&
+                    this.config.idempotency.operationTimeout > 60000
+                        ? this.config.idempotency.operationTimeout
+                        : 120000,
                 isolation: true,
             },
         );
@@ -2173,18 +2198,30 @@ export class ExecutionKernel {
     /**
      * Get isolated context for specific tenant
      */
-    private getTenantContext(tenantId: string): Record<string, unknown> {
+    private getTenantContext(
+        tenantId: string,
+        threadId?: string,
+    ): Record<string, unknown> {
         if (!this.config.isolation?.enableTenantIsolation) {
             return this.state.contextData;
         }
 
-        // Create tenant-specific context key
-        const tenantKey = `tenant:${tenantId}`;
-        if (!this.state.contextData[tenantKey]) {
-            this.state.contextData[tenantKey] = {};
+        // ✅ MELHORADO: Isolamento por tenant + threadId (que já é único)
+        let contextKey: string;
+
+        if (threadId) {
+            // Isolamento por thread específico (cada conversa = thread único)
+            contextKey = `tenant:${tenantId}:thread:${threadId}`;
+        } else {
+            // Fallback para isolamento apenas por tenant
+            contextKey = `tenant:${tenantId}`;
         }
 
-        return this.state.contextData[tenantKey] as Record<string, unknown>;
+        if (!this.state.contextData[contextKey]) {
+            this.state.contextData[contextKey] = {};
+        }
+
+        return this.state.contextData[contextKey] as Record<string, unknown>;
     }
 }
 

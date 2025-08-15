@@ -101,7 +101,8 @@ export type ActionResult =
     | ToolResult
     | FinalAnswerResult
     | ErrorResult
-    | ToolResultsArray;
+    | ToolResultsArray
+    | NeedsReplanResult;
 
 // Tool results array for multiple tool execution
 export interface ToolResultsArray {
@@ -129,6 +130,16 @@ export interface FinalAnswerResult {
 export interface ErrorResult {
     type: 'error';
     error: string;
+    metadata?: ActionResultMetadata;
+    status?: string;
+    replanContext?: import('../../core/types/planning-shared.js').PlanExecutionResult['replanContext'];
+    feedback?: string;
+}
+
+export interface NeedsReplanResult {
+    type: 'needs_replan';
+    replanContext?: import('../../core/types/planning-shared.js').PlanExecutionResult['replanContext'];
+    feedback: string;
     metadata?: ActionResultMetadata;
 }
 
@@ -260,17 +271,8 @@ export interface PlannerExecutionContext {
     // ✅ NEW: ContextBuilder integration - AgentContext with clean APIs
     agentContext?: import('../../core/types/agent-types.js').AgentContext;
 
-    // 🚀 NEW: Rich context from previous plan execution for intelligent replanning
-    previousExecution?: {
-        plan: import('../../core/types/planning-shared.js').ExecutionPlan;
-        result: import('../../core/types/planning-shared.js').PlanExecutionResult;
-        preservedSteps: import('../../core/types/planning-shared.js').StepExecutionResult[];
-        failureAnalysis: {
-            primaryCause: string;
-            failurePatterns: string[];
-            affectedSteps: string[];
-        };
-    };
+    // ✅ CORREÇÃO: Replan context for better planning
+    replanContext?: import('../../core/types/planning-shared.js').PlanExecutionResult['replanContext'];
 
     // Methods
     update(
@@ -618,6 +620,12 @@ export function isErrorResult(result: ActionResult): result is ErrorResult {
     return result.type === 'error';
 }
 
+export function isNeedsReplanResult(
+    result: ActionResult,
+): result is NeedsReplanResult {
+    return result.type === 'needs_replan';
+}
+
 export function isToolResultsArray(
     result: ActionResult,
 ): result is ToolResultsArray {
@@ -706,10 +714,11 @@ Available LLM adapters: LLMAdapter with Gemini, OpenAI, etc.
 
         switch (type) {
             case 'plan-execute':
-                const pe = new PlanAndExecutePlanner(llmAdapter);
-                if (options?.replanPolicy)
-                    pe.updateReplanPolicy(options.replanPolicy);
-                return pe;
+                return new PlanAndExecutePlanner(
+                    llmAdapter,
+                    undefined, // promptConfig
+                    options?.replanPolicy, // ✅ CENTRALIZED: Pass replan policy directly
+                );
 
             default:
                 throw new Error(`

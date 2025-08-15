@@ -343,8 +343,17 @@ export interface AgentContext {
 
     // State: Namespace-based working memory
     state: {
-        get: <T>(namespace: string, key: string) => Promise<T | undefined>;
-        set: (namespace: string, key: string, value: unknown) => Promise<void>;
+        get: <T>(
+            namespace: string,
+            key: string,
+            threadId?: string,
+        ) => Promise<T | undefined>;
+        set: (
+            namespace: string,
+            key: string,
+            value: unknown,
+            threadId?: string,
+        ) => Promise<void>;
         clear: (namespace: string) => Promise<void>;
         getNamespace: (
             namespace: string,

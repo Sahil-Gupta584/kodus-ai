@@ -167,19 +167,45 @@ export interface PlanExecutionResult {
  * Replan policy configuration
  */
 export interface ReplanPolicyConfig {
-    windowSize: number;
-    minFailures: number;
-    planTtlMs?: number;
-    maxReplansPerPlan?: number;
-    allowReplanUntilIteration: number;
-    toolUnavailable: 'replan' | 'ask_user' | 'fail';
-    missingInput: 'ask_user' | 'replan';
-    budget?: {
-        maxMs?: number;
-        maxToolCalls?: number;
-        maxSteps?: number;
-        maxMemoryMb?: number;
+    maxReplans?: number; // ✅ SIMPLE: Unified replan limit
+    toolUnavailable?: 'replan' | 'ask_user' | 'fail';
+}
+
+/**
+ * Replan context data structure
+ */
+export interface ReplanContextData {
+    preservedSteps: StepExecutionResult[];
+    failurePatterns: string[];
+    primaryCause: string;
+    suggestedStrategy: string;
+    contextForReplan: Record<string, unknown>;
+}
+
+/**
+ * Structured replan context for planning optimization
+ */
+export interface ReplanContext {
+    isReplan: boolean;
+    previousPlan: {
+        id: string;
+        goal: string;
+        strategy: string;
+        totalSteps: number;
     };
+    executionSummary: {
+        type: string;
+        executionTime: number;
+        successfulSteps: number;
+        failedSteps: number;
+        feedback: string;
+    };
+    preservedSteps: unknown[];
+    failureAnalysis: {
+        primaryCause: string;
+        failurePatterns: string[];
+    };
+    suggestions?: unknown;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -220,8 +246,13 @@ export function getReadySteps(plan: ExecutionPlan): PlanStep[] {
         if (step.status !== 'pending') return false;
         if (!step.dependencies || step.dependencies.length === 0) return true;
 
+        // ✅ CORREÇÃO: Verificar se alguma dependência falhou
         return step.dependencies.every((depId) => {
             const depStep = plan.steps.find((s) => s.id === depId);
+            // Se a dependência falhou, este step não pode ser executado
+            if (depStep?.status === 'failed') {
+                return false;
+            }
             return depStep?.status === 'completed';
         });
     });

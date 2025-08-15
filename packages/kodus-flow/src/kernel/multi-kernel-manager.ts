@@ -205,6 +205,14 @@ export class MultiKernelManager {
                     ? {
                           enableOperationIdempotency: true,
                           enableEventIdempotency: true,
+                          // Aumentar timeout de operações longas (ex.: processEvents)
+                          operationTimeout: spec.runtimeConfig?.ackTimeout
+                              ? Math.max(
+                                    (spec.runtimeConfig.ackTimeout as number) *
+                                        2,
+                                    60000,
+                                )
+                              : 120000,
                       }
                     : undefined,
             };
@@ -861,7 +869,6 @@ export function createAgentKernelSpec(
         },
         runtimeConfig: {
             enableAcks: true,
-            maxRetries: 3,
         },
         performance: {
             enableBatching: true,

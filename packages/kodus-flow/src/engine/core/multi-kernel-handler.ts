@@ -906,7 +906,7 @@ export class MultiKernelHandler {
 
         const correlationId =
             options.correlationId || this.generateCorrelationId();
-        const timeout = options.timeout || 60000; // ✅ UNIFIED: 60s timeout
+        const timeout = options.timeout || 120000; // ✅ AUMENTADO: 120s timeout para APIs externas
 
         const targetKernel = this.determineTargetKernel(requestEventType);
         const kernel = this.multiKernelManager!.getKernel(
