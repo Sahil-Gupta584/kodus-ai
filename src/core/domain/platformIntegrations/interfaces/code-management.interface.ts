@@ -201,4 +201,13 @@ export interface ICodeManagementService
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId: string;
     }): Promise<any>;
+
+    updateResponseToComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        parentId: string;
+        commentId: string;
+        body: string;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<any | null>;
 }
