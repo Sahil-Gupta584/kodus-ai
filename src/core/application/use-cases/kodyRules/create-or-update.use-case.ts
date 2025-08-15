@@ -30,13 +30,16 @@ export class CreateOrUpdateKodyRulesUseCase {
                 organizationId,
             };
 
+            const req: any = this.request as any;
+            const reqUser = req?.user;
+            const userInfo = reqUser?.uuid && reqUser?.email
+                ? { userId: reqUser.uuid, userEmail: reqUser.email }
+                : { userId: 'kody-system', userEmail: 'kody@kodus.io' };
+
             const result = await this.kodyRulesService.createOrUpdate(
                 organizationAndTeamData,
                 kodyRule,
-                {
-                    userId: this.request.user.uuid,
-                    userEmail: this.request.user.email,
-                },
+                userInfo,
             );
 
             if (!result) {

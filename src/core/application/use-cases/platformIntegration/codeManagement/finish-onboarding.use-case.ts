@@ -13,6 +13,7 @@ import {
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
+import { SyncSelectedRepositoriesKodyRulesUseCase } from '../../kodyRules/sync-selected-repositories.use-case';
 
 @Injectable()
 export class FinishOnboardingUseCase {
@@ -32,6 +33,8 @@ export class FinishOnboardingUseCase {
         private readonly request: Request & {
             user: { organization: { uuid: string } };
         },
+
+        private readonly syncSelectedReposKodyRulesUseCase: SyncSelectedRepositoriesKodyRulesUseCase,
     ) {}
 
     async execute(params: FinishOnboardingDTO) {
@@ -92,6 +95,9 @@ export class FinishOnboardingUseCase {
                     status: KodyRulesStatus.ACTIVE,
                 });
             }
+
+            // Trigger immediate Kody Rules sync from repo files for all selected repositories
+            await this.syncSelectedReposKodyRulesUseCase.execute({ teamId });
 
             if (reviewPR) {
                 if (!pullNumber || !repositoryName || !repositoryId) {

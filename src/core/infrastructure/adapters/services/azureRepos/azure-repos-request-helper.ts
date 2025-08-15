@@ -733,15 +733,32 @@ export class AzureReposRequestHelper {
         token: string;
         projectId: string;
         repositoryId: string;
-        commitId: string;
         filePath: string;
+        commitId?: string;
+        branch?: string;
     }): Promise<{ content: string } | null> {
         const instance = await this.azureRequest(params);
 
+        // Azure DevOps expects plain branch names for versionDescriptor.version.
+        // Normalize typical refs (e.g., "refs/heads/main" -> "main").
+        const normalizedBranch = params.branch?.replace(/^refs\/heads\//, '');
+
+        const versionQuery = normalizedBranch
+            ? `versionDescriptor.version=${encodeURIComponent(normalizedBranch)}&versionDescriptor.versionType=branch`
+            : params.commitId
+              ? `versionDescriptor.version=${encodeURIComponent(params.commitId)}&versionDescriptor.versionType=commit`
+              : '';
+
+        const queryParts = [
+            `path=${encodeURIComponent(params.filePath)}`,
+            versionQuery,
+            'includeContent=true',
+            'resolveLfs=true',
+            'api-version=7.1',
+        ].filter(Boolean);
+
         const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/items?path=${encodeURIComponent(
-                params.filePath,
-            )}&versionDescriptor.version=${params.commitId}&versionDescriptor.versionType=commit&includeContent=true&resolveLfs=true&api-version=7.1`,
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/items?${queryParts.join('&')}`,
         );
 
         return {
@@ -995,16 +1012,82 @@ export class AzureReposRequestHelper {
 
         const queryParams = new URLSearchParams();
         queryParams.append('api-version', '7.1');
-        queryParams.append('recursionLevel', params.recursive ? 'full' : 'oneLevel');
+        queryParams.append(
+            'recursionLevel',
+            params.recursive ? 'full' : 'oneLevel',
+        );
 
         if (params.scopePath) {
             queryParams.append('scopePath', params.scopePath);
         }
 
         const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/items?${queryParams.toString()}`
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/items?${queryParams.toString()}`,
         );
 
         return data?.value || [];
+    }
+
+    async updateThreadComment(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        prId: number;
+        threadId: number;
+        commentId: number;
+        body: string;
+    }): Promise<AzureRepoPRThread> {
+        const {
+            orgName,
+            token,
+            projectId,
+            repositoryId,
+            prId,
+            threadId,
+            commentId,
+            body,
+        } = params;
+
+        const instance = await this.azureRequest(params);
+
+        const apiPath = `/${projectId}/_apis/git/repositories/${repositoryId}/pullRequests/${prId}/threads/${threadId}/comments/${commentId}`;
+
+        const queryParams = {
+            'api-version': '7.1',
+        };
+
+        const payload = {
+            content: body,
+            commentType: AzureRepoCommentType.TEXT,
+        };
+
+        const { data } = await instance.patch(apiPath, payload, {
+            params: queryParams,
+        });
+
+        return data;
+    }
+
+    /**
+     * Lists repository items recursively at a given branch (default branch or specific ref)
+     */
+    async listRepositoryItemsRecursive(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        branch: string;
+    }): Promise<Array<{ path: string; objectId: string; size?: number }>> {
+        const instance = await this.azureRequest(params);
+        const { data } = await instance.get(
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/items?recursionLevel=Full&version=${encodeURIComponent(
+                params.branch,
+            )}&versionType=branch&includeLinks=false&api-version=7.1`,
+        );
+        const values = (data?.value || []) as any[];
+        return values
+            .filter((v) => v?.gitObjectType === 'blob')
+            .map((v) => ({ path: String(v?.path || '').replace(/^\//, ''), objectId: v?.objectId, size: v?.size }));
     }
 }

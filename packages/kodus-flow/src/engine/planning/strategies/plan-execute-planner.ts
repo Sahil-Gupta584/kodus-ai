@@ -1767,83 +1767,83 @@ export class PlanAndExecutePlanner implements Planner {
     /**
      * Detect if multiple steps can be executed in parallel
      */
-    private detectParallelExecution(
-        currentStep: PlanStep,
-        context: PlannerExecutionContext,
-    ): {
-        canExecuteInParallel: boolean;
-        steps: PlanStep[];
-        reason?: string;
-    } {
-        const currentPlan = this.getCurrentPlan(context);
-        if (!currentPlan) {
-            return { canExecuteInParallel: false, steps: [currentStep] };
-        }
+    // private detectParallelExecution(
+    //     currentStep: PlanStep,
+    //     context: PlannerExecutionContext,
+    // ): {
+    //     canExecuteInParallel: boolean;
+    //     steps: PlanStep[];
+    //     reason?: string;
+    // } {
+    //     const currentPlan = this.getCurrentPlan(context);
+    //     if (!currentPlan) {
+    //         return { canExecuteInParallel: false, steps: [currentStep] };
+    //     }
 
-        // Get remaining pending steps
-        const remainingSteps = currentPlan.steps
-            .slice(currentPlan.currentStepIndex)
-            .filter((step) => step.status === 'pending');
+    //     // Get remaining pending steps
+    //     const remainingSteps = currentPlan.steps
+    //         .slice(currentPlan.currentStepIndex)
+    //         .filter((step) => step.status === 'pending');
 
-        if (remainingSteps.length <= 1) {
-            return { canExecuteInParallel: false, steps: [currentStep] };
-        }
+    //     if (remainingSteps.length <= 1) {
+    //         return { canExecuteInParallel: false, steps: [currentStep] };
+    //     }
 
-        // Check if next few steps are independent and can run in parallel
-        const candidateSteps = remainingSteps.slice(0, 4); // Consider up to 4 steps
-        const independentSteps: PlanStep[] = [];
+    //     // Check if next few steps are independent and can run in parallel
+    //     const candidateSteps = remainingSteps.slice(0, 4); // Consider up to 4 steps
+    //     const independentSteps: PlanStep[] = [];
 
-        for (const step of candidateSteps) {
-            // Check if step has dependencies that haven't been completed yet
-            const hasPendingDependencies = step.dependencies?.some((depId) => {
-                const depStep = currentPlan.steps.find((s) => s.id === depId);
-                return depStep && depStep.status !== 'completed';
-            });
+    //     for (const step of candidateSteps) {
+    //         // Check if step has dependencies that haven't been completed yet
+    //         const hasPendingDependencies = step.dependencies?.some((depId) => {
+    //             const depStep = currentPlan.steps.find((s) => s.id === depId);
+    //             return depStep && depStep.status !== 'completed';
+    //         });
 
-            if (!hasPendingDependencies && step.tool && step.tool !== 'none') {
-                // Check if this step is truly independent (no data dependencies)
-                const hasDataDependency = this.checkDataDependency(
-                    step,
-                    independentSteps,
-                );
-                if (!hasDataDependency) {
-                    independentSteps.push(step);
-                }
-            }
-        }
+    //         if (!hasPendingDependencies && step.tool && step.tool !== 'none') {
+    //             // Check if this step is truly independent (no data dependencies)
+    //             const hasDataDependency = this.checkDataDependency(
+    //                 step,
+    //                 independentSteps,
+    //             );
+    //             if (!hasDataDependency) {
+    //                 independentSteps.push(step);
+    //             }
+    //         }
+    //     }
 
-        return {
-            canExecuteInParallel: independentSteps.length > 1,
-            steps:
-                independentSteps.length > 1 ? independentSteps : [currentStep],
-            reason:
-                independentSteps.length > 1
-                    ? `Found ${independentSteps.length} independent steps that can run in parallel`
-                    : 'No parallel execution opportunity detected',
-        };
-    }
+    //     return {
+    //         canExecuteInParallel: independentSteps.length > 1,
+    //         steps:
+    //             independentSteps.length > 1 ? independentSteps : [currentStep],
+    //         reason:
+    //             independentSteps.length > 1
+    //                 ? `Found ${independentSteps.length} independent steps that can run in parallel`
+    //                 : 'No parallel execution opportunity detected',
+    //     };
+    // }
 
     /**
      * Check if a step has data dependencies on other steps
      */
-    private checkDataDependency(
-        step: PlanStep,
-        otherSteps: PlanStep[],
-    ): boolean {
-        // ✅ IMPROVED: Check for actual template references instead of simple string matching
-        if (!step.arguments || !otherSteps.length) return false;
+    // private checkDataDependency(
+    //     step: PlanStep,
+    //     otherSteps: PlanStep[],
+    // ): boolean {
+    //     // ✅ IMPROVED: Check for actual template references instead of simple string matching
+    //     if (!step.arguments || !otherSteps.length) return false;
 
-        const argsStr = JSON.stringify(step.arguments);
-        const stepRefPattern = /\{\{([^.}]+)\.result/;
-        const matches = argsStr.match(stepRefPattern);
+    //     const argsStr = JSON.stringify(step.arguments);
+    //     const stepRefPattern = /\{\{([^.}]+)\.result/;
+    //     const matches = argsStr.match(stepRefPattern);
 
-        if (!matches) return false;
+    //     if (!matches) return false;
 
-        const referencedStepId = matches[1];
-        return otherSteps.some(
-            (otherStep) => otherStep.id === referencedStepId,
-        );
-    }
+    //     const referencedStepId = matches[1];
+    //     return otherSteps.some(
+    //         (otherStep) => otherStep.id === referencedStepId,
+    //     );
+    // }
 
     /**
      * ✅ NEW: Validate step dependencies for circular references

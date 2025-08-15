@@ -70,12 +70,13 @@ describe('Memory Cleanup Tests', () => {
             expect(sessionContext).toBeUndefined();
         });
 
-        it('should enforce max sessions limit', () => {
+        it('should enforce max sessions limit', async () => {
             // Criar mais sessões que o limite
-            const sessions: ReturnType<typeof sessionService.createSession>[] =
-                [];
+            const sessions: Awaited<
+                ReturnType<typeof sessionService.createSession>
+            >[] = [];
             for (let i = 0; i < 15; i++) {
-                const session = sessionService.createSession(
+                const session = await sessionService.createSession(
                     'test-tenant',
                     `test-thread-${i}`,
                     { agentName: 'test-agent' },
@@ -160,9 +161,8 @@ describe('Memory Cleanup Tests', () => {
             await new Promise((resolve) => setTimeout(resolve, 1200));
 
             // Verificar se state foi limpo
-            const expiredSessionContext = sessionService.getSessionContext(
-                session.id,
-            );
+            const expiredSessionContext =
+                await sessionService.getSessionContext(session.id);
             expect(expiredSessionContext).toBeUndefined();
         });
 

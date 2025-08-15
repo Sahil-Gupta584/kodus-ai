@@ -15,13 +15,22 @@ export const isFileMatchingGlob = (
         return false;
     }
 
+    // Normalize filename to increase cross-platform and provider compatibility
+    // - Convert backslashes to forward slashes
+    // - Remove leading './' segments
+    // - Remove leading '/' so patterns like '.cursor/**' match '/.cursor/**'
+    const normalizedFilename = (filename || '')
+        .replace(/\\/g, '/')
+        .replace(/^\.\/+/, '')
+        .replace(/^\/+/, '');
+
     // Compile the patterns once for better performance
     const matchers = patterns.map((pattern) =>
         picomatch(pattern, { dot: true }),
     );
 
     // Check if any matcher matches the filename
-    return matchers.some((matcher) => matcher(filename));
+    return matchers.some((matcher) => matcher(normalizedFilename));
 };
 
 /**
