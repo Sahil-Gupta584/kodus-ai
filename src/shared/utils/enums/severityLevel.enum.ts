@@ -7,9 +7,7 @@ export enum SeverityLevel {
     LOW = 'low',
 }
 
-export const severityLevelSchema = z.enum([
-    SeverityLevel.CRITICAL,
-    SeverityLevel.HIGH,
-    SeverityLevel.MEDIUM,
-    SeverityLevel.LOW,
+export const severityLevelSchema = z.enum([...Object.values(SeverityLevel)] as [
+    SeverityLevel,
+    ...SeverityLevel[],
 ]);
