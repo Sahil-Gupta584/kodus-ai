@@ -128,11 +128,11 @@ export class CopyCodeReviewParameterUseCase {
         let updatedRepositories;
         let updatedTargetRepository;
 
-        // Verificar se o repositório já tem configuração
+        // Check if the repository is already configured
         const repositoryAlreadyConfigured = targetRepository.isSelected === true;
 
         if (!repositoryAlreadyConfigured) {
-            // Se o repositório não está configurado, copiar configuração do source para o repositório
+            // If the repository is not configured, copy the configuration from the source to the repository
             const { id, name, isSelected, directories, ...repositoryConfigFromSource } = sourceRepository;
 
             updatedTargetRepository = {
@@ -142,11 +142,11 @@ export class CopyCodeReviewParameterUseCase {
                 directories: targetRepository.directories || [],
             };
         } else {
-            // Se o repositório já está configurado, manter configuração atual
+            // If the repository is already configured, keep the current configuration
             updatedTargetRepository = { ...targetRepository };
         }
 
-        // Adicionar/atualizar configuração do diretório
+        // Add/update directory configuration
         const existingDirectories = updatedTargetRepository.directories || [];
         const existingDirectoryIndex = existingDirectories.findIndex(
             (dir) => dir.path === targetDirectoryPath,
@@ -154,7 +154,7 @@ export class CopyCodeReviewParameterUseCase {
 
         let updatedDirectories;
         if (existingDirectoryIndex >= 0) {
-            // Atualizar diretório existente
+            // Update existing directory
             updatedDirectories = existingDirectories.map((dir, index) =>
                 index === existingDirectoryIndex
                     ? this.createDirectoryConfig(
@@ -165,7 +165,7 @@ export class CopyCodeReviewParameterUseCase {
                     : dir,
             );
         } else {
-            // Adicionar novo diretório
+            // Add new directory
             updatedDirectories = [
                 ...existingDirectories,
                 this.createDirectoryConfig(
@@ -290,7 +290,7 @@ export class CopyCodeReviewParameterUseCase {
         targetPath: string,
         existingId?: string,
     ): any {
-        // Remove propriedades específicas de repositório se existirem
+        // Remove repository specific properties if they exist
         const { id, name, isSelected, directories, ...directoryConfig } =
             sourceConfig;
 
@@ -314,7 +314,7 @@ export class CopyCodeReviewParameterUseCase {
         organizationAndTeamData: OrganizationAndTeamData,
     ) {
         try {
-            /*this.codeReviewSettingsLogService.registerDirectoriesLog({
+            this.codeReviewSettingsLogService.registerRepositoriesLog({
                 organizationAndTeamData: {
                     ...organizationAndTeamData,
                     organizationId: this.request.user.organization.uuid,
@@ -331,9 +331,11 @@ export class CopyCodeReviewParameterUseCase {
                               id: sourceRepository.id,
                               name: sourceRepository.name,
                           },
-                targetPath: body.targetPath,
-                targetRepositoryId: body.targetRepositoryId,
-            });*/
+                directory: {
+                    id: "",
+                    path: body.targetDirectoryPath,
+                },
+            });
         } catch (error) {
             this.logger.error({
                 message: 'Error saving code review settings log for directory',
