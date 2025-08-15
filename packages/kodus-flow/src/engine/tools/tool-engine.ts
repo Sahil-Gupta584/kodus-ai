@@ -89,7 +89,7 @@ export class ToolEngine {
         input: TInput,
     ): Promise<TOutput> {
         const callId = IdGenerator.callId();
-        const timeout = this.config.timeout || 60000;
+        const timeout = this.config.timeout || 120000; // ✅ AUMENTADO: 120s para APIs externas
         const startTime = Date.now();
         const obs = getObservability();
 
@@ -581,24 +581,44 @@ export class ToolEngine {
                 };
 
                 try {
+                    this.logger.info('🔧 [TOOL] Starting tool execution', {
+                        toolName,
+                        correlationId,
+                        inputSize: JSON.stringify(input).length,
+                        timestamp: Date.now(),
+                    });
+
+                    const startTime = Date.now();
                     const result = await this.executeCall(toolName, input);
+                    const executionTime = Date.now() - startTime;
+
+                    this.logger.info('🔧 [TOOL] Tool execution completed', {
+                        toolName,
+                        correlationId,
+                        executionTimeMs: executionTime,
+                        resultSize: JSON.stringify(result).length,
+                        timestamp: Date.now(),
+                    });
+
+                    // ✅ UNIFICADO: Sempre verificar se há erro no resultado
+                    const hasError = this.checkToolResultError(result);
+                    const responseData = {
+                        ...(typeof result === 'object' && result !== null
+                            ? result
+                            : { result }),
+                        success: !hasError,
+                        toolName,
+                        metadata: {
+                            correlationId,
+                            success: !hasError,
+                            toolName,
+                        },
+                    };
 
                     if (this.kernelHandler?.emitAsync) {
                         await this.kernelHandler.emitAsync(
                             'tool.execute.response',
-                            {
-                                ...(typeof result === 'object' &&
-                                result !== null
-                                    ? result
-                                    : { result }),
-                                success: true,
-                                toolName,
-                                metadata: {
-                                    correlationId,
-                                    success: true,
-                                    toolName,
-                                },
-                            },
+                            responseData,
                             {
                                 correlationId,
                                 deliveryGuarantee: 'at-least-once',
@@ -607,19 +627,7 @@ export class ToolEngine {
                     } else {
                         await this.kernelHandler!.emit(
                             'tool.execute.response',
-                            {
-                                ...(typeof result === 'object' &&
-                                result !== null
-                                    ? result
-                                    : { result }),
-                                success: true,
-                                toolName,
-                                metadata: {
-                                    correlationId,
-                                    success: true,
-                                    toolName,
-                                },
-                            },
+                            responseData,
                         );
                     }
 
@@ -676,6 +684,42 @@ export class ToolEngine {
                 }
             },
         );
+    }
+
+    /**
+     * Check if tool result contains an error
+     */
+    private checkToolResultError(result: unknown): boolean {
+        if (!result || typeof result !== 'object') {
+            return false;
+        }
+
+        const resultObj = result as Record<string, unknown>;
+
+        // Check for direct error indicators
+        if (resultObj.error || resultObj.isError === true) {
+            return true;
+        }
+
+        // Check for MCP-style result structure
+        if (resultObj.result && typeof resultObj.result === 'object') {
+            const innerResult = resultObj.result as Record<string, unknown>;
+            if (innerResult.isError === true || innerResult.error) {
+                return true;
+            }
+
+            // Check for successful: false in inner result
+            if (innerResult.successful === false) {
+                return true;
+            }
+        }
+
+        // Check for success: false at top level
+        if (resultObj.success === false) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

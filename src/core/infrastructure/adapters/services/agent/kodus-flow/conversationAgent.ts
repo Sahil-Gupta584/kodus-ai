@@ -229,11 +229,8 @@ export class ConversationAgentProvider {
             plannerOptions: {
                 planner: 'plan-execute',
                 replanPolicy: {
-                    missingInput: 'replan', // não pergunta; tenta replanejar
-                    toolUnavailable: 'replan', // idem para ferramenta ausente
-                    maxReplansPerPlan: 3, // evita loops
-                    planTtlMs: 60_000, // TTL do plano
-                    budget: { maxMs: 60_000, maxToolCalls: 10 },
+                    toolUnavailable: 'replan',
+                    maxReplans: 3,
                 },
             },
         });
@@ -252,7 +249,7 @@ export class ConversationAgentProvider {
             context || {};
 
         if (!organizationAndTeamData) {
-            throw new Error('Organization and team data is required.');
+            throw new Error('Organization and team data is required ok.');
         }
 
         if (!thread) {

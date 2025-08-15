@@ -276,6 +276,98 @@ describe('Kernel Layer - Basic Functionality', () => {
         // Get non-existent context
         expect(kernel.getContext('test', 'non-existent')).toBeUndefined();
     });
+
+    it('should isolate context by threadId', async () => {
+        createBaseContext({
+            tenantId: 'test-tenant',
+        });
+
+        const mockWorkflow = {
+            name: 'test-workflow',
+            on: () => {},
+            emit: () => {},
+            pause: async () => 'paused',
+            resume: async () => {},
+            cleanup: async () => {},
+            createContext: (): WorkflowContext =>
+                ({
+                    executionId: 'test-execution-id',
+                    tenantId: 'test-tenant',
+                    startTime: Date.now(),
+                    status: 'RUNNING' as const,
+                    workflowName: 'test-workflow',
+                    data: {},
+                    currentSteps: [],
+                    completedSteps: [],
+                    failedSteps: [],
+                    isPaused: false,
+                    signal: new AbortController().signal,
+                    stateManager: new ContextStateService({}),
+                    cleanup: async () => {},
+                    sendEvent: async () => {},
+                    emit: () => {},
+                    pause: async () => 'paused',
+                    resume: async () => {},
+                    stream: createEventStreamMock(),
+                    resourceManager: {
+                        addTimer: () => {},
+                        addInterval: () => {},
+                        addCleanupCallback: () => {},
+                        removeTimer: () => true,
+                        removeInterval: () => true,
+                        removeCleanupCallback: () => true,
+                    },
+                }) as unknown as WorkflowContext,
+        };
+
+        const kernel = createKernel({
+            tenantId: 'test-tenant',
+            workflow: mockWorkflow as unknown as Workflow,
+            isolation: { enableTenantIsolation: true },
+        });
+
+        await kernel.initialize();
+
+        const threadId1 = 'thread-1';
+        const threadId2 = 'thread-2';
+
+        // Set context for thread 1
+        kernel.setContext('test', 'counter', 10, threadId1);
+        kernel.setContext('test', 'message', 'Hello from thread 1', threadId1);
+
+        // Set context for thread 2
+        kernel.setContext('test', 'counter', 20, threadId2);
+        kernel.setContext('test', 'message', 'Hello from thread 2', threadId2);
+
+        // Verify isolation - thread 1 should only see its own data
+        expect(kernel.getContext('test', 'counter', threadId1)).toBe(10);
+        expect(kernel.getContext('test', 'message', threadId1)).toBe(
+            'Hello from thread 1',
+        );
+
+        // Verify isolation - thread 2 should only see its own data
+        expect(kernel.getContext('test', 'counter', threadId2)).toBe(20);
+        expect(kernel.getContext('test', 'message', threadId2)).toBe(
+            'Hello from thread 2',
+        );
+
+        // Verify that threads don't see each other's data
+        expect(kernel.getContext('test', 'counter', threadId1)).not.toBe(20);
+        expect(kernel.getContext('test', 'message', threadId1)).not.toBe(
+            'Hello from thread 2',
+        );
+
+        // Test increment with thread isolation
+        const newValue1 = kernel.incrementContext(
+            'test',
+            'counter',
+            5,
+            threadId1,
+        );
+        expect(newValue1).toBe(15);
+        expect(kernel.getContext('test', 'counter', threadId1)).toBe(15);
+        expect(kernel.getContext('test', 'counter', threadId2)).toBe(20); // Unchanged
+    });
 });
 
 export class TestWorkflow {

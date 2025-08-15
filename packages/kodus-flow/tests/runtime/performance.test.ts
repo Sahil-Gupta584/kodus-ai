@@ -67,7 +67,7 @@ describe('Runtime Layer - Performance', () => {
         );
     });
 
-    it('should handle concurrent event creation', () => {
+    it('should handle concurrent event creation', async () => {
         const concurrentCount = 10;
         const eventsPerConcurrent = 100;
         const startTime = performance.now();
@@ -87,7 +87,7 @@ describe('Runtime Layer - Performance', () => {
         );
 
         // Wait for all to complete
-        Promise.all(concurrentPromises);
+        await Promise.all(concurrentPromises);
 
         const endTime = performance.now();
         const duration = endTime - startTime;

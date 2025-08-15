@@ -60,11 +60,6 @@ export const HIGH_PERFORMANCE_CONFIG = {
     enableCompression: true, // Compressão habilitada
     enableDeltaCompression: true, // Compressão delta
 
-    // === AUTO-SCALING ===
-    enableAutoScaling: true, // Auto-scaling habilitado
-    autoScalingInterval: 15000, // Ajuste a cada 15s
-    learningRate: 0.15, // Taxa de aprendizado mais agressiva
-
     // === RETRY OPTIMIZATION ===
     maxRetries: 2, // Menos retries para velocidade
     baseRetryDelay: 500, // Retry mais rápido
@@ -105,11 +100,6 @@ export const ULTRA_HIGH_PERFORMANCE_CONFIG = {
     maxCpuUsage: 0.85, // 85% da CPU
     enableCompression: true,
     enableDeltaCompression: true,
-
-    // === AUTO-SCALING ===
-    enableAutoScaling: true,
-    autoScalingInterval: 10000, // Ajuste a cada 10s
-    learningRate: 0.2, // Taxa muito agressiva
 
     // === RETRY OPTIMIZATION ===
     maxRetries: 1, // Apenas 1 retry
@@ -152,11 +142,6 @@ export const ENTERPRISE_CONFIG = {
     enableCompression: true,
     enableDeltaCompression: true,
 
-    // === AUTO-SCALING ===
-    enableAutoScaling: true,
-    autoScalingInterval: 20000, // Ajuste a cada 20s
-    learningRate: 0.1, // Taxa conservadora
-
     // === RETRY OPTIMIZATION ===
     maxRetries: 1, // 1 retry (padrão)
     baseRetryDelay: 1000, // Retry padrão
@@ -190,7 +175,6 @@ export const RUNTIME_PRESETS = {
         maxConcurrent: 10,
         queueSize: 1000,
         batchSize: 100,
-        enableAutoScaling: false,
         enablePersistence: false,
     },
 
@@ -201,7 +185,6 @@ export const RUNTIME_PRESETS = {
         maxConcurrent: 5,
         queueSize: 500,
         batchSize: 50,
-        enableAutoScaling: false,
         enablePersistence: false,
         operationTimeoutMs: 5000,
     },

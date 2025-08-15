@@ -30,11 +30,6 @@ export interface EventQueueConfig {
     chunkSize?: number;
     maxConcurrent?: number;
 
-    // Auto-ajuste (DISABLED by default now!)
-    enableAutoScaling?: boolean; // Habilitar auto-ajuste (default: false)
-    autoScalingInterval?: number; // Intervalo de ajuste em ms (default: 30000)
-    learningRate?: number; // Taxa de aprendizado (default: 0.1)
-
     // Event Size Awareness
     largeEventThreshold?: number;
     hugeEventThreshold?: number;
@@ -53,15 +48,6 @@ export interface EventQueueConfig {
     recoveryBatchSize?: number; // Default: 100
     criticalEventTypes?: string[]; // Events types to always persist
     criticalEventPrefixes?: string[]; // Event prefixes to always persist (default: ['agent.', 'workflow.'])
-
-    // === RETRY FEATURES (from EnhancedEventQueue) ===
-    enableRetry?: boolean; // Default: false
-    maxRetries?: number; // Default: 3
-    baseRetryDelay?: number; // Default: 1000ms
-    maxRetryDelay?: number; // Default: 30000ms (30s)
-    retryBackoffMultiplier?: number; // Default: 2 (exponential)
-    enableJitter?: boolean; // Default: true
-    jitterRatio?: number; // Default: 0.1 (10%)
 
     // === EVENT STORE INTEGRATION ===
     enableEventStore?: boolean; // Default: false
@@ -186,12 +172,6 @@ export class EventQueue {
     private maxConcurrent: number; // Agora adaptativo
     private semaphore: Semaphore;
 
-    // Auto-ajuste
-    private readonly enableAutoScaling: boolean;
-    private readonly autoScalingInterval: number;
-    private autoScalingTimer?: NodeJS.Timeout;
-    private performanceHistory: SystemMetrics[] = [];
-
     // Event Size Awareness
     private readonly largeEventThreshold: number;
     private readonly hugeEventThreshold: number;
@@ -248,8 +228,6 @@ export class EventQueue {
         this.semaphore = new Semaphore(this.maxConcurrent);
 
         // Auto-ajuste (ENABLED by default for better performance!)
-        this.enableAutoScaling = config.enableAutoScaling ?? false;
-        this.autoScalingInterval = config.autoScalingInterval ?? 10000; // Reduzido de 30s para 10s
 
         // Event Size Awareness
         this.largeEventThreshold = config.largeEventThreshold ?? 1024 * 1024;
@@ -278,7 +256,7 @@ export class EventQueue {
         this.useGlobalConcurrency = config.enableGlobalConcurrency ?? false;
 
         // Processed events capacity
-        this.maxProcessedEvents = config.maxProcessedEvents ?? 10000;
+        this.maxProcessedEvents = config.maxProcessedEvents ?? 1000; // ✅ REDUZIDO: 1k em vez de 10k para evitar memory leaks
 
         // Future features (not implemented yet)
         // this.maxPersistedEvents = config.maxPersistedEvents ?? 1000;
@@ -293,25 +271,6 @@ export class EventQueue {
         // this.retryBackoffMultiplier = config.retryBackoffMultiplier ?? 2;
         // this.enableJitter = config.enableJitter ?? true;
         // this.jitterRatio = config.jitterRatio ?? 0.1;
-
-        // Iniciar auto-ajuste se habilitado
-        if (this.enableAutoScaling) {
-            this.startAutoScaling();
-        }
-
-        // Adicionar limpeza automática no caso de garbage collection
-        // Isso ajuda a prevenir vazamentos se destroy() não for chamado
-        if (typeof FinalizationRegistry !== 'undefined') {
-            const registry = new FinalizationRegistry(
-                (timer: NodeJS.Timeout) => {
-                    clearInterval(timer);
-                },
-            );
-
-            if (this.autoScalingTimer) {
-                registry.register(this, this.autoScalingTimer);
-            }
-        }
     }
 
     /**
@@ -326,8 +285,8 @@ export class EventQueue {
             memoryUsage,
             cpuUsage,
             queueDepth: this.queue.length,
-            processingRate: this.calculateProcessingRate(),
-            averageProcessingTime: this.calculateAverageProcessingTime(),
+            processingRate: 0, // Removed auto-scaling
+            averageProcessingTime: 0, // Removed auto-scaling
         };
     }
 
@@ -415,54 +374,6 @@ export class EventQueue {
     }
 
     /**
-     * Calcular taxa de processamento real (eventos/segundo)
-     */
-    private calculateProcessingRate(): number {
-        if (this.performanceHistory.length < 2) return 0;
-
-        const recent = this.performanceHistory.slice(-10);
-        const processingTimes: number[] = [];
-
-        // Calcular tempo médio de processamento
-        for (let i = 1; i < recent.length; i++) {
-            const current = recent[i];
-            const previous = recent[i - 1];
-
-            if (current && previous) {
-                const timeDiff = current.timestamp - previous.timestamp;
-                const eventsProcessed =
-                    previous.queueDepth - current.queueDepth;
-
-                if (timeDiff > 0 && eventsProcessed > 0) {
-                    const rate = (eventsProcessed / timeDiff) * 1000; // eventos/segundo
-                    processingTimes.push(rate);
-                }
-            }
-        }
-
-        if (processingTimes.length === 0) return 0;
-
-        // Retornar média dos últimos tempos
-        return (
-            processingTimes.reduce((sum, rate) => sum + rate, 0) /
-            processingTimes.length
-        );
-    }
-
-    /**
-     * Calcular tempo médio de processamento
-     */
-    private calculateAverageProcessingTime(): number {
-        if (this.performanceHistory.length < 2) return 0;
-
-        const recent = this.performanceHistory.slice(-10);
-        return (
-            recent.reduce((sum, m) => sum + m.averageProcessingTime, 0) /
-            recent.length
-        );
-    }
-
-    /**
      * Verificar se deve ativar backpressure baseado em recursos
      */
     private shouldActivateBackpressure(): boolean {
@@ -496,147 +407,6 @@ export class EventQueue {
         }
 
         return isActive;
-    }
-
-    /**
-     * Auto-ajustar parâmetros baseado na performance REAL
-     */
-    private autoAdjust(): void {
-        if (this.performanceHistory.length < 5) return;
-
-        const metrics = this.getSystemMetrics();
-        const adjustments = [];
-
-        // === CORREÇÃO: Ajustar batch size CORRETAMENTE ===
-        const targetRate = 1000; // eventos/segundo desejado
-
-        if (metrics.processingRate < targetRate * 0.8) {
-            // Taxa baixa = diminuir batch para processar mais rápido
-            const newBatchSize = Math.max(this.batchSize * 0.8, 10);
-            if (newBatchSize !== this.batchSize) {
-                adjustments.push({
-                    parameter: 'batchSize',
-                    oldValue: this.batchSize,
-                    newValue: newBatchSize,
-                    reason: 'Low processing rate - reducing batch size',
-                });
-                this.batchSize = newBatchSize;
-            }
-        } else if (
-            metrics.processingRate > targetRate * 1.2 &&
-            metrics.cpuUsage < 0.7
-        ) {
-            // Taxa alta e CPU baixa = aumentar batch para eficiência
-            const newBatchSize = Math.min(this.batchSize * 1.2, 2000);
-            if (newBatchSize !== this.batchSize) {
-                adjustments.push({
-                    parameter: 'batchSize',
-                    oldValue: this.batchSize,
-                    newValue: newBatchSize,
-                    reason: 'High processing rate - increasing batch size',
-                });
-                this.batchSize = newBatchSize;
-            }
-        }
-
-        // === CORREÇÃO: Ajustar concorrência CORRETAMENTE ===
-        if (
-            metrics.cpuUsage < this.maxCpuUsage * 0.5 &&
-            metrics.queueDepth > 100
-        ) {
-            // CPU baixa e fila cheia = aumentar concorrência
-            const newConcurrency = Math.min(this.maxConcurrent * 1.5, 200); // Limite maior
-            if (newConcurrency !== this.maxConcurrent) {
-                adjustments.push({
-                    parameter: 'maxConcurrent',
-                    oldValue: this.maxConcurrent,
-                    newValue: newConcurrency,
-                    reason: 'Low CPU usage with high queue - increasing concurrency',
-                });
-                this.maxConcurrent = newConcurrency;
-                this.semaphore = new Semaphore(this.maxConcurrent);
-            }
-        } else if (
-            metrics.cpuUsage > this.maxCpuUsage * 0.9 ||
-            metrics.memoryUsage > 0.8
-        ) {
-            // CPU alta ou memória alta = diminuir concorrência
-            const newConcurrency = Math.max(this.maxConcurrent * 0.7, 5);
-            if (newConcurrency !== this.maxConcurrent) {
-                adjustments.push({
-                    parameter: 'maxConcurrent',
-                    oldValue: this.maxConcurrent,
-                    newValue: newConcurrency,
-                    reason: 'High resource usage - reducing concurrency',
-                });
-                this.maxConcurrent = newConcurrency;
-                this.semaphore = new Semaphore(this.maxConcurrent);
-            }
-        }
-
-        // === NOVO: Ajustar baseado na profundidade da fila ===
-        if (metrics.queueDepth > 5000 && this.maxConcurrent < 100) {
-            // Fila muito cheia = aumentar concorrência
-            const newConcurrency = Math.min(this.maxConcurrent * 2, 300);
-            if (newConcurrency !== this.maxConcurrent) {
-                adjustments.push({
-                    parameter: 'maxConcurrent',
-                    oldValue: this.maxConcurrent,
-                    newValue: newConcurrency,
-                    reason: 'Very high queue depth - emergency concurrency increase',
-                });
-                this.maxConcurrent = newConcurrency;
-                this.semaphore = new Semaphore(this.maxConcurrent);
-            }
-        }
-
-        // Registrar ajustes
-        adjustments.forEach((adjustment) => {
-            if (this.enableObservability) {
-                this.observability.logger.info('Auto-adjustment applied', {
-                    parameter: adjustment.parameter,
-                    oldValue: adjustment.oldValue,
-                    newValue: adjustment.newValue,
-                    reason: adjustment.reason,
-                    metrics: {
-                        processingRate: metrics.processingRate,
-                        cpuUsage: metrics.cpuUsage,
-                        memoryUsage: metrics.memoryUsage,
-                        queueDepth: metrics.queueDepth,
-                    },
-                });
-            }
-        });
-    }
-
-    /**
-     * Iniciar monitoramento de auto-ajuste
-     */
-    private startAutoScaling(): void {
-        // Limpar timer existente primeiro para evitar vazamentos
-        this.stopAutoScaling();
-
-        this.autoScalingTimer = setInterval(() => {
-            const metrics = this.getSystemMetrics();
-            this.performanceHistory.push(metrics);
-
-            // Manter apenas os últimos 50 registros
-            if (this.performanceHistory.length > 50) {
-                this.performanceHistory.shift();
-            }
-
-            this.autoAdjust();
-        }, this.autoScalingInterval);
-    }
-
-    /**
-     * Parar monitoramento de auto-ajuste
-     */
-    private stopAutoScaling(): void {
-        if (this.autoScalingTimer) {
-            clearInterval(this.autoScalingTimer);
-            this.autoScalingTimer = undefined;
-        }
     }
 
     /**
@@ -1074,11 +844,6 @@ export class EventQueue {
             }
         }
 
-        // Start auto-scaling if enabled
-        if (this.enableAutoScaling && !this.autoScalingTimer) {
-            this.startAutoScaling();
-        }
-
         return true;
     }
 
@@ -1262,11 +1027,27 @@ export class EventQueue {
                     // mark processed only after success (global, after handler)
                     this.processedEvents.add(event.id);
                     if (this.processedEvents.size > this.maxProcessedEvents) {
-                        const firstEventId = this.processedEvents
-                            .values()
-                            .next().value as string | undefined;
-                        if (firstEventId) {
-                            this.processedEvents.delete(firstEventId);
+                        // ✅ MELHORADO: Cleanup mais agressivo - remover 20% dos eventos mais antigos
+                        const eventsToRemove = Math.ceil(
+                            this.maxProcessedEvents * 0.2,
+                        );
+                        const eventIds = Array.from(this.processedEvents).slice(
+                            0,
+                            eventsToRemove,
+                        );
+                        eventIds.forEach((id) =>
+                            this.processedEvents.delete(id),
+                        );
+
+                        if (this.enableObservability) {
+                            this.observability.logger.debug(
+                                '🧹 Cleaned up processed events',
+                                {
+                                    removedCount: eventsToRemove,
+                                    remainingCount: this.processedEvents.size,
+                                    maxProcessedEvents: this.maxProcessedEvents,
+                                },
+                            );
                         }
                     }
 
@@ -1606,27 +1387,6 @@ export class EventQueue {
     }
 
     /**
-     * Configurar auto-scaling em runtime
-     */
-    setAutoScaling(enabled: boolean): void {
-        if (enabled && this.enableAutoScaling) {
-            this.startAutoScaling();
-        } else {
-            this.stopAutoScaling();
-        }
-
-        if (this.enableObservability) {
-            this.observability.logger.info(
-                'Auto-scaling configuration changed',
-                {
-                    enabled,
-                    timerActive: !!this.autoScalingTimer,
-                },
-            );
-        }
-    }
-
-    /**
      * Get Event Store instance (for replay operations)
      */
     getEventStore(): EventStore | undefined {
@@ -1662,19 +1422,14 @@ export class EventQueue {
     destroy(): void {
         // Logged via observability info below
 
-        // Parar auto-scaling usando método dedicado
-        this.stopAutoScaling();
-
         // Limpar arrays e sets
         this.queue = [];
-        this.performanceHistory = [];
         this.processedEvents.clear();
 
         // Logged via observability info below
 
         if (this.enableObservability) {
             this.observability.logger.info('Event queue destroyed', {
-                hadAutoScalingTimer: !!this.autoScalingTimer,
                 queueSize: 0,
                 processedEventsCount: 0,
                 trace: {
