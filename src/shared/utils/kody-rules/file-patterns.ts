@@ -26,7 +26,7 @@ export const RULE_FILE_PATTERNS = [
 
     // Generic / internal
     '.rules/**/*',
-    '.kody/**/*',
+    '.kody/rules/*',
     'docs/coding-standards/**/*',
 ] as const;
 
