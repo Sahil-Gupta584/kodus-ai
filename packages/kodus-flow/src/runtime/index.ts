@@ -99,7 +99,6 @@ export interface RuntimeConfig {
     // Delivery guarantees (simplified)
     enableAcks?: boolean; // Default: true (controls ACK/NACK system)
     ackTimeout?: number; // Default: 30s
-    maxRetries?: number; // Default: 3
 
     // Multi-tenant support
     tenantId?: string;
@@ -254,7 +253,6 @@ export function createRuntime(
         memoryMonitor,
         enableAcks = true,
         ackTimeout = 30000, // ✅ REDUZIDO: 30s em vez de 60s para evitar acúmulo
-        maxRetries = 1,
         tenantId,
         persistor,
         executionId,
@@ -298,7 +296,7 @@ export function createRuntime(
         maxQueueDepth: queueSize,
         enableObservability,
         batchSize,
-        enableAutoScaling: false, // ensure stable behavior for tests and prod
+
         enableGlobalConcurrency: true,
 
         // Persistence (enabled by default with in-memory persistor)
@@ -346,133 +344,33 @@ export function createRuntime(
         memoryMonitorInstance.start();
     }
 
-    // ACK tracking para delivery guarantees
+    // ACK tracking para delivery guarantees (SEM RETRY)
     const pendingAcks = new Map<
         string,
-        { event: AnyEvent; timestamp: number; retries: number }
+        { event: AnyEvent; timestamp: number }
     >();
 
-    // Cleanup de ACKs expirados
+    // Cleanup de ACKs expirados (SEM RETRY AUTOMÁTICO)
     const ackSweepIntervalMs = Math.max(
         100,
-        Math.min(3000, Math.floor(ackTimeout / 10)), // ✅ REDUZIDO: 10x mais frequente
+        Math.min(3000, Math.floor(ackTimeout / 10)),
     );
     const ackCleanupInterval = setInterval(async () => {
         const now = Date.now();
         for (const [eventId, ackInfo] of pendingAcks.entries()) {
             if (now - ackInfo.timestamp > ackTimeout) {
-                // ✅ CORREÇÃO: Não re-enfileirar eventos de resposta ou eventos críticos que falharam
-                const event = ackInfo.event;
-                const isResponseEvent =
-                    event.type.includes('.response') ||
-                    event.type.includes('.error') ||
-                    event.type.includes('.success');
-                const isCriticalError = event.metadata?.criticalError === true;
-                const isToolExecutionTimeout =
-                    event.type === 'tool.execute.timeout' ||
-                    (event.type === 'tool.execute.request' &&
-                        event.metadata?.timedOut === true);
-
-                if (
-                    isResponseEvent ||
-                    isCriticalError ||
-                    isToolExecutionTimeout
-                ) {
-                    // Não re-enfileirar eventos de resposta ou erros críticos
-                    pendingAcks.delete(eventId);
-                    observability.logger.warn(
-                        'Event not re-enqueued due to critical error or response type',
-                        {
-                            eventId,
-                            eventType: event.type,
-                            correlationId: event.metadata?.correlationId,
-                            tenantId: event.metadata?.tenantId,
-                            retries: ackInfo.retries,
-                            ageMs: now - ackInfo.timestamp,
-                            isResponseEvent,
-                            isCriticalError,
-                            isToolExecutionTimeout,
-                        },
-                    );
-                    continue;
-                }
-
-                if (ackInfo.retries < maxRetries) {
-                    observability.logger.warn(
-                        'ACK timeout: re-enqueueing event for retry',
-                        {
-                            eventId,
-                            eventType: ackInfo.event.type,
-                            correlationId:
-                                ackInfo.event.metadata?.correlationId,
-                            tenantId: ackInfo.event.metadata?.tenantId,
-                            nextRetryAttempt: ackInfo.retries + 1,
-                            maxRetries,
-                            ageMs: now - ackInfo.timestamp,
-                        },
-                    );
-                    // Tentar re-enfileirar para retry apenas eventos não-críticos
-                    try {
-                        const queued = await eventQueue.enqueue(
-                            ackInfo.event,
-                            1,
-                        );
-
-                        // Incrementar retries APENAS se realmente re-enfileirou
-                        if (queued) {
-                            ackInfo.retries++;
-                            ackInfo.timestamp = now;
-                        } else {
-                            // Evento já estava na fila; apenas renovar o timestamp para evitar falso esgotamento
-                            ackInfo.timestamp = now;
-                            observability.logger.warn(
-                                'ACK timeout: event already queued, refreshed timestamp without incrementing retries',
-                                {
-                                    eventId,
-                                    eventType: ackInfo.event.type,
-                                    correlationId:
-                                        ackInfo.event.metadata?.correlationId,
-                                    tenantId: ackInfo.event.metadata?.tenantId,
-                                    retries: ackInfo.retries,
-                                    maxRetries,
-                                    ageMs: now - ackInfo.timestamp,
-                                },
-                            );
-                        }
-                    } catch (error) {
-                        observability.logger.error(
-                            'Failed to re-enqueue expired event',
-                            error as Error,
-                            {
-                                eventId,
-                                eventType: ackInfo.event.type,
-                                correlationId:
-                                    ackInfo.event.metadata?.correlationId,
-                                tenantId: ackInfo.event.metadata?.tenantId,
-                                retries: ackInfo.retries,
-                                maxRetries,
-                                ageMs: now - ackInfo.timestamp,
-                            },
-                        );
-                    }
-                } else {
-                    // Máximo de retries atingido
-                    pendingAcks.delete(eventId);
-                    observability.logger.error(
-                        'Event max retries exceeded',
-                        new Error('Max retries exceeded'),
-                        {
-                            eventId,
-                            eventType: ackInfo.event.type,
-                            correlationId:
-                                ackInfo.event.metadata?.correlationId,
-                            tenantId: ackInfo.event.metadata?.tenantId,
-                            retries: ackInfo.retries,
-                            maxRetries,
-                            ageMs: now - ackInfo.timestamp,
-                        },
-                    );
-                }
+                // ✅ SIMPLIFICADO: Apenas log e cleanup, SEM retry automático
+                pendingAcks.delete(eventId);
+                observability.logger.warn(
+                    'ACK timeout: event expired without acknowledgment',
+                    {
+                        eventId,
+                        eventType: ackInfo.event.type,
+                        correlationId: ackInfo.event.metadata?.correlationId,
+                        tenantId: ackInfo.event.metadata?.tenantId,
+                        ageMs: now - ackInfo.timestamp,
+                    },
+                );
             }
         }
     }, ackSweepIntervalMs);
@@ -502,11 +400,10 @@ export function createRuntime(
                     timestamp: Date.now(),
                 };
 
-                // Track para ACK
+                // Track para ACK (SEM RETRY)
                 pendingAcks.set(event.id, {
                     event,
                     timestamp: Date.now(),
-                    retries: 0,
                 });
                 observability.logger.debug('ACK tracking started', {
                     eventId: event.id,
@@ -562,11 +459,10 @@ export function createRuntime(
                         timestamp: Date.now(),
                     };
 
-                    // Track para ACK
+                    // Track para ACK (SEM RETRY)
                     pendingAcks.set(event.id, {
                         event,
                         timestamp: Date.now(),
-                        retries: 0,
                     });
                     observability.logger.debug('ACK tracking started', {
                         eventId: event.id,
@@ -802,7 +698,6 @@ export function createRuntime(
                         {
                             eventId,
                             eventType: ackInfo.event.type,
-                            retries: ackInfo.retries,
                             pendingAcksCount: pendingAcks.size,
                             trace: {
                                 source: 'runtime',
@@ -833,50 +728,23 @@ export function createRuntime(
         async nack(eventId: string, error?: Error): Promise<void> {
             const ackInfo = pendingAcks.get(eventId);
             if (ackInfo) {
-                if (ackInfo.retries < maxRetries) {
-                    // Re-enfileirar para retry
-                    ackInfo.retries++;
-                    ackInfo.timestamp = Date.now();
-                    await eventQueue.enqueue(ackInfo.event, 1);
-
-                    if (enableObservability) {
-                        observability.logger.warn(
-                            '❌ RUNTIME - Event NACK, retrying',
-                            {
-                                eventId,
-                                eventType: ackInfo.event.type,
-                                retries: ackInfo.retries,
-                                maxRetries,
-                                error: error?.message,
-                                pendingAcksCount: pendingAcks.size,
-                                trace: {
-                                    source: 'runtime',
-                                    step: 'nack-retry',
-                                    timestamp: Date.now(),
-                                },
+                // ✅ SIMPLIFICADO: Apenas cleanup, SEM retry automático
+                pendingAcks.delete(eventId);
+                if (enableObservability) {
+                    observability.logger.warn(
+                        '❌ RUNTIME - Event NACK (no retry)',
+                        {
+                            eventId,
+                            eventType: ackInfo.event.type,
+                            error: error?.message,
+                            pendingAcksCount: pendingAcks.size,
+                            trace: {
+                                source: 'runtime',
+                                step: 'nack-no-retry',
+                                timestamp: Date.now(),
                             },
-                        );
-                    }
-                } else {
-                    // Máximo de retries atingido
-                    pendingAcks.delete(eventId);
-                    if (enableObservability) {
-                        observability.logger.error(
-                            '❌ RUNTIME - Event max retries exceeded',
-                            error,
-                            {
-                                eventId,
-                                eventType: ackInfo.event.type,
-                                maxRetries,
-                                pendingAcksCount: pendingAcks.size,
-                                trace: {
-                                    source: 'runtime',
-                                    step: 'nack-max-retries',
-                                    timestamp: Date.now(),
-                                },
-                            },
-                        );
-                    }
+                        },
+                    );
                 }
             } else {
                 if (enableObservability) {
@@ -923,7 +791,6 @@ export function createRuntime(
                 memoryMonitor,
                 enableAcks,
                 ackTimeout,
-                maxRetries,
                 tenantId, // Novo tenant ID
                 // Criar novo persistor para isolamento
                 persistor: undefined,
@@ -944,7 +811,6 @@ export function createRuntime(
                     pendingAcks: pendingAcks.size,
                     enableAcks,
                     ackTimeout,
-                    maxRetries,
                 },
                 runtime: {
                     executionId: runtimeExecutionId,

@@ -4281,9 +4281,6 @@ export abstract class AgentCore<
         }> = [];
 
         let finalExecutionContext: PlannerExecutionContext | undefined;
-        let previousExecution:
-            | PlannerExecutionContext['previousExecution']
-            | undefined;
 
         // ✅ SIMPLIFICADO: Loop principal
         for (let iterations = 0; iterations < maxIterations; iterations++) {
@@ -4294,10 +4291,6 @@ export abstract class AgentCore<
                 maxIterations,
                 context,
             );
-
-            if (previousExecution) {
-                Object.assign(plannerInput, { previousExecution });
-            }
 
             finalExecutionContext = plannerInput;
 
@@ -4333,9 +4326,6 @@ export abstract class AgentCore<
                 ) {
                     break;
                 }
-
-                // ✅ SIMPLIFICADO: Preparar para próxima iteração
-                previousExecution = this.prepareNextIteration(iterationResult);
             } catch (error) {
                 if (iterations >= maxIterations - 1) {
                     throw error;
@@ -4443,7 +4433,7 @@ export abstract class AgentCore<
 
         // ✅ SIMPLIFICADO: Handle execute_plan action
         if (isExecutePlanAction(thought.action)) {
-            return await this.executePlanAction(thought, context, plannerInput);
+            return await this.executePlanAction(context, plannerInput);
         }
 
         // ✅ SIMPLIFICADO: Handle regular actions
@@ -4492,7 +4482,6 @@ export abstract class AgentCore<
     }
 
     private async executePlanAction(
-        _thought: AgentThought,
         context: AgentContext,
         plannerContext: PlannerExecutionContext,
     ): Promise<ActionResult> {
@@ -4552,6 +4541,17 @@ export abstract class AgentCore<
             plannerContext,
         );
 
+        // ✅ CORREÇÃO: Retornar replanContext quando necessário
+        if (obsRes.type === 'needs_replan') {
+            return {
+                type: 'error',
+                replanContext: obsRes.replanContext,
+                feedback: obsRes.feedback,
+                status: 'needs_replan',
+                error: obsRes.feedback,
+            };
+        }
+
         return obsRes.type === 'execution_complete'
             ? { type: 'final_answer', content: obsRes.feedback }
             : { type: 'error', error: obsRes.feedback };
@@ -4579,7 +4579,9 @@ export abstract class AgentCore<
                 result:
                     iterationResult.result.type === 'error'
                         ? { error: iterationResult.result.error }
-                        : iterationResult.result.content,
+                        : iterationResult.result.type === 'needs_replan'
+                          ? { needsReplan: iterationResult.result.feedback }
+                          : iterationResult.result.content,
                 observation: iterationResult.observation.feedback,
                 isComplete: iterationResult.observation.isComplete,
                 timestamp: Date.now(),
@@ -4652,16 +4654,6 @@ export abstract class AgentCore<
         }
 
         return false;
-    }
-
-    private prepareNextIteration(_iterationResult: {
-        thought: AgentThought;
-        action: AgentAction;
-        result: ActionResult;
-        observation: ResultAnalysis;
-    }): PlannerExecutionContext['previousExecution'] | undefined {
-        // ✅ SIMPLIFICADO: Preparar contexto para próxima iteração se necessário
-        return undefined;
     }
 
     private extractFinalResult(
@@ -4888,7 +4880,7 @@ export abstract class AgentCore<
                         action.input || {},
                         {
                             correlationId: correlationId, // ✅ FIX: Use same correlationId
-                            timeout: 30000, // ✅ UNIFIED: 30s timeout
+                            timeout: 180000, // ✅ AUMENTADO: 180s para APIs externas
                         },
                     ),
                 {
@@ -4909,7 +4901,7 @@ export abstract class AgentCore<
                 action.input || {},
                 {
                     correlationId: correlationId, // ✅ FIX: Use same correlationId
-                    timeout: 15000, // ✅ UNIFIED: 15s timeout
+                    timeout: 180000, // ✅ AUMENTADO: 180s para APIs externas
                 },
             );
         }
@@ -5264,6 +5256,7 @@ export abstract class AgentCore<
             iteration: index + 1,
             thought: entry.thought,
             action: entry.action,
+            status: entry.result.type,
             result: entry.result,
             observation: entry.observation,
             duration: 0,

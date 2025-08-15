@@ -869,7 +869,6 @@ export function createAgentKernelSpec(
         },
         runtimeConfig: {
             enableAcks: true,
-            maxRetries: 3,
         },
         performance: {
             enableBatching: true,

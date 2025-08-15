@@ -146,8 +146,9 @@ export class PlanExecutor {
             const step = plan.steps[stepIndex];
             if (!step) continue;
 
+            // ✅ MELHORIA: Lógica mais simples e direta
             if (step.status === 'executing') {
-                step.status = 'pending';
+                step.status = step.result !== undefined ? 'failed' : 'pending';
             }
 
             if (firstPendingIndex === -1 && step.status === 'pending') {
@@ -186,18 +187,20 @@ export class PlanExecutor {
             (step) => step.status === 'pending',
         );
 
-        if (nextPendingStep?.arguments) {
+        // ✅ MELHORIA: Lógica mais simples
+        if (!nextPendingStep?.arguments) {
+            plan.status = 'executing';
+        } else {
             const argumentResolution = await this.resolveArgs(
                 nextPendingStep.arguments,
                 plan.steps,
                 context,
             );
 
-            if (argumentResolution.missing.length === 0) {
-                plan.status = 'executing';
-            }
-        } else {
-            plan.status = 'executing';
+            plan.status =
+                argumentResolution.missing.length === 0
+                    ? 'executing'
+                    : 'waiting_input';
         }
 
         await this.emitSessionEvent(
@@ -238,8 +241,16 @@ export class PlanExecutor {
         while (executionRounds < this.maxExecutionRounds) {
             const readySteps = getReadySteps(plan);
 
+            // ✅ MELHORIA: Log mais limpo e informativo
+            if (readySteps.length > 0) {
+                console.log(
+                    `🔍 [PLAN-EXECUTOR] Round ${executionRounds + 1}: Executing ${readySteps.length} steps`,
+                );
+            }
+
             if (readySteps.length === 0) break;
 
+            // ✅ MELHORIA: Manter execução sequencial por segurança
             for (const step of readySteps) {
                 const stepResult = await this.executeStepSafe(
                     plan,
@@ -263,6 +274,7 @@ export class PlanExecutor {
         const startTime = Date.now();
 
         try {
+            // ✅ MELHORIA: Validar argumentos primeiro
             const argumentResolution = await this.resolveStepArguments(
                 step,
                 plan,
@@ -270,51 +282,71 @@ export class PlanExecutor {
             );
 
             if (argumentResolution.missing.length > 0) {
-                return this.createStepResult(step, {
-                    success: false,
+                return this.markStepAsFailed(step, {
                     error: `Missing inputs: ${argumentResolution.missing.join(', ')}`,
                     startTime,
                 });
             }
 
-            step.status = 'executing';
-            await this.emitStepStartedEvent(context, plan.id, step);
-
-            const result = await this.executeStepAction(step);
-            const analysis = this.analyzeStepResult(result);
-
-            step.status = analysis.success ? 'completed' : 'failed';
-            step.result =
-                result.type === 'tool_result' ? result.content : result;
-
-            await this.emitStepFinishedEvent(
-                context,
-                plan.id,
+            // ✅ MELHORIA: Executar step
+            return await this.executeStepWithEvents(
                 step,
-                analysis.success,
-            );
-
-            return this.createStepResult(step, {
-                result,
-                success: analysis.success,
-                error: analysis.success
-                    ? undefined
-                    : result.type === 'error'
-                      ? result.error
-                      : 'Step failed',
+                plan,
+                context,
                 startTime,
-            });
+            );
         } catch (error) {
-            step.status = 'failed';
-            const errorMsg =
-                error instanceof Error ? error.message : String(error);
-
-            return this.createStepResult(step, {
-                success: false,
-                error: errorMsg,
+            return this.markStepAsFailed(step, {
+                error: error instanceof Error ? error.message : String(error),
                 startTime,
             });
         }
+    }
+
+    private markStepAsFailed(
+        step: PlanStep,
+        options: { error: string; startTime: number },
+    ): StepExecutionResult {
+        step.status = 'failed';
+        return this.createStepResult(step, {
+            success: false,
+            error: options.error,
+            startTime: options.startTime,
+        });
+    }
+
+    private async executeStepWithEvents(
+        step: PlanStep,
+        plan: ExecutionPlan,
+        context: PlannerExecutionContext,
+        startTime: number,
+    ): Promise<StepExecutionResult> {
+        step.status = 'executing';
+        await this.emitStepStartedEvent(context, plan.id, step);
+
+        const result = await this.executeStepAction(step);
+        const analysis = this.analyzeStepResult(result);
+
+        step.status = analysis.success ? 'completed' : 'failed';
+        step.result = result.type === 'tool_result' ? result.content : result;
+
+        await this.emitStepFinishedEvent(
+            context,
+            plan.id,
+            step,
+            analysis.success,
+        );
+
+        return this.createStepResult(step, {
+            result,
+            success: analysis.success,
+            error: analysis.success
+                ? undefined
+                : result.type === 'error'
+                  ? result.error
+                  : 'Step failed',
+            startTime,
+        });
     }
 
     private async resolveStepArguments(
@@ -446,35 +478,21 @@ export class PlanExecutor {
     }
 
     private analyzeStepResult(result: ActionResult): StepAnalysis {
-        // ✅ DEBUG: Log para entender a estrutura do resultado
-        console.log('🔍 [PLAN-EXECUTOR] Analyzing step result:', {
-            resultType: result.type,
-            isWrapped: this.isWrappedToolResult(result),
-            resultStructure: JSON.stringify(result, null, 2).substring(0, 500),
-        });
-
+        // ✅ MELHORIA: Análise mais limpa e direta
         if (this.isWrappedToolResult(result)) {
-            console.log('🔍 [PLAN-EXECUTOR] Using analyzeWrappedToolResult');
             return this.analyzeWrappedToolResult(result);
         }
 
-        if (result.type === 'error') {
-            console.log('🔍 [PLAN-EXECUTOR] Using analyzeErrorResult');
-            return this.analyzeErrorResult(result);
+        switch (result.type) {
+            case 'error':
+                return this.analyzeErrorResult(result);
+            case 'tool_result':
+                return this.analyzeToolResult(result);
+            case 'final_answer':
+                return { success: true, shouldReplan: false };
+            default:
+                return { success: true, shouldReplan: false };
         }
-
-        if (result.type === 'tool_result') {
-            console.log('🔍 [PLAN-EXECUTOR] Using analyzeToolResult');
-            return this.analyzeToolResult(result);
-        }
-
-        if (result.type === 'final_answer') {
-            console.log('🔍 [PLAN-EXECUTOR] Final answer - success: true');
-            return { success: true, shouldReplan: false };
-        }
-
-        console.log('🔍 [PLAN-EXECUTOR] Default case - success: true');
-        return { success: true, shouldReplan: false };
     }
 
     private isWrappedToolResult(result: unknown): result is WrappedToolResult {
@@ -494,6 +512,7 @@ export class PlanExecutor {
 
     private analyzeWrappedToolResult(result: WrappedToolResult): StepAnalysis {
         try {
+            // ✅ MELHORIA: Lógica mais clara e direta
             if (result.result.isError === true) {
                 return { success: false, shouldReplan: true };
             }
@@ -502,15 +521,29 @@ export class PlanExecutor {
             if (!innerJsonString) {
                 return { success: false, shouldReplan: true };
             }
+
             const innerResult = JSON.parse(innerJsonString) as InnerToolResult;
 
+            // Se explicitamente falhou, falhar
             if (innerResult.successful === false) {
-                const errorMsg = innerResult.error || 'Tool execution failed';
-                const shouldReplan = this.shouldReplanForError(errorMsg);
+                const shouldReplan = this.shouldReplanForError(
+                    innerResult.error || 'Tool execution failed',
+                );
                 return { success: false, shouldReplan };
             }
 
-            if (!innerResult.data || this.isEmptyObject(innerResult.data)) {
+            // Se explicitamente sucesso, sucesso (mesmo com data vazia)
+            if (innerResult.successful === true) {
+                return { success: true, shouldReplan: false };
+            }
+
+            // Se não tem data, falhar
+            if (!innerResult.data) {
+                return { success: false, shouldReplan: true };
+            }
+
+            // Se tem data vazia, falhar (a menos que seja explicitamente sucesso)
+            if (this.isEmptyObject(innerResult.data)) {
                 return { success: false, shouldReplan: true };
             }
 

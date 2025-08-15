@@ -246,9 +246,14 @@ export class ContextBuilder {
             invocationId,
 
             state: {
-                get: <T>(namespace: string, key: string) =>
+                get: <T>(namespace: string, key: string, _threadId?: string) =>
                     workingMemory.get<T>(namespace, key),
-                set: async (namespace: string, key: string, value: unknown) => {
+                set: async (
+                    namespace: string,
+                    key: string,
+                    value: unknown,
+                    _threadId?: string,
+                ) => {
                     await workingMemory.set(namespace, key, value);
                     // Espelhar no SessionService como contexto persistente por namespace
                     await this.sessionService.updateSessionContext(session.id, {

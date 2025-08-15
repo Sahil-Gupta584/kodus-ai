@@ -89,7 +89,7 @@ export class ToolEngine {
         input: TInput,
     ): Promise<TOutput> {
         const callId = IdGenerator.callId();
-        const timeout = this.config.timeout || 60000;
+        const timeout = this.config.timeout || 120000; // ✅ AUMENTADO: 120s para APIs externas
         const startTime = Date.now();
         const obs = getObservability();
 
@@ -581,7 +581,24 @@ export class ToolEngine {
                 };
 
                 try {
+                    this.logger.info('🔧 [TOOL] Starting tool execution', {
+                        toolName,
+                        correlationId,
+                        inputSize: JSON.stringify(input).length,
+                        timestamp: Date.now(),
+                    });
+
+                    const startTime = Date.now();
                     const result = await this.executeCall(toolName, input);
+                    const executionTime = Date.now() - startTime;
+
+                    this.logger.info('🔧 [TOOL] Tool execution completed', {
+                        toolName,
+                        correlationId,
+                        executionTimeMs: executionTime,
+                        resultSize: JSON.stringify(result).length,
+                        timestamp: Date.now(),
+                    });
 
                     // ✅ UNIFICADO: Sempre verificar se há erro no resultado
                     const hasError = this.checkToolResultError(result);

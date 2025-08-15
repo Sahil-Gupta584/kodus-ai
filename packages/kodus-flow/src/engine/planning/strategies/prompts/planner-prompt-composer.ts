@@ -85,7 +85,9 @@ export class PlannerPromptComposer {
         }
 
         // Compose system prompt
-        const systemPrompt = this.composeSystemPrompt(context.isReplan);
+        const systemPrompt = this.composeSystemPrompt(
+            context?.replanContext?.isReplan,
+        );
 
         // Compose user prompt
         const userPrompt = this.composeUserPrompt(context);
@@ -175,11 +177,11 @@ export class PlannerPromptComposer {
         }
 
         // 5. Replan context (if this is a replan attempt)
-        if (context.replanContext || context.isReplan) {
+        if (context?.replanContext?.isReplan) {
             sections.push(
                 this.formatReplanContext({
                     replanContext: context.replanContext,
-                    isReplan: context.isReplan,
+                    isReplan: context.replanContext?.isReplan,
                 }),
             );
         }

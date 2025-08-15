@@ -26,6 +26,8 @@ import type {
     ReplanPolicyConfig,
     PlanStep,
     ExecutionPlan,
+    ReplanContext,
+    ReplanContextData,
 } from '../../../core/types/planning-shared.js';
 
 // Re-export for compatibility
@@ -474,87 +476,87 @@ export class PlanAndExecutePlanner implements Planner {
             const contextParts: string[] = [];
 
             // 🚀 NEW: Include previous execution results for replan context
-            if (context.previousExecution) {
-                contextParts.push('\n🔄 Previous Execution Results:');
+            // if (context.previousExecution) {
+            //     contextParts.push('\n🔄 Previous Execution Results:');
 
-                const { plan, result, preservedSteps } =
-                    context.previousExecution;
+            //     const { plan, result, preservedSteps } =
+            //         context.previousExecution;
 
-                // Previous plan summary
-                contextParts.push(`**Previous Plan:** ${plan.goal}`);
-                contextParts.push(`**Strategy:** ${plan.strategy}`);
-                contextParts.push(`**Total Steps:** ${plan.steps.length}`);
+            //     // Previous plan summary
+            //     contextParts.push(`**Previous Plan:** ${plan.goal}`);
+            //     contextParts.push(`**Strategy:** ${plan.strategy}`);
+            //     contextParts.push(`**Total Steps:** ${plan.steps.length}`);
 
-                // Execution results
-                contextParts.push(`**Execution Result:** ${result.type}`);
-                contextParts.push(
-                    `**Successful Steps:** ${result.successfulSteps.length}`,
-                );
-                contextParts.push(
-                    `**Failed Steps:** ${result.failedSteps.length}`,
-                );
-                contextParts.push(
-                    `**Execution Time:** ${result.executionTime}ms`,
-                );
+            //     // Execution results
+            //     contextParts.push(`**Execution Result:** ${result.type}`);
+            //     contextParts.push(
+            //         `**Successful Steps:** ${result.successfulSteps.length}`,
+            //     );
+            //     contextParts.push(
+            //         `**Failed Steps:** ${result.failedSteps.length}`,
+            //     );
+            //     contextParts.push(
+            //         `**Execution Time:** ${result.executionTime}ms`,
+            //     );
 
-                // Preserved steps (successful ones that can be reused)
-                if (preservedSteps.length > 0) {
-                    contextParts.push(
-                        `**Preserved Steps (${preservedSteps.length}):**`,
-                    );
-                    preservedSteps.forEach((step, i) => {
-                        contextParts.push(
-                            `  ${i + 1}. ${step.step.description} (${step.step.tool})`,
-                        );
-                        if (step.result) {
-                            const resultStr =
-                                typeof step.result === 'string'
-                                    ? step.result
-                                    : JSON.stringify(step.result);
-                            contextParts.push(
-                                `     Result: ${resultStr.substring(0, 100)}${
-                                    resultStr.length > 100 ? '...' : ''
-                                }`,
-                            );
-                        }
-                    });
-                }
+            //     // Preserved steps (successful ones that can be reused)
+            //     if (preservedSteps.length > 0) {
+            //         contextParts.push(
+            //             `**Preserved Steps (${preservedSteps.length}):**`,
+            //         );
+            //         preservedSteps.forEach((step, i) => {
+            //             contextParts.push(
+            //                 `  ${i + 1}. ${step.step.description} (${step.step.tool})`,
+            //             );
+            //             if (step.result) {
+            //                 const resultStr =
+            //                     typeof step.result === 'string'
+            //                         ? step.result
+            //                         : JSON.stringify(step.result);
+            //                 contextParts.push(
+            //                     `     Result: ${resultStr.substring(0, 100)}${
+            //                         resultStr.length > 100 ? '...' : ''
+            //                     }`,
+            //                 );
+            //             }
+            //         });
+            //     }
 
-                // Failed steps for analysis
-                if (result.failedSteps.length > 0) {
-                    contextParts.push(
-                        `**Failed Steps (${result.failedSteps.length}):**`,
-                    );
-                    result.failedSteps.forEach((stepId, i) => {
-                        const step = plan.steps.find((s) => s.id === stepId);
-                        if (step) {
-                            contextParts.push(
-                                `  ${i + 1}. ${step.description} (${step.tool})`,
-                            );
-                        }
-                    });
-                }
+            //     // Failed steps for analysis
+            //     if (result.failedSteps.length > 0) {
+            //         contextParts.push(
+            //             `**Failed Steps (${result.failedSteps.length}):**`,
+            //         );
+            //         result.failedSteps.forEach((stepId, i) => {
+            //             const step = plan.steps.find((s) => s.id === stepId);
+            //             if (step) {
+            //                 contextParts.push(
+            //                     `  ${i + 1}. ${step.description} (${step.tool})`,
+            //                 );
+            //             }
+            //         });
+            //     }
 
-                // Feedback from previous execution
-                if (result.feedback) {
-                    contextParts.push(
-                        `**Previous Feedback:** ${result.feedback}`,
-                    );
-                }
+            //     // Feedback from previous execution
+            //     if (result.feedback) {
+            //         contextParts.push(
+            //             `**Previous Feedback:** ${result.feedback}`,
+            //         );
+            //     }
 
-                // Failure analysis if available
-                if (context.previousExecution.failureAnalysis) {
-                    const analysis = context.previousExecution.failureAnalysis;
-                    contextParts.push(
-                        `**Primary Cause:** ${analysis.primaryCause}`,
-                    );
-                    if (analysis.failurePatterns.length > 0) {
-                        contextParts.push(
-                            `**Failure Patterns:** ${analysis.failurePatterns.join(', ')}`,
-                        );
-                    }
-                }
-            }
+            //     // Failure analysis if available
+            //     if (context.previousExecution.failureAnalysis) {
+            //         const analysis = context.previousExecution.failureAnalysis;
+            //         contextParts.push(
+            //             `**Primary Cause:** ${analysis.primaryCause}`,
+            //         );
+            //         if (analysis.failurePatterns.length > 0) {
+            //             contextParts.push(
+            //                 `**Failure Patterns:** ${analysis.failurePatterns.join(', ')}`,
+            //             );
+            //         }
+            //     }
+            // }
 
             const memories = await context.agentContext.memory.search(
                 currentInput,
@@ -855,42 +857,12 @@ export class PlanAndExecutePlanner implements Planner {
             throw new Error('LLM adapter must support createPlan method');
         }
 
-        // 🚀 NEW: Build rich replan context when available
-        const replanContext = context.previousExecution
-            ? {
-                  previousPlan: {
-                      id: context.previousExecution.plan.id,
-                      goal: context.previousExecution.plan.goal,
-                      strategy: context.previousExecution.plan.strategy,
-                      totalSteps: context.previousExecution.result.totalSteps,
-                  },
-                  executionSummary: {
-                      type: context.previousExecution.result.type,
-                      executionTime:
-                          context.previousExecution.result.executionTime,
-                      successfulSteps:
-                          context.previousExecution.result.successfulSteps
-                              .length,
-                      failedSteps:
-                          context.previousExecution.result.failedSteps.length,
-                      feedback: context.previousExecution.result.feedback,
-                  },
-                  preservedSteps: context.previousExecution.preservedSteps.map(
-                      (step) => ({
-                          id: step.stepId,
-                          description: step.step.description,
-                          tool: step.step.tool,
-                          result: step.result,
-                          success: step.success,
-                          duration: step.duration,
-                      }),
-                  ),
-                  failureAnalysis: context.previousExecution.failureAnalysis,
-                  suggestions:
-                      context.previousExecution.result.signals
-                          ?.suggestedNextStep,
-              }
-            : undefined;
+        // ✅ CORREÇÃO: Usar replanContext se disponível
+        const replanContext =
+            context.replanContext ||
+            (this.findLatestReplanContext(context) as
+                | Record<string, unknown>
+                | undefined);
 
         const composedPrompt = await this.promptComposer.composePrompt({
             goal: input,
@@ -904,9 +876,7 @@ export class PlanAndExecutePlanner implements Planner {
                 userContext:
                     context.agentContext?.agentExecutionOptions?.userContext,
             },
-            // 🎯 SEPARATED: System replan context
-            replanContext,
-            isReplan: !!context.previousExecution,
+            replanContext: replanContext as ReplanContext | undefined,
             iteration: 1,
             maxIterations: 5,
         });
@@ -943,16 +913,16 @@ export class PlanAndExecutePlanner implements Planner {
                 createdBy: 'plan-execute-planner',
                 thread: context.plannerMetadata.thread?.id,
                 // 🚀 NEW: Track replan count and preserve context
-                replansCount: context.previousExecution
-                    ? ((context.previousExecution.plan.metadata
-                          ?.replansCount as number) || 0) + 1
-                    : 0,
+                // replansCount: context.previousExecution
+                //     ? ((context.previousExecution.plan.metadata
+                //           ?.replansCount as number) || 0) + 1
+                //     : 0,
                 signals: (plan as Record<string, unknown>)?.signals,
                 // Preserve previous execution metadata for traceability
-                previousPlanId: context.previousExecution?.plan.id,
-                replanCause: context.previousExecution
-                    ? context.previousExecution.failureAnalysis.primaryCause
-                    : undefined,
+                // previousPlanId: context.previousExecution?.plan.id,
+                // replanCause: context.previousExecution
+                //     ? context.previousExecution.failureAnalysis.primaryCause
+                //     : undefined,
             },
         };
 
@@ -1263,6 +1233,7 @@ export class PlanAndExecutePlanner implements Planner {
                     stepId: `step-final-${Date.now()}`,
                     stepNumber: context.history.length + 1,
                     iteration: context.history.length + 1,
+                    status: 'final_answer',
                     thought: {
                         reasoning: currentPlan.reasoning,
                         action: {
@@ -1711,85 +1682,168 @@ export class PlanAndExecutePlanner implements Planner {
     }
 
     /**
+     * Find the latest replan context from execution history
+     * Returns structured replan context only if replanContext exists
+     */
+    private findLatestReplanContext(
+        context: PlannerExecutionContext,
+    ): ReplanContext | undefined {
+        if (context.history.length === 0) {
+            return undefined;
+        }
+
+        // Find most recent error entry that needs replanning
+        const latestReplanEntry = [...context.history]
+            .reverse()
+            .find(
+                (entry) =>
+                    entry.status === 'error' &&
+                    entry.result?.type === 'error' &&
+                    this.isReplanRequired(entry.result),
+            );
+
+        if (!latestReplanEntry) {
+            return undefined;
+        }
+
+        // Check if replanContext exists in result
+        const result = latestReplanEntry.result as unknown as Record<
+            string,
+            unknown
+        >;
+        const replanContext = result?.replanContext as
+            | ReplanContextData
+            | undefined;
+
+        if (!replanContext) {
+            return undefined;
+        }
+
+        // Build structured template only if replanContext exists
+        const contextForReplan = replanContext.contextForReplan as Record<
+            string,
+            unknown
+        >;
+        const successfulSteps =
+            (contextForReplan?.successfulSteps as unknown[]) || [];
+        const failedSteps = (contextForReplan?.failedSteps as unknown[]) || [];
+
+        return {
+            isReplan: true,
+            previousPlan: {
+                id: latestReplanEntry.stepId || 'unknown',
+                goal: context.input,
+                strategy: 'plan-execute',
+                totalSteps: successfulSteps.length + failedSteps.length,
+            },
+            executionSummary: {
+                type: latestReplanEntry.result?.type || 'error',
+                executionTime: latestReplanEntry.duration || 0,
+                successfulSteps: successfulSteps.length,
+                failedSteps: failedSteps.length,
+                feedback: replanContext.primaryCause || 'Execution failed',
+            },
+            preservedSteps: replanContext.preservedSteps || [],
+            failureAnalysis: {
+                primaryCause: replanContext.primaryCause || 'Execution failed',
+                failurePatterns: replanContext.failurePatterns || [],
+            },
+            suggestions: replanContext.suggestedStrategy,
+        };
+    }
+
+    /**
+     * Check if result indicates replanning is required
+     */
+    private isReplanRequired(result: unknown): boolean {
+        return (
+            typeof result === 'object' &&
+            result !== null &&
+            'status' in result &&
+            result.status === 'needs_replan'
+        );
+    }
+
+    /**
      * Detect if multiple steps can be executed in parallel
      */
-    // private detectParallelExecution(
-    //     currentStep: PlanStep,
-    //     context: PlannerExecutionContext,
-    // ): {
-    //     canExecuteInParallel: boolean;
-    //     steps: PlanStep[];
-    //     reason?: string;
-    // } {
-    //     const currentPlan = this.getCurrentPlan(context);
-    //     if (!currentPlan) {
-    //         return { canExecuteInParallel: false, steps: [currentStep] };
-    //     }
+    private detectParallelExecution(
+        currentStep: PlanStep,
+        context: PlannerExecutionContext,
+    ): {
+        canExecuteInParallel: boolean;
+        steps: PlanStep[];
+        reason?: string;
+    } {
+        const currentPlan = this.getCurrentPlan(context);
+        if (!currentPlan) {
+            return { canExecuteInParallel: false, steps: [currentStep] };
+        }
 
-    //     // Get remaining pending steps
-    //     const remainingSteps = currentPlan.steps
-    //         .slice(currentPlan.currentStepIndex)
-    //         .filter((step) => step.status === 'pending');
+        // Get remaining pending steps
+        const remainingSteps = currentPlan.steps
+            .slice(currentPlan.currentStepIndex)
+            .filter((step) => step.status === 'pending');
 
-    //     if (remainingSteps.length <= 1) {
-    //         return { canExecuteInParallel: false, steps: [currentStep] };
-    //     }
+        if (remainingSteps.length <= 1) {
+            return { canExecuteInParallel: false, steps: [currentStep] };
+        }
 
-    //     // Check if next few steps are independent and can run in parallel
-    //     const candidateSteps = remainingSteps.slice(0, 4); // Consider up to 4 steps
-    //     const independentSteps: PlanStep[] = [];
+        // Check if next few steps are independent and can run in parallel
+        const candidateSteps = remainingSteps.slice(0, 4); // Consider up to 4 steps
+        const independentSteps: PlanStep[] = [];
 
-    //     for (const step of candidateSteps) {
-    //         // Check if step has dependencies that haven't been completed yet
-    //         const hasPendingDependencies = step.dependencies?.some((depId) => {
-    //             const depStep = currentPlan.steps.find((s) => s.id === depId);
-    //             return depStep && depStep.status !== 'completed';
-    //         });
+        for (const step of candidateSteps) {
+            // Check if step has dependencies that haven't been completed yet
+            const hasPendingDependencies = step.dependencies?.some((depId) => {
+                const depStep = currentPlan.steps.find((s) => s.id === depId);
+                return depStep && depStep.status !== 'completed';
+            });
 
-    //         if (!hasPendingDependencies && step.tool && step.tool !== 'none') {
-    //             // Check if this step is truly independent (no data dependencies)
-    //             const hasDataDependency = this.checkDataDependency(
-    //                 step,
-    //                 independentSteps,
-    //             );
-    //             if (!hasDataDependency) {
-    //                 independentSteps.push(step);
-    //             }
-    //         }
-    //     }
+            if (!hasPendingDependencies && step.tool && step.tool !== 'none') {
+                // Check if this step is truly independent (no data dependencies)
+                const hasDataDependency = this.checkDataDependency(
+                    step,
+                    independentSteps,
+                );
+                if (!hasDataDependency) {
+                    independentSteps.push(step);
+                }
+            }
+        }
 
-    //     return {
-    //         canExecuteInParallel: independentSteps.length > 1,
-    //         steps:
-    //             independentSteps.length > 1 ? independentSteps : [currentStep],
-    //         reason:
-    //             independentSteps.length > 1
-    //                 ? `Found ${independentSteps.length} independent steps that can run in parallel`
-    //                 : 'No parallel execution opportunity detected',
-    //     };
-    // }
+        return {
+            canExecuteInParallel: independentSteps.length > 1,
+            steps:
+                independentSteps.length > 1 ? independentSteps : [currentStep],
+            reason:
+                independentSteps.length > 1
+                    ? `Found ${independentSteps.length} independent steps that can run in parallel`
+                    : 'No parallel execution opportunity detected',
+        };
+    }
 
     /**
      * Check if a step has data dependencies on other steps
      */
-    // private checkDataDependency(
-    //     step: PlanStep,
-    //     otherSteps: PlanStep[],
-    // ): boolean {
-    //     // ✅ IMPROVED: Check for actual template references instead of simple string matching
-    //     if (!step.arguments || !otherSteps.length) return false;
+    private checkDataDependency(
+        step: PlanStep,
+        otherSteps: PlanStep[],
+    ): boolean {
+        // ✅ IMPROVED: Check for actual template references instead of simple string matching
+        if (!step.arguments || !otherSteps.length) return false;
 
-    //     const argsStr = JSON.stringify(step.arguments);
-    //     const stepRefPattern = /\{\{([^.}]+)\.result/;
-    //     const matches = argsStr.match(stepRefPattern);
+        const argsStr = JSON.stringify(step.arguments);
+        const stepRefPattern = /\{\{([^.}]+)\.result/;
+        const matches = argsStr.match(stepRefPattern);
 
-    //     if (!matches) return false;
+        if (!matches) return false;
 
-    //     const referencedStepId = matches[1];
-    //     return otherSteps.some(
-    //         (otherStep) => otherStep.id === referencedStepId,
-    //     );
-    // }
+        const referencedStepId = matches[1];
+        return otherSteps.some(
+            (otherStep) => otherStep.id === referencedStepId,
+        );
+    }
 
     /**
      * ✅ NEW: Validate step dependencies for circular references
@@ -3004,6 +3058,35 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
         }
     }
 
+    /**
+     * 🆕 Update prompt configuration dynamically
+     * Allows runtime customization of prompt behavior
+     */
+    updatePromptConfig(config: PlannerPromptConfig): void {
+        this.promptComposer = createPlannerPromptComposer(config);
+    }
+
+    /**
+     * 🆕 Get current prompt composition statistics
+     */
+    getPromptStats(): {
+        cacheSize: number;
+        version: string;
+    } {
+        const cacheStats = this.promptComposer.getCacheStats();
+        return {
+            cacheSize: cacheStats.size,
+            version: '1.0.0',
+        };
+    }
+
+    /**
+     * 🆕 Clear prompt cache (useful for testing or memory management)
+     */
+    clearPromptCache(): void {
+        this.promptComposer.clearCache();
+    }
+
     // private shouldExpandToParallel(
     //     currentStep: PlanStep,
     //     allSteps: PlanStep[],
@@ -3132,37 +3215,4 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
     //         },
     //     };
     // }
-
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 🆕 NEW: Prompt system management
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * 🆕 Update prompt configuration dynamically
-     * Allows runtime customization of prompt behavior
-     */
-    updatePromptConfig(config: PlannerPromptConfig): void {
-        this.promptComposer = createPlannerPromptComposer(config);
-    }
-
-    /**
-     * 🆕 Get current prompt composition statistics
-     */
-    getPromptStats(): {
-        cacheSize: number;
-        version: string;
-    } {
-        const cacheStats = this.promptComposer.getCacheStats();
-        return {
-            cacheSize: cacheStats.size,
-            version: '1.0.0',
-        };
-    }
-
-    /**
-     * 🆕 Clear prompt cache (useful for testing or memory management)
-     */
-    clearPromptCache(): void {
-        this.promptComposer.clearCache();
-    }
 }

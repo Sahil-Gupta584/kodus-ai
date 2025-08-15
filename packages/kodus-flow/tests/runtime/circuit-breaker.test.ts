@@ -349,14 +349,14 @@ describe('CircuitBreaker', () => {
             expect(circuit.isClosed()).toBe(false);
         });
 
-        it('should check if circuit is half open', () => {
+        it('should check if circuit is half open', async () => {
             expect(circuit.isHalfOpen()).toBe(false);
 
             circuit.forceOpen();
             vi.advanceTimersByTime(1100);
 
             // This will trigger half-open state
-            circuit.execute(() => Promise.resolve('success'));
+            await circuit.execute(() => Promise.resolve('success'));
 
             expect(circuit.isHalfOpen()).toBe(true);
         });

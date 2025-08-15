@@ -171,6 +171,43 @@ export interface ReplanPolicyConfig {
     toolUnavailable?: 'replan' | 'ask_user' | 'fail';
 }
 
+/**
+ * Replan context data structure
+ */
+export interface ReplanContextData {
+    preservedSteps: StepExecutionResult[];
+    failurePatterns: string[];
+    primaryCause: string;
+    suggestedStrategy: string;
+    contextForReplan: Record<string, unknown>;
+}
+
+/**
+ * Structured replan context for planning optimization
+ */
+export interface ReplanContext {
+    isReplan: boolean;
+    previousPlan: {
+        id: string;
+        goal: string;
+        strategy: string;
+        totalSteps: number;
+    };
+    executionSummary: {
+        type: string;
+        executionTime: number;
+        successfulSteps: number;
+        failedSteps: number;
+        feedback: string;
+    };
+    preservedSteps: unknown[];
+    failureAnalysis: {
+        primaryCause: string;
+        failurePatterns: string[];
+    };
+    suggestions?: unknown;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🔧 UTILITY FUNCTIONS (simple, practical)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -209,8 +246,13 @@ export function getReadySteps(plan: ExecutionPlan): PlanStep[] {
         if (step.status !== 'pending') return false;
         if (!step.dependencies || step.dependencies.length === 0) return true;
 
+        // ✅ CORREÇÃO: Verificar se alguma dependência falhou
         return step.dependencies.every((depId) => {
             const depStep = plan.steps.find((s) => s.id === depId);
+            // Se a dependência falhou, este step não pode ser executado
+            if (depStep?.status === 'failed') {
+                return false;
+            }
             return depStep?.status === 'completed';
         });
     });
