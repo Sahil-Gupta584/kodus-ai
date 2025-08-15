@@ -1,6 +1,18 @@
 import { LibraryKodyRule } from '@/config/types/kodyRules.type';
-import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
+import {
+    IKodyRule,
+    kodyRuleSchema,
+} from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { UncategorizedComment } from '@/core/infrastructure/adapters/services/codeBase/types/commentAnalysis.type';
+import z from 'zod';
+
+export const kodyRulesGeneratorSchema = z.object({
+    rules: z.array(
+        kodyRuleSchema.partial().extend({
+            tags: z.array(z.string()).optional(),
+        }),
+    ),
+});
 
 export const prompt_KodyRulesGeneratorSystem = () => `
 You are a professional code reviewer, you are great at identifying common patterns. Whenever you receive a list of code review suggestions you are able to identify common patterns and formulate new rules and guidelines for future reviews.
@@ -21,7 +33,7 @@ You will also receive a list of pre-made rules and guidelines from a rule librar
         "title": "Avoid equality operators in loop termination conditions",
         "rule": "Check if loops use equality operators (== or !=) in termination conditions. These can lead to infinite loops if the condition is never met exactly. Instead, use relational operators like < or > for safer loop termination.",
         "severity": "Critical",
-        "tags": "cwe, maintainability, security",
+        "tags": [ "cwe", "maintainability", "security" ],
         "examples": [
             {
                 "snippet": "for (var i = 1; i <= 10; i += 2)  // Compliant\n{\n  //...\n}",
@@ -54,10 +66,12 @@ All rules MUST be related to the language of the suggestion.
 
 At the end your output must be only a json, you should not output any other text other than the list.
 It should have the following format:
-[
-    {pre-existing rules},
-    {new rules}
-]
+{
+    "rules": [
+        ...pre-existing rules,
+        ...new rules
+    ]
+}
 
 Your output must be surrounded by \`\`\`json\`\`\` tags.
 `;
@@ -112,6 +126,10 @@ ${payload.rules
 ]
 `;
 
+export const kodyRulesGeneratorDuplicateFilterSchema = z.object({
+    uuids: z.array(z.string()),
+});
+
 export const prompt_KodyRulesGeneratorDuplicateFilterSystem = () => `
 You will receive two lists of rules and guidelines with the following format:
 [
@@ -140,11 +158,13 @@ The existing rules list may be empty, in which case you must keep all the new ru
 
 You must then output the list of rules uuids that have passed the filter in the following format:
 
-[
-    "uuid1",
-    "uuid2",
-    "uuid3"
-]
+{
+    "uuids": [
+        "uuid1",
+        "uuid2",
+        "uuid3"
+    ]
+}
 
 Your output must be surrounded by \`\`\`json\`\`\` tags.
 `;
@@ -160,18 +180,18 @@ ${payload.existingRules
     .map(
         (rule) => `
     {
-        "uuid": "${rule?.uuid || ''}",
-        "title": "${rule?.title || ''}",
-        "rule": "${rule?.rule || ''}",
+        "uuid": "${rule?.uuid ?? ''}",
+        "title": "${rule?.title ?? ''}",
+        "rule": "${rule?.rule ?? ''}",
         ${rule?.why_is_this_important ? `"why_is_this_important": "${rule.why_is_this_important}",` : ''}
-        "severity": "${rule?.severity || ''}",
-        "tags": "${rule?.tags || ''}",
+        "severity": "${rule?.severity ?? ''}",
+        "tags": "${rule?.tags ?? ''}",
         "examples": [
         ${rule?.examples?.map(
             (example) => `
             {
-                "snippet": "${example?.snippet || ''}",
-                "isCorrect": ${example?.isCorrect || false}
+                "snippet": "${example?.snippet ?? ''}",
+                "isCorrect": ${example?.isCorrect ?? false}
             },
         `,
         )}
@@ -210,6 +230,10 @@ ${payload.newRules
 ]
 `;
 
+export const kodyRulesGeneratorQualityFilterSchema = z.object({
+    uuids: z.array(z.string()),
+});
+
 export const prompt_KodyRulesGeneratorQualityFilterSystem = () => `
 You will receive a list of rules and guidelines with the following format:
 [
@@ -239,11 +263,13 @@ You must remove all rules that are not of high quality.
 
 You must then output the list of rules uuids that have passed the filter in the following format:
 
-[
-    "uuid1",
-    "uuid2",
-    "uuid3"
-]
+{
+    "uuids": [
+        "uuid1",
+        "uuid2",
+        "uuid3"
+    ]
+}
 
 Your output must be surrounded by \`\`\`json\`\`\` tags.
 `;
@@ -259,15 +285,15 @@ ${payload.rules
         (rule) => `
     {
         ${rule.uuid ? `"uuid": "${rule.uuid}",` : ''}
-        "title": "${rule?.title || ''}",
-        "rule": "${rule?.rule || ''}",
-        "severity": "${rule?.severity || ''}",
+        "title": "${rule?.title ?? ''}",
+        "rule": "${rule?.rule ?? ''}",
+        "severity": "${rule?.severity ?? ''}",
         "examples": [
         ${rule?.examples?.map(
             (example) => `
             {
-                "snippet": "${example?.snippet || ''}",
-                "isCorrect": ${example?.isCorrect || false}
+                "snippet": "${example?.snippet ?? ''}",
+                "isCorrect": ${example?.isCorrect ?? false}
             },
         `,
         )}

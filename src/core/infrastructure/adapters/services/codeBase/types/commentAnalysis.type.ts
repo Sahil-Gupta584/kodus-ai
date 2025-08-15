@@ -1,5 +1,12 @@
-import { ReviewOptions } from '@/config/types/general/codeReview.type';
-import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import {
+    ReviewOptions,
+    reviewOptionsSchema,
+} from '@/config/types/general/codeReview.type';
+import {
+    SeverityLevel,
+    severityLevelSchema,
+} from '@/shared/utils/enums/severityLevel.enum';
+import z from 'zod';
 
 export interface UncategorizedComment {
     id: string;
@@ -13,6 +20,13 @@ export interface CategorizedComment {
     category: keyof ReviewOptions;
     severity: SeverityLevel;
 }
+
+export const categorizedCommentSchema = z.object({
+    id: z.string(),
+    body: z.string(),
+    category: reviewOptionsSchema.keyof(),
+    severity: severityLevelSchema,
+});
 
 export type CommentFrequency = {
     categories: {

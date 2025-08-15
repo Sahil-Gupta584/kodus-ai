@@ -10,6 +10,7 @@ import { GetImpactAnalysisResponse } from '@kodus/kodus-proto/ast';
 import { TaskStatus } from '@kodus/kodus-proto/task';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { ConfigLevel } from './pullRequestMessages.type';
+import z from 'zod';
 
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
@@ -203,6 +204,19 @@ export type ReviewComment = {
     createdAt: string;
     updatedAt: string;
 };
+
+export const reviewOptionsSchema = z.object({
+    security: z.boolean(),
+    code_style: z.boolean(),
+    refactoring: z.boolean(),
+    error_handling: z.boolean(),
+    maintainability: z.boolean(),
+    potential_issues: z.boolean(),
+    documentation_and_comments: z.boolean(),
+    performance_and_optimization: z.boolean(),
+    kody_rules: z.boolean(),
+    breaking_changes: z.boolean(),
+});
 
 export interface ReviewOptions {
     security: boolean;
