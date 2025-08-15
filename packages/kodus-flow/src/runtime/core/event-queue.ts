@@ -66,6 +66,12 @@ export interface EventQueueConfig {
     // === EVENT STORE INTEGRATION ===
     enableEventStore?: boolean; // Default: false
     eventStore?: EventStore; // Event store instance
+
+    // Global concurrency control (used when integrated via Runtime)
+    enableGlobalConcurrency?: boolean; // Default: false
+
+    // Processed events cache size (for dedup)
+    maxProcessedEvents?: number; // Default: 10000
 }
 
 /**
@@ -103,6 +109,19 @@ export interface QueueItem {
     nextRetryAt?: number;
     retryDelays?: number[];
     originalError?: string;
+}
+
+/**
+ * Snapshot simplificado de itens na fila (para debug/observabilidade)
+ */
+export interface QueueItemSnapshot {
+    eventId: string;
+    eventType: string;
+    priority: number;
+    retryCount: number;
+    timestamp: number;
+    correlationId?: string;
+    tenantId?: string;
 }
 
 /**
@@ -154,7 +173,7 @@ export class EventQueue {
 
     // ✅ DEDUPLICATION: Track processed events to prevent duplicates
     private processedEvents = new Set<string>();
-    private readonly maxProcessedEvents = 10000; // Prevent memory leaks
+    private readonly maxProcessedEvents: number; // Prevent memory leaks
 
     // Configuração baseada em recursos
     private readonly maxMemoryUsage: number;
@@ -192,10 +211,12 @@ export class EventQueue {
     // CPU tracking for real measurement
     private lastCpuInfo?: { idle: number; total: number; timestamp: number };
     private lastCpuUsage?: number;
+    private lastBackpressureActive: boolean = false;
 
     // Event Store integration
     private readonly enableEventStore: boolean;
     private readonly eventStore?: EventStore;
+    private readonly useGlobalConcurrency: boolean;
 
     // Future features (not implemented yet)
     // private readonly maxPersistedEvents: number;
@@ -227,7 +248,7 @@ export class EventQueue {
         this.semaphore = new Semaphore(this.maxConcurrent);
 
         // Auto-ajuste (ENABLED by default for better performance!)
-        this.enableAutoScaling = config.enableAutoScaling ?? true;
+        this.enableAutoScaling = config.enableAutoScaling ?? false;
         this.autoScalingInterval = config.autoScalingInterval ?? 10000; // Reduzido de 30s para 10s
 
         // Event Size Awareness
@@ -252,6 +273,12 @@ export class EventQueue {
         // Event Store integration
         this.enableEventStore = config.enableEventStore ?? false;
         this.eventStore = config.eventStore;
+
+        // Global concurrency (semaphore) only when explicitly enabled (Runtime integration)
+        this.useGlobalConcurrency = config.enableGlobalConcurrency ?? false;
+
+        // Processed events capacity
+        this.maxProcessedEvents = config.maxProcessedEvents ?? 10000;
 
         // Future features (not implemented yet)
         // this.maxPersistedEvents = config.maxPersistedEvents ?? 1000;
@@ -443,9 +470,12 @@ export class EventQueue {
         const isActive =
             metrics.memoryUsage > this.maxMemoryUsage ||
             metrics.cpuUsage > this.maxCpuUsage ||
-            (this.maxQueueDepth
-                ? metrics.queueDepth > this.maxQueueDepth
+            (this.maxQueueDepth !== undefined
+                ? metrics.queueDepth >= this.maxQueueDepth
                 : false);
+
+        // Cache state for lightweight stats reads
+        this.lastBackpressureActive = isActive;
 
         if (this.enableObservability && isActive) {
             this.observability.logger.warn('⚠️ BACKPRESSURE ACTIVATED', {
@@ -766,14 +796,15 @@ export class EventQueue {
 
         try {
             // Implementação básica de compressão (em produção usaria gzip/brotli)
-            const compressed = {
-                ...event,
-                data: {
-                    ...(event.data as Record<string, unknown>),
-                    compressed: true,
-                    originalSize: size,
-                    compressedAt: Date.now(),
-                },
+            // Non-intrusive: marcar compressão em metadata em vez de mutar data
+            const compressed = { ...event } as AnyEvent & {
+                metadata: Record<string, unknown> | undefined;
+            };
+            compressed.metadata = {
+                ...(event.metadata || {}),
+                compressed: true,
+                originalSize: size,
+                compressedAt: Date.now(),
             };
 
             if (this.enableObservability) {
@@ -806,14 +837,7 @@ export class EventQueue {
      * Adicionar evento à fila com backpressure e Event Size Awareness
      */
     async enqueue(event: AnyEvent, priority: number = 0): Promise<boolean> {
-        console.log('📥 ENQUEUING EVENT', {
-            eventId: event.id,
-            eventType: event.type,
-            priority,
-            currentQueueSize: this.queue.length,
-            processedEventsCount: this.processedEvents.size,
-            correlationId: event.metadata?.correlationId,
-        });
+        // Initial enqueue debug (reduced noise): rely on success log below
 
         // ✅ ADD: Log detalhado para detectar duplicação
         const isAlreadyProcessed = this.processedEvents.has(event.id);
@@ -822,34 +846,46 @@ export class EventQueue {
         );
 
         if (isAlreadyProcessed || isAlreadyInQueue) {
-            console.log('🔄 DUAL EVENT', {
-                eventId: event.id,
-                eventType: event.type,
-                correlationId: event.metadata?.correlationId,
-                isAlreadyProcessed,
-                isAlreadyInQueue,
-                processedEventsCount: this.processedEvents.size,
-                queueSize: this.queue.length,
-            });
+            if (this.enableObservability) {
+                this.observability.logger.warn('🔄 DUAL EVENT', {
+                    eventId: event.id,
+                    eventType: event.type,
+                    correlationId: event.metadata?.correlationId,
+                    isAlreadyProcessed,
+                    isAlreadyInQueue,
+                    processedEventsCount: this.processedEvents.size,
+                    queueSize: this.queue.length,
+                });
+            }
         }
 
         // Check if event is already processed (deduplication)
         if (isAlreadyProcessed) {
-            console.log('🔄 EVENT ALREADY PROCESSED - SKIPPING', {
-                eventId: event.id,
-                eventType: event.type,
-                processedEventsCount: this.processedEvents.size,
-            });
+            if (this.enableObservability) {
+                this.observability.logger.warn(
+                    '🔄 EVENT ALREADY PROCESSED - SKIPPING',
+                    {
+                        eventId: event.id,
+                        eventType: event.type,
+                        processedEventsCount: this.processedEvents.size,
+                    },
+                );
+            }
             return false;
         }
 
         // Check if event is already in queue (deduplication)
         if (isAlreadyInQueue) {
-            console.log('🔄 EVENT ALREADY IN QUEUE - SKIPPING', {
-                eventId: event.id,
-                eventType: event.type,
-                queueSize: this.queue.length,
-            });
+            if (this.enableObservability) {
+                this.observability.logger.warn(
+                    '🔄 EVENT ALREADY IN QUEUE - SKIPPING',
+                    {
+                        eventId: event.id,
+                        eventType: event.type,
+                        queueSize: this.queue.length,
+                    },
+                );
+            }
             return false;
         }
 
@@ -858,50 +894,44 @@ export class EventQueue {
         const isLarge = this.isLargeEvent(eventSize);
         const isHuge = this.isHugeEvent(eventSize);
 
-        console.log('📏 EVENT SIZE CALCULATED', {
-            eventId: event.id,
-            eventType: event.type,
-            eventSize,
-            isLarge,
-            isHuge,
-            largeEventThreshold: this.largeEventThreshold,
-            hugeEventThreshold: this.hugeEventThreshold,
-        });
+        // Verbose sizing log removed to reduce noise
 
         // Drop huge events if configured
         if (isHuge && this.dropHugeEvents) {
-            console.log('🚫 HUGE EVENT DROPPED', {
-                eventId: event.id,
-                eventType: event.type,
-                eventSize,
-                hugeEventThreshold: this.hugeEventThreshold,
-                dropHugeEvents: this.dropHugeEvents,
-            });
+            if (this.enableObservability) {
+                this.observability.logger.warn('🚫 HUGE EVENT DROPPED', {
+                    eventId: event.id,
+                    eventType: event.type,
+                    eventSize,
+                    hugeEventThreshold: this.hugeEventThreshold,
+                    dropHugeEvents: this.dropHugeEvents,
+                });
+            }
             return false;
         }
 
         // Check queue depth limits
-        if (this.maxQueueDepth && this.queue.length >= this.maxQueueDepth) {
-            console.log('🚫 QUEUE FULL - EVENT DROPPED', {
-                eventId: event.id,
-                eventType: event.type,
-                queueSize: this.queue.length,
-                maxQueueDepth: this.maxQueueDepth,
-            });
+        if (
+            this.maxQueueDepth !== undefined &&
+            this.queue.length >= this.maxQueueDepth
+        ) {
+            if (this.enableObservability) {
+                this.observability.logger.warn(
+                    '🚫 QUEUE FULL - EVENT DROPPED',
+                    {
+                        eventId: event.id,
+                        eventType: event.type,
+                        queueSize: this.queue.length,
+                        maxQueueDepth: this.maxQueueDepth,
+                    },
+                );
+            }
             return false;
         }
 
         // Check resource limits
         if (this.shouldActivateBackpressure()) {
-            console.log('⚠️ BACKPRESSURE ACTIVE - EVENT MAY BE DELAYED', {
-                eventId: event.id,
-                eventType: event.type,
-                memoryUsage: this.getMemoryUsage(),
-                cpuUsage: this.getCpuUsage(),
-                maxMemoryUsage: this.maxMemoryUsage,
-                maxCpuUsage: this.maxCpuUsage,
-            });
-            // Não rejeitar o evento, apenas aplicar backpressure
+            // Backpressure already logged when activated; do not duplicate here
         }
 
         // Compress event if needed
@@ -918,21 +948,7 @@ export class EventQueue {
             compressed = compressionResult.compressed;
             originalSize = compressionResult.originalSize;
 
-            console.log('🗜️ EVENT COMPRESSION', {
-                eventId: event.id,
-                eventType: event.type,
-                originalSize,
-                compressedSize: this.calculateEventSize(compressedEvent),
-                compressed,
-                compressionRatio: compressed
-                    ? (
-                          ((originalSize -
-                              this.calculateEventSize(compressedEvent)) /
-                              originalSize) *
-                          100
-                      ).toFixed(2) + '%'
-                    : '0%',
-            });
+            // Compression details are logged by compressEvent(); skip duplicate log
         }
 
         // Create queue item
@@ -965,31 +981,40 @@ export class EventQueue {
                     queueItem.persistent = true;
                     queueItem.persistedAt = Date.now();
 
-                    console.log('💾 EVENT PERSISTED', {
-                        eventId: event.id,
-                        eventType: event.type,
-                        persistent: true,
-                        persistedAt: queueItem.persistedAt,
-                    });
+                    if (this.enableObservability) {
+                        this.observability.logger.info('💾 EVENT PERSISTED', {
+                            eventId: event.id,
+                            eventType: event.type,
+                            persistent: true,
+                            persistedAt: queueItem.persistedAt,
+                        });
+                    }
                 } catch (error) {
-                    console.error('❌ EVENT PERSISTENCE FAILED', {
-                        eventId: event.id,
-                        eventType: event.type,
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
-                    });
+                    if (this.enableObservability) {
+                        this.observability.logger.error(
+                            '❌ EVENT PERSISTENCE FAILED',
+                            error as Error,
+                            {
+                                eventId: event.id,
+                                eventType: event.type,
+                            },
+                        );
+                    }
                 }
             } else {
-                console.log('💾 EVENT NOT PERSISTED (not critical)', {
-                    eventId: event.id,
-                    eventType: event.type,
-                    shouldPersist,
-                    persistCriticalEvents: this.persistCriticalEvents,
-                    criticalEventTypes: this.criticalEventTypes,
-                    criticalEventPrefixes: this.criticalEventPrefixes,
-                });
+                if (this.enableObservability) {
+                    this.observability.logger.debug(
+                        '💾 EVENT NOT PERSISTED (not critical)',
+                        {
+                            eventId: event.id,
+                            eventType: event.type,
+                            shouldPersist,
+                            persistCriticalEvents: this.persistCriticalEvents,
+                            criticalEventTypes: this.criticalEventTypes,
+                            criticalEventPrefixes: this.criticalEventPrefixes,
+                        },
+                    );
+                }
             }
         }
 
@@ -1004,17 +1029,7 @@ export class EventQueue {
             this.queue.splice(insertIndex, 0, queueItem);
         }
 
-        console.log('✅ EVENT ENQUEUED SUCCESSFULLY', {
-            eventId: event.id,
-            eventType: event.type,
-            priority,
-            newQueueSize: this.queue.length,
-            processedEventsCount: this.processedEvents.size,
-            correlationId: event.metadata?.correlationId,
-            compressed,
-            persistent: queueItem.persistent,
-            insertIndex: insertIndex === -1 ? 'end' : insertIndex,
-        });
+        // Success enqueue is logged via observability below
 
         if (this.enableObservability) {
             this.observability.logger.info('✅ EVENT ENQUEUED SUCCESSFULLY', {
@@ -1039,17 +1054,23 @@ export class EventQueue {
         if (this.enableEventStore && this.eventStore) {
             try {
                 await this.eventStore.appendEvents([event]);
-                console.log('📚 EVENT STORED', {
-                    eventId: event.id,
-                    eventType: event.type,
-                });
+                if (this.enableObservability) {
+                    this.observability.logger.info('📚 EVENT STORED', {
+                        eventId: event.id,
+                        eventType: event.type,
+                    });
+                }
             } catch (error) {
-                console.error('❌ EVENT STORE FAILED', {
-                    eventId: event.id,
-                    eventType: event.type,
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                });
+                if (this.enableObservability) {
+                    this.observability.logger.error(
+                        '❌ EVENT STORE FAILED',
+                        error as Error,
+                        {
+                            eventId: event.id,
+                            eventType: event.type,
+                        },
+                    );
+                }
             }
         }
 
@@ -1106,18 +1127,21 @@ export class EventQueue {
     /**
      * Processar lote de eventos com backpressure
      */
-    processBatch(
+    async processBatch(
         processor: (event: AnyEvent) => Promise<void>,
     ): Promise<number> {
         if (this.processing) {
-            return Promise.resolve(0);
+            return 0;
         }
 
         this.processing = true;
         const batch: AnyEvent[] = [];
 
         // Coletar lote - processar todos os eventos disponíveis se for menor que batchSize
-        const eventsToProcess = Math.min(this.batchSize, this.queue.length);
+        const eventsToProcess = Math.min(
+            this.batchSize || 10,
+            this.queue.length,
+        );
         for (let i = 0; i < eventsToProcess; i++) {
             const item = this.dequeueItem();
             if (item) {
@@ -1131,7 +1155,15 @@ export class EventQueue {
         }
 
         // Processar lote com backpressure
-        return this.processBatchWithBackpressure(batch, processor);
+        try {
+            const count = await this.processBatchWithBackpressure(
+                batch,
+                processor,
+            );
+            return count;
+        } finally {
+            this.processing = false;
+        }
     }
 
     /**
@@ -1144,14 +1176,7 @@ export class EventQueue {
         let successCount = 0;
         let errorCount = 0;
 
-        console.log('🔧 PROCESSING BATCH WITH BACKPRESSURE', {
-            batchSize: batch.length,
-            backpressureActive: this.shouldActivateBackpressure(),
-            batchEvents: batch.map((event) => ({
-                id: event.id,
-                type: event.type,
-            })),
-        });
+        // Logged via observability right below
 
         if (this.enableObservability) {
             this.observability.logger.info(
@@ -1169,20 +1194,14 @@ export class EventQueue {
         }
 
         // Processar eventos em chunks para evitar bloqueio
-        const chunkSize = this.shouldActivateBackpressure() ? 1 : 5;
+        const chunkSize = this.shouldActivateBackpressure()
+            ? 1
+            : Math.min(5, batch.length);
 
         for (let i = 0; i < batch.length; i += chunkSize) {
             const chunk = batch.slice(i, i + chunkSize);
 
-            console.log('📋 PROCESSING CHUNK', {
-                chunkIndex: Math.floor(i / chunkSize),
-                chunkSize: chunk.length,
-                totalChunks: Math.ceil(batch.length / chunkSize),
-                chunkEvents: chunk.map((event) => ({
-                    id: event.id,
-                    type: event.type,
-                })),
-            });
+            // Logged via observability debug below
 
             if (this.enableObservability) {
                 this.observability.logger.debug('📋 PROCESSING CHUNK', {
@@ -1199,20 +1218,14 @@ export class EventQueue {
                 });
             }
 
+            // Preserve priority order within chunk
             const chunkPromises = chunk.map(async (event) => {
                 try {
                     // ✅ ADD: Log detalhado para debug de duplicação
                     const isAlreadyProcessed = this.processedEvents.has(
                         event.id,
                     );
-                    console.log('🎯 PROCESSING INDIVIDUAL EVENT', {
-                        eventId: event.id,
-                        eventType: event.type,
-                        correlationId: event.metadata?.correlationId,
-                        isAlreadyProcessed,
-                        processedEventsCount: this.processedEvents.size,
-                        queueSize: this.queue.length,
-                    });
+                    // Logged via observability debug below
 
                     if (this.enableObservability) {
                         this.observability.logger.debug(
@@ -1233,41 +1246,31 @@ export class EventQueue {
                         );
                     }
 
-                    // ✅ DEDUPLICATION: Mark event as processed
+                    if (this.useGlobalConcurrency) {
+                        // concurrency control per event (global)
+                        await this.semaphore.acquire();
+                        try {
+                            await processor(event);
+                        } finally {
+                            this.semaphore.release();
+                        }
+                    } else {
+                        await processor(event);
+                    }
+                    successCount++;
+
+                    // mark processed only after success (global, after handler)
                     this.processedEvents.add(event.id);
-
-                    console.log('✅ EVENT MARKED AS PROCESSED', {
-                        eventId: event.id,
-                        eventType: event.type,
-                        processedEventsCount: this.processedEvents.size,
-                    });
-
-                    // ✅ CLEANUP: Prevent memory leaks by limiting set size
                     if (this.processedEvents.size > this.maxProcessedEvents) {
                         const firstEventId = this.processedEvents
                             .values()
-                            .next().value;
+                            .next().value as string | undefined;
                         if (firstEventId) {
                             this.processedEvents.delete(firstEventId);
-                            console.log('🧹 CLEANED OLD PROCESSED EVENT', {
-                                removedEventId: firstEventId,
-                                processedEventsCount: this.processedEvents.size,
-                            });
                         }
                     }
 
-                    await processor(event);
-                    successCount++;
-
-                    console.log('✅ INDIVIDUAL EVENT PROCESSED SUCCESS', {
-                        eventId: event.id,
-                        eventType: event.type,
-                        correlationId: event.metadata?.correlationId,
-                        successCount,
-                        errorCount,
-                        queueSize: this.queue.length,
-                        processedEventsCount: this.processedEvents.size,
-                    });
+                    // Logged via observability debug below
 
                     if (this.enableObservability) {
                         this.observability.logger.debug(
@@ -1292,18 +1295,7 @@ export class EventQueue {
                 } catch (error) {
                     errorCount++;
 
-                    console.error('❌ INDIVIDUAL EVENT PROCESSED ERROR', {
-                        eventId: event.id,
-                        eventType: event.type,
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
-                        successCount,
-                        errorCount,
-                        queueSize: this.queue.length,
-                        processedEventsCount: this.processedEvents.size,
-                    });
+                    // Logged via observability error below
 
                     if (this.enableObservability) {
                         this.observability.logger.error(
@@ -1330,23 +1322,21 @@ export class EventQueue {
 
             await Promise.all(chunkPromises);
 
-            console.log('📋 CHUNK COMPLETED', {
-                chunkIndex: Math.floor(i / chunkSize),
-                chunkSize: chunk.length,
-                successCount,
-                errorCount,
-                queueSize: this.queue.length,
-                processedEventsCount: this.processedEvents.size,
-            });
+            // Chunk completion logged at higher level
         }
 
-        console.log('🔧 BATCH WITH BACKPRESSURE COMPLETED', {
-            batchSize: batch.length,
-            successCount,
-            errorCount,
-            finalQueueSize: this.queue.length,
-            finalProcessedEventsCount: this.processedEvents.size,
-        });
+        if (this.enableObservability) {
+            this.observability.logger.info(
+                '🔧 BATCH WITH BACKPRESSURE COMPLETED',
+                {
+                    batchSize: batch.length,
+                    successCount,
+                    errorCount,
+                    finalQueueSize: this.queue.length,
+                    finalProcessedEventsCount: this.processedEvents.size,
+                },
+            );
+        }
 
         return successCount;
     }
@@ -1358,10 +1348,7 @@ export class EventQueue {
         processor: (event: AnyEvent) => Promise<void>,
     ): Promise<void> {
         if (this.processing) {
-            console.log('🔄 QUEUE ALREADY PROCESSING - SKIPPING', {
-                queueSize: this.queue.length,
-                processedEventsCount: this.processedEvents.size,
-            });
+            // Already logged via observability warn
             if (this.enableObservability) {
                 this.observability.logger.warn('🔄 QUEUE ALREADY PROCESSING', {
                     queueSize: this.queue.length,
@@ -1378,16 +1365,7 @@ export class EventQueue {
 
         this.processing = true;
 
-        console.log('🚀 EVENT QUEUE - STARTING PROCESSING', {
-            queueSize: this.queue.length,
-            processedEventsCount: this.processedEvents.size,
-            batchSize: this.batchSize || 10,
-            queueEvents: this.queue.map((item) => ({
-                id: item.event.id,
-                type: item.event.type,
-                timestamp: item.timestamp,
-            })),
-        });
+        // Logged via observability info below
 
         if (this.enableObservability) {
             this.observability.logger.info(
@@ -1409,16 +1387,7 @@ export class EventQueue {
             while (this.queue.length > 0) {
                 const batch = this.queue.splice(0, this.batchSize || 10);
 
-                console.log('📦 PROCESSING BATCH', {
-                    batchSize: batch.length,
-                    remainingInQueue: this.queue.length,
-                    batchEvents: batch.map((item) => ({
-                        id: item.event.id,
-                        type: item.event.type,
-                        timestamp: item.timestamp,
-                    })),
-                    processedEventsCount: this.processedEvents.size,
-                });
+                // Logged via observability debug below
 
                 if (this.enableObservability) {
                     this.observability.logger.debug(
@@ -1449,12 +1418,7 @@ export class EventQueue {
                     processor,
                 );
 
-                console.log('✅ BATCH PROCESSED', {
-                    batchSize: batch.length,
-                    processedCount,
-                    remainingInQueue: this.queue.length,
-                    processedEventsCount: this.processedEvents.size,
-                });
+                // Logged via observability info below
 
                 if (this.enableObservability) {
                     this.observability.logger.info('✅ BATCH PROCESSED', {
@@ -1476,11 +1440,7 @@ export class EventQueue {
                 }
             }
 
-            console.log('🎉 QUEUE PROCESSING COMPLETED', {
-                finalQueueSize: this.queue.length,
-                totalProcessedEvents: this.processedEvents.size,
-                processedEventsList: Array.from(this.processedEvents),
-            });
+            // Logged via observability info below
 
             if (this.enableObservability) {
                 this.observability.logger.info(
@@ -1497,11 +1457,7 @@ export class EventQueue {
                 );
             }
         } catch (error) {
-            console.error('❌ QUEUE PROCESSING FAILED', {
-                error: error instanceof Error ? error.message : String(error),
-                queueSize: this.queue.length,
-                processedEventsCount: this.processedEvents.size,
-            });
+            // Logged via observability error below
 
             if (this.enableObservability) {
                 this.observability.logger.error(
@@ -1521,11 +1477,13 @@ export class EventQueue {
             throw error;
         } finally {
             this.processing = false;
-            console.log('🏁 QUEUE PROCESSING FINISHED', {
-                finalQueueSize: this.queue.length,
-                finalProcessedEventsCount: this.processedEvents.size,
-                processing: this.processing,
-            });
+            if (this.enableObservability) {
+                this.observability.logger.info('🏁 QUEUE PROCESSING FINISHED', {
+                    finalQueueSize: this.queue.length,
+                    finalProcessedEventsCount: this.processedEvents.size,
+                    processing: this.processing,
+                });
+            }
         }
     }
 
@@ -1533,19 +1491,12 @@ export class EventQueue {
      * Limpar fila
      */
     clear(): void {
-        console.log('🧹 CLEARING EVENT QUEUE', {
-            queueSize: this.queue.length,
-            processedEventsCount: this.processedEvents.size,
-            processing: this.processing,
-        });
+        // Logged via observability info below
 
         this.queue = [];
         this.processedEvents.clear();
 
-        console.log('✅ EVENT QUEUE CLEARED', {
-            newQueueSize: this.queue.length,
-            newProcessedEventsCount: this.processedEvents.size,
-        });
+        // Logged via observability info below
 
         if (this.enableObservability) {
             this.observability.logger.info('Event queue cleared', {
@@ -1596,7 +1547,7 @@ export class EventQueue {
             processing: this.processing,
             avgEventSize: avgSize,
             totalEventSize: totalSize,
-            backpressureActive: this.shouldActivateBackpressure(),
+            backpressureActive: this.lastBackpressureActive,
             availablePermits: this.semaphore['permits'],
             waitQueueSize: this.semaphore['waitQueue'].length,
 
@@ -1617,20 +1568,27 @@ export class EventQueue {
             maxProcessedEvents: this.maxProcessedEvents,
         };
 
-        console.log('📊 EVENT QUEUE STATS', {
-            ...stats,
-            queueEvents: this.queue.map((item) => ({
-                id: item.event.id,
-                type: item.event.type,
-                size: item.size,
-                compressed: item.compressed,
-                isLarge: item.isLarge,
-                isHuge: item.isHuge,
-            })),
-            processedEventsList: Array.from(this.processedEvents),
-        });
+        // Stats are returned to caller; avoid console output in library
 
         return stats;
+    }
+
+    /**
+     * Obter um snapshot dos itens atualmente na fila (ordem de processamento)
+     * Retorna apenas metadados seguros para inspeção.
+     */
+    getQueueSnapshot(limit: number = 50): QueueItemSnapshot[] {
+        const sliceEnd = Math.min(limit, this.queue.length);
+        const items = this.queue.slice(0, sliceEnd);
+        return items.map((qi) => ({
+            eventId: qi.event.id,
+            eventType: qi.event.type,
+            priority: qi.priority,
+            retryCount: qi.retryCount,
+            timestamp: qi.timestamp,
+            correlationId: qi.event.metadata?.correlationId,
+            tenantId: qi.event.metadata?.tenantId,
+        }));
     }
 
     /**
@@ -1702,12 +1660,7 @@ export class EventQueue {
      * Limpar recursos da fila
      */
     destroy(): void {
-        console.log('💥 DESTROYING EVENT QUEUE', {
-            queueSize: this.queue.length,
-            processedEventsCount: this.processedEvents.size,
-            processing: this.processing,
-            hadAutoScalingTimer: !!this.autoScalingTimer,
-        });
+        // Logged via observability info below
 
         // Parar auto-scaling usando método dedicado
         this.stopAutoScaling();
@@ -1717,11 +1670,7 @@ export class EventQueue {
         this.performanceHistory = [];
         this.processedEvents.clear();
 
-        console.log('✅ EVENT QUEUE DESTROYED', {
-            newQueueSize: this.queue.length,
-            newProcessedEventsCount: this.processedEvents.size,
-            newPerformanceHistorySize: this.performanceHistory.length,
-        });
+        // Logged via observability info below
 
         if (this.enableObservability) {
             this.observability.logger.info('Event queue destroyed', {

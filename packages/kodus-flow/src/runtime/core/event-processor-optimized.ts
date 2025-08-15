@@ -158,20 +158,11 @@ function separateMiddlewares(middlewares: Middleware[]): {
     const handlerMiddlewares: Middleware[] = [];
 
     for (const middleware of middlewares) {
-        // Identificar middlewares de pipeline por nome da função ou toString
-        const middlewareStr = middleware.toString();
-        if (
-            middlewareStr.includes('withRetry') ||
-            middlewareStr.includes('withTimeout') ||
-            middlewareStr.includes('withConcurrency') ||
-            middlewareStr.includes('withSchedule') ||
-            middlewareStr.includes('withRetryWrapped') ||
-            middlewareStr.includes('withTimeoutWrapped') ||
-            middlewareStr.includes('withConcurrencyWrapped')
-        ) {
+        const kind = middleware.kind;
+        if (kind === 'pipeline') {
             pipelineMiddlewares.push(middleware);
         } else {
-            // Middlewares de handler: validate, etc.
+            // Default para 'handler' quando não especificado
             handlerMiddlewares.push(middleware);
         }
     }
@@ -672,5 +663,39 @@ export class OptimizedEventProcessor {
         this.clearHandlers();
         this.eventBuffer = createCircularBuffer<AnyEvent>(10000);
         this.processingDepth = 0;
+    }
+
+    /**
+     * Get a snapshot of the most recently processed events (for observability)
+     */
+    getRecentEvents(limit: number = 50): Array<{
+        eventId: string;
+        eventType: string;
+        timestamp: number;
+        correlationId?: string;
+    }> {
+        const result: Array<{
+            eventId: string;
+            eventType: string;
+            timestamp: number;
+            correlationId?: string;
+        }> = [];
+
+        const count = Math.min(limit, this.eventBuffer.size);
+        for (let i = 0; i < count; i++) {
+            const index =
+                (this.eventBuffer.tail - 1 - i + this.eventBuffer.capacity) %
+                this.eventBuffer.capacity;
+            const ev = this.eventBuffer.items[index];
+            if (!ev) continue;
+            result.push({
+                eventId: ev.id,
+                eventType: ev.type,
+                timestamp: ev.ts,
+                correlationId: ev.metadata?.correlationId,
+            });
+        }
+
+        return result;
     }
 }

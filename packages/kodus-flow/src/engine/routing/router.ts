@@ -315,7 +315,7 @@ export class Router<TSchema extends z.ZodType = z.ZodType> {
 
         // Emit routing start event via KernelHandler
         if (this.kernelHandler) {
-            this.kernelHandler.emit('router.start', {
+            await this.kernelHandler.emit('router.start', {
                 routerId: this.config.name,
                 executionId,
                 inputType: typeof input,
@@ -425,7 +425,7 @@ export class Router<TSchema extends z.ZodType = z.ZodType> {
 
             // Emit routing success event via KernelHandler
             if (this.kernelHandler) {
-                this.kernelHandler.emit('router.success', {
+                await this.kernelHandler.emit('router.success', {
                     routerId: this.config.name,
                     executionId,
                     selectedRoute,
@@ -470,7 +470,7 @@ export class Router<TSchema extends z.ZodType = z.ZodType> {
 
             // Emit routing error event via KernelHandler
             if (this.kernelHandler) {
-                this.kernelHandler.emit('router.error', {
+                await this.kernelHandler.emit('router.error', {
                     routerId: this.config.name,
                     executionId,
                     duration,

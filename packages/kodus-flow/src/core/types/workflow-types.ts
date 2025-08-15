@@ -21,6 +21,7 @@ import { ContextStateService } from '../context/services/state-service.js';
 // import { MemoryService } from '../context/context-factory.js';
 import { Persistor, EventStream, Event } from './common-types.js';
 import { IdGenerator } from '../../utils/id-generator.js';
+import { createLogger } from '../../observability/index.js';
 
 // ===== WORKFLOW IDENTITY TYPES =====
 
@@ -642,6 +643,7 @@ export function createWorkflow(
         persistorService?: Persistor;
     } = {},
 ): Workflow {
+    const logger = createLogger('workflow');
     return {
         name: definition.name,
         description: definition.description,
@@ -667,29 +669,29 @@ export function createWorkflow(
             _handler: (event: unknown) => void | Promise<void>,
         ): void {
             // Basic event handling - can be extended
-            console.log(`Event handler registered for ${eventType}`);
+            logger.info('Event handler registered', { eventType });
         },
 
         emit(eventType: string, data?: unknown): void {
             // Basic event emission - can be extended
-            console.log(`Event emitted: ${eventType}`, data);
+            logger.info('Event emitted', { eventType, data });
         },
 
         async pause(reason?: string): Promise<string> {
             // Basic pause implementation
             const snapshotId = `snapshot_${Date.now()}`;
-            console.log(`Workflow paused: ${reason}`, { snapshotId });
+            logger.warn('Workflow paused', { reason, snapshotId });
             return snapshotId;
         },
 
         async resume(snapshotId?: string): Promise<void> {
             // Basic resume implementation
-            console.log(`Workflow resumed from snapshot: ${snapshotId}`);
+            logger.info('Workflow resumed', { snapshotId });
         },
 
         async cleanup(): Promise<void> {
             // Basic cleanup implementation
-            console.log('Workflow cleanup completed');
+            logger.info('Workflow cleanup completed');
         },
     };
 }

@@ -112,7 +112,9 @@ export class StorageAdapterFactory {
     ): Promise<T> {
         logger.info('Creating storage adapter', { type: config.type, config });
 
-        const adapterKey = `${config.type}_${config.connectionString || 'default'}`;
+        const collection = (config.options?.collection ?? 'default') as string;
+
+        const adapterKey = `${config.type}_${config.connectionString || 'default'}_${collection}`;
 
         // Check if adapter already exists
         if (this.adapters.has(adapterKey)) {

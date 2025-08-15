@@ -31,10 +31,17 @@ export interface ContextBuilderConfig {
         };
     };
     session?: SessionConfig;
+    snapshot?: {
+        adapterType?: StorageType;
+        adapterConfig?: {
+            connectionString?: string;
+            options?: Record<string, unknown>;
+        };
+    };
 }
 
 export class ContextBuilder {
-    private static instance: ContextBuilder;
+    private static instance: ContextBuilder | undefined;
     private readonly logger = createLogger('ContextBuilder');
     private readonly _config: ContextBuilderConfig;
 
@@ -69,6 +76,7 @@ export class ContextBuilder {
         this.logger.info('ContextBuilder initialized', {
             memoryConfig: config.memory ? 'configured' : 'default',
             sessionConfig: config.session ? 'configured' : 'default',
+            snapshotConfig: config.snapshot ? 'configured' : 'default',
         });
     }
 
@@ -89,8 +97,10 @@ export class ContextBuilder {
             config,
             hasMemory: !!config.memory,
             hasSession: !!config.session,
+            hasSnapshot: !!config.snapshot,
             memoryAdapterType: config.memory?.adapterType,
             sessionAdapterType: config.session?.adapterType,
+            snapshotAdapterType: config.snapshot?.adapterType,
         });
 
         ContextBuilder.resetInstance();
@@ -129,13 +139,15 @@ export class ContextBuilder {
 
         try {
             await this.memoryManager.initialize();
-
             const threadId = options.thread?.id || 'default';
-            let session =
-                await this.sessionService.getSessionByThread(threadId);
+            const tenantId = options.tenantId || 'default';
+            let session = await this.sessionService.getSessionByThread(
+                threadId,
+                tenantId,
+            );
             if (!session) {
                 session = await this.sessionService.createSession(
-                    options.tenantId || 'default',
+                    tenantId,
                     threadId,
                     {},
                 );
@@ -146,7 +158,7 @@ export class ContextBuilder {
                 { maxNamespaceSize: 1000, maxNamespaces: 50 },
             );
 
-            const agentContext = this.buildAgentContext({
+            const agentContext = await this.buildAgentContext({
                 session,
                 workingMemory,
                 options,
@@ -168,7 +180,7 @@ export class ContextBuilder {
         }
     }
 
-    private buildAgentContext({
+    private async buildAgentContext({
         session,
         workingMemory,
         options,
@@ -176,8 +188,54 @@ export class ContextBuilder {
         session: Session;
         workingMemory: ContextStateService;
         options: AgentExecutionOptions;
-    }): AgentContext {
+    }): Promise<AgentContext> {
         const invocationId = IdGenerator.executionId();
+
+        // Instâncias únicas e compartilhadas para rastreabilidade consistente
+        const sharedStepExecution = new StepExecution();
+        const sharedContextManager = new ContextManager(sharedStepExecution);
+        const sharedMessageContext = new EnhancedMessageContext(
+            sharedContextManager,
+        );
+
+        // Reidratar workingMemory com contexto persistido por sessão (por namespace)
+        try {
+            const contextData = (session.contextData || {}) as Record<
+                string,
+                unknown
+            >;
+            for (const [namespace, nsValue] of Object.entries(contextData)) {
+                if (
+                    typeof nsValue === 'object' &&
+                    nsValue !== null &&
+                    !Array.isArray(nsValue)
+                ) {
+                    const entries = Object.entries(
+                        nsValue as Record<string, unknown>,
+                    );
+                    for (const [key, value] of entries) {
+                        // each key/value re-hydrated into working memory
+
+                        await workingMemory.set(namespace, key, value);
+                    }
+                }
+            }
+            this.logger.debug(
+                'Working memory rehydrated from session context',
+                {
+                    sessionId: session.id,
+                    tenantId: session.tenantId,
+                },
+            );
+        } catch (rehydrateError) {
+            this.logger.warn('Failed to rehydrate working memory', {
+                error:
+                    rehydrateError instanceof Error
+                        ? rehydrateError.message
+                        : String(rehydrateError),
+                sessionId: session.id,
+            });
+        }
 
         return {
             sessionId: session.id,
@@ -190,8 +248,13 @@ export class ContextBuilder {
             state: {
                 get: <T>(namespace: string, key: string) =>
                     workingMemory.get<T>(namespace, key),
-                set: (namespace: string, key: string, value: unknown) =>
-                    workingMemory.set(namespace, key, value),
+                set: async (namespace: string, key: string, value: unknown) => {
+                    await workingMemory.set(namespace, key, value);
+                    // Espelhar no SessionService como contexto persistente por namespace
+                    await this.sessionService.updateSessionContext(session.id, {
+                        [namespace]: { [key]: value },
+                    });
+                },
                 clear: (namespace: string) => workingMemory.clear(namespace),
                 getNamespace: async (namespace: string) => {
                     const nsMap = workingMemory.getNamespace(namespace);
@@ -201,12 +264,47 @@ export class ContextBuilder {
 
             memory: {
                 store: async (content: unknown, type = 'general') => {
-                    await this.memoryManager.store({
+                    // Suporta dois formatos:
+                    // 1) store(value, type)
+                    // 2) store({ content, type?, key?, metadata?, entityId?, sessionId?, tenantId?, contextId?, expireAt? })
+                    if (
+                        content &&
+                        typeof content === 'object' &&
+                        'content' in (content as Record<string, unknown>)
+                    ) {
+                        const input = content as {
+                            content: unknown;
+                            type?: string;
+                            key?: string;
+                            metadata?: Record<string, unknown>;
+                            entityId?: string;
+                            sessionId?: string;
+                            tenantId?: string;
+                            contextId?: string;
+                            expireAt?: number;
+                        };
+
+                        const stored = await this.memoryManager.store({
+                            key: input.key,
+                            content: input.content,
+                            type: input.type ?? type,
+                            entityId: input.entityId,
+                            sessionId: input.sessionId ?? session.id,
+                            tenantId: input.tenantId ?? session.tenantId,
+                            contextId: input.contextId,
+                            metadata: input.metadata,
+                            expireAt: input.expireAt,
+                        });
+                        return stored.id;
+                    }
+
+                    const stored = await this.memoryManager.store({
                         content,
                         type,
                         sessionId: session.id,
                         tenantId: session.tenantId,
                     });
+                    return stored.id;
                 },
                 get: async (id: string) => {
                     const item = await this.memoryManager.get(id);
@@ -215,15 +313,48 @@ export class ContextBuilder {
                 search: async (query: string, limit = 5) => {
                     const results = await this.memoryManager.search(query, {
                         topK: limit,
+                        filter: {
+                            tenantId: session.tenantId,
+                            sessionId: session.id,
+                        },
                     });
                     return results.map(
                         (r) => r.metadata?.content || r.text || 'No content',
                     );
                 },
                 getRecent: async (limit = 5) => {
-                    const items =
-                        await this.memoryManager.getRecentMemories(limit);
-                    return items.map((item) => item.value);
+                    // Buscar itens recentes escopados ao tenant/session do contexto
+                    const results = await this.memoryManager.query({
+                        tenantId: session.tenantId,
+                        sessionId: session.id,
+                        until: Date.now(),
+                        limit,
+                    });
+                    // Ordenar por timestamp desc para garantir ordem
+                    const sorted = results.sort(
+                        (a, b) => b.timestamp - a.timestamp,
+                    );
+                    return sorted.map((item) => item.value);
+                },
+                query: async (filters: {
+                    type?: string;
+                    key?: string;
+                    since?: number;
+                    until?: number;
+                    limit?: number;
+                }) => {
+                    const results = await this.memoryManager.query({
+                        type: filters.type,
+                        // key support depende do adapter; incluímos via keyPattern ≈ exato
+                        // mas como MemoryQuery não possui key diretamente no manager, fica para adapter
+                        // aqui focamos em filtros multi-tenant/sessão e tempo
+                        tenantId: session.tenantId,
+                        sessionId: session.id,
+                        since: filters.since,
+                        until: filters.until,
+                        limit: filters.limit,
+                    });
+                    return results.map((r) => r.value);
                 },
             },
 
@@ -345,11 +476,9 @@ export class ContextBuilder {
             agentExecutionOptions: options,
             allTools: this.toolEngine?.listTools() || [],
 
-            stepExecution: new StepExecution(),
-            messageContext: new EnhancedMessageContext(
-                new ContextManager(new StepExecution()),
-            ),
-            contextManager: new ContextManager(new StepExecution()),
+            stepExecution: sharedStepExecution,
+            messageContext: sharedMessageContext,
+            contextManager: sharedContextManager,
         };
     }
 
@@ -400,10 +529,8 @@ export class ContextBuilder {
     }
 }
 
-export const contextBuilder = ContextBuilder.getInstance();
-
 export const createAgentContext = (
     options: AgentExecutionOptions,
 ): Promise<AgentContext> => {
-    return contextBuilder.createAgentContext(options);
+    return ContextBuilder.getInstance().createAgentContext(options);
 };

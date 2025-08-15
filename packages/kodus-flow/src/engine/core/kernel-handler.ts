@@ -331,7 +331,7 @@ export class KernelHandler implements KernelHandlerInterface {
         this.loopProtection.circuitBreaker
             .execute(
                 async () => {
-                    this.kernel!.run(event);
+                    await this.kernel!.run(event);
                     return true;
                 },
                 {
@@ -477,10 +477,7 @@ export class KernelHandler implements KernelHandlerInterface {
         });
 
         try {
-            // Emitir evento inicial
-            this.emit(startEvent.type, startEvent.data);
-
-            // Processar eventos via kernel
+            // Processar evento via Kernel apenas uma vez
             if (this.kernel) {
                 await this.kernel.run(startEvent);
             }

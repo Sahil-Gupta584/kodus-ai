@@ -206,7 +206,7 @@ export class UnifiedEventManager extends EventEmitter {
             this.on(responseEventType, responseHandler);
 
             // Emit request
-            this.emitEvent(
+            void this.emitEvent(
                 requestEventType as EventType,
                 {
                     data,
@@ -228,7 +228,7 @@ export class UnifiedEventManager extends EventEmitter {
         data?: T,
         error?: string,
     ): void {
-        this.emitEvent(
+        void this.emitEvent(
             responseEventType as EventType,
             {
                 data,
@@ -421,9 +421,9 @@ export function getUnifiedEventManager(
     return globalEventManager;
 }
 
-export function resetUnifiedEventManager(): void {
+export async function resetUnifiedEventManager(): Promise<void> {
     if (globalEventManager) {
-        globalEventManager.cleanup();
+        await globalEventManager.cleanup();
         globalEventManager = null;
     }
 }

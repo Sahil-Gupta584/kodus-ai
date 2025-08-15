@@ -112,6 +112,34 @@ const planningResultSchema = {
             items: planStepSchema,
             minItems: 0,
         },
+        signals: {
+            type: 'object',
+            properties: {
+                needs: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    nullable: true,
+                },
+                noDiscoveryPath: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    nullable: true,
+                },
+                errors: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    nullable: true,
+                },
+                suggestedNextStep: { type: 'string', nullable: true },
+            },
+            additionalProperties: true,
+            nullable: true,
+        },
+        audit: {
+            type: 'array',
+            items: { type: 'string' },
+            nullable: true,
+        },
         reasoning: {
             oneOf: [
                 { type: 'string' },
@@ -440,11 +468,6 @@ export function validatePlanningResponse(response: unknown): PlanningResult {
             reasoning:
                 (planDataRecord?.reasoning as string) ||
                 'No reasoning provided',
-            complexity:
-                (planDataRecord?.complexity as
-                    | 'simple'
-                    | 'medium'
-                    | 'complex') || 'medium',
         };
 
         // Validate recovered data
@@ -476,7 +499,6 @@ export function validatePlanningResponse(response: unknown): PlanningResult {
             goal: 'Failed to parse response',
             steps: [],
             reasoning: error instanceof Error ? error.message : 'Unknown error',
-            complexity: 'simple',
         };
     }
 }

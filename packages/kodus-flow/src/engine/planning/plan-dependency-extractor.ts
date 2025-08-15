@@ -377,26 +377,26 @@ export function debugPlanExtraction(
 ): void {
     const extraction = extractDependenciesFromPlan(plan, config);
 
-    console.log('🔍 Plan Dependency Extraction Debug:');
-    console.log(`📋 Plan: ${plan.id} (${plan.strategy})`);
-    console.log(`🔧 Tool Calls: ${extraction.toolCalls.length}`);
-    console.log(`🔗 Dependencies: ${extraction.dependencies.length}`);
-    console.log(`⚠️ Warnings: ${extraction.warnings.length}`);
+    logger.info('🔍 Plan Dependency Extraction Debug');
+    logger.info(`📋 Plan: ${plan.id} (${plan.strategy})`);
+    logger.info(`🔧 Tool Calls: ${extraction.toolCalls.length}`);
+    logger.info(`🔗 Dependencies: ${extraction.dependencies.length}`);
+    logger.warn(`⚠️ Warnings: ${extraction.warnings.length}`);
 
     if (extraction.warnings.length > 0) {
-        console.log('\n⚠️ Warnings:');
+        logger.warn('⚠️ Warnings:');
         extraction.warnings.forEach((warning, i) => {
-            console.log(`  ${i + 1}. ${warning}`);
+            logger.warn(`  ${i + 1}. ${warning}`);
         });
     }
 
-    console.log('\n🔧 Tool Calls:');
+    logger.info('\n🔧 Tool Calls:');
     extraction.toolCalls.forEach((call, i) => {
-        console.log(`  ${i + 1}. ${call.toolName} (${call.id})`);
+        logger.info(`  ${i + 1}. ${call.toolName} (${call.id})`);
     });
 
-    console.log('\n🔗 Dependencies:');
+    logger.info('\n🔗 Dependencies:');
     extraction.dependencies.forEach((dep, i) => {
-        console.log(`  ${i + 1}. ${dep.toolName} (${dep.type})`);
+        logger.info(`  ${i + 1}. ${dep.toolName} (${dep.type})`);
     });
 }

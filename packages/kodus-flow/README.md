@@ -1,3 +1,28 @@
+## Observabilidade em Produção (OTLP)
+
+Para captura 100% de spans em alta escala, use OpenTelemetry com o BatchSpanProcessor + OTLP exporter:
+
+```ts
+import { getObservability, createOtelTracerAdapter } from './src/observability/index.js';
+
+// 1) Configure o SDK OTEL no host (fora deste exemplo)
+// 2) Crie o adapter e plugue no ObservabilitySystem
+const tracerAdapter = await createOtelTracerAdapter();
+const obs = getObservability({
+  telemetry: {
+    enabled: true,
+    sampling: { rate: 1, strategy: 'probabilistic' },
+    externalTracer: tracerAdapter,
+    privacy: { includeSensitiveData: false },
+  },
+  logging: { enabled: true, level: 'warn' },
+  monitoring: { enabled: true },
+});
+
+// Serverless: chame forceFlush no final
+await obs.telemetry.forceFlush();
+```
+
 # 🚀 Kodus Flow
 
 Framework enterprise para orquestração de agentes de IA com arquitetura em 5 camadas bem definidas.

@@ -2463,7 +2463,7 @@ export class BitbucketService
                 this.instanceBitbucketApi(bitbucketAuthDetails);
 
             // added ts-ignore because parent expects a type property but Bitbucket rejects it
-            bitbucketAPI.pullrequests.createComment({
+            const res = await bitbucketAPI.pullrequests.createComment({
                 pull_request_id: prNumber,
                 repo_slug: `{${repository.id}}`,
                 workspace: `{${workspace}}`,
@@ -2477,6 +2477,8 @@ export class BitbucketService
                     },
                 },
             });
+
+            return res.data;
         } catch (error) {
             this.logger.error({
                 message: 'Error to create response to comment',
@@ -4406,6 +4408,81 @@ export class BitbucketService
             });
 
             return [];
+        }
+    }
+
+    async updateResponseToComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        commentId: string;
+        body: string;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<any | null> {
+        const {
+            organizationAndTeamData,
+            commentId,
+            body,
+            repository,
+            prNumber,
+        } = params;
+
+        try {
+            const bitbucketAuthDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            if (!bitbucketAuthDetails) {
+                this.logger.error({
+                    message: 'Bitbucket auth details not found',
+                    context: BitbucketService.name,
+                    serviceName: 'BitbucketService updateResponseToComment',
+                    metadata: { organizationAndTeamData, repository, prNumber },
+                });
+                return null;
+            }
+
+            const bitbucketAPI =
+                this.instanceBitbucketApi(bitbucketAuthDetails);
+
+            const workspace = await this.getWorkspaceFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            if (!workspace) {
+                this.logger.error({
+                    message: 'Workspace not found for repository',
+                    context: BitbucketService.name,
+                    serviceName: 'BitbucketService updateResponseToComment',
+                    metadata: { organizationAndTeamData, repository, prNumber },
+                });
+                return null;
+            }
+
+            const response = await bitbucketAPI.pullrequests.updateComment({
+                repo_slug: `{${repository.id}}`,
+                workspace: `{${workspace}}`,
+                pull_request_id: prNumber,
+                comment_id: Number(commentId),
+                // @ts-ignore
+                _body: {
+                    content: {
+                        raw: body,
+                    },
+                },
+            });
+
+            return response.data;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error updating response to comment',
+                context: BitbucketService.name,
+                serviceName: 'BitbucketService updateResponseToComment',
+                error: error,
+                metadata: {
+                    params,
+                },
+            });
+            return null;
         }
     }
 

@@ -1012,17 +1012,61 @@ export class AzureReposRequestHelper {
 
         const queryParams = new URLSearchParams();
         queryParams.append('api-version', '7.1');
-        queryParams.append('recursionLevel', params.recursive ? 'full' : 'oneLevel');
+        queryParams.append(
+            'recursionLevel',
+            params.recursive ? 'full' : 'oneLevel',
+        );
 
         if (params.scopePath) {
             queryParams.append('scopePath', params.scopePath);
         }
 
         const { data } = await instance.get(
-            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/items?${queryParams.toString()}`
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/items?${queryParams.toString()}`,
         );
 
         return data?.value || [];
+    }
+
+    async updateThreadComment(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        prId: number;
+        threadId: number;
+        commentId: number;
+        body: string;
+    }): Promise<AzureRepoPRThread> {
+        const {
+            orgName,
+            token,
+            projectId,
+            repositoryId,
+            prId,
+            threadId,
+            commentId,
+            body,
+        } = params;
+
+        const instance = await this.azureRequest(params);
+
+        const apiPath = `/${projectId}/_apis/git/repositories/${repositoryId}/pullRequests/${prId}/threads/${threadId}/comments/${commentId}`;
+
+        const queryParams = {
+            'api-version': '7.1',
+        };
+
+        const payload = {
+            content: body,
+            commentType: AzureRepoCommentType.TEXT,
+        };
+
+        const { data } = await instance.patch(apiPath, payload, {
+            params: queryParams,
+        });
+
+        return data;
     }
 
     /**

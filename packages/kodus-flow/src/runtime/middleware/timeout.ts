@@ -9,7 +9,7 @@ import type { Event, AnyEvent } from '../../core/types/events.js';
 import type { EventHandler } from '../../core/types/common-types.js';
 import { KernelError } from '../../core/errors.js';
 import { DEFAULT_TIMEOUT_MS } from '../constants.js';
-import type { MiddlewareFactoryType } from './types.js';
+import type { Middleware, MiddlewareFactoryType } from './types.js';
 
 /**
  * Options for the timeout middleware
@@ -44,7 +44,9 @@ export const withTimeout: MiddlewareFactoryType<
 > = (options: TimeoutOptions | undefined) => {
     const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-    return <T extends Event>(handler: EventHandler<T>): EventHandler<T> => {
+    const middleware = (<T extends Event>(
+        handler: EventHandler<T>,
+    ): EventHandler<T> => {
         const withTimeoutWrapped = (event: T): Promise<void | AnyEvent> => {
             return new Promise<void | AnyEvent>((resolve, reject) => {
                 const timeoutId = setTimeout(() => {
@@ -69,5 +71,11 @@ export const withTimeout: MiddlewareFactoryType<
         };
 
         return withTimeoutWrapped;
-    };
+    }) as Middleware<Event>;
+
+    middleware.kind = 'pipeline';
+    (middleware as unknown as { displayName?: string }).displayName =
+        'withTimeout';
+
+    return middleware;
 };

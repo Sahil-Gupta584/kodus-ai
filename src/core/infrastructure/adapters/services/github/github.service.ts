@@ -773,12 +773,17 @@ export class GithubService
      * @param params - The parameters for fetching pull requests, including organization and team data, repository filters, and pull request filters.
      * @param params.organizationAndTeamData - The organization and team data containing organizationId and teamId.
      * @param params.repository - Optional repository filter to fetch pull requests from a specific repository.
-     * @param params.filters - Optional filters for pull requests, including startDate, endDate, state, author, and branch.
+     * @param params.filters - Optional filters for pull requests, including startDate, endDate, state, author, branch, number, id, title, repository, and url.
      * @param params.filters.startDate - The start date for filtering pull requests.
      * @param params.filters.endDate - The end date for filtering pull requests.
      * @param params.filters.state - The state of the pull requests to filter (e.g., 'open', 'closed', 'all').
      * @param params.filters.author - The author of the pull requests to filter.
      * @param params.filters.branch - The branch from which to fetch pull requests.
+     * @param params.filters.number - The pull request number to retrieve.
+     * @param params.filters.id - The pull request id to filter by.
+     * @param params.filters.title - The pull request title to filter by (contains match).
+     * @param params.filters.repository - The repository name to filter by (contains match).
+     * @param params.filters.url - The pull request URL to filter by (contains match).
      * @returns A promise that resolves to an array of PullRequest objects.
      */
     async getPullRequests(params: {
@@ -793,6 +798,11 @@ export class GithubService
             state?: PullRequestState;
             author?: string;
             branch?: string;
+            number?: number;
+            id?: number;
+            title?: string;
+            repository?: string;
+            url?: string;
         };
     }): Promise<PullRequest[]> {
         const { organizationAndTeamData, repository, filters = {} } = params;
@@ -851,10 +861,56 @@ export class GithubService
                 }
 
                 reposToProcess = [foundRepo];
+            } else if (filters.repository) {
+                reposToProcess = allRepositories.filter((r) =>
+                    r.name
+                        .toLowerCase()
+                        .includes(filters.repository!.toLowerCase()),
+                );
+
+                if (reposToProcess.length === 0) {
+                    this.logger.warn({
+                        message: `No repositories found matching filter: ${filters.repository}`,
+                        context: GithubService.name,
+                        metadata: params,
+                    });
+
+                    return [];
+                }
             }
 
             const octokit = await this.instanceOctokit(organizationAndTeamData);
             const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
+
+            // If URL filter is provided, try to extract PR info from URL for optimization
+            if (filters.url) {
+                const urlInfo = this.parseGithubUrl(filters.url);
+                if (urlInfo?.owner && urlInfo?.repo && urlInfo?.prNumber) {
+                    // Direct fetch if URL contains complete PR info
+                    const specificRepo = reposToProcess.find(
+                        (r) =>
+                            r.name === urlInfo.repo ||
+                            r.name === `${urlInfo.owner}/${urlInfo.repo}`,
+                    );
+
+                    if (specificRepo) {
+                        const directResult = await this.getPullRequestsByRepo({
+                            octokit,
+                            owner,
+                            repo: specificRepo.name,
+                            filters: { ...filters, number: urlInfo.prNumber },
+                        });
+
+                        const rawPullRequests = directResult.flat();
+                        return rawPullRequests.map((rawPr) =>
+                            this.transformPullRequest(
+                                rawPr,
+                                organizationAndTeamData,
+                            ),
+                        );
+                    }
+                }
+            }
 
             const promises = reposToProcess.map((r) =>
                 this.getPullRequestsByRepo({
@@ -898,14 +954,80 @@ export class GithubService
             state?: PullRequestState;
             author?: string;
             branch?: string;
+            number?: number;
+            id?: number;
+            title?: string;
+            url?: string;
         };
     }): Promise<
         | RestEndpointMethodTypes['pulls']['list']['response']['data']
         | RestEndpointMethodTypes['pulls']['get']['response']['data'][]
     > {
         const { octokit, owner, repo, filters = {} } = params;
-        const { startDate, endDate, state, author, branch } = filters;
+        const {
+            startDate,
+            endDate,
+            state,
+            author,
+            branch,
+            number,
+            id,
+            title,
+            url,
+        } = filters;
 
+        // If PR number is provided, fetch it directly for this repo
+        if (number) {
+            try {
+                const { data: pr } = await octokit.rest.pulls.get({
+                    owner,
+                    repo,
+                    pull_number: number,
+                });
+
+                let isValid = true;
+
+                if (author) {
+                    isValid =
+                        isValid &&
+                        pr.user?.login.toLowerCase() === author.toLowerCase();
+                }
+
+                if (typeof id === 'number') {
+                    isValid = isValid && pr.id === id;
+                }
+
+                if (title) {
+                    isValid =
+                        isValid &&
+                        pr.title.toLowerCase().includes(title.toLowerCase());
+                }
+
+                if (url) {
+                    isValid =
+                        isValid &&
+                        pr.html_url.toLowerCase().includes(url.toLowerCase());
+                }
+
+                return isValid ? [pr] : [];
+            } catch (error) {
+                const status = (error as { status?: number })?.status;
+                if (status === 404) return [];
+                return [];
+            }
+        }
+
+        // Use GitHub Search API for text-based filters (more efficient)
+        if (title || url) {
+            return this.searchPullRequestsByTitle({
+                octokit,
+                owner,
+                repo,
+                filters,
+            });
+        }
+
+        // Use native API filters when possible
         const pullRequests = await octokit.paginate(octokit.rest.pulls.list, {
             owner,
             repo,
@@ -929,8 +1051,196 @@ export class GithubService
                     pr.user?.login.toLowerCase() === author.toLowerCase();
             }
 
+            if (typeof id === 'number') {
+                isValid = isValid && pr.id === id;
+            }
+
+            if (url) {
+                isValid =
+                    isValid &&
+                    pr.html_url.toLowerCase().includes(url.toLowerCase());
+            }
+
             return isValid;
         });
+    }
+
+    private async searchPullRequestsByTitle(params: {
+        octokit: Octokit;
+        owner: string;
+        repo: string;
+        filters: {
+            startDate?: Date;
+            endDate?: Date;
+            state?: PullRequestState;
+            author?: string;
+            branch?: string;
+            title?: string;
+            id?: number;
+            url?: string;
+        };
+    }): Promise<RestEndpointMethodTypes['pulls']['list']['response']['data']> {
+        const { octokit, owner, repo, filters } = params;
+        const { startDate, endDate, state, author, branch, title, id, url } =
+            filters;
+
+        let query = `is:pr repo:${owner}/${repo}`;
+
+        if (title) {
+            query += ` ${title} in:title`;
+        }
+
+        if (state && state !== PullRequestState.ALL) {
+            const githubState = this._prStateMapReverse.get(state);
+            if (githubState && githubState !== 'all') {
+                query += ` is:${githubState}`;
+            }
+        }
+
+        if (author) {
+            query += ` author:${author}`;
+        }
+
+        if (branch) {
+            query += ` base:${branch}`;
+        }
+
+        if (startDate) {
+            query += ` created:>=${startDate.toISOString().split('T')[0]}`;
+        }
+
+        if (endDate) {
+            query += ` created:<=${endDate.toISOString().split('T')[0]}`;
+        }
+
+        try {
+            const searchResults = await octokit.paginate(
+                octokit.rest.search.issuesAndPullRequests,
+                {
+                    q: query,
+                    sort: 'created',
+                    order: 'desc',
+                    per_page: 100,
+                },
+            );
+
+            const pullRequests = searchResults.filter(
+                (item) => item.pull_request,
+            );
+
+            const filteredBySearch = pullRequests.filter((pr) => {
+                let isValid = true;
+
+                if (typeof id === 'number') {
+                    isValid = isValid && pr.id === id;
+                }
+
+                return isValid;
+            });
+
+            const prNumbers = filteredBySearch.map((pr) => pr.number);
+
+            const detailedPRs = await Promise.all(
+                prNumbers.map(async (prNumber) => {
+                    try {
+                        const { data } = await octokit.rest.pulls.get({
+                            owner,
+                            repo,
+                            pull_number: prNumber,
+                        });
+                        return data;
+                    } catch (error) {
+                        return null;
+                    }
+                }),
+            );
+
+            return detailedPRs.filter(
+                (pr) => pr !== null,
+            ) as unknown as RestEndpointMethodTypes['pulls']['list']['response']['data'];
+        } catch (error) {
+            this.logger.warn({
+                message: 'GitHub Search API failed, falling back to list API',
+                context: GithubService.name,
+                error,
+                metadata: { query, repo: `${owner}/${repo}` },
+            });
+
+            const pullRequests = await octokit.paginate(
+                octokit.rest.pulls.list,
+                {
+                    owner,
+                    repo,
+                    state: state
+                        ? this._prStateMapReverse.get(state)
+                        : this._prStateMapReverse.get(PullRequestState.ALL),
+                    base: branch,
+                    sort: 'created',
+                    direction: 'desc',
+                    since: startDate?.toISOString(),
+                    until: endDate?.toISOString(),
+                    per_page: 100,
+                },
+            );
+
+            return pullRequests.filter((pr) => {
+                let isValid = true;
+
+                if (author) {
+                    isValid =
+                        isValid &&
+                        pr.user?.login.toLowerCase() === author.toLowerCase();
+                }
+
+                if (typeof id === 'number') {
+                    isValid = isValid && pr.id === id;
+                }
+
+                if (title) {
+                    isValid =
+                        isValid &&
+                        pr.title.toLowerCase().includes(title.toLowerCase());
+                }
+
+                if (url) {
+                    isValid =
+                        isValid &&
+                        pr.html_url.toLowerCase().includes(url.toLowerCase());
+                }
+
+                return isValid;
+            });
+        }
+    }
+
+    private parseGithubUrl(
+        url: string,
+    ): { owner: string; repo: string; prNumber: number } | null {
+        try {
+            // Parse GitHub PR URLs like:
+            // https://github.com/owner/repo/pull/123
+            // https://github.com/owner/repo/pulls/123
+            const urlObj = new URL(url);
+            const pathParts = urlObj.pathname.split('/').filter((part) => part);
+
+            if (
+                pathParts.length >= 4 &&
+                urlObj.hostname === 'github.com' &&
+                (pathParts[2] === 'pull' || pathParts[2] === 'pulls')
+            ) {
+                const owner = pathParts[0];
+                const repo = pathParts[1];
+                const prNumber = parseInt(pathParts[3], 10);
+
+                if (!isNaN(prNumber)) {
+                    return { owner, repo, prNumber };
+                }
+            }
+        } catch (error) {
+            // Invalid URL, ignore
+        }
+
+        return null;
     }
 
     async getPullRequestAuthors(params: {
@@ -3280,8 +3590,10 @@ export class GithubService
 
             const octokit = await this.instanceOctokit(organizationAndTeamData);
 
+            const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
+
             await octokit.issues.updateComment({
-                owner: githubAuthDetail?.org,
+                owner,
                 repo: repository?.name,
                 comment_id: commentId,
                 body,
@@ -3494,6 +3806,52 @@ export class GithubService
         });
 
         return response.data;
+    }
+
+    async updateResponseToComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+        commentId: string;
+        body: string;
+    }) {
+        const {
+            organizationAndTeamData,
+            repository,
+            prNumber,
+            commentId,
+            body,
+        } = params;
+
+        try {
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const octokit = await this.instanceOctokit(organizationAndTeamData);
+
+            const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
+
+            const updated = await octokit.pulls.updateReviewComment({
+                owner,
+                repo: repository?.name,
+                comment_id: Number(commentId),
+                body,
+            });
+
+            return updated;
+        } catch (error) {
+            this.logger.error({
+                message: `Error updating review comment for PR#${prNumber}`,
+                context: GithubService.name,
+                error: error,
+                metadata: {
+                    ...params,
+                },
+            });
+
+            return null;
+        }
     }
 
     async getPullRequest(params: {
