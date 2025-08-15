@@ -1,6 +1,7 @@
 import { MessageContentComplex } from '@langchain/core/messages';
 import {
     BaseOutputParser,
+    JsonOutputParser,
     StringOutputParser,
     StructuredOutputParser,
 } from '@langchain/core/output_parsers';
@@ -11,7 +12,7 @@ import { ParserType } from './builder';
 import { tryParseJSONObject } from '@/utils/json';
 
 export class CustomStringOutputParser extends StringOutputParser {
-    protected _messageContentComplexToString(
+    protected override _messageContentComplexToString(
         content: MessageContentComplex,
     ): string {
         if (content?.type === 'reasoning') {
@@ -21,8 +22,24 @@ export class CustomStringOutputParser extends StringOutputParser {
     }
 }
 
+export class CustomJsonOutputParser extends JsonOutputParser {
+    protected override _baseMessageContentToString(
+        content: MessageContentComplex[],
+    ): string {
+        const noReasoningContent = content.filter(
+            (c) => c.type !== 'reasoning',
+        );
+        const text = noReasoningContent.map((c) =>
+            c.type === 'text' && c.text && typeof c.text === 'string'
+                ? c.text
+                : '',
+        );
+        return text.join('\n').trim();
+    }
+}
+
 export class ZodOutputParser<T extends z.ZodObject> extends BaseOutputParser {
-    static lc_name(): string {
+    static override lc_name(): string {
         return 'ZodOutputParser';
     }
     lc_namespace = ['kodus', 'output_parsers', 'zod'];
@@ -43,7 +60,9 @@ export class ZodOutputParser<T extends z.ZodObject> extends BaseOutputParser {
         ) as BaseOutputParser<z.infer<T>>;
     }
 
-    _baseMessageContentToString(content: MessageContentComplex[]): string {
+    protected override _baseMessageContentToString(
+        content: MessageContentComplex[],
+    ): string {
         const noReasoningContent = content.filter(
             (c) => c.type !== 'reasoning',
         );
@@ -55,7 +74,7 @@ export class ZodOutputParser<T extends z.ZodObject> extends BaseOutputParser {
         return text.join('\n').trim();
     }
 
-    getFormatInstructions(): string {
+    public override getFormatInstructions(): string {
         return this.structuredParser.getFormatInstructions();
     }
 
@@ -64,7 +83,7 @@ export class ZodOutputParser<T extends z.ZodObject> extends BaseOutputParser {
      * It attempts to extract and parse JSON, and if it fails,
      * it uses another LLM call to correct the format.
      */
-    async parse(text: string): Promise<z.infer<T>> {
+    public override async parse(text: string): Promise<z.infer<T>> {
         if (!text) {
             throw new Error('Input text is empty or undefined');
         }
