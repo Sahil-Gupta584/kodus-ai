@@ -1873,10 +1873,10 @@
   resolved "https://registry.yarnpkg.com/@keyv/serialize/-/serialize-1.1.0.tgz#08f5d89096110fdcf778e5337362e1cd5afad70a"
   integrity sha512-RlDgexML7Z63Q8BSaqhXdCYNBy/JQnqYIwxofUrNLGCblOMHp+xux2Q8nLMLlPpgHQPoU0Do8Z6btCpRBEqZ8g==
 
-"@kodus/flow@^0.1.7":
-  version "0.1.9"
-  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/flow/-/@kodus/flow-0.1.9.tgz#201cf93c9dc2435a1bf3ade69c13cf73fdaf4ace"
-  integrity sha512-mW6ygp5EXW4i+rjrpnQhqLC6E2vX6yZ4OMNRZd724TEBKwO3a5veJsbqJ2ui9G+tS3Z9eUfAODGLP0vY2jDLJA==
+"@kodus/flow@^0.1.11":
+  version "0.1.11"
+  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/flow/-/@kodus/flow-0.1.11.tgz#e807c2b9bc79cb7a5fda488616f09dd29ff315d5"
+  integrity sha512-0fGw1C8mEfvg4vcRin0OLNEOwBZl9VPXYKkCc0DZzB1FgdwM6i9VxEK/07VQ+X1dI25laK4hJ15XSq0lyo6Xgw==
   dependencies:
     "@google/generative-ai" "^0.24.1"
     "@modelcontextprotocol/sdk" "^1.17.2"
@@ -1885,7 +1885,7 @@
     dotenv "^17.2.1"
     mongodb "^6.18.0"
     openai "^5.12.2"
-    pino "^9.8.0"
+    pino "^9.9.0"
     tslib "^2.8.1"
     zod "^4.0.17"
     zod-from-json-schema "^0.4.2"
@@ -2053,9 +2053,9 @@
     "@lukeed/csprng" "^1.1.0"
 
 "@modelcontextprotocol/sdk@^1.17.2":
-  version "1.17.2"
-  resolved "https://registry.yarnpkg.com/@modelcontextprotocol/sdk/-/sdk-1.17.2.tgz#232d079c374bef18d0b411e5d8c7e6c5f24e8684"
-  integrity sha512-EFLRNXR/ixpXQWu6/3Cu30ndDFIFNaqUXcTqsGebujeMan9FzhAaFFswLRiFj61rgygDRr8WO1N+UijjgRxX9g==
+  version "1.17.3"
+  resolved "https://registry.yarnpkg.com/@modelcontextprotocol/sdk/-/sdk-1.17.3.tgz#cf92354220f0183d28179e96a9bf3a8f6d3211ae"
+  integrity sha512-JPwUKWSsbzx+DLFznf/QZ32Qa+ptfbUlHhRLrBQBAFu9iI1iYvizM4p+zhhRDceSsPutXp4z+R/HPVphlIiclg==
   dependencies:
     ajv "^6.12.6"
     content-type "^1.0.5"
@@ -3290,9 +3290,9 @@
     "@sentry/node" "10.5.0"
 
 "@sinclair/typebox@^0.34.0":
-  version "0.34.38"
-  resolved "https://registry.yarnpkg.com/@sinclair/typebox/-/typebox-0.34.38.tgz#2365df7c23406a4d79413a766567bfbca708b49d"
-  integrity sha512-HpkxMmc2XmZKhvaKIZZThlHmx1L0I/V1hWK1NubtlFnr6ZqdiOpV72TKudZUNQjZNsyDBay72qFEhEvb+bcwcA==
+  version "0.34.39"
+  resolved "https://registry.yarnpkg.com/@sinclair/typebox/-/typebox-0.34.39.tgz#41db8ed5ff33fdd47cb34dab250c0eaea7a1a5be"
+  integrity sha512-keEoFsevmLwAedzacnTVmra66GViRH3fhWO1M+nZ8rUgpPJyN4mcvqlGr3QMrQXx4L8KNwW0q9/BeHSEoO4teg==
 
 "@sinonjs/commons@^3.0.1":
   version "3.0.1"
@@ -4109,9 +4109,9 @@
     "@types/node" "*"
 
 "@types/node@*", "@types/node@>=13.7.0", "@types/node@>=18.0.0", "@types/node@^24.2.1":
-  version "24.2.1"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-24.2.1.tgz#83e41543f0a518e006594bb394e2cd961de56727"
-  integrity sha512-DRh5K+ka5eJic8CjH7td8QpYEV6Zo10gfRkjHCO3weqZHWDtAaSTFtl4+VMqOJ4N5jcuhZ9/l+yy8rVgw7BQeQ==
+  version "24.3.0"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-24.3.0.tgz#89b09f45cb9a8ee69466f18ee5864e4c3eb84dec"
+  integrity sha512-aPTXCrfwnDLj4VvXrm+UUCQjNEvJgNA8s5F1cvwQU+3KNltTOkBm1j30uNLyqqPNe7gE3KFzImYoZEfLhp4Yow==
   dependencies:
     undici-types "~7.10.0"
 
@@ -5756,9 +5756,9 @@ ee-first@1.1.1:
   integrity sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==
 
 electron-to-chromium@^1.5.199:
-  version "1.5.200"
-  resolved "https://registry.yarnpkg.com/electron-to-chromium/-/electron-to-chromium-1.5.200.tgz#adffa5db97390ce9d48987f528117a608ed0d7c9"
-  integrity sha512-rFCxROw7aOe4uPTfIAx+rXv9cEcGx+buAF4npnhtTqCJk5KDFRnh3+KYj7rdVh6lsFt5/aPs+Irj9rZ33WMA7w==
+  version "1.5.202"
+  resolved "https://registry.yarnpkg.com/electron-to-chromium/-/electron-to-chromium-1.5.202.tgz#e243716943a2cab144604a81b9ebaa87b4e8c1d4"
+  integrity sha512-NxbYjRmiHcHXV1Ws3fWUW+SLb62isauajk45LUJ/HgIOkUA7jLZu/X2Iif+X9FBNK8QkF9Zb4Q2mcwXCcY30mg==
 
 emittery@^0.13.1:
   version "0.13.1"
@@ -7610,9 +7610,9 @@ langsmith@0.3.57:
     uuid "^10.0.0"
 
 langsmith@^0.3.33, langsmith@^0.3.46:
-  version "0.3.59"
-  resolved "https://registry.yarnpkg.com/langsmith/-/langsmith-0.3.59.tgz#d92cf8a8da1abefeb98f565bd5cf7ecda721ff8e"
-  integrity sha512-iODBmS3CUWCYNnmH69yj5sNAh4ySBQ/RTLIx94ZQlxsiHnnWx1cLPK4smVw4gH9Q2Mfydo8FlkN4uAN10UGOTQ==
+  version "0.3.61"
+  resolved "https://registry.yarnpkg.com/langsmith/-/langsmith-0.3.61.tgz#546b09370a3d655ec10c99dcdb5a1b46b7bb996e"
+  integrity sha512-b7Cpfj3xpWQO41G3xXeG6uzPzBcWfkEo5cK62WOcTqsKCchN2i42z7q45QQrbU6mdLwXp6pjRfnvr7wFu+Y5iQ==
   dependencies:
     "@types/uuid" "^10.0.0"
     chalk "^4.1.2"
@@ -8695,7 +8695,7 @@ pino-std-serializers@^7.0.0:
   resolved "https://registry.yarnpkg.com/pino-std-serializers/-/pino-std-serializers-7.0.0.tgz#7c625038b13718dbbd84ab446bd673dc52259e3b"
   integrity sha512-e906FRY0+tV27iq4juKzSYPbUj2do2X2JX4EzSca1631EB2QJQUqGbDuERal7LCtOpxl6x3+nvo9NPZcmjkiFA==
 
-pino@^9.0.0, pino@^9.8.0:
+pino@^9.0.0, pino@^9.9.0:
   version "9.9.0"
   resolved "https://registry.yarnpkg.com/pino/-/pino-9.9.0.tgz#0d2667ab4a54b561a4434a321ec595f305ab9cd1"
   integrity sha512-zxsRIQG9HzG+jEljmvmZupOMDUQ0Jpj0yAgE28jQvvrdYTlEaiGwelJpdndMl/MBuRr70heIj83QyqJUWaU8mQ==

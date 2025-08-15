@@ -121,17 +121,40 @@ export class CopyCodeReviewParameterUseCase {
             (repository) => repository.id === targetRepositoryId,
         );
 
-        let updatedRepositories;
+        if (!targetRepository) {
+            throw new Error('Target repository not found');
+        }
 
-        // Repositório já existe, adicionar/atualizar diretório
-        const existingDirectories = targetRepository.directories || [];
+        let updatedRepositories;
+        let updatedTargetRepository;
+
+        // Check if the repository is already configured
+        const repositoryAlreadyConfigured = targetRepository.isSelected === true;
+
+        if (!repositoryAlreadyConfigured) {
+            // If the repository is not configured, copy the configuration from the source to the repository
+            const { id, name, isSelected, directories, ...repositoryConfigFromSource } = sourceRepository;
+
+            updatedTargetRepository = {
+                ...targetRepository,
+                ...repositoryConfigFromSource,
+                isSelected: true,
+                directories: targetRepository.directories || [],
+            };
+        } else {
+            // If the repository is already configured, keep the current configuration
+            updatedTargetRepository = { ...targetRepository };
+        }
+
+        // Add/update directory configuration
+        const existingDirectories = updatedTargetRepository.directories || [];
         const existingDirectoryIndex = existingDirectories.findIndex(
             (dir) => dir.path === targetDirectoryPath,
         );
 
         let updatedDirectories;
         if (existingDirectoryIndex >= 0) {
-            // Atualizar diretório existente
+            // Update existing directory
             updatedDirectories = existingDirectories.map((dir, index) =>
                 index === existingDirectoryIndex
                     ? this.createDirectoryConfig(
@@ -142,7 +165,7 @@ export class CopyCodeReviewParameterUseCase {
                     : dir,
             );
         } else {
-            // Adicionar novo diretório
+            // Add new directory
             updatedDirectories = [
                 ...existingDirectories,
                 this.createDirectoryConfig(
@@ -152,10 +175,7 @@ export class CopyCodeReviewParameterUseCase {
             ];
         }
 
-        const updatedTargetRepository = {
-            ...targetRepository,
-            directories: updatedDirectories,
-        };
+        updatedTargetRepository.directories = updatedDirectories;
 
         updatedRepositories = codeReviewConfigValue.repositories.map(
             (repository) =>
@@ -182,12 +202,13 @@ export class CopyCodeReviewParameterUseCase {
         );
 
         this.logger.log({
-            message: 'Code review parameter copied to directory successfully',
+            message: `Code review parameter copied to directory successfully${!repositoryAlreadyConfigured ? ' (repository configuration also created)' : ''}`,
             context: CopyCodeReviewParameterUseCase.name,
             serviceName: 'CopyCodeReviewParameterUseCase',
             metadata: {
                 body,
                 organizationAndTeamData,
+                repositoryAlreadyConfigured,
             },
         });
 
@@ -269,7 +290,7 @@ export class CopyCodeReviewParameterUseCase {
         targetPath: string,
         existingId?: string,
     ): any {
-        // Remove propriedades específicas de repositório se existirem
+        // Remove repository specific properties if they exist
         const { id, name, isSelected, directories, ...directoryConfig } =
             sourceConfig;
 
@@ -293,7 +314,7 @@ export class CopyCodeReviewParameterUseCase {
         organizationAndTeamData: OrganizationAndTeamData,
     ) {
         try {
-            /*this.codeReviewSettingsLogService.registerDirectoriesLog({
+            this.codeReviewSettingsLogService.registerRepositoriesLog({
                 organizationAndTeamData: {
                     ...organizationAndTeamData,
                     organizationId: this.request.user.organization.uuid,
@@ -310,9 +331,11 @@ export class CopyCodeReviewParameterUseCase {
                               id: sourceRepository.id,
                               name: sourceRepository.name,
                           },
-                targetPath: body.targetPath,
-                targetRepositoryId: body.targetRepositoryId,
-            });*/
+                directory: {
+                    id: "",
+                    path: body.targetDirectoryPath,
+                },
+            });
         } catch (error) {
             this.logger.error({
                 message: 'Error saving code review settings log for directory',
