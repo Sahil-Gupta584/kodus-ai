@@ -21,6 +21,7 @@ import {
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { ActiveCodeReviewAutomationUseCase } from '../../teamAutomation/active-code-review-automation.use-case';
+import { SyncSelectedRepositoriesKodyRulesUseCase } from '../../kodyRules/sync-selected-repositories.use-case';
 
 @Injectable()
 export class CreateRepositoriesUseCase implements IUseCase {
@@ -42,6 +43,8 @@ export class CreateRepositoriesUseCase implements IUseCase {
         private readonly codeManagementService: CodeManagementService,
 
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
+
+        private readonly syncSelectedRepositoriesKodyRulesUseCase: SyncSelectedRepositoriesKodyRulesUseCase,
 
         @Inject(REQUEST)
         private readonly request: Request & {
@@ -101,6 +104,10 @@ export class CreateRepositoriesUseCase implements IUseCase {
             if (teams && teams?.length > 1) {
                 this.savePlatformConfig(teamId, organizationId);
             }
+
+            await this.syncSelectedRepositoriesKodyRulesUseCase.execute({
+                teamId,
+            });
 
             return {
                 status: true,
