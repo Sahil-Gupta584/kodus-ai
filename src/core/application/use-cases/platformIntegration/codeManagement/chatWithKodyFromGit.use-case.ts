@@ -790,17 +790,16 @@ export class ChatWithKodyFromGitUseCase {
                 this.logger.warn({
                     message: `Unsupported platform type: ${platformType}`,
                     context: ChatWithKodyFromGitUseCase.name,
+                    metadata: {
+                        originalKodyComment,
+                        ackResponse,
+                        platformType,
+                    },
                 });
                 return ['', ''];
         }
 
         if (!ackResponseId || !parentId) {
-            this.logger.warn({
-                message:
-                    'Failed to get acknowledgment response ID or parent ID',
-                context: ChatWithKodyFromGitUseCase.name,
-                serviceName: ChatWithKodyFromGitUseCase.name,
-            });
             return ['', ''];
         }
 
