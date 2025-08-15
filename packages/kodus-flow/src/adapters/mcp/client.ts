@@ -1132,7 +1132,7 @@ export class SpecCompliantMCPClient extends EventEmitter<MCPClientEvents> {
             return; // Don't send progress for inactive tokens
         }
 
-        this.client.notification({
+        void this.client.notification({
             method: 'notifications/progress',
             params: {
                 progressToken: token,
@@ -1164,7 +1164,7 @@ export class SpecCompliantMCPClient extends EventEmitter<MCPClientEvents> {
             this.activeRequests.delete(requestId);
         }
 
-        this.client.notification({
+        void this.client.notification({
             method: 'notifications/cancelled',
             params: {
                 requestId,

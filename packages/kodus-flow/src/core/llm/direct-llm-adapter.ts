@@ -10,6 +10,7 @@
  * ✅ Mantém todas as técnicas de planning/routing
  */
 
+import { LLMAdapter } from '@/adapters/llm/index.js';
 import {
     createLogger,
     getObservability,
@@ -207,7 +208,7 @@ export interface RoutingResult {
 // 🚀 DIRECT LLM ADAPTER IMPLEMENTATION
 // ──────────────────────────────────────────────────────────────────────────────
 
-export class DirectLLMAdapter {
+export class DirectLLMAdapter implements LLMAdapter {
     private llm: LangChainLLM;
     private logger = createLogger('direct-llm-adapter');
     private routingStrategies = new Map<string, RoutingTechnique>();
@@ -220,6 +221,25 @@ export class DirectLLMAdapter {
             llmName: langchainLLM.name || 'unknown-llm',
             hasStreaming: typeof langchainLLM.stream === 'function',
         });
+    }
+
+    analyzeContext(): Promise<{
+        intent: string;
+        urgency: 'low' | 'normal' | 'high';
+        complexity: 'simple' | 'medium' | 'complex';
+        selectedTool: string;
+        confidence: number;
+        reasoning: string;
+    }> {
+        throw new Error('Method not implemented.');
+    }
+
+    extractParameters(): Promise<Record<string, unknown>> {
+        throw new Error('Method not implemented.');
+    }
+
+    generateResponse(): Promise<string> {
+        throw new Error('Method not implemented.');
     }
 
     async createPlan(

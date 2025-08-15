@@ -9,6 +9,7 @@ import { FindRuleInOrganizationByRuleIdKodyRulesUseCase } from './find-rule-in-o
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from './find-rules-in-organization-by-filter.use-case';
 import { GenerateKodyRulesUseCase } from './generate-kody-rules.use-case';
 import { SendRulesNotificationUseCase } from './send-rules-notification.use-case';
+import { SyncSelectedRepositoriesKodyRulesUseCase } from './sync-selected-repositories.use-case';
 
 export const UseCases = [
     CreateOrUpdateKodyRulesUseCase,
@@ -22,4 +23,5 @@ export const UseCases = [
     GenerateKodyRulesUseCase,
     ChangeStatusKodyRulesUseCase,
     SendRulesNotificationUseCase,
+    SyncSelectedRepositoriesKodyRulesUseCase,
 ];

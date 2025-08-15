@@ -11,7 +11,10 @@ import {
     createDefaultMultiKernelHandler,
     createMultiKernelHandler,
 } from '../engine/core/multi-kernel-handler.js';
-import { ContextBuilder } from '../core/context/context-builder.js';
+import {
+    ContextBuilder,
+    ContextBuilderConfig,
+} from '../core/context/context-builder.js';
 
 // Timeline removida
 
@@ -82,7 +85,7 @@ export interface OrchestrationConfig {
             enableCompression?: boolean;
             cleanupInterval?: number;
         };
-        persistor?: {
+        snapshot?: {
             type: StorageType;
             connectionString?: string;
             database?: string;
@@ -227,7 +230,7 @@ const orchestrator = new SDKOrchestrator({
 
             // ✅ BACKWARD COMPATIBILITY: Keep legacy persistorConfig
             persistorConfig: config.persistorConfig ||
-                config.storage?.persistor || {
+                config.storage?.snapshot || {
                     type: 'memory',
                     maxSnapshots: 1000,
                     enableCompression: true,
@@ -970,6 +973,7 @@ const orchestrator = new SDKOrchestrator({
                 contextConfig,
                 hasMemory: !!contextConfig.memory,
                 hasSession: !!contextConfig.session,
+                hasSnapshot: !!contextConfig.snapshot,
                 memoryConnectionString:
                     contextConfig.memory?.adapterConfig?.connectionString,
                 sessionConnectionString:
@@ -1001,26 +1005,8 @@ const orchestrator = new SDKOrchestrator({
      * ✅ NEW: Get storage config for ContextBuilder
      * Converts OrchestrationConfig.storage to ContextBuilderConfig format
      */
-    getStorageConfig(): {
-        memory?: {
-            adapterType: StorageType;
-            adapterConfig?: {
-                connectionString?: string;
-                options?: Record<string, unknown>;
-            };
-        };
-        session?: import('../core/context/services/session-service.js').SessionConfig;
-    } {
-        const result: {
-            memory?: {
-                adapterType: StorageType;
-                adapterConfig?: {
-                    connectionString?: string;
-                    options?: Record<string, unknown>;
-                };
-            };
-            session?: import('../core/context/services/session-service.js').SessionConfig;
-        } = {};
+    getStorageConfig(): ContextBuilderConfig {
+        const result: ContextBuilderConfig = {};
 
         // ✅ Convert memory config to ContextBuilder format
         if (this.config.storage?.memory) {
@@ -1056,6 +1042,27 @@ const orchestrator = new SDKOrchestrator({
                     collection: sessionConfig.collection || 'sessions',
                 },
                 cleanupInterval: sessionConfig.cleanupInterval || 300000,
+            };
+        }
+
+        if (this.config.storage?.snapshot) {
+            const snapshotConfig = this.config.storage.snapshot;
+            result.snapshot = {
+                adapterType: snapshotConfig.type,
+                adapterConfig: {
+                    connectionString: snapshotConfig.connectionString,
+                    options: {
+                        database: snapshotConfig.database || 'kodus',
+                        collection: snapshotConfig.collection || 'snapshots',
+                        maxSnapshots: snapshotConfig.maxSnapshots || 1000,
+                        enableCompression:
+                            snapshotConfig.enableCompression ?? true,
+                        enableDeltaCompression:
+                            snapshotConfig.enableDeltaCompression ?? true,
+                        cleanupInterval:
+                            snapshotConfig.cleanupInterval || 300000,
+                    },
+                },
             };
         }
 

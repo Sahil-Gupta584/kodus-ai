@@ -608,7 +608,7 @@ export class ToolEngine {
                             },
                         );
                     } else {
-                        this.kernelHandler!.emit(
+                        await this.kernelHandler!.emit(
                             'tool.execute.response',
                             responseData,
                         );
@@ -643,7 +643,7 @@ export class ToolEngine {
                         },
                     );
 
-                    this.kernelHandler!.emit('tool.execute.response', {
+                    await this.kernelHandler!.emit('tool.execute.response', {
                         error: (error as Error).message,
                         success: false,
                         toolName,
@@ -1506,7 +1506,7 @@ export class ToolEngine {
 
         // Emit parallel execution start event
         if (this.kernelHandler) {
-            this.kernelHandler.emit('tool.parallel.execution.start', {
+            await this.kernelHandler.emit('tool.parallel.execution.start', {
                 tools: action.tools.map((t) => t.toolName),
                 concurrency,
                 timeout,
@@ -1573,19 +1573,22 @@ export class ToolEngine {
 
             // Emit success event
             if (this.kernelHandler) {
-                this.kernelHandler.emit('tool.parallel.execution.success', {
-                    tools: action.tools.map((t) => t.toolName),
-                    results,
-                    executionTime: Date.now() - startTime,
-                    tenantId: 'default',
-                });
+                await this.kernelHandler.emit(
+                    'tool.parallel.execution.success',
+                    {
+                        tools: action.tools.map((t) => t.toolName),
+                        results,
+                        executionTime: Date.now() - startTime,
+                        tenantId: 'default',
+                    },
+                );
             }
 
             return results;
         } catch (error) {
             // Emit error event
             if (this.kernelHandler) {
-                this.kernelHandler.emit('tool.parallel.execution.error', {
+                await this.kernelHandler.emit('tool.parallel.execution.error', {
                     tools: action.tools.map((t) => t.toolName),
                     error:
                         error instanceof Error ? error.message : String(error),
@@ -1614,7 +1617,7 @@ export class ToolEngine {
 
         // Emit sequential execution start event
         if (this.kernelHandler) {
-            this.kernelHandler.emit('tool.sequential.execution.start', {
+            await this.kernelHandler.emit('tool.sequential.execution.start', {
                 tools: action.tools.map((t) => t.toolName),
                 timeout: action.timeout,
                 tenantId: 'default',
@@ -1663,25 +1666,33 @@ export class ToolEngine {
 
             // Emit success event
             if (this.kernelHandler) {
-                this.kernelHandler.emit('tool.sequential.execution.success', {
-                    tools: action.tools.map((t) => t.toolName),
-                    results,
-                    executionTime: Date.now() - startTime,
-                    tenantId: 'default',
-                });
+                await this.kernelHandler.emit(
+                    'tool.sequential.execution.success',
+                    {
+                        tools: action.tools.map((t) => t.toolName),
+                        results,
+                        executionTime: Date.now() - startTime,
+                        tenantId: 'default',
+                    },
+                );
             }
 
             return results;
         } catch (error) {
             // Emit error event
             if (this.kernelHandler) {
-                this.kernelHandler.emit('tool.sequential.execution.error', {
-                    tools: action.tools.map((t) => t.toolName),
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                    executionTime: Date.now() - startTime,
-                    tenantId: 'default',
-                });
+                await this.kernelHandler.emit(
+                    'tool.sequential.execution.error',
+                    {
+                        tools: action.tools.map((t) => t.toolName),
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        executionTime: Date.now() - startTime,
+                        tenantId: 'default',
+                    },
+                );
             }
 
             throw error;
@@ -1703,7 +1714,7 @@ export class ToolEngine {
 
         // Emit conditional execution start event
         if (this.kernelHandler) {
-            this.kernelHandler.emit('tool.conditional.execution.start', {
+            await this.kernelHandler.emit('tool.conditional.execution.start', {
                 tools: action.tools.map((t) => t.toolName),
                 conditions: action.conditions,
                 tenantId: 'default',
@@ -1811,25 +1822,33 @@ export class ToolEngine {
 
             // Emit success event
             if (this.kernelHandler) {
-                this.kernelHandler.emit('tool.conditional.execution.success', {
-                    tools: action.tools.map((t) => t.toolName),
-                    results,
-                    executionTime: Date.now() - startTime,
-                    tenantId: 'default',
-                });
+                await this.kernelHandler.emit(
+                    'tool.conditional.execution.success',
+                    {
+                        tools: action.tools.map((t) => t.toolName),
+                        results,
+                        executionTime: Date.now() - startTime,
+                        tenantId: 'default',
+                    },
+                );
             }
 
             return results;
         } catch (error) {
             // Emit error event
             if (this.kernelHandler) {
-                this.kernelHandler.emit('tool.conditional.execution.error', {
-                    tools: action.tools.map((t) => t.toolName),
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                    executionTime: Date.now() - startTime,
-                    tenantId: 'default',
-                });
+                await this.kernelHandler.emit(
+                    'tool.conditional.execution.error',
+                    {
+                        tools: action.tools.map((t) => t.toolName),
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        executionTime: Date.now() - startTime,
+                        tenantId: 'default',
+                    },
+                );
             }
 
             throw error;

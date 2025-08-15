@@ -28,6 +28,8 @@ type KodyRuleInput = Required<
         | 'extendedContext'
         | 'reason'
         | 'severity'
+        | 'sourcePath'
+        | 'sourceAnchor'
     >
 > & {
     severity: KodyRuleSeverity;

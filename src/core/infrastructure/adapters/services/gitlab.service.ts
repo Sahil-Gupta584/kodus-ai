@@ -3230,6 +3230,53 @@ export class GitlabService
         }
     }
 
+    async updateResponseToComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        parentId: string;
+        commentId: string;
+        body: string;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<any | null> {
+        const {
+            organizationAndTeamData,
+            parentId,
+            commentId,
+            body,
+            repository,
+            prNumber,
+        } = params;
+
+        try {
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!gitlabAuthDetail) {
+                throw new Error('GitLab authentication details not found');
+            }
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            return gitlabAPI.MergeRequestDiscussions.editNote(
+                repository.id,
+                prNumber,
+                parentId,
+                Number(commentId),
+                { body },
+            );
+        } catch (error) {
+            this.logger.error({
+                message: `Error updating response to comment ${commentId} in PR #${prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService updateResponseToComment',
+                error: error,
+                metadata: params,
+            });
+            return null;
+        }
+    }
+
     //#region Transformers
 
     /**
@@ -3330,9 +3377,9 @@ export class GitlabService
                     id: r?.id?.toString() ?? '',
                 })) ?? [],
             sourceRefName: mergeRequest?.source_branch ?? '', // TODO: remove, legacy, use head.ref
-            head: {
+                head: {
                 ref: mergeRequest?.source_branch ?? '',
-                repo: {
+                    repo: {
                     id: mergeRequest?.source_project_id?.toString() ?? '',
                     name: '',
                     defaultBranch: '',
@@ -3340,16 +3387,16 @@ export class GitlabService
                 },
             },
             targetRefName: mergeRequest?.target_branch ?? '', // TODO: remove, legacy, use base.ref
-            base: {
+                base: {
                 ref: mergeRequest?.target_branch ?? '',
-                repo: {
+                    repo: {
                     id: repository?.id ?? '',
                     name: repository?.name ?? '',
                     defaultBranch: repository?.default_branch ?? '',
                     fullName: repository?.name ?? '',
+                    },
                 },
-            },
-            user: {
+                user: {
                 login: mergeRequest?.author?.username ?? '',
                 name: mergeRequest?.author?.name ?? '',
                 id: mergeRequest?.author?.id?.toString() ?? '',
@@ -3384,9 +3431,12 @@ export class GitlabService
 
             const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
 
-            const tree = await gitlabAPI.Repositories.allRepositoryTrees(params.repositoryId, {
-                recursive: true,
-            });
+            const tree = await gitlabAPI.Repositories.allRepositoryTrees(
+                params.repositoryId,
+                {
+                    recursive: true,
+                },
+            );
 
             return tree.map((item: any) => ({
                 path: item.path,

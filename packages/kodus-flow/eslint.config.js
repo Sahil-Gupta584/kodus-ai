@@ -50,6 +50,8 @@ export default tseslint.config(
             // Regras básicas de tipagem
             '@typescript-eslint/no-explicit-any': 'error',
 
+            '@typescript-eslint/no-floating-promises': 'error',
+
             // Regras básicas de tipagem
             '@typescript-eslint/no-explicit-any': 'error',
 

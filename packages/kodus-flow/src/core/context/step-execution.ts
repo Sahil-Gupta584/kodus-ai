@@ -270,6 +270,7 @@ export class EnhancedMessageContext {
      * ⭐ AI SDK CONCEPT: Add message with automatic persistence
      * Integra automaticamente com State, Session e Memory
      */
+    // TODO: Wwhy not used
     async addMessage(
         role: MessageEntry['role'],
         content: unknown,

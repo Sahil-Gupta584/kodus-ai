@@ -119,7 +119,7 @@ export class WorkflowEngine {
 
                 // Emit workflow step start event via KernelHandler
                 if (this.kernelHandler) {
-                    this.kernelHandler.emit('workflow.step.start', {
+                    await this.kernelHandler.emit('workflow.step.start', {
                         workflowName: this.definition.name,
                         stepName: step.name,
                         executionId: stepContext.executionId,
@@ -140,7 +140,7 @@ export class WorkflowEngine {
 
                     // Emit workflow step success event via KernelHandler
                     if (this.kernelHandler) {
-                        this.kernelHandler.emit('workflow.step.success', {
+                        await this.kernelHandler.emit('workflow.step.success', {
                             workflowName: this.definition.name,
                             stepName: step.name,
                             executionId: stepContext.executionId,
@@ -170,7 +170,7 @@ export class WorkflowEngine {
                 } catch (error) {
                     // Emit workflow step error event via KernelHandler
                     if (this.kernelHandler) {
-                        this.kernelHandler.emit('workflow.step.error', {
+                        await this.kernelHandler.emit('workflow.step.error', {
                             workflowName: this.definition.name,
                             stepName: step.name,
                             executionId: stepContext.executionId,

@@ -11,7 +11,7 @@ import { CircuitBreaker } from '../../runtime/core/circuit-breaker.js';
 import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
-import { contextBuilder } from '../../core/context/context-builder.js';
+import { ContextBuilder } from '../../core/context/context-builder.js';
 // Timeline removida
 import type {
     AgentContext,
@@ -378,7 +378,7 @@ export abstract class AgentCore<
 
         // ✅ NEW: Configure ToolEngine in ContextBuilder if available
         if (this.toolEngine) {
-            contextBuilder.setToolEngine(this.toolEngine);
+            ContextBuilder.getInstance().setToolEngine(this.toolEngine);
             this.logger.info('ToolEngine configured in ContextBuilder', {
                 toolCount: this.toolEngine.listTools().length,
             });
@@ -431,7 +431,7 @@ export abstract class AgentCore<
             const duration = Date.now() - startTime;
 
             // ✅ SIMPLIFICADO: Marcar como completado
-            this.markExecutionCompleted(
+            await this.markExecutionCompleted(
                 executionId,
                 context,
                 duration,
@@ -484,9 +484,11 @@ export abstract class AgentCore<
         input: unknown,
         agentName: string,
     ): Promise<void> {
-        if (!context.sessionId) return;
+        if (!context.sessionId) {
+            return;
+        }
 
-        sessionService.addConversationEntry(
+        await sessionService.addConversationEntry(
             context.sessionId,
             input,
             null,
@@ -510,7 +512,7 @@ export abstract class AgentCore<
         });
     }
 
-    private markExecutionCompleted(
+    private async markExecutionCompleted(
         executionId: string,
         context: AgentContext,
         duration: number,
@@ -522,14 +524,14 @@ export abstract class AgentCore<
             events: AnyEvent[];
         },
         correlationId?: string,
-    ): void {
+    ): Promise<void> {
         const execution = this.activeExecutions.get(executionId);
         if (execution) {
             execution.status = 'completed';
         }
 
         if (context.executionRuntime) {
-            context.executionRuntime.addContextValue({
+            await context.executionRuntime.addContextValue({
                 type: 'execution',
                 key: 'completion',
                 value: {
@@ -562,9 +564,11 @@ export abstract class AgentCore<
             success: boolean;
         },
     ): Promise<void> {
-        if (!context.sessionId) return;
+        if (!context.sessionId) {
+            return;
+        }
 
-        sessionService.addConversationEntry(
+        await sessionService.addConversationEntry(
             context.sessionId,
             input,
             output,
@@ -706,7 +710,7 @@ export abstract class AgentCore<
                         });
                     }
                 } else {
-                    this.kernelHandler.emit('agent.action.start', {
+                    await this.kernelHandler.emit('agent.action.start', {
                         agentName: context.agentName,
                         actionType,
                         correlationId,
@@ -865,12 +869,15 @@ export abstract class AgentCore<
                                 );
                             }
                         } else {
-                            this.kernelHandler.emit('agent.tool.completed', {
-                                agentName: context.agentName,
-                                toolName: toolName,
-                                correlationId,
-                                sessionId: context.sessionId,
-                            });
+                            await this.kernelHandler.emit(
+                                'agent.tool.completed',
+                                {
+                                    agentName: context.agentName,
+                                    toolName: toolName,
+                                    correlationId,
+                                    sessionId: context.sessionId,
+                                },
+                            );
                         }
                     }
                 } catch (error) {
@@ -905,7 +912,7 @@ export abstract class AgentCore<
                             }
                         } else {
                             // Fallback to basic emit
-                            this.kernelHandler.emit('agent.tool.error', {
+                            await this.kernelHandler.emit('agent.tool.error', {
                                 agentName: context.agentName,
                                 toolName: toolName,
                                 correlationId,
@@ -1580,7 +1587,8 @@ export abstract class AgentCore<
         };
 
         // 1. Create base context via ContextBuilder
-        const context = await contextBuilder.createAgentContext(config);
+        const context =
+            await ContextBuilder.getInstance().createAgentContext(config);
 
         // 2. ✅ ELEGANT: Enrich context with AgentDefinition data
         if (this.singleAgentDefinition?.identity) {
@@ -2657,7 +2665,7 @@ export abstract class AgentCore<
         this.toolEngine = toolEngine;
 
         // Configure ToolEngine in ContextBuilder
-        contextBuilder.setToolEngine(toolEngine);
+        ContextBuilder.getInstance().setToolEngine(toolEngine);
 
         // Inject KernelHandler if available
         if (this.kernelHandler) {
@@ -3255,8 +3263,8 @@ export abstract class AgentCore<
     private startDeliveryProcessor(): void {
         if (!this.config.enableMessaging) return;
 
-        this.deliveryIntervalId = setInterval(() => {
-            this.processDeliveryQueue();
+        this.deliveryIntervalId = setInterval(async () => {
+            await this.processDeliveryQueue();
         }, this.config.deliveryRetryInterval);
     }
 
