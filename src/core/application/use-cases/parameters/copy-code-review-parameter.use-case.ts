@@ -121,10 +121,33 @@ export class CopyCodeReviewParameterUseCase {
             (repository) => repository.id === targetRepositoryId,
         );
 
-        let updatedRepositories;
+        if (!targetRepository) {
+            throw new Error('Target repository not found');
+        }
 
-        // Repositório já existe, adicionar/atualizar diretório
-        const existingDirectories = targetRepository.directories || [];
+        let updatedRepositories;
+        let updatedTargetRepository;
+
+        // Verificar se o repositório já tem configuração
+        const repositoryAlreadyConfigured = targetRepository.isSelected === true;
+
+        if (!repositoryAlreadyConfigured) {
+            // Se o repositório não está configurado, copiar configuração do source para o repositório
+            const { id, name, isSelected, directories, ...repositoryConfigFromSource } = sourceRepository;
+
+            updatedTargetRepository = {
+                ...targetRepository,
+                ...repositoryConfigFromSource,
+                isSelected: true,
+                directories: targetRepository.directories || [],
+            };
+        } else {
+            // Se o repositório já está configurado, manter configuração atual
+            updatedTargetRepository = { ...targetRepository };
+        }
+
+        // Adicionar/atualizar configuração do diretório
+        const existingDirectories = updatedTargetRepository.directories || [];
         const existingDirectoryIndex = existingDirectories.findIndex(
             (dir) => dir.path === targetDirectoryPath,
         );
@@ -152,10 +175,7 @@ export class CopyCodeReviewParameterUseCase {
             ];
         }
 
-        const updatedTargetRepository = {
-            ...targetRepository,
-            directories: updatedDirectories,
-        };
+        updatedTargetRepository.directories = updatedDirectories;
 
         updatedRepositories = codeReviewConfigValue.repositories.map(
             (repository) =>
@@ -182,12 +202,13 @@ export class CopyCodeReviewParameterUseCase {
         );
 
         this.logger.log({
-            message: 'Code review parameter copied to directory successfully',
+            message: `Code review parameter copied to directory successfully${!repositoryAlreadyConfigured ? ' (repository configuration also created)' : ''}`,
             context: CopyCodeReviewParameterUseCase.name,
             serviceName: 'CopyCodeReviewParameterUseCase',
             metadata: {
                 body,
                 organizationAndTeamData,
+                repositoryAlreadyConfigured,
             },
         });
 
