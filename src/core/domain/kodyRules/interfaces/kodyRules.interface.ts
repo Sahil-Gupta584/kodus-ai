@@ -66,22 +66,19 @@ export const kodyRulesExampleSchema = z.object({
     isCorrect: z.boolean(),
 });
 
-const kodyRulesOriginSchema = z.enum([
-    KodyRulesOrigin.USER,
-    KodyRulesOrigin.LIBRARY,
-    KodyRulesOrigin.GENERATED,
+const kodyRulesOriginSchema = z.enum([...Object.values(KodyRulesOrigin)] as [
+    KodyRulesOrigin,
+    ...KodyRulesOrigin[],
 ]);
 
-const kodyRulesStatusSchema = z.enum([
-    KodyRulesStatus.ACTIVE,
-    KodyRulesStatus.REJECTED,
-    KodyRulesStatus.PENDING,
-    KodyRulesStatus.DELETED,
+const kodyRulesStatusSchema = z.enum([...Object.values(KodyRulesStatus)] as [
+    KodyRulesStatus,
+    ...KodyRulesStatus[],
 ]);
 
-const kodyRulesScopeSchema = z.enum([
-    KodyRulesScope.PULL_REQUEST,
-    KodyRulesScope.FILE,
+const kodyRulesScopeSchema = z.enum([...Object.values(KodyRulesScope)] as [
+    KodyRulesScope,
+    ...KodyRulesScope[],
 ]);
 
 export const kodyRuleSchema = z.object({

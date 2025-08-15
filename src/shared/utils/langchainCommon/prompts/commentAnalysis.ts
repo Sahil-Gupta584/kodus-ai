@@ -44,9 +44,11 @@ You must then analyze the input and categorize it according to the previous cate
 Once you've analyzed all the suggestions you must output a json with the following structure:
 {
     "suggestions": [
-        "id": string, unique identifier of the suggestion
-        "category": string, one of the previously informed categories
-        "severity": string, one of the previously informed severity levels
+        {
+            "id": string, unique identifier of the suggestion
+            "category": string, one of the previously informed categories
+            "severity": string, one of the previously informed severity levels
+        }
     ]
 }
 
