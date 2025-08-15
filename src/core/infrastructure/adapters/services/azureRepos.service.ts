@@ -3771,6 +3771,80 @@ export class AzureReposService
         }
     }
 
+    async updateResponseToComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        parentId: string;
+        commentId: string;
+        body: string;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<any | null> {
+        const {
+            organizationAndTeamData,
+            parentId,
+            commentId,
+            body,
+            repository,
+            prNumber,
+        } = params;
+
+        try {
+            const authDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            if (!authDetails) {
+                this.logger.error({
+                    message: 'Azure Repos auth details not found',
+                    context: this.updateResponseToComment.name,
+                    metadata: { organizationAndTeamData, repository },
+                });
+                return null;
+            }
+
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            if (!projectId) {
+                this.logger.error({
+                    message: `Project ID not found for repository ${repository.name}`,
+                    context: this.updateResponseToComment.name,
+                    metadata: { organizationAndTeamData, repository },
+                });
+                return null;
+            }
+
+            const response =
+                await this.azureReposRequestHelper.updateThreadComment({
+                    orgName: authDetails.orgName,
+                    token: authDetails.token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                    threadId: Number(parentId),
+                    commentId: Number(commentId),
+                    body,
+                });
+
+            return response;
+        } catch (error) {
+            this.logger.error({
+                message: `Error updating response to comment ${commentId} in PR #${prNumber} for repository ${repository.name}`,
+                context: this.updateResponseToComment.name,
+                error: error,
+                metadata: {
+                    organizationAndTeamData,
+                    repository: repository.name,
+                    prNumber,
+                    commentId,
+                    parentId,
+                },
+            });
+            return null;
+        }
+    }
+
     //#region Transformers
 
     /**

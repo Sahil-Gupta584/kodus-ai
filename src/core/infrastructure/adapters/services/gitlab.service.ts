@@ -3230,6 +3230,53 @@ export class GitlabService
         }
     }
 
+    async updateResponseToComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        parentId: string;
+        commentId: string;
+        body: string;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<any | null> {
+        const {
+            organizationAndTeamData,
+            parentId,
+            commentId,
+            body,
+            repository,
+            prNumber,
+        } = params;
+
+        try {
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!gitlabAuthDetail) {
+                throw new Error('GitLab authentication details not found');
+            }
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            return gitlabAPI.MergeRequestDiscussions.editNote(
+                repository.id,
+                prNumber,
+                parentId,
+                Number(commentId),
+                { body },
+            );
+        } catch (error) {
+            this.logger.error({
+                message: `Error updating response to comment ${commentId} in PR #${prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService updateResponseToComment',
+                error: error,
+                metadata: params,
+            });
+            return null;
+        }
+    }
+
     //#region Transformers
 
     /**
@@ -3384,9 +3431,12 @@ export class GitlabService
 
             const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
 
-            const tree = await gitlabAPI.Repositories.allRepositoryTrees(params.repositoryId, {
-                recursive: true,
-            });
+            const tree = await gitlabAPI.Repositories.allRepositoryTrees(
+                params.repositoryId,
+                {
+                    recursive: true,
+                },
+            );
 
             return tree.map((item: any) => ({
                 path: item.path,
