@@ -1,4 +1,16 @@
-import { UncategorizedComment } from '@/core/infrastructure/adapters/services/codeBase/types/commentAnalysis.type';
+import {
+    categorizedCommentSchema,
+    UncategorizedComment,
+} from '@/core/infrastructure/adapters/services/codeBase/types/commentAnalysis.type';
+import { ReviewOptions } from '@/config/types/general/codeReview.type';
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import { z } from 'zod';
+
+export const commentCategorizerSchema = z.object({
+    suggestions: z.array(categorizedCommentSchema.omit({ body: true })),
+});
+
+export type CommentCategorizerSchema = z.infer<typeof commentCategorizerSchema>;
 
 export const prompt_CommentCategorizerSystem = () => `
 You are a code review suggestion categorization expert, when given a list of suggestions from a code review you are able to determine which category they belong to and the severity of the suggestion.
@@ -30,13 +42,13 @@ You will receive a list of suggestions with the following format:
 You must then analyze the input and categorize it according to the previous categories and severity levels.
 
 Once you've analyzed all the suggestions you must output a json with the following structure:
-[
-    {
-        id: string, unique identifier of the suggestion
-        category: string, one of the previously informed categories
-        severity: string, one of the previously informed severity levels
-    }
-]
+{
+    "suggestions": [
+        "id": string, unique identifier of the suggestion
+        "category": string, one of the previously informed categories
+        "severity": string, one of the previously informed severity levels
+    ]
+}
 
 Your output must only be a json, you should not output any other text other than the list.
 Your output must be surrounded by \`\`\`json\`\`\` tags.
@@ -58,6 +70,10 @@ ${payload.comments
     .join('')}
 ]`;
 
+export const commentIrrelevanceFilterSchema = z.object({
+    ids: z.array(z.string()),
+});
+
 export const prompt_CommentIrrelevanceFilterSystem = () => `
 You are a code review suggestion relevance expert, when given a list of suggestions from a code review you are able to determine which suggestions are irrelevant and should
 be filtered out.
@@ -75,11 +91,14 @@ Irrelevant suggestions are those that do not provide any value to the code revie
 For example, simple questions, greetings, thank you messages, etc. Bot or template messages should also be filtered out.
 
 Once you've analyzed all the suggestions you must output a list with the ids of all the suggestions that passed the filter, it must be a json with the following structure:
-[
-    "id1",
-    "id2",
-    "id3"
-]
+
+{
+    "ids": [
+        "id1",
+        "id2",
+        "id3"
+    ]
+}
 
 Your output must only be a json, you should not output any other text other than the list.
 Your output must be surrounded by \`\`\`json\`\`\` tags.
