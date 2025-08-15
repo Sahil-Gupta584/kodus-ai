@@ -18,6 +18,7 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
 import { KodyRulesModule } from './kodyRules.module';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { KodyRulesService } from '@/ee/kodyRules/service/kodyRules.service';
+import { UpdateOrCreateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/update-or-create-code-review-parameter-use-case';
 
 @Module({
     imports: [
@@ -53,6 +54,7 @@ import { KodyRulesService } from '@/ee/kodyRules/service/kodyRules.service';
         KODY_RULES_SERVICE_TOKEN,
         CreateOrUpdateParametersUseCase,
         GenerateCodeReviewParameterUseCase,
+        UpdateOrCreateCodeReviewParameterUseCase,
     ],
 })
 export class ParametersModule {}

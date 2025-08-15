@@ -11,6 +11,8 @@ export interface IKodyRule {
     title: string;
     rule: string;
     path?: string;
+    sourcePath?: string;
+    sourceAnchor?: string;
     status: KodyRulesStatus;
     severity: string;
     label?: string;
