@@ -305,6 +305,14 @@ export class ObservabilitySystem implements ObservabilityInterface {
     private mongodbExporter: {
         initialize(): Promise<void>;
         exportTelemetry(item: unknown): void;
+        exportLog(
+            level: 'debug' | 'info' | 'warn' | 'error',
+            message: string,
+            component: string,
+            context?: LogContext,
+            error?: Error,
+        ): void;
+
         flush(): Promise<void>;
         dispose(): Promise<void>;
     } | null = null;
@@ -794,6 +802,14 @@ export class ObservabilitySystem implements ObservabilityInterface {
     async dispose(): Promise<void> {
         this.logger.info('Disposing observability system');
 
+        // Clean up log processors
+        try {
+            const { clearLogProcessors } = await import('./logger.js');
+            clearLogProcessors();
+        } catch {
+            // Ignore import errors during disposal
+        }
+
         // Dispose telemetry tracer if it has dispose method
         const tracer = this.telemetry.getTracer();
         if ('dispose' in tracer && typeof tracer.dispose === 'function') {
@@ -934,8 +950,20 @@ export class ObservabilitySystem implements ObservabilityInterface {
                 }
             });
 
+            // Add log processor for MongoDB export
+            const { addLogProcessor } = await import('./logger.js');
+            addLogProcessor((level, message, component, context, error) => {
+                this.mongodbExporter?.exportLog(
+                    level,
+                    message,
+                    component,
+                    context,
+                    error,
+                );
+            });
+
             this.logger.info(
-                'MongoDB Exporter initialized and connected to telemetry',
+                'MongoDB Exporter initialized and connected to telemetry and logging',
             );
         } catch (error) {
             this.logger.error(
