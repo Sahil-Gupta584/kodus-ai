@@ -4395,23 +4395,19 @@ export abstract class AgentCore<
      */
     private async executeToolViaKernel(
         action: AgentAction,
-        correlationId: string,
+        _correlationId: string,
     ): Promise<unknown> {
         if (!isToolCallAction(action)) {
             throw new Error('Action is not a tool call action');
         }
 
         if (this.toolCircuitBreaker) {
-            // ✅ SIMPLIFIED: No additional retries - Circuit Breaker handles retries
+            // ✅ SIMPLIFIED: Direct tool execution with circuit breaker
             const circuitResult = await this.toolCircuitBreaker.execute(
                 () =>
-                    this.kernelHandler!.requestToolExecution(
+                    this.toolEngine!.executeCall(
                         action.toolName,
                         action.input || {},
-                        {
-                            correlationId: correlationId, // ✅ FIX: Use same correlationId
-                            timeout: 180000, // ✅ AUMENTADO: 180s para APIs externas
-                        },
                     ),
                 {
                     toolName: action.toolName,
@@ -4425,14 +4421,10 @@ export abstract class AgentCore<
 
             return circuitResult.result;
         } else {
-            // Fallback without circuit breaker
-            return await this.kernelHandler!.requestToolExecution(
+            // ✅ SIMPLIFIED: Direct tool execution without circuit breaker
+            return await this.toolEngine!.executeCall(
                 action.toolName,
                 action.input || {},
-                {
-                    correlationId: correlationId, // ✅ FIX: Use same correlationId
-                    timeout: 180000, // ✅ AUMENTADO: 180s para APIs externas
-                },
             );
         }
     }

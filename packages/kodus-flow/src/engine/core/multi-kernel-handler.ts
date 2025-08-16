@@ -581,6 +581,12 @@ export class MultiKernelHandler {
     async processEvents(): Promise<void> {
         this.ensureInitialized();
 
+        console.log('🔍 [DEBUG] MULTI-KERNEL: processEvents called', {
+            timestamp: Date.now(),
+            step: 'processEvents-start',
+            stack: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
+        });
+
         this.logger.info('🔄 PROCESSING EVENTS', {
             trace: {
                 source: 'multi-kernel-handler',
@@ -590,6 +596,11 @@ export class MultiKernelHandler {
         });
 
         await this.multiKernelManager!.processAllKernels();
+
+        console.log('🔍 [DEBUG] MULTI-KERNEL: processEvents completed', {
+            timestamp: Date.now(),
+            step: 'processEvents-complete',
+        });
 
         this.logger.info('✅ EVENTS PROCESSED', {
             trace: {
@@ -891,7 +902,7 @@ export class MultiKernelHandler {
     // ──────────────────────────────────────────────────────────────────────────────
 
     /**
-     * Send request using runtime's built-in ACK/NACK system
+     * Send request using event-driven communication (simplified)
      */
     async request<TRequest = unknown, TResponse = unknown>(
         requestEventType: string,
@@ -906,7 +917,7 @@ export class MultiKernelHandler {
 
         const correlationId =
             options.correlationId || this.generateCorrelationId();
-        const timeout = options.timeout || 120000; // ✅ AUMENTADO: 120s timeout para APIs externas
+        const timeout = options.timeout || 120000;
 
         const targetKernel = this.determineTargetKernel(requestEventType);
         const kernel = this.multiKernelManager!.getKernel(
@@ -917,80 +928,33 @@ export class MultiKernelHandler {
             throw new Error(`Target kernel not available: ${targetKernel}`);
         }
 
+        // ✅ SIMPLIFIED: Event-driven communication
+        return this.emitAndWait<TRequest, TResponse>(
+            kernel,
+            requestEventType,
+            responseEventType,
+            data,
+            correlationId,
+            timeout,
+        );
+    }
+
+    /**
+     * Simplified event-driven communication (no manual timeout)
+     */
+    private async emitAndWait<TRequest, TResponse>(
+        kernel: ReturnType<MultiKernelManager['getKernel']>,
+        requestEventType: string,
+        responseEventType: string,
+        data: TRequest,
+        correlationId: string,
+        _timeout: number, // ✅ IGNORED: No manual timeout
+    ): Promise<TResponse> {
         return new Promise<TResponse>((resolve, reject) => {
-            let responseReceived = false;
-            let timeoutId: NodeJS.Timeout | null = null;
-
-            // ✅ IMPROVED: Cleanup function to prevent memory leaks
+            // ✅ SIMPLIFIED: No manual timeout - let tool execute naturally
             const cleanup = () => {
-                if (timeoutId) {
-                    clearTimeout(timeoutId);
-                    timeoutId = null;
-                }
-                // ❌ REMOVED: responseReceived = true; // Não definir aqui!
+                // No cleanup needed without timeout
             };
-
-            timeoutId = setTimeout(() => {
-                if (!responseReceived) {
-                    responseReceived = true; // ✅ CORREÇÃO: Definir aqui ANTES do cleanup
-                    cleanup();
-                    const timeoutError = new Error(
-                        `Timeout waiting for ${responseEventType} (${timeout}ms)`,
-                    );
-                    this.logger.error(
-                        '⏰ MULTI-KERNEL REQUEST TIMEOUT',
-                        timeoutError,
-                        {
-                            requestEventType,
-                            responseEventType,
-                            correlationId,
-                            timeout,
-                            trace: {
-                                source: 'multi-kernel-handler',
-                                step: 'request-timeout',
-                                timestamp: Date.now(),
-                            },
-                        },
-                    );
-                    // Emitir um evento de timeout via Kernel (sem tocar no Runtime)
-                    if (requestEventType === 'tool.execute.request') {
-                        void kernel
-                            .emitEventAsync(
-                                'tool.execute.timeout' as EventType,
-                                {
-                                    correlationId,
-                                    toolName:
-                                        (data as { toolName?: string })
-                                            .toolName || 'unknown',
-                                    timeout,
-                                    error: timeoutError.message,
-                                } as EventPayloads[EventType],
-                                { correlationId, timeout },
-                            )
-                            .then(async () => {
-                                try {
-                                    // Processar imediatamente para evitar ACK pendente e requeue
-                                    await this.processEvents();
-                                } catch (procErr) {
-                                    this.logger.error(
-                                        'Failed to process events after timeout emit',
-                                        procErr as Error,
-                                        { correlationId },
-                                    );
-                                }
-                            })
-                            .catch((emitErr) => {
-                                this.logger.error(
-                                    'Failed to emit timeout event',
-                                    emitErr as Error,
-                                    { correlationId },
-                                );
-                            });
-                    }
-
-                    reject(timeoutError);
-                }
-            }, timeout);
 
             // ✅ Registrar canal de respostas uma única vez por (kernel,eventType) e rotear por correlationId
             const responseKernel =
@@ -1060,6 +1024,20 @@ export class MultiKernelHandler {
             });
 
             // ✅ Emitir request via Kernel (ACK/NACK pelo Kernel/Runtime interno)
+            console.log('🔍 [DEBUG] MULTI-KERNEL: About to emit event', {
+                requestEventType,
+                correlationId,
+                timestamp: Date.now(),
+                step: 'before-emit',
+            });
+
+            if (!kernel) {
+                cleanup();
+                this.pendingResponses.delete(correlationId);
+                reject(new Error('Kernel is null'));
+                return;
+            }
+
             kernel
                 .emitEventAsync(
                     requestEventType as EventType,
@@ -1069,10 +1047,20 @@ export class MultiKernelHandler {
                     } as EventPayloads[EventType],
                     {
                         correlationId,
-                        timeout,
                     },
                 )
                 .then(async (emitResult) => {
+                    console.log(
+                        '🔍 [DEBUG] MULTI-KERNEL: emitEventAsync completed',
+                        {
+                            requestEventType,
+                            correlationId,
+                            success: emitResult.success,
+                            timestamp: Date.now(),
+                            step: 'emit-completed',
+                        },
+                    );
+
                     if (!emitResult.success) {
                         cleanup();
                         this.pendingResponses.delete(correlationId);
@@ -1094,8 +1082,28 @@ export class MultiKernelHandler {
                         );
                         reject(emitError);
                     } else {
+                        console.log(
+                            '🔍 [DEBUG] MULTI-KERNEL: About to call processEvents',
+                            {
+                                requestEventType,
+                                correlationId,
+                                timestamp: Date.now(),
+                                step: 'before-processEvents',
+                            },
+                        );
+
                         try {
                             await this.processEvents();
+
+                            console.log(
+                                '🔍 [DEBUG] MULTI-KERNEL: processEvents completed',
+                                {
+                                    requestEventType,
+                                    correlationId,
+                                    timestamp: Date.now(),
+                                    step: 'processEvents-completed',
+                                },
+                            );
                         } catch (processError) {
                             this.logger.error(
                                 'Failed to process events after emit',

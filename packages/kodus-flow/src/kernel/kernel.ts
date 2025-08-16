@@ -640,6 +640,16 @@ export class ExecutionKernel {
             // Update state
             this.state.status = 'paused';
 
+            console.log('🔍 [DEBUG] KERNEL: Kernel paused', {
+                snapshotId: snapshot.hash,
+                reason,
+                eventCount: this.state.eventCount,
+                tenantId: this.state.tenantId,
+                timestamp: Date.now(),
+                step: 'kernel-paused',
+                stack: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
+            });
+
             this.logger.info('Kernel paused', {
                 snapshotId: snapshot.hash,
                 reason,
@@ -1128,6 +1138,20 @@ export class ExecutionKernel {
             const timer = setInterval(async () => {
                 const memoryUsage = process.memoryUsage().heapUsed;
                 if (memoryUsage > maxMemory) {
+                    console.log('🔍 [DEBUG] KERNEL: Memory quota exceeded', {
+                        memoryUsage,
+                        maxMemory,
+                        memoryUsageMB: Math.round(memoryUsage / 1024 / 1024),
+                        maxMemoryMB: Math.round(maxMemory / 1024 / 1024),
+                        kernelId: this.state.id,
+                        tenantId: this.state.tenantId,
+                        timestamp: Date.now(),
+                        step: 'memory-quota-exceeded',
+                    });
+
+                    // ✅ CORREÇÃO: Cleanup memory antes de pausar
+                    await this.cleanupMemory();
+
                     this.logger.warn('Memory quota exceeded', {
                         memoryUsage,
                         maxMemory,
@@ -1281,6 +1305,13 @@ export class ExecutionKernel {
      * Reprocess items from Dead Letter Queue
      */
     private async reprocessDLQItems(): Promise<void> {
+        console.log('🔍 [DEBUG] KERNEL: Starting DLQ reprocessing', {
+            tenantId: this.state.tenantId,
+            status: this.state.status,
+            timestamp: Date.now(),
+            step: 'dlq-reprocessing-start',
+        });
+
         const runtime = this.getRuntimeSafely();
         if (!runtime) {
             this.logger.warn('No runtime available for DLQ reprocessing');
@@ -1383,6 +1414,15 @@ export class ExecutionKernel {
 
         // Create snapshot before stopping
         const snapshotId = await this.pause(`quota-exceeded-${type}`);
+
+        console.log('🔍 [DEBUG] KERNEL: Kernel paused due to quota exceeded', {
+            type,
+            snapshotId,
+            tenantId: this.state.tenantId,
+            timestamp: Date.now(),
+            step: 'quota-exceeded-pause',
+            stack: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
+        });
 
         this.logger.info('Kernel paused due to quota exceeded', {
             type,
@@ -1516,6 +1556,15 @@ export class ExecutionKernel {
      */
     private getRuntimeSafely(): Runtime {
         if (!this.isRuntimeReady()) {
+            console.log('🔍 [DEBUG] KERNEL: Runtime not ready', {
+                status: this.state.status,
+                runtimeExists: !!this.runtime,
+                tenantId: this.state.tenantId,
+                timestamp: Date.now(),
+                step: 'runtime-not-ready',
+                stack: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
+            });
+
             throw new Error(
                 `Runtime not ready. Status: ${this.state.status}, Runtime: ${this.runtime ? 'exists' : 'null'}`,
             );
@@ -1548,6 +1597,14 @@ export class ExecutionKernel {
     async processEvents(): Promise<void> {
         const operationId = `process:${Date.now()}`;
 
+        console.log('🔍 [DEBUG] KERNEL: processEvents called', {
+            operationId,
+            tenantId: this.state.tenantId,
+            timestamp: Date.now(),
+            step: 'kernel-processEvents-start',
+            stack: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
+        });
+
         await this.executeAtomicOperation(
             operationId,
             async () => {
@@ -1578,6 +1635,13 @@ export class ExecutionKernel {
                 isolation: true,
             },
         );
+
+        console.log('🔍 [DEBUG] KERNEL: processEvents completed', {
+            operationId,
+            tenantId: this.state.tenantId,
+            timestamp: Date.now(),
+            step: 'kernel-processEvents-complete',
+        });
     }
 
     /**
@@ -2222,6 +2286,102 @@ export class ExecutionKernel {
         }
 
         return this.state.contextData[contextKey] as Record<string, unknown>;
+    }
+
+    /**
+     * Cleanup memory to prevent memory leaks
+     */
+    private async cleanupMemory(): Promise<void> {
+        try {
+            console.log('🔍 [DEBUG] KERNEL: Starting memory cleanup', {
+                kernelId: this.state.id,
+                tenantId: this.state.tenantId,
+                timestamp: Date.now(),
+                step: 'memory-cleanup-start',
+            });
+
+            // 1. Cleanup old snapshots (if persistor supports it)
+            if (this.persistor && 'cleanupOldSnapshots' in this.persistor) {
+                try {
+                    await (
+                        this.persistor as {
+                            cleanupOldSnapshots(): Promise<void>;
+                        }
+                    ).cleanupOldSnapshots();
+                    console.log('🔍 [DEBUG] KERNEL: Old snapshots cleaned', {
+                        kernelId: this.state.id,
+                        timestamp: Date.now(),
+                        step: 'snapshots-cleaned',
+                    });
+                } catch (error) {
+                    console.log('🔍 [DEBUG] KERNEL: Snapshot cleanup failed', {
+                        kernelId: this.state.id,
+                        error: (error as Error).message,
+                        timestamp: Date.now(),
+                        step: 'snapshot-cleanup-error',
+                    });
+                }
+            }
+
+            // 2. Clear context update queue
+            if (this.contextUpdateQueue && this.contextUpdateQueue.size > 0) {
+                const queueSize = this.contextUpdateQueue.size;
+                this.contextUpdateQueue.clear();
+                console.log('🔍 [DEBUG] KERNEL: Context update queue cleared', {
+                    kernelId: this.state.id,
+                    clearedItems: queueSize,
+                    timestamp: Date.now(),
+                    step: 'context-queue-cleared',
+                });
+            }
+
+            // 3. Clear event batch timer
+            if (this.eventBatchTimer) {
+                clearTimeout(this.eventBatchTimer);
+                this.eventBatchTimer = null;
+                console.log('🔍 [DEBUG] KERNEL: Event batch timer cleared', {
+                    kernelId: this.state.id,
+                    timestamp: Date.now(),
+                    step: 'event-timer-cleared',
+                });
+            }
+
+            // 4. Clear context update timer
+            if (this.contextUpdateTimer) {
+                clearTimeout(this.contextUpdateTimer);
+                this.contextUpdateTimer = null;
+                console.log('🔍 [DEBUG] KERNEL: Context update timer cleared', {
+                    kernelId: this.state.id,
+                    timestamp: Date.now(),
+                    step: 'context-timer-cleared',
+                });
+            }
+
+            // 5. Force garbage collection if available
+            if (global.gc) {
+                global.gc();
+                console.log('🔍 [DEBUG] KERNEL: Garbage collection forced', {
+                    kernelId: this.state.id,
+                    timestamp: Date.now(),
+                    step: 'gc-forced',
+                });
+            }
+
+            console.log('🔍 [DEBUG] KERNEL: Memory cleanup completed', {
+                kernelId: this.state.id,
+                tenantId: this.state.tenantId,
+                timestamp: Date.now(),
+                step: 'memory-cleanup-complete',
+            });
+        } catch (error) {
+            console.log('🔍 [DEBUG] KERNEL: Memory cleanup failed', {
+                kernelId: this.state.id,
+                error: (error as Error).message,
+                timestamp: Date.now(),
+                step: 'memory-cleanup-error',
+            });
+            this.logger.error('Memory cleanup failed', error as Error);
+        }
     }
 }
 

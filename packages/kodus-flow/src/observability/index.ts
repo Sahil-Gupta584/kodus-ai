@@ -31,6 +31,13 @@ export {
     type ToolSpanAttributes,
     type LLMSpanAttributes,
 } from './telemetry.js';
+// MongoDB Exporter
+export {
+    createMongoDBExporter,
+    createMongoDBExporterFromStorage,
+    type MongoDBExporterConfig,
+    type ObservabilityStorageConfig,
+} from './mongodb-exporter.js';
 // Removed: functional observable and timeline
 
 // Core exports (simplificados)
@@ -96,6 +103,23 @@ export interface ObservabilityConfig {
     telemetry?: Partial<TelemetryConfig>;
     monitoring?: Partial<MonitoringConfig>;
     debugging?: Partial<DebugConfig>;
+
+    // MongoDB Export
+    mongodb?: {
+        type: 'mongodb';
+        connectionString?: string;
+        database?: string;
+        collections?: {
+            logs?: string;
+            telemetry?: string;
+            metrics?: string;
+            errors?: string;
+        };
+        batchSize?: number;
+        flushIntervalMs?: number;
+        ttlDays?: number;
+        enableObservability?: boolean;
+    };
 
     // Integration settings
     correlation?: {
@@ -278,6 +302,12 @@ export class ObservabilitySystem implements ObservabilityInterface {
             system;
     }
     public readonly debug: DebugSystem;
+    private mongodbExporter: {
+        initialize(): Promise<void>;
+        exportTelemetry(item: unknown): void;
+        flush(): Promise<void>;
+        dispose(): Promise<void>;
+    } | null = null;
 
     constructor(config: Partial<ObservabilityConfig> = {}) {
         this.config = { ...DEFAULT_CONFIG, ...config };
@@ -349,6 +379,34 @@ export class ObservabilitySystem implements ObservabilityInterface {
             this.setMonitor(null);
         }
         this.debug = getGlobalDebugSystem(this.config.debugging);
+
+        // Initialize MongoDB Exporter if configured (legacy or via storage)
+        this.logger.info('Checking MongoDB configuration...', {
+            hasMongoDBConfig: !!this.config.mongodb,
+            configKeys: Object.keys(this.config),
+            mongodbKeys: this.config.mongodb
+                ? Object.keys(this.config.mongodb)
+                : [],
+        });
+
+        if (this.config.mongodb) {
+            this.logger.info(
+                'MongoDB config detected, initializing exporter...',
+                {
+                    hasConfig: !!this.config.mongodb,
+                    connectionString: this.config.mongodb.connectionString,
+                    database: this.config.mongodb.database,
+                },
+            );
+            void this.initializeMongoDBExporter();
+        } else {
+            this.logger.info(
+                'No MongoDB config detected, skipping exporter initialization',
+                {
+                    config: this.config,
+                },
+            );
+        }
 
         // Inject automatic correlation into logs
         setLogContextProvider(() => {
@@ -699,6 +757,19 @@ export class ObservabilitySystem implements ObservabilityInterface {
             this.debug.updateConfig(config.debugging);
         }
 
+        // ✅ NOVO: Re-inicializar MongoDB Exporter se configuração mudou
+        if (config.mongodb && !this.mongodbExporter) {
+            this.logger.info(
+                'MongoDB config updated, initializing exporter...',
+                {
+                    hasConfig: !!this.config.mongodb,
+                    connectionString: this.config.mongodb?.connectionString,
+                    database: this.config.mongodb?.database,
+                },
+            );
+            void this.initializeMongoDBExporter();
+        }
+
         this.logger.info('Observability configuration updated', {
             environment: this.config.environment,
         } as LogContext);
@@ -711,6 +782,7 @@ export class ObservabilitySystem implements ObservabilityInterface {
         await Promise.allSettled([
             this.debug.flush(),
             this.telemetry.forceFlush(),
+            this.mongodbExporter?.flush(),
         ]);
 
         this.logger.debug('Observability system flushed');
@@ -728,7 +800,11 @@ export class ObservabilitySystem implements ObservabilityInterface {
             (tracer as { dispose(): void }).dispose();
         }
 
-        await Promise.allSettled([this.debug.dispose(), this.flush()]);
+        await Promise.allSettled([
+            this.debug.dispose(),
+            this.mongodbExporter?.dispose(),
+            this.flush(),
+        ]);
 
         this.monitor?.stop?.();
         this.clearContext();
@@ -792,6 +868,84 @@ export class ObservabilitySystem implements ObservabilityInterface {
                 ...this.config.telemetry,
                 enabled: false, // Disable telemetry in tests
             };
+        }
+    }
+
+    /**
+     * Initialize MongoDB Exporter
+     */
+    private async initializeMongoDBExporter(): Promise<void> {
+        this.logger.info('Starting MongoDB Exporter initialization...');
+
+        try {
+            const { createMongoDBExporter } = await import(
+                './mongodb-exporter.js'
+            );
+
+            // Convert simple config to MongoDBExporterConfig
+            const mongodbConfig = this.config.mongodb
+                ? {
+                      connectionString:
+                          this.config.mongodb.connectionString ||
+                          'mongodb://localhost:27017/kodus',
+                      database: this.config.mongodb.database || 'kodus',
+                      collections: {
+                          logs:
+                              this.config.mongodb.collections?.logs ||
+                              'observability_logs',
+                          telemetry:
+                              this.config.mongodb.collections?.telemetry ||
+                              'observability_telemetry',
+                          metrics:
+                              this.config.mongodb.collections?.metrics ||
+                              'observability_metrics',
+                          errors:
+                              this.config.mongodb.collections?.errors ||
+                              'observability_errors',
+                      },
+                      batchSize: this.config.mongodb.batchSize || 100,
+                      flushIntervalMs:
+                          this.config.mongodb.flushIntervalMs || 5000,
+                      maxRetries: 3,
+                      ttlDays: this.config.mongodb.ttlDays || 30,
+                      enableObservability:
+                          this.config.mongodb.enableObservability ?? true,
+                  }
+                : undefined;
+
+            this.logger.info('Creating MongoDB Exporter with config:', {
+                connectionString: mongodbConfig?.connectionString,
+                database: mongodbConfig?.database,
+                collections: mongodbConfig?.collections,
+            });
+
+            this.mongodbExporter = createMongoDBExporter(mongodbConfig);
+
+            this.logger.info('Initializing MongoDB Exporter...');
+            await this.mongodbExporter.initialize();
+
+            // Add telemetry processor
+            this.telemetry.addTraceProcessor((items) => {
+                this.logger.debug('Processing telemetry items for MongoDB:', {
+                    itemCount: items.length,
+                });
+                for (const item of items) {
+                    this.mongodbExporter?.exportTelemetry(item);
+                }
+            });
+
+            this.logger.info(
+                'MongoDB Exporter initialized and connected to telemetry',
+            );
+        } catch (error) {
+            this.logger.error(
+                'Failed to initialize MongoDB Exporter',
+                error as Error,
+                {
+                    errorMessage:
+                        error instanceof Error ? error.message : String(error),
+                } as LogContext,
+            );
         }
     }
 
@@ -1032,6 +1186,7 @@ let globalObservability: ObservabilitySystem | undefined;
 export function getObservability(
     config?: Partial<ObservabilityConfig>,
 ): ObservabilitySystem {
+    debugger;
     if (!globalObservability) {
         globalObservability = new ObservabilitySystem(config);
     } else if (config) {
