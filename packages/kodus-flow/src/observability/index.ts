@@ -312,7 +312,15 @@ export class ObservabilitySystem implements ObservabilityInterface {
             context?: LogContext,
             error?: Error,
         ): void;
-
+        exportError(
+            error: Error,
+            context?: {
+                correlationId?: string;
+                tenantId?: string;
+                executionId?: string;
+                [key: string]: unknown;
+            },
+        ): void;
         flush(): Promise<void>;
         dispose(): Promise<void>;
     } | null = null;
@@ -426,6 +434,9 @@ export class ObservabilitySystem implements ObservabilityInterface {
                 executionId: ctx.executionId,
             };
         });
+
+        // Setup global error handling
+        this.setupGlobalErrorHandling();
 
         this.logger.info('Observability system initialized', {
             environment: this.config.environment,
@@ -960,10 +971,25 @@ export class ObservabilitySystem implements ObservabilityInterface {
                     context,
                     error,
                 );
+
+                // Export error to dedicated error collection when level is 'error'
+                if (level === 'error' && error && this.mongodbExporter) {
+                    const errorContext = {
+                        correlationId: context?.correlationId as
+                            | string
+                            | undefined,
+                        tenantId: context?.tenantId as string | undefined,
+                        executionId: context?.executionId as string | undefined,
+                        component,
+                        logMessage: message,
+                        ...context,
+                    };
+                    this.mongodbExporter.exportError(error, errorContext);
+                }
             });
 
             this.logger.info(
-                'MongoDB Exporter initialized and connected to telemetry and logging',
+                'MongoDB Exporter initialized and connected to telemetry, logging, and errors',
             );
         } catch (error) {
             this.logger.error(
@@ -975,6 +1001,63 @@ export class ObservabilitySystem implements ObservabilityInterface {
                 } as LogContext,
             );
         }
+    }
+
+    /**
+     * Setup global error handling to capture uncaught exceptions and unhandled rejections
+     */
+    private setupGlobalErrorHandling(): void {
+        // Capture uncaught exceptions
+        process.on('uncaughtException', (error: Error) => {
+            this.logger.error('Uncaught Exception', error, {
+                source: 'global',
+                type: 'uncaughtException',
+            });
+
+            // Export to MongoDB if available
+            if (this.mongodbExporter) {
+                const context = this.getContext();
+                this.mongodbExporter.exportError(error, {
+                    correlationId: context?.correlationId,
+                    tenantId: context?.tenantId,
+                    executionId: context?.executionId,
+                    source: 'global',
+                    type: 'uncaughtException',
+                });
+            }
+        });
+
+        // Capture unhandled promise rejections
+        process.on(
+            'unhandledRejection',
+            (reason: unknown, promise: Promise<unknown>) => {
+                const error =
+                    reason instanceof Error
+                        ? reason
+                        : new Error(String(reason));
+
+                this.logger.error('Unhandled Promise Rejection', error, {
+                    source: 'global',
+                    type: 'unhandledRejection',
+                    promise: promise.toString(),
+                });
+
+                // Export to MongoDB if available
+                if (this.mongodbExporter) {
+                    const context = this.getContext();
+                    this.mongodbExporter.exportError(error, {
+                        correlationId: context?.correlationId,
+                        tenantId: context?.tenantId,
+                        executionId: context?.executionId,
+                        source: 'global',
+                        type: 'unhandledRejection',
+                        promise: promise.toString(),
+                    });
+                }
+            },
+        );
+
+        this.logger.debug('Global error handling setup completed');
     }
 
     /**
@@ -1136,10 +1219,28 @@ export class ObservabilitySystem implements ObservabilityInterface {
         message: string,
         context?: Partial<ObservabilityContext>,
     ): void {
-        this.logger.error(message, error, {
+        const currentContext = this.getContext();
+        const mergedContext = {
             ...context,
-            correlationId: this.getContext()?.correlationId,
-        });
+            correlationId: currentContext?.correlationId,
+        };
+
+        // Log the error
+        this.logger.error(message, error, mergedContext);
+
+        // Export to MongoDB errors collection if available
+        if (this.mongodbExporter) {
+            this.mongodbExporter.exportError(error, {
+                correlationId: currentContext?.correlationId,
+                tenantId: currentContext?.tenantId || context?.tenantId,
+                executionId:
+                    currentContext?.executionId || context?.executionId,
+                source: 'application',
+                type: 'manual',
+                logMessage: message,
+                ...context,
+            });
+        }
     }
 
     /**
