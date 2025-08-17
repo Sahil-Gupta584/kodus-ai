@@ -143,13 +143,13 @@ export interface NeedsReplanResult {
     metadata?: ActionResultMetadata;
 }
 
-export interface ResultAnalysis {
+export type ResultAnalysis = {
     isComplete: boolean;
     isSuccessful: boolean;
     feedback: string;
     shouldContinue: boolean;
     suggestedNextAction?: string;
-}
+};
 
 /**
  * ✅ UNIFIED: StepExecution now uses the implementation from step-execution.ts

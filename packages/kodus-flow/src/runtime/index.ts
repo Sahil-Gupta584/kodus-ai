@@ -614,21 +614,8 @@ export function createRuntime(
                     await eventProcessor.processEvent(event);
                     processed++;
 
-                    // Auto-ACK se habilitado
+                    // ✅ REFACTOR: ACK automático sempre que habilitado
                     if (enableAcks && event.metadata?.correlationId) {
-                        observability.logger.debug(
-                            '✅ RUNTIME - Auto-ACK event',
-                            {
-                                eventType: event.type,
-                                eventId: event.id,
-                                correlationId: event.metadata.correlationId,
-                                trace: {
-                                    source: 'runtime',
-                                    step: 'auto-ack',
-                                    timestamp: Date.now(),
-                                },
-                            },
-                        );
                         await this.ack(event.id);
                         acked++;
                     }
@@ -649,6 +636,7 @@ export function createRuntime(
                         },
                     );
 
+                    // ✅ REFACTOR: NACK automático sempre que habilitado
                     if (enableAcks && event.metadata?.correlationId) {
                         await this.nack(event.id, error as Error);
                     }

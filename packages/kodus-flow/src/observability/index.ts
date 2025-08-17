@@ -946,18 +946,18 @@ export class ObservabilitySystem implements ObservabilityInterface {
                 collections: mongodbConfig?.collections,
             });
 
-            this.mongodbExporter = createMongoDBExporter(mongodbConfig);
+            this.mongodbExporter = await createMongoDBExporter(mongodbConfig);
 
             this.logger.info('Initializing MongoDB Exporter...');
             await this.mongodbExporter.initialize();
 
             // Add telemetry processor
-            this.telemetry.addTraceProcessor((items) => {
+            await this.telemetry.addTraceProcessor(async (items) => {
                 this.logger.debug('Processing telemetry items for MongoDB:', {
                     itemCount: items.length,
                 });
                 for (const item of items) {
-                    this.mongodbExporter?.exportTelemetry(item);
+                    await this.mongodbExporter?.exportTelemetry(item);
                 }
             });
 
@@ -1315,7 +1315,6 @@ let globalObservability: ObservabilitySystem | undefined;
 export function getObservability(
     config?: Partial<ObservabilityConfig>,
 ): ObservabilitySystem {
-    debugger;
     if (!globalObservability) {
         globalObservability = new ObservabilitySystem(config);
     } else if (config) {

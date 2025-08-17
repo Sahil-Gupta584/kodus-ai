@@ -223,7 +223,9 @@ export class MCPRegistry {
             totalToolsFound: allTools.length,
             toolsByServer: allTools.reduce(
                 (acc, tool) => {
-                    acc[tool.serverName] = (acc[tool.serverName] || 0) + 1;
+                    if (tool.serverName) {
+                        acc[tool.serverName] = (acc[tool.serverName] || 0) + 1;
+                    }
                     return acc;
                 },
                 {} as Record<string, number>,

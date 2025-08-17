@@ -109,15 +109,15 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         try {
-            // Build structured XML-like context blocks first
             const { agentContext } = context;
+
             if (!agentContext) {
                 return '';
             }
             const blocks: string[] = [];
 
-            // 1) Observations from memory (relevant knowledge)
             const memories = await agentContext.memory.search(context.input, 3);
+
             if (memories && memories.length > 0) {
                 for (const mem of memories) {
                     const s =
@@ -128,7 +128,6 @@ export class PlanAndExecutePlanner implements Planner {
                 }
             }
 
-            // 2) Recent session entries (tool calls/results, messages, errors, planning events)
             const sessionHistory = await agentContext.session.getHistory();
             if (sessionHistory && sessionHistory.length > 0) {
                 const recent = sessionHistory.slice(-3);
@@ -1135,6 +1134,7 @@ export class PlanAndExecutePlanner implements Planner {
     ): Promise<ResultAnalysis> {
         const currentPlan = this.getCurrentPlan(context);
         if (!currentPlan) {
+            // ❌ SEM PLANO = Comunicação interna, não resposta final
             return {
                 isComplete: true,
                 isSuccessful: true,
@@ -1143,7 +1143,7 @@ export class PlanAndExecutePlanner implements Planner {
             };
         }
 
-        // If plan is waiting for user input, do not finalize here
+        // ❌ WAITING_INPUT = Comunicação interna, não resposta final
         if (currentPlan.status === 'waiting_input') {
             return {
                 isComplete: true,
@@ -1308,6 +1308,7 @@ export class PlanAndExecutePlanner implements Planner {
         const currentStep = currentPlan.steps[currentPlan.currentStepIndex];
 
         if (!currentStep) {
+            // ❌ SEM STEP = Comunicação interna, não resposta final
             return {
                 isComplete: true,
                 isSuccessful: true,
@@ -1328,6 +1329,7 @@ export class PlanAndExecutePlanner implements Planner {
             if (shouldReplan) {
                 currentPlan.status = 'replanning';
                 this.setCurrentPlan(context, currentPlan);
+                // ❌ REPLANNING = Processo interno, não resposta final
                 return {
                     isComplete: false,
                     isSuccessful: false,
@@ -1339,15 +1341,31 @@ export class PlanAndExecutePlanner implements Planner {
                 currentPlan.status = 'failed';
                 this.setCurrentPlan(context, currentPlan);
 
-                const synthesizedErrorResponse =
-                    await this.createFinalResponse(context);
+                // ✅ VERIFICAR SE É FALHA DEFINITIVA
+                const isDefinitiveFailure =
+                    this.isDefinitiveFailure(currentPlan);
 
-                return {
-                    isComplete: true,
-                    isSuccessful: false,
-                    feedback: synthesizedErrorResponse,
-                    shouldContinue: false,
-                };
+                if (isDefinitiveFailure) {
+                    // ✅ FALHA DEFINITIVA = Resposta final para usuário
+                    const synthesizedErrorResponse =
+                        await this.createFinalResponse(context);
+
+                    return {
+                        isComplete: true,
+                        isSuccessful: false,
+                        feedback: synthesizedErrorResponse,
+                        shouldContinue: false,
+                    };
+                } else {
+                    // ❌ FALHA TEMPORÁRIA = Comunicação interna
+                    return {
+                        isComplete: false,
+                        isSuccessful: false,
+                        feedback: `Step failed: ${result.error}. Will replan from this point.`,
+                        shouldContinue: true,
+                        suggestedNextAction: 'Replan execution strategy',
+                    };
+                }
             }
         }
 
@@ -1407,6 +1425,7 @@ export class PlanAndExecutePlanner implements Planner {
             };
         }
 
+        // ❌ STEP EM ANDAMENTO = Comunicação interna, não resposta final
         return {
             isComplete: false,
             isSuccessful: true,
@@ -1414,6 +1433,22 @@ export class PlanAndExecutePlanner implements Planner {
             shouldContinue: true,
             suggestedNextAction: `Next: ${currentPlan.steps[currentPlan.currentStepIndex]?.description}`,
         };
+    }
+
+    private isDefinitiveFailure(plan: ExecutionPlan): boolean {
+        const replanCause = (plan.metadata as Record<string, unknown>)
+            ?.replanCause as string;
+
+        // ✅ FALHAS DEFINITIVAS
+        const definitiveCauses = [
+            'max_replans_exceeded',
+            'permission_denied',
+            'not_found',
+            'invalid_credentials',
+            'unauthorized',
+        ];
+
+        return definitiveCauses.includes(replanCause);
     }
 
     private shouldReplan(context: PlannerExecutionContext): boolean {
@@ -1479,6 +1514,20 @@ export class PlanAndExecutePlanner implements Planner {
             'unauthorized',
         ];
         if (unrecoverableErrors.some((err) => errorMessage.includes(err))) {
+            // ✅ SETAR REPLAN_CAUSE para falha definitiva
+            const currentPlan = this.getCurrentPlan(context);
+            if (currentPlan) {
+                const matchedError = unrecoverableErrors.find((err) =>
+                    errorMessage.includes(err),
+                );
+                currentPlan.metadata = {
+                    ...(currentPlan.metadata || {}),
+                    replanCause:
+                        matchedError?.replace(' ', '_') ||
+                        'unrecoverable_error',
+                } as Record<string, unknown>;
+                this.setCurrentPlan(context, currentPlan);
+            }
             return false;
         }
 

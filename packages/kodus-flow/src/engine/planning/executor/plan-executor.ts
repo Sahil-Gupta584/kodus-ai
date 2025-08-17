@@ -241,16 +241,10 @@ export class PlanExecutor {
         while (executionRounds < this.maxExecutionRounds) {
             const readySteps = getReadySteps(plan);
 
-            // ✅ MELHORIA: Log mais limpo e informativo
-            if (readySteps.length > 0) {
-                console.log(
-                    `🔍 [PLAN-EXECUTOR] Round ${executionRounds + 1}: Executing ${readySteps.length} steps`,
-                );
+            if (readySteps.length === 0) {
+                break;
             }
 
-            if (readySteps.length === 0) break;
-
-            // ✅ MELHORIA: Manter execução sequencial por segurança
             for (const step of readySteps) {
                 const stepResult = await this.executeStepSafe(
                     plan,
@@ -274,7 +268,6 @@ export class PlanExecutor {
         const startTime = Date.now();
 
         try {
-            // ✅ MELHORIA: Validar argumentos primeiro
             const argumentResolution = await this.resolveStepArguments(
                 step,
                 plan,

@@ -1,9 +1,5 @@
 import { MCPRegistry } from './registry.js';
-import {
-    mcpToolsToEngineTools,
-    parseToolName,
-    type EngineTool,
-} from './tools.js';
+import { mcpToolsToEngineTools, type EngineTool } from './tools.js';
 import type {
     MCPAdapterConfig,
     MCPAdapter,
@@ -127,12 +123,11 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
                 annotations: tool?.annotations,
                 title: tool?.title,
                 execute: async (args: unknown, _ctx: unknown) => {
-                    const { serverName, toolName } = parseToolName(tool.name);
-
+                    // Since we removed server prefix, execute tool without server name
+                    // The registry will find the tool in any available server
                     return registry.executeTool(
-                        toolName,
+                        tool.name,
                         args as Record<string, unknown>,
-                        serverName,
                     );
                 },
             }));
@@ -234,12 +229,9 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
 
             await this.ensureConnection();
 
-            const { serverName: parsedServer, toolName } = parseToolName(name);
-            return registry.executeTool(
-                toolName,
-                args,
-                serverName || parsedServer,
-            );
+            // Since we removed server prefix, use the name directly
+            // If serverName is provided, use it; otherwise let registry find the tool
+            return registry.executeTool(name, args, serverName);
         },
 
         /**

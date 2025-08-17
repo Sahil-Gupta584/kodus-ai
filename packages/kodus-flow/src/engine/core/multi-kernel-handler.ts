@@ -1357,65 +1357,8 @@ export class MultiKernelHandler {
     }
 
     // ──────────────────────────────────────────────────────────────────────────────
-    // 🎯 ACK/NACK METHODS FOR EVENT HANDLERS
+    // ✅ REFACTOR: ACK/NACK removido - agora é automático no Runtime
     // ──────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Acknowledge event processing completion
-     */
-    async ack(eventId: string): Promise<void> {
-        await this.ensureInitialized();
-
-        // ACK via Kernel (sem tocar no Runtime)
-        const agentKernel =
-            this.multiKernelManager!.getKernel('agent-execution');
-        if (!agentKernel) {
-            this.logger.warn('Agent kernel not available for ACK', { eventId });
-            return;
-        }
-
-        try {
-            await agentKernel.ackEvent(eventId);
-            this.logger.debug('Event ACK successful', { eventId });
-        } catch (error) {
-            this.logger.error('Failed to ACK event', error as Error, {
-                eventId,
-            });
-            throw error;
-        }
-    }
-
-    /**
-     * Negative acknowledge event with optional error
-     */
-    async nack(eventId: string, error?: Error): Promise<void> {
-        await this.ensureInitialized();
-
-        // NACK via Kernel (sem tocar no Runtime)
-        const agentKernel =
-            this.multiKernelManager!.getKernel('agent-execution');
-        if (!agentKernel) {
-            this.logger.warn('Agent kernel not available for NACK', {
-                eventId,
-                error,
-            });
-            return;
-        }
-
-        try {
-            await agentKernel.nackEvent(eventId, error);
-            this.logger.debug('Event NACK successful', {
-                eventId,
-                error: error?.message,
-            });
-        } catch (nackError) {
-            this.logger.error('Failed to NACK event', nackError as Error, {
-                eventId,
-                originalError: error?.message,
-            });
-            throw nackError;
-        }
-    }
 }
 
 /**

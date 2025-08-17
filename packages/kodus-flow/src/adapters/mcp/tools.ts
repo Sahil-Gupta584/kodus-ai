@@ -57,7 +57,8 @@ export function mcpToolToEngineTool(mcpTool: MCPToolRawWithServer): EngineTool {
         throw new Error('Invalid MCP tool name');
     }
 
-    if (!mcpTool.serverName || typeof mcpTool.serverName !== 'string') {
+    // serverName is now optional since we removed server prefix from tool names
+    if (mcpTool.serverName && typeof mcpTool.serverName !== 'string') {
         throw new Error('Invalid MCP server name');
     }
 
@@ -74,9 +75,8 @@ export function mcpToolToEngineTool(mcpTool: MCPToolRawWithServer): EngineTool {
         ? safeJsonSchemaToZod(mcpTool.outputSchema)
         : undefined;
 
-    const toolName = mcpTool.serverName
-        ? `${mcpTool.serverName}.${mcpTool.name}`
-        : mcpTool.name;
+    // Use apenas o nome da tool, sem prefixo do servidor
+    const toolName = mcpTool.name;
 
     if (!toolName || toolName.includes('..')) {
         throw new Error(`Invalid tool name: ${toolName}`);
@@ -185,6 +185,25 @@ export function mcpToolsToEngineTools(
 ): EngineTool[] {
     const validTools: EngineTool[] = [];
     const invalidTools: string[] = [];
+    const toolNameCounts = new Map<string, string[]>();
+
+    // Check for name conflicts
+    for (const mcpTool of mcpTools) {
+        const existing = toolNameCounts.get(mcpTool.name) || [];
+        if (mcpTool.serverName) {
+            existing.push(mcpTool.serverName);
+        }
+        toolNameCounts.set(mcpTool.name, existing);
+    }
+
+    // Log conflicts
+    for (const [toolName, servers] of toolNameCounts) {
+        if (servers.length > 1) {
+            console.warn(
+                `⚠️  Tool name conflict detected: "${toolName}" exists in multiple servers: ${servers.join(', ')}. The first available server will be used during execution.`,
+            );
+        }
+    }
 
     for (const mcpTool of mcpTools) {
         try {
@@ -200,6 +219,8 @@ export function mcpToolsToEngineTools(
 
 /**
  * Parse tool name to extract server name and tool name
+ * Since we now use only tool names without server prefix,
+ * we need to find the tool in the registry to get the server name
  */
 export function parseToolName(fullName: string): {
     serverName?: string;
@@ -209,12 +230,7 @@ export function parseToolName(fullName: string): {
         throw new Error('Invalid tool name');
     }
 
-    const parts = fullName.split('.');
-    if (parts.length > 1) {
-        return {
-            serverName: parts[0],
-            toolName: parts.slice(1).join('.'),
-        };
-    }
+    // Since we removed server prefix, just return the tool name
+    // The server name will be resolved during execution
     return { toolName: fullName };
 }

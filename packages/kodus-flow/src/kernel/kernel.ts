@@ -1334,11 +1334,17 @@ export class ExecutionKernel {
                 recoveryAttempts: this.recoveryAttempts,
             });
 
-            // Perform actual DLQ reprocessing using the enhanced runtime interface
+            // ✅ REFACTOR: DLQ reprocessing com critérios adaptativos
             if (runtime.reprocessDLQByCriteria) {
+                // Critérios baseados no estado do sistema
+                const memoryUsage = process.memoryUsage().heapUsed;
+                const isHighMemory = memoryUsage > 500 * 1024 * 1024; // 500MB
+
                 const criteria = {
-                    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-                    limit: 10,
+                    maxAge: isHighMemory ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000, // 1h vs 24h
+                    limit: isHighMemory ? 5 : 10, // Menos eventos sob alta memória
+                    eventType:
+                        this.recoveryAttempts > 3 ? undefined : 'agent.error', // Foco em erros de agente
                 };
 
                 const result = await runtime.reprocessDLQByCriteria(criteria);
@@ -1347,6 +1353,8 @@ export class ExecutionKernel {
                     reprocessedCount: result.reprocessedCount,
                     eventTypes: result.events.map((e) => e.type),
                     recoveryAttempts: this.recoveryAttempts,
+                    criteria,
+                    memoryUsageMB: Math.round(memoryUsage / 1024 / 1024),
                 });
 
                 // Update recovery metrics if any events were reprocessed
