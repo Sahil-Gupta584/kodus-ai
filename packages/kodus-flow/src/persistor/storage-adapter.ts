@@ -75,6 +75,8 @@ export class StoragePersistorAdapter implements Persistor {
             timestamp: Date.now(),
             metadata: {
                 xcId: s.xcId,
+                // Store full snapshot for simple adapters (memory)
+                snapshot: s,
                 ...options,
             },
         };
@@ -83,16 +85,28 @@ export class StoragePersistorAdapter implements Persistor {
         logger.debug('Snapshot appended', { hash: s.hash, xcId: s.xcId });
     }
 
-    async *load(_xcId: string): AsyncIterable<Snapshot> {
+    async *load(xcId: string): AsyncIterable<Snapshot> {
         await this.ensureInitialized();
-
-        // Note: This is a simplified implementation
-        // In a real implementation, you'd need to query by xcId
-        // For now, we'll return empty as the storage doesn't support this query pattern
-        logger.warn(
-            'load() not fully implemented in storage adapter - returning empty',
-        );
-        return;
+        // Try to iterate items if storage supports getAllItems (in-memory)
+        const storageAny = this.storage as unknown as {
+            getAllItems?: () => Map<string, BaseStorageItem>;
+        };
+        if (storageAny.getAllItems) {
+            const items = storageAny.getAllItems();
+            for (const [, item] of items) {
+                if (item.metadata && item.metadata['xcId'] === xcId) {
+                    const snap = item.metadata['snapshot'] as
+                        | Snapshot
+                        | undefined;
+                    if (snap) {
+                        yield snap;
+                    }
+                }
+            }
+            return;
+        }
+        // Fallback: nothing available
+        logger.warn('load() not supported by underlying storage');
     }
 
     async has(hash: string): Promise<boolean> {
@@ -107,21 +121,26 @@ export class StoragePersistorAdapter implements Persistor {
 
         const item = await this.storage!.retrieve(hash);
         if (!item) return null;
-
-        // Note: This is simplified - real implementation would need full Snapshot data
-        // For now, return null as the conversion is complex
-        return null;
+        const snap = item.metadata?.['snapshot'] as Snapshot | undefined;
+        return snap ?? null;
     }
 
-    async listHashes(_xcId: string): Promise<string[]> {
+    async listHashes(xcId: string): Promise<string[]> {
         await this.ensureInitialized();
-
-        // Note: This is a simplified implementation
-        // In a real implementation, you'd need to query by xcId
-        logger.warn(
-            'listHashes() not fully implemented in storage adapter - returning empty',
-        );
-        return [];
+        const result: string[] = [];
+        const storageAny = this.storage as unknown as {
+            getAllItems?: () => Map<string, BaseStorageItem>;
+        };
+        if (storageAny.getAllItems) {
+            for (const [id, item] of storageAny.getAllItems()!) {
+                if (item.metadata && item.metadata['xcId'] === xcId) {
+                    result.push(id);
+                }
+            }
+            return result;
+        }
+        logger.warn('listHashes() not supported by underlying storage');
+        return result;
     }
 
     async getStats(): Promise<PersistorStats> {

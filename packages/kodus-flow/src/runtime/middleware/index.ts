@@ -10,6 +10,7 @@ export { withTimeout } from './timeout.js';
 export { withConcurrency } from './concurrency.js';
 export { schedule } from './schedule.js';
 export { withValidate, withValidateMiddleware } from './validate.js';
+export { withObservability } from './observability.js';
 
 // Middleware types
 export {

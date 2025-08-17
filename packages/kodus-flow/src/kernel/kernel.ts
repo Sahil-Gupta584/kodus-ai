@@ -11,6 +11,7 @@
 
 import { createLogger } from '../observability/index.js';
 import { getObservability } from '../observability/index.js';
+import { withObservability } from '../runtime/middleware/index.js';
 import { KernelError } from '../core/errors.js';
 
 import { ContextStateService } from '../core/context/index.js';
@@ -213,6 +214,12 @@ export interface KernelConfig {
         cacheSize?: number;
         enableLazyLoading?: boolean;
         contextUpdateDebounceMs?: number;
+        autoSnapshot?: {
+            enabled?: boolean;
+            intervalMs?: number;
+            eventInterval?: number;
+            useDelta?: boolean;
+        };
     };
 
     // ISOLATION & ATOMICITY
@@ -274,6 +281,8 @@ export class ExecutionKernel {
     private contextUpdateTimer: NodeJS.Timeout | null = null;
     private eventBatchQueue: Event[] = [];
     private eventBatchTimer: NodeJS.Timeout | null = null;
+    private lastSnapshotTs = 0;
+    private lastEventSnapshotCount = 0;
 
     constructor(config: KernelConfig) {
         this.config = config;
@@ -393,11 +402,23 @@ export class ExecutionKernel {
                     }
 
                     // 2. Initialize runtime with simplified configuration
+                    const baseMiddleware = [
+                        ...(this.config.runtimeConfig?.middleware || []),
+                    ];
+
+                    // Inject observability middleware first (if enabled)
+                    const middleware = [
+                        // Ensure we pass plain options and do not mutate middleware function properties
+                        withObservability(undefined),
+                        ...baseMiddleware,
+                    ];
+
                     const runtimeConfig: RuntimeConfig = {
                         ...this.config.runtimeConfig,
                         persistor: this.persistor,
                         executionId: this.state.id,
                         tenantId: this.config.tenantId,
+                        middleware,
                     };
 
                     this.runtime = createRuntime(
@@ -443,10 +464,26 @@ export class ExecutionKernel {
                     });
 
                     // 8. Emit kernel started event via runtime (AGORA SEGURO)
-                    this.runtime.emit(EVENT_TYPES.KERNEL_STARTED, {
+                    await this.runtime.emitAsync(EVENT_TYPES.KERNEL_STARTED, {
                         kernelId: this.state.id,
                         tenantId: this.state.tenantId,
                     });
+
+                    // 9. Processar imediatamente para evitar ACK pendente/requeue
+                    try {
+                        await this.runtime.process(true);
+                    } catch (procErr) {
+                        this.logger.warn(
+                            'Failed to process events after KERNEL_STARTED emit',
+                            {
+                                error:
+                                    procErr instanceof Error
+                                        ? procErr.message
+                                        : String(procErr),
+                                kernelId: this.state.id,
+                            },
+                        );
+                    }
 
                     return this.workflowContext;
                 } catch (error) {
@@ -463,7 +500,12 @@ export class ExecutionKernel {
                 }
             },
             {
-                timeout: this.config.idempotency?.operationTimeout || 60000,
+                // Aumentar timeout de init para evitar 'Operation timeout' em ambientes pesados
+                timeout:
+                    this.config.idempotency?.operationTimeout &&
+                    this.config.idempotency.operationTimeout > 60000
+                        ? this.config.idempotency.operationTimeout
+                        : 120000,
                 isolation: true,
             },
         );
@@ -530,7 +572,7 @@ export class ExecutionKernel {
             this.updateStateFromEvent(event);
 
             // Check quotas after event processing
-            this.checkQuotas();
+            await this.checkQuotas();
 
             this.logger.debug('Event sent to runtime', {
                 eventType: event.type,
@@ -684,10 +726,16 @@ export class ExecutionKernel {
     /**
      * Get context value with caching
      */
-    getContext<T = unknown>(namespace: string, key: string): T | undefined {
+    getContext<T = unknown>(
+        namespace: string,
+        key: string,
+        threadId?: string,
+    ): T | undefined {
         const tenantId = this.state.tenantId;
-        const tenantContext = this.getTenantContext(tenantId);
-        const cacheKey = `${tenantId}:${namespace}:${key}`;
+        const tenantContext = this.getTenantContext(tenantId, threadId);
+        const cacheKey = threadId
+            ? `${tenantId}:${threadId}:${namespace}:${key}`
+            : `${tenantId}:${namespace}:${key}`;
 
         // Performance: Check cache first
         if (
@@ -715,10 +763,17 @@ export class ExecutionKernel {
     /**
      * Set context value with batching
      */
-    setContext(namespace: string, key: string, value: unknown): void {
+    setContext(
+        namespace: string,
+        key: string,
+        value: unknown,
+        threadId?: string,
+    ): void {
         const tenantId = this.state.tenantId;
-        const tenantContext = this.getTenantContext(tenantId);
-        const cacheKey = `${tenantId}:${namespace}:${key}`;
+        const tenantContext = this.getTenantContext(tenantId, threadId);
+        const cacheKey = threadId
+            ? `${tenantId}:${threadId}:${namespace}:${key}`
+            : `${tenantId}:${namespace}:${key}`;
 
         // Create namespace in tenant context
         if (!tenantContext[namespace]) {
@@ -752,6 +807,7 @@ export class ExecutionKernel {
 
         this.logger.debug('Context set with tenant isolation', {
             tenantId,
+            threadId,
             namespace,
             key,
             hasValue: value !== undefined,
@@ -765,10 +821,11 @@ export class ExecutionKernel {
         namespace: string,
         key: string,
         delta: number = 1,
+        threadId?: string,
     ): number {
         const currentValue =
-            (this.getContext<number>(namespace, key) || 0) + delta;
-        this.setContext(namespace, key, currentValue);
+            (this.getContext<number>(namespace, key, threadId) || 0) + delta;
+        this.setContext(namespace, key, currentValue, threadId);
         return currentValue;
     }
 
@@ -955,6 +1012,16 @@ export class ExecutionKernel {
      */
     private updateStateFromEvent(_event: Event): void {
         this.state.eventCount++;
+
+        // Autosnapshot baseado em contagem de eventos
+        const auto = this.config.performance?.autoSnapshot;
+        if (auto?.enabled && auto.eventInterval && auto.eventInterval > 0) {
+            this.lastEventSnapshotCount++;
+            if (this.lastEventSnapshotCount >= auto.eventInterval) {
+                this.lastEventSnapshotCount = 0;
+                void this.persistContextSnapshot('event-interval');
+            }
+        }
     }
 
     /**
@@ -1046,19 +1113,19 @@ export class ExecutionKernel {
         const { maxDuration, maxMemory } = this.state.quotas;
 
         if (maxDuration) {
-            const timer = setTimeout(() => {
+            const timer = setTimeout(async () => {
                 this.logger.warn('Duration quota exceeded', {
                     maxDuration,
                     kernelId: this.state.id,
                     runtime: Date.now() - this.state.startTime,
                 });
-                this.handleQuotaExceeded('duration');
+                await this.handleQuotaExceeded('duration');
             }, maxDuration);
             this.quotaTimers.add(timer);
         }
 
         if (maxMemory) {
-            const timer = setInterval(() => {
+            const timer = setInterval(async () => {
                 const memoryUsage = process.memoryUsage().heapUsed;
                 if (memoryUsage > maxMemory) {
                     this.logger.warn('Memory quota exceeded', {
@@ -1066,7 +1133,7 @@ export class ExecutionKernel {
                         maxMemory,
                         kernelId: this.state.id,
                     });
-                    this.handleQuotaExceeded('memory');
+                    await this.handleQuotaExceeded('memory');
                 }
             }, 1000);
             this.quotaTimers.add(timer);
@@ -1171,6 +1238,43 @@ export class ExecutionKernel {
         this.logger.debug('Context updates flushed', {
             updateCount: updates.length,
         });
+
+        // Autosnapshot baseado em tempo
+        const auto = this.config.performance?.autoSnapshot;
+        if (auto?.enabled && auto.intervalMs && auto.intervalMs > 0) {
+            const now = Date.now();
+            if (
+                !this.lastSnapshotTs ||
+                now - this.lastSnapshotTs >= auto.intervalMs
+            ) {
+                await this.persistContextSnapshot('interval');
+            }
+        }
+    }
+
+    /**
+     * Persist current context as snapshot
+     */
+    private async persistContextSnapshot(reason: string): Promise<void> {
+        try {
+            await this.flushContextUpdates();
+            const snapshot = await this.createSnapshot();
+            const useDelta =
+                this.config.performance?.autoSnapshot?.useDelta !== false;
+            await this.persistor.append(snapshot, { useDelta });
+            this.lastSnapshotTs = Date.now();
+            this.logger.info('Context snapshot persisted', {
+                reason,
+                hash: snapshot.hash,
+                eventCount: this.state.eventCount,
+                tenantId: this.state.tenantId,
+            });
+        } catch (error) {
+            this.logger.warn('Failed to persist context snapshot', {
+                errorName: (error as Error)?.name,
+                errorMessage: (error as Error)?.message,
+            });
+        }
     }
 
     /**
@@ -1256,7 +1360,7 @@ export class ExecutionKernel {
     /**
      * Check quotas
      */
-    private checkQuotas(): void {
+    private async checkQuotas(): Promise<void> {
         const { maxEvents } = this.state.quotas;
 
         if (maxEvents && this.state.eventCount >= maxEvents) {
@@ -1265,7 +1369,7 @@ export class ExecutionKernel {
                 maxEvents,
                 kernelId: this.state.id,
             });
-            this.handleQuotaExceeded('events');
+            await this.handleQuotaExceeded('events');
         }
     }
 
@@ -1461,10 +1565,16 @@ export class ExecutionKernel {
                     );
                 }
 
-                await runtime.process();
+                // Use stats-enabled processing to auto-ACK/NACK events
+                await runtime.process(true);
             },
             {
-                timeout: this.config.idempotency?.operationTimeout,
+                // processEvents pode demandar mais que 60s dependendo de workload
+                timeout:
+                    this.config.idempotency?.operationTimeout &&
+                    this.config.idempotency.operationTimeout > 60000
+                        ? this.config.idempotency.operationTimeout
+                        : 120000,
                 isolation: true,
             },
         );
@@ -1765,7 +1875,11 @@ export class ExecutionKernel {
         }
 
         // This would require runtime to expose middleware management
-        this.logger.info('Middleware added', { middleware: middleware.name });
+        const mwName =
+            (middleware as unknown as { displayName?: string }).displayName ||
+            middleware.name ||
+            'anonymous-middleware';
+        this.logger.info('Middleware added', { middleware: mwName });
     }
 
     /**
@@ -1788,7 +1902,9 @@ export class ExecutionKernel {
             throw new Error('Runtime not initialized');
         }
 
-        return this.config.runtimeConfig?.middleware?.map((m) => m.name) || [];
+        const names =
+            this.config.runtimeConfig?.middleware?.map((m) => m.name) || [];
+        return names.filter((n): n is string => typeof n === 'string');
     }
 
     // ===== MEMORY MANAGEMENT =====
@@ -2082,18 +2198,30 @@ export class ExecutionKernel {
     /**
      * Get isolated context for specific tenant
      */
-    private getTenantContext(tenantId: string): Record<string, unknown> {
+    private getTenantContext(
+        tenantId: string,
+        threadId?: string,
+    ): Record<string, unknown> {
         if (!this.config.isolation?.enableTenantIsolation) {
             return this.state.contextData;
         }
 
-        // Create tenant-specific context key
-        const tenantKey = `tenant:${tenantId}`;
-        if (!this.state.contextData[tenantKey]) {
-            this.state.contextData[tenantKey] = {};
+        // ✅ MELHORADO: Isolamento por tenant + threadId (que já é único)
+        let contextKey: string;
+
+        if (threadId) {
+            // Isolamento por thread específico (cada conversa = thread único)
+            contextKey = `tenant:${tenantId}:thread:${threadId}`;
+        } else {
+            // Fallback para isolamento apenas por tenant
+            contextKey = `tenant:${tenantId}`;
         }
 
-        return this.state.contextData[tenantKey] as Record<string, unknown>;
+        if (!this.state.contextData[contextKey]) {
+            this.state.contextData[contextKey] = {};
+        }
+
+        return this.state.contextData[contextKey] as Record<string, unknown>;
     }
 }
 

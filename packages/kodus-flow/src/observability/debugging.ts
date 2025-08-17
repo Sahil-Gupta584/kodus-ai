@@ -14,6 +14,7 @@ import { getTelemetry } from './telemetry.js';
 import { IdGenerator } from '../utils/index.js';
 import type { Event } from '../core/types/events.js';
 import z from 'zod';
+import { createLogger } from './logger.js';
 
 export const logLevelSchema = z.enum(['debug', 'info', 'warn', 'error']);
 export type LogLevel = z.infer<typeof logLevelSchema>;
@@ -194,10 +195,11 @@ export class FileDebugOutput implements DebugOutput {
         write: (data: string) => void;
         end: (callback?: () => void) => void;
     };
+    private logger = createLogger('debug-file-output');
 
     constructor(filePath: string) {
         this.filePath = filePath;
-        this.initializeStream();
+        void this.initializeStream();
     }
 
     private async initializeStream(): Promise<void> {
@@ -216,7 +218,10 @@ export class FileDebugOutput implements DebugOutput {
                 encoding: 'utf8',
             });
         } catch (error) {
-            console.error('Failed to initialize file debug output:', error);
+            this.logger.error(
+                'Failed to initialize file debug output',
+                error as Error,
+            );
         }
     }
 
@@ -323,7 +328,7 @@ export class DebugSystem {
             correlationId: this.currentCorrelationId,
         };
 
-        this.writeToOutputs(entry);
+        void this.writeToOutputs(entry);
     }
 
     /**
@@ -599,14 +604,15 @@ export class DebugSystem {
     /**
      * Escrever para outputs
      */
-    private writeToOutputs(entry: DebugEntry): void {
+    private async writeToOutputs(entry: DebugEntry): Promise<void> {
         for (const output of this.outputs) {
             try {
-                output.write(entry);
+                await output.write(entry);
             } catch (error) {
-                console.error(
-                    `Failed to write to debug output ${output.name}:`,
-                    error,
+                const logger = createLogger('debug-system');
+                logger.error(
+                    `Failed to write to debug output ${output.name}`,
+                    error as Error,
                 );
             }
         }
@@ -622,7 +628,8 @@ export class DebugSystem {
 
         this.flushTimer = setInterval(() => {
             this.flush().catch((error) => {
-                console.error('Auto-flush failed:', error);
+                const logger = createLogger('debug-system');
+                logger.error('Auto-flush failed', error as Error);
             });
         }, this.config.flushInterval);
     }

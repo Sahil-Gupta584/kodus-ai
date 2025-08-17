@@ -42,6 +42,7 @@ export class GetRepositoryTreeUseCase implements IUseCase {
 
     public async execute(params: {
         organizationId: string;
+        teamId: string;
         repositoryId: string;
         treeType?: RepositoryTreeType;
     }) {
@@ -50,6 +51,7 @@ export class GetRepositoryTreeUseCase implements IUseCase {
                 await this.codeManagementService.getRepositoryTree({
                     organizationAndTeamData: {
                         organizationId: params.organizationId,
+                        teamId: params.teamId,
                     },
                     repositoryId: params.repositoryId,
                 });

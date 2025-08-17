@@ -5,6 +5,8 @@
  * that allows customization while maintaining framework-level intelligence.
  */
 
+import { ReplanContext } from '@/core/types/planning-shared.js';
+
 /**
  * Represents an example planning scenario for training the LLM
  */
@@ -171,8 +173,11 @@ export interface PromptCompositionContext {
     /** Planning history from current session */
     planningHistory?: string;
 
-    /** Additional context data */
+    /** Additional context data (user-provided info only) */
     additionalContext?: Record<string, unknown>;
+
+    /** Replan context (system information about previous execution) */
+    replanContext?: ReplanContext;
 
     /** Current iteration number */
     iteration?: number;

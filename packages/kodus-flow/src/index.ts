@@ -76,8 +76,18 @@ export type { ToolDefinition } from './core/types/tool-types.js';
 export type { WorkflowDefinition } from './core/types/workflow-types.js';
 
 // ✅ OBSERVABILIDADE PARA USUÁRIOS
-export { getObservability, createLogger } from './observability/index.js';
-export { getSDKConfig } from './observability/config/sdk-config.js';
+export {
+    getObservability,
+    createLogger,
+    createOtelTracerAdapter,
+    shutdownObservability,
+} from './observability/index.js';
+
+// ✅ TIPOS DE OBSERVABILIDADE
+export type { ObservabilityConfig } from './observability/index.js';
+export type { TelemetryConfig } from './observability/telemetry.js';
+export type { LogLevel, LogContext } from './observability/logger.js';
+export type { OtelTracerAdapter } from './observability/otel-adapter.js';
 
 // ✅ UTILITÁRIOS
 export { IdGenerator } from './utils/id-generator.js';

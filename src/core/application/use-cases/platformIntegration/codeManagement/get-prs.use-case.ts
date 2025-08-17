@@ -17,7 +17,7 @@ export class GetPRsUseCase implements IUseCase {
         private readonly logger: PinoLoggerService,
     ) {}
 
-    public async execute(params: { teamId: string }) {
+    public async execute(params: { teamId: string; number?: number; title: string; url?: string }) {
         try {
             const { teamId } = params;
             const organizationId = this.request.user.organization.uuid;
@@ -36,6 +36,9 @@ export class GetPRsUseCase implements IUseCase {
             const defaultFilter = {
                 startDate: thirtyDaysAgo,
                 endDate: today,
+                number: params.number,
+                title: params.title,
+                url: params.url,
             };
 
             const pullRequests =

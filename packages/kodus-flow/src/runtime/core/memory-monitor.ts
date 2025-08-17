@@ -250,12 +250,16 @@ export class MemoryMonitor {
     private isRunning = false;
     private lastMeasurementTime = 0;
 
+    // ✅ ADICIONADO: Throttling para evitar spam de alertas
+    private lastHighUsageAlert = 0;
+    private readonly highUsageAlertThrottleMs = 30000; // 30s entre alertas de uso alto
+
     constructor(
         private observability: ObservabilitySystem,
         config: MemoryMonitorConfig = {},
     ) {
         this.config = {
-            intervalMs: 30000,
+            intervalMs: 60000, // ✅ AUMENTADO: 60s em vez de 30s para produção
             enabled: true,
             onAlert: () => {},
             ...config,
@@ -270,7 +274,7 @@ export class MemoryMonitor {
                 enabled: true,
                 samples: 10,
                 minGrowthMb: 50,
-                sampleIntervalMs: 60000,
+                sampleIntervalMs: 120000, // ✅ AUMENTADO: 2min em vez de 1min
                 ...config.leakDetection,
             },
         };
@@ -434,13 +438,18 @@ export class MemoryMonitor {
 
         // Uso alto (>80%)
         if (metrics.heapUsagePercent > 80) {
-            this.createAlert({
-                type: 'HIGH_USAGE',
-                severity:
-                    metrics.heapUsagePercent > 90 ? 'CRITICAL' : 'WARNING',
-                message: `High heap usage: ${metrics.heapUsagePercent}%`,
-                metrics,
-            });
+            const now = Date.now();
+            // ✅ ADICIONADO: Throttling para evitar spam de alertas
+            if (now - this.lastHighUsageAlert > this.highUsageAlertThrottleMs) {
+                this.createAlert({
+                    type: 'HIGH_USAGE',
+                    severity:
+                        metrics.heapUsagePercent > 90 ? 'CRITICAL' : 'WARNING',
+                    message: `High heap usage: ${metrics.heapUsagePercent}%`,
+                    metrics,
+                });
+                this.lastHighUsageAlert = now;
+            }
         }
     }
 

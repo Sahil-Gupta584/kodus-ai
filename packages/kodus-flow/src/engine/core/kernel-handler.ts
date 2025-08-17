@@ -100,9 +100,23 @@ export interface KernelHandlerInterface {
     cleanup(): Promise<void>;
 
     // Context management (via Kernel)
-    getContext<T = unknown>(namespace: string, key: string): T | undefined;
-    setContext(namespace: string, key: string, value: unknown): void;
-    incrementContext(namespace: string, key: string, delta?: number): number;
+    getContext<T = unknown>(
+        namespace: string,
+        key: string,
+        threadId?: string,
+    ): T | undefined;
+    setContext(
+        namespace: string,
+        key: string,
+        value: unknown,
+        threadId?: string,
+    ): void;
+    incrementContext(
+        namespace: string,
+        key: string,
+        delta?: number,
+        threadId?: string,
+    ): number;
 
     // Event management (via Kernel → Runtime)
     emit<T extends EventType>(eventType: T, data?: unknown): void;
@@ -286,25 +300,41 @@ export class KernelHandler implements KernelHandlerInterface {
     }
 
     /**
-     * Context Management (via Kernel)
+     * Get context value
      */
-    getContext<T = unknown>(namespace: string, key: string): T | undefined {
+    getContext<T = unknown>(
+        namespace: string,
+        key: string,
+        threadId?: string,
+    ): T | undefined {
         this.ensureInitialized();
-        return this.kernel!.getContext<T>(namespace, key);
+        return this.kernel!.getContext<T>(namespace, key, threadId);
     }
 
-    setContext(namespace: string, key: string, value: unknown): void {
+    /**
+     * Set context value
+     */
+    setContext(
+        namespace: string,
+        key: string,
+        value: unknown,
+        threadId?: string,
+    ): void {
         this.ensureInitialized();
-        this.kernel!.setContext(namespace, key, value);
+        this.kernel!.setContext(namespace, key, value, threadId);
     }
 
+    /**
+     * Increment context value
+     */
     incrementContext(
         namespace: string,
         key: string,
-        delta: number = 1,
+        delta?: number,
+        threadId?: string,
     ): number {
         this.ensureInitialized();
-        return this.kernel!.incrementContext(namespace, key, delta);
+        return this.kernel!.incrementContext(namespace, key, delta, threadId);
     }
 
     /**
@@ -331,7 +361,7 @@ export class KernelHandler implements KernelHandlerInterface {
         this.loopProtection.circuitBreaker
             .execute(
                 async () => {
-                    this.kernel!.run(event);
+                    await this.kernel!.run(event);
                     return true;
                 },
                 {
@@ -477,10 +507,7 @@ export class KernelHandler implements KernelHandlerInterface {
         });
 
         try {
-            // Emitir evento inicial
-            this.emit(startEvent.type, startEvent.data);
-
-            // Processar eventos via kernel
+            // Processar evento via Kernel apenas uma vez
             if (this.kernel) {
                 await this.kernel.run(startEvent);
             }

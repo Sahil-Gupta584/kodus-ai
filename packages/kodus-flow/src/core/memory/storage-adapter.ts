@@ -18,6 +18,8 @@ const logger = createLogger('memory-storage-adapter');
 export class StorageMemoryAdapter implements MemoryAdapter {
     private storage: BaseStorage<BaseStorageItem> | null = null;
     private isInitialized = false;
+    // Cache opcional em memória para queries simples sobre metadata
+    private inMemoryIndex: Map<string, BaseStorageItem> = new Map();
 
     constructor(
         private config: MemoryAdapterConfig = { adapterType: 'memory' },
@@ -70,13 +72,17 @@ export class StorageMemoryAdapter implements MemoryAdapter {
         };
 
         await this.storage!.store(storageItem);
+        this.inMemoryIndex.set(storageItem.id, storageItem);
         logger.debug('Memory item stored', { id: item.id, type: item.type });
     }
 
     async retrieve(id: string): Promise<MemoryItem | null> {
         await this.ensureInitialized();
 
-        const item = await this.storage!.retrieve(id);
+        const item =
+            (await this.storage!.retrieve(id)) ||
+            this.inMemoryIndex.get(id) ||
+            null;
         if (!item) return null;
 
         // Convert back to MemoryItem format
@@ -97,13 +103,75 @@ export class StorageMemoryAdapter implements MemoryAdapter {
     async search(_query: MemoryQuery): Promise<MemoryItem[]> {
         await this.ensureInitialized();
 
-        // Note: This is a simplified implementation
-        // In a real implementation, you'd need to implement proper querying
-        // For now, we'll return empty as the storage doesn't support this query pattern
-        logger.warn(
-            'search() not fully implemented in storage adapter - returning empty',
-        );
-        return [];
+        // Implementação básica usando o índice em memória (metadados)
+        // Suporta filtros: type, key, tenantId, entityId, sessionId, contextId, range temporal, limit e ordenação
+        const query = _query || {};
+
+        const items = Array.from(this.inMemoryIndex.values());
+
+        const filtered = items.filter((it) => {
+            const md = it.metadata || {};
+            if (query.type && md.type !== query.type) return false;
+            if (query.key && md.key !== query.key) return false;
+            if (query.keyPattern && typeof md.key === 'string') {
+                try {
+                    const re = new RegExp(query.keyPattern);
+                    if (!re.test(md.key as string)) return false;
+                } catch {
+                    // se regex inválida, ignora pattern
+                }
+            }
+            if (query.tenantId && md.tenantId !== query.tenantId) return false;
+            if (query.entityId && md.entityId !== query.entityId) return false;
+            if (query.sessionId && md.sessionId !== query.sessionId)
+                return false;
+            if (query.contextId && md.contextId !== query.contextId)
+                return false;
+            if (query.fromTimestamp && it.timestamp < query.fromTimestamp)
+                return false;
+            if (query.toTimestamp && it.timestamp > query.toTimestamp)
+                return false;
+            return true;
+        });
+
+        // Ordenação
+        const sortBy = query.sortBy || 'timestamp';
+        const sortDir = query.sortDirection === 'asc' ? 1 : -1;
+        filtered.sort((a, b) => {
+            const av =
+                (a as unknown as Record<string, unknown>)[sortBy] ??
+                (a.metadata || {})[sortBy as string];
+            const bv =
+                (b as unknown as Record<string, unknown>)[sortBy] ??
+                (b.metadata || {})[sortBy as string];
+            if (typeof av === 'number' && typeof bv === 'number') {
+                return (av - bv) * sortDir;
+            }
+            const as = String(av ?? '');
+            const bs = String(bv ?? '');
+            return as.localeCompare(bs) * sortDir;
+        });
+
+        // Paginação
+        const offset = query.offset ?? 0;
+        const limit = query.limit ?? filtered.length;
+        const sliced = filtered.slice(offset, offset + limit);
+
+        // Mapear para MemoryItem
+        const result: MemoryItem[] = sliced.map((it) => ({
+            id: it.id,
+            timestamp: it.timestamp,
+            type: (it.metadata?.type as string) || undefined,
+            entityId: (it.metadata?.entityId as string) || undefined,
+            sessionId: (it.metadata?.sessionId as string) || undefined,
+            tenantId: (it.metadata?.tenantId as string) || undefined,
+            contextId: (it.metadata?.contextId as string) || undefined,
+            key: (it.metadata?.key as string) || 'default',
+            value: it.metadata?.value,
+            metadata: it.metadata,
+        }));
+
+        return result;
     }
 
     async delete(id: string): Promise<boolean> {
@@ -112,6 +180,7 @@ export class StorageMemoryAdapter implements MemoryAdapter {
         const deleted = await this.storage!.delete(id);
         if (deleted) {
             logger.debug('Memory item deleted', { id });
+            this.inMemoryIndex.delete(id);
         }
         return deleted;
     }
@@ -120,6 +189,7 @@ export class StorageMemoryAdapter implements MemoryAdapter {
         await this.ensureInitialized();
 
         await this.storage!.clear();
+        this.inMemoryIndex.clear();
         logger.info('All memory items cleared');
     }
 

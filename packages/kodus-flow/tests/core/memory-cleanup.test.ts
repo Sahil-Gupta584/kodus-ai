@@ -25,8 +25,8 @@ describe('Memory Cleanup Tests', () => {
     });
 
     describe('Session Memory Management', () => {
-        it('should create session and save in memory correctly', () => {
-            const session = sessionService.createSession(
+        it('should create session and save in memory correctly', async () => {
+            const session = await sessionService.createSession(
                 'test-tenant',
                 'test-thread',
                 { agentName: 'test-agent' },
@@ -39,14 +39,16 @@ describe('Memory Cleanup Tests', () => {
             expect(session.status).toBe('active');
 
             // Verificar se session está salva em memória
-            const retrievedSession = sessionService.getSession(session.id);
+            const retrievedSession = await sessionService.getSession(
+                session.id,
+            );
             expect(retrievedSession).toBeDefined();
             expect(retrievedSession?.id).toBe(session.id);
         });
 
         it('should cleanup expired sessions automatically', async () => {
             // Criar sessão com timeout curto
-            const session = sessionService.createSession(
+            const session = await sessionService.createSession(
                 'test-tenant',
                 'test-thread',
                 { agentName: 'test-agent' },
@@ -56,20 +58,25 @@ describe('Memory Cleanup Tests', () => {
             await new Promise((resolve) => setTimeout(resolve, 1200));
 
             // Verificar se sessão foi limpa
-            const retrievedSession = sessionService.getSession(session.id);
+            const retrievedSession = await sessionService.getSession(
+                session.id,
+            );
             expect(retrievedSession).toBeUndefined();
 
             // Verificar se state manager foi limpo
-            const sessionContext = sessionService.getSessionContext(session.id);
+            const sessionContext = await sessionService.getSessionContext(
+                session.id,
+            );
             expect(sessionContext).toBeUndefined();
         });
 
-        it('should enforce max sessions limit', () => {
+        it('should enforce max sessions limit', async () => {
             // Criar mais sessões que o limite
-            const sessions: ReturnType<typeof sessionService.createSession>[] =
-                [];
+            const sessions: Awaited<
+                ReturnType<typeof sessionService.createSession>
+            >[] = [];
             for (let i = 0; i < 15; i++) {
-                const session = sessionService.createSession(
+                const session = await sessionService.createSession(
                     'test-tenant',
                     `test-thread-${i}`,
                     { agentName: 'test-agent' },
@@ -86,7 +93,7 @@ describe('Memory Cleanup Tests', () => {
         });
 
         it('should update session activity correctly', async () => {
-            const session = sessionService.createSession(
+            const session = await sessionService.createSession(
                 'test-tenant',
                 'test-thread',
                 { agentName: 'test-agent' },
@@ -98,7 +105,9 @@ describe('Memory Cleanup Tests', () => {
             await new Promise((resolve) => setTimeout(resolve, 10));
 
             // Acessar sessão novamente
-            const retrievedSession = sessionService.getSession(session.id);
+            const retrievedSession = await sessionService.getSession(
+                session.id,
+            );
             expect(retrievedSession).toBeDefined();
             expect(retrievedSession?.lastActivity).toBeGreaterThan(
                 initialActivity,
@@ -127,13 +136,15 @@ describe('Memory Cleanup Tests', () => {
         });
 
         it('should cleanup state when session expires', async () => {
-            const session = sessionService.createSession(
+            const session = await sessionService.createSession(
                 'test-tenant',
                 'test-thread',
                 { agentName: 'test-agent' },
             );
 
-            const sessionContext = sessionService.getSessionContext(session.id);
+            const sessionContext = await sessionService.getSessionContext(
+                session.id,
+            );
             expect(sessionContext).toBeDefined();
 
             // Adicionar dados ao state
@@ -150,9 +161,8 @@ describe('Memory Cleanup Tests', () => {
             await new Promise((resolve) => setTimeout(resolve, 1200));
 
             // Verificar se state foi limpo
-            const expiredSessionContext = sessionService.getSessionContext(
-                session.id,
-            );
+            const expiredSessionContext =
+                await sessionService.getSessionContext(session.id);
             expect(expiredSessionContext).toBeUndefined();
         });
 
@@ -208,10 +218,10 @@ describe('Memory Cleanup Tests', () => {
     });
 
     describe('Memory Leak Detection', () => {
-        it('should detect memory leaks in session service', () => {
+        it('should detect memory leaks in session service', async () => {
             // Criar sessões sem limpar
             for (let i = 0; i < 20; i++) {
-                sessionService.createSession(
+                await sessionService.createSession(
                     'test-tenant',
                     `test-thread-${i}`,
                     { agentName: 'test-agent' },

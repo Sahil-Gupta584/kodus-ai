@@ -75,7 +75,7 @@ import { CheckIfPRCanBeApprovedCronProvider } from '@/core/infrastructure/adapte
         WeeklyExecutiveCheckinCronProvider,
         CodeReviewFeedbackCronProvider,
         KodyLearningCronProvider,
-        CheckIfPRCanBeApprovedCronProvider
+        CheckIfPRCanBeApprovedCronProvider,
     ],
     exports: [
         MetricsCronProvider,
@@ -89,7 +89,7 @@ import { CheckIfPRCanBeApprovedCronProvider } from '@/core/infrastructure/adapte
         OrganizationMetricsCronProvider,
         WeeklyExecutiveCheckinCronProvider,
         CodeReviewFeedbackCronProvider,
-        CheckIfPRCanBeApprovedCronProvider
+        CheckIfPRCanBeApprovedCronProvider,
     ],
 })
-export class CronModule { }
+export class CronModule {}

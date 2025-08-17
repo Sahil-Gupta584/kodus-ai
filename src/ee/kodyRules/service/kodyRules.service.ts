@@ -145,11 +145,13 @@ export class KodyRulesService implements IKodyRulesService {
 
             const newRule: IKodyRule = {
                 uuid: v4(),
-                title: kodyRule.title,
-                rule: kodyRule.rule,
-                path: kodyRule.path,
-                severity: kodyRule.severity?.toLowerCase(),
-                status: kodyRule.status ?? KodyRulesStatus.ACTIVE,
+                title: kodyRule?.title,
+                rule: kodyRule?.rule,
+                path: kodyRule?.path,
+                severity: kodyRule?.severity?.toLowerCase(),
+                status: kodyRule?.status ?? KodyRulesStatus.ACTIVE,
+                sourcePath: kodyRule?.sourcePath,
+                sourceAnchor: kodyRule?.sourceAnchor,
                 repositoryId: kodyRule?.repositoryId,
                 examples: kodyRule?.examples,
                 origin: kodyRule?.origin ?? KodyRulesOrigin.USER,
@@ -201,6 +203,8 @@ export class KodyRulesService implements IKodyRulesService {
                 title: kodyRule.title,
                 rule: kodyRule.rule,
                 path: kodyRule.path,
+                sourcePath: kodyRule.sourcePath,
+                sourceAnchor: kodyRule.sourceAnchor,
                 severity: kodyRule.severity?.toLowerCase(),
                 status: kodyRule.status ?? KodyRulesStatus.ACTIVE,
                 repositoryId: kodyRule?.repositoryId,
@@ -305,6 +309,50 @@ export class KodyRulesService implements IKodyRulesService {
 
     async deleteRule(uuid: string, ruleId: string): Promise<Boolean> {
         return this.kodyRulesRepository.deleteRule(uuid, ruleId);
+    }
+
+    async updateRulesStatusByFilter(
+        organizationId: string,
+        repositoryId: string,
+        directoryId?: string,
+        newStatus: KodyRulesStatus = KodyRulesStatus.DELETED,
+    ): Promise<KodyRulesEntity | null> {
+        try {
+            const result = await this.kodyRulesRepository.updateRulesStatusByFilter(
+                organizationId,
+                repositoryId,
+                directoryId,
+                newStatus,
+            );
+
+            if (result) {
+                this.logger.log({
+                    message: 'Kody rules status updated successfully by filter',
+                    context: KodyRulesService.name,
+                    metadata: {
+                        organizationId,
+                        repositoryId,
+                        directoryId,
+                        newStatus,
+                    },
+                });
+            }
+
+            return result;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error updating Kody rules status by filter',
+                context: KodyRulesService.name,
+                error: error,
+                metadata: {
+                    organizationId,
+                    repositoryId,
+                    directoryId,
+                    newStatus,
+                },
+            });
+            throw error;
+        }
     }
 
     async deleteRuleLogically(

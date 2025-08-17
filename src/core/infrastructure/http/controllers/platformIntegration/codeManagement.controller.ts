@@ -122,8 +122,15 @@ export class CodeManagementController {
     }
 
     @Get('/get-prs')
-    public async getPRs(@Query() query: { teamId: string }) {
-        return await this.getPRsUseCase.execute({ teamId: query.teamId });
+    public async getPRs(
+        @Query() query: { teamId: string; number?: number; title: string; url?: string },
+    ) {
+        return await this.getPRsUseCase.execute({
+            teamId: query.teamId,
+            number: query.number,
+            title: query.title,
+            url: query.url,
+        });
     }
 
     @Get('/get-code-review-started')
@@ -168,6 +175,7 @@ export class CodeManagementController {
         @Query()
         query: {
             organizationId: string;
+            teamId: string;
             repositoryId: string;
             treeType?: RepositoryTreeType;
         },

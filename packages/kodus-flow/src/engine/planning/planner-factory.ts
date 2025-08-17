@@ -7,6 +7,7 @@
 import { createLogger } from '../../observability/index.js';
 import type { LLMAdapter } from '../../adapters/llm/index.js';
 import { PlanAndExecutePlanner } from './strategies/plan-execute-planner.js';
+import type { ReplanPolicyConfig } from './strategies/plan-execute-planner.js';
 import { Thread } from '../../core/types/common-types.js';
 import { AgentIdentity } from '@/core/types/agent-definition.js';
 
@@ -46,6 +47,13 @@ export interface Planner<
         result: ActionResult,
         context: TContext,
     ): Promise<ResultAnalysis>;
+    // Optional hooks for Plan–Execute style planners
+    getPlanForContext?(context: TContext): unknown | null;
+    resolveArgs?(
+        args: Record<string, unknown>,
+        steps: unknown[],
+        context?: TContext,
+    ): Promise<{ args: Record<string, unknown>; missing: string[] }>;
 }
 
 // Specific metadata types for better type safety
@@ -53,14 +61,12 @@ export interface AgentThoughtMetadata {
     plannerType?: PlannerType;
     executionTime?: number;
     retryCount?: number;
-    confidenceSource?: string;
     [key: string]: unknown;
 }
 
 export interface AgentThought {
     reasoning: string;
     action: AgentAction; // Make action required to fix compatibility
-    confidence?: number;
     metadata?: AgentThoughtMetadata;
 }
 
@@ -95,7 +101,8 @@ export type ActionResult =
     | ToolResult
     | FinalAnswerResult
     | ErrorResult
-    | ToolResultsArray;
+    | ToolResultsArray
+    | NeedsReplanResult;
 
 // Tool results array for multiple tool execution
 export interface ToolResultsArray {
@@ -123,6 +130,16 @@ export interface FinalAnswerResult {
 export interface ErrorResult {
     type: 'error';
     error: string;
+    metadata?: ActionResultMetadata;
+    status?: string;
+    replanContext?: import('../../core/types/planning-shared.js').PlanExecutionResult['replanContext'];
+    feedback?: string;
+}
+
+export interface NeedsReplanResult {
+    type: 'needs_replan';
+    replanContext?: import('../../core/types/planning-shared.js').PlanExecutionResult['replanContext'];
+    feedback: string;
     metadata?: ActionResultMetadata;
 }
 
@@ -154,6 +171,13 @@ export interface ExecutionContextMetadata {
     thread?: Thread; // ⭐ NOVO: ID da thread para acesso ao ExecutionRuntime
     startTime?: number;
     plannerType?: PlannerType;
+    // Replan cause for observability
+    replanCause?:
+        | 'fail_window'
+        | 'ttl'
+        | 'budget'
+        | 'tool_missing'
+        | 'missing_inputs';
     // 🆕 NEW: Context quality metrics from auto-retrieval
     contextMetrics?: {
         memoryRelevance: number;
@@ -246,6 +270,9 @@ export interface PlannerExecutionContext {
 
     // ✅ NEW: ContextBuilder integration - AgentContext with clean APIs
     agentContext?: import('../../core/types/agent-types.js').AgentContext;
+
+    // ✅ CORREÇÃO: Replan context for better planning
+    replanContext?: import('../../core/types/planning-shared.js').PlanExecutionResult['replanContext'];
 
     // Methods
     update(
@@ -593,6 +620,12 @@ export function isErrorResult(result: ActionResult): result is ErrorResult {
     return result.type === 'error';
 }
 
+export function isNeedsReplanResult(
+    result: ActionResult,
+): result is NeedsReplanResult {
+    return result.type === 'needs_replan';
+}
+
 export function isToolResultsArray(
     result: ActionResult,
 ): result is ToolResultsArray {
@@ -659,6 +692,7 @@ export class PlannerFactory {
     static create<T extends PlannerType>(
         type: T,
         llmAdapter: LLMAdapter,
+        options?: { replanPolicy?: Partial<ReplanPolicyConfig> },
     ): Planner {
         if (!llmAdapter) {
             throw new Error(`
@@ -680,7 +714,11 @@ Available LLM adapters: LLMAdapter with Gemini, OpenAI, etc.
 
         switch (type) {
             case 'plan-execute':
-                return new PlanAndExecutePlanner(llmAdapter);
+                return new PlanAndExecutePlanner(
+                    llmAdapter,
+                    undefined, // promptConfig
+                    options?.replanPolicy, // ✅ CENTRALIZED: Pass replan policy directly
+                );
 
             default:
                 throw new Error(`

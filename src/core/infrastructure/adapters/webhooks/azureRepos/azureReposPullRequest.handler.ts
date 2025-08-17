@@ -9,9 +9,11 @@ import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.us
 import { ChatWithKodyFromGitUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/chatWithKodyFromGit.use-case';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { createHash } from 'crypto';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
+import { KodyRulesSyncService } from '../../services/kodyRules/kodyRulesSync.service';
 
 @Injectable()
 export class AzureReposPullRequestHandler implements IWebhookEventHandler {
@@ -22,6 +24,8 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
         private readonly chatWithKodyFromGitUseCase: ChatWithKodyFromGitUseCase,
         private readonly cacheService: CacheService,
         private readonly generateIssuesFromPrClosedUseCase: GenerateIssuesFromPrClosedUseCase,
+        private readonly kodyRulesSyncService: KodyRulesSyncService,
+        private readonly codeManagement: CodeManagementService,
     ) {}
 
     /**
@@ -98,13 +102,95 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
             message: `Processing Azure Repos event '${eventType}' for PR ID: ${prId} in repo ${repoName}`,
         });
 
+        const repository = {
+            id: params?.payload?.resource?.repository?.id,
+            name: params?.payload?.resource?.repository?.name,
+            fullName: params?.payload?.resource?.repository?.name,
+        } as any;
+
+        const orgData =
+            await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview(
+                {
+                    repository: {
+                        id: repository.id,
+                        name: repository.name,
+                    },
+                    platformType: PlatformType.AZURE_REPOS,
+                },
+            );
+
         try {
             switch (eventType) {
                 case 'git.pullrequest.created':
                 case 'git.pullrequest.updated':
                     await this.savePullRequestUseCase.execute(params);
                     this.runCodeReviewAutomationUseCase.execute(params);
-                    await this.generateIssuesFromPrClosedUseCase.execute(params);
+                    await this.generateIssuesFromPrClosedUseCase.execute(
+                        params,
+                    );
+
+                    try {
+                        if (params?.payload?.resource?.status === 'completed') {
+                            if (orgData?.organizationAndTeamData) {
+                                const baseRefFull =
+                                    params?.payload?.resource?.targetRefName; // refs/heads/main
+                                const baseRef =
+                                    baseRefFull?.replace('refs/heads/', '') ||
+                                    baseRefFull;
+                                const defaultBranch =
+                                    await this.codeManagement.getDefaultBranch({
+                                        organizationAndTeamData:
+                                            orgData.organizationAndTeamData,
+                                        repository: {
+                                            id: repository.id,
+                                            name: repository.name,
+                                        },
+                                    });
+                                if (baseRefFull !== defaultBranch) {
+                                    return;
+                                }
+                                const changedFiles =
+                                    await this.codeManagement.getFilesByPullRequestId(
+                                        {
+                                            organizationAndTeamData:
+                                                orgData.organizationAndTeamData,
+                                            repository: {
+                                                id: repository.id,
+                                                name: repository.name,
+                                            },
+                                            prNumber:
+                                                params?.payload?.resource
+                                                    ?.pullRequestId,
+                                        },
+                                    );
+                                await this.kodyRulesSyncService.syncFromChangedFiles(
+                                    {
+                                        organizationAndTeamData:
+                                            orgData.organizationAndTeamData,
+                                        repository,
+                                        pullRequestNumber:
+                                            params?.payload?.resource
+                                                ?.pullRequestId,
+                                        files: changedFiles || [],
+                                    },
+                                );
+                            }
+                        }
+                    } catch (e) {
+                        this.logger.error({
+                            message: 'Failed to sync Kody Rules after PR merge',
+                            context: AzureReposPullRequestHandler.name,
+                            error: e,
+                            metadata: {
+                                prId,
+                                eventType,
+                                repoName,
+                                organizationAndTeamData:
+                                    orgData?.organizationAndTeamData,
+                            },
+                        });
+                    }
+
                     break;
                 case 'git.pullrequest.merge.attempted':
                     await this.savePullRequestUseCase.execute(params);
@@ -124,6 +210,7 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                     prId,
                     eventType,
                     repoName,
+                    organizationAndTeamData: orgData?.organizationAndTeamData,
                 },
                 message: `Successfully processed Azure Repos event '${eventType}' for PR ID: ${prId}`,
             });
@@ -135,6 +222,7 @@ export class AzureReposPullRequestHandler implements IWebhookEventHandler {
                     prId,
                     eventType,
                     repoName,
+                    organizationAndTeamData: orgData?.organizationAndTeamData,
                 },
                 message: `Error processing Azure Repos pull request #${prId}: ${error.message}`,
                 error,

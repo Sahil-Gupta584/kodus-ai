@@ -244,6 +244,9 @@ export class CodeManagementService implements ICodeManagementService {
                 state?: PullRequestState;
                 author?: string;
                 branch?: string;
+                number?: number;
+                title?: string;
+                url?: string;
             };
         },
         type?: PlatformType,
@@ -957,6 +960,8 @@ export class CodeManagementService implements ICodeManagementService {
             filters?: {
                 startDate: string;
                 endDate: string;
+                number?: number;
+                branch?: string;
             };
         },
         type?: PlatformType,
@@ -1117,5 +1122,27 @@ export class CodeManagementService implements ICodeManagementService {
             this.platformIntegrationFactory.getCodeManagementService(type);
 
         return codeManagementService.getRepositoryTree(params);
+    }
+
+    async updateResponseToComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        parentId: string;
+        commentId: string;
+        body: string;
+        repository: { id: string; name: string };
+        prNumber: number;
+    }): Promise<any | null> {
+        const type = await this.getTypeIntegration(
+            params.organizationAndTeamData,
+        );
+
+        if (!type) {
+            return null;
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.updateResponseToComment(params);
     }
 }

@@ -80,9 +80,19 @@ export function updateTrackedHandler<TEvent extends Event = Event>(
  * Base middleware function type
  * A middleware takes a handler and returns an enhanced handler
  */
-export type Middleware<TEvent extends Event = Event> = (
+export type MiddlewareKind = 'pipeline' | 'handler';
+
+export type Middleware<TEvent extends Event = Event> = ((
     handler: EventHandler<TEvent>,
-) => EventHandler<TEvent>;
+) => EventHandler<TEvent>) & {
+    kind?: MiddlewareKind;
+    /**
+     * DO NOT write to Function.name at runtime (read-only in many environments).
+     * Use displayName for custom labeling, and keep name as the intrinsic function name.
+     */
+    name?: string;
+    displayName?: string;
+};
 
 /**
  * Configurable middleware factory

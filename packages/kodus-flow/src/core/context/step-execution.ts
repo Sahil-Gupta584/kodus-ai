@@ -76,6 +76,7 @@ export interface AgentStepResult {
     iteration: number;
     thought: AgentThought;
     action: AgentAction;
+    status: string;
     result: ActionResult;
     observation: ResultAnalysis;
     duration: number;
@@ -115,6 +116,7 @@ export class StepExecution {
                 reasoning: '',
                 action: { type: 'final_answer', content: '' },
             },
+            status: 'final_answer',
             action: { type: 'final_answer', content: '' },
             result: { type: 'error', error: 'Not executed yet' },
             observation: {
@@ -270,6 +272,7 @@ export class EnhancedMessageContext {
      * ⭐ AI SDK CONCEPT: Add message with automatic persistence
      * Integra automaticamente com State, Session e Memory
      */
+    // TODO: Wwhy not used
     async addMessage(
         role: MessageEntry['role'],
         content: unknown,

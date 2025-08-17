@@ -6,6 +6,7 @@
  */
 
 import { ContextStateService } from '../core/context/services/state-service.js';
+import { createLogger } from '../observability/index.js';
 
 // ── Context Management ────────────────────────────────────────────────────
 export interface ResourceManager {
@@ -34,6 +35,7 @@ export class DefaultResourceManager implements ResourceManager {
     private cleanupCallbacks = new Set<() => void | Promise<void>>();
     private isDisposed = false;
     private stateService: ContextStateService;
+    private logger = createLogger('resource-manager');
 
     constructor(contextKey: object = {}) {
         // CRÍTICO: Usar ContextStateService para tracking de recursos
@@ -67,7 +69,10 @@ export class DefaultResourceManager implements ResourceManager {
                 disposed: false,
             })
             .catch((error: unknown) => {
-                console.error('Failed to track timer in state service:', error);
+                this.logger.error(
+                    'Failed to track timer in state service',
+                    error as Error,
+                );
             });
     }
 
@@ -95,9 +100,9 @@ export class DefaultResourceManager implements ResourceManager {
                 disposed: false,
             })
             .catch((error: unknown) => {
-                console.error(
-                    'Failed to track interval in state service:',
-                    error,
+                this.logger.error(
+                    'Failed to track interval in state service',
+                    error as Error,
                 );
             });
     }
@@ -112,14 +117,17 @@ export class DefaultResourceManager implements ResourceManager {
                 const result = callback();
                 if (result instanceof Promise) {
                     result.catch((error) => {
-                        console.error(
-                            'Cleanup callback error during disposal:',
-                            error,
+                        this.logger.error(
+                            'Cleanup callback error during disposal',
+                            error as Error,
                         );
                     });
                 }
             } catch (error) {
-                console.error('Cleanup callback error during disposal:', error);
+                this.logger.error(
+                    'Cleanup callback error during disposal',
+                    error as Error,
+                );
             }
             return;
         }
@@ -134,9 +142,9 @@ export class DefaultResourceManager implements ResourceManager {
                 disposed: false,
             })
             .catch((error: unknown) => {
-                console.error(
-                    'Failed to track callback in state service:',
-                    error,
+                this.logger.error(
+                    'Failed to track callback in state service',
+                    error as Error,
                 );
             });
     }
@@ -157,7 +165,10 @@ export class DefaultResourceManager implements ResourceManager {
                     disposedAt: Date.now(),
                 })
                 .catch((error: unknown) => {
-                    console.error('Failed to update timer state:', error);
+                    this.logger.error(
+                        'Failed to update timer state',
+                        error as Error,
+                    );
                 });
         }
         return existed;
@@ -179,7 +190,10 @@ export class DefaultResourceManager implements ResourceManager {
                     disposedAt: Date.now(),
                 })
                 .catch((error: unknown) => {
-                    console.error('Failed to update interval state:', error);
+                    this.logger.error(
+                        'Failed to update interval state',
+                        error as Error,
+                    );
                 });
         }
         return existed;
@@ -199,7 +213,10 @@ export class DefaultResourceManager implements ResourceManager {
                     disposedAt: Date.now(),
                 })
                 .catch((error: unknown) => {
-                    console.error('Failed to update callback state:', error);
+                    this.logger.error(
+                        'Failed to update callback state',
+                        error as Error,
+                    );
                 });
         }
         return existed;
@@ -245,16 +262,19 @@ export class DefaultResourceManager implements ResourceManager {
                     cleanupPromises.push(
                         Promise.race([result, timeoutPromise]).catch(
                             (error) => {
-                                console.error(
-                                    'Cleanup callback error during disposal:',
-                                    error,
+                                this.logger.error(
+                                    'Cleanup callback error during disposal',
+                                    error as Error,
                                 );
                             },
                         ),
                     );
                 }
             } catch (error) {
-                console.error('Cleanup callback error during disposal:', error);
+                this.logger.error(
+                    'Cleanup callback error during disposal',
+                    error as Error,
+                );
             }
         }
 
@@ -269,9 +289,9 @@ export class DefaultResourceManager implements ResourceManager {
         try {
             await this.stateService.clear();
         } catch (error) {
-            console.error(
-                'Failed to clear state service during disposal:',
-                error,
+            this.logger.error(
+                'Failed to clear state service during disposal',
+                error as Error,
             );
         }
     }
@@ -315,7 +335,7 @@ export class DefaultResourceManager implements ResourceManager {
                 callbacks: this.stateService.getNamespace('callbacks'),
             };
         } catch (error) {
-            console.error('Failed to get detailed stats:', error);
+            this.logger.error('Failed to get detailed stats', error as Error);
             return {
                 timers: {},
                 intervals: {},

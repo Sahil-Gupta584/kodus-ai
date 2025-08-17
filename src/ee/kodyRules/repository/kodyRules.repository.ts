@@ -286,5 +286,58 @@ export class KodyRulesRepository implements IKodyRulesRepository {
             throw error;
         }
     }
+
+    async updateRulesStatusByFilter(
+        organizationId: string,
+        repositoryId: string,
+        directoryId?: string,
+        newStatus: KodyRulesStatus = KodyRulesStatus.DELETED,
+    ): Promise<KodyRulesEntity | null> {
+        try {
+            let filter: any = {
+                organizationId,
+                'rules.repositoryId': repositoryId,
+            };
+
+            if (directoryId) {
+                // Se directoryId for fornecido, atualizar apenas rules desse diretório
+                filter['rules.directoryId'] = directoryId;
+            } else {
+                // Se não for fornecido, atualizar apenas rules do repositório (directoryId null)
+                filter['rules.directoryId'] = null;
+            }
+
+            const updated = await this.kodyRulesModel
+                .findOneAndUpdate(
+                    filter,
+                    {
+                        $set: {
+                            'rules.$[elem].status': newStatus,
+                            'rules.$[elem].updatedAt': new Date()
+                        }
+                    },
+                    {
+                        new: true,
+                        arrayFilters: [
+                            {
+                                'elem.repositoryId': repositoryId,
+                                ...(directoryId
+                                    ? { 'elem.directoryId': directoryId }
+                                    : { 'elem.directoryId': null }
+                                ),
+                                'elem.status': KodyRulesStatus.ACTIVE
+                            }
+                        ]
+                    }
+                )
+                .exec();
+
+            return updated
+                ? mapSimpleModelToEntity(updated, KodyRulesEntity)
+                : null;
+        } catch (error) {
+            throw error;
+        }
+    }
     //#endregion
 }

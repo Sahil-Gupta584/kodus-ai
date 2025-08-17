@@ -95,7 +95,9 @@ export class SessionService {
         });
 
         // Initialize asynchronously
-        this.initializeStorage();
+        this.initializeStorage().catch((e) => {
+            this.logger.error('Failed to initialize storage adapter', e);
+        });
 
         if (this.config.enableAutoCleanup) {
             this.startAutoCleanup();
@@ -302,18 +304,52 @@ export class SessionService {
     /**
      * Get session by thread ID (for ContextBuilder)
      */
-    async getSessionByThread(threadId: string): Promise<Session | undefined> {
+    async getSessionByThread(
+        threadId: string,
+        tenantId?: string,
+    ): Promise<Session | undefined> {
         await this.ensureInitialized();
 
         // Check RAM cache first
         for (const session of this.sessions.values()) {
-            if (session.threadId === threadId && session.status === 'active') {
+            if (
+                session.threadId === threadId &&
+                session.status === 'active' &&
+                (!tenantId || session.tenantId === tenantId)
+            ) {
                 return session;
             }
         }
 
-        // Note: In a full implementation, we'd query storage here
-        // For now, we rely on the on-demand loading in getSession()
+        // Consulta opcional ao storage (se disponível e persistente)
+        if (this.config.persistent && this.storage) {
+            try {
+                const found = await this.storage.findSessionByThread(
+                    threadId,
+                    tenantId,
+                );
+                if (found) {
+                    // Cachear e criar state manager
+                    this.sessions.set(found.id, found);
+                    const stateManager = new ContextStateService(
+                        { sessionId: found.id },
+                        {
+                            maxNamespaceSize: 1000,
+                            maxNamespaces: 50,
+                        },
+                    );
+                    this.sessionStateManagers.set(found.id, stateManager);
+                    return found;
+                }
+            } catch (error) {
+                this.logger.warn('Storage lookup by thread failed', {
+                    threadId,
+                    error: error instanceof Error ? error.message : 'Unknown',
+                });
+            }
+        }
+
+        // Fallback: não encontrado
         return undefined;
     }
 
@@ -416,7 +452,30 @@ export class SessionService {
         const session = await this.getSession(sessionId);
         if (!session) return false;
 
-        session.contextData = { ...session.contextData, ...updates };
+        // Deep merge por namespace para não sobrescrever chaves irmãs
+        const deepMerge = (
+            target: Record<string, unknown>,
+            source: Record<string, unknown>,
+        ): Record<string, unknown> => {
+            const result: Record<string, unknown> = { ...target };
+            for (const [key, value] of Object.entries(source)) {
+                const targetValue = result[key];
+                const isObject = (v: unknown): v is Record<string, unknown> =>
+                    typeof v === 'object' && v !== null && !Array.isArray(v);
+
+                if (isObject(targetValue) && isObject(value)) {
+                    result[key] = deepMerge(targetValue, value);
+                } else {
+                    result[key] = value;
+                }
+            }
+            return result;
+        };
+
+        session.contextData = deepMerge(
+            session.contextData as Record<string, unknown>,
+            updates,
+        );
         session.lastActivity = Date.now();
 
         // ✅ SYNC: Persist changes if enabled
@@ -425,6 +484,16 @@ export class SessionService {
         }
 
         return true;
+    }
+
+    /**
+     * Obter dados de contexto persistidos da sessão (diagnóstico)
+     */
+    async getSessionContextData(
+        sessionId: string,
+    ): Promise<Record<string, unknown>> {
+        const session = await this.getSession(sessionId);
+        return (session?.contextData as Record<string, unknown>) || {};
     }
 
     /**

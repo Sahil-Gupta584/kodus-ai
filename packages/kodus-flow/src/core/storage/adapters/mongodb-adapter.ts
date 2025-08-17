@@ -325,4 +325,22 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
             await this.initialize();
         }
     }
+
+    /**
+     * Find one document by arbitrary query (used by higher-level adapters when needed)
+     */
+    async findOneByQuery(query: Record<string, unknown>): Promise<T | null> {
+        await this.ensureInitialized();
+        try {
+            const doc = await this.collection!.findOne(
+                query as unknown as object,
+            );
+            return (doc as unknown as T) || null;
+        } catch (error) {
+            logger.error('Failed to execute findOneByQuery', error as Error, {
+                query,
+            });
+            return null;
+        }
+    }
 }

@@ -21,6 +21,7 @@ import { CodeManagementService } from '../../services/platformIntegration/codeMa
 import { IWebhookBitbucketPullRequestEvent } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-bitbucket.type';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
+import { KodyRulesSyncService } from '../../services/kodyRules/kodyRulesSync.service';
 
 /**
  * Handler for Bitbucket webhook events.
@@ -40,6 +41,7 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
         private readonly chatWithKodyFromGitUseCase: ChatWithKodyFromGitUseCase,
         private readonly codeManagement: CodeManagementService,
         private readonly generateIssuesFromPrClosedUseCase: GenerateIssuesFromPrClosedUseCase,
+        private readonly kodyRulesSyncService: KodyRulesSyncService,
     ) {}
 
     /**
@@ -94,6 +96,23 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
             })`,
         });
 
+        const repository = {
+            id: payload?.repository?.uuid?.replace(/[{}]/g, ''),
+            name: payload?.repository?.name,
+            fullName: payload?.repository?.full_name,
+        } as any;
+
+        const orgData =
+            await this.runCodeReviewAutomationUseCase.findTeamWithActiveCodeReview(
+                {
+                    repository: {
+                        id: repository.id,
+                        name: repository.name,
+                    },
+                    platformType: PlatformType.BITBUCKET,
+                },
+            );
+
         try {
             // Check if we should trigger code review based on the PR event
             const shouldTrigger = await this.shouldTriggerCodeReview(params);
@@ -115,7 +134,67 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                     await this.savePullRequestUseCase.execute(params);
 
                 if (pullRequest && pullRequest.status === 'closed') {
-                    await this.generateIssuesFromPrClosedUseCase.execute(params);
+                    await this.generateIssuesFromPrClosedUseCase.execute(
+                        params,
+                    );
+
+                    const merged = payload?.pullrequest?.state === 'MERGED';
+                    if (merged) {
+                        try {
+                            if (orgData?.organizationAndTeamData) {
+                                const baseRef =
+                                    payload?.pullrequest?.destination?.branch
+                                        ?.name;
+                                const defaultBranch =
+                                    await this.codeManagement.getDefaultBranch({
+                                        organizationAndTeamData:
+                                            orgData.organizationAndTeamData,
+                                        repository: {
+                                            id: repository.id,
+                                            name: repository.name,
+                                        },
+                                    });
+                                if (baseRef !== defaultBranch) {
+                                    return;
+                                }
+                                const changedFiles =
+                                    await this.codeManagement.getFilesByPullRequestId(
+                                        {
+                                            organizationAndTeamData:
+                                                orgData.organizationAndTeamData,
+                                            repository: {
+                                                id: repository.id,
+                                                name: repository.name,
+                                            },
+                                            prNumber: payload?.pullrequest?.id,
+                                        },
+                                    );
+                                await this.kodyRulesSyncService.syncFromChangedFiles(
+                                    {
+                                        organizationAndTeamData:
+                                            orgData.organizationAndTeamData,
+                                        repository,
+                                        pullRequestNumber:
+                                            payload?.pullrequest?.id,
+                                        files: changedFiles || [],
+                                    },
+                                );
+                            }
+                        } catch (e) {
+                            this.logger.error({
+                                message:
+                                    'Failed to sync Kody Rules after PR merge',
+                                context: BitbucketPullRequestHandler.name,
+                                error: e,
+                                metadata: {
+                                    organizationAndTeamData:
+                                        orgData?.organizationAndTeamData,
+                                    repository,
+                                    pullRequestNumber: payload?.pullrequest?.id,
+                                },
+                            });
+                        }
+                    }
                 }
             }
         } catch (error) {

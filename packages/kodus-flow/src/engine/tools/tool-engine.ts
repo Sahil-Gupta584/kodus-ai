@@ -1,4 +1,10 @@
-import { createLogger } from '../../observability/index.js';
+import {
+    createLogger,
+    getObservability,
+    startToolSpan,
+    applyErrorToSpan,
+    markSpanOk,
+} from '../../observability/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import type {
     ToolDefinition,
@@ -83,30 +89,46 @@ export class ToolEngine {
         input: TInput,
     ): Promise<TOutput> {
         const callId = IdGenerator.callId();
-        const timeout = this.config.timeout || 60000;
+        const timeout = this.config.timeout || 120000; // ✅ AUMENTADO: 120s para APIs externas
         const startTime = Date.now();
+        const obs = getObservability();
 
         try {
-            // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
-            const timeoutPromise = new Promise<never>((_, reject) => {
-                setTimeout(() => {
-                    reject(
-                        new Error(`Tool execution timeout after ${timeout}ms`),
-                    );
-                }, timeout);
+            const span = startToolSpan(obs.telemetry, {
+                toolName: String(toolName),
+                callId,
             });
 
-            // Create execution promise
-            const executionPromise = this.executeToolInternal<TInput, TOutput>(
-                toolName,
-                input,
-                callId,
-            );
+            const result = await obs.telemetry.withSpan(span, async () => {
+                try {
+                    // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
+                    const timeoutPromise = new Promise<never>((_, reject) => {
+                        setTimeout(() => {
+                            reject(
+                                new Error(
+                                    `Tool execution timeout after ${timeout}ms`,
+                                ),
+                            );
+                        }, timeout);
+                    });
 
-            const result = await Promise.race([
-                executionPromise,
-                timeoutPromise,
-            ]);
+                    // Create execution promise
+                    const executionPromise = this.executeToolInternal<
+                        TInput,
+                        TOutput
+                    >(toolName, input, callId);
+
+                    const res = await Promise.race([
+                        executionPromise,
+                        timeoutPromise,
+                    ]);
+                    markSpanOk(span);
+                    return res;
+                } catch (innerError) {
+                    applyErrorToSpan(span, innerError);
+                    throw innerError;
+                }
+            });
 
             return result;
         } catch (error) {
@@ -559,42 +581,54 @@ export class ToolEngine {
                 };
 
                 try {
+                    this.logger.info('🔧 [TOOL] Starting tool execution', {
+                        toolName,
+                        correlationId,
+                        inputSize: JSON.stringify(input).length,
+                        timestamp: Date.now(),
+                    });
+
+                    const startTime = Date.now();
                     const result = await this.executeCall(toolName, input);
+                    const executionTime = Date.now() - startTime;
+
+                    this.logger.info('🔧 [TOOL] Tool execution completed', {
+                        toolName,
+                        correlationId,
+                        executionTimeMs: executionTime,
+                        resultSize: JSON.stringify(result).length,
+                        timestamp: Date.now(),
+                    });
+
+                    // ✅ UNIFICADO: Sempre verificar se há erro no resultado
+                    const hasError = this.checkToolResultError(result);
+                    const responseData = {
+                        ...(typeof result === 'object' && result !== null
+                            ? result
+                            : { result }),
+                        success: !hasError,
+                        toolName,
+                        metadata: {
+                            correlationId,
+                            success: !hasError,
+                            toolName,
+                        },
+                    };
 
                     if (this.kernelHandler?.emitAsync) {
                         await this.kernelHandler.emitAsync(
                             'tool.execute.response',
-                            {
-                                ...(typeof result === 'object' &&
-                                result !== null
-                                    ? result
-                                    : { result }),
-                                success: true,
-                                toolName,
-                                metadata: {
-                                    correlationId,
-                                    success: true,
-                                    toolName,
-                                },
-                            },
+                            responseData,
                             {
                                 correlationId,
                                 deliveryGuarantee: 'at-least-once',
                             },
                         );
                     } else {
-                        this.kernelHandler!.emit('tool.execute.response', {
-                            ...(typeof result === 'object' && result !== null
-                                ? result
-                                : { result }),
-                            success: true,
-                            toolName,
-                            metadata: {
-                                correlationId,
-                                success: true,
-                                toolName,
-                            },
-                        });
+                        await this.kernelHandler!.emit(
+                            'tool.execute.response',
+                            responseData,
+                        );
                     }
 
                     // ✅ ACK the original event after successful processing
@@ -626,7 +660,7 @@ export class ToolEngine {
                         },
                     );
 
-                    this.kernelHandler!.emit('tool.execute.response', {
+                    await this.kernelHandler!.emit('tool.execute.response', {
                         error: (error as Error).message,
                         success: false,
                         toolName,
@@ -650,6 +684,42 @@ export class ToolEngine {
                 }
             },
         );
+    }
+
+    /**
+     * Check if tool result contains an error
+     */
+    private checkToolResultError(result: unknown): boolean {
+        if (!result || typeof result !== 'object') {
+            return false;
+        }
+
+        const resultObj = result as Record<string, unknown>;
+
+        // Check for direct error indicators
+        if (resultObj.error || resultObj.isError === true) {
+            return true;
+        }
+
+        // Check for MCP-style result structure
+        if (resultObj.result && typeof resultObj.result === 'object') {
+            const innerResult = resultObj.result as Record<string, unknown>;
+            if (innerResult.isError === true || innerResult.error) {
+                return true;
+            }
+
+            // Check for successful: false in inner result
+            if (innerResult.successful === false) {
+                return true;
+            }
+        }
+
+        // Check for success: false at top level
+        if (resultObj.success === false) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -685,29 +755,47 @@ export class ToolEngine {
         const callId = IdGenerator.callId();
         const timeout = this.config.timeout || 60000; // ✅ 60s timeout para ferramentas MCP
         const startTime = Date.now();
+        const obs = getObservability();
 
         try {
-            // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
-            const timeoutPromise = new Promise<never>((_, reject) => {
-                setTimeout(() => {
-                    reject(
-                        new Error(`Tool execution timeout after ${timeout}ms`),
-                    );
-                }, timeout);
+            const span = obs.telemetry.startSpan('tool.execute', {
+                attributes: {
+                    toolName: String(toolName),
+                    callId,
+                },
             });
 
-            // Create execution promise using executeToolInternal
-            const executionPromise = this.executeToolInternal<TInput, TOutput>(
-                toolName as ToolId,
-                input,
-                callId,
-            );
+            const result = await obs.telemetry.withSpan(span, async () => {
+                try {
+                    // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
+                    const timeoutPromise = new Promise<never>((_, reject) => {
+                        setTimeout(() => {
+                            reject(
+                                new Error(
+                                    `Tool execution timeout after ${timeout}ms`,
+                                ),
+                            );
+                        }, timeout);
+                    });
 
-            // Race between execution and timeout
-            const result = await Promise.race([
-                executionPromise,
-                timeoutPromise,
-            ]);
+                    // Create execution promise using executeToolInternal
+                    const executionPromise = this.executeToolInternal<
+                        TInput,
+                        TOutput
+                    >(toolName as ToolId, input, callId);
+
+                    // Race between execution and timeout
+                    const res = await Promise.race([
+                        executionPromise,
+                        timeoutPromise,
+                    ]);
+                    markSpanOk(span);
+                    return res;
+                } catch (innerError) {
+                    applyErrorToSpan(span, innerError);
+                    throw innerError;
+                }
+            });
 
             return result;
         } catch (error) {
@@ -1435,7 +1523,7 @@ export class ToolEngine {
 
         // Emit parallel execution start event
         if (this.kernelHandler) {
-            this.kernelHandler.emit('tool.parallel.execution.start', {
+            await this.kernelHandler.emit('tool.parallel.execution.start', {
                 tools: action.tools.map((t) => t.toolName),
                 concurrency,
                 timeout,
@@ -1502,19 +1590,22 @@ export class ToolEngine {
 
             // Emit success event
             if (this.kernelHandler) {
-                this.kernelHandler.emit('tool.parallel.execution.success', {
-                    tools: action.tools.map((t) => t.toolName),
-                    results,
-                    executionTime: Date.now() - startTime,
-                    tenantId: 'default',
-                });
+                await this.kernelHandler.emit(
+                    'tool.parallel.execution.success',
+                    {
+                        tools: action.tools.map((t) => t.toolName),
+                        results,
+                        executionTime: Date.now() - startTime,
+                        tenantId: 'default',
+                    },
+                );
             }
 
             return results;
         } catch (error) {
             // Emit error event
             if (this.kernelHandler) {
-                this.kernelHandler.emit('tool.parallel.execution.error', {
+                await this.kernelHandler.emit('tool.parallel.execution.error', {
                     tools: action.tools.map((t) => t.toolName),
                     error:
                         error instanceof Error ? error.message : String(error),
@@ -1543,7 +1634,7 @@ export class ToolEngine {
 
         // Emit sequential execution start event
         if (this.kernelHandler) {
-            this.kernelHandler.emit('tool.sequential.execution.start', {
+            await this.kernelHandler.emit('tool.sequential.execution.start', {
                 tools: action.tools.map((t) => t.toolName),
                 timeout: action.timeout,
                 tenantId: 'default',
@@ -1592,25 +1683,33 @@ export class ToolEngine {
 
             // Emit success event
             if (this.kernelHandler) {
-                this.kernelHandler.emit('tool.sequential.execution.success', {
-                    tools: action.tools.map((t) => t.toolName),
-                    results,
-                    executionTime: Date.now() - startTime,
-                    tenantId: 'default',
-                });
+                await this.kernelHandler.emit(
+                    'tool.sequential.execution.success',
+                    {
+                        tools: action.tools.map((t) => t.toolName),
+                        results,
+                        executionTime: Date.now() - startTime,
+                        tenantId: 'default',
+                    },
+                );
             }
 
             return results;
         } catch (error) {
             // Emit error event
             if (this.kernelHandler) {
-                this.kernelHandler.emit('tool.sequential.execution.error', {
-                    tools: action.tools.map((t) => t.toolName),
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                    executionTime: Date.now() - startTime,
-                    tenantId: 'default',
-                });
+                await this.kernelHandler.emit(
+                    'tool.sequential.execution.error',
+                    {
+                        tools: action.tools.map((t) => t.toolName),
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        executionTime: Date.now() - startTime,
+                        tenantId: 'default',
+                    },
+                );
             }
 
             throw error;
@@ -1632,7 +1731,7 @@ export class ToolEngine {
 
         // Emit conditional execution start event
         if (this.kernelHandler) {
-            this.kernelHandler.emit('tool.conditional.execution.start', {
+            await this.kernelHandler.emit('tool.conditional.execution.start', {
                 tools: action.tools.map((t) => t.toolName),
                 conditions: action.conditions,
                 tenantId: 'default',
@@ -1740,25 +1839,33 @@ export class ToolEngine {
 
             // Emit success event
             if (this.kernelHandler) {
-                this.kernelHandler.emit('tool.conditional.execution.success', {
-                    tools: action.tools.map((t) => t.toolName),
-                    results,
-                    executionTime: Date.now() - startTime,
-                    tenantId: 'default',
-                });
+                await this.kernelHandler.emit(
+                    'tool.conditional.execution.success',
+                    {
+                        tools: action.tools.map((t) => t.toolName),
+                        results,
+                        executionTime: Date.now() - startTime,
+                        tenantId: 'default',
+                    },
+                );
             }
 
             return results;
         } catch (error) {
             // Emit error event
             if (this.kernelHandler) {
-                this.kernelHandler.emit('tool.conditional.execution.error', {
-                    tools: action.tools.map((t) => t.toolName),
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                    executionTime: Date.now() - startTime,
-                    tenantId: 'default',
-                });
+                await this.kernelHandler.emit(
+                    'tool.conditional.execution.error',
+                    {
+                        tools: action.tools.map((t) => t.toolName),
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        executionTime: Date.now() - startTime,
+                        tenantId: 'default',
+                    },
+                );
             }
 
             throw error;
