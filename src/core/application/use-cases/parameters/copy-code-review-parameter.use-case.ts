@@ -331,7 +331,7 @@ export class CopyCodeReviewParameterUseCase {
                               id: sourceRepository.id,
                               name: sourceRepository.name,
                           },
-                directory: {
+                targetDirectory: {
                     id: "",
                     path: body.targetDirectoryPath,
                 },

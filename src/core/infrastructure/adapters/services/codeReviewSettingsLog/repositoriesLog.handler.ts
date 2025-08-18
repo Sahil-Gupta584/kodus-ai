@@ -14,6 +14,7 @@ export interface RepositoriesLogParams extends BaseLogParams {
     removedRepositories?: Array<{ id: string; name: string }>;
     sourceRepository?: { id: string; name: string };
     targetRepository?: { id: string; name: string };
+    targetDirectory?: { id?: string; path: string };
 }
 
 export interface RepositoryConfigRemovalParams extends BaseLogParams {
@@ -40,20 +41,33 @@ export class RepositoriesLogHandler {
             removedRepositories = [],
             sourceRepository,
             targetRepository,
+            targetDirectory,
         } = params;
 
         // Handle copy operation
         if (
             actionType === ActionType.ADD &&
             sourceRepository &&
-            targetRepository
+            (targetRepository || targetDirectory)
         ) {
-            await this.logCopyOperation({
-                organizationAndTeamData,
-                userInfo,
-                sourceRepository,
-                targetRepository,
-            });
+            if (targetRepository) {
+                await this.logCopyRepositoryOperation({
+                    organizationAndTeamData,
+                    userInfo,
+                    sourceRepository,
+                    targetRepository,
+                });
+            }
+
+            if (targetDirectory) {
+                await this.logCopyDirectoryOperation({
+                    organizationAndTeamData,
+                    userInfo,
+                    sourceRepository,
+                    targetDirectory,
+                });
+            }
+
             return;
         }
 
@@ -150,7 +164,7 @@ export class RepositoriesLogHandler {
         });
     }
 
-    private async logCopyOperation(params: {
+    private async logCopyRepositoryOperation(params: {
         organizationAndTeamData: any;
         userInfo: any;
         sourceRepository: { id: string; name: string };
@@ -193,6 +207,53 @@ export class RepositoriesLogHandler {
             actionType: ActionType.ADD,
             configLevel: ConfigLevel.REPOSITORY,
             repository: targetRepository,
+            changedData,
+        });
+    }
+
+    private async logCopyDirectoryOperation(params: {
+        organizationAndTeamData: any;
+        userInfo: any;
+        sourceRepository: { id: string; name: string };
+        targetDirectory: { id?: string; path: string };
+    }): Promise<void> {
+        const {
+            organizationAndTeamData,
+            userInfo,
+            sourceRepository,
+            targetDirectory,
+        } = params;
+
+        const isSourceGlobal = sourceRepository.id === 'global';
+        const sourceName = isSourceGlobal
+            ? 'Global Settings'
+            : sourceRepository.name;
+
+        const changedData: ChangedDataToExport[] = [
+            {
+                actionDescription: 'Directory Configuration Copied',
+                previousValue: null,
+                currentValue: {
+                    sourceRepository: {
+                        id: sourceRepository.id,
+                        name: sourceName,
+                        isGlobal: isSourceGlobal,
+                    },
+                    targetDirectory: {
+                        id: targetDirectory.id,
+                        path: targetDirectory.path,
+                    },
+                },
+                description: `User ${userInfo.userEmail} copied code review configuration from ${isSourceGlobal ? 'Global Settings' : `"${sourceName}"`} to directory "${targetDirectory.path}"`,
+            },
+        ];
+
+        await this.unifiedLogHandler.saveLogEntry({
+            organizationAndTeamData,
+            userInfo,
+            actionType: ActionType.ADD,
+            configLevel: ConfigLevel.DIRECTORY,
+            directory: targetDirectory,
             changedData,
         });
     }
