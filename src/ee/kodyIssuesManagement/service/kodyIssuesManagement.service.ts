@@ -271,6 +271,9 @@ export class KodyIssuesManagementService
 
             const prChangedFiles = await this.getChangedFiles(context);
 
+            // Array para coletar todas as promises de atualização
+            const updatePromises: Promise<any>[] = [];
+
             for (const file of files) {
                 const currentCode = prChangedFiles.find(
                     (f) => f.filename === file.path,
@@ -290,9 +293,11 @@ export class KodyIssuesManagementService
                 if (!openIssues?.length) continue;
 
                 if (fileData.status === 'removed') {
-                    await this.issuesService.updateStatusByIds(
-                        openIssues.map((issue) => issue.uuid),
-                        IssueStatus.DISMISSED,
+                    updatePromises.push(
+                        this.issuesService.updateStatusByIds(
+                            openIssues.map((issue) => issue.uuid),
+                            IssueStatus.DISMISSED,
+                        ),
                     );
                     continue;
                 }
@@ -328,6 +333,11 @@ export class KodyIssuesManagementService
                         }
                     }
                 }
+            }
+
+            // Executar todas as operações de atualização em paralelo
+            if (updatePromises.length > 0) {
+                await Promise.all(updatePromises);
             }
         } catch (error) {
             this.logger.error({
