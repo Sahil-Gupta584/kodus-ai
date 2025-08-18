@@ -167,6 +167,7 @@ export interface AzureRepoChange {
         path?: string;
         isFolder?: boolean;
     };
+    originalPath?: string;
 }
 
 /**
