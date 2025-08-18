@@ -19,6 +19,7 @@ export interface IMembers {
     email: string;
     userId?: string;
 }
+
 export interface ITeamMember {
     uuid?: string;
     organization?: Partial<IOrganization>;
@@ -33,4 +34,16 @@ export interface ITeamMember {
     codeManagement?: ICodeManagementMemberConfig;
     projectManagement?: IProjectManagementMemberConfig;
     createdAt?: Date;
+}
+
+export interface IInviteResult {
+    email: string;
+    status: 'invite_sent' | 'user_already_registered_in_other_organization';
+    uuid?: string;
+    message: string;
+}
+
+export interface IUpdateOrCreateMembersResponse {
+    success: boolean;
+    results: IInviteResult[];
 }
