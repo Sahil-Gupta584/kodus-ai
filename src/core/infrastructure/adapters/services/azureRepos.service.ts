@@ -2712,9 +2712,9 @@ export class AzureReposService
 
             // 4. Process each change entry to generate the diff using our specific base and target commits
             const fileDiffPromises = changeEntries
-                .filter((change) => change.item?.path) // Ensure item and path exist
+                .filter((change) => change.item?.path || change?.originalPath) // Ensure item and path exist
                 .map((change) => {
-                    const filePath = change.item.path;
+                    const filePath = change.item?.path || change?.originalPath;
                     // Pass the globally determined base/target and the specific change type
                     return this._generateFileDiffForAzure({
                         orgName,
