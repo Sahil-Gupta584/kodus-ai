@@ -279,8 +279,7 @@ export class ExecutionKernel {
         { value: unknown; timestamp: number }
     >();
     private contextUpdateTimer: NodeJS.Timeout | null = null;
-    private eventBatchQueue: Event[] = [];
-    private eventBatchTimer: NodeJS.Timeout | null = null;
+    // REMOVED: eventBatchQueue and eventBatchTimer - now delegated to Runtime
     private lastSnapshotTs = 0;
     private lastEventSnapshotCount = 0;
 
@@ -419,6 +418,25 @@ export class ExecutionKernel {
                         executionId: this.state.id,
                         tenantId: this.config.tenantId,
                         middleware,
+                        // Configure batching if performance batching is enabled
+                        batching: this.config.performance?.enableBatching
+                            ? {
+                                  enabled: true,
+                                  defaultBatchSize:
+                                      this.config.performance.batchSize || 50,
+                                  defaultBatchTimeout:
+                                      this.config.performance.batchTimeoutMs ||
+                                      100,
+                                  maxBatchSize: 1000,
+                                  // Critical events should flush immediately
+                                  flushOnEventTypes: [
+                                      'kernel.completed',
+                                      'kernel.failed',
+                                      'workflow.completed',
+                                      'workflow.failed',
+                                  ],
+                              }
+                            : undefined,
                     };
 
                     this.runtime = createRuntime(
@@ -523,25 +541,8 @@ export class ExecutionKernel {
         }
 
         try {
-            // Performance: Batch event processing
-            if (this.config.performance?.enableBatching) {
-                this.eventBatchQueue.push(event);
-
-                if (
-                    this.eventBatchQueue.length >=
-                    (this.config.performance.batchSize || 10)
-                ) {
-                    await this.processEventBatch();
-                } else if (!this.eventBatchTimer) {
-                    this.eventBatchTimer = setTimeout(
-                        () => this.processEventBatch(),
-                        this.config.performance.batchTimeoutMs || 100,
-                    );
-                }
-            } else {
-                // Direct processing
-                await this.sendEvent(event);
-            }
+            // Send event - batching is now handled by Runtime if configured
+            await this.sendEvent(event);
         } catch (error) {
             this.logger.error('Failed to run workflow', error as Error, {
                 event,
@@ -565,8 +566,26 @@ export class ExecutionKernel {
             // Performance: Prepare context in batch
             this.prepareContextForEvent(event);
 
-            // Send to runtime
-            this.runtime.emit(event.type, event.data);
+            // Send to runtime with batching options if configured
+            const useBatching = this.config.performance?.enableBatching;
+            if (useBatching) {
+                // Use async emit with batching options
+                await this.runtime.emitAsync(event.type, event.data, {
+                    batch: true,
+                    batchSize: this.config.performance?.batchSize,
+                    batchTimeout: this.config.performance?.batchTimeoutMs,
+                    // Flush immediately for critical events
+                    flushBatch: [
+                        'kernel.completed',
+                        'kernel.failed',
+                        'workflow.completed',
+                        'workflow.failed',
+                    ].includes(event.type),
+                });
+            } else {
+                // Use synchronous emit
+                this.runtime.emit(event.type, event.data);
+            }
 
             // Update state
             this.updateStateFromEvent(event);
@@ -586,37 +605,7 @@ export class ExecutionKernel {
         }
     }
 
-    /**
-     * Process batched events for better performance
-     */
-    private async processEventBatch(): Promise<void> {
-        if (this.eventBatchQueue.length === 0) return;
-
-        const events = [...this.eventBatchQueue];
-        this.eventBatchQueue = [];
-
-        if (this.eventBatchTimer) {
-            clearTimeout(this.eventBatchTimer);
-            this.eventBatchTimer = null;
-        }
-
-        try {
-            // Process all events in batch
-            for (const event of events) {
-                await this.sendEvent(event);
-            }
-
-            this.logger.debug('Event batch processed', {
-                batchSize: events.length,
-                totalEvents: this.state.eventCount,
-            });
-        } catch (error) {
-            this.logger.error('Failed to process event batch', error as Error, {
-                batchSize: events.length,
-            });
-            throw error;
-        }
-    }
+    // REMOVED: processEventBatch - now delegated to Runtime batching
 
     /**
      * Pause execution with snapshot
@@ -639,16 +628,6 @@ export class ExecutionKernel {
 
             // Update state
             this.state.status = 'paused';
-
-            console.log('🔍 [DEBUG] KERNEL: Kernel paused', {
-                snapshotId: snapshot.hash,
-                reason,
-                eventCount: this.state.eventCount,
-                tenantId: this.state.tenantId,
-                timestamp: Date.now(),
-                step: 'kernel-paused',
-                stack: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
-            });
 
             this.logger.info('Kernel paused', {
                 snapshotId: snapshot.hash,
@@ -715,7 +694,6 @@ export class ExecutionKernel {
         try {
             // Performance: Flush all pending updates
             await this.flushContextUpdates();
-            await this.processEventBatch();
 
             // Update state
             this.state.status = 'completed';
@@ -852,7 +830,7 @@ export class ExecutionKernel {
             performance: {
                 cache: this.contextCache.getStats(),
                 pendingUpdates: this.contextUpdateQueue.size,
-                pendingEvents: this.eventBatchQueue.length,
+                // pendingEvents: removed - batching delegated to Runtime
             },
         };
     }
@@ -1138,17 +1116,6 @@ export class ExecutionKernel {
             const timer = setInterval(async () => {
                 const memoryUsage = process.memoryUsage().heapUsed;
                 if (memoryUsage > maxMemory) {
-                    console.log('🔍 [DEBUG] KERNEL: Memory quota exceeded', {
-                        memoryUsage,
-                        maxMemory,
-                        memoryUsageMB: Math.round(memoryUsage / 1024 / 1024),
-                        maxMemoryMB: Math.round(maxMemory / 1024 / 1024),
-                        kernelId: this.state.id,
-                        tenantId: this.state.tenantId,
-                        timestamp: Date.now(),
-                        step: 'memory-quota-exceeded',
-                    });
-
                     // ✅ CORREÇÃO: Cleanup memory antes de pausar
                     await this.cleanupMemory();
 
@@ -1305,13 +1272,6 @@ export class ExecutionKernel {
      * Reprocess items from Dead Letter Queue
      */
     private async reprocessDLQItems(): Promise<void> {
-        console.log('🔍 [DEBUG] KERNEL: Starting DLQ reprocessing', {
-            tenantId: this.state.tenantId,
-            status: this.state.status,
-            timestamp: Date.now(),
-            step: 'dlq-reprocessing-start',
-        });
-
         const runtime = this.getRuntimeSafely();
         if (!runtime) {
             this.logger.warn('No runtime available for DLQ reprocessing');
@@ -1383,14 +1343,10 @@ export class ExecutionKernel {
             this.contextUpdateTimer = null;
         }
 
-        if (this.eventBatchTimer) {
-            clearTimeout(this.eventBatchTimer);
-            this.eventBatchTimer = null;
-        }
+        // Batch timer removed - batching delegated to Runtime
 
         // Clear queues
         this.contextUpdateQueue.clear();
-        this.eventBatchQueue = [];
 
         // Clear cache
         this.contextCache.clear();
@@ -1422,15 +1378,6 @@ export class ExecutionKernel {
 
         // Create snapshot before stopping
         const snapshotId = await this.pause(`quota-exceeded-${type}`);
-
-        console.log('🔍 [DEBUG] KERNEL: Kernel paused due to quota exceeded', {
-            type,
-            snapshotId,
-            tenantId: this.state.tenantId,
-            timestamp: Date.now(),
-            step: 'quota-exceeded-pause',
-            stack: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
-        });
 
         this.logger.info('Kernel paused due to quota exceeded', {
             type,
@@ -1564,15 +1511,6 @@ export class ExecutionKernel {
      */
     private getRuntimeSafely(): Runtime {
         if (!this.isRuntimeReady()) {
-            console.log('🔍 [DEBUG] KERNEL: Runtime not ready', {
-                status: this.state.status,
-                runtimeExists: !!this.runtime,
-                tenantId: this.state.tenantId,
-                timestamp: Date.now(),
-                step: 'runtime-not-ready',
-                stack: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
-            });
-
             throw new Error(
                 `Runtime not ready. Status: ${this.state.status}, Runtime: ${this.runtime ? 'exists' : 'null'}`,
             );
@@ -1605,14 +1543,6 @@ export class ExecutionKernel {
     async processEvents(): Promise<void> {
         const operationId = `process:${Date.now()}`;
 
-        console.log('🔍 [DEBUG] KERNEL: processEvents called', {
-            operationId,
-            tenantId: this.state.tenantId,
-            timestamp: Date.now(),
-            step: 'kernel-processEvents-start',
-            stack: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
-        });
-
         await this.executeAtomicOperation(
             operationId,
             async () => {
@@ -1643,13 +1573,6 @@ export class ExecutionKernel {
                 isolation: true,
             },
         );
-
-        console.log('🔍 [DEBUG] KERNEL: processEvents completed', {
-            operationId,
-            tenantId: this.state.tenantId,
-            timestamp: Date.now(),
-            step: 'kernel-processEvents-complete',
-        });
     }
 
     /**
@@ -1822,7 +1745,7 @@ export class ExecutionKernel {
                 ...baseStatus.performance,
                 cache: this.contextCache.getStats(),
                 pendingUpdates: this.contextUpdateQueue.size,
-                pendingEvents: this.eventBatchQueue.length,
+                // pendingEvents: removed - batching delegated to Runtime
             },
         };
     }
@@ -1995,7 +1918,7 @@ export class ExecutionKernel {
             kernel: {
                 contextCacheSize: this.contextCache.size,
                 contextUpdateQueueSize: this.contextUpdateQueue.size,
-                eventBatchQueueSize: this.eventBatchQueue.length,
+                // eventBatchQueueSize: removed - batching delegated to Runtime,
             },
         };
     }
@@ -2040,17 +1963,14 @@ export class ExecutionKernel {
         // Cleanup kernel resources
         this.contextCache.clear();
         this.contextUpdateQueue.clear();
-        this.eventBatchQueue.length = 0;
+        // Event batch queue removed - batching delegated to Runtime
 
         // Clear timers
         if (this.contextUpdateTimer) {
             clearTimeout(this.contextUpdateTimer);
             this.contextUpdateTimer = null;
         }
-        if (this.eventBatchTimer) {
-            clearTimeout(this.eventBatchTimer);
-            this.eventBatchTimer = null;
-        }
+        // Batch timer removed - batching delegated to Runtime
 
         // Cleanup enhanced queue timers
         this.cleanupEnhancedQueueFeatures();
@@ -2109,7 +2029,7 @@ export class ExecutionKernel {
             // Clear all caches and queues
             this.contextCache.clear();
             this.contextUpdateQueue.clear();
-            this.eventBatchQueue.length = 0;
+            // Event batch queue cleanup removed - batching delegated to Runtime
 
             this.logger.info('✅ KERNEL CLEARED', {
                 kernelId: this.state.id,
@@ -2142,7 +2062,7 @@ export class ExecutionKernel {
     } {
         const runtimeHealthy = !!this.runtime;
         const contextHealthy = this.contextCache.size < 1000;
-        const memoryHealthy = this.eventBatchQueue.length < 100;
+        const memoryHealthy = true; // Event batch queue removed - always consider healthy
         const performanceHealthy = this.contextUpdateQueue.size < 50;
 
         const allHealthy =
@@ -2301,14 +2221,6 @@ export class ExecutionKernel {
      */
     private async cleanupMemory(): Promise<void> {
         try {
-            console.log('🔍 [DEBUG] KERNEL: Starting memory cleanup', {
-                kernelId: this.state.id,
-                tenantId: this.state.tenantId,
-                timestamp: Date.now(),
-                step: 'memory-cleanup-start',
-            });
-
-            // 1. Cleanup old snapshots (if persistor supports it)
             if (this.persistor && 'cleanupOldSnapshots' in this.persistor) {
                 try {
                     await (
@@ -2316,78 +2228,30 @@ export class ExecutionKernel {
                             cleanupOldSnapshots(): Promise<void>;
                         }
                     ).cleanupOldSnapshots();
-                    console.log('🔍 [DEBUG] KERNEL: Old snapshots cleaned', {
-                        kernelId: this.state.id,
-                        timestamp: Date.now(),
-                        step: 'snapshots-cleaned',
-                    });
                 } catch (error) {
-                    console.log('🔍 [DEBUG] KERNEL: Snapshot cleanup failed', {
-                        kernelId: this.state.id,
-                        error: (error as Error).message,
-                        timestamp: Date.now(),
-                        step: 'snapshot-cleanup-error',
-                    });
+                    this.logger.error(
+                        '[DEBUG] KERNEL: Snapshot cleanup failed',
+                        error as Error,
+                    );
                 }
             }
 
             // 2. Clear context update queue
             if (this.contextUpdateQueue && this.contextUpdateQueue.size > 0) {
-                const queueSize = this.contextUpdateQueue.size;
                 this.contextUpdateQueue.clear();
-                console.log('🔍 [DEBUG] KERNEL: Context update queue cleared', {
-                    kernelId: this.state.id,
-                    clearedItems: queueSize,
-                    timestamp: Date.now(),
-                    step: 'context-queue-cleared',
-                });
-            }
-
-            // 3. Clear event batch timer
-            if (this.eventBatchTimer) {
-                clearTimeout(this.eventBatchTimer);
-                this.eventBatchTimer = null;
-                console.log('🔍 [DEBUG] KERNEL: Event batch timer cleared', {
-                    kernelId: this.state.id,
-                    timestamp: Date.now(),
-                    step: 'event-timer-cleared',
-                });
             }
 
             // 4. Clear context update timer
             if (this.contextUpdateTimer) {
                 clearTimeout(this.contextUpdateTimer);
                 this.contextUpdateTimer = null;
-                console.log('🔍 [DEBUG] KERNEL: Context update timer cleared', {
-                    kernelId: this.state.id,
-                    timestamp: Date.now(),
-                    step: 'context-timer-cleared',
-                });
             }
 
             // 5. Force garbage collection if available
             if (global.gc) {
                 global.gc();
-                console.log('🔍 [DEBUG] KERNEL: Garbage collection forced', {
-                    kernelId: this.state.id,
-                    timestamp: Date.now(),
-                    step: 'gc-forced',
-                });
             }
-
-            console.log('🔍 [DEBUG] KERNEL: Memory cleanup completed', {
-                kernelId: this.state.id,
-                tenantId: this.state.tenantId,
-                timestamp: Date.now(),
-                step: 'memory-cleanup-complete',
-            });
         } catch (error) {
-            console.log('🔍 [DEBUG] KERNEL: Memory cleanup failed', {
-                kernelId: this.state.id,
-                error: (error as Error).message,
-                timestamp: Date.now(),
-                step: 'memory-cleanup-error',
-            });
             this.logger.error('Memory cleanup failed', error as Error);
         }
     }
