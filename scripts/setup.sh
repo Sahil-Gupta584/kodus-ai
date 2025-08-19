@@ -91,7 +91,10 @@ CODE_MANAGEMENT_WEBHOOK_TOKEN=
 API_CRYPTO_KEY=
 
 # GitHub Configuration
-GITHUB_CODE_MANAGEMENT_WEBHOOK=http://localhost:3331/github/webhook
+GITHUB_CODE_MANAGEMENT_WEBHOOK=http://localhost:3001/github/webhook
+
+# API Configuration
+API_PORT=3001
 
 # LLM Integration Settings (Fixed Mode)
 API_LLM_PROVIDER_MODEL=gpt-3.5-turbo
@@ -124,6 +127,7 @@ WEB_JWT_SECRET_KEY_ESCAPED=$(echo "$WEB_JWT_SECRET_KEY" | sed 's/[[\.*^$()+?{|]/
 CODE_MANAGEMENT_SECRET_ESCAPED=$(echo "$CODE_MANAGEMENT_SECRET" | sed 's/[[\.*^$()+?{|]/\\&/g')
 CODE_MANAGEMENT_WEBHOOK_TOKEN_ESCAPED=$(echo "$CODE_MANAGEMENT_WEBHOOK_TOKEN" | sed 's/[[\.*^$()+?{|]/\\&/g')
 API_CRYPTO_KEY_ESCAPED=$(echo "$API_CRYPTO_KEY" | sed 's/[[\.*^$()+?{|]/\\&/g')
+API_PORT_ESCAPED="3001"
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
     sed -i '' "s|JWT_SECRET=.*|JWT_SECRET=$JWT_SECRET_ESCAPED|" .env
@@ -135,6 +139,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     sed -i '' "s|CODE_MANAGEMENT_SECRET=.*|CODE_MANAGEMENT_SECRET=$CODE_MANAGEMENT_SECRET_ESCAPED|" .env
     sed -i '' "s|CODE_MANAGEMENT_WEBHOOK_TOKEN=.*|CODE_MANAGEMENT_WEBHOOK_TOKEN=$CODE_MANAGEMENT_WEBHOOK_TOKEN_ESCAPED|" .env
     sed -i '' "s|API_CRYPTO_KEY=.*|API_CRYPTO_KEY=$API_CRYPTO_KEY_ESCAPED|" .env
+    sed -i '' "s|API_PORT=.*|API_PORT=$API_PORT_ESCAPED|" .env
 else
     sed -i "s|JWT_SECRET=.*|JWT_SECRET=$JWT_SECRET_ESCAPED|" .env
     sed -i "s|JWT_REFRESH_SECRET=.*|JWT_REFRESH_SECRET=$JWT_REFRESH_SECRET_ESCAPED|" .env
@@ -145,6 +150,7 @@ else
     sed -i "s|CODE_MANAGEMENT_SECRET=.*|CODE_MANAGEMENT_SECRET=$CODE_MANAGEMENT_SECRET_ESCAPED|" .env
     sed -i "s|CODE_MANAGEMENT_WEBHOOK_TOKEN=.*|CODE_MANAGEMENT_WEBHOOK_TOKEN=$CODE_MANAGEMENT_WEBHOOK_TOKEN_ESCAPED|" .env
     sed -i "s|API_CRYPTO_KEY=.*|API_CRYPTO_KEY=$API_CRYPTO_KEY_ESCAPED|" .env
+    sed -i "s|API_PORT=.*|API_PORT=$API_PORT_ESCAPED|" .env
 fi
 
 echo -e "${GREEN}✅ Security keys generated and configured!${NC}"
@@ -175,7 +181,7 @@ echo -e "${BLUE}5.${NC} To verify everything is working:"
 echo -e "   ${YELLOW}yarn dev:health-check${NC}"
 echo ""
 echo -e "${BLUE}6.${NC} To access the API:"
-echo -e "   ${YELLOW}http://localhost:3331${NC}"
+echo -e "   ${YELLOW}http://localhost:3001${NC}"
 echo ""
 echo -e "${BLUE}💡 Or run everything at once:${NC}"
 echo -e "   ${YELLOW}yarn docker:start && yarn migrate:dev && yarn seed${NC}"

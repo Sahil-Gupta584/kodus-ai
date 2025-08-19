@@ -51,4 +51,14 @@ export class HealthController {
             return res.status(HttpStatus.SERVICE_UNAVAILABLE).json(response);
         }
     }
+
+    @Get('simple')
+    simpleCheck(@Res() res: Response) {
+        return res.status(HttpStatus.OK).json({
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            message: 'API is running',
+            uptime: Math.floor(process.uptime()),
+        });
+    }
 }
