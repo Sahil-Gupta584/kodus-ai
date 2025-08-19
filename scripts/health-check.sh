@@ -6,16 +6,38 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Load API_PORT from .env if it exists, otherwise default to 3001
-if [ -f .env ] && grep -q "^API_PORT=" .env; then
-    API_PORT=$(grep "^API_PORT=" .env | cut -d'=' -f2 | tr -d '"' | tr -d "'")
+# Load environment variables from .env if it exists
+if [ -f .env ]; then
+    # Load API_PORT
+    if grep -q "^API_PORT=" .env; then
+        API_PORT=$(grep "^API_PORT=" .env | cut -d'=' -f2 | tr -d '"' | tr -d "'")
+    else
+        API_PORT=3001
+    fi
+    
+    # Load database variables
+    if grep -q "^API_PG_DB_USERNAME=" .env; then
+        API_PG_DB_USERNAME=$(grep "^API_PG_DB_USERNAME=" .env | cut -d'=' -f2 | tr -d '"' | tr -d "'")
+    else
+        API_PG_DB_USERNAME=kodusdev
+    fi
+    
+    if grep -q "^API_PG_DB_DATABASE=" .env; then
+        API_PG_DB_DATABASE=$(grep "^API_PG_DB_DATABASE=" .env | cut -d'=' -f2 | tr -d '"' | tr -d "'")
+    else
+        API_PG_DB_DATABASE=kodus_db
+    fi
 else
+    # Default values if .env doesn't exist
     API_PORT=3001
+    API_PG_DB_USERNAME=kodusdev
+    API_PG_DB_DATABASE=kodus_db
 fi
 
 echo -e "${BLUE}🔍 Kodus AI - Health Check${NC}"
 echo -e "${BLUE}============================${NC}"
 echo -e "${BLUE}Using API Port: ${API_PORT}${NC}"
+echo -e "${BLUE}Using Database: ${API_PG_DB_DATABASE} (user: ${API_PG_DB_USERNAME})${NC}"
 echo ""
 
 check_service() {
@@ -87,6 +109,42 @@ check_port "PostgreSQL" 5432 || all_good=false
 check_port "MongoDB" 27017 || all_good=false
 echo ""
 
+echo -e "${YELLOW}🗄️ Checking database setup...${NC}"
+
+check_migrations() {
+    local result=$(docker exec db_postgres psql -U ${API_PG_DB_USERNAME:-kodusdev} -d ${API_PG_DB_DATABASE:-kodus_db} -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'migrations';" 2>/dev/null | tr -d ' ')
+    
+    if [ "$result" = "1" ]; then
+        local migration_count=$(docker exec db_postgres psql -U ${API_PG_DB_USERNAME:-kodusdev} -d ${API_PG_DB_DATABASE:-kodus_db} -t -c "SELECT COUNT(*) FROM migrations;" 2>/dev/null | tr -d ' ')
+        if [ "$migration_count" -gt "0" ]; then
+            echo -e "   ✅ Migrations: $migration_count executed"
+            return 0
+        else
+            echo -e "   ❌ Migrations: Table exists but no migrations found"
+            return 1
+        fi
+    else
+        echo -e "   ❌ Migrations: Table not found"
+        return 1
+    fi
+}
+
+check_seed() {
+    local result=$(docker exec db_postgres psql -U ${API_PG_DB_USERNAME:-kodusdev} -d ${API_PG_DB_DATABASE:-kodus_db} -t -c "SELECT COUNT(*) FROM automation;" 2>/dev/null | tr -d ' ')
+    
+    if [ "$?" -eq 0 ] && [ "$result" -gt "0" ]; then
+        echo -e "   ✅ Seed data: $result automations found"
+        return 0
+    else
+        echo -e "   ❌ Seed data: No automations found (run seed)"
+        return 1
+    fi
+}
+
+check_migrations || all_good=false
+check_seed || all_good=false
+echo ""
+
 echo -e "${YELLOW}🌐 Checking endpoints...${NC}"
 
 # Try simple health check first (no dependencies)
@@ -117,11 +175,36 @@ else
     echo -e "${BLUE}🔧 Development Status:${NC}"
     echo -e "   ${GREEN}✅ Containers: Running${NC}"
     echo -e "   ${GREEN}✅ Databases: Connected${NC}"
+    
+    # Check which specific things are missing
+    local migrations_ok=false
+    local seed_ok=false
+    
+    if check_migrations >/dev/null 2>&1; then
+        echo -e "   ${GREEN}✅ Migrations: Ready${NC}"
+        migrations_ok=true
+    else
+        echo -e "   ${RED}❌ Migrations: Not run yet${NC}"
+    fi
+    
+    if check_seed >/dev/null 2>&1; then
+        echo -e "   ${GREEN}✅ Seed data: Loaded${NC}"
+        seed_ok=true
+    else
+        echo -e "   ${RED}❌ Seed data: Not loaded yet${NC}"
+    fi
+    
     echo -e "   ${RED}❌ API HTTP: Not responding yet${NC}"
     echo ""
-    echo -e "${BLUE}💡 This is normal during startup. Try:${NC}"
-    echo -e "   ${YELLOW}yarn docker:logs     # Check API startup progress${NC}"
-    echo -e "   ${YELLOW}yarn docker:restart  # Restart if stuck${NC}"
+    
+    echo -e "${BLUE}💡 Next steps:${NC}"
+    if [ "$migrations_ok" = false ]; then
+        echo -e "   ${YELLOW}yarn migrate:dev     # Run database migrations${NC}"
+    fi
+    if [ "$seed_ok" = false ]; then
+        echo -e "   ${YELLOW}yarn seed           # Load initial data${NC}"
+    fi
+    echo -e "   ${YELLOW}yarn docker:logs    # Check API startup progress${NC}"
     echo -e "   ${YELLOW}./scripts/health-check.sh  # Re-run this check${NC}"
     echo ""
     echo -e "${BLUE}🕐 Wait 1-2 minutes for full startup${NC}"

@@ -95,6 +95,11 @@ GITHUB_CODE_MANAGEMENT_WEBHOOK=http://localhost:3001/github/webhook
 
 # API Configuration
 API_PORT=3001
+API_HOST=0.0.0.0
+
+# Database Configuration (for health checks)
+POSTGRES_USER=postgres
+POSTGRES_DB=kodus_db
 
 # LLM Integration Settings (Fixed Mode)
 API_LLM_PROVIDER_MODEL=gpt-3.5-turbo
@@ -165,7 +170,7 @@ echo ""
 echo -e "${GREEN}🎉 Setup completed successfully!${NC}"
 echo ""
 echo -e "${BLUE}📋 Next steps:${NC}"
-echo -e "${BLUE}1.${NC} Configure your OpenAI API key in the .env file:"
+echo -e "${BLUE}1.${NC} Configure your LLM API keys in the .env file:"
 echo -e "   ${YELLOW}API_OPEN_AI_API_KEY=your_api_key_here${NC}"
 echo ""
 echo -e "${BLUE}2.${NC} Start the services:"
@@ -182,7 +187,3 @@ echo -e "   ${YELLOW}yarn dev:health-check${NC}"
 echo ""
 echo -e "${BLUE}6.${NC} To access the API:"
 echo -e "   ${YELLOW}http://localhost:3001${NC}"
-echo ""
-echo -e "${BLUE}💡 Or run everything at once:${NC}"
-echo -e "   ${YELLOW}yarn docker:start && yarn migrate:dev && yarn seed${NC}"
-echo ""
