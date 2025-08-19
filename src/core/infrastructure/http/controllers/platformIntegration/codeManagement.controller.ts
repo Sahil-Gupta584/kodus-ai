@@ -17,6 +17,7 @@ import { GetCodeReviewStartedUseCase } from '@/core/application/use-cases/platfo
 import { FinishOnboardingDTO } from '../../dtos/finish-onboarding.dto';
 import { FinishOnboardingUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/finish-onboarding.use-case';
 import { DeleteIntegrationUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/delete-integration.use-case';
+import { DeleteIntegrationAndRepositoriesUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/delete-integration-and-repositories.use-case';
 import { GetRepositoryTreeUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-repository-tree.use-case';
 import { RepositoryTreeType } from '@/shared/utils/enums/repositoryTree.enum';
 
@@ -38,6 +39,7 @@ export class CodeManagementController {
         private readonly getCodeReviewStartedUseCase: GetCodeReviewStartedUseCase,
         private readonly finishOnboardingUseCase: FinishOnboardingUseCase,
         private readonly deleteIntegrationUseCase: DeleteIntegrationUseCase,
+        private readonly deleteIntegrationAndRepositoriesUseCase: DeleteIntegrationAndRepositoriesUseCase,
         private readonly getRepositoryTreeUseCase: GetRepositoryTreeUseCase,
     ) {}
 
@@ -168,6 +170,13 @@ export class CodeManagementController {
         @Query() query: { organizationId: string; teamId: string },
     ) {
         return await this.deleteIntegrationUseCase.execute(query);
+    }
+
+    @Delete('/delete-integration-and-repositories')
+    public async deleteIntegrationAndRepositories(
+        @Query() query: { organizationId: string; teamId: string },
+    ) {
+        return await this.deleteIntegrationAndRepositoriesUseCase.execute(query);
     }
 
     @Get('/get-repository-tree')
