@@ -96,6 +96,7 @@ interface IWebhookBitbucketPullRequest {
             href: string;
         };
     };
+    draft: boolean;
 }
 
 interface IWebhookBitbucketAccount {

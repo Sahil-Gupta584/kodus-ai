@@ -36,3 +36,4 @@ ignoredTitleKeywords: []
 automatedReviewActive: true
 pullRequestApprovalActive: false
 isRequestChangesActive: false
+runOnDraft: true

@@ -192,6 +192,7 @@ export class SavePullRequestUseCase {
             'unassigned',
             'active',
             'completed',
+            'ready_for_review',
         ] as const;
         const validObjectActions = [
             'open',

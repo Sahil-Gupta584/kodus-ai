@@ -64,6 +64,7 @@ export class AzureReposMappedPlatform implements IMappedPlatform {
                     defaultBranch: pullRequest.repository?.defaultBranch ?? '',
                 },
             },
+            isDraft: resource?.isDraft ?? false,
         };
     }
 

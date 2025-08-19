@@ -58,6 +58,7 @@ export class GithubMappedPlatform implements IMappedPlatform {
                 },
                 ref: payload?.pull_request?.base?.ref,
             },
+            isDraft: payload?.pull_request?.draft ?? false,
         };
     }
 
