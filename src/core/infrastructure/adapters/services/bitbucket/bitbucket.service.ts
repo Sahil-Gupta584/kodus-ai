@@ -532,7 +532,7 @@ export class BitbucketService
                 ? this._prStateMapReversed.get(state)
                 : this._prStateMapReversed.get(PullRequestState.ALL), // get all states if not specified
             sort: '-created_on', // Sort by creation date, descending
-            fields: '+values.participants,+values.reviewers',
+            fields: '+values.participants,+values.reviewers,+values.draft',
         });
 
         const pullRequests = await this.getPaginatedResults(
@@ -607,7 +607,7 @@ export class BitbucketService
                     repo_slug: `{${repository.id}}`,
                     workspace: `{${workspace}}`,
                     pull_request_id: prNumber,
-                    fields: '+values.participants,+values.reviewers',
+                    fields: '+values.participants,+values.reviewers,+values.draft',
                 })
             ).data;
 
@@ -1518,7 +1518,7 @@ export class BitbucketService
                         const isRemoved = file.status === 'removed';
                         const pathForContent = isRemoved
                             ? file.old?.path
-                            : file.new?.path ?? file.old?.path;
+                            : (file.new?.path ?? file.old?.path);
                         const commitForContent = isRemoved
                             ? pr.destination?.commit?.hash
                             : pr.source?.commit?.hash;
@@ -1538,7 +1538,7 @@ export class BitbucketService
 
                         const pathForDiff = isRemoved
                             ? file.old?.path
-                            : file.new?.path ?? file.old?.path;
+                            : (file.new?.path ?? file.old?.path);
 
                         const diff = pathForDiff
                             ? await bitbucketAPI.commits
@@ -3464,7 +3464,7 @@ export class BitbucketService
                     repo_slug: `{${repository.id}}`,
                     workspace: `{${workspace}}`,
                     q: queryString,
-                    fields: '+values.participants,+values.reviewers',
+                    fields: '+values.participants,+values.reviewers,+values.draft',
                 })
                 .then((res) => this.getPaginatedResults(bitbucketAPI, res));
 
@@ -4486,6 +4486,35 @@ export class BitbucketService
         }
     }
 
+    async isDraftPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<boolean> {
+        try {
+            const { organizationAndTeamData, repository, prNumber } = params;
+
+            const pr = await this.getPullRequest({
+                organizationAndTeamData,
+                repository,
+                prNumber,
+            });
+
+            return pr?.isDraft ?? false;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error checking if PR is draft',
+                context: BitbucketService.name,
+                serviceName: 'BitbucketService isDraftPullRequest',
+                error: error,
+                metadata: {
+                    params,
+                },
+            });
+            return false;
+        }
+    }
+
     //#region Transformers
 
     /**
@@ -4634,6 +4663,7 @@ export class BitbucketService
                 name: pullRequest?.author?.display_name ?? '',
                 id: this.sanitizeUUID(pullRequest?.author?.uuid ?? '') ?? '',
             },
+            isDraft: (pullRequest?.draft as boolean | undefined) ?? false,
         };
     }
 

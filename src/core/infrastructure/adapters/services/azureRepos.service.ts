@@ -980,26 +980,30 @@ export class AzureReposService
             if (typeof prNumber === 'number' && !Number.isNaN(prNumber)) {
                 try {
                     const commits =
-                        await this.azureReposRequestHelper.getCommitsForPullRequest({
-                            orgName,
-                            token,
-                            projectId,
-                            repositoryId: repository.id,
-                            prId: prNumber,
-                        });
+                        await this.azureReposRequestHelper.getCommitsForPullRequest(
+                            {
+                                orgName,
+                                token,
+                                projectId,
+                                repositoryId: repository.id,
+                                prId: prNumber,
+                            },
+                        );
 
                     const latestCommit = commits[commits.length - 1];
 
                     if (latestCommit?.commitId) {
                         content =
-                            await this.azureReposRequestHelper.getRepositoryContentFile({
-                                orgName,
-                                token,
-                                projectId,
-                                repositoryId: repository.id,
-                                commitId: latestCommit.commitId,
-                                filePath: file.filename,
-                            });
+                            await this.azureReposRequestHelper.getRepositoryContentFile(
+                                {
+                                    orgName,
+                                    token,
+                                    projectId,
+                                    repositoryId: repository.id,
+                                    commitId: latestCommit.commitId,
+                                    filePath: file.filename,
+                                },
+                            );
                     }
                 } catch {
                     // Ignore commit fetch errors and try branch fallback below
@@ -1014,46 +1018,70 @@ export class AzureReposService
                     try {
                         branch = await this.getDefaultBranch({
                             organizationAndTeamData,
-                            repository: { id: repository.id, name: repository.name },
+                            repository: {
+                                id: repository.id,
+                                name: repository.name,
+                            },
                         });
                     } catch {}
                 }
 
                 if (branch) {
                     // Normalize refs/heads/* to plain branch name for Azure Items API
-                    const normalizedBranch = branch.replace(/^refs\/heads\//, '');
+                    const normalizedBranch = branch.replace(
+                        /^refs\/heads\//,
+                        '',
+                    );
 
                     try {
-                        content = await this.azureReposRequestHelper.getRepositoryContentFile({
-                            orgName,
-                            token,
-                            projectId,
-                            repositoryId: repository.id,
-                            branch: normalizedBranch,
-                            filePath: file.filename,
-                        });
-                    } catch (e: any) {
-                        // Fallback: if branch lookup fails (e.g. deleted or PR merged), try latest PR commit again
-                        const prNumberFallback: number | undefined = (pullRequest as any)?.number;
-                        if (typeof prNumberFallback === 'number' && !Number.isNaN(prNumberFallback)) {
-                            try {
-                                const commitsFallback = await this.azureReposRequestHelper.getCommitsForPullRequest({
+                        content =
+                            await this.azureReposRequestHelper.getRepositoryContentFile(
+                                {
                                     orgName,
                                     token,
                                     projectId,
                                     repositoryId: repository.id,
-                                    prId: prNumberFallback,
-                                });
-                                const latestCommitFallback = commitsFallback?.[commitsFallback.length - 1];
+                                    branch: normalizedBranch,
+                                    filePath: file.filename,
+                                },
+                            );
+                    } catch (e: any) {
+                        // Fallback: if branch lookup fails (e.g. deleted or PR merged), try latest PR commit again
+                        const prNumberFallback: number | undefined = (
+                            pullRequest as any
+                        )?.number;
+                        if (
+                            typeof prNumberFallback === 'number' &&
+                            !Number.isNaN(prNumberFallback)
+                        ) {
+                            try {
+                                const commitsFallback =
+                                    await this.azureReposRequestHelper.getCommitsForPullRequest(
+                                        {
+                                            orgName,
+                                            token,
+                                            projectId,
+                                            repositoryId: repository.id,
+                                            prId: prNumberFallback,
+                                        },
+                                    );
+                                const latestCommitFallback =
+                                    commitsFallback?.[
+                                        commitsFallback.length - 1
+                                    ];
                                 if (latestCommitFallback?.commitId) {
-                                    content = await this.azureReposRequestHelper.getRepositoryContentFile({
-                                        orgName,
-                                        token,
-                                        projectId,
-                                        repositoryId: repository.id,
-                                        commitId: latestCommitFallback.commitId,
-                                        filePath: file.filename,
-                                    });
+                                    content =
+                                        await this.azureReposRequestHelper.getRepositoryContentFile(
+                                            {
+                                                orgName,
+                                                token,
+                                                projectId,
+                                                repositoryId: repository.id,
+                                                commitId:
+                                                    latestCommitFallback.commitId,
+                                                filePath: file.filename,
+                                            },
+                                        );
                                 }
                             } catch {}
                         }
@@ -3908,6 +3936,36 @@ export class AzureReposService
         }
     }
 
+    async isDraftPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<boolean> {
+        try {
+            const { organizationAndTeamData, repository, prNumber } = params;
+
+            const pr = await this.getPullRequest({
+                organizationAndTeamData,
+                repository,
+                prNumber,
+            });
+
+            return pr?.isDraft ?? false;
+        } catch (error) {
+            this.logger.error({
+                message: `Error checking if PR #${params.prNumber} is draft in repository ${params.repository.name}`,
+                context: this.isDraftPullRequest.name,
+                error: error,
+                metadata: {
+                    organizationAndTeamData: params.organizationAndTeamData,
+                    repository: params.repository.name,
+                    prNumber: params.prNumber,
+                },
+            });
+            return false;
+        }
+    }
+
     //#region Transformers
 
     /**
@@ -4029,6 +4087,7 @@ export class AzureReposService
                 name: pr?.createdBy?.displayName ?? '',
                 id: pr?.createdBy?.id ?? '',
             },
+            isDraft: pr?.isDraft ?? false,
         };
     }
 

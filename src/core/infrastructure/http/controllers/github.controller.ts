@@ -43,7 +43,8 @@ export class GithubController {
                 payload?.action !== 'opened' &&
                 payload?.action !== 'synchronize' &&
                 payload?.action !== 'closed' &&
-                payload?.action !== 'reopened'
+                payload?.action !== 'reopened' &&
+                payload?.action !== 'ready_for_review'
             ) {
                 return res.status(HttpStatus.OK).send('Webhook received');
             }

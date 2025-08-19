@@ -210,4 +210,10 @@ export interface ICodeManagementService
         repository: Partial<Repository>;
         prNumber: number;
     }): Promise<any | null>;
+
+    isDraftPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<boolean>;
 }

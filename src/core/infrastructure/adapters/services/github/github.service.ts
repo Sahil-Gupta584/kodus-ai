@@ -5191,6 +5191,33 @@ export class GithubService
         return Promise.resolve(commentBody.trim());
     }
 
+    async isDraftPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<boolean> {
+        try {
+            const { organizationAndTeamData, repository, prNumber } = params;
+
+            const pr = await this.getPullRequest({
+                organizationAndTeamData,
+                repository,
+                prNumber,
+            });
+
+            return pr?.isDraft ?? false;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error checking if pull request is draft',
+                context: GithubService.name,
+                serviceName: 'GithubService isDraftPullRequest',
+                error: error.message,
+                metadata: params,
+            });
+            return false;
+        }
+    }
+
     //#region Transformers
 
     /**
@@ -5321,6 +5348,7 @@ export class GithubService
                 name: pullRequest?.user?.name ?? '',
                 id: pullRequest?.user?.id?.toString() ?? '',
             },
+            isDraft: pullRequest?.draft ?? false,
         };
     }
 

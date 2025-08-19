@@ -114,6 +114,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         const basicValidation = this.shouldProcessPR(
             context.pullRequest.title,
             context.pullRequest.base.ref,
+            context.pullRequest.isDraft,
             config,
             context.origin || '',
         );
@@ -442,6 +443,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
     private shouldProcessPR(
         title: string,
         baseBranch: string,
+        isDraft: boolean,
         config: any,
         origin: string,
     ): boolean {
@@ -462,6 +464,10 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         }
 
         if (!config.baseBranches?.includes(baseBranch)) {
+            return false;
+        }
+
+        if (isDraft && !config?.runOnDraft) {
             return false;
         }
 

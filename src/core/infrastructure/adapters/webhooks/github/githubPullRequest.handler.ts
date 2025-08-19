@@ -55,6 +55,7 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                 'synchronize',
                 'closed',
                 'reopened',
+                'ready_for_review',
             ];
 
             // If the action is in the allowed list, we can process it
@@ -345,6 +346,7 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                                     login: data?.user?.login,
                                     name: data?.user?.name,
                                 },
+                                isDraft: data?.isDraft ?? false,
                             },
                         };
                     }

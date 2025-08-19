@@ -3277,6 +3277,33 @@ export class GitlabService
         }
     }
 
+    async isDraftPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<boolean> {
+        try {
+            const { organizationAndTeamData, repository, prNumber } = params;
+
+            const pr = await this.getPullRequest({
+                organizationAndTeamData,
+                repository,
+                prNumber,
+            });
+
+            return pr?.isDraft ?? false;
+        } catch (error) {
+            this.logger.error({
+                message: `Error checking if PR #${params.prNumber} is a draft`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService isDraftPullRequest',
+                error: error,
+                metadata: params,
+            });
+            return false;
+        }
+    }
+
     //#region Transformers
 
     /**
@@ -3377,9 +3404,9 @@ export class GitlabService
                     id: r?.id?.toString() ?? '',
                 })) ?? [],
             sourceRefName: mergeRequest?.source_branch ?? '', // TODO: remove, legacy, use head.ref
-                head: {
+            head: {
                 ref: mergeRequest?.source_branch ?? '',
-                    repo: {
+                repo: {
                     id: mergeRequest?.source_project_id?.toString() ?? '',
                     name: '',
                     defaultBranch: '',
@@ -3387,20 +3414,21 @@ export class GitlabService
                 },
             },
             targetRefName: mergeRequest?.target_branch ?? '', // TODO: remove, legacy, use base.ref
-                base: {
+            base: {
                 ref: mergeRequest?.target_branch ?? '',
-                    repo: {
+                repo: {
                     id: repository?.id ?? '',
                     name: repository?.name ?? '',
                     defaultBranch: repository?.default_branch ?? '',
                     fullName: repository?.name ?? '',
-                    },
                 },
-                user: {
+            },
+            user: {
                 login: mergeRequest?.author?.username ?? '',
                 name: mergeRequest?.author?.name ?? '',
                 id: mergeRequest?.author?.id?.toString() ?? '',
             },
+            isDraft: mergeRequest?.draft ?? false,
         };
     }
 

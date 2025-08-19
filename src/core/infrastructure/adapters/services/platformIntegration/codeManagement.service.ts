@@ -1145,4 +1145,23 @@ export class CodeManagementService implements ICodeManagementService {
 
         return codeManagementService.updateResponseToComment(params);
     }
+
+    async isDraftPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<boolean> {
+        const type = await this.getTypeIntegration(
+            params.organizationAndTeamData,
+        );
+
+        if (!type) {
+            return false;
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.isDraftPullRequest(params);
+    }
 }
