@@ -211,6 +211,23 @@ export class IssuesRepository implements IIssuesRepository {
             throw error;
         }
     }
+
+    async updateStatusByIds(
+        uuids: string[],
+        status: IssueStatus,
+    ): Promise<IssuesEntity[] | null> {
+        try {
+            await this.issuesModel.updateMany(
+                { _id: { $in: uuids } },
+                { $set: { status: status } },
+            );
+
+            const docs = await this.issuesModel.find({ _id: { $in: uuids } });
+            return mapSimpleModelsToEntities(docs, IssuesEntity);
+        } catch (error) {
+            throw error;
+        }
+    }
     //#endregion
 
     async addSuggestionIds(

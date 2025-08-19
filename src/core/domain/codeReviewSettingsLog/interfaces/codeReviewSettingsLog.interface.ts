@@ -15,7 +15,7 @@ export interface ICodeReviewSettingsLog {
         name?: string;
     };
     directory?: {
-        id: string;
+        id?: string;
         path?: string;
     };
     changedData: ChangedData[];

@@ -86,10 +86,7 @@ export class KodyIssuesManagementService
             }
 
             // 4. Resolver issues que podem ter sido corrigidas
-            await this.resolveExistingIssues(
-                params,
-                params.prFiles,
-            );
+            await this.resolveExistingIssues(params, params.prFiles);
 
             await this.pullRequestsService.updateSyncedWithIssuesFlag(
                 params.pullRequest.number,
@@ -274,6 +271,9 @@ export class KodyIssuesManagementService
 
             const prChangedFiles = await this.getChangedFiles(context);
 
+            // Array para coletar todas as promises de atualização
+            const updatePromises: Promise<any>[] = [];
+
             for (const file of files) {
                 const currentCode = prChangedFiles.find(
                     (f) => f.filename === file.path,
@@ -291,6 +291,16 @@ export class KodyIssuesManagementService
                 );
 
                 if (!openIssues?.length) continue;
+
+                if (fileData.status === 'removed') {
+                    updatePromises.push(
+                        this.issuesService.updateStatusByIds(
+                            openIssues.map((issue) => issue.uuid),
+                            IssueStatus.DISMISSED,
+                        ),
+                    );
+                    continue;
+                }
 
                 const promptData = {
                     filePath: file.path,
@@ -323,6 +333,11 @@ export class KodyIssuesManagementService
                         }
                     }
                 }
+            }
+
+            // Executar todas as operações de atualização em paralelo
+            if (updatePromises.length > 0) {
+                await Promise.all(updatePromises);
             }
         } catch (error) {
             this.logger.error({

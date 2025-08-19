@@ -5,6 +5,8 @@ import {
 import {
     IMembers,
     ITeamMember,
+    IInviteResult,
+    IUpdateOrCreateMembersResponse,
 } from '@/core/domain/teamMembers/interfaces/team-members.interface';
 import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import { CommunicationService } from './platformIntegration/communication.service';
@@ -194,10 +196,11 @@ export class TeamMemberService implements ITeamMemberService {
     async updateOrCreateMembers(
         members: IMembers[],
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<any> {
+    ): Promise<IUpdateOrCreateMembersResponse> {
         try {
             const emails = members.map((member) => member.email);
             const usersToSendInvite = [];
+            const results: IInviteResult[] = [];
 
             const { success, problematicUserIds } =
                 await this.checkExistingUsersInOtherOrganizations(
@@ -205,8 +208,36 @@ export class TeamMemberService implements ITeamMemberService {
                     organizationAndTeamData.organizationId,
                 );
 
+            // Process problematic users (users already in other organizations)
+            if (problematicUserIds.length > 0) {
+                for (const problematicUser of problematicUserIds) {
+                    results.push({
+                        email: problematicUser.email,
+                        status: 'user_already_registered_in_other_organization',
+                        uuid: problematicUser.uuid,
+                        message: 'User already registered in another organization'
+                    });
+                }
+            }
+
+            // If there are problematic users, we still process the valid ones
             if (!success) {
-                return { success: false, problematicUserIds };
+                // Continue processing valid users but return partial success
+                const validEmails = emails.filter(email =>
+                    !problematicUserIds.some(pu => pu.email === email)
+                );
+
+                if (validEmails.length === 0) {
+                    return {
+                        success: false,
+                        results
+                    };
+                }
+
+                // Filter members to only include valid ones
+                members = members.filter(member =>
+                    validEmails.includes(member.email)
+                );
             }
 
             members = await this.getUserIdFromMembers(
@@ -246,6 +277,13 @@ export class TeamMemberService implements ITeamMemberService {
                         member,
                     );
                 }
+
+                // Add successful result
+                results.push({
+                    email: member.email,
+                    status: 'invite_sent',
+                    message: 'Invite sent successfully'
+                });
             }
 
             if (usersToSendInvite?.length > 0) {
@@ -255,7 +293,10 @@ export class TeamMemberService implements ITeamMemberService {
                 );
             }
 
-            return { success: true };
+            return {
+                success: true,
+                results
+            };
         } catch (error) {
             throw new Error(error);
         }
