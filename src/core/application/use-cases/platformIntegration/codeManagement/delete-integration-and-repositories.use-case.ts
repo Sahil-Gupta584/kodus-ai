@@ -260,7 +260,7 @@ export class DeleteIntegrationAndRepositoriesUseCase {
                     const result = await this.kodyRulesService.updateRulesStatusByFilter(
                         organizationId,
                         repositoryId,
-                        undefined, // directoryId - undefined para inativar todas as rules do repositório
+                        undefined,
                         KodyRulesStatus.DELETED,
                     );
 
