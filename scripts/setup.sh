@@ -50,65 +50,12 @@ if [ ! -f .env ]; then
         cp .env.example .env
         echo -e "${GREEN}✅ .env file created from .env.example${NC}"
     else
-        echo -e "${RED}❌ .env.example not found. Creating basic .env...${NC}"
-        cat > .env << EOF
-# Cloud Mode Configuration
-API_CLOUD_MODE=false
-
-# PostgreSQL Configuration
-PG_DB_HOST=localhost
-PG_DB_PORT=5432
-PG_DB_USERNAME=kodusdev
-PG_DB_PASSWORD=123456
-PG_DB_DATABASE=kodus_db
-
-# MongoDB Configuration
-MG_DB_HOST=localhost
-MG_DB_PORT=27017
-MG_DB_USERNAME=kodusdev
-MG_DB_PASSWORD=123456
-MG_DB_DATABASE=kodus_db
-
-# JWT Configuration
-JWT_EXPIRES_IN=365d
-JWT_SECRET=
-JWT_REFRESH_SECRET=
-JWT_REFRESH_EXPIRES_IN=7d
-
-# API JWT Configuration
-API_JWT_SECRET=
-API_JWT_REFRESHSECRET=
-
-# Web NextAuth Configuration
-WEB_NEXTAUTH_SECRET=
-WEB_JWT_SECRET_KEY=
-
-# Code Management Service Configuration
-CODE_MANAGEMENT_SECRET=
-CODE_MANAGEMENT_WEBHOOK_TOKEN=
-
-# Crypto Configuration
-API_CRYPTO_KEY=
-
-# GitHub Configuration
-GITHUB_CODE_MANAGEMENT_WEBHOOK=http://localhost:3001/github/webhook
-
-# API Configuration
-API_PORT=3001
-API_HOST=0.0.0.0
-
-# Database Configuration (for health checks)
-POSTGRES_USER=postgres
-POSTGRES_DB=kodus_db
-
-# LLM Integration Settings (Fixed Mode)
-API_LLM_PROVIDER_MODEL=gpt-3.5-turbo
-API_OPENAI_FORCE_BASE_URL=https://api.openai.com/v1
-API_OPEN_AI_API_KEY=
-EOF
+        echo -e "${RED}❌ .env.example not found!${NC}"
+        echo -e "${RED}Please create a .env.example file first.${NC}"
+        exit 1
     fi
 else
-    echo -e "${YELLOW}⚠️  .env file already exists. Skipping creation.${NC}"
+    echo -e "${YELLOW}⚠️  .env file already exists. Using existing file.${NC}"
 fi
 
 echo -e "${YELLOW}🔐 Generating security keys...${NC}"
@@ -116,8 +63,7 @@ JWT_SECRET=$(generate_security_key)
 JWT_REFRESH_SECRET=$(generate_security_key)
 API_JWT_SECRET=$(generate_security_key)
 API_JWT_REFRESHSECRET=$(generate_security_key)
-WEB_NEXTAUTH_SECRET=$(generate_security_key)
-WEB_JWT_SECRET_KEY=$(generate_security_key)
+
 CODE_MANAGEMENT_SECRET=$(generate_hex_key)
 CODE_MANAGEMENT_WEBHOOK_TOKEN=$(generate_webhook_token)
 API_CRYPTO_KEY=$(generate_hex_key)
@@ -127,8 +73,7 @@ JWT_SECRET_ESCAPED=$(echo "$JWT_SECRET" | sed 's/[[\.*^$()+?{|]/\\&/g')
 JWT_REFRESH_SECRET_ESCAPED=$(echo "$JWT_REFRESH_SECRET" | sed 's/[[\.*^$()+?{|]/\\&/g')
 API_JWT_SECRET_ESCAPED=$(echo "$API_JWT_SECRET" | sed 's/[[\.*^$()+?{|]/\\&/g')
 API_JWT_REFRESHSECRET_ESCAPED=$(echo "$API_JWT_REFRESHSECRET" | sed 's/[[\.*^$()+?{|]/\\&/g')
-WEB_NEXTAUTH_SECRET_ESCAPED=$(echo "$WEB_NEXTAUTH_SECRET" | sed 's/[[\.*^$()+?{|]/\\&/g')
-WEB_JWT_SECRET_KEY_ESCAPED=$(echo "$WEB_JWT_SECRET_KEY" | sed 's/[[\.*^$()+?{|]/\\&/g')
+
 CODE_MANAGEMENT_SECRET_ESCAPED=$(echo "$CODE_MANAGEMENT_SECRET" | sed 's/[[\.*^$()+?{|]/\\&/g')
 CODE_MANAGEMENT_WEBHOOK_TOKEN_ESCAPED=$(echo "$CODE_MANAGEMENT_WEBHOOK_TOKEN" | sed 's/[[\.*^$()+?{|]/\\&/g')
 API_CRYPTO_KEY_ESCAPED=$(echo "$API_CRYPTO_KEY" | sed 's/[[\.*^$()+?{|]/\\&/g')
@@ -139,8 +84,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     sed -i '' "s|JWT_REFRESH_SECRET=.*|JWT_REFRESH_SECRET=$JWT_REFRESH_SECRET_ESCAPED|" .env
     sed -i '' "s|API_JWT_SECRET=.*|API_JWT_SECRET=$API_JWT_SECRET_ESCAPED|" .env
     sed -i '' "s|API_JWT_REFRESHSECRET=.*|API_JWT_REFRESHSECRET=$API_JWT_REFRESHSECRET_ESCAPED|" .env
-    sed -i '' "s|WEB_NEXTAUTH_SECRET=.*|WEB_NEXTAUTH_SECRET=$WEB_NEXTAUTH_SECRET_ESCAPED|" .env
-    sed -i '' "s|WEB_JWT_SECRET_KEY=.*|WEB_JWT_SECRET_KEY=$WEB_JWT_SECRET_KEY_ESCAPED|" .env
+
     sed -i '' "s|CODE_MANAGEMENT_SECRET=.*|CODE_MANAGEMENT_SECRET=$CODE_MANAGEMENT_SECRET_ESCAPED|" .env
     sed -i '' "s|CODE_MANAGEMENT_WEBHOOK_TOKEN=.*|CODE_MANAGEMENT_WEBHOOK_TOKEN=$CODE_MANAGEMENT_WEBHOOK_TOKEN_ESCAPED|" .env
     sed -i '' "s|API_CRYPTO_KEY=.*|API_CRYPTO_KEY=$API_CRYPTO_KEY_ESCAPED|" .env
@@ -150,8 +94,7 @@ else
     sed -i "s|JWT_REFRESH_SECRET=.*|JWT_REFRESH_SECRET=$JWT_REFRESH_SECRET_ESCAPED|" .env
     sed -i "s|API_JWT_SECRET=.*|API_JWT_SECRET=$API_JWT_SECRET_ESCAPED|" .env
     sed -i "s|API_JWT_REFRESHSECRET=.*|API_JWT_REFRESHSECRET=$API_JWT_REFRESHSECRET_ESCAPED|" .env
-    sed -i "s|WEB_NEXTAUTH_SECRET=.*|WEB_NEXTAUTH_SECRET=$WEB_NEXTAUTH_SECRET_ESCAPED|" .env
-    sed -i "s|WEB_JWT_SECRET_KEY=.*|WEB_JWT_SECRET_KEY=$WEB_JWT_SECRET_KEY_ESCAPED|" .env
+
     sed -i "s|CODE_MANAGEMENT_SECRET=.*|CODE_MANAGEMENT_SECRET=$CODE_MANAGEMENT_SECRET_ESCAPED|" .env
     sed -i "s|CODE_MANAGEMENT_WEBHOOK_TOKEN=.*|CODE_MANAGEMENT_WEBHOOK_TOKEN=$CODE_MANAGEMENT_WEBHOOK_TOKEN_ESCAPED|" .env
     sed -i "s|API_CRYPTO_KEY=.*|API_CRYPTO_KEY=$API_CRYPTO_KEY_ESCAPED|" .env
