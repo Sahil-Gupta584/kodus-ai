@@ -61,7 +61,10 @@
         "dev:yalc:watch": "docker compose -f docker-compose.dev.small.yml exec -d kodus-orchestrator sh -lc \"cd packages/kodus-flow && (yarn build:watch &); (chokidar 'dist/**/*' -c 'yalc push --changed --sig' & )\"",
         "yalc:update:flow": "docker compose -f docker-compose.dev.small.yml exec kodus-orchestrator sh -lc \"cd /usr/src/app && yalc update @kodus/flow && yarn install\"",
         "yalc:remove:flow": "docker compose -f docker-compose.dev.small.yml exec kodus-orchestrator sh -lc \"cd /usr/src/app && yalc remove @kodus/flow && yarn install\"",
-        "dev:yalc:clean": "docker compose -f docker-compose.dev.small.yml down && docker volume rm kodus-ai_yalc_store kodus-ai_node_modules_cache || true"
+        "dev:yalc:clean": "docker compose -f docker-compose.dev.small.yml down && docker volume rm kodus-ai_yalc_store kodus-ai_node_modules_cache || true",
+        "tunnel": "node scripts/tunnel.js",
+        "tunnel:start": "yarn tunnel",
+        "dev:with-tunnel": "yarn tunnel & yarn docker:start"
     },
     "dependencies": {
         "@anthropic-ai/sdk": "^0.59.0",
@@ -213,6 +216,7 @@
         "eslint-plugin-prettier": "^5.5.4",
         "husky": "^9.1.7",
         "jest": "^30.0.5",
+        "localtunnel": "^2.0.2",
         "nodemon": "^3.1.10",
         "prettier": "^3.6.2",
         "supertest": "^7.1.4",
