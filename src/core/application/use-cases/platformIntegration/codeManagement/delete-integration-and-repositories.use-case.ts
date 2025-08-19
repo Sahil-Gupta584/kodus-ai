@@ -51,7 +51,7 @@ export class DeleteIntegrationAndRepositoriesUseCase {
         const { organizationId, teamId } = params;
 
         try {
-            // 1. Primeiro, obter a lista de repositórios antes de deletar as configurações
+            // 1. First, get the list of repositories before deleting the configurations
             const repositoriesIds = await this.getRepositoriesIds(teamId);
 
             this.logger.log({
@@ -64,7 +64,7 @@ export class DeleteIntegrationAndRepositoriesUseCase {
                 },
             });
 
-            // 2. Executar o deleteIntegrationUseCase existente (remove integração e config repositories)
+            // 2. Execute the existing deleteIntegrationUseCase (remove integration and config repositories)
             await this.deleteIntegrationUseCase.execute(params);
 
             this.logger.log({
@@ -73,7 +73,7 @@ export class DeleteIntegrationAndRepositoriesUseCase {
                 metadata: { organizationId, teamId },
             });
 
-            // 3. Remover repositórios do campo repositories da tabela parameters (code_review_config)
+            // 3. Remove the repositories array from the code_review_config parameter
             await this.removeRepositoriesFromCodeReviewConfig(teamId);
 
             this.logger.log({
@@ -82,7 +82,7 @@ export class DeleteIntegrationAndRepositoriesUseCase {
                 metadata: { organizationId, teamId },
             });
 
-            // 4. Deletar pullRequestMessages associadas aos repositórios
+            // 4. Delete pullRequestMessages associated with the repositories
             await this.deletePullRequestMessages(organizationId, repositoriesIds);
 
             this.logger.log({
@@ -131,7 +131,7 @@ export class DeleteIntegrationAndRepositoriesUseCase {
 
     private async getRepositoriesIds(teamId: string): Promise<string[]> {
         try {
-            // Buscar o parâmetro code_review_config para obter a lista de repositórios
+            // Get the code_review_config parameter to get the list of repositories
             const codeReviewConfig = await this.parametersService.findOne({
                 configKey: ParametersKey.CODE_REVIEW_CONFIG,
                 team: { uuid: teamId },
@@ -176,7 +176,7 @@ export class DeleteIntegrationAndRepositoriesUseCase {
                 return;
             }
 
-            // Remover o array de repositórios do configValue
+            // Remove the repositories array from the configValue
             const updatedConfigValue = {
                 ...codeReviewConfig.configValue,
                 repositories: [],
@@ -204,7 +204,6 @@ export class DeleteIntegrationAndRepositoriesUseCase {
 
     private async deletePullRequestMessages(organizationId: string, repositoriesIds: string[]): Promise<void> {
         try {
-            // Deletar mensagens para cada repositório
             const deletionPromises = repositoriesIds.map(async (repositoryId) => {
                 try {
                     const wasDeleted = await this.pullRequestMessagesService.deleteByFilter({
@@ -234,7 +233,6 @@ export class DeleteIntegrationAndRepositoriesUseCase {
                             repositoryId,
                         },
                     });
-                    // Não falhar o processo principal se houver erro em um repositório específico
                     return false;
                 }
             });
@@ -257,7 +255,6 @@ export class DeleteIntegrationAndRepositoriesUseCase {
 
     private async inactivateKodyRules(organizationId: string, repositoriesIds: string[]): Promise<void> {
         try {
-            // Inativar Kody rules para cada repositório
             const inactivationPromises = repositoriesIds.map(async (repositoryId) => {
                 try {
                     const result = await this.kodyRulesService.updateRulesStatusByFilter(
@@ -288,7 +285,7 @@ export class DeleteIntegrationAndRepositoriesUseCase {
                             repositoryId,
                         },
                     });
-                    // Não falhar o processo principal se houver erro em um repositório específico
+                    // Do not fail the main process if there is an error in a specific repository
                     return null;
                 }
             });
