@@ -1,27 +1,20 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DeleteIntegrationUseCase } from './delete-integration.use-case';
-import { INTEGRATION_CONFIG_SERVICE_TOKEN } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
-import { IIntegrationConfigService } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { PARAMETERS_SERVICE_TOKEN } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { IParametersService } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { PULL_REQUEST_MESSAGES_SERVICE_TOKEN } from '@/core/domain/pullRequestMessages/contracts/pullRequestMessages.service.contract';
 import { IPullRequestMessagesService } from '@/core/domain/pullRequestMessages/contracts/pullRequestMessages.service.contract';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { IKodyRulesService } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
-import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { KodyRulesStatus } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { ConfigLevel } from '@/config/types/general/pullRequestMessages.type';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { REQUEST } from '@nestjs/core';
 
 @Injectable()
 export class DeleteIntegrationAndRepositoriesUseCase {
     constructor(
         private readonly deleteIntegrationUseCase: DeleteIntegrationUseCase,
-
-        @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
-        private readonly integrationConfigService: IIntegrationConfigService,
 
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
@@ -33,15 +26,6 @@ export class DeleteIntegrationAndRepositoriesUseCase {
         private readonly kodyRulesService: IKodyRulesService,
 
         private readonly logger: PinoLoggerService,
-
-        @Inject(REQUEST)
-        private readonly request: Request & {
-            user: {
-                organization: { uuid: string };
-                uuid: string;
-                email: string;
-            };
-        },
     ) {}
 
     async execute(params: {
@@ -52,10 +36,14 @@ export class DeleteIntegrationAndRepositoriesUseCase {
 
         try {
             // 1. First, get the list of repositories before deleting the configurations
-            const repositoriesIds = await this.getRepositoriesIds(teamId);
+            const repositoriesIds = await this.getRepositoriesIds(
+                teamId,
+                organizationId,
+            );
 
             this.logger.log({
-                message: 'Starting complete integration and repositories deletion',
+                message:
+                    'Starting complete integration and repositories deletion',
                 context: DeleteIntegrationAndRepositoriesUseCase.name,
                 metadata: {
                     organizationId,
@@ -74,7 +62,10 @@ export class DeleteIntegrationAndRepositoriesUseCase {
             });
 
             // 3. Remove the repositories array from the code_review_config parameter
-            await this.removeRepositoriesFromCodeReviewConfig(teamId);
+            await this.removeRepositoriesFromCodeReviewConfig(
+                teamId,
+                organizationId,
+            );
 
             this.logger.log({
                 message: 'Repositories removed from code review config',
@@ -83,7 +74,10 @@ export class DeleteIntegrationAndRepositoriesUseCase {
             });
 
             // 4. Delete pullRequestMessages associated with the repositories
-            await this.deletePullRequestMessages(organizationId, repositoriesIds);
+            await this.deletePullRequestMessages(
+                organizationId,
+                repositoriesIds,
+            );
 
             this.logger.log({
                 message: 'Pull request messages deleted successfully',
@@ -109,7 +103,8 @@ export class DeleteIntegrationAndRepositoriesUseCase {
             });
 
             this.logger.log({
-                message: 'Complete integration and repositories deletion finished successfully',
+                message:
+                    'Complete integration and repositories deletion finished successfully',
                 context: DeleteIntegrationAndRepositoriesUseCase.name,
                 metadata: {
                     organizationId,
@@ -117,10 +112,10 @@ export class DeleteIntegrationAndRepositoriesUseCase {
                     repositoriesCount: repositoriesIds.length,
                 },
             });
-
         } catch (error) {
             this.logger.error({
-                message: 'Error during complete integration and repositories deletion',
+                message:
+                    'Error during complete integration and repositories deletion',
                 context: DeleteIntegrationAndRepositoriesUseCase.name,
                 error: error,
                 metadata: { organizationId, teamId },
@@ -129,7 +124,10 @@ export class DeleteIntegrationAndRepositoriesUseCase {
         }
     }
 
-    private async getRepositoriesIds(teamId: string): Promise<string[]> {
+    private async getRepositoriesIds(
+        teamId: string,
+        organizationId: string,
+    ): Promise<string[]> {
         try {
             // Get the code_review_config parameter to get the list of repositories
             const codeReviewConfig = await this.parametersService.findOne({
@@ -148,19 +146,26 @@ export class DeleteIntegrationAndRepositoriesUseCase {
 
             const repositories = codeReviewConfig.configValue.repositories;
             return repositories.map((repo: any) => repo.id.toString());
-
         } catch (error) {
             this.logger.error({
                 message: 'Error getting repositories IDs',
                 context: DeleteIntegrationAndRepositoriesUseCase.name,
                 error: error,
-                metadata: { teamId },
+                metadata: {
+                    organizationAndTeamData: {
+                        teamId,
+                        organizationId,
+                    },
+                },
             });
-            return [];
+            throw error;
         }
     }
 
-    private async removeRepositoriesFromCodeReviewConfig(teamId: string): Promise<void> {
+    private async removeRepositoriesFromCodeReviewConfig(
+        teamId: string,
+        organizationId: string,
+    ): Promise<void> {
         try {
             const codeReviewConfig = await this.parametersService.findOne({
                 configKey: ParametersKey.CODE_REVIEW_CONFIG,
@@ -171,7 +176,12 @@ export class DeleteIntegrationAndRepositoriesUseCase {
                 this.logger.warn({
                     message: 'Code review config not found',
                     context: DeleteIntegrationAndRepositoriesUseCase.name,
-                    metadata: { teamId },
+                    metadata: {
+                        organizationAndTeamData: {
+                            teamId,
+                            organizationId,
+                        },
+                    },
                 });
                 return;
             }
@@ -186,59 +196,73 @@ export class DeleteIntegrationAndRepositoriesUseCase {
                 ParametersKey.CODE_REVIEW_CONFIG,
                 updatedConfigValue,
                 {
-                    organizationId: this.request.user.organization.uuid,
+                    organizationId,
                     teamId,
                 },
             );
-
         } catch (error) {
             this.logger.error({
                 message: 'Error removing repositories from code review config',
                 context: DeleteIntegrationAndRepositoriesUseCase.name,
                 error: error,
-                metadata: { teamId },
+                metadata: {
+                    organizationAndTeamData: {
+                        teamId,
+                        organizationId,
+                    },
+                },
             });
             throw error;
         }
     }
 
-    private async deletePullRequestMessages(organizationId: string, repositoriesIds: string[]): Promise<void> {
+    private async deletePullRequestMessages(
+        organizationId: string,
+        repositoriesIds: string[],
+    ): Promise<void> {
         try {
-            const deletionPromises = repositoriesIds.map(async (repositoryId) => {
-                try {
-                    const wasDeleted = await this.pullRequestMessagesService.deleteByFilter({
-                        organizationId,
-                        repositoryId,
-                        configLevel: ConfigLevel.REPOSITORY,
-                    });
+            const deletionPromises = repositoriesIds.map(
+                async (repositoryId) => {
+                    try {
+                        const wasDeleted =
+                            await this.pullRequestMessagesService.deleteByFilter(
+                                {
+                                    organizationId,
+                                    repositoryId,
+                                    configLevel: ConfigLevel.REPOSITORY,
+                                },
+                            );
 
-                    this.logger.log({
-                        message: 'Pull request messages deletion attempt',
-                        context: DeleteIntegrationAndRepositoriesUseCase.name,
-                        metadata: {
-                            organizationId,
-                            repositoryId,
-                            wasDeleted,
-                        },
-                    });
+                        this.logger.log({
+                            message: 'Pull request messages deletion attempt',
+                            context:
+                                DeleteIntegrationAndRepositoriesUseCase.name,
+                            metadata: {
+                                organizationId,
+                                repositoryId,
+                                wasDeleted,
+                            },
+                        });
 
-                    return wasDeleted;
-                } catch (error) {
-                    this.logger.error({
-                        message: 'Error deleting pull request messages for repository',
-                        context: DeleteIntegrationAndRepositoriesUseCase.name,
-                        error: error,
-                        metadata: {
-                            organizationId,
-                            repositoryId,
-                        },
-                    });
-                    return false;
-                }
-            });
+                        return wasDeleted;
+                    } catch (error) {
+                        this.logger.error({
+                            message:
+                                'Error deleting pull request messages for repository',
+                            context:
+                                DeleteIntegrationAndRepositoriesUseCase.name,
+                            error: error,
+                            metadata: {
+                                organizationId,
+                                repositoryId,
+                            },
+                        });
+                        return false;
+                    }
+                },
+            );
 
             await Promise.all(deletionPromises);
-
         } catch (error) {
             this.logger.error({
                 message: 'Error deleting pull request messages',
@@ -253,45 +277,53 @@ export class DeleteIntegrationAndRepositoriesUseCase {
         }
     }
 
-    private async inactivateKodyRules(organizationId: string, repositoriesIds: string[]): Promise<void> {
+    private async inactivateKodyRules(
+        organizationId: string,
+        repositoriesIds: string[],
+    ): Promise<void> {
         try {
-            const inactivationPromises = repositoriesIds.map(async (repositoryId) => {
-                try {
-                    const result = await this.kodyRulesService.updateRulesStatusByFilter(
-                        organizationId,
-                        repositoryId,
-                        undefined,
-                        KodyRulesStatus.DELETED,
-                    );
+            const inactivationPromises = repositoriesIds.map(
+                async (repositoryId) => {
+                    try {
+                        const result =
+                            await this.kodyRulesService.updateRulesStatusByFilter(
+                                organizationId,
+                                repositoryId,
+                                undefined,
+                                KodyRulesStatus.DELETED,
+                            );
 
-                    this.logger.log({
-                        message: 'Kody rules inactivation attempt',
-                        context: DeleteIntegrationAndRepositoriesUseCase.name,
-                        metadata: {
-                            organizationId,
-                            repositoryId,
-                            wasInactivated: !!result,
-                        },
-                    });
+                        this.logger.log({
+                            message: 'Kody rules inactivation attempt',
+                            context:
+                                DeleteIntegrationAndRepositoriesUseCase.name,
+                            metadata: {
+                                organizationId,
+                                repositoryId,
+                                wasInactivated: !!result,
+                            },
+                        });
 
-                    return result;
-                } catch (error) {
-                    this.logger.error({
-                        message: 'Error inactivating Kody rules for repository',
-                        context: DeleteIntegrationAndRepositoriesUseCase.name,
-                        error: error,
-                        metadata: {
-                            organizationId,
-                            repositoryId,
-                        },
-                    });
-                    // Do not fail the main process if there is an error in a specific repository
-                    return null;
-                }
-            });
+                        return result;
+                    } catch (error) {
+                        this.logger.error({
+                            message:
+                                'Error inactivating Kody rules for repository',
+                            context:
+                                DeleteIntegrationAndRepositoriesUseCase.name,
+                            error: error,
+                            metadata: {
+                                organizationId,
+                                repositoryId,
+                            },
+                        });
+                        // Do not fail the main process if there is an error in a specific repository
+                        return null;
+                    }
+                },
+            );
 
             await Promise.all(inactivationPromises);
-
         } catch (error) {
             this.logger.error({
                 message: 'Error inactivating Kody rules',
