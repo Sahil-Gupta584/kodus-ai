@@ -12,6 +12,7 @@ import { Type } from 'class-transformer';
 import { OrganizationAndTeamDataDto } from './organizationAndTeamData.dto';
 import {
     BehaviourForExistingDescription,
+    BehaviourForNewCommits,
     GroupingModeSuggestions,
     LimitationType,
     ReviewCadenceType,
@@ -61,6 +62,10 @@ class SummaryConfigDto {
 
     @IsOptional()
     behaviourForExistingDescription?: BehaviourForExistingDescription;
+
+    @IsOptional()
+    @IsEnum(BehaviourForNewCommits)
+    behaviourForNewCommits?: BehaviourForNewCommits;
 }
 
 class SeverityLimitsDto {
@@ -200,7 +205,7 @@ class CodeReviewConfigWithoutLLMProviderDto {
     @ValidateNested()
     @Type(() => ReviewCadenceDto)
     reviewCadence?: ReviewCadenceDto;
-
+  
     @IsOptional()
     @IsBoolean()
     runOnDraft?: boolean;
