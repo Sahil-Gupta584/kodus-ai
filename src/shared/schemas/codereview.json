@@ -25,12 +25,19 @@
                     "enum": ["replace", "concatenate", "complement"],
                     "default": "concatenate",
                     "description": "Defines how to handle existing descriptions."
+                },
+                "behaviourForNewCommits": {
+                    "type": "string",
+                    "enum": ["none", "replace", "concatenate"],
+                    "default": "none",
+                    "description": "Defines how Kody updates the summary when new commits arrive."
                 }
             },
             "required": [
                 "generatePRSummary",
                 "customInstructions",
-                "behaviourForExistingDescription"
+                "behaviourForExistingDescription",
+                "behaviourForNewCommits"
             ],
             "additionalProperties": false
         },

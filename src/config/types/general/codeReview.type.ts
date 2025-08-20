@@ -258,6 +258,7 @@ export interface SummaryConfig {
     generatePRSummary?: boolean;
     customInstructions?: string;
     behaviourForExistingDescription?: BehaviourForExistingDescription;
+    behaviourForNewCommits?: BehaviourForNewCommits; 
 }
 
 export interface SuggestionControlConfig {
@@ -375,4 +376,10 @@ export enum ReviewCadenceState {
     AUTOMATIC = 'automatic',
     COMMAND = 'command',
     PAUSED = 'paused',
+}
+
+export enum BehaviourForNewCommits {
+    NONE = 'none',
+    REPLACE = 'replace',
+    CONCATENATE = 'concatenate',
 }

@@ -6,9 +6,8 @@ import {
 } from '@/core/domain/codeBase/contracts/CommentManagerService.contract';
 import { PinoLoggerService } from '../../../logger/pino.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
-import {
-    PullRequestMessageStatus,
-} from '@/config/types/general/pullRequestMessages.type';
+import { PullRequestMessageStatus } from '@/config/types/general/pullRequestMessages.type';
+import { BehaviourForNewCommits } from '@/config/types/general/codeReview.type';
 
 @Injectable()
 export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -38,7 +37,21 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             lineComments,
         } = context;
 
-        if (!initialCommentData && !context.pullRequestMessagesConfig?.startReviewMessage) {
+        const isCommitRun = Boolean(lastExecution);
+        const commitBehaviour =
+            codeReviewConfig?.summary?.behaviourForNewCommits ??
+            BehaviourForNewCommits.NONE;
+
+        const shouldGenerateOrUpdateSummary =
+            (!isCommitRun && codeReviewConfig?.summary?.generatePRSummary) ||
+            (isCommitRun &&
+                codeReviewConfig?.summary?.generatePRSummary &&
+                commitBehaviour !== BehaviourForNewCommits.NONE);
+
+        if (
+            !initialCommentData &&
+            !context.pullRequestMessagesConfig?.startReviewMessage
+        ) {
             this.logger.warn({
                 message: `Missing initialCommentData for PR#${pullRequest.number}`,
                 context: this.stageName,
@@ -46,10 +59,15 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             return context;
         }
 
-        if (!lastExecution && codeReviewConfig.summary.generatePRSummary) {
+        if (shouldGenerateOrUpdateSummary) {
             this.logger.log({
                 message: `Generating summary for PR#${pullRequest.number}`,
                 context: this.stageName,
+                metadata: {
+                        organizationAndTeamData,
+                        prNumber: context.pullRequest.number,
+                        repository: context.repository,
+                    },
             });
 
             const changedFiles = context.changedFiles.map((file) => ({
@@ -66,6 +84,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                     organizationAndTeamData,
                     codeReviewConfig.languageResultPrompt,
                     codeReviewConfig.summary,
+                    isCommitRun,
                 );
 
             await this.commentManagerService.updateSummarizationInPR(
@@ -76,9 +95,13 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             );
         }
 
-        const endReviewMessage = context.pullRequestMessagesConfig?.endReviewMessage;
+        const endReviewMessage =
+            context.pullRequestMessagesConfig?.endReviewMessage;
 
-        if (!context.pullRequestMessagesConfig?.startReviewMessage && !endReviewMessage) {
+        if (
+            !context.pullRequestMessagesConfig?.startReviewMessage &&
+            !endReviewMessage
+        ) {
             await this.commentManagerService.updateOverallComment(
                 organizationAndTeamData,
                 pullRequest.number,

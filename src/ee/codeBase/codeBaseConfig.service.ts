@@ -537,6 +537,16 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 repo?.behaviourForExistingDescription ??
                 global?.behaviourForExistingDescription ??
                 defaultSummary.behaviourForExistingDescription,
+            behaviourForNewCommits:
+                (isParameterValidInConfigFile(
+                    'behaviourForNewCommits',
+                    validationErrors,
+                )
+                    ? kodusConfig?.behaviourForNewCommits
+                    : undefined) ??
+                repo?.behaviourForNewCommits ??
+                global?.behaviourForNewCommits ??
+                defaultSummary.behaviourForNewCommits,
         };
     }
 
