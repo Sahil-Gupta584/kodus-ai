@@ -18,6 +18,180 @@ import {
 
 const logger = createLogger('storage-session-adapter');
 
+/**
+ * Session type for storage (with string dates)
+ */
+type SessionForStorage = Omit<Session, 'createdAt' | 'lastActivity'> & {
+    createdAt: string;
+    lastActivity: string;
+    createdAtTimestamp: number; // Backup for compatibility
+    lastActivityTimestamp: number; // Backup for compatibility
+};
+
+/**
+ * Session type that can come from storage (mixed types)
+ */
+type SessionFromStorage = Omit<Session, 'createdAt' | 'lastActivity'> & {
+    createdAt: string | number;
+    lastActivity: string | number;
+    createdAtTimestamp?: number;
+    lastActivityTimestamp?: number;
+};
+
+/**
+ * Utility functions for date transformation
+ */
+class DateUtils {
+    /**
+     * Convert timestamp to formatted date string for storage
+     */
+    static timestampToFormattedDate(timestamp: number): string {
+        return new Date(timestamp).toISOString();
+    }
+
+    /**
+     * Convert formatted date string back to timestamp for application logic
+     */
+    static formattedDateToTimestamp(dateString: string): number {
+        return new Date(dateString).getTime();
+    }
+
+    /**
+     * Transform nested timestamps in objects (like contextData)
+     */
+    static transformNestedTimestamps(obj: unknown): unknown {
+        if (!obj || typeof obj !== 'object') return obj;
+
+        if (Array.isArray(obj)) {
+            return obj.map((item) => this.transformNestedTimestamps(item));
+        }
+
+        const result: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(
+            obj as Record<string, unknown>,
+        )) {
+            // Transform known timestamp fields
+            if (
+                (key === 'completedAt' ||
+                    key === 'createdAt' ||
+                    key === 'startTime' ||
+                    key === 'at' ||
+                    key === 'timestamp') &&
+                typeof value === 'number'
+            ) {
+                result[key] = this.timestampToFormattedDate(value as number);
+                result[`${key}Original`] = value; // Backup
+            } else if (typeof value === 'object' && value !== null) {
+                result[key] = this.transformNestedTimestamps(value);
+            } else {
+                result[key] = value;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Restore nested timestamps from storage
+     */
+    static restoreNestedTimestamps(obj: unknown): unknown {
+        if (!obj || typeof obj !== 'object') return obj;
+
+        if (Array.isArray(obj)) {
+            return obj.map((item) => this.restoreNestedTimestamps(item));
+        }
+
+        const result: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(
+            obj as Record<string, unknown>,
+        )) {
+            // Restore known timestamp fields
+            if (
+                (key === 'completedAt' ||
+                    key === 'createdAt' ||
+                    key === 'startTime' ||
+                    key === 'at' ||
+                    key === 'timestamp') &&
+                typeof value === 'string'
+            ) {
+                result[key] = this.formattedDateToTimestamp(value);
+            } else if (key.endsWith('Original')) {
+                // Skip backup fields - they're just for safety
+                continue;
+            } else if (typeof value === 'object' && value !== null) {
+                result[key] = this.restoreNestedTimestamps(value);
+            } else {
+                result[key] = value;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Transform session for storage (timestamps → formatted dates)
+     */
+    static transformSessionForStorage(session: Session): SessionForStorage {
+        const transformed = {
+            ...session,
+            createdAt: this.timestampToFormattedDate(session.createdAt),
+            lastActivity: this.timestampToFormattedDate(session.lastActivity),
+            createdAtTimestamp: session.createdAt,
+            lastActivityTimestamp: session.lastActivity,
+        };
+
+        // ✅ Transform nested timestamps in contextData
+        if (transformed.contextData) {
+            transformed.contextData = this.transformNestedTimestamps(
+                transformed.contextData,
+            ) as Record<string, unknown>;
+        }
+
+        // ✅ Transform timestamps in conversationHistory
+        if (transformed.conversationHistory) {
+            transformed.conversationHistory = this.transformNestedTimestamps(
+                transformed.conversationHistory,
+            ) as typeof transformed.conversationHistory;
+        }
+
+        return transformed;
+    }
+
+    /**
+     * Transform session from storage (formatted dates → timestamps)
+     */
+    static transformSessionFromStorage(
+        sessionData: SessionFromStorage,
+    ): Session {
+        const restored = {
+            ...sessionData,
+            createdAt:
+                typeof sessionData.createdAt === 'string'
+                    ? this.formattedDateToTimestamp(sessionData.createdAt)
+                    : sessionData.createdAtTimestamp || sessionData.createdAt,
+            lastActivity:
+                typeof sessionData.lastActivity === 'string'
+                    ? this.formattedDateToTimestamp(sessionData.lastActivity)
+                    : sessionData.lastActivityTimestamp ||
+                      sessionData.lastActivity,
+        };
+
+        // ✅ Restore nested timestamps in contextData
+        if (restored.contextData) {
+            restored.contextData = this.restoreNestedTimestamps(
+                restored.contextData,
+            ) as Record<string, unknown>;
+        }
+
+        // ✅ Restore timestamps in conversationHistory
+        if (restored.conversationHistory) {
+            restored.conversationHistory = this.restoreNestedTimestamps(
+                restored.conversationHistory,
+            ) as typeof restored.conversationHistory;
+        }
+
+        return restored;
+    }
+}
+
 export interface SessionAdapterConfig {
     adapterType: StorageType;
     connectionString?: string;
@@ -30,7 +204,7 @@ export interface SessionAdapterConfig {
  * Storage item for sessions
  */
 interface SessionStorageItem extends BaseStorageItem {
-    sessionData: Session;
+    sessionData: SessionForStorage;
 }
 
 /**
@@ -121,13 +295,13 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
 
     // Convenience methods for Session-specific operations
     async storeSession(session: Session): Promise<void> {
+        // ✅ Transform timestamps to formatted dates for storage
+        const sessionForStorage = DateUtils.transformSessionForStorage(session);
+
         const storageItem: SessionStorageItem = {
             id: `session_${session.id}`,
             timestamp: session.lastActivity,
-            metadata: {
-                sessionData: session,
-            },
-            sessionData: session,
+            sessionData: sessionForStorage,
         };
 
         await this.store(storageItem);
@@ -137,7 +311,11 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
         const item = await this.retrieve(`session_${sessionId}`);
         if (!item) return null;
 
-        const sessionData = item.sessionData;
+        // ✅ Transform formatted dates back to timestamps for application logic
+        const sessionData = DateUtils.transformSessionFromStorage(
+            item.sessionData,
+        );
+
         logger.debug('Session loaded', { sessionId });
         return sessionData;
     }
@@ -160,7 +338,7 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
             const anyStorage = this.storage as unknown as {
                 findOneByQuery?: (
                     query: Record<string, unknown>,
-                ) => Promise<SessionStorageItem | null>;
+                ) => Promise<{ sessionData: SessionFromStorage } | null>;
             };
 
             if (typeof anyStorage.findOneByQuery === 'function') {
@@ -172,7 +350,10 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
                 }
 
                 const doc = await anyStorage.findOneByQuery!(query);
-                return doc?.sessionData ?? null;
+                if (!doc?.sessionData) return null;
+
+                // ✅ Transform formatted dates back to timestamps
+                return DateUtils.transformSessionFromStorage(doc.sessionData);
             }
 
             // Fallback: se não suportar query, retorna null
