@@ -148,39 +148,6 @@ export class KodyRulesSyncService {
         }
     }
 
-    private normalizeTitle(input?: string): string {
-        return (input || '').trim().toLowerCase();
-    }
-
-    private normalizeRuleText(input?: string): string {
-        if (!input) return '';
-        return input
-            .replace(/\r\n/g, '\n')
-            .replace(/\t/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .toLowerCase();
-    }
-
-    private normalizeSnippet(input?: string): string {
-        if (!input) return '';
-        return input
-            .replace(/\r\n/g, '\n')
-            .replace(/[\s\u00A0]+/g, ' ')
-            .trim()
-            .toLowerCase();
-    }
-
-    private extractAnchorFromSourcePath(
-        sourcePath?: string,
-    ): string | undefined {
-        if (!sourcePath) return undefined;
-        const idx = sourcePath.indexOf('#');
-        if (idx < 0) return undefined;
-        const suffix = sourcePath.slice(idx + 1);
-        return suffix || undefined;
-    }
-
     async syncFromChangedFiles(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { id: string; name: string; fullName?: string };
@@ -200,6 +167,7 @@ export class KodyRulesSyncService {
         try {
             const syncEnabled = await this.isIdeRulesSyncEnabled(
                 organizationAndTeamData,
+                repository.id,
             );
             if (!syncEnabled) {
                 this.logger.log({
@@ -425,6 +393,7 @@ export class KodyRulesSyncService {
         try {
             const syncEnabled = await this.isIdeRulesSyncEnabled(
                 organizationAndTeamData,
+                repository.id,
             );
             if (!syncEnabled) {
                 this.logger.log({
@@ -553,16 +522,26 @@ export class KodyRulesSyncService {
 
     private async isIdeRulesSyncEnabled(
         organizationAndTeamData: OrganizationAndTeamData,
+        repositoryId?: string,
     ): Promise<boolean> {
         try {
             const cfg = await this.parametersService.findByKey(
                 ParametersKey.CODE_REVIEW_CONFIG,
                 organizationAndTeamData,
             );
-            const enabled = cfg?.configValue?.global?.ideRulesSyncEnabled;
-            return enabled !== false;
+            
+            // Must have repository context and repository-specific config
+            if (!repositoryId || !cfg?.configValue?.repositories) {
+                return false;
+            }
+            
+            const repoConfig = cfg.configValue.repositories.find(
+                (repo: any) => repo.id === repositoryId || repo.id === repositoryId.toString(),
+            );
+            
+            return repoConfig?.ideRulesSyncEnabled === true;
         } catch {
-            return true;
+            return false;
         }
     }
 

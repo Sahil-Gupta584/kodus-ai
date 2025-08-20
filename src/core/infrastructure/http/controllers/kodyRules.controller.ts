@@ -25,6 +25,7 @@ import { ChangeStatusKodyRulesUseCase } from '@/core/application/use-cases/kodyR
 import { REQUEST } from '@nestjs/core';
 import { CheckSyncStatusUseCase } from '@/core/application/use-cases/kodyRules/check-sync-status.use-case';
 import { CacheService } from '@/shared/utils/cache/cache.service';
+import { SyncSelectedRepositoriesKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/sync-selected-repositories.use-case';
 
 @Controller('kody-rules')
 export class KodyRulesController {
@@ -41,6 +42,7 @@ export class KodyRulesController {
         private readonly changeStatusKodyRulesUseCase: ChangeStatusKodyRulesUseCase,
         private readonly checkSyncStatusUseCase: CheckSyncStatusUseCase,
         private readonly cacheService: CacheService,
+        private readonly syncSelectedReposKodyRulesUseCase: SyncSelectedRepositoriesKodyRulesUseCase,
 
         @Inject(REQUEST)
         private readonly request: Request & {
@@ -184,7 +186,7 @@ export class KodyRulesController {
     public async changeStatusKodyRules(@Body() body: ChangeStatusKodyRulesDTO) {
         return this.changeStatusKodyRulesUseCase.execute(body);
     }
-    
+
     @Get('/check-sync-status')
     public async checkSyncStatus(
         @Query('teamId')
@@ -193,7 +195,7 @@ export class KodyRulesController {
         repositoryId?: string,
     ) {
         const cacheKey = `check-sync-status:${this.request.user.organization.uuid}:${teamId}:${repositoryId || 'no-repo'}`;
-        
+
         // Tenta buscar do cache primeiro
         const cachedResult = await this.cacheService.getFromCache(cacheKey);
         if (cachedResult) {
@@ -201,11 +203,26 @@ export class KodyRulesController {
         }
 
         // Se não estiver no cache, executa o use case
-        const result = await this.checkSyncStatusUseCase.execute(teamId, repositoryId);
-        
+        const result = await this.checkSyncStatusUseCase.execute(
+            teamId,
+            repositoryId,
+        );
+
         // Salva no cache por 15 minutos
         await this.cacheService.addToCache(cacheKey, result, 900000); // 15 minutos em milissegundos
-        
+
         return result;
+    }
+
+    @Post('/sync-ide-rules')
+    public async syncIdeRules(
+        @Body() body: { teamId: string; repositoryId: string },
+    ) {
+        const respositories = [body.repositoryId];
+
+        return this.syncSelectedReposKodyRulesUseCase.execute({
+            teamId: body.teamId,
+            repositoriesIds: respositories,
+        });
     }
 }
