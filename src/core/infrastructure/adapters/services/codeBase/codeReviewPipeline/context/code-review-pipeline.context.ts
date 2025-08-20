@@ -25,6 +25,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
         title: string;
         base: { ref: string };
         repository: Repository;
+        isDraft: boolean;
         [key: string]: any;
     };
     teamAutomationId: string;

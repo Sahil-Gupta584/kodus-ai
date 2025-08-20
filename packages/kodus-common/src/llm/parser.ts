@@ -12,6 +12,11 @@ import { ParserType } from './builder';
 import { tryParseJSONObject } from '@/utils/json';
 
 export class CustomStringOutputParser extends StringOutputParser {
+    static override lc_name(): string {
+        return 'CustomStringOutputParser';
+    }
+    lc_namespace = ['kodus', 'output_parsers', 'string'];
+
     protected override _messageContentComplexToString(
         content: MessageContentComplex,
     ): string {
@@ -23,6 +28,11 @@ export class CustomStringOutputParser extends StringOutputParser {
 }
 
 export class CustomJsonOutputParser extends JsonOutputParser {
+    static override lc_name(): string {
+        return 'CustomJsonOutputParser';
+    }
+    lc_namespace = ['kodus', 'output_parsers', 'json'];
+
     protected override _baseMessageContentToString(
         content: MessageContentComplex[],
     ): string {

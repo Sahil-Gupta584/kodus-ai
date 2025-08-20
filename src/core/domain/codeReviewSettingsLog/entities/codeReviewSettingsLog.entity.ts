@@ -23,7 +23,7 @@ export class CodeReviewSettingsLogEntity
         name?: string;
     };
     private readonly _directory?: {
-        id: string;
+        id?: string;
         path?: string;
     };
     private readonly _changedData: ChangedData[];
@@ -111,7 +111,7 @@ export class CodeReviewSettingsLogEntity
     }
 
     get directory(): {
-        id: string;
+        id?: string;
         path?: string;
     } {
         return this._directory;

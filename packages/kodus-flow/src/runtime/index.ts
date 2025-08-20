@@ -434,7 +434,7 @@ export function createRuntime(
                 (options.batchSize || batchingConfig.defaultBatchSize);
 
         if (shouldFlushImmediately) {
-            flushBatch();
+            void flushBatch();
         } else if (!batchTimer) {
             // Set timer for batch timeout
             const timeout =

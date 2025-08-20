@@ -71,6 +71,10 @@ export class GitlabMappedPlatform implements IMappedPlatform {
                 },
                 ref: mergeRequest?.target_branch,
             },
+            isDraft:
+                'draft' in mergeRequest
+                    ? (mergeRequest?.draft ?? false)
+                    : false,
         };
     }
 

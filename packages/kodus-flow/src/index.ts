@@ -84,8 +84,7 @@ export {
 } from './observability/index.js';
 
 // ✅ TIPOS DE OBSERVABILIDADE
-export type { ObservabilityConfig } from './observability/index.js';
-export type { TelemetryConfig } from './observability/telemetry.js';
+export type { ObservabilityConfig, TelemetryConfig } from './observability/index.js';
 export type { LogLevel, LogContext } from './observability/logger.js';
 export type { OtelTracerAdapter } from './observability/otel-adapter.js';
 

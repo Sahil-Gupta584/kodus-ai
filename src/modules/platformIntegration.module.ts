@@ -54,6 +54,7 @@ import { IssuesModule } from './issues.module';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 import { McpAgentModule } from './mcpAgent.module';
 import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
+import { PullRequestMessagesModule } from './pullRequestMessages.module';
 @Module({
     imports: [
         forwardRef(() => IntegrationModule),
@@ -83,6 +84,7 @@ import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInf
         forwardRef(() => BitbucketModule),
         forwardRef(() => IssuesModule),
         forwardRef(() => CodeReviewSettingsLogModule),
+        forwardRef(() => PullRequestMessagesModule),
         PullRequestsModule,
         McpAgentModule,
     ],

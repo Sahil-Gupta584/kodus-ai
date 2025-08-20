@@ -19,12 +19,20 @@ export class GetTeamMembersUseCase implements IUseCase {
     ) {}
 
     public async execute(teamId: any): Promise<any> {
-        return await this.teamMembersService.findTeamMembersFormated(
+        const members = await this.teamMembersService.findTeamMembersFormated(
             {
                 organizationId: this.request.user?.organization?.uuid,
                 teamId,
             },
             true,
         );
+
+        const sortedMembers = members.members.sort((a, b) => {
+            if (a.email && !b.email) return -1;
+            if (!a.email && b.email) return 1;
+            return a.email.localeCompare(b.email);
+        });
+
+        return { members: sortedMembers };
     }
 }

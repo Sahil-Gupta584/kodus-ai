@@ -25,7 +25,7 @@ export interface BaseLogParams {
     actionType: ActionType;
     configLevel?: ConfigLevel;
     repository?: { id: string; name?: string };
-    directory?: { id: string; path?: string };
+    directory?: { id?: string; path?: string };
 }
 
 export interface UnifiedLogParams extends BaseLogParams {

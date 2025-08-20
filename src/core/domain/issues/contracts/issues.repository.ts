@@ -44,6 +44,11 @@ export interface IIssuesRepository {
         status: IssueStatus,
     ): Promise<IssuesEntity | null>;
 
+    updateStatusByIds(
+        uuids: string[],
+        status: IssueStatus,
+    ): Promise<IssuesEntity[] | null>;
+
     addSuggestionIds(
         uuid: string,
         suggestionIds: string[],
