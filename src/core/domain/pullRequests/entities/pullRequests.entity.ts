@@ -43,6 +43,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
     private readonly _commits: Array<ICommit>;
     private readonly _syncedEmbeddedSuggestions: boolean;
     private readonly _syncedWithIssues: boolean;
+    private readonly _isDraft: boolean;
 
     constructor(pullRequest: IPullRequests) {
         this._uuid = pullRequest.uuid;
@@ -75,6 +76,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
             : [];
         this._syncedEmbeddedSuggestions = pullRequest.syncedEmbeddedSuggestions;
         this._syncedWithIssues = pullRequest.syncedWithIssues;
+        this._isDraft = pullRequest.isDraft ?? false;
     }
 
     toJson(): IPullRequests {
@@ -105,6 +107,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
             commits: this._commits,
             syncedEmbeddedSuggestions: this._syncedEmbeddedSuggestions,
             syncedWithIssues: this._syncedWithIssues,
+            isDraft: this._isDraft,
         };
     }
 
@@ -136,6 +139,7 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
             commits: this._commits,
             syncedEmbeddedSuggestions: this._syncedEmbeddedSuggestions,
             syncedWithIssues: this._syncedWithIssues,
+            isDraft: this._isDraft,
         };
     }
 
@@ -245,5 +249,9 @@ export class PullRequestsEntity implements Entity<IPullRequests> {
 
     get syncedWithIssues(): boolean {
         return this._syncedWithIssues;
+    }
+
+    get isDraft(): boolean {
+        return this._isDraft;
     }
 }

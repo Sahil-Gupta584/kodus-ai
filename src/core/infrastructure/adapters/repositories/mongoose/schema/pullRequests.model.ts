@@ -64,11 +64,11 @@ export class PullRequestsModel extends CoreDocument {
         added: number;
         deleted: number;
         changes: number;
-        reviewMode: ReviewModeResponse,
+        reviewMode: ReviewModeResponse;
         codeReviewModelUsed: {
             generateSuggestions: string;
             safeguard: string;
-        }
+        };
         suggestions: Array<{
             id: string;
             relevantFile: string;
@@ -161,8 +161,10 @@ export class PullRequestsModel extends CoreDocument {
         createdAt?: string;
         updatedAt?: string;
     }>;
+
+    @Prop({ type: Boolean, required: true, default: false })
+    public isDraft: boolean;
 }
 
 export const PullRequestsSchema =
     SchemaFactory.createForClass(PullRequestsModel);
-

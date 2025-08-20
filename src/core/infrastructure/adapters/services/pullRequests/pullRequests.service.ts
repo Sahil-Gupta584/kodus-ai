@@ -380,6 +380,7 @@ export class PullRequestsService implements IPullRequestsService {
                     pullRequest?.number,
                 ),
                 commits: enrichedPullRequest.commits,
+                isDraft: enrichedPullRequest.isDraft ?? false,
             });
 
             if (prLevelSuggestions && prLevelSuggestions.length > 0) {
@@ -473,6 +474,7 @@ export class PullRequestsService implements IPullRequestsService {
                 syncedEmbeddedSuggestions: false,
                 syncedWithIssues: false,
                 prLevelSuggestions: [],
+                isDraft: pullRequest.isDraft ?? false,
             };
         } catch (error) {
             this.logger.log({
