@@ -216,7 +216,6 @@ export interface DependencyToolsAction extends AgentAction {
 export interface AgentThought<TContent = unknown> {
     reasoning: string;
     action: AgentAction<TContent>;
-    confidence?: number;
     metadata?: Metadata;
 }
 
@@ -340,6 +339,7 @@ export interface AgentContext {
     thread: Thread;
     agentName: string;
     invocationId: string;
+    executionId?: string;
 
     // State: Namespace-based working memory
     state: {

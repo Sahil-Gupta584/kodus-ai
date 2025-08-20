@@ -29,6 +29,7 @@ import type {
     ReplanContext,
     ReplanContextData,
 } from '../../../core/types/planning-shared.js';
+import { UNIFIED_STATUS } from '../../../core/types/planning-shared.js';
 
 // Re-export for compatibility
 export type {
@@ -99,24 +100,20 @@ export class PlanAndExecutePlanner implements Planner {
         }
     }
 
-    private async createFinalResponse(
+    public async createFinalResponse(
         context: PlannerExecutionContext,
     ): Promise<string> {
         const currentPlan = this.getCurrentPlan(context);
 
-        if (!currentPlan) {
-            return '';
-        }
-
         try {
             const { agentContext } = context;
 
-            if (!agentContext) {
-                return '';
-            }
             const blocks: string[] = [];
 
-            const memories = await agentContext.memory.search(context.input, 3);
+            const memories = await agentContext?.memory.search(
+                context?.input,
+                3,
+            );
 
             if (memories && memories.length > 0) {
                 for (const mem of memories) {
@@ -128,7 +125,8 @@ export class PlanAndExecutePlanner implements Planner {
                 }
             }
 
-            const sessionHistory = await agentContext.session.getHistory();
+            const sessionHistory = await agentContext?.session.getHistory();
+
             if (sessionHistory && sessionHistory.length > 0) {
                 const recent = sessionHistory.slice(-3);
                 for (const entry of recent) {
@@ -232,12 +230,12 @@ export class PlanAndExecutePlanner implements Planner {
                 originalQuery: context.input,
                 plannerType: 'plan-execute',
                 executionResults,
-                planSteps: currentPlan.steps
+                planSteps: currentPlan?.steps
                     .filter(
                         (step) =>
-                            step.status === 'completed' ||
-                            step.status === 'failed' ||
-                            step.status === 'skipped',
+                            step.status === UNIFIED_STATUS.COMPLETED ||
+                            step.status === UNIFIED_STATUS.FAILED ||
+                            step.status === UNIFIED_STATUS.SKIPPED,
                     )
                     .map((step) => ({
                         id: step.id,
@@ -249,64 +247,98 @@ export class PlanAndExecutePlanner implements Planner {
                         result: step.result,
                     })),
 
-                plannerReasoning: this.buildDynamicReasoning(
-                    context,
-                    currentPlan,
-                ),
-
                 metadata: {
-                    totalSteps: currentPlan.steps.length,
-                    completedSteps: currentPlan.steps.filter(
-                        (s) => s.status === 'completed',
-                    ).length,
-                    failedSteps: currentPlan.steps.filter(
-                        (s) => s.status === 'failed',
-                    ).length,
+                    totalSteps: currentPlan?.steps.length || 0,
+                    completedSteps:
+                        currentPlan?.steps.filter(
+                            (s) => s.status === UNIFIED_STATUS.COMPLETED,
+                        ).length || 0,
+                    failedSteps:
+                        currentPlan?.steps.filter(
+                            (s) => s.status === UNIFIED_STATUS.FAILED,
+                        ).length || 0,
                     executionTime:
                         Date.now() -
-                        ((currentPlan.metadata?.startTime as number) ||
+                        ((currentPlan?.metadata?.startTime as number) ||
                             Date.now()),
                     iterationCount: context.iterations,
-                    planId: currentPlan.id,
-                    strategy: currentPlan.strategy,
+                    planId: currentPlan?.id,
+                    strategy: currentPlan?.strategy,
                 },
             };
 
-            // Usar Response Synthesizer para criar resposta conversacional
-            const synthesizedResponse =
-                await this.responseSynthesizer.synthesize(
-                    synthesisContext,
-                    'conversational',
-                );
+            // ✅ FALLBACK COM ATÉ 2 TENTATIVAS
+            let synthesizedResponse;
+            let lastError: Error | null = null;
 
-            return this.extractFinalText(synthesizedResponse.content);
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    synthesizedResponse =
+                        await this.responseSynthesizer.synthesize(
+                            synthesisContext,
+                            'conversational',
+                        );
+
+                    const finalText = this.extractFinalText(
+                        synthesizedResponse.content,
+                    );
+
+                    if (finalText && finalText.trim()) {
+                        // ✅ SETAR STATUS FINAL_ANSWER_RESULT
+                        if (currentPlan) {
+                            currentPlan.status =
+                                UNIFIED_STATUS.FINAL_ANSWER_RESULT;
+                            this.setCurrentPlan(context, currentPlan);
+                        }
+
+                        return finalText;
+                    }
+
+                    this.logger.warn('Empty response from LLM, retrying...', {
+                        attempt,
+                        planId: currentPlan?.id,
+                    });
+                } catch (error) {
+                    lastError = error as Error;
+
+                    this.logger.warn('LLM synthesis failed, retrying...', {
+                        attempt,
+                        error: lastError.message,
+                        planId: currentPlan?.id,
+                    });
+
+                    if (attempt === 3) {
+                        break;
+                    }
+
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                }
+            }
+
+            this.logger.error(
+                'All LLM synthesis attempts failed',
+                lastError as Error,
+                {
+                    planId: currentPlan?.id,
+                    attempts: 3,
+                },
+            );
+
+            throw new Error(
+                `LLM synthesis failed after 3 attempts: ${
+                    lastError?.message || 'Unknown error'
+                }`,
+            );
         } catch (error) {
             this.logger.error(
                 'Failed to synthesize final response',
                 error as Error,
                 {
-                    planId: currentPlan.id,
+                    planId: currentPlan?.id,
                 },
             );
 
-            const completedSteps = currentPlan.steps.filter(
-                (s) => s.status === 'completed',
-            ).length;
-            const failedSteps = currentPlan.steps.filter(
-                (s) => s.status === 'failed',
-            ).length;
-
-            let fallbackResponse = `About "${context.input}":\n\n`;
-            fallbackResponse += `✅ Executed ${completedSteps} steps successfully`;
-
-            if (failedSteps > 0) {
-                fallbackResponse += ` (${failedSteps} falharam)`;
-            }
-
-            fallbackResponse +=
-                '.\n\nPosso explicar melhor algum resultado específico se precisar!';
-
-            return fallbackResponse;
+            throw error;
         }
     }
 
@@ -335,9 +367,14 @@ export class PlanAndExecutePlanner implements Planner {
             return content
                 .filter((item) => item && typeof item === 'object')
                 .map((item) => {
-                    if ('text' in item) return item.text;
-                    if ('content' in item) return item.content;
-                    return '';
+                    if ('text' in item) {
+                        return item.text;
+                    }
+                    if ('content' in item) {
+                        return item.content;
+                    }
+
+                    return 'No content available';
                 })
                 .filter(Boolean)
                 .join(' ');
@@ -355,53 +392,11 @@ export class PlanAndExecutePlanner implements Planner {
             }
         }
 
-        return String(content || 'Response generated successfully');
-    }
-
-    private buildDynamicReasoning(
-        context: PlannerExecutionContext,
-        plan: ExecutionPlan,
-    ): string {
-        if (plan.steps.length === 0) {
-            return Array.isArray(plan.reasoning)
-                ? plan.reasoning.join(' ')
-                : plan.reasoning;
-        } else {
-            // Plan with steps - create reasoning based on execution results
-            const completedSteps = plan.steps.filter(
-                (s) => s.status === 'completed',
-            ).length;
-            const failedSteps = plan.steps.filter(
-                (s) => s.status === 'failed',
-            ).length;
-
-            let dynamicReasoning = `Executed plan with ${plan.steps.length} steps: `;
-
-            if (completedSteps > 0) {
-                dynamicReasoning += `${completedSteps} completed successfully`;
-            }
-
-            if (failedSteps > 0) {
-                dynamicReasoning += `${completedSteps > 0 ? ', ' : ''}${failedSteps} failed`;
-            }
-
-            // Include brief summary of execution results if available
-            if (context.history.length > 0) {
-                const recentResults = context.history
-                    .slice(-2)
-                    .map((h) => {
-                        const content = getResultContent(h.result);
-                        return typeof content === 'string'
-                            ? content.substring(0, 100)
-                            : 'result obtained';
-                    })
-                    .join('; ');
-
-                dynamicReasoning += `. Recent results: ${recentResults}`;
-            }
-
-            return dynamicReasoning;
+        if (!content) {
+            throw new Error('LLM response content is empty or null');
         }
+
+        return String(content);
     }
 
     private getAvailableToolsForContext(
@@ -456,7 +451,7 @@ export class PlanAndExecutePlanner implements Planner {
     ): Promise<string> {
         if (!context.agentContext) {
             this.logger.debug('No AgentContext available for memory access');
-            return '';
+            return 'No memory context available';
         }
 
         try {
@@ -639,6 +634,7 @@ export class PlanAndExecutePlanner implements Planner {
                     currentInput,
                 );
 
+                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Add session entry
                 await context.agentContext.session.addEntry(
                     { type: 'memory_context_request', input: currentInput },
                     {
@@ -653,7 +649,7 @@ export class PlanAndExecutePlanner implements Planner {
             this.logger.error('Failed to get memory context', error as Error, {
                 input: currentInput,
             });
-            return '';
+            return 'Memory context unavailable due to error';
         }
     }
 
@@ -752,9 +748,10 @@ export class PlanAndExecutePlanner implements Planner {
                 }
 
                 const current = this.getCurrentPlan(context);
+
                 if (current) {
                     if (
-                        current.status === 'failed' &&
+                        current.status === UNIFIED_STATUS.FAILED &&
                         (current.metadata as Record<string, unknown>)
                             ?.replanCause === 'max_replans_exceeded'
                     ) {
@@ -784,10 +781,10 @@ export class PlanAndExecutePlanner implements Planner {
                         } as AgentAction,
                     };
                 }
+
                 return result;
             }
 
-            // Default path now delegates full execution to executor
             const current = this.getCurrentPlan(context);
 
             if (current) {
@@ -801,7 +798,7 @@ export class PlanAndExecutePlanner implements Planner {
                     } as AgentAction,
                 };
             }
-            // Fallback if no plan
+
             return {
                 reasoning: 'No plan available; please replan',
                 action: { type: 'final_answer', content: 'Replanning…' },
@@ -812,7 +809,7 @@ export class PlanAndExecutePlanner implements Planner {
                 error as Error,
             );
 
-            // ✅ NEW: Update step execution with error
+            // ✅ CASO 7: ERRO NO PLANNING - Atualizar step execution
             if (stepId && context.agentContext?.stepExecution) {
                 context.agentContext.stepExecution.updateStep(stepId, {
                     result: {
@@ -831,6 +828,7 @@ export class PlanAndExecutePlanner implements Planner {
                 });
             }
 
+            // ✅ CASO 7: ERRO NO PLANNING - Retornar final_answer
             return {
                 reasoning: `Error in planning: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 action: {
@@ -901,7 +899,7 @@ export class PlanAndExecutePlanner implements Planner {
             strategy: 'plan-execute',
             steps: steps,
             currentStepIndex: 0,
-            status: 'executing',
+            status: UNIFIED_STATUS.EXECUTING,
             reasoning:
                 ((plan as Record<string, unknown>)?.reasoning as string) ||
                 `Plan created for: ${input}`,
@@ -911,17 +909,7 @@ export class PlanAndExecutePlanner implements Planner {
                 startTime: now,
                 createdBy: 'plan-execute-planner',
                 thread: context.plannerMetadata.thread?.id,
-                // 🚀 NEW: Track replan count and preserve context
-                // replansCount: context.previousExecution
-                //     ? ((context.previousExecution.plan.metadata
-                //           ?.replansCount as number) || 0) + 1
-                //     : 0,
                 signals: (plan as Record<string, unknown>)?.signals,
-                // Preserve previous execution metadata for traceability
-                // previousPlanId: context.previousExecution?.plan.id,
-                // replanCause: context.previousExecution
-                //     ? context.previousExecution.failureAnalysis.primaryCause
-                //     : undefined,
             },
         };
 
@@ -939,7 +927,6 @@ export class PlanAndExecutePlanner implements Planner {
                   .filter((x) => typeof x === 'string')
                   .map((x) => String(x))
             : [];
-        // We may use noDiscoveryPath for UI or logging later; keep parsed for metadata only
         const noDiscoveryPath: string[] | undefined = Array.isArray(
             rawSignals?.noDiscoveryPath,
         )
@@ -972,7 +959,6 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         if (needs.length > 0) {
-            // ✅ VERIFICAR SE JÁ EXCEDEU MAX REPLANS
             const currentPlan = this.getCurrentPlan(context);
             const prevReplans = Number(
                 (currentPlan?.metadata as Record<string, unknown> | undefined)
@@ -982,11 +968,11 @@ export class PlanAndExecutePlanner implements Planner {
             // ✅ SÓ REPLAN SE NÃO EXCEDEU LIMITE
             const maxReplans = this.replanPolicy.maxReplans;
             if (!maxReplans || prevReplans < maxReplans) {
-                newPlan.status = 'replanning';
+                newPlan.status = UNIFIED_STATUS.REPLANNING;
                 (newPlan.metadata as Record<string, unknown>) = {
                     ...(newPlan.metadata || {}),
                     replanCause: 'missing_inputs',
-                    replansCount: prevReplans + 1, // ✅ INCREMENTAR CONTADOR
+                    replansCount: prevReplans + 1,
                 };
 
                 this.logger.info(
@@ -1000,7 +986,7 @@ export class PlanAndExecutePlanner implements Planner {
                 );
             } else {
                 // ✅ PARAR LOOP - LIMITE ATINGIDO
-                newPlan.status = 'failed';
+                newPlan.status = UNIFIED_STATUS.FAILED;
                 (newPlan.metadata as Record<string, unknown>) = {
                     ...(newPlan.metadata || {}),
                     replanCause: 'max_replans_exceeded',
@@ -1022,7 +1008,10 @@ export class PlanAndExecutePlanner implements Planner {
         const previousPlan = this.getCurrentPlan(context);
         this.setCurrentPlan(context, newPlan);
 
-        if (previousPlan?.status === 'replanning' && context.agentContext) {
+        if (
+            previousPlan?.status === UNIFIED_STATUS.REPLANNING &&
+            context.agentContext
+        ) {
             try {
                 const elapsed = previousPlan.metadata?.startTime
                     ? Date.now() - (previousPlan.metadata.startTime as number)
@@ -1030,6 +1019,7 @@ export class PlanAndExecutePlanner implements Planner {
                 const replansCount = (
                     previousPlan.metadata as Record<string, unknown> | undefined
                 )?.replansCount;
+                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Add replan completed entry
                 await context.agentContext.session.addEntry(
                     { type: 'planner.replan.completed' },
                     {
@@ -1048,10 +1038,10 @@ export class PlanAndExecutePlanner implements Planner {
             } catch {}
         }
 
-        // ✅ NOVO: Persistir dados do plano no state e session
+        // TODO: MOVER PARA CAMADA DE KERNEL/STATE - Persistir dados do plano no state e session
         if (context.agentContext) {
             try {
-                // Salvar plano no state
+                // TODO: MOVER PARA CAMADA DE KERNEL/STATE - Salvar plano no state
                 await context.agentContext.state.set('planner', 'currentPlan', {
                     id: newPlan.id,
                     goal: newPlan.goal,
@@ -1065,7 +1055,7 @@ export class PlanAndExecutePlanner implements Planner {
                     suggestedNextStep,
                 });
 
-                // Salvar entrada na session
+                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Salvar entrada na session
                 await context.agentContext.session.addEntry(
                     {
                         type: 'plan_created',
@@ -1091,7 +1081,7 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         if (
-            newPlan.status === 'failed' &&
+            newPlan.status === UNIFIED_STATUS.FAILED &&
             (newPlan.metadata as Record<string, unknown>)?.replanCause ===
                 'max_replans_exceeded'
         ) {
@@ -1116,11 +1106,11 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         return {
-            reasoning: 'Plan created. Delegating execution to executor.',
+            reasoning: 'Plan created. Ready to execute.',
             action: {
-                type: 'final_answer',
-                content: 'Plan is ready to execute',
-            },
+                type: 'execute_plan' as const,
+                planId: newPlan.id,
+            } as AgentAction,
             metadata: {
                 planId: newPlan.id,
                 totalSteps: newPlan.steps.length,
@@ -1133,41 +1123,38 @@ export class PlanAndExecutePlanner implements Planner {
         context: PlannerExecutionContext,
     ): Promise<ResultAnalysis> {
         const currentPlan = this.getCurrentPlan(context);
+
         if (!currentPlan) {
-            // ❌ SEM PLANO = Comunicação interna, não resposta final
             return {
-                isComplete: true,
-                isSuccessful: true,
-                feedback: 'No plan to analyze',
-                shouldContinue: false,
+                isComplete: false,
+                isSuccessful: false,
+                feedback: 'No plan available, need to create one',
+                shouldContinue: true,
             };
         }
 
-        // ❌ WAITING_INPUT = Comunicação interna, não resposta final
-        if (currentPlan.status === 'waiting_input') {
+        if (currentPlan.status === UNIFIED_STATUS.WAITING_INPUT) {
             return {
                 isComplete: true,
                 isSuccessful: true,
-                feedback:
-                    typeof getResultContent(result) === 'string'
-                        ? (getResultContent(result) as string)
-                        : 'Awaiting user input to proceed',
+                feedback: 'Awaiting user input to proceed',
                 shouldContinue: false,
                 suggestedNextAction: 'Awaiting user input',
             };
         }
 
         if (result.type === 'final_answer') {
-            currentPlan.status = 'completed';
+            currentPlan.status = UNIFIED_STATUS.COMPLETED;
             this.setCurrentPlan(context, currentPlan);
 
-            // Emit replan.completed for final answer path
+            // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Emit replan.completed for final answer path
             if (context.agentContext) {
                 try {
                     const elapsed = currentPlan.metadata?.startTime
                         ? Date.now() -
                           (currentPlan.metadata.startTime as number)
                         : undefined;
+                    // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Add session entry
                     await context.agentContext.session.addEntry(
                         { type: 'planner.replan.completed' },
                         {
@@ -1181,12 +1168,12 @@ export class PlanAndExecutePlanner implements Planner {
                 } catch {}
             }
 
-            // ✅ ENHANCED: Use AI SDK Components for real tracking
+            // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Step execution tracking
             if (context.agentContext?.stepExecution) {
                 const stepId = `step-final-${Date.now()}`;
                 const endTime = Date.now();
 
-                // ✅ NEW: Track context operations for final answer
+                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Track context operations
                 context.agentContext.stepExecution.addContextOperation(
                     stepId,
                     'session',
@@ -1194,7 +1181,7 @@ export class PlanAndExecutePlanner implements Planner {
                     { content: result.content, timestamp: endTime },
                 );
 
-                // ✅ NEW: Track context operations
+                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Track context operations
                 context.agentContext.stepExecution.addContextOperation(
                     stepId,
                     'session',
@@ -1202,7 +1189,7 @@ export class PlanAndExecutePlanner implements Planner {
                     { content: result.content, timestamp: endTime },
                 );
 
-                // ✅ NEW: Update step with real duration
+                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Update step with real duration
                 context.agentContext.stepExecution.updateStep(stepId, {
                     thought: {
                         reasoning: currentPlan.reasoning,
@@ -1228,7 +1215,7 @@ export class PlanAndExecutePlanner implements Planner {
                             ?.duration || 0),
                 });
             } else {
-                // ✅ FALLBACK: Use traditional approach
+                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Use traditional approach
                 const stepExecution = {
                     stepId: `step-final-${Date.now()}`,
                     stepNumber: context.history.length + 1,
@@ -1252,7 +1239,7 @@ export class PlanAndExecutePlanner implements Planner {
                         feedback: result.content || 'Task completed',
                         shouldContinue: false,
                     },
-                    duration: 0, // Instant response for empty plan
+                    duration: 0,
                     metadata: {
                         contextOperations: [],
                         toolCalls: [],
@@ -1266,28 +1253,26 @@ export class PlanAndExecutePlanner implements Planner {
                 context.history.push(stepExecution);
             }
 
-            const synthesizedResponse = await this.createFinalResponse(context);
-
-            // ✅ NOVO: Persistir resultado final no state e session
+            // TODO: MOVER PARA CAMADA DE KERNEL/STATE - Persist final result
             if (context.agentContext) {
                 try {
+                    // TODO: MOVER PARA CAMADA DE KERNEL/STATE - Set state
                     await context.agentContext.state.set(
                         'planner',
                         'finalResult',
                         {
                             planId: currentPlan.id,
                             result: result.content,
-                            synthesizedResponse,
                             completedAt: Date.now(),
                         },
                     );
 
+                    // TODO: MOVER PARA CAMADA DE KERNEL/STATE - Add session entry
                     await context.agentContext.session.addEntry(
                         { type: 'plan_completed', planId: currentPlan.id },
                         {
                             type: 'final_result',
                             content: result.content,
-                            synthesized: synthesizedResponse,
                         },
                     );
                 } catch (error) {
@@ -1300,7 +1285,7 @@ export class PlanAndExecutePlanner implements Planner {
             return {
                 isComplete: true,
                 isSuccessful: true,
-                feedback: synthesizedResponse,
+                feedback: result.content || 'Task completed successfully',
                 shouldContinue: false,
             };
         }
@@ -1308,17 +1293,31 @@ export class PlanAndExecutePlanner implements Planner {
         const currentStep = currentPlan.steps[currentPlan.currentStepIndex];
 
         if (!currentStep) {
-            // ❌ SEM STEP = Comunicação interna, não resposta final
-            return {
-                isComplete: true,
-                isSuccessful: true,
-                feedback: 'Plan execution completed',
-                shouldContinue: false,
-            };
+            // ✅ VERIFICAR SE PRECISA REPLAN
+            const shouldReplan = await this.shouldReplan(context);
+
+            if (shouldReplan) {
+                // ✅ PRECISA REPLAN - Continua execução
+                return {
+                    isComplete: false,
+                    isSuccessful: false,
+                    feedback: 'No steps available, need to replan',
+                    shouldContinue: true,
+                    suggestedNextAction: 'Create new execution plan',
+                };
+            } else {
+                // ✅ PLANO EXECUTADO COM SUCESSO
+                return {
+                    isComplete: true,
+                    isSuccessful: true,
+                    feedback: 'Plan execution completed',
+                    shouldContinue: false,
+                };
+            }
         }
 
         if (isErrorResult(result)) {
-            currentStep.status = 'failed';
+            currentStep.status = UNIFIED_STATUS.FAILED;
             currentStep.result = { error: getResultError(result) };
 
             const shouldReplan = await this.shouldReplanOnFailure(
@@ -1327,41 +1326,40 @@ export class PlanAndExecutePlanner implements Planner {
             );
 
             if (shouldReplan) {
-                currentPlan.status = 'replanning';
+                currentPlan.status = UNIFIED_STATUS.REPLANNING;
                 this.setCurrentPlan(context, currentPlan);
-                // ❌ REPLANNING = Processo interno, não resposta final
                 return {
                     isComplete: false,
                     isSuccessful: false,
-                    feedback: `Step failed: ${result.error}. Will replan from this point.`,
+                    feedback: `Step failed: ${getResultError(result)}. Will replan.`,
                     shouldContinue: true,
                     suggestedNextAction: 'Replan execution strategy',
                 };
             } else {
-                currentPlan.status = 'failed';
+                currentPlan.status = UNIFIED_STATUS.FAILED;
                 this.setCurrentPlan(context, currentPlan);
 
-                // ✅ VERIFICAR SE É FALHA DEFINITIVA
-                const isDefinitiveFailure =
-                    this.isDefinitiveFailure(currentPlan);
-
-                if (isDefinitiveFailure) {
-                    // ✅ FALHA DEFINITIVA = Resposta final para usuário
-                    const synthesizedErrorResponse =
-                        await this.createFinalResponse(context);
-
+                if (this.isDefinitiveFailure(currentPlan)) {
                     return {
                         isComplete: true,
                         isSuccessful: false,
-                        feedback: synthesizedErrorResponse,
+                        feedback: `Task failed definitively: ${getResultError(result)}`,
+                        shouldContinue: false,
+                    };
+                } else if (this.shouldStopForMaxReplans(currentPlan)) {
+                    // ✅ MAX REPLANS - Para com resposta ao usuário
+                    return {
+                        isComplete: true,
+                        isSuccessful: true, // ← NÃO É FALHA!
+                        feedback: 'Need more information to proceed',
                         shouldContinue: false,
                     };
                 } else {
-                    // ❌ FALHA TEMPORÁRIA = Comunicação interna
+                    // ✅ FALHA TEMPORÁRIA - Continua
                     return {
                         isComplete: false,
                         isSuccessful: false,
-                        feedback: `Step failed: ${result.error}. Will replan from this point.`,
+                        feedback: `Step failed temporarily: ${getResultError(result)}. Will replan.`,
                         shouldContinue: true,
                         suggestedNextAction: 'Replan execution strategy',
                     };
@@ -1386,12 +1384,14 @@ export class PlanAndExecutePlanner implements Planner {
                 i++
             ) {
                 const step = currentPlan.steps[i];
-                if (step && step.status === 'executing') {
+                if (step && step.status === UNIFIED_STATUS.EXECUTING) {
                     const stepResult = parallelResults.find(
                         (r) => r.toolName === step.tool,
                     );
                     if (stepResult) {
-                        step.status = stepResult.error ? 'failed' : 'completed';
+                        step.status = stepResult.error
+                            ? UNIFIED_STATUS.FAILED
+                            : UNIFIED_STATUS.COMPLETED;
                         step.result = stepResult.error
                             ? { error: stepResult.error }
                             : stepResult.result;
@@ -1403,7 +1403,7 @@ export class PlanAndExecutePlanner implements Planner {
             currentPlan.currentStepIndex = startIndex + stepsCompleted;
         } else {
             const stepResult = getResultContent(result);
-            currentStep.status = 'completed';
+            currentStep.status = UNIFIED_STATUS.COMPLETED;
             currentStep.result = stepResult;
 
             currentPlan.currentStepIndex++;
@@ -1413,14 +1413,12 @@ export class PlanAndExecutePlanner implements Planner {
             currentPlan.currentStepIndex >= currentPlan.steps.length;
 
         if (isLastStep) {
-            currentPlan.status = 'completed';
-
-            const synthesizedResponse = await this.createFinalResponse(context);
+            currentPlan.status = UNIFIED_STATUS.COMPLETED;
 
             return {
                 isComplete: true,
                 isSuccessful: true,
-                feedback: synthesizedResponse,
+                feedback: 'Task completed successfully',
                 shouldContinue: false,
             };
         }
@@ -1439,9 +1437,8 @@ export class PlanAndExecutePlanner implements Planner {
         const replanCause = (plan.metadata as Record<string, unknown>)
             ?.replanCause as string;
 
-        // ✅ FALHAS DEFINITIVAS
+        // ✅ APENAS FALHAS REAIS
         const definitiveCauses = [
-            'max_replans_exceeded',
             'permission_denied',
             'not_found',
             'invalid_credentials',
@@ -1451,6 +1448,13 @@ export class PlanAndExecutePlanner implements Planner {
         return definitiveCauses.includes(replanCause);
     }
 
+    private shouldStopForMaxReplans(plan: ExecutionPlan): boolean {
+        const replanCause = (plan.metadata as Record<string, unknown>)
+            ?.replanCause as string;
+
+        return replanCause === 'max_replans_exceeded';
+    }
+
     private shouldReplan(context: PlannerExecutionContext): boolean {
         const currentPlan = this.getCurrentPlan(context);
 
@@ -1458,7 +1462,7 @@ export class PlanAndExecutePlanner implements Planner {
             return true;
         }
 
-        if (currentPlan.status === 'replanning') {
+        if (currentPlan.status === UNIFIED_STATUS.REPLANNING) {
             const replansCount = Number(
                 (currentPlan.metadata as Record<string, unknown>)
                     ?.replansCount ?? 0,
@@ -1474,7 +1478,7 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         if (
-            currentPlan.status === 'failed' &&
+            currentPlan.status === UNIFIED_STATUS.FAILED &&
             (currentPlan.metadata as Record<string, unknown>)?.replanCause ===
                 'max_replans_exceeded'
         ) {
@@ -1600,7 +1604,7 @@ export class PlanAndExecutePlanner implements Planner {
             strategy: '',
             steps: convertedSteps,
             currentStepIndex: 0,
-            status: 'planning',
+            status: UNIFIED_STATUS.PENDING,
             reasoning: '',
             createdAt: Date.now(),
             updatedAt: Date.now(),
@@ -1712,7 +1716,7 @@ export class PlanAndExecutePlanner implements Planner {
 
     private buildPlanningHistory(context: PlannerExecutionContext): string {
         if (context.history.length === 0) {
-            return '';
+            return 'No execution history available';
         }
 
         const recentActions = context.history.slice(-3);
@@ -2269,7 +2273,7 @@ export class PlanAndExecutePlanner implements Planner {
                         continue; // Keep original if step has no result
                     }
 
-                    if (step.status !== 'completed') {
+                    if (step.status !== UNIFIED_STATUS.COMPLETED) {
                         this.logger.warn('❌ STEP NOT COMPLETED', {
                             reference: fullMatch,
                             stepIdentifier,
@@ -3135,133 +3139,4 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
     clearPromptCache(): void {
         this.promptComposer.clearCache();
     }
-
-    // private shouldExpandToParallel(
-    //     currentStep: PlanStep,
-    //     allSteps: PlanStep[],
-    // ): boolean {
-    //     if (!currentStep.arguments || !currentStep.tool) {
-    //         return false;
-    //     }
-
-    //     // 🆕 NEW: Check if step explicitly marked as parallel by LLM
-    //     if ('parallel' in currentStep && currentStep.parallel === true) {
-    //         this.logger.info('🚀 STEP MARKED FOR PARALLEL EXECUTION', {
-    //             stepId: currentStep.id,
-    //             explicitParallel: true,
-    //         });
-    //     }
-
-    //     const argsStr = JSON.stringify(currentStep.arguments);
-
-    //     // Check if arguments contain array references like {{step-1.result}} or {{stepId.result}}
-    //     const arrayRefPattern = /\{\{([^.}]+)\.result\}\}/;
-    //     const match = argsStr.match(arrayRefPattern);
-
-    //     if (!match) {
-    //         return false;
-    //     }
-
-    //     // Check if the referenced step result is an array
-    //     const stepIdentifier = match[1];
-    //     if (!stepIdentifier) {
-    //         return false;
-    //     }
-
-    //     let referencedStep: PlanStep | undefined;
-
-    //     // Try to find step by number (step-1, step-2, etc.)
-    //     if (stepIdentifier.startsWith('step-')) {
-    //         const stepNum = parseInt(stepIdentifier.substring(5));
-    //         const stepIndex = stepNum - 1;
-    //         referencedStep = allSteps[stepIndex];
-    //     } else {
-    //         // Try to find step by ID
-    //         referencedStep = allSteps.find((s) => s.id === stepIdentifier);
-    //     }
-
-    //     if (!referencedStep?.result) return false;
-
-    //     return (
-    //         Array.isArray(referencedStep.result) &&
-    //         referencedStep.result.length > 1
-    //     );
-    // }
-
-    // /**
-    //  * 🔥 Expand a single step into parallel execution for array results
-    //  */
-    // private expandToParallelExecution(
-    //     currentStep: PlanStep,
-    //     context: PlannerExecutionContext,
-    // ): AgentThought {
-    //     const argsStr = JSON.stringify(currentStep.arguments);
-    //     const match = argsStr.match(/\{\{([^.}]+)\.result\}\}/);
-
-    //     const currentPlan = this.getCurrentPlan(context);
-    //     if (!match || !currentPlan) {
-    //         throw new Error('Invalid state for parallel expansion');
-    //     }
-
-    //     const stepIdentifier = match[1];
-    //     if (!stepIdentifier) {
-    //         throw new Error('Step identifier not found in reference');
-    //     }
-
-    //     let referencedStep: PlanStep | undefined;
-
-    //     // Try to find step by number (step-1, step-2, etc.)
-    //     if (stepIdentifier.startsWith('step-')) {
-    //         const stepNum = parseInt(stepIdentifier.substring(5));
-    //         const stepIndex = stepNum - 1;
-    //         referencedStep = currentPlan.steps[stepIndex];
-    //     } else {
-    //         // Try to find step by ID
-    //         referencedStep = currentPlan.steps.find(
-    //             (s) => s.id === stepIdentifier,
-    //         );
-    //     }
-
-    //     if (!referencedStep?.result) {
-    //         throw new Error('Referenced step not found or has no result');
-    //     }
-    //     const arrayResult = referencedStep.result as unknown[];
-
-    //     // Create parallel tools action for each item in array
-    //     const parallelTools = arrayResult.map((item, index) => {
-    //         // Replace {{step-X.result}} or {{stepId.result}} with the actual item
-    //         const itemArgs = JSON.parse(
-    //             argsStr.replace(/\{\{[^.}]+\.result\}\}/, JSON.stringify(item)),
-    //         );
-
-    //         return {
-    //             id: `tool-${Date.now()}-${index}`,
-    //             toolName: currentStep.tool!,
-    //             arguments: itemArgs,
-    //             timestamp: Date.now(),
-    //             reasoning: `${currentStep.description} (item ${index + 1}/${arrayResult.length})`,
-    //         };
-    //     });
-
-    //     // Mark current step as executing
-    //     currentStep.status = 'executing';
-
-    //     return {
-    //         reasoning: `Executing ${currentStep.tool} for ${arrayResult.length} items in parallel`,
-    //         action: {
-    //             type: 'parallel_tools' as const,
-    //             tools: parallelTools,
-    //             reasoning: `Processing ${arrayResult.length} items from previous step in parallel`,
-    //             concurrency: Math.min(arrayResult.length, 5), // Limit concurrency
-    //             failFast: false,
-    //             aggregateResults: true,
-    //         } as ParallelToolsAction,
-    //         metadata: {
-    //             planId: currentPlan.id,
-    //             stepId: currentStep.id,
-    //             expandedToParallel: true,
-    //             itemCount: arrayResult.length,
-    //         },
-    //     };
-    // }
 }

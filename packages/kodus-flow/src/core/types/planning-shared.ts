@@ -1,27 +1,132 @@
+import { AgentAction } from './agent-definition.js';
+
+export const UNIFIED_STATUS = {
+    // Estados básicos
+    PENDING: 'pending',
+    EXECUTING: 'executing',
+    COMPLETED: 'completed',
+    FAILED: 'failed',
+
+    // Estados de controle
+    REPLANNING: 'replanning',
+    WAITING_INPUT: 'waiting_input',
+    PAUSED: 'paused',
+    CANCELLED: 'cancelled',
+    SKIPPED: 'skipped',
+
+    // Estados ReWOO
+    REWRITING: 'rewriting',
+    OBSERVING: 'observing',
+    PARALLEL: 'parallel',
+
+    // Estados de problema
+    STAGNATED: 'stagnated',
+    TIMEOUT: 'timeout',
+    DEADLOCK: 'deadlock',
+
+    // Estados de resposta final
+    FINAL_ANSWER_RESULT: 'final_answer_result',
+} as const;
+
+export type UnifiedStatus =
+    (typeof UNIFIED_STATUS)[keyof typeof UNIFIED_STATUS];
+
 /**
- * 🎯 SHARED PLANNING TYPES
- *
- * Simple shared types to eliminate conflicts between planning files.
- * Contains only what's needed to fix the current type conflicts.
+ * Status transitions validation
  */
-
-import type { AgentAction } from './agent-types.js';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 🎯 CORE SHARED TYPES (resolves conflicts)
-// ═══════════════════════════════════════════════════════════════════════════════
+export const VALID_STATUS_TRANSITIONS: Record<UnifiedStatus, UnifiedStatus[]> =
+    {
+        [UNIFIED_STATUS.PENDING]: [
+            UNIFIED_STATUS.EXECUTING,
+            UNIFIED_STATUS.CANCELLED,
+            UNIFIED_STATUS.SKIPPED,
+        ],
+        [UNIFIED_STATUS.EXECUTING]: [
+            UNIFIED_STATUS.COMPLETED,
+            UNIFIED_STATUS.FAILED,
+            UNIFIED_STATUS.REPLANNING,
+            UNIFIED_STATUS.WAITING_INPUT,
+            UNIFIED_STATUS.PAUSED,
+            UNIFIED_STATUS.CANCELLED,
+            UNIFIED_STATUS.REWRITING,
+            UNIFIED_STATUS.OBSERVING,
+            UNIFIED_STATUS.PARALLEL,
+            UNIFIED_STATUS.STAGNATED,
+            UNIFIED_STATUS.TIMEOUT,
+            UNIFIED_STATUS.DEADLOCK,
+        ],
+        [UNIFIED_STATUS.COMPLETED]: [], // Estado final
+        [UNIFIED_STATUS.FAILED]: [
+            UNIFIED_STATUS.REPLANNING,
+            UNIFIED_STATUS.CANCELLED,
+        ],
+        [UNIFIED_STATUS.REPLANNING]: [
+            UNIFIED_STATUS.EXECUTING,
+            UNIFIED_STATUS.FAILED,
+            UNIFIED_STATUS.CANCELLED,
+        ],
+        [UNIFIED_STATUS.WAITING_INPUT]: [
+            UNIFIED_STATUS.EXECUTING,
+            UNIFIED_STATUS.CANCELLED,
+        ],
+        [UNIFIED_STATUS.PAUSED]: [
+            UNIFIED_STATUS.EXECUTING,
+            UNIFIED_STATUS.CANCELLED,
+        ],
+        [UNIFIED_STATUS.CANCELLED]: [], // Estado final
+        [UNIFIED_STATUS.SKIPPED]: [], // Estado final
+        [UNIFIED_STATUS.REWRITING]: [
+            UNIFIED_STATUS.EXECUTING,
+            UNIFIED_STATUS.FAILED,
+            UNIFIED_STATUS.CANCELLED,
+        ],
+        [UNIFIED_STATUS.OBSERVING]: [
+            UNIFIED_STATUS.EXECUTING,
+            UNIFIED_STATUS.FAILED,
+            UNIFIED_STATUS.CANCELLED,
+        ],
+        [UNIFIED_STATUS.PARALLEL]: [
+            UNIFIED_STATUS.EXECUTING,
+            UNIFIED_STATUS.FAILED,
+            UNIFIED_STATUS.CANCELLED,
+        ],
+        [UNIFIED_STATUS.STAGNATED]: [
+            UNIFIED_STATUS.EXECUTING,
+            UNIFIED_STATUS.FAILED,
+            UNIFIED_STATUS.CANCELLED,
+        ],
+        [UNIFIED_STATUS.TIMEOUT]: [
+            UNIFIED_STATUS.REPLANNING,
+            UNIFIED_STATUS.CANCELLED,
+        ],
+        [UNIFIED_STATUS.DEADLOCK]: [
+            UNIFIED_STATUS.REPLANNING,
+            UNIFIED_STATUS.CANCELLED,
+        ],
+        [UNIFIED_STATUS.FINAL_ANSWER_RESULT]: [], // Estado final - resposta sintetizada
+    };
 
 /**
- * Planning step status
+ * Validate status transition
  */
-export type StepStatus =
-    | 'pending'
-    | 'blocked'
-    | 'executing'
-    | 'completed'
-    | 'failed'
-    | 'skipped'
-    | 'cancelled';
+export function isValidStatusTransition(
+    from: UnifiedStatus,
+    to: UnifiedStatus,
+): boolean {
+    return VALID_STATUS_TRANSITIONS[from].includes(to);
+}
+
+// ===== EXISTING TYPES (UPDATED) =====
+
+/**
+ * Step status - now using unified status
+ */
+export type StepStatus = UnifiedStatus;
+
+/**
+ * Plan status - now using unified status
+ */
+export type PlanStatus = UnifiedStatus;
 
 /**
  * Unified PlanStep interface (consolidates all conflicting definitions)
@@ -90,13 +195,7 @@ export interface ExecutionPlan {
     goal: string;
     reasoning: string;
     steps: PlanStep[];
-    status:
-        | 'planning'
-        | 'executing'
-        | 'completed'
-        | 'failed'
-        | 'replanning'
-        | 'waiting_input';
+    status: UnifiedStatus;
     currentStepIndex: number;
     signals?: PlanSignals;
     createdAt: number;
@@ -243,17 +342,17 @@ export function createPlanId(name: string): string {
  */
 export function getReadySteps(plan: ExecutionPlan): PlanStep[] {
     return plan.steps.filter((step) => {
-        if (step.status !== 'pending') return false;
+        if (step.status !== UNIFIED_STATUS.PENDING) return false;
         if (!step.dependencies || step.dependencies.length === 0) return true;
 
         // ✅ CORREÇÃO: Verificar se alguma dependência falhou
         return step.dependencies.every((depId) => {
             const depStep = plan.steps.find((s) => s.id === depId);
             // Se a dependência falhou, este step não pode ser executado
-            if (depStep?.status === 'failed') {
+            if (depStep?.status === UNIFIED_STATUS.FAILED) {
                 return false;
             }
-            return depStep?.status === 'completed';
+            return depStep?.status === UNIFIED_STATUS.COMPLETED;
         });
     });
 }
@@ -264,9 +363,9 @@ export function getReadySteps(plan: ExecutionPlan): PlanStep[] {
 export function isPlanComplete(plan: ExecutionPlan): boolean {
     return plan.steps.every(
         (step) =>
-            step.status === 'completed' ||
-            step.status === 'skipped' ||
-            (step.optional && step.status === 'failed'),
+            step.status === UNIFIED_STATUS.COMPLETED ||
+            step.status === UNIFIED_STATUS.SKIPPED ||
+            (step.optional && step.status === UNIFIED_STATUS.FAILED),
     );
 }
 
@@ -281,9 +380,15 @@ export function getPlanProgress(plan: ExecutionPlan): {
     percentage: number;
 } {
     const total = plan.steps.length;
-    const completed = plan.steps.filter((s) => s.status === 'completed').length;
-    const failed = plan.steps.filter((s) => s.status === 'failed').length;
-    const skipped = plan.steps.filter((s) => s.status === 'skipped').length;
+    const completed = plan.steps.filter(
+        (s) => s.status === UNIFIED_STATUS.COMPLETED,
+    ).length;
+    const failed = plan.steps.filter(
+        (s) => s.status === UNIFIED_STATUS.FAILED,
+    ).length;
+    const skipped = plan.steps.filter(
+        (s) => s.status === UNIFIED_STATUS.SKIPPED,
+    ).length;
     const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
 
     return { total, completed, failed, skipped, percentage };

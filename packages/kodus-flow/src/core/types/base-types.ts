@@ -169,6 +169,7 @@ export interface SnapshotContext extends BaseContext {
 export interface ObservabilityContext extends BaseContext {
     sessionId?: SessionId;
     threadId?: ThreadId;
+    executionId?: ExecutionId;
 }
 
 /**

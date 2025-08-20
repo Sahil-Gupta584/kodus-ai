@@ -791,7 +791,7 @@ export interface TraceItem {
 // DOMAIN SPAN HELPERS (padronizam nomes e atributos)
 // ============================================================================
 
-export type AgentPhase = 'think' | 'act' | 'observe';
+export type AgentPhase = 'think' | 'act' | 'observe' | 'analyze' | 'synthesize';
 
 export interface AgentSpanAttributes {
     agentName: string;

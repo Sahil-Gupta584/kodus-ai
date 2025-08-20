@@ -135,6 +135,7 @@ export interface ObservabilityConfig {
 export interface ObservabilityContext extends OtelContext {
     tenantId?: string;
     executionId?: string;
+    sessionId?: string; // ✅ NEW: Link to session for proper hierarchy
     metadata?: Record<string, unknown>;
 }
 
@@ -456,10 +457,13 @@ export class ObservabilitySystem implements ObservabilityInterface {
     createContext(correlationId?: string): ObservabilityContext {
         const context: ObservabilityContext = {
             correlationId: correlationId || this.generateCorrelationId(),
+            // ✅ NEW: Initialize executionId - will be populated by SessionService when needed
+            executionId: undefined,
         };
 
         this.logger.debug('Observability context created', {
             correlationId: context.correlationId,
+            executionId: context.executionId,
         } as LogContext);
 
         return context;
@@ -503,6 +507,29 @@ export class ObservabilitySystem implements ObservabilityInterface {
     }
 
     /**
+     * ✅ NEW: Update current context with executionId
+     * (Used by SessionService when starting execution)
+     */
+    updateContextWithExecution(
+        executionId: string,
+        sessionId?: string,
+        tenantId?: string,
+    ): void {
+        if (this.currentContext) {
+            this.currentContext.executionId = executionId;
+            if (sessionId) this.currentContext.sessionId = sessionId;
+            if (tenantId) this.currentContext.tenantId = tenantId;
+
+            this.logger.debug('Observability context updated with execution', {
+                correlationId: this.currentContext.correlationId,
+                executionId,
+                sessionId,
+                tenantId,
+            } as LogContext);
+        }
+    }
+
+    /**
      * Trace a function with unified observability
      */
     async trace<T>(
@@ -526,6 +553,8 @@ export class ObservabilitySystem implements ObservabilityInterface {
             rootAttributes['tenant.id'] = execContext.tenantId;
         if (execContext?.executionId)
             rootAttributes['execution.id'] = execContext.executionId;
+        if (execContext?.sessionId)
+            rootAttributes['session.id'] = execContext.sessionId; // ✅ NEW: Add sessionId to span attributes
         const span = this.telemetry.startSpan(name, {
             attributes: rootAttributes,
         });

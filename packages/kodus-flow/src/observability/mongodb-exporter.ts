@@ -69,6 +69,7 @@ export interface MongoDBLogItem {
     correlationId?: string;
     tenantId?: string;
     executionId?: string;
+    sessionId?: string; // ✅ NEW: Link to session for proper hierarchy
     metadata?: Record<string, unknown>;
     error?: {
         name: string;
@@ -89,6 +90,7 @@ export interface MongoDBTelemetryItem {
     correlationId?: string;
     tenantId?: string;
     executionId?: string;
+    sessionId?: string; // ✅ NEW: Link to session for proper hierarchy
     agentName?: string;
     toolName?: string;
     phase?: 'think' | 'act' | 'observe';
@@ -124,6 +126,7 @@ export interface MongoDBErrorItem {
     correlationId?: string;
     tenantId?: string;
     executionId?: string;
+    sessionId?: string; // ✅ NEW: Link to session for proper hierarchy
     errorName: string;
     errorMessage: string;
     errorStack?: string;
@@ -391,6 +394,7 @@ export class MongoDBExporter {
             correlationId: context?.correlationId as string | undefined,
             tenantId: context?.tenantId as string | undefined,
             executionId: context?.executionId as string | undefined,
+            sessionId: context?.sessionId as string | undefined, // ✅ NEW: Extract sessionId from context
             metadata: context,
             error: error
                 ? {
@@ -419,6 +423,8 @@ export class MongoDBExporter {
         const duration = item.endTime - item.startTime;
         const correlationId = item.attributes['correlation.id'] as string;
         const tenantId = item.attributes['tenant.id'] as string;
+        const executionId = item.attributes['execution.id'] as string; // ✅ Extract from attributes
+        const sessionId = item.attributes['session.id'] as string; // ✅ Extract from attributes
         const agentName = item.attributes['agent.name'] as string;
         const toolName = item.attributes['tool.name'] as string;
         const phase = item.attributes['agent.phase'] as
@@ -432,7 +438,8 @@ export class MongoDBExporter {
             duration,
             correlationId,
             tenantId,
-            executionId: undefined, // Não disponível no TraceItem
+            executionId, // ✅ Now properly extracted from trace attributes
+            sessionId, // ✅ Link to session for proper hierarchy
             agentName,
             toolName,
             phase,
@@ -499,6 +506,7 @@ export class MongoDBExporter {
             correlationId: context?.correlationId,
             tenantId: context?.tenantId,
             executionId: context?.executionId,
+            sessionId: context?.sessionId as string | undefined, // ✅ NEW: Extract sessionId from context
             errorName: error.name,
             errorMessage: error.message,
             errorStack: error.stack,

@@ -33,6 +33,7 @@ export type Session = {
     metadata: Record<string, unknown>;
     contextData: Record<string, unknown>;
     conversationHistory: ConversationHistory;
+    currentExecutionId?: string;
 };
 
 export interface SessionConfig {
@@ -759,6 +760,71 @@ export class SessionService {
         this.sessionStateManagers.clear();
 
         this.logger.info('SessionService cleanup completed');
+    }
+
+    // ============================================================================
+    // EXECUTION MANAGEMENT (NEW)
+    // ============================================================================
+
+    /**
+     * Start a new execution within a session
+     */
+    async startExecution(
+        sessionId: string,
+        agentName: string,
+    ): Promise<string | null> {
+        const session = await this.getSession(sessionId);
+        if (!session) return null;
+
+        const executionId = IdGenerator.executionId();
+
+        session.currentExecutionId = executionId;
+        session.lastActivity = Date.now();
+
+        // ✅ SYNC: Persist changes if enabled
+        if (this.config.persistent && this.storage) {
+            await this.storage.storeSession(session);
+        }
+
+        this.logger.info('Execution started', {
+            sessionId,
+            executionId,
+            agentName,
+        });
+
+        return executionId;
+    }
+
+    /**
+     * End current execution in session
+     */
+    async endExecution(sessionId: string): Promise<boolean> {
+        const session = await this.getSession(sessionId);
+        if (!session) return false;
+
+        const executionId = session.currentExecutionId;
+        session.currentExecutionId = undefined;
+        session.lastActivity = Date.now();
+
+        // ✅ SYNC: Persist changes if enabled
+        if (this.config.persistent && this.storage) {
+            await this.storage.storeSession(session);
+        }
+
+        this.logger.info('Execution ended', {
+            sessionId,
+            executionId,
+        });
+
+        return true;
+    }
+
+    /**
+     * Get current execution ID for a session
+     */
+    async getCurrentExecutionId(sessionId: string): Promise<string | null> {
+        const session = await this.getSession(sessionId);
+        return session?.currentExecutionId || null;
     }
 }
 

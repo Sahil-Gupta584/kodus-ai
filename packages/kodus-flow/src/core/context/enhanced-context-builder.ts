@@ -528,6 +528,25 @@ export class EnhancedContextBuilder {
         const baseContext =
             await this.contextBuilder.createAgentContext(options);
 
+        // ✅ NEW: Start execution tracking if sessionId is provided
+        if (options.sessionId) {
+            const executionId = await this.sessionService.startExecution(
+                options.sessionId,
+                options.agentName,
+            );
+
+            if (executionId) {
+                // Set executionId in context
+                baseContext.executionId = executionId;
+
+                this.logger.info('Execution started and tracked in context', {
+                    sessionId: options.sessionId,
+                    executionId,
+                    agentName: options.agentName,
+                });
+            }
+        }
+
         // Apply enhanced context
         return this.build(baseContext);
     }
