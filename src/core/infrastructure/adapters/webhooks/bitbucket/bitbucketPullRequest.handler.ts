@@ -372,6 +372,15 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                         organizationAndTeamData,
                     );
 
+                const isDraft =
+                    pullrequest.state === 'OPEN' &&
+                    (pullrequest.draft ?? false);
+                const wasDraft = storedPR?.isDraft ?? false;
+
+                if (wasDraft && !isDraft) {
+                    return true;
+                }
+
                 if (storedPR && pullrequest.state === 'OPEN') {
                     const prCommit =
                         pullRequestCommits[pullRequestCommits.length - 1];
