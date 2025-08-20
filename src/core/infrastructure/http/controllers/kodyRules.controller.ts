@@ -23,6 +23,8 @@ import { GenerateKodyRulesDTO } from '../dtos/generate-kody-rules.dto';
 import { ChangeStatusKodyRulesDTO } from '../dtos/change-status-kody-rules.dto';
 import { ChangeStatusKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/change-status-kody-rules.use-case';
 import { REQUEST } from '@nestjs/core';
+import { CheckSyncStatusUseCase } from '@/core/application/use-cases/kodyRules/check-sync-status.use-case';
+import { CacheService } from '@/shared/utils/cache/cache.service';
 
 @Controller('kody-rules')
 export class KodyRulesController {
@@ -37,6 +39,8 @@ export class KodyRulesController {
         private readonly addLibraryKodyRulesUseCase: AddLibraryKodyRulesUseCase,
         private readonly generateKodyRulesUseCase: GenerateKodyRulesUseCase,
         private readonly changeStatusKodyRulesUseCase: ChangeStatusKodyRulesUseCase,
+        private readonly checkSyncStatusUseCase: CheckSyncStatusUseCase,
+        private readonly cacheService: CacheService,
 
         @Inject(REQUEST)
         private readonly request: Request & {
@@ -179,5 +183,29 @@ export class KodyRulesController {
     @Post('/change-status-kody-rules')
     public async changeStatusKodyRules(@Body() body: ChangeStatusKodyRulesDTO) {
         return this.changeStatusKodyRulesUseCase.execute(body);
+    }
+    
+    @Get('/check-sync-status')
+    public async checkSyncStatus(
+        @Query('teamId')
+        teamId: string,
+        @Query('repositoryId')
+        repositoryId?: string,
+    ) {
+        const cacheKey = `check-sync-status:${this.request.user.organization.uuid}:${teamId}:${repositoryId || 'no-repo'}`;
+        
+        // Tenta buscar do cache primeiro
+        const cachedResult = await this.cacheService.getFromCache(cacheKey);
+        if (cachedResult) {
+            return cachedResult;
+        }
+
+        // Se não estiver no cache, executa o use case
+        const result = await this.checkSyncStatusUseCase.execute(teamId, repositoryId);
+        
+        // Salva no cache por 15 minutos
+        await this.cacheService.addToCache(cacheKey, result, 900000); // 15 minutos em milissegundos
+        
+        return result;
     }
 }

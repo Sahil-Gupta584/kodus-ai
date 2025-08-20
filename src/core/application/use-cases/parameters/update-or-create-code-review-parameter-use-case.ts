@@ -31,44 +31,17 @@ import {
     ActionType,
     ConfigLevel,
 } from '@/config/types/general/codeReviewSettingsLog.type';
+import {
+    ICodeRepository,
+    ICodeReviewParameter,
+    IFilteredCodeRepository,
+} from '@/config/types/general/codeReviewConfig.type';
 
-interface Body {
+interface CodeReviewParameterBody {
     organizationAndTeamData: OrganizationAndTeamData;
     configValue: any;
     repositoryId?: string;
     directoryId?: string;
-}
-
-interface ICodeRepository {
-    avatar_url?: string;
-    default_branch: string;
-    http_url: string;
-    id: string;
-    language: string;
-    name: string;
-    organizationName: string;
-    selected: string;
-    visibility: 'private' | 'public';
-    directories: Array<any>;
-}
-
-interface IFilteredCodeRepository {
-    id: string;
-    name: string;
-    isSelected: boolean;
-    directories: Array<any>;
-    directoryId?: string;
-}
-
-interface IRepositoryCodeReviewConfig
-    extends CodeReviewConfigWithoutLLMProvider {
-    id: string;
-    name: string;
-    directories: Array<any>;
-}
-interface ICodeReviewParameter {
-    global: CodeReviewConfigWithoutLLMProvider;
-    repositories: Array<IRepositoryCodeReviewConfig | IFilteredCodeRepository>;
 }
 
 @Injectable()
@@ -95,9 +68,16 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         private readonly logger: PinoLoggerService,
     ) {}
 
-    async execute(body: Body): Promise<ParametersEntity | boolean> {
+    async execute(
+        body: CodeReviewParameterBody,
+    ): Promise<ParametersEntity | boolean> {
         try {
-            const { organizationAndTeamData, configValue, repositoryId, directoryId } = body;
+            const {
+                organizationAndTeamData,
+                configValue,
+                repositoryId,
+                directoryId,
+            } = body;
 
             if (!organizationAndTeamData.organizationId) {
                 organizationAndTeamData.organizationId =
@@ -561,7 +541,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         return true;
     }
 
-    private handleError(error: any, body: Body) {
+    private handleError(error: any, body: CodeReviewParameterBody) {
         this.logger.error({
             message:
                 'Error creating or updating code review configuration parameter',
