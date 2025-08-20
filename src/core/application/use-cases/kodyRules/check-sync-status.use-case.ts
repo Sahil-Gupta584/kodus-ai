@@ -63,7 +63,13 @@ export class CheckSyncStatusUseCase {
         },
     ) {}
 
-    async execute(teamId: string, repositoryId?: string) {
+    async execute(
+        teamId: string,
+        repositoryId?: string,
+    ): Promise<{
+        ideRulesSyncEnabledFirstTime: boolean;
+        kodyRulesGeneratorEnabledFirstTime: boolean;
+    }> {
         const syncStatusFlags = {
             ideRulesSyncEnabledFirstTime: true,
             kodyRulesGeneratorEnabledFirstTime: true,
@@ -114,12 +120,14 @@ export class CheckSyncStatusUseCase {
             const kodyRulesGeneratorEnabled =
                 currentRepositoryConfig.kodyRulesGeneratorEnabled;
 
-            if (kodyRulesGeneratorEnabled) {
+            if (
+                platformConfig.configValue.kodyLearningStatus ===
+                KodyLearningStatus.DISABLED
+            ) {
                 syncStatusFlags.kodyRulesGeneratorEnabledFirstTime = false;
             } else {
                 syncStatusFlags.kodyRulesGeneratorEnabledFirstTime =
-                    platformConfig.configValue.kodyLearningStatus ===
-                    KodyLearningStatus.DISABLED;
+                    kodyRulesGeneratorEnabled;
             }
 
             return syncStatusFlags;
