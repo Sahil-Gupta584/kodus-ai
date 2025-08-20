@@ -305,6 +305,7 @@ export type CodeReviewConfig = {
     configLevel?: ConfigLevel;
     directoryId?: string;
     directoryPath?: string;
+    runOnDraft?: boolean;
 };
 
 export type CodeReviewConfigWithoutLLMProvider = Omit<

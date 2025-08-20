@@ -1,5 +1,5 @@
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { IMembers } from '../interfaces/team-members.interface';
+import { IMembers, IUpdateOrCreateMembersResponse } from '../interfaces/team-members.interface';
 import { ITeamMemberRepository } from './teamMembers.repository.contracts';
 import { IUser } from '../../user/interfaces/user.interface';
 
@@ -13,7 +13,7 @@ export interface ITeamMemberService extends ITeamMemberRepository {
     updateOrCreateMembers(
         members: IMembers[],
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<any>;
+    ): Promise<IUpdateOrCreateMembersResponse>;
 
     sendInvitations(
         usersToSendInvitation: Partial<IUser[]>,

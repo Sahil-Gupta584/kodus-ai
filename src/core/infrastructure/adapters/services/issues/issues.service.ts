@@ -87,6 +87,13 @@ export class IssuesService implements IIssuesService {
     ): Promise<IssuesEntity | null> {
         return this.issuesRepository.updateStatus(uuid, status);
     }
+
+    async updateStatusByIds(
+        uuids: string[],
+        status: IssueStatus,
+    ): Promise<IssuesEntity[] | null> {
+        return this.issuesRepository.updateStatusByIds(uuids, status);
+    }
     //#endregion
 
     async addSuggestionIds(

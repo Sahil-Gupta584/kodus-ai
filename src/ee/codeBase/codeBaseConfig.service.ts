@@ -261,6 +261,16 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     repoConfig.isRequestChangesActive ??
                     globalConfig.isRequestChangesActive ??
                     this.DEFAULT_CONFIG.isRequestChangesActive,
+                runOnDraft:
+                    (isParameterValidInConfigFile(
+                        'runOnDraft',
+                        validationErrors,
+                    )
+                        ? kodusConfigFile?.runOnDraft
+                        : undefined) ??
+                    repoConfig.runOnDraft ??
+                    globalConfig.runOnDraft ??
+                    this.DEFAULT_CONFIG.runOnDraft,
             };
 
             return config;
@@ -1062,11 +1072,12 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 ),
             ]);
 
-            const repositoryKodyRules =
-                this.kodyRulesValidationService.filterKodyRules(
+            const repositoryKodyRules = this.kodyRulesValidationService
+                .filterKodyRules(
                     kodyRulesEntity?.toObject()?.rules,
                     repository.id,
-                ).filter((rule) => rule?.directoryId !== directoryConfig.id);
+                )
+                .filter((rule) => rule?.directoryId !== directoryConfig.id);
 
             const kodyRules = [
                 ...repositoryKodyRules,

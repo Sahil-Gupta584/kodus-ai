@@ -566,7 +566,7 @@ export class SuggestionService implements ISuggestionService {
 
         let severityLevelFilterWithConditional = severityLevelFilter;
 
-        if (severityLimits) {
+        if (limitationType === LimitationType.SEVERITY) {
             severityLevelFilterWithConditional = SeverityLevel.LOW;
         }
 

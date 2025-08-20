@@ -54,6 +54,7 @@ export type PullRequest = {
         name: string;
         id: string;
     };
+    isDraft: boolean;
 };
 
 export type PullRequestFile = {

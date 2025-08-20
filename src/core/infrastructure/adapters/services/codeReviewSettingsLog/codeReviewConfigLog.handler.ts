@@ -4,9 +4,7 @@ import {
     BaseLogParams,
     ChangedDataToExport,
 } from './unifiedLog.handler';
-import {
-    UserInfo,
-} from '@/config/types/general/codeReviewSettingsLog.type';
+import { UserInfo } from '@/config/types/general/codeReviewSettingsLog.type';
 
 export interface CodeReviewConfigLogParams extends BaseLogParams {
     oldConfig: any;
@@ -77,6 +75,9 @@ const PROPERTY_CONFIGS: Record<string, PropertyConfig> = {
     },
     'languageResultPrompt': {
         actionDescription: 'Language Result Prompt',
+    },
+    'runOnDraft': {
+        actionDescription: 'Run on Draft',
     },
     //#endregion
 

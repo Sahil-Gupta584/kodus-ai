@@ -22,11 +22,7 @@
                 },
                 "behaviourForExistingDescription": {
                     "type": "string",
-                    "enum": [
-                        "replace",
-                        "concatenate",
-                        "complement"
-                    ],
+                    "enum": ["replace", "concatenate", "complement"],
                     "default": "concatenate",
                     "description": "Defines how to handle existing descriptions."
                 },
@@ -139,20 +135,13 @@
             "properties": {
                 "groupingMode": {
                     "type": "string",
-                    "enum": [
-                        "minimal",
-                        "full"
-                    ],
+                    "enum": ["minimal", "full"],
                     "default": "full",
                     "description": "Defines the grouping mode for suggestions."
                 },
                 "limitationType": {
                     "type": "string",
-                    "enum": [
-                        "file",
-                        "pr",
-                        "severity"
-                    ],
+                    "enum": ["file", "pr", "severity"],
                     "default": "pr",
                     "description": "Defines the limitation type for suggestions."
                 },
@@ -164,12 +153,7 @@
                 },
                 "severityLevelFilter": {
                     "type": "string",
-                    "enum": [
-                        "critical",
-                        "high",
-                        "medium",
-                        "low"
-                    ],
+                    "enum": ["critical", "high", "medium", "low"],
                     "default": "medium",
                     "description": "Filter for the severity level of suggestions."
                 },
@@ -258,6 +242,11 @@
             "type": "boolean",
             "default": false,
             "description": "Indicates whether to change status to 'Request Changes' if a critical suggestions is found."
+        },
+        "runOnDraft": {
+            "type": "boolean",
+            "default": true,
+            "description": "Indicates whether the review should run on draft pull requests."
         }
     },
     "required": [
@@ -270,7 +259,8 @@
         "ignoredTitleKeywords",
         "automatedReviewActive",
         "pullRequestApprovalActive",
-        "isRequestChangesActive"
+        "isRequestChangesActive",
+        "runOnDraft"
     ],
     "additionalProperties": false
 }

@@ -205,6 +205,10 @@ class CodeReviewConfigWithoutLLMProviderDto {
     @ValidateNested()
     @Type(() => ReviewCadenceDto)
     reviewCadence?: ReviewCadenceDto;
+  
+    @IsOptional()
+    @IsBoolean()
+    runOnDraft?: boolean;
 }
 
 export class CreateOrUpdateCodeReviewParameterDto {

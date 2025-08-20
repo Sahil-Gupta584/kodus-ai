@@ -319,6 +319,15 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
             return false;
         }
 
+        if (
+            objectAttributes.action === 'update' &&
+            changes?.draft &&
+            changes.draft.previous === true &&
+            changes.draft.current === false
+        ) {
+            return true;
+        }
+
         // For all other cases, return false
         return false;
     }

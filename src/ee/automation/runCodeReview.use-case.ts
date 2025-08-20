@@ -174,6 +174,10 @@ export class RunCodeReviewAutomationUseCase {
                         login: pullRequestData?.user?.login,
                         name: pullRequestData?.user?.name,
                     },
+                    isDraft:
+                        pullRequestData?.isDraft ??
+                        pullRequestData?.draft ??
+                        false,
                 };
             }
 
@@ -242,6 +246,7 @@ export class RunCodeReviewAutomationUseCase {
         const allowedActions = [
             'opened',
             'synchronize',
+            'ready_for_review',
             'open',
             'update',
             'git.pullrequest.updated',
