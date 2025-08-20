@@ -372,12 +372,10 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                         organizationAndTeamData,
                     );
 
-                const isDraft =
-                    pullrequest.state === 'OPEN' &&
-                    (pullrequest.draft ?? false);
+                const isDraft = pullrequest.draft ?? false;
                 const wasDraft = storedPR?.isDraft ?? false;
 
-                if (wasDraft && !isDraft) {
+                if (pullrequest.state === 'OPEN' && wasDraft && !isDraft) {
                     return true;
                 }
 
