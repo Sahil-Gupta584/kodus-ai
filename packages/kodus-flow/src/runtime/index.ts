@@ -380,7 +380,7 @@ export function createRuntime(
     let batchTimer: NodeJS.Timeout | null = null;
 
     // Function to flush the batch
-    const flushBatch = async () => {
+    const flushBatch = async (): Promise<void> => {
         if (batchQueue.length === 0) return;
 
         // Clear timer
@@ -394,14 +394,17 @@ export function createRuntime(
         batchQueue.length = 0;
 
         // Enqueue all batched events
+        const errors: Error[] = [];
         for (const { event, priority } of eventsToProcess) {
             try {
                 await eventQueue.enqueue(event, priority);
             } catch (error) {
+                const err = error as Error;
+                errors.push(err);
                 if (enableObservability) {
                     observability.logger.error(
                         'Failed to enqueue batched event',
-                        error as Error,
+                        err,
                         {
                             eventType: event.type,
                             eventId: event.id,
@@ -409,6 +412,13 @@ export function createRuntime(
                     );
                 }
             }
+        }
+
+        if (errors.length > 0) {
+            // Consider using AggregateError if the environment supports it.
+            throw new Error(
+                `Failed to enqueue ${errors.length} batched events. First error: ${errors[0]?.message}`,
+            );
         }
 
         if (enableObservability) {
@@ -434,12 +444,34 @@ export function createRuntime(
                 (options.batchSize || batchingConfig.defaultBatchSize);
 
         if (shouldFlushImmediately) {
-            void flushBatch();
+            // Fire-and-forget calls to flushBatch need error handling
+            flushBatch().catch((error) => {
+                if (enableObservability) {
+                    observability.logger.error(
+                        'Failed to flush batch during addToBatch',
+                        error as Error,
+                        {
+                            eventType: event.type,
+                            eventId: event.id,
+                        },
+                    );
+                }
+            });
         } else if (!batchTimer) {
             // Set timer for batch timeout
             const timeout =
                 options.batchTimeout || batchingConfig.defaultBatchTimeout;
-            batchTimer = setTimeout(() => flushBatch(), timeout);
+            batchTimer = setTimeout(() => {
+                // Fire-and-forget calls to flushBatch need error handling
+                flushBatch().catch((error) => {
+                    if (enableObservability) {
+                        observability.logger.error(
+                            'Failed to flush batch during timeout',
+                            error as Error,
+                        );
+                    }
+                });
+            }, timeout);
         }
     };
 
@@ -584,7 +616,29 @@ export function createRuntime(
 
                     // If flushBatch is requested, wait for flush
                     if (options.flushBatch) {
-                        await flushBatch();
+                        try {
+                            await flushBatch();
+                        } catch (error) {
+                            if (enableObservability) {
+                                observability.logger.error(
+                                    'Failed to flush batch during emit',
+                                    error as Error,
+                                    {
+                                        eventType,
+                                        eventId: event.id,
+                                        correlationId: finalCorrelationId,
+                                    },
+                                );
+                            }
+
+                            return {
+                                success: false,
+                                eventId: event.id,
+                                queued: false,
+                                error: error as Error,
+                                correlationId: finalCorrelationId,
+                            };
+                        }
                     }
 
                     return {
@@ -1006,8 +1060,18 @@ export function createRuntime(
 
         cleanup: async () => {
             // Flush any pending batched events
-            if (batchingConfig.enabled && batchQueue.length > 0) {
-                await flushBatch();
+            if (batchQueue.length > 0) {
+                try {
+                    await flushBatch();
+                } catch (error) {
+                    if (enableObservability) {
+                        observability.logger.error(
+                            'Failed to flush batch during cleanup',
+                            error as Error,
+                        );
+                    }
+                    // Continue with cleanup even if batch flush fails
+                }
             }
 
             // Clear batch timer

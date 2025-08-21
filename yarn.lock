@@ -1874,15 +1874,15 @@
   integrity sha512-RlDgexML7Z63Q8BSaqhXdCYNBy/JQnqYIwxofUrNLGCblOMHp+xux2Q8nLMLlPpgHQPoU0Do8Z6btCpRBEqZ8g==
 
 "@kodus/flow@file:.yalc/@kodus/flow":
-  version "0.1.11"
+  version "0.1.12"
   dependencies:
     "@google/generative-ai" "^0.24.1"
-    "@modelcontextprotocol/sdk" "^1.17.2"
+    "@modelcontextprotocol/sdk" "^1.17.3"
     ajv "^8.17.1"
     ajv-formats "^3.0.1"
     dotenv "^17.2.1"
     mongodb "^6.18.0"
-    openai "^5.12.2"
+    openai "^5.13.1"
     pino "^9.9.0"
     tslib "^2.8.1"
     zod "^4.0.17"
@@ -2050,7 +2050,7 @@
   dependencies:
     "@lukeed/csprng" "^1.1.0"
 
-"@modelcontextprotocol/sdk@^1.17.2":
+"@modelcontextprotocol/sdk@^1.17.2", "@modelcontextprotocol/sdk@^1.17.3":
   version "1.17.3"
   resolved "https://registry.yarnpkg.com/@modelcontextprotocol/sdk/-/sdk-1.17.3.tgz#cf92354220f0183d28179e96a9bf3a8f6d3211ae"
   integrity sha512-JPwUKWSsbzx+DLFznf/QZ32Qa+ptfbUlHhRLrBQBAFu9iI1iYvizM4p+zhhRDceSsPutXp4z+R/HPVphlIiclg==
@@ -8375,6 +8375,11 @@ openai@^5.12.1, openai@^5.12.2, openai@^5.3.0:
   version "5.12.2"
   resolved "https://registry.yarnpkg.com/openai/-/openai-5.12.2.tgz#512ab6b80eb8414837436e208f1b951442b97761"
   integrity sha512-xqzHHQch5Tws5PcKR2xsZGX9xtch+JQFz5zb14dGqlshmmDAFBFEWmeIpf7wVqWV+w7Emj7jRgkNJakyKE0tYQ==
+
+openai@^5.13.1:
+  version "5.13.1"
+  resolved "https://registry.yarnpkg.com/openai/-/openai-5.13.1.tgz#485e0a60a222256463af3a89d387140f3ac8919f"
+  integrity sha512-Jty97Apw40znKSlXZL2YDap1U2eN9NfXbqm/Rj1rExeOLEnhwezpKQ+v43kIqojavUgm30SR3iuvGlNEBR+AFg==
 
 openapi-types@^12.1.3:
   version "12.1.3"

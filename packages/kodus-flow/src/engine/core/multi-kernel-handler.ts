@@ -581,12 +581,6 @@ export class MultiKernelHandler {
     async processEvents(): Promise<void> {
         this.ensureInitialized();
 
-        console.log('🔍 [DEBUG] MULTI-KERNEL: processEvents called', {
-            timestamp: Date.now(),
-            step: 'processEvents-start',
-            stack: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
-        });
-
         this.logger.info('🔄 PROCESSING EVENTS', {
             trace: {
                 source: 'multi-kernel-handler',
@@ -596,11 +590,6 @@ export class MultiKernelHandler {
         });
 
         await this.multiKernelManager!.processAllKernels();
-
-        console.log('🔍 [DEBUG] MULTI-KERNEL: processEvents completed', {
-            timestamp: Date.now(),
-            step: 'processEvents-complete',
-        });
 
         this.logger.info('✅ EVENTS PROCESSED', {
             trace: {
@@ -1023,14 +1012,6 @@ export class MultiKernelHandler {
                 reject: (error: Error) => reject(error),
             });
 
-            // ✅ Emitir request via Kernel (ACK/NACK pelo Kernel/Runtime interno)
-            console.log('🔍 [DEBUG] MULTI-KERNEL: About to emit event', {
-                requestEventType,
-                correlationId,
-                timestamp: Date.now(),
-                step: 'before-emit',
-            });
-
             if (!kernel) {
                 cleanup();
                 this.pendingResponses.delete(correlationId);
@@ -1050,17 +1031,6 @@ export class MultiKernelHandler {
                     },
                 )
                 .then(async (emitResult) => {
-                    console.log(
-                        '🔍 [DEBUG] MULTI-KERNEL: emitEventAsync completed',
-                        {
-                            requestEventType,
-                            correlationId,
-                            success: emitResult.success,
-                            timestamp: Date.now(),
-                            step: 'emit-completed',
-                        },
-                    );
-
                     if (!emitResult.success) {
                         cleanup();
                         this.pendingResponses.delete(correlationId);
@@ -1082,28 +1052,8 @@ export class MultiKernelHandler {
                         );
                         reject(emitError);
                     } else {
-                        console.log(
-                            '🔍 [DEBUG] MULTI-KERNEL: About to call processEvents',
-                            {
-                                requestEventType,
-                                correlationId,
-                                timestamp: Date.now(),
-                                step: 'before-processEvents',
-                            },
-                        );
-
                         try {
                             await this.processEvents();
-
-                            console.log(
-                                '🔍 [DEBUG] MULTI-KERNEL: processEvents completed',
-                                {
-                                    requestEventType,
-                                    correlationId,
-                                    timestamp: Date.now(),
-                                    step: 'processEvents-completed',
-                                },
-                            );
                         } catch (processError) {
                             this.logger.error(
                                 'Failed to process events after emit',

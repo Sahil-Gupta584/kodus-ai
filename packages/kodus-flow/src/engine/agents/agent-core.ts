@@ -89,9 +89,9 @@ import {
     ReplanPolicyConfig,
     UNIFIED_STATUS,
     UnifiedStatus,
-} from '@/core/types/planning-shared.js';
+} from '../../core/types/planning-shared.js';
 import { PlanExecutor } from '../planning/executor/plan-executor.js';
-import { parseToolResult } from '@/core/utils/tool-result-parser.js';
+import { parseToolResult } from '../../core/utils/tool-result-parser.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🧩 CORE CONFIGURATION
@@ -4679,8 +4679,20 @@ export abstract class AgentCore<
                 synthesizeSpan,
                 async () => {
                     try {
+                        // Check if planner supports createFinalResponse
+                        if (!this.planner?.createFinalResponse) {
+                            this.logger.warn(
+                                'Planner does not support createFinalResponse, skipping synthesis',
+                                {
+                                    plannerType: this.planner?.constructor.name,
+                                },
+                            );
+                            markSpanOk(synthesizeSpan);
+                            return 'Synthesis not supported by this planner';
+                        }
+
                         const response =
-                            await this.planner!.createFinalResponse(context);
+                            await this.planner.createFinalResponse(context);
                         markSpanOk(synthesizeSpan);
                         return response;
                     } catch (err) {

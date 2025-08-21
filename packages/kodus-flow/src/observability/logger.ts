@@ -30,6 +30,7 @@ type LogProcessor = (
 ) => void;
 
 let globalLogProcessors: LogProcessor[] = [];
+let isProcessingLog = false; // Add module-level re-entrancy guard
 
 export function setLogContextProvider(
     provider: LogContextProvider | undefined,
@@ -81,8 +82,9 @@ function processLog(
     context?: LogContext,
     error?: Error,
 ): void {
-    if (globalLogProcessors.length === 0) return;
+    if (isProcessingLog || globalLogProcessors.length === 0) return;
 
+    isProcessingLog = true;
     try {
         const mergedContext = mergeContext(context);
         for (const processor of globalLogProcessors) {
@@ -91,6 +93,8 @@ function processLog(
     } catch (processorError) {
         // Fail silently to prevent infinite loops
         console.warn('Log processor failed:', processorError);
+    } finally {
+        isProcessingLog = false;
     }
 }
 

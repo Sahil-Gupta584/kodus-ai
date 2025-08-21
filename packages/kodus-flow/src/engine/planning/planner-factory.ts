@@ -47,7 +47,8 @@ export interface Planner<
         result: ActionResult,
         context: TContext,
     ): Promise<ResultAnalysis>;
-    createFinalResponse(context: TContext): Promise<string>;
+    // Optional hooks for Plan–Execute style planners
+    createFinalResponse?(context: TContext): Promise<string>;
     getPlanForContext?(context: TContext): unknown | null;
     resolveArgs?(
         args: Record<string, unknown>,

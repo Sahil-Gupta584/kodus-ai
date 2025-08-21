@@ -527,18 +527,6 @@ export class MultiKernelManager {
             (k) => k.status === 'running',
         );
 
-        console.log(
-            '🔍 [DEBUG] MULTI-KERNEL-MANAGER: processAllKernels called',
-            {
-                totalKernels: this.kernels.size,
-                runningKernels: runningKernels.length,
-                kernelIds: runningKernels.map((k) => k.spec.kernelId),
-                timestamp: Date.now(),
-                step: 'processAllKernels-start',
-                stack: new Error().stack?.split('\n').slice(1, 4).join(' -> '),
-            },
-        );
-
         this.logger.info('🔄 PROCESSING ALL KERNELS', {
             totalKernels: this.kernels.size,
             runningKernels: runningKernels.length,
@@ -588,16 +576,6 @@ export class MultiKernelManager {
         });
 
         await Promise.all(processPromises);
-
-        console.log(
-            '🔍 [DEBUG] MULTI-KERNEL-MANAGER: processAllKernels completed',
-            {
-                totalKernels: this.kernels.size,
-                runningKernels: runningKernels.length,
-                timestamp: Date.now(),
-                step: 'processAllKernels-complete',
-            },
-        );
 
         this.logger.info('✅ ALL KERNELS PROCESSED', {
             totalKernels: this.kernels.size,

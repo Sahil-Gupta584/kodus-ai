@@ -2236,16 +2236,8 @@ export class ExecutionKernel {
                 }
             }
 
-            // 2. Clear context update queue
-            if (this.contextUpdateQueue && this.contextUpdateQueue.size > 0) {
-                this.contextUpdateQueue.clear();
-            }
-
-            // 4. Clear context update timer
-            if (this.contextUpdateTimer) {
-                clearTimeout(this.contextUpdateTimer);
-                this.contextUpdateTimer = null;
-            }
+            // 2. Flush pending context updates to avoid data loss
+            await this.flushContextUpdates();
 
             // 5. Force garbage collection if available
             if (global.gc) {

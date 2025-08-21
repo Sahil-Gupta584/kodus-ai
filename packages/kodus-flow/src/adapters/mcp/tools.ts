@@ -196,11 +196,11 @@ export function mcpToolsToEngineTools(
         toolNameCounts.set(mcpTool.name, existing);
     }
 
-    // Log conflicts
+    // Handle conflicts
     for (const [toolName, servers] of toolNameCounts) {
         if (servers.length > 1) {
-            console.warn(
-                `⚠️  Tool name conflict detected: "${toolName}" exists in multiple servers: ${servers.join(', ')}. The first available server will be used during execution.`,
+            throw new Error(
+                `Tool name conflict detected: "${toolName}" exists in multiple servers: ${servers.join(', ')}. Please rename tools to ensure uniqueness.`,
             );
         }
     }

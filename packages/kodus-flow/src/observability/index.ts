@@ -1038,22 +1038,18 @@ export class ObservabilitySystem implements ObservabilityInterface {
     private setupGlobalErrorHandling(): void {
         // Capture uncaught exceptions
         process.on('uncaughtException', (error: Error) => {
-            this.logger.error('Uncaught Exception', error, {
-                source: 'global',
-                type: 'uncaughtException',
-            });
-
-            // Export to MongoDB if available
-            if (this.mongodbExporter) {
-                const context = this.getContext();
-                this.mongodbExporter.exportError(error, {
-                    correlationId: context?.correlationId,
-                    tenantId: context?.tenantId,
-                    executionId: context?.executionId,
+            this.logger.error(
+                'Uncaught Exception: The process will now terminate.',
+                error,
+                {
                     source: 'global',
                     type: 'uncaughtException',
-                });
-            }
+                },
+            );
+
+            // It is unsafe to resume normal operation after an 'uncaughtException'.
+            // The process should be terminated after synchronous logging.
+            process.exit(1);
         });
 
         // Capture unhandled promise rejections
@@ -1065,24 +1061,19 @@ export class ObservabilitySystem implements ObservabilityInterface {
                         ? reason
                         : new Error(String(reason));
 
-                this.logger.error('Unhandled Promise Rejection', error, {
-                    source: 'global',
-                    type: 'unhandledRejection',
-                    promise: promise.toString(),
-                });
-
-                // Export to MongoDB if available
-                if (this.mongodbExporter) {
-                    const context = this.getContext();
-                    this.mongodbExporter.exportError(error, {
-                        correlationId: context?.correlationId,
-                        tenantId: context?.tenantId,
-                        executionId: context?.executionId,
+                this.logger.error(
+                    'Unhandled Promise Rejection: The process will now terminate.',
+                    error,
+                    {
                         source: 'global',
                         type: 'unhandledRejection',
                         promise: promise.toString(),
-                    });
-                }
+                    },
+                );
+
+                // It is unsafe to resume normal operation after an 'unhandledRejection'.
+                // The process should be terminated after synchronous logging.
+                process.exit(1);
             },
         );
 

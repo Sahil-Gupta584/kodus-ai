@@ -773,50 +773,139 @@ export class SessionService {
         sessionId: string,
         agentName: string,
     ): Promise<string | null> {
-        const session = await this.getSession(sessionId);
-        if (!session) return null;
+        try {
+            const session = await this.getSession(sessionId);
+            if (!session) {
+                this.logger.warn(
+                    'Attempted to start execution for non-existent session',
+                    {
+                        context: SessionService.name,
+                        metadata: {
+                            sessionId,
+                            agentName,
+                        },
+                    },
+                );
+                return null;
+            }
 
-        const executionId = IdGenerator.executionId();
+            // Check for existing execution
+            if (session.currentExecutionId) {
+                this.logger.warn(
+                    'Attempted to start an execution while another is already in progress.',
+                    {
+                        context: SessionService.name,
+                        metadata: {
+                            sessionId,
+                            existingExecutionId: session.currentExecutionId,
+                            agentName,
+                            tenantId: session.tenantId,
+                        },
+                    },
+                );
+                return null;
+            }
 
-        session.currentExecutionId = executionId;
-        session.lastActivity = Date.now();
+            const executionId = IdGenerator.executionId();
 
-        // ✅ SYNC: Persist changes if enabled
-        if (this.config.persistent && this.storage) {
-            await this.storage.storeSession(session);
+            session.currentExecutionId = executionId;
+            session.lastActivity = Date.now();
+
+            // ✅ SYNC: Persist changes if enabled
+            if (this.config.persistent && this.storage) {
+                await this.storage.storeSession(session);
+            }
+
+            this.logger.info('Execution started successfully', {
+                context: SessionService.name,
+                metadata: {
+                    sessionId,
+                    executionId,
+                    agentName,
+                    tenantId: session.tenantId,
+                    sessionStatus: session.status,
+                },
+            });
+
+            return executionId;
+        } catch (error) {
+            this.logger.error('Failed to start execution', error as Error, {
+                context: SessionService.name,
+                metadata: {
+                    sessionId,
+                    agentName,
+                    errorMessage:
+                        error instanceof Error ? error.message : String(error),
+                },
+            });
+            return null;
         }
-
-        this.logger.info('Execution started', {
-            sessionId,
-            executionId,
-            agentName,
-        });
-
-        return executionId;
     }
 
     /**
      * End current execution in session
      */
     async endExecution(sessionId: string): Promise<boolean> {
-        const session = await this.getSession(sessionId);
-        if (!session) return false;
+        try {
+            const session = await this.getSession(sessionId);
+            if (!session) {
+                this.logger.warn(
+                    'Attempted to end execution for non-existent session',
+                    {
+                        context: SessionService.name,
+                        metadata: {
+                            sessionId,
+                        },
+                    },
+                );
+                return false;
+            }
 
-        const executionId = session.currentExecutionId;
-        session.currentExecutionId = undefined;
-        session.lastActivity = Date.now();
+            if (!session.currentExecutionId) {
+                this.logger.warn(
+                    'Attempted to end an execution, but none was in progress.',
+                    {
+                        context: SessionService.name,
+                        metadata: {
+                            sessionId,
+                            tenantId: session.tenantId,
+                        },
+                    },
+                );
+                return false;
+            }
 
-        // ✅ SYNC: Persist changes if enabled
-        if (this.config.persistent && this.storage) {
-            await this.storage.storeSession(session);
+            const executionId = session.currentExecutionId;
+            session.currentExecutionId = undefined;
+            session.lastActivity = Date.now();
+
+            // ✅ SYNC: Persist changes if enabled
+            if (this.config.persistent && this.storage) {
+                await this.storage.storeSession(session);
+            }
+
+            this.logger.info('Execution ended successfully', {
+                context: SessionService.name,
+                metadata: {
+                    sessionId,
+                    executionId,
+                    tenantId: session.tenantId,
+                    sessionStatus: session.status,
+                },
+            });
+
+            return true;
+        } catch (error) {
+            this.logger.error('Failed to end execution', error as Error, {
+                context: SessionService.name,
+                metadata: {
+                    sessionId,
+                    errorMessage:
+                        error instanceof Error ? error.message : String(error),
+                },
+            });
+            return false;
         }
-
-        this.logger.info('Execution ended', {
-            sessionId,
-            executionId,
-        });
-
-        return true;
     }
 
     /**

@@ -93,14 +93,6 @@ export class ToolEngine {
         const startTime = Date.now();
         const obs = getObservability();
 
-        console.log('🔍 [DEBUG] TOOL-ENGINE: executeCall started', {
-            toolName,
-            callId,
-            timeout,
-            timestamp: Date.now(),
-            step: 'executeCall-start',
-        });
-
         try {
             const span = startToolSpan(obs.telemetry, {
                 toolName: String(toolName),
@@ -140,14 +132,6 @@ export class ToolEngine {
 
             return result;
         } catch (error) {
-            console.log('🔍 [DEBUG] TOOL-ENGINE: executeCall caught error', {
-                toolName,
-                callId,
-                errorMessage: (error as Error).message,
-                timestamp: Date.now(),
-                step: 'executeCall-error-caught',
-            });
-
             const lastError = error as Error;
             const executionTime = Date.now() - startTime;
 
@@ -181,13 +165,6 @@ export class ToolEngine {
         input: TInput,
         callId: string,
     ): Promise<TOutput> {
-        console.log('🔍 [DEBUG] TOOL-ENGINE: executeToolInternal started', {
-            toolName,
-            callId,
-            timestamp: Date.now(),
-            step: 'executeToolInternal-start',
-        });
-
         if (isBuiltInTool(toolName)) {
             const result = executeBuiltInTool(toolName);
 
@@ -261,13 +238,6 @@ export class ToolEngine {
         let error: Error | undefined;
 
         try {
-            console.log('🔍 [DEBUG] TOOL-ENGINE: About to execute tool', {
-                toolName,
-                callId,
-                timestamp: Date.now(),
-                step: 'before-tool-execute',
-            });
-
             // Create tool context using factory function
             const context = createToolContext(
                 tool.name,
@@ -279,13 +249,6 @@ export class ToolEngine {
 
             // Execute tool using execute function
             result = await tool.execute(input, context);
-
-            console.log('🔍 [DEBUG] TOOL-ENGINE: Tool execution completed', {
-                toolName,
-                callId,
-                timestamp: Date.now(),
-                step: 'tool-execute-completed',
-            });
         } catch (err) {
             error = err as Error;
 
@@ -617,14 +580,6 @@ export class ToolEngine {
                     input: unknown;
                 };
 
-                console.log('🔍 [DEBUG] TOOL-ENGINE: Handler called', {
-                    toolName,
-                    correlationId,
-                    eventId: event.id,
-                    timestamp: Date.now(),
-                    step: 'handler-start',
-                });
-
                 try {
                     this.logger.info('🔧 [TOOL] Starting tool execution', {
                         toolName,
@@ -634,29 +589,9 @@ export class ToolEngine {
                     });
 
                     const startTime = Date.now();
-                    console.log(
-                        '🔍 [DEBUG] TOOL-ENGINE: About to call executeCall',
-                        {
-                            toolName,
-                            correlationId,
-                            timestamp: Date.now(),
-                            step: 'before-executeCall',
-                        },
-                    );
 
                     const result = await this.executeCall(toolName, input);
                     const executionTime = Date.now() - startTime;
-
-                    console.log(
-                        '🔍 [DEBUG] TOOL-ENGINE: executeCall completed',
-                        {
-                            toolName,
-                            correlationId,
-                            executionTimeMs: executionTime,
-                            timestamp: Date.now(),
-                            step: 'executeCall-completed',
-                        },
-                    );
 
                     this.logger.info('🔧 [TOOL] Tool execution completed', {
                         toolName,
@@ -668,17 +603,6 @@ export class ToolEngine {
 
                     // ✅ UNIFICADO: Sempre verificar se há erro no resultado
                     const hasError = this.checkToolResultError(result);
-
-                    console.log(
-                        '🔍 [DEBUG] TOOL-ENGINE: About to check tool result error',
-                        {
-                            toolName,
-                            correlationId,
-                            hasError,
-                            timestamp: Date.now(),
-                            step: 'check-error',
-                        },
-                    );
 
                     const responseData = {
                         ...(typeof result === 'object' && result !== null
@@ -708,18 +632,6 @@ export class ToolEngine {
                             responseData,
                         );
                     }
-
-                    // ✅ SIMPLIFIED: No manual ACK - let runtime handle it automatically
-                    console.log(
-                        '🔍 [DEBUG] TOOL-ENGINE: Tool execution completed successfully',
-                        {
-                            toolName,
-                            correlationId,
-                            eventId: event.id,
-                            timestamp: Date.now(),
-                            step: 'tool-execution-success',
-                        },
-                    );
                 } catch (error) {
                     this.logger.error(
                         '🔧 [TOOL] Tool execution failed via events',
@@ -755,19 +667,6 @@ export class ToolEngine {
                             toolName,
                         },
                     });
-
-                    // ✅ SIMPLIFIED: No manual NACK - let runtime handle it automatically
-                    console.log(
-                        '🔍 [DEBUG] TOOL-ENGINE: Tool execution failed',
-                        {
-                            toolName,
-                            correlationId,
-                            eventId: event.id,
-                            error: (error as Error).message,
-                            timestamp: Date.now(),
-                            step: 'tool-execution-error',
-                        },
-                    );
                 }
             },
         );
