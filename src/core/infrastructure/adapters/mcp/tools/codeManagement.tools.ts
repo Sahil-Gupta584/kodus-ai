@@ -196,7 +196,7 @@ export class CodeManagementTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'list_repositories',
+            name: 'KODUS_LIST_REPOSITORIES',
             description:
                 'List all repositories accessible to the team. Use this to discover available repositories, check repository metadata (private/public, archived status, languages), or when you need to see what repositories exist before performing other operations.',
             inputSchema,
@@ -302,7 +302,7 @@ export class CodeManagementTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'list_pull_requests',
+            name: 'KODUS_LIST_PULL_REQUESTS',
             description:
                 'List pull requests with advanced filtering (by state, repository, author, date range). Use this to find specific PRs, analyze PR patterns, or get overview of team activity. Returns PR metadata only - use get_pull_request for full PR content.',
             inputSchema,
@@ -420,7 +420,7 @@ export class CodeManagementTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'list_commits',
+            name: 'KODUS_LIST_COMMITS',
             description:
                 'List commit history from repositories with filtering by author, date range, or branch. Use this to analyze commit patterns, find specific commits, or track development activity. Returns commit metadata and messages.',
             inputSchema,
@@ -500,7 +500,7 @@ export class CodeManagementTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'get_pull_request',
+            name: 'KODUS_GET_PULL_REQUEST',
             description:
                 'Get complete details of a specific pull request including description, commits, reviews, and list of modified files. Use this when you need full PR context - NOT for file content (use get_pull_request_file_content for that).',
             inputSchema,
@@ -614,7 +614,7 @@ export class CodeManagementTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'get_repository_files',
+            name: 'KODUS_GET_REPOSITORY_FILES',
             description:
                 'Get file tree/listing from a repository branch with pattern filtering. Use this to explore repository structure, find specific files by pattern, or get overview of codebase organization. Returns file paths only - NOT file content.',
             inputSchema,
@@ -706,7 +706,7 @@ export class CodeManagementTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'get_repository_content',
+            name: 'KODUS_GET_REPOSITORY_CONTENT',
             description:
                 'Get the current content of a specific file from a repository branch. Use this to read files from the main/current branch - NOT from pull requests (use get_pull_request_file_content for PR files).',
             inputSchema,
@@ -795,7 +795,7 @@ export class CodeManagementTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'get_repository_languages',
+            name: 'KODUS_GET_REPOSITORY_LANGUAGES',
             description:
                 'Get programming languages breakdown and statistics for a repository. Use this to understand technology stack, language distribution, or filter repositories by technology.',
             inputSchema,
@@ -874,7 +874,7 @@ export class CodeManagementTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'get_pull_request_file_content',
+            name: 'KODUS_GET_PULL_REQUEST_FILE_CONTENT',
             description:
                 'Get the modified content of a specific file within a pull request context. Use this to read how a file looks AFTER the PR changes are applied - NOT the original version.',
             inputSchema,
@@ -1004,7 +1004,7 @@ export class CodeManagementTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'get_diff_for_file',
+            name: 'KODUS_GET_DIFF_FOR_FILE',
             description:
                 'Get the exact diff/patch showing what changed in a specific file within a pull request. Use this to see the precise changes made - additions, deletions, and modifications line by line.',
             inputSchema,

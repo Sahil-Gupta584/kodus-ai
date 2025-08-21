@@ -63,7 +63,7 @@ export class KodyRulesTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'get_kody_rules',
+            name: 'KODUS_GET_KODY_RULES',
             description:
                 'Get all active Kody Rules at organization level. Use this to see organization-wide coding standards, global rules that apply across all repositories, or when you need a complete overview of all active rules. Returns only ACTIVE status rules.',
             inputSchema,
@@ -147,7 +147,7 @@ export class KodyRulesTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'get_kody_rules_repository',
+            name: 'KODUS_GET_KODY_RULES_REPOSITORY',
             description:
                 'Get active Kody Rules specific to a particular repository. Use this to see repository-specific coding standards, rules that only apply to one codebase, or when analyzing rules for a specific project. More focused than get_kody_rules.',
             inputSchema,
@@ -297,7 +297,7 @@ export class KodyRulesTools {
         type InputType = z.infer<typeof inputSchema>;
 
         return {
-            name: 'create_kody_rule',
+            name: 'KODUS_CREATE_KODY_RULE',
             description:
                 'Create a new Kody Rule with custom scope and severity. pull_request scope: analyzes entire PR context for PR-level rules. file scope: analyzes individual files one by one for file-level rules. Rule starts in pending status.',
             inputSchema,
