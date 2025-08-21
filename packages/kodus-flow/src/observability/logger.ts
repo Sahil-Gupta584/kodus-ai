@@ -18,10 +18,48 @@ export interface LogContext {
 type LogContextProvider = () => LogContext | undefined;
 let globalLogContextProvider: LogContextProvider | undefined;
 
+/**
+ * Log processor type for external processing (e.g. MongoDB export)
+ */
+type LogProcessor = (
+    level: LogLevel,
+    message: string,
+    component: string,
+    context?: LogContext,
+    error?: Error,
+) => void;
+
+let globalLogProcessors: LogProcessor[] = [];
+let isProcessingLog = false; // Add module-level re-entrancy guard
+
 export function setLogContextProvider(
     provider: LogContextProvider | undefined,
 ): void {
     globalLogContextProvider = provider;
+}
+
+/**
+ * Add a global log processor
+ */
+export function addLogProcessor(processor: LogProcessor): void {
+    globalLogProcessors.push(processor);
+}
+
+/**
+ * Remove a log processor
+ */
+export function removeLogProcessor(processor: LogProcessor): void {
+    const index = globalLogProcessors.indexOf(processor);
+    if (index > -1) {
+        globalLogProcessors.splice(index, 1);
+    }
+}
+
+/**
+ * Clear all log processors
+ */
+export function clearLogProcessors(): void {
+    globalLogProcessors = [];
 }
 
 function mergeContext(context?: LogContext): LogContext | undefined {
@@ -31,6 +69,32 @@ function mergeContext(context?: LogContext): LogContext | undefined {
         return { ...base, ...context };
     } catch {
         return context;
+    }
+}
+
+/**
+ * Process log through global processors
+ */
+function processLog(
+    level: LogLevel,
+    message: string,
+    component: string,
+    context?: LogContext,
+    error?: Error,
+): void {
+    if (isProcessingLog || globalLogProcessors.length === 0) return;
+
+    isProcessingLog = true;
+    try {
+        const mergedContext = mergeContext(context);
+        for (const processor of globalLogProcessors) {
+            processor(level, message, component, mergedContext, error);
+        }
+    } catch (processorError) {
+        // Fail silently to prevent infinite loops
+        console.warn('Log processor failed:', processorError);
+    } finally {
+        isProcessingLog = false;
     }
 }
 
@@ -80,18 +144,21 @@ class SimpleLogger implements Logger {
         if (!this.shouldLog('debug')) return;
         const formattedMessage = this.formatMessage('debug', message);
         console.debug(formattedMessage, mergeContext(context));
+        processLog('debug', message, this.componentName, context);
     }
 
     info(message: string, context?: LogContext): void {
         if (!this.shouldLog('info')) return;
         const formattedMessage = this.formatMessage('info', message);
         console.log(formattedMessage, mergeContext(context));
+        processLog('info', message, this.componentName, context);
     }
 
     warn(message: string, context?: LogContext): void {
         if (!this.shouldLog('warn')) return;
         const formattedMessage = this.formatMessage('warn', message);
         console.warn(formattedMessage, mergeContext(context));
+        processLog('warn', message, this.componentName, context);
     }
 
     error(message: string, error?: Error, context?: LogContext): void {
@@ -108,6 +175,7 @@ class SimpleLogger implements Logger {
         };
 
         console.error(formattedMessage, mergeContext(errorContext));
+        processLog('error', message, this.componentName, errorContext, error);
     }
 }
 

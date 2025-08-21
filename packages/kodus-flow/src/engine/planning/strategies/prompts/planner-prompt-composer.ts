@@ -206,15 +206,6 @@ export class PlannerPromptComposer {
 
         const finalPrompt = sections.join('\n\n');
 
-        // ✅ DEBUG: Log prompt size
-        console.log('🔍 PROMPT SIZE:', {
-            totalLength: finalPrompt.length,
-            sections: sections.length,
-            additionalContextSize: context.additionalContext
-                ? JSON.stringify(context.additionalContext).length
-                : 0,
-        });
-
         return finalPrompt;
     }
 

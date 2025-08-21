@@ -891,7 +891,7 @@ export class MultiKernelHandler {
     // ──────────────────────────────────────────────────────────────────────────────
 
     /**
-     * Send request using runtime's built-in ACK/NACK system
+     * Send request using event-driven communication (simplified)
      */
     async request<TRequest = unknown, TResponse = unknown>(
         requestEventType: string,
@@ -906,7 +906,7 @@ export class MultiKernelHandler {
 
         const correlationId =
             options.correlationId || this.generateCorrelationId();
-        const timeout = options.timeout || 120000; // ✅ AUMENTADO: 120s timeout para APIs externas
+        const timeout = options.timeout || 120000;
 
         const targetKernel = this.determineTargetKernel(requestEventType);
         const kernel = this.multiKernelManager!.getKernel(
@@ -917,80 +917,33 @@ export class MultiKernelHandler {
             throw new Error(`Target kernel not available: ${targetKernel}`);
         }
 
+        // ✅ SIMPLIFIED: Event-driven communication
+        return this.emitAndWait<TRequest, TResponse>(
+            kernel,
+            requestEventType,
+            responseEventType,
+            data,
+            correlationId,
+            timeout,
+        );
+    }
+
+    /**
+     * Simplified event-driven communication (no manual timeout)
+     */
+    private async emitAndWait<TRequest, TResponse>(
+        kernel: ReturnType<MultiKernelManager['getKernel']>,
+        requestEventType: string,
+        responseEventType: string,
+        data: TRequest,
+        correlationId: string,
+        _timeout: number, // ✅ IGNORED: No manual timeout
+    ): Promise<TResponse> {
         return new Promise<TResponse>((resolve, reject) => {
-            let responseReceived = false;
-            let timeoutId: NodeJS.Timeout | null = null;
-
-            // ✅ IMPROVED: Cleanup function to prevent memory leaks
+            // ✅ SIMPLIFIED: No manual timeout - let tool execute naturally
             const cleanup = () => {
-                if (timeoutId) {
-                    clearTimeout(timeoutId);
-                    timeoutId = null;
-                }
-                // ❌ REMOVED: responseReceived = true; // Não definir aqui!
+                // No cleanup needed without timeout
             };
-
-            timeoutId = setTimeout(() => {
-                if (!responseReceived) {
-                    responseReceived = true; // ✅ CORREÇÃO: Definir aqui ANTES do cleanup
-                    cleanup();
-                    const timeoutError = new Error(
-                        `Timeout waiting for ${responseEventType} (${timeout}ms)`,
-                    );
-                    this.logger.error(
-                        '⏰ MULTI-KERNEL REQUEST TIMEOUT',
-                        timeoutError,
-                        {
-                            requestEventType,
-                            responseEventType,
-                            correlationId,
-                            timeout,
-                            trace: {
-                                source: 'multi-kernel-handler',
-                                step: 'request-timeout',
-                                timestamp: Date.now(),
-                            },
-                        },
-                    );
-                    // Emitir um evento de timeout via Kernel (sem tocar no Runtime)
-                    if (requestEventType === 'tool.execute.request') {
-                        void kernel
-                            .emitEventAsync(
-                                'tool.execute.timeout' as EventType,
-                                {
-                                    correlationId,
-                                    toolName:
-                                        (data as { toolName?: string })
-                                            .toolName || 'unknown',
-                                    timeout,
-                                    error: timeoutError.message,
-                                } as EventPayloads[EventType],
-                                { correlationId, timeout },
-                            )
-                            .then(async () => {
-                                try {
-                                    // Processar imediatamente para evitar ACK pendente e requeue
-                                    await this.processEvents();
-                                } catch (procErr) {
-                                    this.logger.error(
-                                        'Failed to process events after timeout emit',
-                                        procErr as Error,
-                                        { correlationId },
-                                    );
-                                }
-                            })
-                            .catch((emitErr) => {
-                                this.logger.error(
-                                    'Failed to emit timeout event',
-                                    emitErr as Error,
-                                    { correlationId },
-                                );
-                            });
-                    }
-
-                    reject(timeoutError);
-                }
-            }, timeout);
 
             // ✅ Registrar canal de respostas uma única vez por (kernel,eventType) e rotear por correlationId
             const responseKernel =
@@ -1059,7 +1012,13 @@ export class MultiKernelHandler {
                 reject: (error: Error) => reject(error),
             });
 
-            // ✅ Emitir request via Kernel (ACK/NACK pelo Kernel/Runtime interno)
+            if (!kernel) {
+                cleanup();
+                this.pendingResponses.delete(correlationId);
+                reject(new Error('Kernel is null'));
+                return;
+            }
+
             kernel
                 .emitEventAsync(
                     requestEventType as EventType,
@@ -1069,7 +1028,6 @@ export class MultiKernelHandler {
                     } as EventPayloads[EventType],
                     {
                         correlationId,
-                        timeout,
                     },
                 )
                 .then(async (emitResult) => {
@@ -1349,65 +1307,8 @@ export class MultiKernelHandler {
     }
 
     // ──────────────────────────────────────────────────────────────────────────────
-    // 🎯 ACK/NACK METHODS FOR EVENT HANDLERS
+    // ✅ REFACTOR: ACK/NACK removido - agora é automático no Runtime
     // ──────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Acknowledge event processing completion
-     */
-    async ack(eventId: string): Promise<void> {
-        await this.ensureInitialized();
-
-        // ACK via Kernel (sem tocar no Runtime)
-        const agentKernel =
-            this.multiKernelManager!.getKernel('agent-execution');
-        if (!agentKernel) {
-            this.logger.warn('Agent kernel not available for ACK', { eventId });
-            return;
-        }
-
-        try {
-            await agentKernel.ackEvent(eventId);
-            this.logger.debug('Event ACK successful', { eventId });
-        } catch (error) {
-            this.logger.error('Failed to ACK event', error as Error, {
-                eventId,
-            });
-            throw error;
-        }
-    }
-
-    /**
-     * Negative acknowledge event with optional error
-     */
-    async nack(eventId: string, error?: Error): Promise<void> {
-        await this.ensureInitialized();
-
-        // NACK via Kernel (sem tocar no Runtime)
-        const agentKernel =
-            this.multiKernelManager!.getKernel('agent-execution');
-        if (!agentKernel) {
-            this.logger.warn('Agent kernel not available for NACK', {
-                eventId,
-                error,
-            });
-            return;
-        }
-
-        try {
-            await agentKernel.nackEvent(eventId, error);
-            this.logger.debug('Event NACK successful', {
-                eventId,
-                error: error?.message,
-            });
-        } catch (nackError) {
-            this.logger.error('Failed to NACK event', nackError as Error, {
-                eventId,
-                originalError: error?.message,
-            });
-            throw nackError;
-        }
-    }
 }
 
 /**

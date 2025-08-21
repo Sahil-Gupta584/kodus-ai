@@ -279,8 +279,7 @@ export class ExecutionKernel {
         { value: unknown; timestamp: number }
     >();
     private contextUpdateTimer: NodeJS.Timeout | null = null;
-    private eventBatchQueue: Event[] = [];
-    private eventBatchTimer: NodeJS.Timeout | null = null;
+    // REMOVED: eventBatchQueue and eventBatchTimer - now delegated to Runtime
     private lastSnapshotTs = 0;
     private lastEventSnapshotCount = 0;
 
@@ -419,6 +418,25 @@ export class ExecutionKernel {
                         executionId: this.state.id,
                         tenantId: this.config.tenantId,
                         middleware,
+                        // Configure batching if performance batching is enabled
+                        batching: this.config.performance?.enableBatching
+                            ? {
+                                  enabled: true,
+                                  defaultBatchSize:
+                                      this.config.performance.batchSize || 50,
+                                  defaultBatchTimeout:
+                                      this.config.performance.batchTimeoutMs ||
+                                      100,
+                                  maxBatchSize: 1000,
+                                  // Critical events should flush immediately
+                                  flushOnEventTypes: [
+                                      'kernel.completed',
+                                      'kernel.failed',
+                                      'workflow.completed',
+                                      'workflow.failed',
+                                  ],
+                              }
+                            : undefined,
                     };
 
                     this.runtime = createRuntime(
@@ -523,25 +541,8 @@ export class ExecutionKernel {
         }
 
         try {
-            // Performance: Batch event processing
-            if (this.config.performance?.enableBatching) {
-                this.eventBatchQueue.push(event);
-
-                if (
-                    this.eventBatchQueue.length >=
-                    (this.config.performance.batchSize || 10)
-                ) {
-                    await this.processEventBatch();
-                } else if (!this.eventBatchTimer) {
-                    this.eventBatchTimer = setTimeout(
-                        () => this.processEventBatch(),
-                        this.config.performance.batchTimeoutMs || 100,
-                    );
-                }
-            } else {
-                // Direct processing
-                await this.sendEvent(event);
-            }
+            // Send event - batching is now handled by Runtime if configured
+            await this.sendEvent(event);
         } catch (error) {
             this.logger.error('Failed to run workflow', error as Error, {
                 event,
@@ -565,8 +566,26 @@ export class ExecutionKernel {
             // Performance: Prepare context in batch
             this.prepareContextForEvent(event);
 
-            // Send to runtime
-            this.runtime.emit(event.type, event.data);
+            // Send to runtime with batching options if configured
+            const useBatching = this.config.performance?.enableBatching;
+            if (useBatching) {
+                // Use async emit with batching options
+                await this.runtime.emitAsync(event.type, event.data, {
+                    batch: true,
+                    batchSize: this.config.performance?.batchSize,
+                    batchTimeout: this.config.performance?.batchTimeoutMs,
+                    // Flush immediately for critical events
+                    flushBatch: [
+                        'kernel.completed',
+                        'kernel.failed',
+                        'workflow.completed',
+                        'workflow.failed',
+                    ].includes(event.type),
+                });
+            } else {
+                // Use synchronous emit
+                this.runtime.emit(event.type, event.data);
+            }
 
             // Update state
             this.updateStateFromEvent(event);
@@ -586,37 +605,7 @@ export class ExecutionKernel {
         }
     }
 
-    /**
-     * Process batched events for better performance
-     */
-    private async processEventBatch(): Promise<void> {
-        if (this.eventBatchQueue.length === 0) return;
-
-        const events = [...this.eventBatchQueue];
-        this.eventBatchQueue = [];
-
-        if (this.eventBatchTimer) {
-            clearTimeout(this.eventBatchTimer);
-            this.eventBatchTimer = null;
-        }
-
-        try {
-            // Process all events in batch
-            for (const event of events) {
-                await this.sendEvent(event);
-            }
-
-            this.logger.debug('Event batch processed', {
-                batchSize: events.length,
-                totalEvents: this.state.eventCount,
-            });
-        } catch (error) {
-            this.logger.error('Failed to process event batch', error as Error, {
-                batchSize: events.length,
-            });
-            throw error;
-        }
-    }
+    // REMOVED: processEventBatch - now delegated to Runtime batching
 
     /**
      * Pause execution with snapshot
@@ -705,7 +694,6 @@ export class ExecutionKernel {
         try {
             // Performance: Flush all pending updates
             await this.flushContextUpdates();
-            await this.processEventBatch();
 
             // Update state
             this.state.status = 'completed';
@@ -842,7 +830,7 @@ export class ExecutionKernel {
             performance: {
                 cache: this.contextCache.getStats(),
                 pendingUpdates: this.contextUpdateQueue.size,
-                pendingEvents: this.eventBatchQueue.length,
+                // pendingEvents: removed - batching delegated to Runtime
             },
         };
     }
@@ -1128,6 +1116,9 @@ export class ExecutionKernel {
             const timer = setInterval(async () => {
                 const memoryUsage = process.memoryUsage().heapUsed;
                 if (memoryUsage > maxMemory) {
+                    // ✅ CORREÇÃO: Cleanup memory antes de pausar
+                    await this.cleanupMemory();
+
                     this.logger.warn('Memory quota exceeded', {
                         memoryUsage,
                         maxMemory,
@@ -1303,11 +1294,17 @@ export class ExecutionKernel {
                 recoveryAttempts: this.recoveryAttempts,
             });
 
-            // Perform actual DLQ reprocessing using the enhanced runtime interface
+            // ✅ REFACTOR: DLQ reprocessing com critérios adaptativos
             if (runtime.reprocessDLQByCriteria) {
+                // Critérios baseados no estado do sistema
+                const memoryUsage = process.memoryUsage().heapUsed;
+                const isHighMemory = memoryUsage > 500 * 1024 * 1024; // 500MB
+
                 const criteria = {
-                    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-                    limit: 10,
+                    maxAge: isHighMemory ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000, // 1h vs 24h
+                    limit: isHighMemory ? 5 : 10, // Menos eventos sob alta memória
+                    eventType:
+                        this.recoveryAttempts > 3 ? undefined : 'agent.error', // Foco em erros de agente
                 };
 
                 const result = await runtime.reprocessDLQByCriteria(criteria);
@@ -1316,6 +1313,8 @@ export class ExecutionKernel {
                     reprocessedCount: result.reprocessedCount,
                     eventTypes: result.events.map((e) => e.type),
                     recoveryAttempts: this.recoveryAttempts,
+                    criteria,
+                    memoryUsageMB: Math.round(memoryUsage / 1024 / 1024),
                 });
 
                 // Update recovery metrics if any events were reprocessed
@@ -1344,14 +1343,10 @@ export class ExecutionKernel {
             this.contextUpdateTimer = null;
         }
 
-        if (this.eventBatchTimer) {
-            clearTimeout(this.eventBatchTimer);
-            this.eventBatchTimer = null;
-        }
+        // Batch timer removed - batching delegated to Runtime
 
         // Clear queues
         this.contextUpdateQueue.clear();
-        this.eventBatchQueue = [];
 
         // Clear cache
         this.contextCache.clear();
@@ -1750,7 +1745,7 @@ export class ExecutionKernel {
                 ...baseStatus.performance,
                 cache: this.contextCache.getStats(),
                 pendingUpdates: this.contextUpdateQueue.size,
-                pendingEvents: this.eventBatchQueue.length,
+                // pendingEvents: removed - batching delegated to Runtime
             },
         };
     }
@@ -1923,7 +1918,7 @@ export class ExecutionKernel {
             kernel: {
                 contextCacheSize: this.contextCache.size,
                 contextUpdateQueueSize: this.contextUpdateQueue.size,
-                eventBatchQueueSize: this.eventBatchQueue.length,
+                // eventBatchQueueSize: removed - batching delegated to Runtime,
             },
         };
     }
@@ -1968,17 +1963,14 @@ export class ExecutionKernel {
         // Cleanup kernel resources
         this.contextCache.clear();
         this.contextUpdateQueue.clear();
-        this.eventBatchQueue.length = 0;
+        // Event batch queue removed - batching delegated to Runtime
 
         // Clear timers
         if (this.contextUpdateTimer) {
             clearTimeout(this.contextUpdateTimer);
             this.contextUpdateTimer = null;
         }
-        if (this.eventBatchTimer) {
-            clearTimeout(this.eventBatchTimer);
-            this.eventBatchTimer = null;
-        }
+        // Batch timer removed - batching delegated to Runtime
 
         // Cleanup enhanced queue timers
         this.cleanupEnhancedQueueFeatures();
@@ -2037,7 +2029,7 @@ export class ExecutionKernel {
             // Clear all caches and queues
             this.contextCache.clear();
             this.contextUpdateQueue.clear();
-            this.eventBatchQueue.length = 0;
+            // Event batch queue cleanup removed - batching delegated to Runtime
 
             this.logger.info('✅ KERNEL CLEARED', {
                 kernelId: this.state.id,
@@ -2070,7 +2062,7 @@ export class ExecutionKernel {
     } {
         const runtimeHealthy = !!this.runtime;
         const contextHealthy = this.contextCache.size < 1000;
-        const memoryHealthy = this.eventBatchQueue.length < 100;
+        const memoryHealthy = true; // Event batch queue removed - always consider healthy
         const performanceHealthy = this.contextUpdateQueue.size < 50;
 
         const allHealthy =
@@ -2222,6 +2214,38 @@ export class ExecutionKernel {
         }
 
         return this.state.contextData[contextKey] as Record<string, unknown>;
+    }
+
+    /**
+     * Cleanup memory to prevent memory leaks
+     */
+    private async cleanupMemory(): Promise<void> {
+        try {
+            if (this.persistor && 'cleanupOldSnapshots' in this.persistor) {
+                try {
+                    await (
+                        this.persistor as {
+                            cleanupOldSnapshots(): Promise<void>;
+                        }
+                    ).cleanupOldSnapshots();
+                } catch (error) {
+                    this.logger.error(
+                        '[DEBUG] KERNEL: Snapshot cleanup failed',
+                        error as Error,
+                    );
+                }
+            }
+
+            // 2. Flush pending context updates to avoid data loss
+            await this.flushContextUpdates();
+
+            // 5. Force garbage collection if available
+            if (global.gc) {
+                global.gc();
+            }
+        } catch (error) {
+            this.logger.error('Memory cleanup failed', error as Error);
+        }
     }
 }
 

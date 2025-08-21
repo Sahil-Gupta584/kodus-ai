@@ -122,7 +122,7 @@ export class StepExecution {
             observation: {
                 isComplete: false,
                 isSuccessful: false,
-                feedback: '',
+                feedback: 'Step initialized',
                 shouldContinue: false,
             },
             duration: 0,

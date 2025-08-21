@@ -118,6 +118,15 @@ export interface RuntimeConfig {
         replayBatchSize?: number;
         maxStoredEvents?: number;
     };
+
+    // Batching configuration
+    batching?: {
+        enabled?: boolean; // Default: false
+        defaultBatchSize?: number; // Default: 50
+        defaultBatchTimeout?: number; // Default: 100ms
+        maxBatchSize?: number; // Default: 1000
+        flushOnEventTypes?: string[]; // Event types that trigger immediate flush
+    };
 }
 
 /**
@@ -134,6 +143,12 @@ export interface EmitOptions {
     };
     correlationId?: string;
     tenantId?: string;
+
+    // Batching options
+    batch?: boolean; // Enable batching for this event
+    batchSize?: number; // Override default batch size
+    batchTimeout?: number; // Override default batch timeout (ms)
+    flushBatch?: boolean; // Force flush the batch after this event
 }
 
 /**
@@ -259,6 +274,7 @@ export function createRuntime(
         queueConfig = {},
         enableEventStore = false,
         eventStoreConfig = {},
+        batching = {},
     } = config;
 
     // Create persistor if not provided
@@ -350,6 +366,115 @@ export function createRuntime(
         { event: AnyEvent; timestamp: number }
     >();
 
+    // Batching configuration
+    const batchingConfig = {
+        enabled: batching.enabled || false,
+        defaultBatchSize: batching.defaultBatchSize || 50,
+        defaultBatchTimeout: batching.defaultBatchTimeout || 100,
+        maxBatchSize: batching.maxBatchSize || 1000,
+        flushOnEventTypes: batching.flushOnEventTypes || [],
+    };
+
+    // Batch queue for buffering events
+    const batchQueue: Array<{ event: AnyEvent; priority: number }> = [];
+    let batchTimer: NodeJS.Timeout | null = null;
+
+    // Function to flush the batch
+    const flushBatch = async (): Promise<void> => {
+        if (batchQueue.length === 0) return;
+
+        // Clear timer
+        if (batchTimer) {
+            clearTimeout(batchTimer);
+            batchTimer = null;
+        }
+
+        // Copy and clear the batch
+        const eventsToProcess = [...batchQueue];
+        batchQueue.length = 0;
+
+        // Enqueue all batched events
+        const errors: Error[] = [];
+        for (const { event, priority } of eventsToProcess) {
+            try {
+                await eventQueue.enqueue(event, priority);
+            } catch (error) {
+                const err = error as Error;
+                errors.push(err);
+                if (enableObservability) {
+                    observability.logger.error(
+                        'Failed to enqueue batched event',
+                        err,
+                        {
+                            eventType: event.type,
+                            eventId: event.id,
+                        },
+                    );
+                }
+            }
+        }
+
+        if (errors.length > 0) {
+            // Consider using AggregateError if the environment supports it.
+            throw new Error(
+                `Failed to enqueue ${errors.length} batched events. First error: ${errors[0]?.message}`,
+            );
+        }
+
+        if (enableObservability) {
+            observability.logger.debug('Batch flushed', {
+                eventCount: eventsToProcess.length,
+            });
+        }
+    };
+
+    // Function to add event to batch
+    const addToBatch = (
+        event: AnyEvent,
+        priority: number,
+        options: EmitOptions,
+    ) => {
+        batchQueue.push({ event, priority });
+
+        // Check if we should flush immediately
+        const shouldFlushImmediately =
+            options.flushBatch ||
+            batchingConfig.flushOnEventTypes.includes(event.type) ||
+            batchQueue.length >=
+                (options.batchSize || batchingConfig.defaultBatchSize);
+
+        if (shouldFlushImmediately) {
+            // Fire-and-forget calls to flushBatch need error handling
+            flushBatch().catch((error) => {
+                if (enableObservability) {
+                    observability.logger.error(
+                        'Failed to flush batch during addToBatch',
+                        error as Error,
+                        {
+                            eventType: event.type,
+                            eventId: event.id,
+                        },
+                    );
+                }
+            });
+        } else if (!batchTimer) {
+            // Set timer for batch timeout
+            const timeout =
+                options.batchTimeout || batchingConfig.defaultBatchTimeout;
+            batchTimer = setTimeout(() => {
+                // Fire-and-forget calls to flushBatch need error handling
+                flushBatch().catch((error) => {
+                    if (enableObservability) {
+                        observability.logger.error(
+                            'Failed to flush batch during timeout',
+                            error as Error,
+                        );
+                    }
+                });
+            }, timeout);
+        }
+    };
+
     // Cleanup de ACKs expirados (SEM RETRY AUTOMÁTICO)
     const ackSweepIntervalMs = Math.max(
         100,
@@ -413,20 +538,30 @@ export function createRuntime(
                 });
             }
 
-            // Enfileirar de forma não-bloqueante
-            eventQueue.enqueue(event, options.priority || 0).catch((error) => {
-                if (enableObservability) {
-                    observability.logger.error(
-                        'Failed to enqueue event',
-                        error,
-                        {
-                            eventType,
-                            data,
-                            correlationId,
-                        },
-                    );
-                }
-            });
+            // Check if batching is enabled
+            const useBatching = batchingConfig.enabled || options.batch;
+
+            if (useBatching) {
+                // Add to batch queue
+                addToBatch(event, options.priority || 0, options);
+            } else {
+                // Enfileirar de forma não-bloqueante
+                eventQueue
+                    .enqueue(event, options.priority || 0)
+                    .catch((error) => {
+                        if (enableObservability) {
+                            observability.logger.error(
+                                'Failed to enqueue event',
+                                error,
+                                {
+                                    eventType,
+                                    data,
+                                    correlationId,
+                                },
+                            );
+                        }
+                    });
+            }
 
             return {
                 success: true,
@@ -472,17 +607,59 @@ export function createRuntime(
                     });
                 }
 
-                const queued = await eventQueue.enqueue(
-                    event,
-                    options.priority || 0,
-                );
+                // Check if batching is enabled
+                const useBatching = batchingConfig.enabled || options.batch;
 
-                return {
-                    success: queued,
-                    eventId: event.id,
-                    queued,
-                    correlationId: finalCorrelationId,
-                };
+                if (useBatching) {
+                    // Add to batch queue
+                    addToBatch(event, options.priority || 0, options);
+
+                    // If flushBatch is requested, wait for flush
+                    if (options.flushBatch) {
+                        try {
+                            await flushBatch();
+                        } catch (error) {
+                            if (enableObservability) {
+                                observability.logger.error(
+                                    'Failed to flush batch during emit',
+                                    error as Error,
+                                    {
+                                        eventType,
+                                        eventId: event.id,
+                                        correlationId: finalCorrelationId,
+                                    },
+                                );
+                            }
+
+                            return {
+                                success: false,
+                                eventId: event.id,
+                                queued: false,
+                                error: error as Error,
+                                correlationId: finalCorrelationId,
+                            };
+                        }
+                    }
+
+                    return {
+                        success: true,
+                        eventId: event.id,
+                        queued: true,
+                        correlationId: finalCorrelationId,
+                    };
+                } else {
+                    const queued = await eventQueue.enqueue(
+                        event,
+                        options.priority || 0,
+                    );
+
+                    return {
+                        success: queued,
+                        eventId: event.id,
+                        queued,
+                        correlationId: finalCorrelationId,
+                    };
+                }
             } catch (error) {
                 if (enableObservability) {
                     observability.logger.error(
@@ -614,21 +791,8 @@ export function createRuntime(
                     await eventProcessor.processEvent(event);
                     processed++;
 
-                    // Auto-ACK se habilitado
+                    // ✅ REFACTOR: ACK automático sempre que habilitado
                     if (enableAcks && event.metadata?.correlationId) {
-                        observability.logger.debug(
-                            '✅ RUNTIME - Auto-ACK event',
-                            {
-                                eventType: event.type,
-                                eventId: event.id,
-                                correlationId: event.metadata.correlationId,
-                                trace: {
-                                    source: 'runtime',
-                                    step: 'auto-ack',
-                                    timestamp: Date.now(),
-                                },
-                            },
-                        );
                         await this.ack(event.id);
                         acked++;
                     }
@@ -649,6 +813,7 @@ export function createRuntime(
                         },
                     );
 
+                    // ✅ REFACTOR: NACK automático sempre que habilitado
                     if (enableAcks && event.metadata?.correlationId) {
                         await this.nack(event.id, error as Error);
                     }
@@ -894,6 +1059,27 @@ export function createRuntime(
         },
 
         cleanup: async () => {
+            // Flush any pending batched events
+            if (batchQueue.length > 0) {
+                try {
+                    await flushBatch();
+                } catch (error) {
+                    if (enableObservability) {
+                        observability.logger.error(
+                            'Failed to flush batch during cleanup',
+                            error as Error,
+                        );
+                    }
+                    // Continue with cleanup even if batch flush fails
+                }
+            }
+
+            // Clear batch timer
+            if (batchTimer) {
+                clearTimeout(batchTimer);
+                batchTimer = null;
+            }
+
             clearInterval(ackCleanupInterval);
             memoryMonitorInstance.stop();
             await Promise.all([

@@ -334,7 +334,7 @@ export interface MCPTool extends MCPToolRaw {
 
 // Tool with server information
 export interface MCPToolRawWithServer extends MCPToolRaw {
-    serverName: string;
+    serverName?: string;
 }
 
 export interface MCPToolWithServer extends MCPTool {

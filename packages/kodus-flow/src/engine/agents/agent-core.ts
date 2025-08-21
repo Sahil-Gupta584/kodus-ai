@@ -11,7 +11,6 @@ import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextBuilder } from '../../core/context/context-builder.js';
-// Timeline removida
 import type {
     AgentContext,
     TenantId,
@@ -88,8 +87,11 @@ import {
 import {
     ExecutionPlan,
     ReplanPolicyConfig,
-} from '@/core/types/planning-shared.js';
+    UNIFIED_STATUS,
+    UnifiedStatus,
+} from '../../core/types/planning-shared.js';
 import { PlanExecutor } from '../planning/executor/plan-executor.js';
+import { parseToolResult } from '../../core/utils/tool-result-parser.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🧩 CORE CONFIGURATION
@@ -186,7 +188,7 @@ export abstract class AgentCore<
             correlationId: string;
             sessionId?: string;
             startTime: number;
-            status: 'running' | 'paused' | 'completed' | 'failed';
+            status: UnifiedStatus;
         }
     >();
 
@@ -521,7 +523,7 @@ export abstract class AgentCore<
     ): Promise<void> {
         const execution = this.activeExecutions.get(executionId);
         if (execution) {
-            execution.status = 'completed';
+            execution.status = UNIFIED_STATUS.COMPLETED;
         }
 
         if (context.executionRuntime) {
@@ -607,7 +609,7 @@ export abstract class AgentCore<
     private markExecutionFailed(executionId: string): void {
         const execution = this.activeExecutions.get(executionId);
         if (execution) {
-            execution.status = 'failed';
+            execution.status = UNIFIED_STATUS.FAILED;
         }
     }
 
@@ -3864,10 +3866,9 @@ export abstract class AgentCore<
         }
 
         // ✅ SIMPLIFICADO: Retornar resultado final
-        return this.extractFinalResult(
+        return (await this.extractFinalResult(
             finalExecutionContext,
-            executionHistory,
-        ) as TOutput;
+        )) as TOutput;
     }
 
     // ✅ NOVOS MÉTODOS PRIVADOS SIMPLES
@@ -4186,15 +4187,9 @@ export abstract class AgentCore<
         return false;
     }
 
-    private extractFinalResult(
+    private async extractFinalResult(
         finalExecutionContext: PlannerExecutionContext | undefined,
-        executionHistory: Array<{
-            thought: AgentThought;
-            action: AgentAction;
-            result: ActionResult;
-            observation: ResultAnalysis;
-        }>,
-    ): unknown {
+    ): Promise<unknown> {
         const finalResult = finalExecutionContext?.getFinalResult();
 
         if (finalResult && finalResult.success) {
@@ -4209,19 +4204,8 @@ export abstract class AgentCore<
                     return result.content;
                 }
             }
-            return finalResult.result;
-        }
 
-        // ✅ SIMPLIFICADO: Extrair último resultado útil
-        for (let i = executionHistory.length - 1; i >= 0; i--) {
-            const entry = executionHistory[i];
-            if (
-                entry?.result &&
-                'content' in entry.result &&
-                entry.result.content
-            ) {
-                return entry.result.content;
-            }
+            return finalResult.result;
         }
 
         return 'Sorry, I had trouble processing your request. Please try again with more details.';
@@ -4395,23 +4379,19 @@ export abstract class AgentCore<
      */
     private async executeToolViaKernel(
         action: AgentAction,
-        correlationId: string,
+        _correlationId: string,
     ): Promise<unknown> {
         if (!isToolCallAction(action)) {
             throw new Error('Action is not a tool call action');
         }
 
         if (this.toolCircuitBreaker) {
-            // ✅ SIMPLIFIED: No additional retries - Circuit Breaker handles retries
+            // ✅ SIMPLIFIED: Direct tool execution with circuit breaker
             const circuitResult = await this.toolCircuitBreaker.execute(
                 () =>
-                    this.kernelHandler!.requestToolExecution(
+                    this.toolEngine!.executeCall(
                         action.toolName,
                         action.input || {},
-                        {
-                            correlationId: correlationId, // ✅ FIX: Use same correlationId
-                            timeout: 180000, // ✅ AUMENTADO: 180s para APIs externas
-                        },
                     ),
                 {
                     toolName: action.toolName,
@@ -4425,14 +4405,10 @@ export abstract class AgentCore<
 
             return circuitResult.result;
         } else {
-            // Fallback without circuit breaker
-            return await this.kernelHandler!.requestToolExecution(
+            // ✅ SIMPLIFIED: Direct tool execution without circuit breaker
+            return await this.toolEngine!.executeCall(
                 action.toolName,
                 action.input || {},
-                {
-                    correlationId: correlationId, // ✅ FIX: Use same correlationId
-                    timeout: 180000, // ✅ AUMENTADO: 180s para APIs externas
-                },
             );
         }
     }
@@ -4648,7 +4624,7 @@ export abstract class AgentCore<
     }
 
     /**
-     * OBSERVE phase - Delegate to planner for analysis
+     * OBSERVE phase - Delegate to planner for analysis and synthesize response when needed
      */
     private async observe(
         result: ActionResult,
@@ -4658,25 +4634,84 @@ export abstract class AgentCore<
             throw new EngineError('AGENT_ERROR', 'Planner not initialized');
         }
 
-        if (isToolResult(result)) {
-            const { parseToolResult } = await import(
-                '../../core/utils/tool-result-parser.js'
-            );
-            const parsed = parseToolResult(result.content);
+        // ✅ CAMADA 1: PLANNER DECIDE
+        // Parse tool result for additional context
+        const parsed = isToolResult(result)
+            ? parseToolResult(result.content)
+            : null;
 
-            if (parsed.isSubstantial && !parsed.isError) {
-                const analysis = await this.planner.analyzeResult(
+        const obs = getObservability();
+        const analyzeSpan = startAgentSpan(obs.telemetry, 'analyze', {
+            agentName: this.config.agentName || 'unknown',
+            correlationId: context.plannerMetadata.correlationId || 'unknown',
+            attributes: {
+                resultType: result?.type || 'unknown',
+                isToolResult: isToolResult(result),
+                isSubstantial: parsed?.isSubstantial || false,
+                hasError: parsed?.isError || false,
+            },
+        });
+
+        const analysis = await obs.telemetry.withSpan(analyzeSpan, async () => {
+            try {
+                const analyzeResult = await this.planner!.analyzeResult(
                     result,
                     context,
                 );
-
-                return {
-                    ...analysis,
-                };
+                markSpanOk(analyzeSpan);
+                return analyzeResult;
+            } catch (err) {
+                applyErrorToSpan(analyzeSpan, err, { phase: 'analyze' });
+                throw err;
             }
+        });
+
+        // ✅ CAMADA 2: SE DEVE PARAR, SINTETIZA RESPOSTA
+        if (analysis.isComplete && analysis.isSuccessful) {
+            const synthesizeSpan = startAgentSpan(obs.telemetry, 'synthesize', {
+                agentName: this.config.agentName || 'unknown',
+                correlationId:
+                    context.plannerMetadata.correlationId || 'unknown',
+                attributes: { analysisComplete: true },
+            });
+
+            const synthesizedResponse = await obs.telemetry.withSpan(
+                synthesizeSpan,
+                async () => {
+                    try {
+                        // Check if planner supports createFinalResponse
+                        if (!this.planner?.createFinalResponse) {
+                            this.logger.warn(
+                                'Planner does not support createFinalResponse, skipping synthesis',
+                                {
+                                    plannerType: this.planner?.constructor.name,
+                                },
+                            );
+                            markSpanOk(synthesizeSpan);
+                            return 'Synthesis not supported by this planner';
+                        }
+
+                        const response =
+                            await this.planner.createFinalResponse(context);
+                        markSpanOk(synthesizeSpan);
+                        return response;
+                    } catch (err) {
+                        applyErrorToSpan(synthesizeSpan, err, {
+                            phase: 'synthesize',
+                        });
+                        throw err;
+                    }
+                },
+            );
+
+            return {
+                ...analysis,
+                feedback: synthesizedResponse,
+            };
         }
 
-        return this.planner.analyzeResult(result, context);
+        // ✅ CAMADA 3: SE DEVE CONTINUAR, RETORNA ANÁLISE
+        return analysis;
     }
 
     /**

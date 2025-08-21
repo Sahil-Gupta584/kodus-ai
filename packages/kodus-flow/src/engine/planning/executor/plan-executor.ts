@@ -9,7 +9,10 @@ import type {
     StepExecutionResult,
     PlanExecutionResult,
 } from '../../../core/types/planning-shared.js';
-import { getReadySteps } from '../../../core/types/planning-shared.js';
+import {
+    getReadySteps,
+    UNIFIED_STATUS,
+} from '../../../core/types/planning-shared.js';
 
 interface PlanExecutorConfig {
     enableReWOO?: boolean;
@@ -147,11 +150,17 @@ export class PlanExecutor {
             if (!step) continue;
 
             // ✅ MELHORIA: Lógica mais simples e direta
-            if (step.status === 'executing') {
-                step.status = step.result !== undefined ? 'failed' : 'pending';
+            if (step.status === UNIFIED_STATUS.EXECUTING) {
+                step.status =
+                    step.result !== undefined
+                        ? UNIFIED_STATUS.FAILED
+                        : UNIFIED_STATUS.PENDING;
             }
 
-            if (firstPendingIndex === -1 && step.status === 'pending') {
+            if (
+                firstPendingIndex === -1 &&
+                step.status === UNIFIED_STATUS.PENDING
+            ) {
                 firstPendingIndex = stepIndex;
             }
         }
@@ -181,15 +190,15 @@ export class PlanExecutor {
         plan: ExecutionPlan,
         context: PlannerExecutionContext,
     ): Promise<void> {
-        if (plan.status !== 'waiting_input') return;
+        if (plan.status !== UNIFIED_STATUS.WAITING_INPUT) return;
 
         const nextPendingStep = plan.steps.find(
-            (step) => step.status === 'pending',
+            (step) => step.status === UNIFIED_STATUS.PENDING,
         );
 
         // ✅ MELHORIA: Lógica mais simples
         if (!nextPendingStep?.arguments) {
-            plan.status = 'executing';
+            plan.status = UNIFIED_STATUS.EXECUTING;
         } else {
             const argumentResolution = await this.resolveArgs(
                 nextPendingStep.arguments,
@@ -241,16 +250,10 @@ export class PlanExecutor {
         while (executionRounds < this.maxExecutionRounds) {
             const readySteps = getReadySteps(plan);
 
-            // ✅ MELHORIA: Log mais limpo e informativo
-            if (readySteps.length > 0) {
-                console.log(
-                    `🔍 [PLAN-EXECUTOR] Round ${executionRounds + 1}: Executing ${readySteps.length} steps`,
-                );
+            if (readySteps.length === 0) {
+                break;
             }
 
-            if (readySteps.length === 0) break;
-
-            // ✅ MELHORIA: Manter execução sequencial por segurança
             for (const step of readySteps) {
                 const stepResult = await this.executeStepSafe(
                     plan,
@@ -274,7 +277,6 @@ export class PlanExecutor {
         const startTime = Date.now();
 
         try {
-            // ✅ MELHORIA: Validar argumentos primeiro
             const argumentResolution = await this.resolveStepArguments(
                 step,
                 plan,
@@ -307,7 +309,7 @@ export class PlanExecutor {
         step: PlanStep,
         options: { error: string; startTime: number },
     ): StepExecutionResult {
-        step.status = 'failed';
+        step.status = UNIFIED_STATUS.FAILED;
         return this.createStepResult(step, {
             success: false,
             error: options.error,
@@ -321,13 +323,15 @@ export class PlanExecutor {
         context: PlannerExecutionContext,
         startTime: number,
     ): Promise<StepExecutionResult> {
-        step.status = 'executing';
+        step.status = UNIFIED_STATUS.EXECUTING;
         await this.emitStepStartedEvent(context, plan.id, step);
 
         const result = await this.executeStepAction(step);
         const analysis = this.analyzeStepResult(result);
 
-        step.status = analysis.success ? 'completed' : 'failed';
+        step.status = analysis.success
+            ? UNIFIED_STATUS.COMPLETED
+            : UNIFIED_STATUS.FAILED;
         step.result = result.type === 'tool_result' ? result.content : result;
 
         await this.emitStepFinishedEvent(
@@ -624,13 +628,15 @@ export class PlanExecutor {
 
         const allStepsProcessed = plan.steps.every(
             (s) =>
-                s.status === 'completed' ||
-                s.status === 'failed' ||
-                s.status === 'skipped',
+                s.status === UNIFIED_STATUS.COMPLETED ||
+                s.status === UNIFIED_STATUS.FAILED ||
+                s.status === UNIFIED_STATUS.SKIPPED,
         );
 
         const hasNoMoreExecutableSteps = plan.steps.every(
-            (s) => s.status !== 'pending' && s.status !== 'executing',
+            (s) =>
+                s.status !== UNIFIED_STATUS.PENDING &&
+                s.status !== UNIFIED_STATUS.EXECUTING,
         );
 
         return {

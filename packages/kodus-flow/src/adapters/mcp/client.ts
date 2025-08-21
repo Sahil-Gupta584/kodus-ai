@@ -226,9 +226,6 @@ class AuditLogger {
         };
 
         this.events.push(auditEvent);
-
-        // In production, this would write to external audit system
-        // console.log('[AUDIT]', JSON.stringify(auditEvent));
     }
 
     getEvents(): AuditEvent[] {

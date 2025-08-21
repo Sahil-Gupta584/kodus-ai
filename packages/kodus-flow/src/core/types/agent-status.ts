@@ -146,7 +146,6 @@ export type SuccessStatus =
     | 'success_cached' // Sucesso usando cache
     | 'success_optimized'; // Sucesso otimizado
 
-// ═══════════════════════════════════════════════════════════════════════════════
 // 🎯 UNIFIED STATUS SYSTEM
 // ═══════════════════════════════════════════════════════════════════════════════
 
