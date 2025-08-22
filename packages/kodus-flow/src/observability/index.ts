@@ -1,27 +1,12 @@
-/**
- * @module observability
- * @description Unified observability interface for the Kodus Flow SDK
- *
- * This module provides a single, integrated interface for all observability needs:
- * - Logging: Structured application logging with Pino
- * - Telemetry: OpenTelemetry-compatible tracing and metrics
- * - Monitoring: Production resource monitoring and health checks
- * - Debugging: Development debugging and introspection tools
- * - Timeline: Execution timeline tracking and visualization
- * - (Removido) Event Bus
- */
-
 import type { Event } from '../core/types/events.js';
 import { BaseSDKError, type ErrorCode } from '../core/errors.js';
 import { IdGenerator } from '../utils/id-generator.js';
 import dns from 'dns';
 
-// Re-export all observability modules
 export * from './telemetry.js';
 export * from './monitoring.js';
 export * from './debugging.js';
 export { createOtelTracerAdapter, OtelTracerAdapter } from './otel-adapter.js';
-// Helpers de domínio para spans
 export {
     startAgentSpan,
     startToolSpan,
@@ -31,15 +16,10 @@ export {
     type ToolSpanAttributes,
     type LLMSpanAttributes,
 } from './telemetry.js';
-// Removed: functional observable and timeline
 
-// Core exports (simplificados)
-
-// Re-export logger types and interfaces (backward compatibility)
 export type { LogLevel, LogContext } from './logger.js';
 export { createLogger, type Logger } from './logger.js';
 
-// Import key classes and functions
 import {
     createLogger,
     type Logger,
@@ -80,24 +60,33 @@ export interface OtelContext {
  * Unified observability configuration
  */
 export interface ObservabilityConfig {
-    // Global settings
     enabled: boolean;
     environment: 'development' | 'production' | 'test';
     debug: boolean;
-
-    // Component configurations
     logging?: {
         enabled?: boolean;
         level?: LogLevel;
-        outputs?: string[]; // 'console', 'file', etc.
+        outputs?: string[];
         filePath?: string;
     };
-
     telemetry?: Partial<TelemetryConfig>;
     monitoring?: Partial<MonitoringConfig>;
     debugging?: Partial<DebugConfig>;
-
-    // Integration settings
+    mongodb?: {
+        type: 'mongodb';
+        connectionString?: string;
+        database?: string;
+        collections?: {
+            logs?: string;
+            telemetry?: string;
+            metrics?: string;
+            errors?: string;
+        };
+        batchSize?: number;
+        flushIntervalMs?: number;
+        ttlDays?: number;
+        enableObservability?: boolean;
+    };
     correlation?: {
         enabled: boolean;
         generateIds: boolean;
@@ -128,19 +117,15 @@ interface ResourceLeak {
  * Unified observability interface
  */
 export interface ObservabilityInterface {
-    // Core components
     logger: Logger;
     telemetry: TelemetrySystem;
     monitor: ResourceMonitor | null;
     debug: DebugSystem;
-
-    // Context management
     createContext(correlationId?: string): ObservabilityContext;
     setContext(context: ObservabilityContext): void;
     getContext(): ObservabilityContext | undefined;
     clearContext(): void;
 
-    // Unified operations
     trace<T>(
         name: string,
         fn: () => T | Promise<T>,
@@ -152,7 +137,6 @@ export interface ObservabilityInterface {
         category?: string,
     ): Promise<{ result: T; duration: number }>;
 
-    // Error handling
     logError(
         error: Error | BaseSDKError,
         message: string,
@@ -165,14 +149,11 @@ export interface ObservabilityInterface {
         context?: Partial<ObservabilityContext>,
     ): BaseSDKError;
 
-    // Health and status
     getHealthStatus(): HealthStatus;
     generateReport(): UnifiedReport;
 
-    // Configuration
     updateConfig(config: Partial<ObservabilityConfig>): void;
 
-    // Lifecycle
     flush(): Promise<void>;
     dispose(): Promise<void>;
 }

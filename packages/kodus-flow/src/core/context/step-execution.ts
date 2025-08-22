@@ -1,71 +1,12 @@
-/**
- * @file step-execution.ts
- * @description Step Execution Components - Rastreamento estruturado de execução
- *
- * Este arquivo implementa componentes para rastreamento de execução inspirados no AI SDK:
- * - StepExecution: Rastreamento estruturado de execução
- * - EnhancedMessageContext: Contexto inteligente com integração automática
- * - ContextManager: API unificada para session/state/memory
- *
- * 📊 ORGANIZAÇÃO DOS NAMESPACES:
- *
- * ⚡ STATE NAMESPACES:
- * - "planner": Estado do planner (planos, steps, resultados)
- * - "ai_sdk": Mensagens e contexto atual do AI SDK
- * - "execution": Valores de contexto da execução atual
- * - "runtime": Dados temporários de execução
- * - "tools": Estado das ferramentas (usage, errors, performance)
- *
- * 💬 SESSION ENTRIES:
- * - "message": Mensagens do usuário/assistente
- * - "tool_call": Chamadas de ferramentas
- * - "planner_step": Passos do planner
- * - "error": Erros e eventos do sistema
- * - "enhanced-context": Dados do contexto enriquecido
- *
- * 🧠 MEMORY TYPES:
- * - "conversation": Histórico de conversas significativas
- * - "user-preferences": Preferências do usuário
- * - "execution-hints": Dicas de execução
- * - "learning-context": Contexto de aprendizado
- * - "relevant-memories": Memórias relevantes para consulta
- */
-
 import { createLogger } from '../../observability/index.js';
+import { getGlobalMemoryManager } from '../memory/memory-manager.js';
 import type { AgentContext } from '../types/agent-types.js';
 import type { AgentThought, AgentAction } from '../types/agent-types.js';
 import type {
     ActionResult,
     ResultAnalysis,
 } from '../../engine/planning/planner-factory.js';
-
-// ============================================================================
-// 0. NAMESPACE CONSTANTS
-// ============================================================================
-
-export const STATE_NAMESPACES = {
-    PLANNER: 'planner',
-    AI_SDK: 'ai_sdk',
-    EXECUTION: 'execution',
-    RUNTIME: 'runtime',
-    TOOLS: 'tools',
-} as const;
-
-export const SESSION_TYPES = {
-    MESSAGE: 'message',
-    TOOL_CALL: 'tool_call',
-    PLANNER_STEP: 'planner_step',
-    ERROR: 'error',
-    ENHANCED_CONTEXT: 'enhanced-context',
-} as const;
-
-export const MEMORY_TYPES = {
-    CONVERSATION: 'conversation',
-    USER_PREFERENCES: 'user-preferences',
-    EXECUTION_HINTS: 'execution-hints',
-    LEARNING_CONTEXT: 'learning-context',
-    RELEVANT_MEMORIES: 'relevant-memories',
-} as const;
+import { STATE_NAMESPACES, MEMORY_TYPES } from './namespace-constants.js';
 
 // ============================================================================
 // 1. STEP EXECUTION (AI SDK CONCEPT)
@@ -261,116 +202,10 @@ export interface MessageEntry {
 
 export class EnhancedMessageContext {
     private messages: MessageEntry[] = [];
-    private contextManager: ContextManager;
     private logger = createLogger('enhanced-message-context');
 
-    constructor(contextManager: ContextManager) {
-        this.contextManager = contextManager;
-    }
-
-    /**
-     * ⭐ AI SDK CONCEPT: Add message with automatic persistence
-     * Integra automaticamente com State, Session e Memory
-     */
-    // TODO: Wwhy not used
-    async addMessage(
-        role: MessageEntry['role'],
-        content: unknown,
-        context: AgentContext,
-        metadata?: MessageEntry['metadata'],
-        stepId?: string,
-    ): Promise<string> {
-        const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-        const message: MessageEntry = {
-            id: messageId,
-            role,
-            content,
-            timestamp: Date.now(),
-            metadata,
-            stepId,
-        };
-
-        this.messages.push(message);
-
-        // ⭐ AI SDK CONCEPT: Integração automática com context
-        try {
-            // Adicionar à session (histórico de conversa)
-            await context.session.addEntry(
-                {
-                    type: 'message',
-                    role,
-                    content:
-                        typeof content === 'string'
-                            ? content
-                            : JSON.stringify(content),
-                },
-                { type: 'metadata', timestamp: message.timestamp, ...metadata },
-            );
-
-            // Adicionar ao state (memória de trabalho)
-            await context.state.set(STATE_NAMESPACES.AI_SDK, 'last_message', {
-                id: messageId,
-                role,
-                content:
-                    typeof content === 'string'
-                        ? content
-                        : JSON.stringify(content),
-                timestamp: message.timestamp,
-                stepId,
-            });
-
-            // Adicionar à memory (armazenamento de longo prazo) se for significativo
-            if (
-                role === 'user' ||
-                (role === 'assistant' &&
-                    typeof content === 'string' &&
-                    content.length > 50)
-            ) {
-                await context.memory.store({
-                    type: MEMORY_TYPES.CONVERSATION,
-                    content:
-                        typeof content === 'string'
-                            ? content
-                            : JSON.stringify(content),
-                    metadata: {
-                        role,
-                        timestamp: message.timestamp,
-                        stepId,
-                        ...metadata,
-                    },
-                });
-            }
-
-            // Registrar operação de context no step atual
-            if (stepId) {
-                this.contextManager.recordContextOperation(
-                    stepId,
-                    'session',
-                    'add_message',
-                    {
-                        messageId,
-                        role,
-                        contentLength:
-                            typeof content === 'string'
-                                ? content.length
-                                : JSON.stringify(content).length,
-                    },
-                );
-            }
-
-            this.logger.debug('Message added with auto-persistence', {
-                messageId,
-                role,
-                stepId,
-            });
-        } catch (error) {
-            this.logger.warn('Failed to persist message to context:', {
-                error: String(error),
-            });
-        }
-
-        return messageId;
+    constructor(_contextManager: ContextManager) {
+        // Context manager reference not needed for current implementation
     }
 
     /**
@@ -386,21 +221,29 @@ export class EnhancedMessageContext {
         try {
             // 1. MEMORY: Buscar memórias relevantes
             if (query) {
-                const memories = await context.memory.search(query, 3);
-                if (memories && memories.length > 0) {
+                // ✅ CLEAN ARCHITECTURE: Use dependency injection for memory
+                const memoryManager = getGlobalMemoryManager();
+                const searchResults = await memoryManager.search(query, {
+                    topK: 3,
+                    filter: {
+                        tenantId: context.tenantId,
+                        sessionId: context.sessionId,
+                    },
+                });
+                if (searchResults && searchResults.length > 0) {
                     contextParts.push('\n📚 Conhecimento relevante:');
-                    memories.forEach((memory, i) => {
+                    searchResults.forEach((result, i) => {
                         const memoryStr =
-                            typeof memory === 'string'
-                                ? memory
-                                : JSON.stringify(memory);
+                            result.metadata?.content ||
+                            result.text ||
+                            'No content';
                         contextParts.push(`${i + 1}. ${memoryStr}`);
                     });
                 }
             }
 
             // 2. SESSION: Histórico recente de conversa
-            const sessionHistory = await context.session.getHistory();
+            const sessionHistory = await context.conversation.getHistory();
             if (sessionHistory && sessionHistory.length > 0) {
                 contextParts.push('\n💬 Conversa recente:');
                 sessionHistory.slice(-3).forEach((entry, i) => {
@@ -412,7 +255,9 @@ export class EnhancedMessageContext {
             }
 
             // 3. STATE: Estado atual de trabalho
-            const workingState = await context.state.getNamespace('execution');
+            const workingState = await context.state.getNamespace(
+                STATE_NAMESPACES.EXECUTION,
+            );
             if (workingState && workingState.size > 0) {
                 contextParts.push('\n⚡ Estado atual:');
                 let count = 0;
@@ -576,7 +421,11 @@ export class ContextManager {
         try {
             switch (type) {
                 case 'state':
-                    await context.state.set('ai_sdk', key, value);
+                    await context.state.set(
+                        STATE_NAMESPACES.AI_SDK,
+                        key,
+                        value,
+                    );
                     if (stepId) {
                         this.recordContextOperation(stepId, 'state', 'set', {
                             key,
@@ -586,10 +435,6 @@ export class ContextManager {
                     break;
 
                 case 'session':
-                    await context.session.addEntry(
-                        { type: 'ai_sdk', key, data: value },
-                        { type: 'metadata', timestamp: Date.now() },
-                    );
                     if (stepId) {
                         this.recordContextOperation(
                             stepId,
@@ -601,12 +446,15 @@ export class ContextManager {
                     break;
 
                 case 'memory':
-                    await context.memory.store({
-                        type: 'ai_sdk',
+                    const memoryManager = getGlobalMemoryManager();
+                    await memoryManager.store({
+                        type: MEMORY_TYPES.LEARNING_CONTEXT,
                         content:
                             typeof value === 'string'
                                 ? value
                                 : JSON.stringify(value),
+                        sessionId: context.sessionId,
+                        tenantId: context.tenantId,
                         metadata: { key, timestamp: Date.now() },
                     });
                     if (stepId) {
@@ -653,25 +501,6 @@ export class ContextManager {
     }
 
     /**
-     * ⭐ AI SDK CONCEPT: Adicionar mensagem com integração automática
-     */
-    async addMessage(
-        role: MessageEntry['role'],
-        content: unknown,
-        context: AgentContext,
-        metadata?: Record<string, unknown>,
-        stepId?: string,
-    ): Promise<string> {
-        return this.messageContext.addMessage(
-            role,
-            content,
-            context,
-            metadata,
-            stepId,
-        );
-    }
-
-    /**
      * ⭐ AI SDK CONCEPT: Obter estatísticas de context
      */
     async getContextStats(context: AgentContext): Promise<{
@@ -681,8 +510,10 @@ export class ContextManager {
         messageCount: number;
     }> {
         try {
-            const sessionHistory = await context.session.getHistory();
-            const stateKeys = await context.state.getNamespace('ai_sdk');
+            const sessionHistory = await context.conversation.getHistory();
+            const stateKeys = await context.state.getNamespace(
+                STATE_NAMESPACES.AI_SDK,
+            );
             const messageCount = this.messageContext.getMessageCount();
 
             return {

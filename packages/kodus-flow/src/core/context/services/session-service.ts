@@ -1,27 +1,14 @@
-/**
- * Session Service - Gerenciamento robusto de sessões de usuário
- *
- * RESPONSABILIDADES:
- * - Criar e gerenciar sessões de usuário
- * - Persistir contexto entre execuções
- * - Gerenciar lifecycle das sessões
- * - Integração com memory e state
- */
-
 import { IdGenerator } from '../../../utils/id-generator.js';
 import { createLogger } from '../../../observability/index.js';
 import { ContextStateService } from './state-service.js';
 import { SessionId, ThreadId, TenantId } from '@/core/types/base-types.js';
 import { StorageSessionAdapter } from './storage-session-adapter.js';
 import type { StorageType } from '../../storage/factory.js';
-
-export type ConversationHistory = Array<{
-    timestamp: number;
-    input: unknown;
-    output: unknown;
-    agentName?: string;
-    metadata?: Record<string, unknown>;
-}>;
+// Conversation types moved to conversation-manager
+export type {
+    ConversationMessage,
+    ConversationHistory,
+} from './conversation-manager.js';
 
 export type Session = {
     id: string;
@@ -32,7 +19,7 @@ export type Session = {
     status: 'active' | 'paused' | 'expired' | 'closed';
     metadata: Record<string, unknown>;
     contextData: Record<string, unknown>;
-    conversationHistory: ConversationHistory;
+    // conversationHistory removed - now handled by ConversationManager
 };
 
 export interface SessionConfig {
@@ -41,7 +28,6 @@ export interface SessionConfig {
     maxConversationHistory?: number;
     enableAutoCleanup?: boolean;
     cleanupInterval?: number; // ms
-    // ✅ CORRECTED: Use same pattern as MemoryAdapterConfig
     persistent?: boolean;
     adapterType?: StorageType;
     connectionString?: string;
@@ -53,12 +39,11 @@ export interface SessionContext {
     threadId: ThreadId;
     tenantId: TenantId;
     stateManager: ContextStateService;
-    conversationHistory: Session['conversationHistory'];
     metadata: Record<string, unknown>;
+    // conversationHistory removed - now handled by ConversationManager
 }
 
 export class SessionService {
-    // ✅ HYBRID: RAM cache + persistent storage
     private sessions = new Map<string, Session>();
     private sessionStateManagers = new Map<string, ContextStateService>();
     private storage?: StorageSessionAdapter;
@@ -81,18 +66,11 @@ export class SessionService {
             maxConversationHistory: config.maxConversationHistory || 100,
             enableAutoCleanup: config.enableAutoCleanup !== false,
             cleanupInterval: config.cleanupInterval || 5 * 60 * 1000, // 5 min
-            // ✅ CORRECTED: Use adapterType consistently
             persistent: config.persistent ?? true,
             adapterType: config.adapterType || 'memory',
             connectionString: config.connectionString || '',
             adapterOptions: config.adapterOptions || {},
         };
-
-        this.logger.info('🔍 [DEBUG] SessionService final config', {
-            finalConfig: this.config,
-            connectionStringFinal: this.config.connectionString,
-            adapterTypeFinal: this.config.adapterType,
-        });
 
         // Initialize asynchronously
         this.initializeStorage().catch((e) => {
@@ -104,11 +82,38 @@ export class SessionService {
         }
 
         this.logger.info('SessionService initialized', {
-            ...this.config,
-            connectionString: this.config.connectionString
-                ? '[REDACTED]'
-                : undefined,
+            maxSessions: this.config.maxSessions,
+            sessionTimeout: this.config.sessionTimeout,
+            persistent: this.config.persistent,
+            adapterType: this.config.adapterType,
         });
+    }
+
+    /**
+     * SECURITY: Validate tenantId format and content
+     */
+    private validateTenantId(tenantId: string): void {
+        if (
+            !tenantId ||
+            typeof tenantId !== 'string' ||
+            tenantId.trim() === ''
+        ) {
+            throw new Error('Valid tenantId is required');
+        }
+
+        // Prevent injection attacks - allow only alphanumeric, underscore, hyphen
+        if (!/^[a-zA-Z0-9_-]+$/.test(tenantId)) {
+            throw new Error(
+                'TenantId contains invalid characters. Only alphanumeric, underscore, and hyphen allowed.',
+            );
+        }
+
+        // Prevent extremely long tenant IDs
+        if (tenantId.length > 128) {
+            throw new Error(
+                'TenantId too long. Maximum 128 characters allowed.',
+            );
+        }
     }
 
     /**
@@ -201,6 +206,7 @@ export class SessionService {
         threadId: string,
         metadata: Record<string, unknown> = {},
     ): Promise<Session> {
+        this.validateTenantId(tenantId);
         await this.ensureInitialized();
 
         const sessionId = IdGenerator.sessionId();
@@ -214,7 +220,6 @@ export class SessionService {
             status: 'active',
             metadata,
             contextData: {},
-            conversationHistory: [],
         };
 
         // Criar state manager para a sessão
@@ -303,19 +308,22 @@ export class SessionService {
 
     /**
      * Get session by thread ID (for ContextBuilder)
+     * SECURITY: tenantId is MANDATORY for tenant isolation
      */
     async getSessionByThread(
         threadId: string,
-        tenantId?: string,
+        tenantId: string, // ✅ MANDATORY
     ): Promise<Session | undefined> {
+        this.validateTenantId(tenantId);
+
         await this.ensureInitialized();
 
-        // Check RAM cache first
+        // Check RAM cache first - WITH MANDATORY TENANT CHECK
         for (const session of this.sessions.values()) {
             if (
                 session.threadId === threadId &&
                 session.status === 'active' &&
-                (!tenantId || session.tenantId === tenantId)
+                session.tenantId === tenantId // ✅ MANDATORY CHECK
             ) {
                 return session;
             }
@@ -339,6 +347,7 @@ export class SessionService {
                         },
                     );
                     this.sessionStateManagers.set(found.id, stateManager);
+                    // Note: Conversation history now handled by ConversationManager
                     return found;
                 }
             } catch (error) {
@@ -374,52 +383,14 @@ export class SessionService {
             threadId: session.threadId,
             tenantId: session.tenantId,
             stateManager,
-            conversationHistory: session.conversationHistory,
             metadata: session.metadata,
         };
     }
 
     /**
-     * Adicionar entrada na conversa
+     * Note: Conversation methods moved to ConversationManager
+     * Use ConversationManager.addMessage() and ConversationManager.getHistory()
      */
-    async addConversationEntry(
-        sessionId: string,
-        input: unknown,
-        output: unknown,
-        agentName?: string,
-        metadata: Record<string, unknown> = {},
-    ): Promise<boolean> {
-        const session = await this.getSession(sessionId);
-        if (!session) return false;
-
-        const entry = {
-            timestamp: Date.now(),
-            input,
-            output,
-            agentName,
-            metadata,
-        };
-
-        session.conversationHistory.push(entry);
-
-        // Enforce max conversation history
-        if (
-            session.conversationHistory.length >
-            this.config.maxConversationHistory
-        ) {
-            session.conversationHistory.shift();
-        }
-
-        // Atualizar última atividade
-        session.lastActivity = Date.now();
-
-        // ✅ SYNC: Persist changes if enabled
-        if (this.config.persistent && this.storage) {
-            await this.storage.storeSession(session);
-        }
-
-        return true;
-    }
 
     /**
      * Atualizar metadados da sessão
@@ -557,17 +528,20 @@ export class SessionService {
 
     /**
      * Buscar sessões por critérios
+     * SECURITY: tenantId is MANDATORY for tenant isolation
      */
     findSessions(criteria: {
         threadId?: string;
-        tenantId?: string;
+        tenantId: string; // ✅ MANDATORY
         status?: Session['status'];
         activeSince?: number;
     }): Session[] {
+        this.validateTenantId(criteria.tenantId);
+
         return Array.from(this.sessions.values()).filter((session) => {
+            // ✅ MANDATORY: Filter by tenant FIRST
+            if (session.tenantId !== criteria.tenantId) return false;
             if (criteria.threadId && session.threadId !== criteria.threadId)
-                return false;
-            if (criteria.tenantId && session.tenantId !== criteria.tenantId)
                 return false;
             if (criteria.status && session.status !== criteria.status)
                 return false;
@@ -582,17 +556,20 @@ export class SessionService {
 
     /**
      * Buscar sessão por thread (para continuidade)
+     * SECURITY: tenantId is MANDATORY for tenant isolation
      */
     async findSessionByThread(
         threadId: string,
-        tenantId?: string,
+        tenantId: string, // ✅ MANDATORY
     ): Promise<Session | undefined> {
+        this.validateTenantId(tenantId);
+
         await this.ensureInitialized();
 
         for (const session of this.sessions.values()) {
             if (
                 session.threadId === threadId &&
-                (!tenantId || session.tenantId === tenantId) &&
+                session.tenantId === tenantId && // ✅ MANDATORY CHECK
                 session.status === 'active' &&
                 !this.isSessionExpired(session)
             ) {
@@ -656,6 +633,7 @@ export class SessionService {
                 session.status = 'expired';
                 // CRÍTICO: Limpar state manager para evitar memory leak
                 this.sessionStateManagers.delete(sessionId);
+                // Note: Conversation cleanup now handled by ConversationManager
                 cleanedCount++;
             }
         }

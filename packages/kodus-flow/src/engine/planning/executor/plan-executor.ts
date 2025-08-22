@@ -168,10 +168,12 @@ export class PlanExecutor {
         details?: Record<string, unknown>,
     ): Promise<void> {
         try {
-            await context.agentContext?.session.addEntry(
-                { type, ...input },
-                details ?? {},
-            );
+            console.log('emitSessionEvent', context, type, input, details);
+            // TODO: Convert to telemetry - runtime debug data should not go to conversation
+            // await context.agentContext?.session.addEntry(
+            //     { type, ...input },
+            //     details ?? {},
+            // );
         } catch {
             // Silent fail for session events
         }
@@ -710,22 +712,24 @@ export class PlanExecutor {
         },
     ): Promise<void> {
         try {
-            await context.agentContext?.session.addEntry(
-                {
-                    type: 'plan.execution.completed',
-                    planId,
-                },
-                {
-                    type: 'plan_completed',
-                    at: Date.now(),
-                    executionTime: details.executionTime,
-                    resultType: details.resultType,
-                    successfulSteps: details.summary.successfulSteps.length,
-                    failedSteps: details.summary.failedSteps.length,
-                    skippedSteps: details.summary.skippedSteps.length,
-                    hasSignalsProblems: details.hasSignalsProblems,
-                },
-            );
+            console.log('emitCompletionEvent', details, context, planId);
+            // TODO: Convert to telemetry - runtime plan data should not go to conversation
+            // await context.agentContext?.session.addEntry(
+            //     {
+            //         type: 'plan.execution.completed',
+            //         planId,
+            //     },
+            //     {
+            //         type: 'plan_completed',
+            //         at: Date.now(),
+            //         executionTime: details.executionTime,
+            //         resultType: details.resultType,
+            //         successfulSteps: details.summary.successfulSteps.length,
+            //         failedSteps: details.summary.failedSteps.length,
+            //         skippedSteps: details.summary.skippedSteps.length,
+            //         hasSignalsProblems: details.hasSignalsProblems,
+            //     },
+            // );
         } catch {
             // Silent fail for completion events
         }

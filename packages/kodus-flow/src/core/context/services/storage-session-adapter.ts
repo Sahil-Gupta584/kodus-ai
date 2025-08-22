@@ -1,8 +1,3 @@
-/**
- * @module core/context/services/storage-session-adapter
- * @description Adapter to bridge SessionService with BaseStorage (same pattern as StorageMemoryAdapter)
- */
-
 import { createLogger } from '../../../observability/logger.js';
 import type { Session } from './session-service.js';
 import type {
@@ -18,19 +13,13 @@ import {
 
 const logger = createLogger('storage-session-adapter');
 
-/**
- * Session type for storage (with string dates)
- */
 type SessionForStorage = Omit<Session, 'createdAt' | 'lastActivity'> & {
     createdAt: string;
     lastActivity: string;
-    createdAtTimestamp: number; // Backup for compatibility
-    lastActivityTimestamp: number; // Backup for compatibility
+    createdAtTimestamp: number;
+    lastActivityTimestamp: number;
 };
 
-/**
- * Session type that can come from storage (mixed types)
- */
 type SessionFromStorage = Omit<Session, 'createdAt' | 'lastActivity'> & {
     createdAt: string | number;
     lastActivity: string | number;
@@ -38,29 +27,19 @@ type SessionFromStorage = Omit<Session, 'createdAt' | 'lastActivity'> & {
     lastActivityTimestamp?: number;
 };
 
-/**
- * Utility functions for date transformation
- */
 class DateUtils {
-    /**
-     * Convert timestamp to formatted date string for storage
-     */
     static timestampToFormattedDate(timestamp: number): string {
         return new Date(timestamp).toISOString();
     }
 
-    /**
-     * Convert formatted date string back to timestamp for application logic
-     */
     static formattedDateToTimestamp(dateString: string): number {
         return new Date(dateString).getTime();
     }
 
-    /**
-     * Transform nested timestamps in objects (like contextData)
-     */
     static transformNestedTimestamps(obj: unknown): unknown {
-        if (!obj || typeof obj !== 'object') return obj;
+        if (!obj || typeof obj !== 'object') {
+            return obj;
+        }
 
         if (Array.isArray(obj)) {
             return obj.map((item) => this.transformNestedTimestamps(item));
@@ -70,7 +49,6 @@ class DateUtils {
         for (const [key, value] of Object.entries(
             obj as Record<string, unknown>,
         )) {
-            // Transform known timestamp fields
             if (
                 (key === 'completedAt' ||
                     key === 'createdAt' ||
@@ -80,7 +58,7 @@ class DateUtils {
                 typeof value === 'number'
             ) {
                 result[key] = this.timestampToFormattedDate(value as number);
-                result[`${key}Original`] = value; // Backup
+                result[`${key}Original`] = value;
             } else if (typeof value === 'object' && value !== null) {
                 result[key] = this.transformNestedTimestamps(value);
             } else {
@@ -90,11 +68,10 @@ class DateUtils {
         return result;
     }
 
-    /**
-     * Restore nested timestamps from storage
-     */
     static restoreNestedTimestamps(obj: unknown): unknown {
-        if (!obj || typeof obj !== 'object') return obj;
+        if (!obj || typeof obj !== 'object') {
+            return obj;
+        }
 
         if (Array.isArray(obj)) {
             return obj.map((item) => this.restoreNestedTimestamps(item));
@@ -104,7 +81,6 @@ class DateUtils {
         for (const [key, value] of Object.entries(
             obj as Record<string, unknown>,
         )) {
-            // Restore known timestamp fields
             if (
                 (key === 'completedAt' ||
                     key === 'createdAt' ||
@@ -115,7 +91,6 @@ class DateUtils {
             ) {
                 result[key] = this.formattedDateToTimestamp(value);
             } else if (key.endsWith('Original')) {
-                // Skip backup fields - they're just for safety
                 continue;
             } else if (typeof value === 'object' && value !== null) {
                 result[key] = this.restoreNestedTimestamps(value);
@@ -126,9 +101,6 @@ class DateUtils {
         return result;
     }
 
-    /**
-     * Transform session for storage (timestamps → formatted dates)
-     */
     static transformSessionForStorage(session: Session): SessionForStorage {
         const transformed = {
             ...session,
@@ -138,26 +110,17 @@ class DateUtils {
             lastActivityTimestamp: session.lastActivity,
         };
 
-        // ✅ Transform nested timestamps in contextData
         if (transformed.contextData) {
             transformed.contextData = this.transformNestedTimestamps(
                 transformed.contextData,
             ) as Record<string, unknown>;
         }
 
-        // ✅ Transform timestamps in conversationHistory
-        if (transformed.conversationHistory) {
-            transformed.conversationHistory = this.transformNestedTimestamps(
-                transformed.conversationHistory,
-            ) as typeof transformed.conversationHistory;
-        }
+        // Note: conversationHistory removed from Session - now handled by ConversationManager
 
         return transformed;
     }
 
-    /**
-     * Transform session from storage (formatted dates → timestamps)
-     */
     static transformSessionFromStorage(
         sessionData: SessionFromStorage,
     ): Session {
@@ -174,19 +137,13 @@ class DateUtils {
                       sessionData.lastActivity,
         };
 
-        // ✅ Restore nested timestamps in contextData
         if (restored.contextData) {
             restored.contextData = this.restoreNestedTimestamps(
                 restored.contextData,
             ) as Record<string, unknown>;
         }
 
-        // ✅ Restore timestamps in conversationHistory
-        if (restored.conversationHistory) {
-            restored.conversationHistory = this.restoreNestedTimestamps(
-                restored.conversationHistory,
-            ) as typeof restored.conversationHistory;
-        }
+        // Note: conversationHistory removed from Session - now handled by ConversationManager
 
         return restored;
     }
@@ -200,16 +157,10 @@ export interface SessionAdapterConfig {
     retries?: number;
 }
 
-/**
- * Storage item for sessions
- */
 interface SessionStorageItem extends BaseStorageItem {
     sessionData: SessionForStorage;
 }
 
-/**
- * Adapter that implements session storage using BaseStorage (same pattern as StorageMemoryAdapter)
- */
 export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
     private storage: BaseStorage<SessionStorageItem> | null = null;
     private config: StorageAdapterConfig;
@@ -221,7 +172,6 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
             connectionString: config.connectionString,
             options: {
                 ...config.options,
-                // ✅ SESSION: Use specific collection for Session data
                 database: config.options?.database || 'kodus',
                 collection: config.options?.collection || 'sessions',
             },
@@ -237,7 +187,9 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
     }
 
     async initialize(): Promise<void> {
-        if (this.isInitialized) return;
+        if (this.isInitialized) {
+            return;
+        }
 
         this.storage = await StorageAdapterFactory.create<
             BaseStorage<SessionStorageItem>
@@ -295,7 +247,6 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
 
     // Convenience methods for Session-specific operations
     async storeSession(session: Session): Promise<void> {
-        // ✅ Transform timestamps to formatted dates for storage
         const sessionForStorage = DateUtils.transformSessionForStorage(session);
 
         const storageItem: SessionStorageItem = {
@@ -309,9 +260,11 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
 
     async retrieveSession(sessionId: string): Promise<Session | null> {
         const item = await this.retrieve(`session_${sessionId}`);
-        if (!item) return null;
 
-        // ✅ Transform formatted dates back to timestamps for application logic
+        if (!item) {
+            return null;
+        }
+
         const sessionData = DateUtils.transformSessionFromStorage(
             item.sessionData,
         );
@@ -324,17 +277,16 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
         return await this.delete(`session_${sessionId}`);
     }
 
-    /**
-     * Find session by threadId (and optional tenantId)
-     * Fallback-safe: retorna null se storage não suportar query
-     */
     async findSessionByThread(
         threadId: string,
-        tenantId?: string,
+        tenantId: string,
     ): Promise<Session | null> {
+        if (!tenantId) {
+            throw new Error('TenantId is required for session queries');
+        }
+
         await this.ensureInitialized();
         try {
-            // Tentar usar recurso específico do MongoDB adapter se disponível
             const anyStorage = this.storage as unknown as {
                 findOneByQuery?: (
                     query: Record<string, unknown>,
@@ -342,24 +294,22 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
             };
 
             if (typeof anyStorage.findOneByQuery === 'function') {
-                const query: Record<string, unknown> = {};
-                query['sessionData.threadId'] = threadId;
-                query['sessionData.status'] = 'active';
-                if (tenantId) {
-                    query['sessionData.tenantId'] = tenantId;
-                }
+                const query: Record<string, unknown> = {
+                    sessionDataThreadId: threadId,
+                    sessionDataTenantId: tenantId,
+                    sessionDataStatus: 'active',
+                };
 
                 const doc = await anyStorage.findOneByQuery!(query);
-                if (!doc?.sessionData) return null;
+                if (!doc?.sessionData) {
+                    return null;
+                }
 
-                // ✅ Transform formatted dates back to timestamps
                 return DateUtils.transformSessionFromStorage(doc.sessionData);
             }
 
-            // Fallback: se não suportar query, retorna null
             return null;
         } catch {
-            // Em caso de falha de conexão ou erro, retorna null sem quebrar
             return null;
         }
     }

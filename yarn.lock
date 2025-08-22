@@ -1873,10 +1873,8 @@
   resolved "https://registry.yarnpkg.com/@keyv/serialize/-/serialize-1.1.0.tgz#08f5d89096110fdcf778e5337362e1cd5afad70a"
   integrity sha512-RlDgexML7Z63Q8BSaqhXdCYNBy/JQnqYIwxofUrNLGCblOMHp+xux2Q8nLMLlPpgHQPoU0Do8Z6btCpRBEqZ8g==
 
-"@kodus/flow@^0.1.11":
+"@kodus/flow@file:.yalc/@kodus/flow":
   version "0.1.11"
-  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/flow/-/@kodus/flow-0.1.11.tgz#e807c2b9bc79cb7a5fda488616f09dd29ff315d5"
-  integrity sha512-0fGw1C8mEfvg4vcRin0OLNEOwBZl9VPXYKkCc0DZzB1FgdwM6i9VxEK/07VQ+X1dI25laK4hJ15XSq0lyo6Xgw==
   dependencies:
     "@google/generative-ai" "^0.24.1"
     "@modelcontextprotocol/sdk" "^1.17.2"

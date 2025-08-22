@@ -183,6 +183,21 @@ export class ConversationAgentProvider {
                     generateIds: true,
                     propagateContext: true,
                 },
+                mongodb: {
+                    type: 'mongodb',
+                    connectionString: uri,
+                    database: this.config.database,
+                    collections: {
+                        logs: 'observability_logs',
+                        telemetry: 'observability_telemetry',
+                        metrics: 'observability_metrics',
+                        errors: 'observability_errors',
+                    },
+                    batchSize: 100,
+                    flushIntervalMs: 5000,
+                    ttlDays: 30,
+                    enableObservability: true,
+                },
             },
             storage: {
                 memory: {
@@ -271,16 +286,23 @@ export class ConversationAgentProvider {
         );
 
         // Optional timeline (dev only). Guarded to avoid test failures
-        const correlationId = result?.context?.correlationId as string | undefined;
-        if (correlationId && typeof (this.orchestration as any)?.getExecutionTimeline === 'function') {
+        const correlationId = result?.context?.correlationId as
+            | string
+            | undefined;
+        if (
+            correlationId &&
+            typeof (this.orchestration as any)?.getExecutionTimeline ===
+                'function'
+        ) {
             try {
-                const timeline = (this.orchestration as any).getExecutionTimeline(correlationId);
+                const timeline = (
+                    this.orchestration as any
+                ).getExecutionTimeline(correlationId);
                 if (process.env.NODE_ENV !== 'test') {
                     console.log(timeline);
                 }
             } catch {}
         }
-        
 
         return typeof result.result === 'string'
             ? result.result

@@ -62,9 +62,6 @@ import type {
     // DelegationResult,
 } from './multi-agent-types.js';
 
-// ✅ REMOVER: Import não utilizado após remoção do stateManager duplicado
-// import { ContextStateService } from '../../core/context/services/state-service.js';
-import { sessionService } from '../../core/context/services/session-service.js';
 import { ToolId } from '../../core/types/tool-types.js';
 import type { Router } from '../routing/router.js';
 import type { Plan, PlanStep } from '../planning/planner.js';
@@ -360,7 +357,7 @@ export abstract class AgentCore<
                 this.config.tenantId,
             );
         }
-        this.thinkingTimeout = this.config.thinkingTimeout || 60000; // ✅ 60s thinking timeout
+        this.thinkingTimeout = this.config.thinkingTimeout || 1200000;
 
         // Setup memory leak prevention - cleanup expired executions every 5 minutes
         setInterval(() => {
@@ -373,7 +370,6 @@ export abstract class AgentCore<
             this.startDeliveryProcessor();
         }
 
-        // ✅ NEW: Configure ToolEngine in ContextBuilder if available
         if (this.toolEngine) {
             ContextBuilder.getInstance().setToolEngine(this.toolEngine);
             this.logger.info('ToolEngine configured in ContextBuilder', {
@@ -386,9 +382,6 @@ export abstract class AgentCore<
     // 🔧 CORE EXECUTION LOGIC (COMPARTILHADA)
     // ──────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Lógica de execução compartilhada - IDÊNTICA para ambos os métodos
-     */
     protected async executeAgent(
         agent:
             | AgentDefinition<TInput, TOutput, TContent>
@@ -400,14 +393,12 @@ export abstract class AgentCore<
         const executionId = IdGenerator.executionId();
         const { correlationId } = agentExecutionOptions || {};
 
-        // ✅ SIMPLIFICADO: Criar contexto
         const context = await this.createAgentContext(
             agent.name,
             executionId,
             agentExecutionOptions,
         );
 
-        // ✅ SIMPLIFICADO: Track execution start
         await this.trackExecutionStart(
             context,
             executionId,
@@ -418,7 +409,6 @@ export abstract class AgentCore<
         await this.addConversationEntry(context, input, agent.name);
 
         try {
-            // ✅ SIMPLIFICADO: Processar thinking
             const result = await this.processAgentThinking(
                 agent,
                 input,
@@ -436,7 +426,6 @@ export abstract class AgentCore<
 
             await this.updateConversationEntry(
                 context,
-                input,
                 result.output,
                 agent.name,
                 { correlationId, executionId, success: true },
@@ -463,14 +452,16 @@ export abstract class AgentCore<
         startTime: number,
         correlationId?: string,
     ): Promise<void> {
-        await context.track.plannerStep({
-            type: 'execution_start',
+        console.log(
+            'trackExecutionStart',
+            context,
             executionId,
             startTime,
-            status: 'running',
-            agentName: context.agentName,
             correlationId,
-        });
+        );
+        // TODO: Fix telemetry Event structure
+        // const observability = getObservability();
+        // await observability.telemetry.traceEvent(...);
     }
 
     private async addConversationEntry(
@@ -482,11 +473,15 @@ export abstract class AgentCore<
             return;
         }
 
-        await sessionService.addConversationEntry(
-            context.sessionId,
-            input,
-            null,
-            agentName,
+        // ✅ CLEAN ARCHITECTURE: Use conversation interface for agent communication
+        await context.conversation.addMessage(
+            'user',
+            typeof input === 'string' ? input : JSON.stringify(input),
+            {
+                agentName,
+                timestamp: Date.now(),
+                source: 'agent-input',
+            },
         );
 
         await context.executionRuntime?.addContextValue({
@@ -549,7 +544,6 @@ export abstract class AgentCore<
 
     private async updateConversationEntry(
         context: AgentContext,
-        input: unknown,
         output: unknown,
         agentName: string,
         metadata: {
@@ -562,12 +556,18 @@ export abstract class AgentCore<
             return;
         }
 
-        await sessionService.addConversationEntry(
-            context.sessionId,
-            input,
-            output,
-            agentName,
-            metadata,
+        // ✅ CLEAN ARCHITECTURE: Use conversation interface for agent communication
+        await context.conversation.addMessage(
+            'assistant',
+            typeof output === 'string' ? output : JSON.stringify(output),
+            {
+                agentName,
+                executionId: metadata.executionId,
+                correlationId: metadata.correlationId,
+                success: metadata.success,
+                timestamp: Date.now(),
+                source: 'agent-output',
+            },
         );
     }
 
@@ -1486,15 +1486,12 @@ export abstract class AgentCore<
         context: AgentContext,
     ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
         const { correlationId } = context.agentExecutionOptions || {};
-
         const tools = this.extractToolsFromAction(action);
-
-        // Simple heuristic for now - can be enhanced with AI/ML in the future
         const toolCount = tools.length;
 
         if (toolCount === 1) {
-            // Single tool - execute directly
             const tool = tools[0];
+
             if (!tool) {
                 return [{ toolName: 'unknown', error: 'No tool available' }];
             }
@@ -1524,26 +1521,26 @@ export abstract class AgentCore<
                         duration,
                     );
                 }
-                await context.track?.toolUsage?.(
-                    tool.toolName,
-                    tool.arguments,
-                    result,
-                    true,
-                );
+                // await context.track?.toolUsage?.(
+                //     tool.toolName,
+                //     tool.arguments,
+                //     result,
+                //     true,
+                // );
 
                 return [{ toolName: tool.toolName, result }];
             } catch (error) {
-                await context.track?.toolUsage?.(
-                    tool.toolName,
-                    tool.arguments,
-                    {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
-                    },
-                    false,
-                );
+                // await context.track?.toolUsage?.(
+                //     tool.toolName,
+                //     tool.arguments,
+                //     {
+                //         error:
+                //             error instanceof Error
+                //                 ? error.message
+                //                 : String(error),
+                //     },
+                //     false,
+                // );
                 const errorMessage =
                     error instanceof Error ? error.message : String(error);
                 return [{ toolName: tool.toolName, error: errorMessage }];
@@ -1593,12 +1590,12 @@ export abstract class AgentCore<
                             0,
                         );
                     }
-                    await context.track?.toolUsage?.(
-                        r.toolName,
-                        input,
-                        r.result ?? { error: r.error },
-                        !r.error,
-                    );
+                    // await context.track?.toolUsage?.(
+                    //     r.toolName,
+                    //     input,
+                    //     r.result ?? { error: r.error },
+                    //     !r.error,
+                    // );
                 }
             } catch {
                 // best-effort
@@ -1654,12 +1651,12 @@ export abstract class AgentCore<
                             0,
                         );
                     }
-                    await context.track?.toolUsage?.(
-                        r.toolName,
-                        input,
-                        r.result ?? { error: r.error },
-                        !r.error,
-                    );
+                    // await context.track?.toolUsage?.(
+                    //     r.toolName,
+                    //     input,
+                    //     r.result ?? { error: r.error },
+                    //     !r.error,
+                    // );
                 }
             } catch {
                 // best-effort
@@ -1746,12 +1743,12 @@ export abstract class AgentCore<
                         0,
                     );
                 }
-                await context.track?.toolUsage?.(
-                    r.toolName,
-                    input,
-                    r.result ?? { error: r.error },
-                    !r.error,
-                );
+                // await context.track?.toolUsage?.(
+                //     r.toolName,
+                //     input,
+                //     r.result ?? { error: r.error },
+                //     !r.error,
+                // );
             }
         } catch {
             // best-effort
@@ -3770,24 +3767,6 @@ export abstract class AgentCore<
         return `corr_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     }
 
-    /**
-     * Get current agent context for action processing
-     * ✅ REMOVER: Método não utilizado após remoção do currentAgentContext
-     */
-    // private getCurrentAgentContext(): AgentContext {
-    //     if (!this.currentAgentContext) {
-    //         throw new EngineError(
-    //             'AGENT_ERROR',
-    //             'No current agent context available',
-    //         );
-    //     }
-    //     return this.currentAgentContext;
-    // }
-
-    /**
-     * Execute Think→Act→Observe loop - Main intelligence method
-     * This is the primary method for agent intelligence processing
-     */
     protected async executeThinkActObserve<TInput, TOutput>(
         input: TInput,
         context: AgentContext,
@@ -4097,45 +4076,28 @@ export abstract class AgentCore<
         },
         iterations: number,
     ): Promise<void> {
-        await context.session.addEntry(
-            {
-                type: 'execution_step',
-                iteration: iterations,
-                thought: iterationResult.thought.reasoning,
-                action: iterationResult.action,
-            },
-            {
-                type: 'execution_result',
-                result:
-                    iterationResult.result.type === 'error'
-                        ? { error: iterationResult.result.error }
-                        : iterationResult.result.type === 'needs_replan'
-                          ? { needsReplan: iterationResult.result.feedback }
-                          : iterationResult.result.content,
-                observation: iterationResult.observation.feedback,
-                isComplete: iterationResult.observation.isComplete,
-                timestamp: Date.now(),
-            },
-        );
+        // ✅ CLEAN ARCHITECTURE: Use telemetry for runtime debug data instead of polluting conversation
+        //const observability = getObservability();
+        // TODO: Fix telemetry Event structure
+        // await observability.telemetry.traceEvent(...);
+        // Log for now
+        this.logger.debug('Execution step', {
+            iteration: iterations,
+            thought: iterationResult.thought.reasoning,
+            action: iterationResult.action,
+        });
 
+        // ✅ CLEAN ARCHITECTURE: Use state for agent execution data
+        await context.state.set('agent', 'last_action', iterationResult.action);
+        await context.state.set('agent', 'current_iteration', iterations);
+        await context.state.set('agent', 'last_result', iterationResult.result);
         await context.state.set(
-            'execution',
-            'last_action',
-            iterationResult.action,
-        );
-        await context.state.set('execution', 'current_iteration', iterations);
-        await context.state.set(
-            'execution',
-            'last_result',
-            iterationResult.result,
-        );
-        await context.state.set(
-            'execution',
+            'agent',
             'last_observation',
             iterationResult.observation,
         );
         await context.state.set(
-            'execution',
+            'agent',
             'is_complete',
             iterationResult.observation.isComplete,
         );

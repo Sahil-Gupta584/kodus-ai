@@ -531,19 +531,16 @@ export class TelemetrySystem {
             }
         })().catch(() => {});
         this.metrics = new InMemoryMetrics();
-
-        // ✅ REMOVED: Env override - use programmatic config instead
-        // Configuration is now handled via ObservabilityConfig.telemetry.enabled
-        // This provides better UX for framework users
     }
 
     /**
      * Check if telemetry is enabled and should be sampled
      */
     isEnabled(): boolean {
-        if (!this.config.enabled) return false;
+        if (!this.config.enabled) {
+            return false;
+        }
 
-        // Apply sampling
         if (this.config.sampling.strategy === 'probabilistic') {
             return Math.random() < this.config.sampling.rate;
         }
@@ -559,7 +556,6 @@ export class TelemetrySystem {
             return createNoOpSpan();
         }
 
-        // Derive parent from current span if not explicitly provided
         const parentContext =
             options?.parent || this.currentSpan?.getSpanContext();
 
@@ -577,7 +573,6 @@ export class TelemetrySystem {
             attributes: finalAttributes,
         });
 
-        // Track span info for processors/exporters
         const startTime = options?.startTime || Date.now();
         this.spanInfo.set(span, {
             name,
@@ -625,6 +620,7 @@ export class TelemetrySystem {
 
         try {
             const runner = async () => await fn();
+
             if (TelemetrySystem.asyncContext) {
                 return await new Promise<T>((resolve, reject) => {
                     TelemetrySystem.asyncContext!.run(span, () => {
@@ -632,6 +628,7 @@ export class TelemetrySystem {
                     });
                 });
             }
+
             return await runner();
         } finally {
             span.end();
@@ -639,6 +636,7 @@ export class TelemetrySystem {
 
             // Dispatch to processors
             const info = this.spanInfo.get(span);
+
             if (info) {
                 const item: TraceItem = {
                     name: info.name,
@@ -647,7 +645,7 @@ export class TelemetrySystem {
                     startTime: info.startTime,
                     endTime: Date.now(),
                 };
-                // Fire and forget; processors should be robust
+
                 for (const proc of this.processors) {
                     try {
                         void proc([item]);
@@ -676,7 +674,9 @@ export class TelemetrySystem {
         value: number,
         attributes?: Record<string, string>,
     ): void {
-        if (!this.config.features.metricsEnabled) return;
+        if (!this.config.features.metricsEnabled) {
+            return;
+        }
 
         this.metrics[type](name, value, attributes);
     }
@@ -688,16 +688,10 @@ export class TelemetrySystem {
         return this.tracer;
     }
 
-    /**
-     * Get the underlying metrics
-     */
     getMetrics(): Metrics {
         return this.metrics;
     }
 
-    /**
-     * Provider de contexto para atributos padrão de spans (ex.: tenant/correlation)
-     */
     setContextProvider(
         provider:
             | (() =>
@@ -712,17 +706,22 @@ export class TelemetrySystem {
         this.contextProvider = provider;
     }
 
-    /**
-     * Atributos derivados do contexto atual
-     */
     getContextAttributes(): Record<string, string | number | boolean> {
         const attributes: Record<string, string | number | boolean> = {};
         try {
             const ctx = this.contextProvider?.();
-            if (ctx?.tenantId) attributes['tenant.id'] = ctx.tenantId;
-            if (ctx?.correlationId)
+
+            if (ctx?.tenantId) {
+                attributes['tenant.id'] = ctx.tenantId;
+            }
+
+            if (ctx?.correlationId) {
                 attributes['correlation.id'] = ctx.correlationId;
-            if (ctx?.executionId) attributes['execution.id'] = ctx.executionId;
+            }
+
+            if (ctx?.executionId) {
+                attributes['execution.id'] = ctx.executionId;
+            }
         } catch {
             // ignore provider errors
         }
@@ -765,11 +764,11 @@ export class TelemetrySystem {
      * Force flush (useful in serverless/browser)
      */
     async forceFlush(): Promise<void> {
-        // Delegar se external tracer suportar flush
         const tracerAny = this.tracer as unknown as {
             forceFlush?: () => Promise<void> | void;
             flush?: () => Promise<void> | void;
         };
+
         if (typeof tracerAny.forceFlush === 'function') {
             await Promise.resolve(tracerAny.forceFlush());
         } else if (typeof tracerAny.flush === 'function') {
@@ -808,11 +807,22 @@ export function startAgentSpan(
 ): Span {
     const attributes: Record<string, string | number | boolean> = {};
     attributes['agent.name'] = attrs.agentName;
-    if (attrs.tenantId) attributes['tenant.id'] = attrs.tenantId;
-    if (attrs.correlationId) attributes['correlation.id'] = attrs.correlationId;
-    if (typeof attrs.iteration === 'number')
+
+    if (attrs.tenantId) {
+        attributes['tenant.id'] = attrs.tenantId;
+    }
+    if (attrs.correlationId) {
+        attributes['correlation.id'] = attrs.correlationId;
+    }
+
+    if (typeof attrs.iteration === 'number') {
         attributes['iteration'] = attrs.iteration;
-    if (attrs.attributes) Object.assign(attributes, attrs.attributes);
+    }
+
+    if (attrs.attributes) {
+        Object.assign(attributes, attrs.attributes);
+    }
+
     return telemetry.startSpan(`agent.${phase}`, { attributes });
 }
 
@@ -833,12 +843,27 @@ export function startToolSpan(
         ...telemetry.getContextAttributes(),
     };
     attributes['tool.name'] = attrs.toolName;
-    if (attrs.callId) attributes['callId'] = attrs.callId;
-    if (typeof attrs.timeoutMs === 'number')
+
+    if (attrs.callId) {
+        attributes['callId'] = attrs.callId;
+    }
+
+    if (typeof attrs.timeoutMs === 'number') {
         attributes['timeoutMs'] = attrs.timeoutMs;
-    if (attrs.tenantId) attributes['tenant.id'] = attrs.tenantId;
-    if (attrs.correlationId) attributes['correlation.id'] = attrs.correlationId;
-    if (attrs.attributes) Object.assign(attributes, attrs.attributes);
+    }
+
+    if (attrs.tenantId) {
+        attributes['tenant.id'] = attrs.tenantId;
+    }
+
+    if (attrs.correlationId) {
+        attributes['correlation.id'] = attrs.correlationId;
+    }
+
+    if (attrs.attributes) {
+        Object.assign(attributes, attrs.attributes);
+    }
+
     return telemetry.startSpan('tool.execute', { attributes });
 }
 
@@ -847,7 +872,6 @@ export interface LLMSpanAttributes {
     technique?: string;
     inputTokens?: number;
     outputTokens?: number;
-    // Parâmetros de request
     temperature?: number;
     topP?: number;
     maxTokens?: number;
@@ -873,12 +897,15 @@ export function startLLMSpan(
         attributes['gen_ai.technique'] = attrs.technique;
         attributes['technique'] = attrs.technique; // legacy
     }
-    if (typeof attrs.temperature === 'number')
+    if (typeof attrs.temperature === 'number') {
         attributes['gen_ai.request.temperature'] = attrs.temperature;
-    if (typeof attrs.topP === 'number')
+    }
+    if (typeof attrs.topP === 'number') {
         attributes['gen_ai.request.top_p'] = attrs.topP;
-    if (typeof attrs.maxTokens === 'number')
+    }
+    if (typeof attrs.maxTokens === 'number') {
         attributes['gen_ai.request.max_tokens'] = attrs.maxTokens;
+    }
 
     if (typeof attrs.inputTokens === 'number') {
         attributes['gen_ai.usage.input_tokens'] = attrs.inputTokens;
@@ -889,9 +916,15 @@ export function startLLMSpan(
         attributes['outputTokens'] = attrs.outputTokens; // legacy
     }
 
-    if (attrs.tenantId) attributes['tenant.id'] = attrs.tenantId;
-    if (attrs.correlationId) attributes['correlation.id'] = attrs.correlationId;
-    if (attrs.attributes) Object.assign(attributes, attrs.attributes);
+    if (attrs.tenantId) {
+        attributes['tenant.id'] = attrs.tenantId;
+    }
+    if (attrs.correlationId) {
+        attributes['correlation.id'] = attrs.correlationId;
+    }
+    if (attrs.attributes) {
+        Object.assign(attributes, attrs.attributes);
+    }
     return telemetry.startSpan('llm.generation', { attributes });
 }
 
