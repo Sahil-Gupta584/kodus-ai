@@ -161,12 +161,27 @@ export class ConversationAgentProvider {
         await startKodusOtel();
         const externalTracer = await createOtelTracerAdapter();
 
-        this.orchestration = createOrchestration({
+        this.orchestration = await createOrchestration({
             tenantId: 'kodus-agent-conversation',
             llmAdapter: this.llmAdapter,
             mcpAdapter: this.mcpAdapter,
             observability: {
                 logging: { enabled: true, level: 'info' },
+                mongodb: {
+                    type: 'mongodb',
+                    connectionString: uri,
+                    database: this.config.database,
+                    collections: {
+                        logs: 'observability_logs',
+                        telemetry: 'observability_telemetry',
+                        metrics: 'observability_metrics',
+                        errors: 'observability_errors',
+                    },
+                    batchSize: 100,
+                    flushIntervalMs: 5000,
+                    ttlDays: 30,
+                    enableObservability: true,
+                },
                 telemetry: {
                     enabled: true,
                     serviceName: 'kodus-flow',

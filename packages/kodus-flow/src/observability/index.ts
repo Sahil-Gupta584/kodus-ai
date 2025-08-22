@@ -100,6 +100,7 @@ export interface ObservabilityConfig {
 export interface ObservabilityContext extends OtelContext {
     tenantId?: string;
     executionId?: string;
+    sessionId?: string; // ✅ NEW: Link to session for proper hierarchy
     metadata?: Record<string, unknown>;
 }
 
@@ -259,6 +260,28 @@ export class ObservabilitySystem implements ObservabilityInterface {
             system;
     }
     public readonly debug: DebugSystem;
+    private mongodbExporter: {
+        initialize(): Promise<void>;
+        exportTelemetry(item: unknown): void;
+        exportLog(
+            level: 'debug' | 'info' | 'warn' | 'error',
+            message: string,
+            component: string,
+            context?: LogContext,
+            error?: Error,
+        ): void;
+        exportError(
+            error: Error,
+            context?: {
+                correlationId?: string;
+                tenantId?: string;
+                executionId?: string;
+                [key: string]: unknown;
+            },
+        ): void;
+        flush(): Promise<void>;
+        dispose(): Promise<void>;
+    } | null = null;
 
     constructor(config: Partial<ObservabilityConfig> = {}) {
         this.config = { ...DEFAULT_CONFIG, ...config };
@@ -331,6 +354,34 @@ export class ObservabilitySystem implements ObservabilityInterface {
         }
         this.debug = getGlobalDebugSystem(this.config.debugging);
 
+        // Initialize MongoDB Exporter if configured (legacy or via storage)
+        this.logger.info('Checking MongoDB configuration...', {
+            hasMongoDBConfig: !!this.config.mongodb,
+            configKeys: Object.keys(this.config),
+            mongodbKeys: this.config.mongodb
+                ? Object.keys(this.config.mongodb)
+                : [],
+        });
+
+        if (this.config.mongodb) {
+            this.logger.info(
+                'MongoDB config detected, initializing exporter...',
+                {
+                    hasConfig: !!this.config.mongodb,
+                    connectionString: this.config.mongodb.connectionString,
+                    database: this.config.mongodb.database,
+                },
+            );
+            void this.initializeMongoDBExporter();
+        } else {
+            this.logger.info(
+                'No MongoDB config detected, skipping exporter initialization',
+                {
+                    config: this.config,
+                },
+            );
+        }
+
         // Inject automatic correlation into logs
         setLogContextProvider(() => {
             const ctx = this.getContext();
@@ -341,6 +392,9 @@ export class ObservabilitySystem implements ObservabilityInterface {
                 executionId: ctx.executionId,
             };
         });
+
+        // Setup global error handling
+        this.setupGlobalErrorHandling();
 
         this.logger.info('Observability system initialized', {
             environment: this.config.environment,
@@ -360,10 +414,13 @@ export class ObservabilitySystem implements ObservabilityInterface {
     createContext(correlationId?: string): ObservabilityContext {
         const context: ObservabilityContext = {
             correlationId: correlationId || this.generateCorrelationId(),
+            // ✅ NEW: Initialize executionId - will be populated by SessionService when needed
+            executionId: undefined,
         };
 
         this.logger.debug('Observability context created', {
             correlationId: context.correlationId,
+            executionId: context.executionId,
         } as LogContext);
 
         return context;
@@ -407,6 +464,29 @@ export class ObservabilitySystem implements ObservabilityInterface {
     }
 
     /**
+     * ✅ NEW: Update current context with executionId
+     * (Used by SessionService when starting execution)
+     */
+    updateContextWithExecution(
+        executionId: string,
+        sessionId?: string,
+        tenantId?: string,
+    ): void {
+        if (this.currentContext) {
+            this.currentContext.executionId = executionId;
+            if (sessionId) this.currentContext.sessionId = sessionId;
+            if (tenantId) this.currentContext.tenantId = tenantId;
+
+            this.logger.debug('Observability context updated with execution', {
+                correlationId: this.currentContext.correlationId,
+                executionId,
+                sessionId,
+                tenantId,
+            } as LogContext);
+        }
+    }
+
+    /**
      * Trace a function with unified observability
      */
     async trace<T>(
@@ -430,6 +510,8 @@ export class ObservabilitySystem implements ObservabilityInterface {
             rootAttributes['tenant.id'] = execContext.tenantId;
         if (execContext?.executionId)
             rootAttributes['execution.id'] = execContext.executionId;
+        if (execContext?.sessionId)
+            rootAttributes['session.id'] = execContext.sessionId; // ✅ NEW: Add sessionId to span attributes
         const span = this.telemetry.startSpan(name, {
             attributes: rootAttributes,
         });
@@ -680,6 +762,19 @@ export class ObservabilitySystem implements ObservabilityInterface {
             this.debug.updateConfig(config.debugging);
         }
 
+        // ✅ NOVO: Re-inicializar MongoDB Exporter se configuração mudou
+        if (config.mongodb && !this.mongodbExporter) {
+            this.logger.info(
+                'MongoDB config updated, initializing exporter...',
+                {
+                    hasConfig: !!this.config.mongodb,
+                    connectionString: this.config.mongodb?.connectionString,
+                    database: this.config.mongodb?.database,
+                },
+            );
+            void this.initializeMongoDBExporter();
+        }
+
         this.logger.info('Observability configuration updated', {
             environment: this.config.environment,
         } as LogContext);
@@ -692,6 +787,7 @@ export class ObservabilitySystem implements ObservabilityInterface {
         await Promise.allSettled([
             this.debug.flush(),
             this.telemetry.forceFlush(),
+            this.mongodbExporter?.flush(),
         ]);
 
         this.logger.debug('Observability system flushed');
@@ -703,13 +799,25 @@ export class ObservabilitySystem implements ObservabilityInterface {
     async dispose(): Promise<void> {
         this.logger.info('Disposing observability system');
 
+        // Clean up log processors
+        try {
+            const { clearLogProcessors } = await import('./logger.js');
+            clearLogProcessors();
+        } catch {
+            // Ignore import errors during disposal
+        }
+
         // Dispose telemetry tracer if it has dispose method
         const tracer = this.telemetry.getTracer();
         if ('dispose' in tracer && typeof tracer.dispose === 'function') {
             (tracer as { dispose(): void }).dispose();
         }
 
-        await Promise.allSettled([this.debug.dispose(), this.flush()]);
+        await Promise.allSettled([
+            this.debug.dispose(),
+            this.mongodbExporter?.dispose(),
+            this.flush(),
+        ]);
 
         this.monitor?.stop?.();
         this.clearContext();
@@ -774,6 +882,159 @@ export class ObservabilitySystem implements ObservabilityInterface {
                 enabled: false, // Disable telemetry in tests
             };
         }
+    }
+
+    /**
+     * Initialize MongoDB Exporter
+     */
+    private async initializeMongoDBExporter(): Promise<void> {
+        this.logger.info('Starting MongoDB Exporter initialization...');
+
+        try {
+            const { createMongoDBExporter } = await import(
+                './mongodb-exporter.js'
+            );
+
+            // Convert simple config to MongoDBExporterConfig
+            const mongodbConfig = this.config.mongodb
+                ? {
+                      connectionString:
+                          this.config.mongodb.connectionString ||
+                          'mongodb://localhost:27017/kodus',
+                      database: this.config.mongodb.database || 'kodus',
+                      collections: {
+                          logs:
+                              this.config.mongodb.collections?.logs ||
+                              'observability_logs',
+                          telemetry:
+                              this.config.mongodb.collections?.telemetry ||
+                              'observability_telemetry',
+                          metrics:
+                              this.config.mongodb.collections?.metrics ||
+                              'observability_metrics',
+                          errors:
+                              this.config.mongodb.collections?.errors ||
+                              'observability_errors',
+                      },
+                      batchSize: this.config.mongodb.batchSize || 100,
+                      flushIntervalMs:
+                          this.config.mongodb.flushIntervalMs || 5000,
+                      maxRetries: 3,
+                      ttlDays: this.config.mongodb.ttlDays || 30,
+                      enableObservability:
+                          this.config.mongodb.enableObservability ?? true,
+                  }
+                : undefined;
+
+            this.logger.info('Creating MongoDB Exporter with config:', {
+                connectionString: mongodbConfig?.connectionString,
+                database: mongodbConfig?.database,
+                collections: mongodbConfig?.collections,
+            });
+
+            this.mongodbExporter = await createMongoDBExporter(mongodbConfig);
+
+            this.logger.info('Initializing MongoDB Exporter...');
+            await this.mongodbExporter.initialize();
+
+            // Add telemetry processor
+            await this.telemetry.addTraceProcessor(async (items) => {
+                this.logger.debug('Processing telemetry items for MongoDB:', {
+                    itemCount: items.length,
+                });
+                for (const item of items) {
+                    await this.mongodbExporter?.exportTelemetry(item);
+                }
+            });
+
+            // Add log processor for MongoDB export
+            const { addLogProcessor } = await import('./logger.js');
+            addLogProcessor((level, message, component, context, error) => {
+                this.mongodbExporter?.exportLog(
+                    level,
+                    message,
+                    component,
+                    context,
+                    error,
+                );
+
+                // Export error to dedicated error collection when level is 'error'
+                if (level === 'error' && error && this.mongodbExporter) {
+                    const errorContext = {
+                        correlationId: context?.correlationId as
+                            | string
+                            | undefined,
+                        tenantId: context?.tenantId as string | undefined,
+                        executionId: context?.executionId as string | undefined,
+                        component,
+                        logMessage: message,
+                        ...context,
+                    };
+                    this.mongodbExporter.exportError(error, errorContext);
+                }
+            });
+
+            this.logger.info(
+                'MongoDB Exporter initialized and connected to telemetry, logging, and errors',
+            );
+        } catch (error) {
+            this.logger.error(
+                'Failed to initialize MongoDB Exporter',
+                error as Error,
+                {
+                    errorMessage:
+                        error instanceof Error ? error.message : String(error),
+                } as LogContext,
+            );
+        }
+    }
+
+    /**
+     * Setup global error handling to capture uncaught exceptions and unhandled rejections
+     */
+    private setupGlobalErrorHandling(): void {
+        // Capture uncaught exceptions
+        process.on('uncaughtException', (error: Error) => {
+            this.logger.error(
+                'Uncaught Exception: The process will now terminate.',
+                error,
+                {
+                    source: 'global',
+                    type: 'uncaughtException',
+                },
+            );
+
+            // It is unsafe to resume normal operation after an 'uncaughtException'.
+            // The process should be terminated after synchronous logging.
+            process.exit(1);
+        });
+
+        // Capture unhandled promise rejections
+        process.on(
+            'unhandledRejection',
+            (reason: unknown, promise: Promise<unknown>) => {
+                const error =
+                    reason instanceof Error
+                        ? reason
+                        : new Error(String(reason));
+
+                this.logger.error(
+                    'Unhandled Promise Rejection: The process will now terminate.',
+                    error,
+                    {
+                        source: 'global',
+                        type: 'unhandledRejection',
+                        promise: promise.toString(),
+                    },
+                );
+
+                // It is unsafe to resume normal operation after an 'unhandledRejection'.
+                // The process should be terminated after synchronous logging.
+                process.exit(1);
+            },
+        );
+
+        this.logger.debug('Global error handling setup completed');
     }
 
     /**
@@ -935,10 +1196,28 @@ export class ObservabilitySystem implements ObservabilityInterface {
         message: string,
         context?: Partial<ObservabilityContext>,
     ): void {
-        this.logger.error(message, error, {
+        const currentContext = this.getContext();
+        const mergedContext = {
             ...context,
-            correlationId: this.getContext()?.correlationId,
-        });
+            correlationId: currentContext?.correlationId,
+        };
+
+        // Log the error
+        this.logger.error(message, error, mergedContext);
+
+        // Export to MongoDB errors collection if available
+        if (this.mongodbExporter) {
+            this.mongodbExporter.exportError(error, {
+                correlationId: currentContext?.correlationId,
+                tenantId: currentContext?.tenantId || context?.tenantId,
+                executionId:
+                    currentContext?.executionId || context?.executionId,
+                source: 'application',
+                type: 'manual',
+                logMessage: message,
+                ...context,
+            });
+        }
     }
 
     /**

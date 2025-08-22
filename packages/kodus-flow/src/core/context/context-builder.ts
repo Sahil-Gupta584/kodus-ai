@@ -45,7 +45,7 @@ export interface ContextBuilderConfig {
 export class ContextBuilder {
     private static instance: ContextBuilder | undefined;
     private readonly logger = createLogger('ContextBuilder');
-    private readonly _config: ContextBuilderConfig;
+    private readonly contextBuilderConfig: ContextBuilderConfig;
 
     private memoryManager!: MemoryManager;
     private sessionService: SessionService;
@@ -53,16 +53,17 @@ export class ContextBuilder {
     private toolEngine?: ToolEngine;
 
     private constructor(config: ContextBuilderConfig = {}) {
-        this._config = config;
+        this.contextBuilderConfig = config;
 
         if (config.memory) {
             this.initializeMemoryManager(config.memory);
         } else {
             this.memoryManager = getGlobalMemoryManager();
         }
+
         const sessionConfig = {
             maxSessions: 1000,
-            sessionTimeout: 30 * 60 * 1000, // 30 min
+            sessionTimeout: 60 * 60 * 1000, // 1 hour
             enableAutoCleanup: true,
             ...config.session,
         };
@@ -86,6 +87,7 @@ export class ContextBuilder {
         if (!ContextBuilder.instance) {
             ContextBuilder.instance = new ContextBuilder(config);
         }
+
         return ContextBuilder.instance;
     }
 
@@ -99,7 +101,7 @@ export class ContextBuilder {
     }
 
     getConfig(): ContextBuilderConfig {
-        return this._config;
+        return this.contextBuilderConfig;
     }
 
     private initializeMemoryManager(

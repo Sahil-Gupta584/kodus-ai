@@ -48,6 +48,7 @@ export interface Planner<
         context: TContext,
     ): Promise<ResultAnalysis>;
     // Optional hooks for Plan–Execute style planners
+    createFinalResponse?(context: TContext): Promise<string>;
     getPlanForContext?(context: TContext): unknown | null;
     resolveArgs?(
         args: Record<string, unknown>,
@@ -143,13 +144,13 @@ export interface NeedsReplanResult {
     metadata?: ActionResultMetadata;
 }
 
-export interface ResultAnalysis {
+export type ResultAnalysis = {
     isComplete: boolean;
     isSuccessful: boolean;
     feedback: string;
     shouldContinue: boolean;
     suggestedNextAction?: string;
-}
+};
 
 /**
  * ✅ UNIFIED: StepExecution now uses the implementation from step-execution.ts
@@ -414,165 +415,6 @@ export function generateLearningContext(
 
     return context;
 }
-
-/**
- * Create an enhanced execution context with automatic hints and learning
- */
-// export function createEnhancedExecutionContext(
-//     agentContext: AgentContext,
-//     input: string,
-//     history: ExecutionHistoryEntry[],
-//     iterations: number,
-//     maxIterations: number,
-//     constraints?: string[],
-//     plannerMetadata?: ExecutionContextMetadata,
-// ): PlannerExecutionContext {
-//     // Auto-generate execution hints and learning context
-//     const autoHints = generateExecutionHints(
-//         history,
-//         agentContext.agentIdentity,
-//     );
-//     const autoLearning = generateLearningContext(history);
-
-//     return createPlannerExecutionContext(
-//         agentContext,
-//         input,
-//         history,
-//         iterations,
-//         maxIterations,
-//         constraints,
-//         plannerMetadata,
-//         {
-//             executionHints: autoHints,
-//             learningContext: autoLearning,
-//             enhanceTools: true, // Always enhance tools for better performance
-//         },
-//     );
-// }
-
-// Context adapter to convert AgentContext to PlannerExecutionContext
-// export function createPlannerExecutionContext(
-//     agentContext: AgentContext,
-//     input: string,
-//     history: ExecutionHistoryEntry[],
-//     iterations: number,
-//     maxIterations: number,
-//     constraints?: string[],
-//     plannerMetadata?: ExecutionContextMetadata,
-//     enhancement?: ContextEnhancementConfig,
-// ): PlannerExecutionContext {
-//     // Convert basic tools to enhanced tools if requested
-//     const enhancedTools: EnhancedToolInfo[] = (
-//         agentContext.availableTools || []
-//     ).map((tool) => {
-//         // Extract analytics from tool usage history if available
-//         const toolUsageFromHistory = history.filter(
-//             (entry) =>
-//                 entry.action.type === 'tool_call' &&
-//                 (entry.action as ToolCallAction).toolName === tool.name,
-//         );
-
-//         const baseEnhancedTool: EnhancedToolInfo = {
-//             name: tool.name,
-//             description: tool.description,
-//             schema: tool.inputSchema,
-//             examples: tool.examples as EnhancedToolInfo['examples'],
-//             plannerHints: tool.plannerHints as EnhancedToolInfo['plannerHints'],
-//             categories: tool.categories,
-//             dependencies: tool.dependencies,
-//         };
-
-//         if (enhancement?.enhanceTools) {
-//             // Add usage analytics
-//             return {
-//                 ...baseEnhancedTool,
-//                 usageCount: toolUsageFromHistory.length,
-//                 lastSuccess:
-//                     toolUsageFromHistory.length > 0
-//                         ? isSuccessResult(
-//                               toolUsageFromHistory[
-//                                   toolUsageFromHistory.length - 1
-//                               ]!.result,
-//                           )
-//                         : undefined,
-//                 errorRate:
-//                     toolUsageFromHistory.length > 0
-//                         ? toolUsageFromHistory.filter((entry) =>
-//                               isErrorResult(entry.result),
-//                           ).length / toolUsageFromHistory.length
-//                         : undefined,
-//                 lastUsed:
-//                     toolUsageFromHistory.length > 0
-//                         ? Date.now() // Would be better to get from actual execution timestamp
-//                         : undefined,
-//             };
-//         }
-
-//         return baseEnhancedTool;
-//     });
-
-//     return {
-//         history,
-//         iterations,
-//         maxIterations,
-//         constraints,
-//         plannerMetadata: plannerMetadata || {},
-
-//         // 🚀 Enhanced execution context
-//         executionHints: enhancement?.executionHints,
-//         learningContext: enhancement?.learningContext,
-
-//         update(
-//             thought: AgentThought,
-//             result: ActionResult,
-//             observation: ResultAnalysis,
-//         ): void {
-//             history.push({
-//                 thought,
-//                 action: thought.action,
-//                 result,
-//                 observation,
-//             });
-//         },
-
-//         getCurrentSituation(): string {
-//             const recentHistory = history.slice(-3);
-//             return recentHistory
-//                 .map(
-//                     (entry) =>
-//                         `Action: ${JSON.stringify(entry.action)} -> Result: ${JSON.stringify(entry.result)}`,
-//                 )
-//                 .join('\n');
-//         },
-
-//         get isComplete(): boolean {
-//             return (
-//                 history.length > 0 &&
-//                 history[history.length - 1]?.observation.isComplete === true
-//             );
-//         },
-
-//         getFinalResult(): AgentExecutionResult {
-//             const lastEntry = history[history.length - 1];
-//             return {
-//                 success: lastEntry?.observation.isComplete || false,
-//                 result: lastEntry?.result,
-//                 iterations,
-//                 totalTime: Date.now(), // Simplified
-//                 thoughts: history.map((h) => h.thought),
-//                 metadata: {
-//                     plannerType: plannerMetadata?.plannerType,
-//                     toolCallsCount: history.filter(
-//                         (h) => h.action.type === 'tool_call',
-//                     ).length,
-//                     errorsCount: history.filter(
-//                         (h) => h.result.type === 'error',
-//                     ).length,
-//                 },
-//             };
-//         },
-//     };
-// }
 
 // Specific metadata types for execution results
 export interface ExecutionResultMetadata {

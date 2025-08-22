@@ -15,6 +15,7 @@ import {
     getResultError,
     getResultContent,
 } from '../planning/planner-factory.js';
+import { UNIFIED_STATUS } from '../../core/types/planning-shared.js';
 
 // const logger = createLogger('response-synthesizer');
 
@@ -34,7 +35,10 @@ export interface ResponseSynthesisContext {
     planSteps?: Array<{
         id: string;
         description: string;
-        status: 'completed' | 'failed' | 'skipped';
+        status:
+            | typeof UNIFIED_STATUS.COMPLETED
+            | typeof UNIFIED_STATUS.FAILED
+            | typeof UNIFIED_STATUS.SKIPPED;
         result?: unknown;
     }>;
 
@@ -177,9 +181,12 @@ export class ResponseSynthesizer {
         // Coletar resultados dos steps do plano
         if (context.planSteps) {
             context.planSteps.forEach((step) => {
-                if (step.status === 'failed') {
+                if (step.status === UNIFIED_STATUS.FAILED) {
                     errors.push(`Failed: ${step.description}`);
-                } else if (step.status === 'completed' && step.result) {
+                } else if (
+                    step.status === UNIFIED_STATUS.COMPLETED &&
+                    step.result
+                ) {
                     rawResults.push(step.result);
                 }
             });

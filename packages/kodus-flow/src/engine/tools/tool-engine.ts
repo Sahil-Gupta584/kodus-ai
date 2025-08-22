@@ -589,6 +589,7 @@ export class ToolEngine {
                     });
 
                     const startTime = Date.now();
+
                     const result = await this.executeCall(toolName, input);
                     const executionTime = Date.now() - startTime;
 
@@ -602,6 +603,7 @@ export class ToolEngine {
 
                     // ✅ UNIFICADO: Sempre verificar se há erro no resultado
                     const hasError = this.checkToolResultError(result);
+
                     const responseData = {
                         ...(typeof result === 'object' && result !== null
                             ? result
@@ -629,11 +631,6 @@ export class ToolEngine {
                             'tool.execute.response',
                             responseData,
                         );
-                    }
-
-                    // ✅ ACK the original event after successful processing
-                    if (this.kernelHandler) {
-                        await this.kernelHandler.ack(event.id);
                     }
                 } catch (error) {
                     this.logger.error(
@@ -670,17 +667,6 @@ export class ToolEngine {
                             toolName,
                         },
                     });
-
-                    // ✅ NACK the original event after error
-                    if (this.kernelHandler) {
-                        await this.kernelHandler.nack(event.id, error as Error);
-                        this.logger.debug('🎯 [TOOL] Event NACK successful', {
-                            eventId: event.id,
-                            toolName,
-                            correlationId,
-                            error: (error as Error).message,
-                        });
-                    }
                 }
             },
         );

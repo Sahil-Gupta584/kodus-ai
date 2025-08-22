@@ -12,15 +12,24 @@ import {
 } from '@/core/domain/auth/contracts/auth.service.contracts';
 import { UserRole } from '@/core/domain/user/enums/userRole.enum';
 import { STATUS } from '@/config/types/database/status.type';
+import { IUsersService } from '@/core/domain/user/contracts/user.service.contract';
 
 @Injectable()
-export class UsersService {
+export class UsersService implements IUsersService {
     constructor(
         @Inject(AUTH_SERVICE_TOKEN)
         private readonly authService: IAuthService,
         @Inject(USER_REPOSITORY_TOKEN)
         private readonly userRepository: IUserRepository,
     ) {}
+
+    public getCryptedPassword(email: string): Promise<string | undefined> {
+        return this.userRepository.getCryptedPassword(email);
+    }
+
+    public create(userEntity: IUser): Promise<UserEntity | undefined> {
+        return this.userRepository.create(userEntity);
+    }
 
     public find(
         filter: Partial<IUser>,
@@ -29,7 +38,7 @@ export class UsersService {
         return this.userRepository.find(filter, statusArray);
     }
 
-    public findOne(filter: Partial<IUser>, statusA): Promise<UserEntity> {
+    public findOne(filter: Partial<IUser>): Promise<UserEntity> {
         return this.userRepository.findOne(filter);
     }
 

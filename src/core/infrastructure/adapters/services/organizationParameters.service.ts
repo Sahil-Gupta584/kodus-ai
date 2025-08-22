@@ -242,4 +242,13 @@ export class OrganizationParametersService
 
         return categorizedWorkItemTypes;
     }
+
+    findByKeyAndValue(filter: {
+        configKey: OrganizationParametersKey;
+        configValue: any;
+        organizationAndTeamData?: OrganizationAndTeamData;
+        fuzzy?: boolean;
+    }): Promise<OrganizationParametersEntity[]> {
+        return this.organizationParametersRepository.findByKeyAndValue(filter);
+    }
 }
