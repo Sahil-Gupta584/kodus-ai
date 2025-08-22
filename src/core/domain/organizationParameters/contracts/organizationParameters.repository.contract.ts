@@ -3,11 +3,17 @@ import { IOrganizationParameters } from '../interfaces/organizationParameters.in
 import { OrganizationParametersEntity } from '../entities/organizationParameters.entity';
 import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
 
-export const ORGANIZATION_PARAMETERS_REPOSITORY_TOKEN = Symbol('OrganizationParametersRepository');
+export const ORGANIZATION_PARAMETERS_REPOSITORY_TOKEN = Symbol(
+    'OrganizationParametersRepository',
+);
 
 export interface IOrganizationParametersRepository {
-    find(filter?: Partial<IOrganizationParameters>): Promise<OrganizationParametersEntity[]>;
-    findOne(filter?: Partial<IOrganizationParameters>): Promise<OrganizationParametersEntity>;
+    find(
+        filter?: Partial<IOrganizationParameters>,
+    ): Promise<OrganizationParametersEntity[]>;
+    findOne(
+        filter?: Partial<IOrganizationParameters>,
+    ): Promise<OrganizationParametersEntity>;
     findById(uuid: string): Promise<OrganizationParametersEntity | undefined>;
     findByOrganizationName(
         organizationName: string,
@@ -24,4 +30,10 @@ export interface IOrganizationParametersRepository {
         configKey: OrganizationParametersKey,
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<OrganizationParametersEntity>;
+    findByKeyAndValue(filter: {
+        configKey: OrganizationParametersKey;
+        configValue: any;
+        organizationAndTeamData?: OrganizationAndTeamData;
+        fuzzy?: boolean;
+    }): Promise<OrganizationParametersEntity[]>;
 }

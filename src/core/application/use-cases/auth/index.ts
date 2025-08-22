@@ -4,6 +4,7 @@ import { LogoutUseCase } from './logout.use-case';
 import { RefreshTokenUseCase } from './refresh-toke.use-case';
 import { ForgotPasswordUseCase } from './forgotPasswordUseCase';
 import { ResetPasswordUseCase } from './resetPasswordUseCase';
+import { SignUpUseCase } from './signup.use-case';
 
 export const UseCases = [
     LoginUseCase,
@@ -12,4 +13,5 @@ export const UseCases = [
     OAuthLoginUseCase,
     ForgotPasswordUseCase,
     ResetPasswordUseCase,
+    SignUpUseCase,
 ];

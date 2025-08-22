@@ -18,6 +18,8 @@ import { CreateOrganizationUseCase } from '@/core/application/use-cases/organiza
 import { OrganizationModule } from './organization.module';
 import { TeamMembersModule } from './teamMembers.module';
 import { CreateOrganizationFromOAuthUseCase } from '@/core/application/use-cases/organization/create-from-oauth.use-case';
+import { ProfilesModule } from './profiles.module';
+import { TeamsModule } from './team.module';
 
 @Module({
     imports: [
@@ -37,6 +39,8 @@ import { CreateOrganizationFromOAuthUseCase } from '@/core/application/use-cases
         }),
         forwardRef(() => OrganizationModule),
         TeamMembersModule,
+        forwardRef(() => ProfilesModule),
+        forwardRef(() => TeamsModule),
     ],
     providers: [
         ...UseCases,
