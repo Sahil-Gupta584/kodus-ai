@@ -54,11 +54,12 @@ export class GetOrganizationsByDomainUseCase implements IUseCase {
                 return [];
             }
 
+            const lowercaseDomain = domain.toLowerCase();
             const matchingDomains = autoJoinOrgs.filter((org) => {
                 const config =
                     org.configValue as OrganizationParametersAutoJoinConfig;
                 return config?.domains?.some(
-                    (d) => d.toLowerCase() === domain.toLowerCase(),
+                    (d) => d.toLowerCase() === lowercaseDomain,
                 );
             });
 

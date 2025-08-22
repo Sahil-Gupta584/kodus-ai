@@ -306,7 +306,7 @@ export class OrganizationParametersRepository
             if (fuzzy) {
                 queryBuilder.andWhere(
                     'organizationParameters.configValue @> :configValue',
-                    { configValue },
+                    { configValue: JSON.stringify(configValue) },
                 );
             } else {
                 queryBuilder.andWhere(
