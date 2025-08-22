@@ -580,8 +580,7 @@ export class PlanAndExecutePlanner implements Planner {
                         // Only include user inputs and final responses
                         return (
                             input?.type === 'memory_context_request' ||
-                            input?.type === 'plan_completed' ||
-                            input?.type === 'plan.execution.completed'
+                            input?.type === 'plan_completed'
                         );
                     })
                     .slice(-3); // Get last 3 relevant entries
