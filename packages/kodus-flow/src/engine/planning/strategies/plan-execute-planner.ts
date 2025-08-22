@@ -206,6 +206,8 @@ export class PlanAndExecutePlanner implements Planner {
                             `<observation>\n${JSON.stringify(payload, null, 2)}\n</observation>`,
                         );
                     }
+                    
+                    //TODO entender como comparar o status no input vem como plan.execution.completed e no output vem como plan_completed
                     if (input?.type === 'plan_completed') {
                         blocks.push(
                             `<observation>\n${JSON.stringify(
@@ -578,7 +580,8 @@ export class PlanAndExecutePlanner implements Planner {
                         // Only include user inputs and final responses
                         return (
                             input?.type === 'memory_context_request' ||
-                            input?.type === 'plan_completed'
+                            input?.type === 'plan_completed' ||
+                            input?.type === 'plan.execution.completed'
                         );
                     })
                     .slice(-3); // Get last 3 relevant entries
@@ -769,6 +772,7 @@ export class PlanAndExecutePlanner implements Planner {
                                     current.metadata as Record<string, unknown>
                                 )?.replansCount,
                                 maxReplans: this.replanPolicy.maxReplans,
+                                correlationId: context.agentContext?.correlationId,
                             },
                         };
                     }
