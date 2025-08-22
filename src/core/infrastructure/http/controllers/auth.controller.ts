@@ -3,11 +3,12 @@ import { LogoutUseCase } from '@/core/application/use-cases/auth/logout.use-case
 import { RefreshTokenUseCase } from '@/core/application/use-cases/auth/refresh-toke.use-case';
 import { CreateOrganizationUseCase } from '@/core/application/use-cases/organization/create.use-case';
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
-import { CreateUserOrganizationDto } from '../dtos/create-user-organization.dto';
+import { SignUpDTO } from '../dtos/create-user-organization.dto';
 import { OAuthLoginUseCase } from '@/core/application/use-cases/auth/oauth-login.use-case';
 import { CreateUserOrganizationOAuthDto } from '../dtos/create-user-organization-oauth.dto';
 import { ForgotPasswordUseCase } from '@/core/application/use-cases/auth/forgotPasswordUseCase';
 import { ResetPasswordUseCase } from '@/core/application/use-cases/auth/resetPasswordUseCase';
+import { SignUpUseCase } from '@/core/application/use-cases/auth/signup.use-case';
 
 @Controller('auth')
 export class AuthController {
@@ -15,7 +16,7 @@ export class AuthController {
         private readonly loginUseCase: LoginUseCase,
         private readonly refreshTokenUseCase: RefreshTokenUseCase,
         private readonly logoutUseCase: LogoutUseCase,
-        private readonly createOrganizationUseCase: CreateOrganizationUseCase,
+        private readonly signUpUseCase: SignUpUseCase,
         private readonly oAuthLoginUseCase: OAuthLoginUseCase,
         private readonly forgotPasswordUseCase: ForgotPasswordUseCase,
         private readonly resetPasswordUseCase: ResetPasswordUseCase,
@@ -37,16 +38,8 @@ export class AuthController {
     }
 
     @Post('signUp')
-    async signUp(@Body() body: CreateUserOrganizationDto) {
-        const { name, email, password } = body;
-
-        return await this.createOrganizationUseCase.execute(
-            { name },
-            {
-                email,
-                password,
-            },
-        );
+    async signUp(@Body() body: SignUpDTO) {
+        return await this.signUpUseCase.execute(body);
     }
 
     @Post('forgot-password')

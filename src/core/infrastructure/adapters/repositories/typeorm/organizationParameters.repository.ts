@@ -19,23 +19,31 @@ import { IOrganizationParameters } from '@/core/domain/organizationParameters/in
 import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
 
 @Injectable()
-export class OrganizationParametersRepository implements IOrganizationParametersRepository {
+export class OrganizationParametersRepository
+    implements IOrganizationParametersRepository
+{
     constructor(
         @InjectRepository(OrganizationParametersModel)
         private readonly organizationParametersRepository: Repository<OrganizationParametersModel>,
     ) {}
 
-    async find(filter?: Partial<IOrganizationParameters>): Promise<OrganizationParametersEntity[]> {
+    async find(
+        filter?: Partial<IOrganizationParameters>,
+    ): Promise<OrganizationParametersEntity[]> {
         try {
             const { organization, ...otherFilterAttributes } = filter || {};
 
-            const teamCondition = createNestedConditions('organization', organization);
+            const teamCondition = createNestedConditions(
+                'organization',
+                organization,
+            );
 
             const findOptions: FindManyOptions<OrganizationParametersModel> = {
                 where: {
                     ...otherFilterAttributes,
                     ...teamCondition,
                 },
+                relations: ['organization'],
             };
 
             const organizationParametersModel =
@@ -50,21 +58,29 @@ export class OrganizationParametersRepository implements IOrganizationParameters
         }
     }
 
-    async findOne(filter?: Partial<IOrganizationParameters>): Promise<OrganizationParametersEntity> {
+    async findOne(
+        filter?: Partial<IOrganizationParameters>,
+    ): Promise<OrganizationParametersEntity> {
         try {
             const { organization, ...otherFilterAttributes } = filter || {};
 
-            const organizationCondition = createNestedConditions('organization', organization);
+            const organizationCondition = createNestedConditions(
+                'organization',
+                organization,
+            );
 
             const findOptions: FindManyOptions<OrganizationParametersModel> = {
                 where: {
                     ...otherFilterAttributes,
                     ...organizationCondition,
                 },
+                relations: ['organization'],
             };
 
             const organizationParametersModel =
-                await this.organizationParametersRepository.findOne(findOptions);
+                await this.organizationParametersRepository.findOne(
+                    findOptions,
+                );
 
             return mapSimpleModelToEntity(
                 organizationParametersModel,
@@ -81,7 +97,10 @@ export class OrganizationParametersRepository implements IOrganizationParameters
         try {
             const response = await this.organizationParametersRepository
                 .createQueryBuilder('organizationParameters')
-                .leftJoinAndSelect('organizationParameters.integration', 'integration')
+                .leftJoinAndSelect(
+                    'organizationParameters.integration',
+                    'integration',
+                )
                 .where('organizationParameters.configValue @> :item::jsonb', {
                     item: JSON.stringify({
                         organizationName: organizationName,
@@ -93,7 +112,10 @@ export class OrganizationParametersRepository implements IOrganizationParameters
                 return null;
             }
 
-            return mapSimpleModelToEntity(response, OrganizationParametersEntity);
+            return mapSimpleModelToEntity(
+                response,
+                OrganizationParametersEntity,
+            );
         } catch (err) {
             console.log(err);
         }
@@ -119,7 +141,9 @@ export class OrganizationParametersRepository implements IOrganizationParameters
         }
     }
 
-    async create(integrationConfig: IOrganizationParameters): Promise<OrganizationParametersEntity> {
+    async create(
+        integrationConfig: IOrganizationParameters,
+    ): Promise<OrganizationParametersEntity> {
         try {
             const queryBuilder =
                 this.organizationParametersRepository.createQueryBuilder(
@@ -135,11 +159,12 @@ export class OrganizationParametersRepository implements IOrganizationParameters
                 .execute();
 
             if (integrationConfigCreated?.identifiers[0]?.uuid) {
-                const findOneOptions: FindOneOptions<OrganizationParametersModel> = {
-                    where: {
-                        uuid: integrationConfigCreated.identifiers[0].uuid,
-                    },
-                };
+                const findOneOptions: FindOneOptions<OrganizationParametersModel> =
+                    {
+                        where: {
+                            uuid: integrationConfigCreated.identifiers[0].uuid,
+                        },
+                    };
 
                 const integrationConfig =
                     await this.organizationParametersRepository.findOne(
@@ -175,17 +200,24 @@ export class OrganizationParametersRepository implements IOrganizationParameters
             if (result.affected > 0) {
                 const { organization, ...otherFilterAttributes } = filter || {};
 
-                const organizationCondition = createNestedConditions('organization', organization);
+                const organizationCondition = createNestedConditions(
+                    'organization',
+                    organization,
+                );
 
-                const findOptions: FindManyOptions<OrganizationParametersModel> = {
-                    where: {
-                        ...otherFilterAttributes,
-                        ...organizationCondition,
-                    },
-                };
+                const findOptions: FindManyOptions<OrganizationParametersModel> =
+                    {
+                        where: {
+                            ...otherFilterAttributes,
+                            ...organizationCondition,
+                        },
+                        relations: ['organization'],
+                    };
 
                 const integrationConfig =
-                    await this.organizationParametersRepository.findOne(findOptions);
+                    await this.organizationParametersRepository.findOne(
+                        findOptions,
+                    );
 
                 if (integrationConfig) {
                     return mapSimpleModelToEntity(
@@ -213,18 +245,88 @@ export class OrganizationParametersRepository implements IOrganizationParameters
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<OrganizationParametersEntity> {
         const queryBuilder =
-            this.organizationParametersRepository.createQueryBuilder('organizationParameters');
+            this.organizationParametersRepository.createQueryBuilder(
+                'organizationParameters',
+            );
 
         const integrationConfigSelected = await queryBuilder
-            .where('organizationParameters.configKey = :configKey', { configKey })
-            .andWhere('organizationParameters.organization_id = :organizationId', {
-                organizationId: organizationAndTeamData.organizationId,
+            .where('organizationParameters.configKey = :configKey', {
+                configKey,
             })
+            .andWhere(
+                'organizationParameters.organization_id = :organizationId',
+                {
+                    organizationId: organizationAndTeamData.organizationId,
+                },
+            )
             .getOne();
 
         return mapSimpleModelToEntity(
             integrationConfigSelected,
             OrganizationParametersEntity,
         );
+    }
+
+    async findByKeyAndValue(filter: {
+        configKey: OrganizationParametersKey;
+        configValue: any;
+        organizationAndTeamData?: OrganizationAndTeamData;
+        fuzzy?: boolean;
+    }): Promise<OrganizationParametersEntity[]> {
+        try {
+            const { configKey, configValue, organizationAndTeamData, fuzzy } =
+                filter;
+
+            const queryBuilder =
+                this.organizationParametersRepository.createQueryBuilder(
+                    'organizationParameters',
+                );
+
+            queryBuilder.leftJoinAndSelect(
+                'organizationParameters.organization',
+                'organization',
+            );
+
+            queryBuilder.where(
+                'organizationParameters.configKey = :configKey',
+                {
+                    configKey,
+                },
+            );
+
+            if (organizationAndTeamData) {
+                queryBuilder.andWhere(
+                    'organizationParameters.organization_id = :organizationId',
+                    {
+                        organizationId: organizationAndTeamData.organizationId,
+                    },
+                );
+            }
+
+            if (fuzzy) {
+                queryBuilder.andWhere(
+                    'organizationParameters.configValue @> :configValue',
+                    { configValue: JSON.stringify(configValue) },
+                );
+            } else {
+                queryBuilder.andWhere(
+                    'organizationParameters.configValue = :configValue::jsonb',
+                    { configValue: JSON.stringify(configValue) },
+                );
+            }
+
+            const retrievedParameters = await queryBuilder.getMany();
+
+            if (!retrievedParameters || retrievedParameters.length === 0) {
+                return [];
+            }
+
+            return mapSimpleModelsToEntities(
+                retrievedParameters,
+                OrganizationParametersEntity,
+            );
+        } catch (error) {
+            console.log(error);
+        }
     }
 }

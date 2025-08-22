@@ -3,4 +3,5 @@ export enum OrganizationParametersKey {
     TIMEZONE_CONFIG = 'timezone_config',
     REVIEW_MODE_CONFIG = 'review_mode_config',
     KODY_FINE_TUNING_CONFIG = 'kody_fine_tuning_config',
+    AUTO_JOIN_CONFIG = 'auto_join_config',
 }

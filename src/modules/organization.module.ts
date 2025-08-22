@@ -15,6 +15,7 @@ import { IntegrationConfigModule } from './integrationConfig.module';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
 import { ParametersModule } from './parameters.module';
 import { ProfilesModule } from './profiles.module';
+import { OrganizationParametersModule } from './organizationParameters.module';
 
 @Module({
     imports: [
@@ -26,6 +27,7 @@ import { ProfilesModule } from './profiles.module';
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => ParametersModule),
         forwardRef(() => ProfilesModule),
+        forwardRef(() => OrganizationParametersModule),
     ],
     providers: [
         ...UseCases,
