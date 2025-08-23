@@ -206,7 +206,7 @@ export class PlanAndExecutePlanner implements Planner {
                             `<observation>\n${JSON.stringify(payload, null, 2)}\n</observation>`,
                         );
                     }
-                    
+
                     //TODO entender como comparar o status no input vem como plan.execution.completed e no output vem como plan_completed
                     if (input?.type === 'plan_completed') {
                         blocks.push(
@@ -771,7 +771,8 @@ export class PlanAndExecutePlanner implements Planner {
                                     current.metadata as Record<string, unknown>
                                 )?.replansCount,
                                 maxReplans: this.replanPolicy.maxReplans,
-                                correlationId: context.agentContext?.correlationId,
+                                correlationId:
+                                    context.agentContext?.correlationId,
                             },
                         };
                     }
