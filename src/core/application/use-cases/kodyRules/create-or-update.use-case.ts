@@ -22,9 +22,9 @@ export class CreateOrUpdateKodyRulesUseCase {
                 email: string;
             };
         },
-    ) {}
+    ) { }
 
-    async execute(kodyRule: CreateKodyRuleDto, organizationId: string) {
+    async execute(kodyRule: CreateKodyRuleDto, organizationId: string, userInfo?: { userId: string, userEmail: string }) {
         try {
             const organizationAndTeamData: OrganizationAndTeamData = {
                 organizationId,
@@ -32,14 +32,14 @@ export class CreateOrUpdateKodyRulesUseCase {
 
             const req: any = this.request as any;
             const reqUser = req?.user;
-            const userInfo = reqUser?.uuid && reqUser?.email
+            const userInfoData = userInfo || (reqUser?.uuid && reqUser?.email
                 ? { userId: reqUser.uuid, userEmail: reqUser.email }
-                : { userId: 'kody-system', userEmail: 'kody@kodus.io' };
+                : { userId: 'kody-system', userEmail: 'kody@kodus.io' });
 
             const result = await this.kodyRulesService.createOrUpdate(
                 organizationAndTeamData,
                 kodyRule,
-                userInfo,
+                userInfoData,
             );
 
             if (!result) {
