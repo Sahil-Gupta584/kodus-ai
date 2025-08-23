@@ -39,7 +39,7 @@ export class KodyRulesService implements IKodyRulesService {
         private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
 
         private readonly logger: PinoLoggerService,
-    ) {}
+    ) { }
 
     getNativeCollection() {
         throw new Error('Method not implemented.');
@@ -277,7 +277,7 @@ export class KodyRulesService implements IKodyRulesService {
         try {
             this.codeReviewSettingsLogService.registerKodyRulesLog({
                 organizationAndTeamData,
-                userInfo,
+                userInfo: userInfo || { userId: 'kody-system', userEmail: 'kody@kodus.io' },
                 actionType: ActionType.EDIT,
                 repository: { id: updatedRule.repositoryId },
                 directory: { id: updatedRule.directoryId },
