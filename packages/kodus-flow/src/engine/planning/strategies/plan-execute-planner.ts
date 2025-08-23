@@ -207,8 +207,7 @@ export class PlanAndExecutePlanner implements Planner {
                         );
                     }
 
-                    //TODO entender como comparar o status no input vem como plan.execution.completed e no output vem como plan_completed
-                    if (input?.type === 'plan_completed') {
+                    if (output?.type === 'plan_completed') {
                         blocks.push(
                             `<observation>\n${JSON.stringify(
                                 { event: 'plan_completed' },
