@@ -334,7 +334,7 @@ export interface AgentContext {
     invocationId: string;
     executionId?: string;
 
-    // State: Namespace-based working memory
+    // State: Namespace-based working memory with explicit persistence
     state: {
         get: <T>(
             namespace: string,
@@ -351,6 +351,9 @@ export interface AgentContext {
         getNamespace: (
             namespace: string,
         ) => Promise<Map<string, unknown> | undefined>;
+        // EXPLICIT persistence control
+        persist?: (namespace?: string) => Promise<void>;
+        hasChanges?: () => boolean;
     };
 
     // Conversation Management (ONLY legitimate agent concern)
@@ -396,7 +399,7 @@ export interface AgentContext {
     //     toolsUsed?: string[];
     // };
     executionRuntime: {
-        addContextValue: (update: Record<string, unknown>) => Promise<void>;
+        // Long-term memory patterns (MemoryManager)
         storeToolUsagePattern: (
             toolName: string,
             input: unknown,
@@ -405,16 +408,12 @@ export interface AgentContext {
             duration: number,
         ) => Promise<void>;
         storeExecutionPattern: (
-            patternType: 'success' | 'failure',
-            action: string,
+            patternType: 'success' | 'failure' | string,
+            action: string | unknown,
             result: unknown,
-            context?: string,
+            context?: string | unknown,
         ) => Promise<void>;
-        setState: (
-            namespace: string,
-            key: string,
-            value: unknown,
-        ) => Promise<void>;
+        // Removed duplicated methods - use state.set() directly for working memory
     };
     agentIdentity?: AgentIdentity;
     agentExecutionOptions?: AgentExecutionOptions;

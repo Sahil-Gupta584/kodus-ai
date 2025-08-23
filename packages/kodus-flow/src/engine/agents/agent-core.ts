@@ -486,21 +486,17 @@ export abstract class AgentCore<
             },
         );
 
-        await context.executionRuntime?.addContextValue({
-            type: 'session',
-            key: 'conversationEntry',
-            value: {
+        // Use state directly instead of removed addContextValue
+        if (context.state) {
+            await context.state.set('runtime', 'conversationEntry', {
                 sessionId: context.sessionId,
                 input,
                 agentName,
                 timestamp: Date.now(),
-            },
-            metadata: {
                 source: 'agent-core',
                 action: 'conversation-start',
-                sessionId: context.sessionId,
-            },
-        });
+            });
+        }
     }
 
     private async markExecutionCompleted(
@@ -522,24 +518,19 @@ export abstract class AgentCore<
         }
 
         if (context.executionRuntime) {
-            await context.executionRuntime.addContextValue({
-                type: 'execution',
-                key: 'completion',
-                value: {
-                    executionId,
-                    duration,
-                    iterations: result.iterations,
-                    toolsUsed: result.toolsUsed,
-                    success: true,
-                    status: 'completed',
-                    timestamp: Date.now(),
-                },
-                metadata: {
-                    source: 'agent-core',
-                    action: 'execution_completed',
-                    correlationId,
-                    agentName: context.agentName,
-                },
+            // Store execution completion in state
+            await context.state.set('runtime', 'executionCompletion', {
+                executionId,
+                duration,
+                iterations: result.iterations,
+                toolsUsed: result.toolsUsed,
+                success: true,
+                status: 'completed',
+                timestamp: Date.now(),
+                source: 'agent-core',
+                action: 'execution_completed',
+                correlationId,
+                agentName: context.agentName,
             });
         }
     }

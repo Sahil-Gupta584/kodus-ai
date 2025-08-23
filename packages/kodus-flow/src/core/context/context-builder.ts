@@ -7,8 +7,10 @@ import {
 } from '../memory/memory-manager.js';
 import { SessionService } from './services/session-service.js';
 import { ContextStateService } from './services/state-service.js';
-import { ConversationManager } from './services/conversation-manager.js';
-import { STATE_NAMESPACES } from './namespace-constants.js';
+import {
+    ConversationManager,
+    type ConversationHistory,
+} from './services/conversation-manager.js';
 
 import type {
     AgentContext,
@@ -70,10 +72,36 @@ export class ContextBuilder {
 
         this.sessionService = new SessionService(sessionConfig);
 
-        // Initialize conversation manager
+        // Initialize conversation manager WITH persistence
         this.conversationManager = new ConversationManager({
             maxHistory: sessionConfig.maxConversationHistory || 100,
-            persistent: false, // Can be made configurable later
+            persistent: true, // Enable persistence for conversations
+            // Use session service as storage adapter
+            storageAdapter: {
+                storeConversation: async (sessionId, history) => {
+                    await this.sessionService.updateSessionContext(sessionId, {
+                        conversationHistory: history,
+                    });
+                },
+                loadConversation: async (sessionId) => {
+                    const contextData =
+                        await this.sessionService.getSessionContextData(
+                            sessionId,
+                        );
+                    // Type-safe conversion
+                    const history = contextData.conversationHistory;
+                    if (Array.isArray(history)) {
+                        return history as ConversationHistory;
+                    }
+                    return null;
+                },
+                deleteConversation: async (sessionId) => {
+                    await this.sessionService.updateSessionContext(sessionId, {
+                        conversationHistory: [],
+                    });
+                    return true;
+                },
+            },
         });
 
         this.logger.info('ContextBuilder initialized', {
@@ -244,6 +272,7 @@ export class ContextBuilder {
             thread: options.thread,
             invocationId,
             state: {
+                // Pure working memory operations - NO automatic persistence
                 get: <T>(namespace: string, key: string, _threadId?: string) =>
                     workingMemory.get<T>(namespace, key),
                 set: async (
@@ -252,16 +281,39 @@ export class ContextBuilder {
                     value: unknown,
                     _threadId?: string,
                 ) => {
+                    // ONLY save to working memory (RAM)
                     await workingMemory.set(namespace, key, value);
-                    await this.sessionService.updateSessionContext(session.id, {
-                        [namespace]: { [key]: value },
-                    });
+                    // NO automatic persistence - let the agent decide when to persist
                 },
                 clear: (namespace: string) => workingMemory.clear(namespace),
                 getNamespace: async (namespace: string) => {
                     const nsMap = workingMemory.getNamespace(namespace);
                     return nsMap ? new Map(Object.entries(nsMap)) : undefined;
                 },
+                // EXPLICIT persistence methods
+                persist: async (namespace?: string) => {
+                    if (namespace) {
+                        // Persist specific namespace
+                        const data = workingMemory.getNamespace(namespace);
+                        if (data) {
+                            await this.sessionService.updateSessionContext(
+                                session.id,
+                                {
+                                    [namespace]: data,
+                                },
+                            );
+                        }
+                    } else {
+                        // Persist all namespaces
+                        const allData = workingMemory.getAllNamespaces();
+                        await this.sessionService.updateSessionContext(
+                            session.id,
+                            allData,
+                        );
+                    }
+                },
+                // Check if there are unsaved changes
+                hasChanges: () => workingMemory.hasUnsavedChanges(),
             },
 
             conversation: {
@@ -295,19 +347,7 @@ export class ContextBuilder {
             signal: new AbortController().signal,
             cleanup: async () => {},
             executionRuntime: {
-                addContextValue: async (update: Record<string, unknown>) => {
-                    const contextValues =
-                        (await workingMemory.get<unknown[]>(
-                            STATE_NAMESPACES.RUNTIME,
-                            'contextValues',
-                        )) || [];
-                    contextValues.push({ ...update, timestamp: Date.now() });
-                    await workingMemory.set(
-                        STATE_NAMESPACES.RUNTIME,
-                        'contextValues',
-                        contextValues,
-                    );
-                },
+                // Store tool usage patterns in long-term memory
                 storeToolUsagePattern: async (
                     toolName: string,
                     input: unknown,
@@ -322,6 +362,7 @@ export class ContextBuilder {
                         tenantId: session.tenantId,
                     });
                 },
+                // Store execution patterns in long-term memory
                 storeExecutionPattern: async (
                     patternType: string,
                     action: unknown,
@@ -335,13 +376,7 @@ export class ContextBuilder {
                         tenantId: session.tenantId,
                     });
                 },
-                setState: async (
-                    namespace: string,
-                    key: string,
-                    value: unknown,
-                ) => {
-                    await workingMemory.set(namespace, key, value);
-                },
+                // REMOVED duplicated methods - use state.set() directly
             },
             agentIdentity: undefined,
             agentExecutionOptions: options,

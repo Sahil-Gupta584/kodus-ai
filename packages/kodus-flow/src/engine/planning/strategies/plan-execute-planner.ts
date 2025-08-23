@@ -130,6 +130,13 @@ export class PlanAndExecutePlanner implements Planner {
         try {
             const { agentContext } = context;
 
+            // Guard clause for missing agentContext
+            if (!agentContext) {
+                throw new Error(
+                    'AgentContext is required for final response generation',
+                );
+            }
+
             const blocks: string[] = [];
 
             // 1) Observations from memory (relevant knowledge)
@@ -1239,7 +1246,7 @@ export class PlanAndExecutePlanner implements Planner {
                         createTelemetryEvent('plan_completed', {
                             planId: currentPlan.id,
                             content: result.content,
-                            synthesized: synthesizedResponse,
+                            synthesized: result.content,
                             sessionId: context.agentContext.sessionId,
                             agentName: context.agentContext.agentName,
                             correlationId: context.agentContext.correlationId,

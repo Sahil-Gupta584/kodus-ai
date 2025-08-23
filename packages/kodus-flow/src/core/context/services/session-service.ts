@@ -19,6 +19,7 @@ export type Session = {
     status: 'active' | 'paused' | 'expired' | 'closed';
     metadata: Record<string, unknown>;
     contextData: Record<string, unknown>;
+    currentExecutionId?: string; // Track current execution
 };
 
 export interface SessionConfig {
