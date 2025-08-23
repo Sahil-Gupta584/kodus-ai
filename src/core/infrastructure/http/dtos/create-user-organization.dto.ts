@@ -5,9 +5,10 @@ import {
     IsPhoneNumber,
     IsString,
     IsStrongPassword,
+    IsUUID,
 } from 'class-validator';
 
-export class CreateUserOrganizationDto {
+export class SignUpDTO {
     @IsString()
     public name: string;
 
@@ -24,4 +25,9 @@ export class CreateUserOrganizationDto {
         minSymbols: 1,
     })
     public password: string;
+
+    @IsString()
+    @IsOptional()
+    @IsUUID()
+    public organizationId: string;
 }

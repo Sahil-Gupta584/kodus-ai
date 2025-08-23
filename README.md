@@ -46,6 +46,36 @@ Kody (our agent) plugs into your Git workflow, learns how your team writes code,
 
 - **Continuous Learning** — Improves over time by incorporating feedback and adapting to your team's preferences and standards.
 
+## Supported Languages
+
+Kodus supports **all programming languages** with two levels of analysis:
+
+### 💡 **All Languages** - Semantic Analysis (LLM)
+Every programming language receives full semantic review via LLM covering style, best practices, code smells, and intelligent feedback.
+
+### 🚀 **Enhanced Support** - Additional AST Analysis
+These languages get everything above **plus** structural analysis via AST parsing for:
+- Lower noise and duplicate detection
+- Similarity analysis between code blocks
+- Node-level structural validation
+- Enhanced accuracy in complex scenarios
+
+| Language | Enhanced Features |
+|----------|------------------|
+| TypeScript | ✅ AST + Semantic |
+| JavaScript | ✅ AST + Semantic |
+| Python | ✅ AST + Semantic |
+| Java | ✅ AST + Semantic |
+| Go | ✅ AST + Semantic |
+| Ruby | ✅ AST + Semantic |
+| PHP | ✅ AST + Semantic |
+| C# | ✅ AST + Semantic |
+| Rust | ✅ AST + Semantic |
+
+**All other languages work perfectly with semantic analysis!** Including Swift, Kotlin, Scala, Dart/Flutter, Elixir, Erlang, Haskell, Julia, R, MATLAB, Objective-C, Perl, Lua, Crystal, Clojure, Groovy, VB.NET, F#, Nim, Zig, OCaml, Solidity, Move, VHDL, Verilog, Assembly, Fortran, COBOL, Smalltalk, PowerShell, Tcl, Scheme, Common Lisp, Elm, ReasonML, SML, Prolog, AWK, Makefile, and many more.
+
+**Configuration & Template Languages:** HCL, TOML, INI, Gradle DSL, custom build DSLs, Graph languages (DOT), Template languages (Handlebars, Liquid), Markup variants (AsciiDoc, reST), Query/Graph DSLs (Gremlin, Cypher).
+
 ## Getting Started
 
 Kodus is available in two editions:
