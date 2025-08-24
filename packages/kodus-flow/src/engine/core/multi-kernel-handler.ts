@@ -55,6 +55,7 @@ import {
 } from '../../kernel/multi-kernel-manager.js';
 import { createLogger } from '../../observability/index.js';
 import { createWorkflow } from '../../core/types/common-types.js';
+import { IdGenerator } from '../../utils/id-generator.js';
 import type {
     EventType,
     EventPayloads,
@@ -1137,7 +1138,7 @@ export class MultiKernelHandler {
      * Generate correlation ID for request-response
      */
     private generateCorrelationId(): string {
-        return `corr_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+        return IdGenerator.correlationId();
     }
 
     // Private helper methods

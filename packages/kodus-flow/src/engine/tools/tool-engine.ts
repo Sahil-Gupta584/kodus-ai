@@ -87,16 +87,23 @@ export class ToolEngine {
     async executeCall<TInput = unknown, TOutput = unknown>(
         toolName: ToolId,
         input: TInput,
+        options?: {
+            correlationId?: string;
+            tenantId?: string;
+        },
     ): Promise<TOutput> {
         const callId = IdGenerator.callId();
         const timeout = this.config.timeout || 120000; // ✅ AUMENTADO: 120s para APIs externas
         const startTime = Date.now();
         const obs = getObservability();
+        const correlationId =
+            options?.correlationId || obs.getContext()?.correlationId;
 
         try {
             const span = startToolSpan(obs.telemetry, {
                 toolName: String(toolName),
                 callId,
+                correlationId,
             });
 
             const result = await obs.telemetry.withSpan(span, async () => {
@@ -116,7 +123,10 @@ export class ToolEngine {
                     const executionPromise = this.executeToolInternal<
                         TInput,
                         TOutput
-                    >(toolName, input, callId);
+                    >(toolName, input, callId, {
+                        correlationId,
+                        tenantId: options?.tenantId,
+                    });
 
                     const res = await Promise.race([
                         executionPromise,
@@ -141,6 +151,7 @@ export class ToolEngine {
                 {
                     toolName,
                     callId,
+                    correlationId,
                     error: lastError.message,
                     errorType: lastError.constructor.name,
                     executionTime,
@@ -164,6 +175,10 @@ export class ToolEngine {
         toolName: ToolId,
         input: TInput,
         callId: string,
+        options?: {
+            correlationId?: string;
+            tenantId?: string;
+        },
     ): Promise<TOutput> {
         if (isBuiltInTool(toolName)) {
             const result = executeBuiltInTool(toolName);
@@ -243,8 +258,11 @@ export class ToolEngine {
                 tool.name,
                 callId,
                 `exec-${Date.now()}`,
-                'default',
+                options?.tenantId || 'default',
                 input as Record<string, unknown>,
+                {
+                    correlationId: options?.correlationId,
+                },
             );
 
             // Execute tool using execute function

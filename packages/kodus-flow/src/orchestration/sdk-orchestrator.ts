@@ -729,19 +729,34 @@ const orchestrator = new SDKOrchestrator({
     async callTool(
         toolName: string,
         input: unknown,
+        options?: {
+            correlationId?: string;
+            tenantId?: string;
+        },
     ): Promise<OrchestrationResult<unknown>> {
         const startTime = Date.now();
-        const correlationId = IdGenerator.correlationId();
+        const correlationId =
+            options?.correlationId || IdGenerator.correlationId();
+        const obs = getObservability();
+        const obsContext = obs.createContext(correlationId);
+        obsContext.tenantId = options?.tenantId || this.config.tenantId;
+        obsContext.metadata = { toolName };
+        obs.setContext(obsContext);
 
         this.logger.info('Tool execution started', {
             toolName,
             correlationId,
+            tenantId: obsContext.tenantId,
         });
 
         try {
             const result = await this.toolEngine.executeCall(
                 toolName as ToolId,
                 input,
+                {
+                    correlationId,
+                    tenantId: obsContext.tenantId,
+                },
             );
             const duration = Date.now() - startTime;
 
@@ -764,6 +779,7 @@ const orchestrator = new SDKOrchestrator({
             this.logger.error('Tool execution failed', error as Error, {
                 toolName,
                 correlationId,
+                tenantId: obsContext.tenantId,
             });
 
             return {
@@ -783,6 +799,9 @@ const orchestrator = new SDKOrchestrator({
                             : 'Unknown error',
                 },
             };
+        } finally {
+            // Clear context to avoid leaking across executions
+            obs.clearContext();
         }
     }
 
