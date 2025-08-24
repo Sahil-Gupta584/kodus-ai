@@ -138,6 +138,7 @@ export class ContextBuilder {
             agentName: options.agentName,
             threadId: options.thread?.id,
             tenantId: options.tenantId,
+            correlationId: options.correlationId,
         });
 
         try {

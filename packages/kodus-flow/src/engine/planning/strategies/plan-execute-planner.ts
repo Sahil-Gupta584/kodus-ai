@@ -206,7 +206,8 @@ export class PlanAndExecutePlanner implements Planner {
                             `<observation>\n${JSON.stringify(payload, null, 2)}\n</observation>`,
                         );
                     }
-                    if (input?.type === 'plan_completed') {
+
+                    if (output?.type === 'plan_completed') {
                         blocks.push(
                             `<observation>\n${JSON.stringify(
                                 { event: 'plan_completed' },
@@ -769,6 +770,8 @@ export class PlanAndExecutePlanner implements Planner {
                                     current.metadata as Record<string, unknown>
                                 )?.replansCount,
                                 maxReplans: this.replanPolicy.maxReplans,
+                                correlationId:
+                                    context.agentContext?.correlationId,
                             },
                         };
                     }
