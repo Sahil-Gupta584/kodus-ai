@@ -294,11 +294,11 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
             };
 
             if (typeof anyStorage.findOneByQuery === 'function') {
-                const query: Record<string, unknown> = {
-                    sessionDataThreadId: threadId,
-                    sessionDataTenantId: tenantId,
-                    sessionDataStatus: 'active',
-                };
+                // MongoDB query with dot notation
+                const query: Record<string, unknown> = {};
+                query['sessionData.threadId'] = threadId;
+                query['sessionData.tenantId'] = tenantId;
+                query['sessionData.status'] = 'active';
 
                 const doc = await anyStorage.findOneByQuery!(query);
                 if (!doc?.sessionData) {

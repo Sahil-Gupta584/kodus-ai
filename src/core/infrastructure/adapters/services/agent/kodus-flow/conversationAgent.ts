@@ -5,9 +5,6 @@ import {
     createOrchestration,
     Thread,
     MCPServerConfig,
-    PersistorType,
-    MongoDBPersistorConfig,
-    getObservability,
     createOtelTracerAdapter,
     DirectLLMAdapter,
 } from '@kodus/flow';
@@ -16,11 +13,7 @@ import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseConnection } from '@/config/types';
 import { ConnectionString } from 'connection-string';
-import {
-    LLMProviderService,
-    LLMModelProvider,
-    PromptRunnerService,
-} from '@kodus/kodus-common/llm';
+import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 import { startKodusOtel } from '@/config/log/otel-kodus-flow';
 
 @Injectable()
@@ -197,21 +190,6 @@ export class ConversationAgentProvider {
                     enabled: true,
                     generateIds: true,
                     propagateContext: true,
-                },
-                mongodb: {
-                    type: 'mongodb',
-                    connectionString: uri,
-                    database: this.config.database,
-                    collections: {
-                        logs: 'observability_logs',
-                        telemetry: 'observability_telemetry',
-                        metrics: 'observability_metrics',
-                        errors: 'observability_errors',
-                    },
-                    batchSize: 100,
-                    flushIntervalMs: 5000,
-                    ttlDays: 30,
-                    enableObservability: true,
                 },
             },
             storage: {

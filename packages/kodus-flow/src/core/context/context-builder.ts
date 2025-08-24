@@ -167,6 +167,13 @@ export class ContextBuilder {
                 tenantId,
             );
             if (!session) {
+                this.logger.info(
+                    'No existing session found, creating new session',
+                    {
+                        threadId,
+                        tenantId,
+                    },
+                );
                 session = await this.sessionService.createSession(
                     tenantId,
                     threadId,
@@ -176,6 +183,21 @@ export class ContextBuilder {
                 this.conversationManager.initializeSession(
                     session.id,
                     [],
+                    session.tenantId,
+                );
+            } else {
+                this.logger.info('Found existing session, reusing', {
+                    sessionId: session.id,
+                    threadId,
+                    tenantId,
+                });
+                // Initialize conversation with existing history from session
+                const existingHistory =
+                    (session.contextData
+                        ?.conversationHistory as ConversationHistory) || [];
+                this.conversationManager.initializeSession(
+                    session.id,
+                    existingHistory,
                     session.tenantId,
                 );
             }
