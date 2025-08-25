@@ -64,12 +64,7 @@ export class AuthService implements IAuthService {
         authProvider: AuthProvider,
         authDetails?: any,
     ): Promise<any> {
-        const teamMember = await this.teamMemberService.findOne({
-            user: { uuid: userEntity?.uuid },
-            organization: { uuid: userEntity?.organization?.uuid },
-        });
-
-        const tokens = await this.createToken(userEntity, teamMember);
+        const tokens = await this.createToken(userEntity);
 
         await this.createAuth(userEntity, tokens, authProvider, authDetails);
 
@@ -125,12 +120,7 @@ export class AuthService implements IAuthService {
                 };
             }
 
-            const teamMember = await this.teamMemberService.findOne({
-                user: { uuid: userEntity?.uuid },
-                organization: { uuid: userEntity?.organization?.uuid },
-            });
-
-            const tokens = await this.createToken(userEntity, teamMember);
+            const tokens = await this.createToken(userEntity);
 
             await this.markTokenAsUsed(refreshTokenAuth);
             await this.createAuth(
@@ -153,11 +143,13 @@ export class AuthService implements IAuthService {
             const user = await this.validateUser({
                 email,
             });
-            if (!user|| !user.uuid) {
+            if (!user || !user.uuid) {
                 throw new UnauthorizedException('api.users.unauthorized');
             }
-             if (user.uuid !== uuid) {
-                 throw new UnauthorizedException('User ID does not match the provided email.');
+            if (user.uuid !== uuid) {
+                throw new UnauthorizedException(
+                    'User ID does not match the provided email.',
+                );
             }
             const token = await this.jwtService.signAsync(
                 { uuid, email },
@@ -185,13 +177,10 @@ export class AuthService implements IAuthService {
 
     private async createToken(
         user: Partial<UserEntity>,
-        teamMember?: Partial<TeamMemberEntity>,
     ): Promise<TokenResponse> {
         try {
             const payload = {
                 email: user.email,
-                role: user?.role,
-                teamRole: teamMember?.teamRole ?? '',
                 sub: user.uuid,
                 organizationId: user.organization.uuid,
                 iss: 'kodus-orchestrator',
@@ -228,9 +217,7 @@ export class AuthService implements IAuthService {
 
             const userModel = mapSimpleEntityToModel(userEntity, UserModel);
 
-            const expiryDate = await getExpiryDate(
-                this.jwtConfig.refreshExpiresIn,
-            );
+            const expiryDate = getExpiryDate(this.jwtConfig.refreshExpiresIn);
 
             if (authProvider === AuthProvider.CREDENTIALS) {
                 authDetails = {
