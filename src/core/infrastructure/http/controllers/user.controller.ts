@@ -1,10 +1,15 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Query } from '@nestjs/common';
 import { GetUserUseCase } from '@/core/application/use-cases/user/get-user.use-case';
 import { InviteDataUserUseCase } from '@/core/application/use-cases/user/invite-data.use-case';
 
 import { AcceptUserInvitationDto } from '../dtos/accept-user-invitation.dto';
 import { AcceptUserInvitationUseCase } from '@/core/application/use-cases/user/accept-user-invitation.use-case';
 import { CheckUserWithEmailUserUseCase } from '@/core/application/use-cases/user/check-user-email.use-case';
+import { IUser } from '@/core/domain/user/interfaces/user.interface';
+import { UpdateUserUseCase } from '@/core/application/use-cases/user/update.use-case';
+import { UpdateUserDto } from '../dtos/update.dto';
+import { JoinOrganizationDto } from '../dtos/join-organization.dto';
+import { JoinOrganizationUseCase } from '@/core/application/use-cases/user/join-organization.use-case';
 
 @Controller('user')
 export class UsersController {
@@ -13,6 +18,7 @@ export class UsersController {
         private readonly inviteDataUserUseCase: InviteDataUserUseCase,
         private readonly acceptUserInvitationUseCase: AcceptUserInvitationUseCase,
         private readonly checkUserWithEmailUserUseCase: CheckUserWithEmailUserUseCase,
+        private readonly joinOrganizationUseCase: JoinOrganizationUseCase,
     ) {}
 
     @Get('/email')
@@ -39,5 +45,10 @@ export class UsersController {
     @Post('/invite/complete-invitation')
     public async completeInvitation(@Body() body: AcceptUserInvitationDto) {
         return await this.acceptUserInvitationUseCase.execute(body);
+    }
+
+    @Post('/join-organization')
+    public async joinOrganization(@Body() body: JoinOrganizationDto) {
+        return await this.joinOrganizationUseCase.execute(body);
     }
 }

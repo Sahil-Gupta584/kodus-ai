@@ -13,6 +13,8 @@ import { AuthModule } from './auth.module';
 import { CreateUserUseCase } from '@/core/application/use-cases/user/create.use-case';
 import { ProfilesModule } from './profiles.module';
 import { TeamsModule } from './team.module';
+import { TeamMembersModule } from './teamMembers.module';
+import { OrganizationModule } from './organization.module';
 
 @Module({
     imports: [
@@ -20,6 +22,9 @@ import { TeamsModule } from './team.module';
         forwardRef(() => AuthModule),
         forwardRef(() => ProfilesModule),
         forwardRef(() => TeamsModule),
+        forwardRef(() => TeamMembersModule),
+        forwardRef(() => OrganizationModule),
+        forwardRef(() => ProfilesModule),
     ],
     providers: [
         ...UseCases,

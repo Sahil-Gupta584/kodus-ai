@@ -153,7 +153,7 @@ export class SignUpUseCase implements IUseCase {
 
             await this.sendWebhook(user, payload, user.organization.name);
 
-            return createdUser;
+            return createdUser.toObject();
         } catch (error) {
             this.logger.error({
                 message: 'Error during sign up',
