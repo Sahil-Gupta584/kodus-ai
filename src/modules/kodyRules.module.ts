@@ -27,6 +27,7 @@ import { SyncSelectedRepositoriesKodyRulesUseCase } from '@/core/application/use
 import { UsersModule } from './user.module';
 import { OrganizationModule } from './organization.module';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
+import { GlobalCacheModule } from './cache.module';
 
 @Module({
     imports: [
@@ -45,6 +46,7 @@ import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
         forwardRef(() => OrganizationModule),
         forwardRef(() => CodeReviewSettingsLogModule),
         KodyRulesValidationModule,
+        GlobalCacheModule,
     ],
     providers: [
         ...UseCases,

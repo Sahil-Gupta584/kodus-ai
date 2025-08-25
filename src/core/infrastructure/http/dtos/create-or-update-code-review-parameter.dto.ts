@@ -199,13 +199,17 @@ class CodeReviewConfigWithoutLLMProviderDto {
 
     @IsOptional()
     @IsBoolean()
+    ideRulesSyncEnabled?: boolean;
+
+    @IsOptional()
+    @IsBoolean()
     kodyRulesGeneratorEnabled?: boolean;
 
     @IsOptional()
     @ValidateNested()
     @Type(() => ReviewCadenceDto)
     reviewCadence?: ReviewCadenceDto;
-  
+
     @IsOptional()
     @IsBoolean()
     runOnDraft?: boolean;
