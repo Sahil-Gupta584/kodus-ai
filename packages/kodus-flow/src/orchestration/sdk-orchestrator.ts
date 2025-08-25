@@ -6,7 +6,6 @@ import { defineTool } from '../core/types/tool-types.js';
 import { AgentEngine } from '../engine/agents/agent-engine.js';
 import { AgentExecutor } from '../engine/agents/agent-executor.js';
 import { IdGenerator } from '../utils/id-generator.js';
-
 import {
     createDefaultMultiKernelHandler,
     createMultiKernelHandler,
@@ -15,9 +14,6 @@ import {
     ContextBuilder,
     ContextBuilderConfig,
 } from '../core/context/context-builder.js';
-
-// Timeline removida
-
 import type { LLMAdapter } from '../adapters/llm/index.js';
 import type { PlannerType } from '../engine/planning/planner-factory.js';
 import type {
@@ -38,7 +34,6 @@ import { safeJsonSchemaToZod } from '../core/utils/json-schema-to-zod.js';
 import { AgentIdentity } from '@/core/types/agent-definition.js';
 import { SessionId, UserContext } from '@/core/types/base-types.js';
 import { Thread } from '@/core/types/common-types.js';
-import type { PersistorType } from '../persistor/config.js';
 import type { StorageType } from '../core/storage/factory.js';
 import { ReplanPolicyConfig } from '@/engine/planning/strategies/plan-execute-planner.js';
 
@@ -47,24 +42,13 @@ import { ReplanPolicyConfig } from '@/engine/planning/strategies/plan-execute-pl
 // ──────────────────────────────────────────────────────────────────────────────
 
 export interface OrchestrationConfig {
-    // LLM é OBRIGATÓRIO para agents
     llmAdapter: LLMAdapter;
-
-    // Tenant identification
     tenantId?: string;
-
-    // Optional integrations
     mcpAdapter?: MCPAdapter;
-
-    // Basic settings
     enableObservability?: boolean;
     defaultTimeout?: number;
-
-    // Agent defaults
     defaultPlanner?: PlannerType;
     defaultMaxIterations?: number;
-
-    // ✅ NEW: Clean storage configuration - completely separated
     storage?: {
         memory?: {
             type: StorageType;
@@ -97,11 +81,7 @@ export interface OrchestrationConfig {
             ttl?: number;
         };
     };
-
-    // ✅ NEW: Observability programática (sem depender de env)
     observability?: Partial<ObservabilityConfig>;
-
-    // ✅ NEW: Kernel performance (ex.: autoSnapshot)
     kernel?: {
         performance?: {
             autoSnapshot?: {
@@ -111,24 +91,6 @@ export interface OrchestrationConfig {
                 useDelta?: boolean;
             };
         };
-    };
-
-    // ✅ DEPRECATED: Legacy persistorConfig (for backward compatibility)
-    /** @deprecated Use storage.persistor instead */
-    persistorConfig?: {
-        type: PersistorType;
-        connectionString?: string;
-        database?: string;
-        collection?: string;
-        maxPoolSize?: number;
-        serverSelectionTimeoutMS?: number;
-        connectTimeoutMS?: number;
-        socketTimeoutMS?: number;
-        ttl?: number;
-        maxSnapshots?: number;
-        enableCompression?: boolean;
-        enableDeltaCompression?: boolean;
-        cleanupInterval?: number;
     };
 }
 
@@ -186,11 +148,10 @@ export class SDKOrchestrator {
     private kernelHandler?: ReturnType<typeof createDefaultMultiKernelHandler>;
 
     constructor(config: OrchestrationConfig) {
-        // Apply observability configuration early (updates global system)
         if (config.observability) {
             getObservability(config.observability);
         }
-        // LLM é OBRIGATÓRIO!
+
         if (!config.llmAdapter) {
             throw new EngineError(
                 'ENGINE_AGENT_INITIALIZATION_FAILED',
@@ -218,26 +179,11 @@ const orchestrator = new SDKOrchestrator({
             tenantId: config.tenantId || 'default-tenant',
             mcpAdapter: config.mcpAdapter || null,
             enableObservability: config.enableObservability ?? true,
-            defaultTimeout: config.defaultTimeout || 60000, // ✅ UNIFIED: 60s timeout
+            defaultTimeout: config.defaultTimeout || 60000, //UNIFIED: 60s timeout
             defaultPlanner: config.defaultPlanner || 'plan-execute',
             defaultMaxIterations: config.defaultMaxIterations || 15,
-
-            // ✅ NEW: Clean storage config
             storage: config.storage || {},
-
-            // ✅ NEW: Observability config (default vazio)
             observability: config.observability || {},
-
-            // ✅ BACKWARD COMPATIBILITY: Keep legacy persistorConfig
-            persistorConfig: config.persistorConfig ||
-                config.storage?.snapshot || {
-                    type: 'memory',
-                    maxSnapshots: 1000,
-                    enableCompression: true,
-                    enableDeltaCompression: true,
-                    cleanupInterval: 300000,
-                },
-            // ✅ ensure kernel defaults present even if undefined in input
             kernel: config.kernel || {},
         };
 
@@ -253,7 +199,6 @@ const orchestrator = new SDKOrchestrator({
         );
         this.configureContextBuilder();
 
-        // Criar MultiKernelHandler com performance explícita quando houver configuração
         if (this.config.kernel?.performance?.autoSnapshot) {
             this.kernelHandler = createMultiKernelHandler({
                 tenantId: this.config.tenantId,
@@ -267,21 +212,17 @@ const orchestrator = new SDKOrchestrator({
                             this.config.kernel.performance.autoSnapshot,
                     },
                 },
-                global: {
-                    persistorType: this.config.persistorConfig.type,
-                    persistorOptions: this.config.persistorConfig,
-                    enableCrossKernelLogging: this.config.enableObservability,
-                },
                 loopProtection: { enabled: true },
             });
         } else {
-            this.kernelHandler = createDefaultMultiKernelHandler(
-                this.config.tenantId,
-                {
-                    type: this.config.persistorConfig.type,
-                    options: this.config.persistorConfig,
-                },
-            );
+            //TODO: Remove this when we have a default persistor config
+            // this.kernelHandler = createDefaultMultiKernelHandler(
+            //     this.config.tenantId,
+            //     {
+            //         type: this.config.persistorConfig.type,
+            //         options: this.config.persistorConfig,
+            //     },
+            // );
         }
 
         this.logger.info('Clean SDKOrchestrator initialized', {
@@ -310,7 +251,6 @@ const orchestrator = new SDKOrchestrator({
             executionMode: config.executionMode || 'simple',
         });
 
-        // Validate identity field - at least one field must be provided
         try {
             agentIdentitySchema.parse(config.identity);
         } catch (error) {
@@ -320,12 +260,10 @@ const orchestrator = new SDKOrchestrator({
             );
         }
 
-        // Create basic agent definition
         const agentDefinition: AgentDefinition<unknown, unknown, unknown> = {
             name: config.name,
             identity: config.identity,
             think: async () => {
-                // This will be replaced by AgentCore with real planner
                 throw new EngineError(
                     'AGENT_ERROR',
                     'Agent think function should be replaced by AgentCore',
@@ -340,7 +278,6 @@ const orchestrator = new SDKOrchestrator({
             },
         };
 
-        // Create agent core configuration
         const agentCoreConfig: AgentCoreConfig = {
             tenantId: this.config.tenantId,
             agentName: config.name,
@@ -355,7 +292,6 @@ const orchestrator = new SDKOrchestrator({
             plannerOptions: config?.plannerOptions,
         };
 
-        // Create agent instance based on execution mode
         let agentInstance:
             | AgentEngine<unknown, unknown, unknown>
             | AgentExecutor<unknown, unknown, unknown>;
@@ -400,7 +336,6 @@ const orchestrator = new SDKOrchestrator({
 
         // Inject kernel handler
         if (this.kernelHandler) {
-            // Ensure kernelHandler is initialized
             if (!this.kernelHandler.isInitialized()) {
                 await this.kernelHandler.initialize();
             }

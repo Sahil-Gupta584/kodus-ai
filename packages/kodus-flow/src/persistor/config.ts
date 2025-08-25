@@ -1,19 +1,9 @@
-/**
- * @module persistor/config
- * @description Unified configuration for persistence layer
- */
-
 import { z } from 'zod';
 
 /**
  * Persistor Type Schema
  */
-export const persistorTypeSchema = z.enum([
-    'memory',
-    'mongodb',
-    'redis',
-    'temporal',
-]);
+export const persistorTypeSchema = z.enum(['memory', 'mongodb']);
 
 /**
  * Base Persistor Configuration
@@ -45,38 +35,15 @@ export const memoryPersistorConfigSchema = basePersistorConfigSchema.extend({
  */
 export const mongodbPersistorConfigSchema = basePersistorConfigSchema.extend({
     type: z.literal('mongodb'),
-    connectionString: z.string().default('mongodb://localhost:27017/kodus'),
-    database: z.string().default('kodus'),
+    connectionString: z.string().default('mongodb://localhost:27017/default'),
+    database: z.string().default('default'),
     collection: z.string().default('snapshots'),
     maxPoolSize: z.number().min(1).max(100).default(10),
     serverSelectionTimeoutMS: z.number().min(1000).max(30000).default(5000),
     connectTimeoutMS: z.number().min(1000).max(30000).default(10000),
     socketTimeoutMS: z.number().min(1000).max(30000).default(45000),
     enableCompression: z.boolean().default(true),
-    ttl: z.number().min(60).max(31536000).default(86400), // 1 day
-});
-
-/**
- * Redis Persistor Configuration
- */
-export const redisPersistorConfigSchema = basePersistorConfigSchema.extend({
-    type: z.literal('redis'),
-    host: z.string().default('localhost'),
-    port: z.number().min(1).max(65535).default(6379),
-    password: z.string().optional(),
-    database: z.number().min(0).max(15).default(0),
-    keyPrefix: z.string().default('kodus:snapshot:'),
-    ttl: z.number().min(60).max(31536000).default(86400), // 1 day
-});
-
-/**
- * Temporal Persistor Configuration
- */
-export const temporalPersistorConfigSchema = basePersistorConfigSchema.extend({
-    type: z.literal('temporal'),
-    namespace: z.string().default('kodus'),
-    taskQueue: z.string().default('persistor'),
-    workflowId: z.string().optional(),
+    ttl: z.number().min(60).max(31536000).default(86400),
 });
 
 /**
@@ -85,8 +52,6 @@ export const temporalPersistorConfigSchema = basePersistorConfigSchema.extend({
 export const persistorConfigSchema = z.discriminatedUnion('type', [
     memoryPersistorConfigSchema,
     mongodbPersistorConfigSchema,
-    redisPersistorConfigSchema,
-    temporalPersistorConfigSchema,
 ]);
 
 /**
@@ -99,8 +64,5 @@ export type MemoryPersistorConfig = z.infer<typeof memoryPersistorConfigSchema>;
 export type MongoDBPersistorConfig = z.infer<
     typeof mongodbPersistorConfigSchema
 >;
-export type RedisPersistorConfig = z.infer<typeof redisPersistorConfigSchema>;
-export type TemporalPersistorConfig = z.infer<
-    typeof temporalPersistorConfigSchema
->;
+
 export type PersistorConfig = z.infer<typeof persistorConfigSchema>;

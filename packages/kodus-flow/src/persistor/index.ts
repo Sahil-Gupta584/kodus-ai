@@ -72,20 +72,14 @@ export interface Persistor {
     getStats?(): Promise<PersistorStats>;
 }
 
-// Export implementations
 export { StoragePersistorAdapter } from './storage-adapter.js';
 
-// Export configuration
 export type {
     PersistorConfig,
     PersistorType,
     MemoryPersistorConfig,
-    // SQLitePersistorConfig removed,
-    RedisPersistorConfig,
-    TemporalPersistorConfig,
 } from './config.js';
 
-// Export factory
 export {
     createPersistorFromConfig,
     createPersistor,

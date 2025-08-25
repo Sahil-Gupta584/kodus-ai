@@ -11,6 +11,10 @@ import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextBuilder } from '../../core/context/context-builder.js';
+import {
+    ExecutionTracker,
+    StepResult,
+} from '../../core/context/execution-tracker.js';
 import type {
     AgentContext,
     TenantId,
@@ -61,14 +65,10 @@ import type {
     // DelegationResult,
 } from './multi-agent-types.js';
 
-// ✅ REMOVER: Import não utilizado após remoção do stateManager duplicado
-// import { ContextStateService } from '../../core/context/services/state-service.js';
-import { sessionService } from '../../core/context/services/session-service.js';
 import { ToolId } from '../../core/types/tool-types.js';
 import type { Router } from '../routing/router.js';
 import type { Plan, PlanStep } from '../planning/planner.js';
 
-// NEW: Think→Act→Observe imports
 import type { LLMAdapter } from '../../adapters/llm/index.js';
 import {
     PlannerFactory,
@@ -82,7 +82,6 @@ import {
     isErrorResult,
     getResultError,
     isToolResult,
-    StepExecution,
 } from '../planning/planner-factory.js';
 import {
     ExecutionPlan,
@@ -111,6 +110,7 @@ export interface AgentCoreConfig {
     // Debugging & Monitoring
     debug?: boolean;
     monitoring?: boolean;
+    enableDebugging?: boolean;
 
     // Performance & Concurrency
     maxConcurrentAgents?: number;
@@ -169,6 +169,9 @@ export abstract class AgentCore<
     >;
     protected toolEngine?: ToolEngine;
     protected router?: Router;
+
+    // ✅ Step execution and context tracking
+    protected stepExecution: ExecutionTracker;
 
     // Multi-agent mode (LAZY INITIALIZATION)
     private _agents?: Map<string, AgentDefinition<unknown, unknown, unknown>>;
@@ -362,7 +365,7 @@ export abstract class AgentCore<
                 this.config.tenantId,
             );
         }
-        this.thinkingTimeout = this.config.thinkingTimeout || 60000; // ✅ 60s thinking timeout
+        this.thinkingTimeout = this.config.thinkingTimeout || 1200000;
 
         // Setup memory leak prevention - cleanup expired executions every 5 minutes
         setInterval(() => {
@@ -371,11 +374,13 @@ export abstract class AgentCore<
 
         this.initializePlannerComponents();
 
+        // ✅ Initialize step execution and context tracking
+        this.stepExecution = new ExecutionTracker();
+
         if (this.config.enableMessaging) {
             this.startDeliveryProcessor();
         }
 
-        // ✅ NEW: Configure ToolEngine in ContextBuilder if available
         if (this.toolEngine) {
             ContextBuilder.getInstance().setToolEngine(this.toolEngine);
             this.logger.info('ToolEngine configured in ContextBuilder', {
@@ -388,9 +393,6 @@ export abstract class AgentCore<
     // 🔧 CORE EXECUTION LOGIC (COMPARTILHADA)
     // ──────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Lógica de execução compartilhada - IDÊNTICA para ambos os métodos
-     */
     protected async executeAgent(
         agent:
             | AgentDefinition<TInput, TOutput, TContent>
@@ -402,14 +404,12 @@ export abstract class AgentCore<
         const executionId = IdGenerator.executionId();
         const { correlationId } = agentExecutionOptions || {};
 
-        // ✅ SIMPLIFICADO: Criar contexto
         const context = await this.createAgentContext(
             agent.name,
             executionId,
             agentExecutionOptions,
         );
 
-        // ✅ SIMPLIFICADO: Track execution start
         await this.trackExecutionStart(
             context,
             executionId,
@@ -420,7 +420,6 @@ export abstract class AgentCore<
         await this.addConversationEntry(context, input, agent.name);
 
         try {
-            // ✅ SIMPLIFICADO: Processar thinking
             const result = await this.processAgentThinking(
                 agent,
                 input,
@@ -438,7 +437,6 @@ export abstract class AgentCore<
 
             await this.updateConversationEntry(
                 context,
-                input,
                 result.output,
                 agent.name,
                 { correlationId, executionId, success: true },
@@ -465,14 +463,16 @@ export abstract class AgentCore<
         startTime: number,
         correlationId?: string,
     ): Promise<void> {
-        await context.track.plannerStep({
-            type: 'execution_start',
+        console.log(
+            'trackExecutionStart',
+            context,
             executionId,
             startTime,
-            status: 'running',
-            agentName: context.agentName,
             correlationId,
-        });
+        );
+        // TODO: Fix telemetry Event structure
+        // const observability = getObservability();
+        // await observability.telemetry.traceEvent(...);
     }
 
     private async addConversationEntry(
@@ -484,28 +484,28 @@ export abstract class AgentCore<
             return;
         }
 
-        await sessionService.addConversationEntry(
-            context.sessionId,
-            input,
-            null,
-            agentName,
+        // ✅ CLEAN ARCHITECTURE: Use conversation interface for agent communication
+        await context.conversation.addMessage(
+            'user',
+            typeof input === 'string' ? input : JSON.stringify(input),
+            {
+                agentName,
+                timestamp: Date.now(),
+                source: 'agent-input',
+            },
         );
 
-        await context.executionRuntime?.addContextValue({
-            type: 'session',
-            key: 'conversationEntry',
-            value: {
+        // Use state directly instead of removed addContextValue
+        if (context.state) {
+            await context.state.set('runtime', 'conversationEntry', {
                 sessionId: context.sessionId,
                 input,
                 agentName,
                 timestamp: Date.now(),
-            },
-            metadata: {
                 source: 'agent-core',
                 action: 'conversation-start',
-                sessionId: context.sessionId,
-            },
-        });
+            });
+        }
     }
 
     private async markExecutionCompleted(
@@ -527,31 +527,25 @@ export abstract class AgentCore<
         }
 
         if (context.executionRuntime) {
-            await context.executionRuntime.addContextValue({
-                type: 'execution',
-                key: 'completion',
-                value: {
-                    executionId,
-                    duration,
-                    iterations: result.iterations,
-                    toolsUsed: result.toolsUsed,
-                    success: true,
-                    status: 'completed',
-                    timestamp: Date.now(),
-                },
-                metadata: {
-                    source: 'agent-core',
-                    action: 'execution_completed',
-                    correlationId,
-                    agentName: context.agentName,
-                },
+            // Store execution completion in state
+            await context.state.set('runtime', 'executionCompletion', {
+                executionId,
+                duration,
+                iterations: result.iterations,
+                toolsUsed: result.toolsUsed,
+                success: true,
+                status: 'completed',
+                timestamp: Date.now(),
+                source: 'agent-core',
+                action: 'execution_completed',
+                correlationId,
+                agentName: context.agentName,
             });
         }
     }
 
     private async updateConversationEntry(
         context: AgentContext,
-        input: unknown,
         output: unknown,
         agentName: string,
         metadata: {
@@ -564,12 +558,18 @@ export abstract class AgentCore<
             return;
         }
 
-        await sessionService.addConversationEntry(
-            context.sessionId,
-            input,
-            output,
-            agentName,
-            metadata,
+        // ✅ CLEAN ARCHITECTURE: Use conversation interface for agent communication
+        await context.conversation.addMessage(
+            'assistant',
+            typeof output === 'string' ? output : JSON.stringify(output),
+            {
+                agentName,
+                executionId: metadata.executionId,
+                correlationId: metadata.correlationId,
+                success: metadata.success,
+                timestamp: Date.now(),
+                source: 'agent-output',
+            },
         );
     }
 
@@ -1488,15 +1488,12 @@ export abstract class AgentCore<
         context: AgentContext,
     ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
         const { correlationId } = context.agentExecutionOptions || {};
-
         const tools = this.extractToolsFromAction(action);
-
-        // Simple heuristic for now - can be enhanced with AI/ML in the future
         const toolCount = tools.length;
 
         if (toolCount === 1) {
-            // Single tool - execute directly
             const tool = tools[0];
+
             if (!tool) {
                 return [{ toolName: 'unknown', error: 'No tool available' }];
             }
@@ -1526,26 +1523,26 @@ export abstract class AgentCore<
                         duration,
                     );
                 }
-                await context.track?.toolUsage?.(
-                    tool.toolName,
-                    tool.arguments,
-                    result,
-                    true,
-                );
+                // await context.track?.toolUsage?.(
+                //     tool.toolName,
+                //     tool.arguments,
+                //     result,
+                //     true,
+                // );
 
                 return [{ toolName: tool.toolName, result }];
             } catch (error) {
-                await context.track?.toolUsage?.(
-                    tool.toolName,
-                    tool.arguments,
-                    {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
-                    },
-                    false,
-                );
+                // await context.track?.toolUsage?.(
+                //     tool.toolName,
+                //     tool.arguments,
+                //     {
+                //         error:
+                //             error instanceof Error
+                //                 ? error.message
+                //                 : String(error),
+                //     },
+                //     false,
+                // );
                 const errorMessage =
                     error instanceof Error ? error.message : String(error);
                 return [{ toolName: tool.toolName, error: errorMessage }];
@@ -1595,12 +1592,12 @@ export abstract class AgentCore<
                             0,
                         );
                     }
-                    await context.track?.toolUsage?.(
-                        r.toolName,
-                        input,
-                        r.result ?? { error: r.error },
-                        !r.error,
-                    );
+                    // await context.track?.toolUsage?.(
+                    //     r.toolName,
+                    //     input,
+                    //     r.result ?? { error: r.error },
+                    //     !r.error,
+                    // );
                 }
             } catch {
                 // best-effort
@@ -1656,12 +1653,12 @@ export abstract class AgentCore<
                             0,
                         );
                     }
-                    await context.track?.toolUsage?.(
-                        r.toolName,
-                        input,
-                        r.result ?? { error: r.error },
-                        !r.error,
-                    );
+                    // await context.track?.toolUsage?.(
+                    //     r.toolName,
+                    //     input,
+                    //     r.result ?? { error: r.error },
+                    //     !r.error,
+                    // );
                 }
             } catch {
                 // best-effort
@@ -1748,12 +1745,12 @@ export abstract class AgentCore<
                         0,
                     );
                 }
-                await context.track?.toolUsage?.(
-                    r.toolName,
-                    input,
-                    r.result ?? { error: r.error },
-                    !r.error,
-                );
+                // await context.track?.toolUsage?.(
+                //     r.toolName,
+                //     input,
+                //     r.result ?? { error: r.error },
+                //     !r.error,
+                // );
             }
         } catch {
             // best-effort
@@ -3772,24 +3769,6 @@ export abstract class AgentCore<
         return IdGenerator.correlationId();
     }
 
-    /**
-     * Get current agent context for action processing
-     * ✅ REMOVER: Método não utilizado após remoção do currentAgentContext
-     */
-    // private getCurrentAgentContext(): AgentContext {
-    //     if (!this.currentAgentContext) {
-    //         throw new EngineError(
-    //             'AGENT_ERROR',
-    //             'No current agent context available',
-    //         );
-    //     }
-    //     return this.currentAgentContext;
-    // }
-
-    /**
-     * Execute Think→Act→Observe loop - Main intelligence method
-     * This is the primary method for agent intelligence processing
-     */
     protected async executeThinkActObserve<TInput, TOutput>(
         input: TInput,
         context: AgentContext,
@@ -3814,7 +3793,6 @@ export abstract class AgentCore<
 
         let finalExecutionContext: PlannerExecutionContext | undefined;
 
-        // ✅ SIMPLIFICADO: Loop principal
         for (let iterations = 0; iterations < maxIterations; iterations++) {
             const plannerInput = this.createPlannerContext(
                 inputString,
@@ -3831,7 +3809,6 @@ export abstract class AgentCore<
             }
 
             try {
-                // ✅ SIMPLIFICADO: Executar uma iteração
                 const iterationResult = await this.executeSingleIteration(
                     plannerInput,
                     iterations,
@@ -3841,14 +3818,12 @@ export abstract class AgentCore<
 
                 executionHistory.push(iterationResult);
 
-                // ✅ SIMPLIFICADO: Atualizar estado
                 await this.updateExecutionState(
                     context,
                     iterationResult,
                     iterations,
                 );
 
-                // ✅ SIMPLIFICADO: Verificar condições de parada
                 if (
                     this.shouldStopExecution(
                         iterationResult,
@@ -3865,10 +3840,11 @@ export abstract class AgentCore<
             }
         }
 
-        // ✅ SIMPLIFICADO: Retornar resultado final
-        return (await this.extractFinalResult(
+        const finalResult = await this.extractFinalResult(
             finalExecutionContext,
-        )) as TOutput;
+        );
+
+        return finalResult as TOutput;
     }
 
     // ✅ NOVOS MÉTODOS PRIVADOS SIMPLES
@@ -3888,12 +3864,16 @@ export abstract class AgentCore<
             ?.getKernelByNamespace('agent');
         const initialEventCount = kernel?.getState().eventCount || 0;
 
+        // ✅ START NEW STEP FOR TRACKING
+        const stepId = this.stepExecution.startStep(iterations);
+
         // ✅ SIMPLIFICADO: Think
         const thought = await this.executeThinkPhase(
             plannerInput,
             iterations,
             obs,
             context,
+            stepId, // ✅ Pass stepId
         );
 
         // ✅ SIMPLIFICADO: Act
@@ -3903,6 +3883,7 @@ export abstract class AgentCore<
             obs,
             context,
             plannerInput,
+            stepId, // ✅ Pass stepId
         );
 
         // ✅ SIMPLIFICADO: Observe
@@ -3912,6 +3893,7 @@ export abstract class AgentCore<
             iterations,
             obs,
             context,
+            stepId, // ✅ Pass stepId
         );
 
         // ✅ SIMPLIFICADO: Logging
@@ -3932,6 +3914,7 @@ export abstract class AgentCore<
         iterations: number,
         obs: ObservabilitySystem,
         context: AgentContext,
+        stepId: string, // ✅ Add stepId parameter
     ): Promise<AgentThought> {
         const thinkSpan = startAgentSpan(obs.telemetry, 'think', {
             agentName: this.config.agentName || 'unknown',
@@ -3941,7 +3924,7 @@ export abstract class AgentCore<
 
         return obs.telemetry.withSpan(thinkSpan, async () => {
             try {
-                const res = await this.think(plannerInput);
+                const res = await this.think(plannerInput, stepId); // ✅ Pass stepId
                 markSpanOk(thinkSpan);
                 return res;
             } catch (err) {
@@ -3957,6 +3940,7 @@ export abstract class AgentCore<
         obs: ObservabilitySystem,
         context: AgentContext,
         plannerInput: PlannerExecutionContext,
+        stepId: string, // ✅ Add stepId parameter
     ): Promise<ActionResult> {
         if (!thought.action) {
             throw new Error('Thought action is undefined');
@@ -3977,7 +3961,7 @@ export abstract class AgentCore<
 
         return obs.telemetry.withSpan(actSpan, async () => {
             try {
-                const res = await this.act(thought.action);
+                const res = await this.act(thought.action, stepId); // ✅ Pass stepId
                 markSpanOk(actSpan);
                 return res;
             } catch (err) {
@@ -3993,6 +3977,7 @@ export abstract class AgentCore<
         iterations: number,
         obs: ObservabilitySystem,
         context: AgentContext,
+        stepId: string, // ✅ Add stepId parameter
     ): Promise<ResultAnalysis> {
         const observeSpan = startAgentSpan(obs.telemetry, 'observe', {
             agentName: this.config.agentName || 'unknown',
@@ -4002,7 +3987,7 @@ export abstract class AgentCore<
 
         return obs.telemetry.withSpan(observeSpan, async () => {
             try {
-                const res = await this.observe(result, plannerInput);
+                const res = await this.observe(result, plannerInput, stepId); // ✅ Pass stepId
                 markSpanOk(observeSpan);
                 return res;
             } catch (err) {
@@ -4098,45 +4083,28 @@ export abstract class AgentCore<
         },
         iterations: number,
     ): Promise<void> {
-        await context.session.addEntry(
-            {
-                type: 'execution_step',
-                iteration: iterations,
-                thought: iterationResult.thought.reasoning,
-                action: iterationResult.action,
-            },
-            {
-                type: 'execution_result',
-                result:
-                    iterationResult.result.type === 'error'
-                        ? { error: iterationResult.result.error }
-                        : iterationResult.result.type === 'needs_replan'
-                          ? { needsReplan: iterationResult.result.feedback }
-                          : iterationResult.result.content,
-                observation: iterationResult.observation.feedback,
-                isComplete: iterationResult.observation.isComplete,
-                timestamp: Date.now(),
-            },
-        );
+        // ✅ CLEAN ARCHITECTURE: Use telemetry for runtime debug data instead of polluting conversation
+        //const observability = getObservability();
+        // TODO: Fix telemetry Event structure
+        // await observability.telemetry.traceEvent(...);
+        // Log for now
+        this.logger.debug('Execution step', {
+            iteration: iterations,
+            thought: iterationResult.thought.reasoning,
+            action: iterationResult.action,
+        });
 
+        // ✅ CLEAN ARCHITECTURE: Use state for agent execution data
+        await context.state.set('agent', 'last_action', iterationResult.action);
+        await context.state.set('agent', 'current_iteration', iterations);
+        await context.state.set('agent', 'last_result', iterationResult.result);
         await context.state.set(
-            'execution',
-            'last_action',
-            iterationResult.action,
-        );
-        await context.state.set('execution', 'current_iteration', iterations);
-        await context.state.set(
-            'execution',
-            'last_result',
-            iterationResult.result,
-        );
-        await context.state.set(
-            'execution',
+            'agent',
             'last_observation',
             iterationResult.observation,
         );
         await context.state.set(
-            'execution',
+            'agent',
             'is_complete',
             iterationResult.observation.isComplete,
         );
@@ -4264,36 +4232,135 @@ export abstract class AgentCore<
      */
     private async think(
         context: PlannerExecutionContext,
+        stepId?: string, // ✅ Add optional stepId parameter
     ): Promise<AgentThought> {
         if (!this.planner) {
             throw new EngineError('AGENT_ERROR', 'Planner not initialized');
         }
 
-        return this.planner.think(context);
-    }
+        const thinkStart = Date.now();
 
-    private async act(action: AgentAction): Promise<ActionResult> {
         try {
-            if (isToolCallAction(action)) {
-                return await this.executeToolAction(action);
+            // ✅ Get enhanced context for better reasoning if stepId provided
+            let enhancedContext = context;
+            if (stepId && context.agentContext) {
+                const relevantContext =
+                    await this.stepExecution.getContextForModel(
+                        context.agentContext,
+                        context.input,
+                    );
+
+                // Add enhanced context to planner input
+                enhancedContext = {
+                    ...context,
+                    plannerMetadata: {
+                        ...context.plannerMetadata,
+                        enhancedContext: relevantContext,
+                    },
+                };
             }
 
-            if (isFinalAnswerAction(action)) {
-                return {
+            const thought = await this.planner.think(enhancedContext);
+            const thinkDuration = Date.now() - thinkStart;
+
+            if (stepId && this.stepExecution) {
+                this.stepExecution.updateStep(stepId, { thought });
+
+                this.logger.debug('Think phase completed', {
+                    stepId,
+                    thinkDuration,
+                    thoughtType: thought.action.type,
+                });
+            }
+
+            return thought;
+        } catch (error) {
+            const thinkDuration = Date.now() - thinkStart;
+
+            if (stepId && this.stepExecution) {
+                this.logger.warn('Think phase failed', {
+                    stepId,
+                    thinkDuration,
+                    error: String(error),
+                });
+            }
+
+            throw error;
+        }
+    }
+
+    private async act(
+        action: AgentAction,
+        stepId?: string,
+    ): Promise<ActionResult> {
+        const actStart = Date.now();
+
+        try {
+            let result: ActionResult;
+
+            if (isToolCallAction(action)) {
+                const toolStart = Date.now();
+                result = await this.executeToolAction(action);
+                const toolDuration = Date.now() - toolStart;
+
+                // ✅ Record tool call in step
+                if (stepId && this.stepExecution) {
+                    this.stepExecution.addToolCall(
+                        stepId,
+                        action.toolName,
+                        action.input,
+                        result,
+                        toolDuration,
+                    );
+                }
+            } else if (isFinalAnswerAction(action)) {
+                result = {
                     type: 'final_answer',
                     content: String(action.content),
                 };
-            }
-
-            if (isNeedMoreInfoAction(action)) {
-                return {
+            } else if (isNeedMoreInfoAction(action)) {
+                result = {
                     type: 'final_answer',
                     content: action.question,
                 };
+            } else {
+                throw new Error(`Unknown action type: ${action.type}`);
             }
 
-            throw new Error(`Unknown action type: ${action.type}`);
+            const actDuration = Date.now() - actStart;
+
+            // ✅ Update step with action result
+            if (stepId && this.stepExecution) {
+                this.stepExecution.updateStep(stepId, {
+                    action,
+                    result,
+                });
+
+                this.logger.debug('Act phase completed', {
+                    stepId,
+                    actDuration,
+                    actionType: action.type,
+                    resultType: result.type,
+                });
+            }
+
+            return result;
         } catch (error) {
+            const actDuration = Date.now() - actStart;
+
+            if (stepId && this.stepExecution) {
+                this.stepExecution.updateStep(stepId, {
+                    result: { type: 'error', error: String(error) },
+                });
+
+                this.logger.warn('Act phase failed', {
+                    stepId,
+                    actDuration,
+                    actionType: action.type,
+                    error: String(error),
+                });
+            }
+
             return this.handleActionError(error, action);
         }
     }
@@ -4629,6 +4696,7 @@ export abstract class AgentCore<
     private async observe(
         result: ActionResult,
         context: PlannerExecutionContext,
+        stepId?: string, // ✅ Add optional stepId parameter
     ): Promise<ResultAnalysis> {
         if (!this.planner) {
             throw new EngineError('AGENT_ERROR', 'Planner not initialized');
@@ -4639,6 +4707,8 @@ export abstract class AgentCore<
         const parsed = isToolResult(result)
             ? parseToolResult(result.content)
             : null;
+
+        const observeStart = Date.now();
 
         const obs = getObservability();
         const analyzeSpan = startAgentSpan(obs.telemetry, 'analyze', {
@@ -4704,13 +4774,43 @@ export abstract class AgentCore<
                 },
             );
 
+            const observeDuration = Date.now() - observeStart;
+
+            if (stepId && this.stepExecution) {
+                this.stepExecution.updateStep(stepId, {
+                    observation: analysis,
+                });
+
+                this.logger.debug('Observe phase completed (synthesis)', {
+                    stepId,
+                    observeDuration,
+                    analysisComplete: analysis.isComplete,
+                    synthesized: true,
+                });
+            }
+
             return {
                 ...analysis,
                 feedback: synthesizedResponse,
             };
         }
 
-        // ✅ CAMADA 3: SE DEVE CONTINUAR, RETORNA ANÁLISE
+        const observeDuration = Date.now() - observeStart;
+
+        if (stepId && this.stepExecution) {
+            this.stepExecution.updateStep(stepId, {
+                observation: analysis,
+                duration: observeDuration,
+            });
+
+            this.logger.debug('Observe phase completed (continuing)', {
+                stepId,
+                observeDuration,
+                shouldContinue: analysis.shouldContinue,
+                synthesized: false,
+            });
+        }
+
         return analysis;
     }
 
@@ -4796,13 +4896,6 @@ export abstract class AgentCore<
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 🔍 CONTEXT CAPTURE & OBSERVABILITY HELPERS
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Create planner context - extracted method to avoid object creation in loop
-     */
     private createPlannerContext(
         input: string,
         history: Array<{
@@ -4815,8 +4908,7 @@ export abstract class AgentCore<
         maxIterations: number,
         agentContext: AgentContext,
     ): PlannerExecutionContext {
-        // Convert simple history to StepExecution format
-        const stepHistory: StepExecution[] = history.map((entry, index) => ({
+        const stepHistory: StepResult[] = history.map((entry, index) => ({
             stepId: `step-${index + 1}`,
             iteration: index + 1,
             thought: entry.thought,
@@ -4825,15 +4917,7 @@ export abstract class AgentCore<
             result: entry.result,
             observation: entry.observation,
             duration: 0,
-            metadata: {
-                contextOperations: [],
-                toolCalls: [],
-                performance: {
-                    thinkDuration: 0,
-                    actDuration: 0,
-                    observeDuration: 0,
-                },
-            },
+            toolCalls: [],
         }));
 
         return {

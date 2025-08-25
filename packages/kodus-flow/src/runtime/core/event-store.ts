@@ -11,6 +11,7 @@
 
 import type { AnyEvent } from '../../core/types/events.js';
 import type { Persistor } from '../../persistor/index.js';
+import type { PersistorType } from '../../persistor/config.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
 import { createPersistorFromConfig } from '../../persistor/factory.js';
 
@@ -25,7 +26,7 @@ export interface EventStoreConfig {
 
     // Persistor config (usa factory existente)
     persistor?: Persistor;
-    persistorType?: 'memory' | 'mongodb' | 'redis' | 'temporal'; // Default: memory
+    persistorType?: PersistorType; // Default: memory
     persistorOptions?: Record<string, unknown>;
 
     // Observability

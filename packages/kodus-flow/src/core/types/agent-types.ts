@@ -1,13 +1,3 @@
-/**
- * @module core/types/agent-types
- * @description Agent types following Definition/Context/Engine pattern
- *
- * This file contains all agent-related types with proper separation:
- * - AgentDefinition: Blueprint/configuration for an agent
- * - AgentContext: Execution environment with intelligent capabilities
- * - AgentEngine: Executor that manages agent execution
- */
-
 import { z } from 'zod';
 import type {
     BaseContext,
@@ -25,14 +15,13 @@ import type {
     ToolDefinition,
 } from './tool-types.js';
 import { AgentIdentity } from './agent-definition.js';
-// Removed dependency on execution-runtime-types
 
 import { IdGenerator } from '../../utils/id-generator.js';
-import { ContextStateService } from '../context/services/state-service.js';
+import { SimpleContextStateService as ContextStateService } from '../context/services/simple-state-service.js';
 import { Persistor } from '../../persistor/index.js';
-// Import interface instead of class to avoid circular dependency
+import { ExecutionTracker } from '../context/index.js';
+
 interface SimpleExecutionRuntime {
-    // Public methods - these are what AgentExecutionContext needs
     startExecution(agentName: string): Promise<void>;
     endExecution(result: {
         success: boolean;
@@ -341,7 +330,7 @@ export interface AgentContext {
     invocationId: string;
     executionId?: string;
 
-    // State: Namespace-based working memory
+    // State: Namespace-based working memory with explicit persistence
     state: {
         get: <T>(
             namespace: string,
@@ -358,43 +347,36 @@ export interface AgentContext {
         getNamespace: (
             namespace: string,
         ) => Promise<Map<string, unknown> | undefined>;
+        // EXPLICIT persistence control
+        persist?: (namespace?: string) => Promise<void>;
+        hasChanges?: () => boolean;
     };
 
-    // Memory: Long-term storage with search
-    memory: {
-        // Retorna o id do item armazenado
-        store: (content: unknown, type?: string) => Promise<string>;
-        get: (id: string) => Promise<unknown>;
-        search: (query: string, limit?: number) => Promise<unknown[]>;
-        getRecent: (limit?: number) => Promise<unknown[]>;
-        // Query estruturada (escopada por padrão ao contexto atual)
-        query?: (filters: {
-            type?: string;
-            key?: string;
-            since?: number;
-            until?: number;
-            limit?: number;
-        }) => Promise<unknown[]>;
-    };
-
-    // Session: Conversation management
-    session: {
-        addEntry: (input: unknown, output: unknown) => Promise<void>;
-        getHistory: () => Promise<unknown[]>;
+    // Conversation Management (ONLY legitimate agent concern)
+    conversation: {
+        addMessage: (
+            role: 'user' | 'assistant' | 'system',
+            content: string,
+            metadata?: Record<string, unknown>,
+        ) => Promise<void>;
+        getHistory: () => Promise<
+            Array<{
+                role: 'user' | 'assistant' | 'system' | 'tool';
+                content: string;
+                timestamp: number;
+                metadata?: Record<string, unknown>;
+            }>
+        >;
         updateMetadata: (metadata: Record<string, unknown>) => Promise<void>;
     };
 
-    // High-level tracking
-    track: {
-        toolUsage: (
-            toolName: string,
-            params: unknown,
-            result: unknown,
-            success: boolean,
-        ) => Promise<void>;
-        plannerStep: (step: unknown) => Promise<void>;
-        error: (error: Error, context?: unknown) => Promise<void>;
-    };
+    // Tools available to this agent execution
+    availableTools: ToolMetadataForPlanner[];
+
+    // === REMOVED FROM AgentContext ===
+    // ❌ memory: Use dependency injection - MemoryManager
+    // ❌ telemetry: Use getObservability() directly
+    // ❌ state: Replaced with structured 'variables'
 
     // Signal for cancellation
     signal: AbortSignal;
@@ -413,7 +395,7 @@ export interface AgentContext {
     //     toolsUsed?: string[];
     // };
     executionRuntime: {
-        addContextValue: (update: Record<string, unknown>) => Promise<void>;
+        // Long-term memory patterns (MemoryManager)
         storeToolUsagePattern: (
             toolName: string,
             input: unknown,
@@ -422,23 +404,18 @@ export interface AgentContext {
             duration: number,
         ) => Promise<void>;
         storeExecutionPattern: (
-            patternType: 'success' | 'failure',
-            action: string,
+            patternType: 'success' | 'failure' | string,
+            action: string | unknown,
             result: unknown,
-            context?: string,
+            context?: string | unknown,
         ) => Promise<void>;
-        setState: (
-            namespace: string,
-            key: string,
-            value: unknown,
-        ) => Promise<void>;
+        // Removed duplicated methods - use state.set() directly for working memory
     };
     agentIdentity?: AgentIdentity;
     agentExecutionOptions?: AgentExecutionOptions;
     allTools?: ToolDefinition<unknown, unknown>[];
-    stepExecution?: import('../context/step-execution.js').StepExecution;
-    messageContext?: import('../context/step-execution.js').EnhancedMessageContext;
-    contextManager?: import('../context/step-execution.js').ContextManager;
+    stepExecution?: ExecutionTracker;
+    messageContext?: ExecutionTracker;
 }
 
 /**
@@ -962,16 +939,10 @@ export function createAgentContext(
     // SystemContext becomes RuntimeContext in public API for clarity
 
     // Create state manager once
-    const stateManager = new ContextStateService(
-        {
-            tenantId: tenantId,
-            correlationId: correlationId,
-        },
-        {
-            maxNamespaceSize: 1000,
-            maxNamespaces: 100,
-        },
-    );
+    const stateManager = new ContextStateService({
+        tenantId: tenantId,
+        correlationId: correlationId,
+    });
 
     return {
         tenantId: tenantId,

@@ -1,8 +1,3 @@
-/**
- * @module persistor/transaction-persistor
- * @description Transaction-aware persistor with ACID guarantees
- */
-
 import { BasePersistor } from '../kernel/persistor.js';
 import { ConcurrentStateManager } from '../utils/thread-safe-state.js';
 import { createLogger } from '../observability/logger.js';

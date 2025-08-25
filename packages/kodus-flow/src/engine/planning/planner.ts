@@ -338,20 +338,15 @@ export class CoTPlanner implements Planner {
                 });
 
                 // Add to context state for agent intelligence
-                await context.executionRuntime.setState(
-                    'main',
-                    'plannerSuggestions',
-                    [
-                        {
-                            stepId: 'parallel-execution',
-                            toolStrategy: 'parallel',
-                            tools: parallelTools,
-                            confidence: 0.8,
-                            reasoning:
-                                'Goal benefits from parallel tool execution',
-                        },
-                    ],
-                );
+                await context.state.set('main', 'plannerSuggestions', [
+                    {
+                        stepId: 'parallel-execution',
+                        toolStrategy: 'parallel',
+                        tools: parallelTools,
+                        confidence: 0.8,
+                        reasoning: 'Goal benefits from parallel tool execution',
+                    },
+                ]);
             }
         }
 

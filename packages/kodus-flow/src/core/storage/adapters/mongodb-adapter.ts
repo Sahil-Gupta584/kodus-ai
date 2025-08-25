@@ -1,11 +1,3 @@
-/**
- * @module core/storage/adapters/mongodb-adapter
- * @description MongoDB storage adapter implementation
- * @ts-nocheck - MongoDB types are dynamic
- * @eslint-disable @typescript-eslint/no-explicit-any
- * @eslint-disable @typescript-eslint/naming-convention
- */
-
 import { createLogger } from '../../../observability/logger.js';
 import type {
     BaseStorage,
@@ -17,9 +9,6 @@ import type { MongoClient, Db, Collection } from 'mongodb';
 
 const logger = createLogger('mongodb-storage-adapter');
 
-/**
- * MongoDB storage adapter implementation
- */
 export class MongoDBStorageAdapter<T extends BaseStorageItem>
     implements BaseStorage<T>
 {
@@ -37,7 +26,6 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
         if (this.isInitialized) return;
 
         try {
-            // Dynamic import to avoid requiring mongodb in package.json
             const { MongoClient: mongoClient } = await import('mongodb');
 
             const connectionString =

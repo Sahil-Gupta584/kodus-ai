@@ -1,18 +1,3 @@
-/**
- * @module engine
- * @description Engine Layer - Motor de execução simplificado e organizado
- *
- * Estrutura simplificada:
- * - core/: Motor principal e interface com Kernel
- * - agents/: Motor de agentes e lifecycle
- * - tools/: Motor de ferramentas
- * - workflows/: Motor de workflows
- * - routing/: Router inteligente
- * - planning/: Planejador
- */
-
-// ===== CORE - Motor principal =====
-// ExecutionEngine removido - funcionalidades migradas para MultiKernelHandler
 export {
     MultiKernelHandler,
     createMultiKernelHandler,
@@ -21,7 +6,6 @@ export {
     type MultiKernelExecutionResult,
 } from './core/multi-kernel-handler.js';
 
-// ===== AGENTS - Motor de agentes =====
 export { AgentEngine, createAgent } from './agents/agent-engine.js';
 
 export {
@@ -37,7 +21,6 @@ export {
     type LifecycleStats,
 } from './agents/agent-lifecycle.js';
 
-// ===== MULTI-AGENT TYPES =====
 export type {
     AgentCapability,
     AgentMessage,
@@ -53,13 +36,10 @@ export type {
     DelegationResult,
 } from './agents/multi-agent-types.js';
 
-// ===== AGENT EXECUTION =====
 export { AgentExecutor, createWorkflowAgent } from './agents/agent-executor.js';
 
-// ===== TOOLS - Motor de ferramentas =====
 export { ToolEngine, defineTool } from './tools/tool-engine.js';
 
-// ===== WORKFLOWS - Motor de workflows =====
 export {
     WorkflowEngine,
     WorkflowBuilder,
@@ -69,7 +49,6 @@ export {
     type WorkflowDefinition,
 } from './workflows/workflow-engine.js';
 
-// ===== ROUTING - Router inteligente =====
 export {
     Router,
     createRouter,
@@ -78,10 +57,6 @@ export {
     type RoutingResult,
 } from './routing/router.js';
 
-// ===== AGENT ROUTING =====
-// AgentRouter temporarily disabled - using main Router instead
-
-// ===== PLANNING - Planejador =====
 export {
     PlannerHandler as Planner,
     CoTPlanner,
@@ -99,7 +74,6 @@ export {
     type PlanningContext,
 } from './planning/planner.js';
 
-// ===== TYPES - Re-export de tipos comuns =====
 export type {
     AgentContext,
     AgentThought,

@@ -555,8 +555,13 @@ export class LayeredMetricsSystem {
      * Calcular uso de CPU (simplificado)
      */
     private calculateCpuUsage(): number {
-        // Implementação simplificada - em produção seria baseada em medições reais
-        return Math.random() * 100;
+        // Get actual CPU usage
+        const usage = process.cpuUsage();
+        const totalCpu = (usage.user + usage.system) / 1000000; // Convert to seconds
+        const uptime = process.uptime();
+
+        // Calculate CPU percentage (rough estimate)
+        return uptime > 0 ? Math.min(100, (totalCpu / uptime) * 100) : 0;
     }
 
     /**
