@@ -1,8 +1,12 @@
-import { FileChange } from '@/config/types/general/codeReview.type';
+import {
+    AnalysisContext,
+    FileChange,
+} from '@/config/types/general/codeReview.type';
 
 export type KodyRulesPrLevelPayload = {
     pr_title: string;
     pr_description: string;
+    stats: AnalysisContext['pullRequest']['stats'];
     files: FileChange[];
     rules?: any;
     rule?: any;
@@ -28,6 +32,11 @@ You are a code review expert specialized in identifying cross-file rule violatio
 ### PR Information
 - **Title**: ${payload?.pr_title}
 - **Description**: ${payload?.pr_description}
+- **Stats**:
+    - Total Additions: ${payload?.stats?.total_additions ?? 0}
+    - Total Deletions: ${payload?.stats?.total_deletions ?? 0}
+    - Total Files Changed: ${payload?.stats?.total_files ?? 0}
+    - Total Lines Changed: ${payload?.stats?.total_lines_changed ?? 0}
 
 ### Files in PR
 \`\`\`json
@@ -147,9 +156,7 @@ Return a JSON array containing only rules that have violations:
 **Now analyze the provided PR and rules to identify cross-file rule violations.**`;
 };
 
-export const prompt_kodyrules_prlevel_group_rules = (
-    payload: any,
-) => {
+export const prompt_kodyrules_prlevel_group_rules = (payload: any) => {
     return `# Rule Violation Consolidation System
 
 ## Your Role
@@ -171,12 +178,16 @@ Consolidate multiple violations of the same rule into a single, well-structured 
 - **Language**: ${payload?.language || 'en-US'}
 
 ## Violations to Consolidate:
-${(payload?.violations || []).map((v: any, i: number) => `
+${(payload?.violations || [])
+    .map(
+        (v: any, i: number) => `
 ### Violation ${i + 1}
 ${v.reason}
 Violated File Sha: ${v.violatedFileSha}
 Related File Sha: ${v.relatedFileSha}
-`).join('\n')}
+`,
+    )
+    .join('\n')}
 
 ## Output Instructions
 - Return ONLY the output JSON in the following format:

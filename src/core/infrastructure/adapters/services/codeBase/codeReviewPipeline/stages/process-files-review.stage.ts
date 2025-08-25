@@ -736,7 +736,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                         mergedSuggestions =
                             await this.suggestionService.removeSuggestionsRelatedToSavedFiles(
                                 context?.organizationAndTeamData,
-                                context?.pullRequest?.number,
+                                context?.pullRequest?.number.toString(),
                                 savedSuggestions,
                                 mergedSuggestions,
                             );

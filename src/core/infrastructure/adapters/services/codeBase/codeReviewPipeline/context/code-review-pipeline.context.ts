@@ -23,9 +23,20 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     pullRequest: {
         number: number;
         title: string;
-        base: { ref: string };
+        base: {
+            repo: {
+                fullName: string;
+            };
+            ref: string;
+        };
         repository: Repository;
         isDraft: boolean;
+        stats: {
+            total_additions: number;
+            total_deletions: number;
+            total_files: number;
+            total_lines_changed: number;
+        };
         [key: string]: any;
     };
     teamAutomationId: string;
