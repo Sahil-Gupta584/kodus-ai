@@ -70,7 +70,7 @@ export class SignUpUseCase implements IUseCase {
                 },
             };
 
-            if (organizationId) {
+            if (organizationId && organizationId.length > 0) {
                 user.organization = await this.organizationService.findOne({
                     uuid: organizationId,
                 });
