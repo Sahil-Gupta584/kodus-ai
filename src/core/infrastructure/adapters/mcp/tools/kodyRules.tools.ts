@@ -347,6 +347,7 @@ export class KodyRulesTools {
                         await this.kodyRulesService.createOrUpdate(
                             params.organizationAndTeamData,
                             params.kodyRule,
+                            { userId: 'kody-system-tool', userEmail: 'kody@kodus.io' },
                         );
 
                     return {

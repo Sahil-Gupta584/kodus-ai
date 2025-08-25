@@ -3757,7 +3757,7 @@ export abstract class AgentCore<
      * Generate correlation ID for request-response tracking
      */
     private generateCorrelationId(): string {
-        return `corr_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+        return IdGenerator.correlationId();
     }
 
     protected async executeThinkActObserve<TInput, TOutput>(

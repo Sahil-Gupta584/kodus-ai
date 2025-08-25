@@ -246,9 +246,15 @@ export class GenerateKodyRulesUseCase {
                         severity: rule.severity as KodyRuleSeverity,
                     };
 
+                    const userInfo = {
+                        userId: 'kody-system-rules-generator',
+                        userEmail: 'kody@kodus.io',
+                    };
+
                     await this.createOrUpdateKodyRulesUseCase.execute(
                         dto,
                         organizationId,
+                        userInfo,
                     );
 
                     // Adicionar regra aos dados de notificação
