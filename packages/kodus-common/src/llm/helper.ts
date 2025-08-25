@@ -246,24 +246,9 @@ export enum LLMModelProvider {
     NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT = 'novita:moonshotai/kimi-k2-instruct',
 }
 
-type ChatAnthropicOptions = ConstructorParameters<typeof ChatAnthropic>[0];
-type ChatOpenAIOptions = ConstructorParameters<typeof ChatOpenAI>[0];
-type ChatGoogleAIOptions = ConstructorParameters<typeof ChatGoogle>[0];
-type ChatVertexAIOptions = ConstructorParameters<typeof ChatVertexAI>[0];
-type ChatNovitaAIOptions = ConstructorParameters<typeof ChatNovitaAI>[0];
-
-export type FactoryInput =
-    | ChatAnthropicOptions
-    | ChatOpenAIOptions
-    | ChatGoogleAIOptions
-    | ChatVertexAIOptions
-    | ChatNovitaAIOptions;
-
 export interface ModelStrategy {
     readonly provider: string;
-    readonly factory: (
-        args: FactoryInput & { baseURL?: string; json?: boolean },
-    ) => BaseChatModel | Runnable;
+    readonly factory: (args?: any) => BaseChatModel | Runnable;
     readonly modelName: string;
     readonly defaultMaxTokens: number;
     readonly baseURL?: string;

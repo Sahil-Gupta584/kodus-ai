@@ -1,7 +1,7 @@
 import { createLogger } from '../../../observability/index.js';
 
 export interface ConversationMessage {
-    role: 'user' | 'assistant' | 'system';
+    role: 'user' | 'assistant' | 'tool' | 'system';
     content: string;
     timestamp: number;
     metadata?: {
@@ -82,7 +82,7 @@ export class ConversationManager {
 
     async addMessage(
         sessionId: string,
-        role: 'user' | 'assistant' | 'system',
+        role: 'user' | 'assistant' | 'tool' | 'system',
         content: string,
         metadata?: ConversationMessage['metadata'],
         tenantId?: string,

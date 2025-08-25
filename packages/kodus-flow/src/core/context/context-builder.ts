@@ -1,4 +1,4 @@
-import { createLogger } from '../../observability/index.js';
+import { createLogger, getObservability } from '../../observability/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import {
     getGlobalMemoryManager,
@@ -240,6 +240,14 @@ export class ContextBuilder {
         options: AgentExecutionOptions;
     }): Promise<AgentContext> {
         const invocationId = IdGenerator.executionId();
+
+        // ✅ Connect context with observability system
+        const observability = getObservability();
+        observability.updateContextWithExecution(
+            invocationId,
+            session.id,
+            session.tenantId
+        );
 
         // Instâncias únicas e compartilhadas para rastreabilidade consistente
         const sharedStepExecution = new StepExecution();

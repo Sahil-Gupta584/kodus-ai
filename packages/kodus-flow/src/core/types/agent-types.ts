@@ -365,7 +365,7 @@ export interface AgentContext {
         ) => Promise<void>;
         getHistory: () => Promise<
             Array<{
-                role: 'user' | 'assistant' | 'system';
+                role: 'user' | 'assistant' | 'system' | 'tool';
                 content: string;
                 timestamp: number;
                 metadata?: Record<string, unknown>;
