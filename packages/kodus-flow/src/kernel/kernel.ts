@@ -1,14 +1,3 @@
-/**
- * @module kernel/kernel
- * @description Execution Kernel - Central orchestration layer
- *
- * RESPONSABILIDADES DO KERNEL:
- * - Gerenciamento de Context e State
- * - Snapshots e Persistência
- * - Quota Management
- * - Coordenação com Runtime
- */
-
 import { createLogger } from '../observability/index.js';
 import { getObservability } from '../observability/index.js';
 import { withObservability } from '../runtime/middleware/index.js';
@@ -43,7 +32,6 @@ import type { Snapshot } from './snapshot.js';
 import { stableHash } from './snapshot.js';
 import type { WorkflowContext } from '../core/types/workflow-types.js';
 import { IdGenerator } from '../utils/id-generator.js';
-// import { CircuitBreakerManager } from '../runtime/middleware/circuit-breaker.js';
 
 /**
  * Simple LRU Cache implementation for context caching
@@ -62,7 +50,7 @@ class LRUCache<T> {
     get(key: string): T | undefined {
         const entry = this.cache.get(key);
         if (entry) {
-            // Update last accessed time
+            // Update last  time
             entry.lastAccessed = Date.now();
             return entry.value;
         }
@@ -70,7 +58,6 @@ class LRUCache<T> {
     }
 
     set(key: string, value: T): void {
-        // If key exists, update it
         if (this.cache.has(key)) {
             this.cache.get(key)!.value = value;
             this.cache.get(key)!.lastAccessed = Date.now();
@@ -254,16 +241,8 @@ export class ExecutionKernel {
     private quotaTimers = new Set<NodeJS.Timeout>();
     private readonly maxQuotaTimers = 100;
 
-    // ✅ ADICIONAR: StateService para Kernel Layer
     private stateService: ContextStateService;
 
-    // Circuit breakers for critical operations
-    // private circuitBreakerManager: CircuitBreakerManager;
-
-    // Context factory for context management
-    // Legacy field - now using ContextBuilder
-
-    // Runtime for event processing
     private runtime: Runtime | null = null;
     private workflowContext: WorkflowContext | null = null;
 
@@ -279,7 +258,6 @@ export class ExecutionKernel {
         { value: unknown; timestamp: number }
     >();
     private contextUpdateTimer: NodeJS.Timeout | null = null;
-    // REMOVED: eventBatchQueue and eventBatchTimer - now delegated to Runtime
     private lastSnapshotTs = 0;
     private lastEventSnapshotCount = 0;
 
@@ -297,7 +275,6 @@ export class ExecutionKernel {
                 maxMemoryUsage: 100 * 1024 * 1024,
             });
 
-        // ✅ ADICIONAR: Inicializar StateService (Kernel Layer)
         this.stateService = new ContextStateService(
             {
                 tenantId: config.tenantId,
@@ -308,9 +285,6 @@ export class ExecutionKernel {
                 maxNamespaces: 100,
             },
         );
-
-        // Initialize context factory
-        // Using ContextBuilder singleton instead of contextFactory
 
         // Initialize state
         const jobId = config.jobId || IdGenerator.executionId();

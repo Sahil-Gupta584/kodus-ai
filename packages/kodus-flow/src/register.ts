@@ -6,12 +6,10 @@ import { register } from 'tsconfig-paths';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Compatibilidade ESM/CJS
 const currentDir = import.meta.url
     ? dirname(fileURLToPath(import.meta.url))
     : process.cwd();
 
-// Registra os aliases de path definidos no tsconfig.json
 register({
     baseUrl: resolve(currentDir, '..'),
     paths: {
@@ -25,6 +23,5 @@ register({
         '@telemetry/*': ['./src/telemetry/*'],
         '@types/*': ['./src/types/*'],
     },
-    // Adiciona extensão .js para arquivos compilados
     addMatchAll: true,
 });

@@ -1,10 +1,3 @@
-/**
- * Context Module - Clean and Essential
- *
- * Core context management for agents and workflows
- */
-
-// ===== MAIN ENTRY POINT =====
 export {
     ContextBuilder,
     createAgentContext,
@@ -16,7 +9,6 @@ export {
 // ===== CORE SERVICES =====
 export { ContextStateService } from './services/state-service.js';
 export { SessionService } from './services/session-service.js';
-export { ConversationManager } from './services/conversation-manager.js';
 export type {
     Session,
     SessionConfig,
@@ -25,14 +17,8 @@ export type {
     ConversationMessage,
 } from './services/session-service.js';
 
-// ===== AI SDK COMPONENTS =====
-export {
-    StepExecution,
-    EnhancedMessageContext,
-    ContextManager,
-    type AgentStepResult,
-    type MessageEntry,
-} from './step-execution.js';
+// ===== EXECUTION TRACKING =====
+export { ExecutionTracker, type StepResult } from './execution-tracker.js';
 
 // ===== NAMESPACE CONSTANTS =====
 export {

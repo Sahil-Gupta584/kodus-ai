@@ -148,11 +148,10 @@ export class SDKOrchestrator {
     private kernelHandler?: ReturnType<typeof createDefaultMultiKernelHandler>;
 
     constructor(config: OrchestrationConfig) {
-        // Apply observability configuration early (updates global system)
         if (config.observability) {
             getObservability(config.observability);
         }
-        // LLM é OBRIGATÓRIO!
+
         if (!config.llmAdapter) {
             throw new EngineError(
                 'ENGINE_AGENT_INITIALIZATION_FAILED',
@@ -180,7 +179,7 @@ const orchestrator = new SDKOrchestrator({
             tenantId: config.tenantId || 'default-tenant',
             mcpAdapter: config.mcpAdapter || null,
             enableObservability: config.enableObservability ?? true,
-            defaultTimeout: config.defaultTimeout || 60000, // ✅ UNIFIED: 60s timeout
+            defaultTimeout: config.defaultTimeout || 60000, //UNIFIED: 60s timeout
             defaultPlanner: config.defaultPlanner || 'plan-execute',
             defaultMaxIterations: config.defaultMaxIterations || 15,
             storage: config.storage || {},
@@ -252,7 +251,6 @@ const orchestrator = new SDKOrchestrator({
             executionMode: config.executionMode || 'simple',
         });
 
-        // Validate identity field - at least one field must be provided
         try {
             agentIdentitySchema.parse(config.identity);
         } catch (error) {
@@ -262,12 +260,10 @@ const orchestrator = new SDKOrchestrator({
             );
         }
 
-        // Create basic agent definition
         const agentDefinition: AgentDefinition<unknown, unknown, unknown> = {
             name: config.name,
             identity: config.identity,
             think: async () => {
-                // This will be replaced by AgentCore with real planner
                 throw new EngineError(
                     'AGENT_ERROR',
                     'Agent think function should be replaced by AgentCore',
@@ -282,7 +278,6 @@ const orchestrator = new SDKOrchestrator({
             },
         };
 
-        // Create agent core configuration
         const agentCoreConfig: AgentCoreConfig = {
             tenantId: this.config.tenantId,
             agentName: config.name,
@@ -297,7 +292,6 @@ const orchestrator = new SDKOrchestrator({
             plannerOptions: config?.plannerOptions,
         };
 
-        // Create agent instance based on execution mode
         let agentInstance:
             | AgentEngine<unknown, unknown, unknown>
             | AgentExecutor<unknown, unknown, unknown>;
@@ -342,7 +336,6 @@ const orchestrator = new SDKOrchestrator({
 
         // Inject kernel handler
         if (this.kernelHandler) {
-            // Ensure kernelHandler is initialized
             if (!this.kernelHandler.isInitialized()) {
                 await this.kernelHandler.initialize();
             }

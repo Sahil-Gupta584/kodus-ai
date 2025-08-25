@@ -285,7 +285,7 @@ export interface WorkflowEngineConfig extends BaseEngineConfig {
 
     // State management
     storage?: {
-        type: 'memory' | 'redis' | 'custom';
+        type: 'memory' | 'custom';
         config?: Record<string, unknown>;
     };
 

@@ -7,10 +7,6 @@ import {
 } from '../memory/memory-manager.js';
 import { SessionService } from './services/session-service.js';
 import { ContextStateService } from './services/state-service.js';
-import {
-    ConversationManager,
-    type ConversationHistory,
-} from './services/conversation-manager.js';
 
 import type {
     AgentContext,
@@ -20,11 +16,7 @@ import type { Session, SessionConfig } from './services/session-service.js';
 import type { ToolEngine } from '../../engine/tools/tool-engine.js';
 import { StorageType } from '../storage/index.js';
 
-import {
-    StepExecution,
-    EnhancedMessageContext,
-    ContextManager,
-} from './step-execution.js';
+import { ExecutionTracker } from './execution-tracker.js';
 
 export interface ContextBuilderConfig {
     memory?: {
@@ -51,7 +43,6 @@ export class ContextBuilder {
 
     private memoryManager!: MemoryManager;
     private sessionService: SessionService;
-    private conversationManager: ConversationManager;
     private toolEngine?: ToolEngine;
 
     private constructor(config: ContextBuilderConfig = {}) {
@@ -65,44 +56,12 @@ export class ContextBuilder {
 
         const sessionConfig = {
             maxSessions: 1000,
-            sessionTimeout: 60 * 60 * 1000, // 1 hour
+            sessionTimeout: 60 * 60 * 1000,
             enableAutoCleanup: true,
             ...config.session,
         };
 
         this.sessionService = new SessionService(sessionConfig);
-
-        // Initialize conversation manager WITH persistence
-        this.conversationManager = new ConversationManager({
-            maxHistory: sessionConfig.maxConversationHistory || 100,
-            persistent: true, // Enable persistence for conversations
-            // Use session service as storage adapter
-            storageAdapter: {
-                storeConversation: async (sessionId, history) => {
-                    await this.sessionService.updateSessionContext(sessionId, {
-                        conversationHistory: history,
-                    });
-                },
-                loadConversation: async (sessionId) => {
-                    const contextData =
-                        await this.sessionService.getSessionContextData(
-                            sessionId,
-                        );
-                    // Type-safe conversion
-                    const history = contextData.conversationHistory;
-                    if (Array.isArray(history)) {
-                        return history as ConversationHistory;
-                    }
-                    return null;
-                },
-                deleteConversation: async (sessionId) => {
-                    await this.sessionService.updateSessionContext(sessionId, {
-                        conversationHistory: [],
-                    });
-                    return true;
-                },
-            },
-        });
 
         this.logger.info('ContextBuilder initialized', {
             memoryConfig: config.memory ? 'configured' : 'default',
@@ -180,37 +139,23 @@ export class ContextBuilder {
                     threadId,
                     {},
                 );
-                // Initialize conversation for new session
-                this.conversationManager.initializeSession(
-                    session.id,
-                    [],
-                    session.tenantId,
-                );
+                // Conversation history initialized as empty array in SessionService
             } else {
                 this.logger.info('Found existing session, reusing', {
                     sessionId: session.id,
                     threadId,
                     tenantId,
                 });
-                // Initialize conversation with existing history from session
-                const existingHistory =
-                    (session.contextData
-                        ?.conversationHistory as ConversationHistory) || [];
-                this.conversationManager.initializeSession(
-                    session.id,
-                    existingHistory,
-                    session.tenantId,
-                );
             }
 
-            const workingMemory = new ContextStateService(
+            const workingState = new ContextStateService(
                 { sessionId: session.id },
                 { maxNamespaceSize: 1000, maxNamespaces: 50 },
             );
 
             const agentContext = await this.buildAgentContext({
                 session,
-                workingMemory,
+                workingState,
                 options,
             });
 
@@ -232,31 +177,24 @@ export class ContextBuilder {
 
     private async buildAgentContext({
         session,
-        workingMemory,
+        workingState,
         options,
     }: {
         session: Session;
-        workingMemory: ContextStateService;
+        workingState: ContextStateService;
         options: AgentExecutionOptions;
     }): Promise<AgentContext> {
         const invocationId = IdGenerator.executionId();
 
-        // ✅ Connect context with observability system
         const observability = getObservability();
         observability.updateContextWithExecution(
             invocationId,
             session.id,
-            session.tenantId
+            session.tenantId,
         );
 
-        // Instâncias únicas e compartilhadas para rastreabilidade consistente
-        const sharedStepExecution = new StepExecution();
-        const sharedContextManager = new ContextManager(sharedStepExecution);
-        const sharedMessageContext = new EnhancedMessageContext(
-            sharedContextManager,
-        );
+        const executionTracker = new ExecutionTracker();
 
-        // Reidratar workingMemory com contexto persistido por sessão (por namespace)
         try {
             const contextData = (session.contextData || {}) as Record<
                 string,
@@ -271,10 +209,9 @@ export class ContextBuilder {
                     const entries = Object.entries(
                         nsValue as Record<string, unknown>,
                     );
-                    for (const [key, value] of entries) {
-                        // each key/value re-hydrated into working memory
 
-                        await workingMemory.set(namespace, key, value);
+                    for (const [key, value] of entries) {
+                        await workingState.set(namespace, key, value);
                     }
                 }
             }
@@ -305,27 +242,25 @@ export class ContextBuilder {
             state: {
                 // Pure working memory operations - NO automatic persistence
                 get: <T>(namespace: string, key: string, _threadId?: string) =>
-                    workingMemory.get<T>(namespace, key),
+                    workingState.get<T>(namespace, key),
                 set: async (
                     namespace: string,
                     key: string,
                     value: unknown,
                     _threadId?: string,
                 ) => {
-                    // ONLY save to working memory (RAM)
-                    await workingMemory.set(namespace, key, value);
-                    // NO automatic persistence - let the agent decide when to persist
+                    await workingState.set(namespace, key, value);
                 },
-                clear: (namespace: string) => workingMemory.clear(namespace),
+                clear: (namespace: string) => workingState.clear(namespace),
                 getNamespace: async (namespace: string) => {
-                    const nsMap = workingMemory.getNamespace(namespace);
+                    const nsMap = workingState.getNamespace(namespace);
                     return nsMap ? new Map(Object.entries(nsMap)) : undefined;
                 },
                 // EXPLICIT persistence methods
                 persist: async (namespace?: string) => {
                     if (namespace) {
                         // Persist specific namespace
-                        const data = workingMemory.getNamespace(namespace);
+                        const data = workingState.getNamespace(namespace);
                         if (data) {
                             await this.sessionService.updateSessionContext(
                                 session.id,
@@ -336,7 +271,7 @@ export class ContextBuilder {
                         }
                     } else {
                         // Persist all namespaces
-                        const allData = workingMemory.getAllNamespaces();
+                        const allData = workingState.getAllNamespaces();
                         await this.sessionService.updateSessionContext(
                             session.id,
                             allData,
@@ -344,7 +279,7 @@ export class ContextBuilder {
                     }
                 },
                 // Check if there are unsaved changes
-                hasChanges: () => workingMemory.hasUnsavedChanges(),
+                hasChanges: () => workingState.hasUnsavedChanges(),
             },
 
             conversation: {
@@ -353,7 +288,7 @@ export class ContextBuilder {
                     content: string,
                     metadata?: Record<string, unknown>,
                 ) => {
-                    await this.conversationManager.addMessage(
+                    await this.sessionService.addMessage(
                         session.id,
                         role,
                         content,
@@ -362,7 +297,7 @@ export class ContextBuilder {
                     );
                 },
                 getHistory: async () => {
-                    return await this.conversationManager.getHistory(
+                    return await this.sessionService.getConversationHistory(
                         session.id,
                         session.tenantId,
                     );
@@ -412,9 +347,8 @@ export class ContextBuilder {
             agentIdentity: undefined,
             agentExecutionOptions: options,
             allTools: this.toolEngine?.listTools() || [],
-            stepExecution: sharedStepExecution,
-            messageContext: sharedMessageContext,
-            contextManager: sharedContextManager,
+            stepExecution: executionTracker,
+            messageContext: executionTracker,
         };
     }
 

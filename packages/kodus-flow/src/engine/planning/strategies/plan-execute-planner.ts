@@ -562,23 +562,8 @@ export class PlanAndExecutePlanner implements Planner {
                 }
             }
 
-            // ✅ ENHANCED: Use ContextManager for unified operations
-            if (context.agentContext.contextManager) {
-                await context.agentContext.contextManager.addToContext(
-                    'state',
-                    'planner_lastInput',
-                    currentInput,
-                    context.agentContext,
-                );
-
-                await context.agentContext.contextManager.addToContext(
-                    'session',
-                    'memory_context_request',
-                    { input: currentInput, timestamp: Date.now() },
-                    context.agentContext,
-                );
-            } else {
-                // ✅ FALLBACK: Use traditional APIs
+            // Context operations simplified
+            if (context.agentContext) {
                 await context.agentContext.state.set(
                     'planner',
                     'lastInput',
@@ -1149,21 +1134,10 @@ export class PlanAndExecutePlanner implements Planner {
                 const stepId = `step-final-${Date.now()}`;
                 const endTime = Date.now();
 
-                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Track context operations
-                context.agentContext.stepExecution.addContextOperation(
-                    stepId,
-                    'session',
-                    'final_answer',
-                    { content: result.content, timestamp: endTime },
-                );
-
-                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Track context operations
-                context.agentContext.stepExecution.addContextOperation(
-                    stepId,
-                    'session',
-                    'final_answer',
-                    { content: result.content, timestamp: endTime },
-                );
+                // Context operations simplified
+                // TODO: entender
+                context.agentContext.stepExecution.addContextOperation();
+                context.agentContext.stepExecution.addContextOperation();
 
                 // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Update step with real duration
                 context.agentContext.stepExecution.updateStep(stepId, {
@@ -1216,15 +1190,7 @@ export class PlanAndExecutePlanner implements Planner {
                         shouldContinue: false,
                     },
                     duration: 0,
-                    metadata: {
-                        contextOperations: [],
-                        toolCalls: [],
-                        performance: {
-                            thinkDuration: 0,
-                            actDuration: 0,
-                            observeDuration: 0,
-                        },
-                    },
+                    toolCalls: [],
                 };
                 context.history.push(stepExecution);
             }

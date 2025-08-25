@@ -1,12 +1,3 @@
-/**
- * @module engine/response/response-synthesizer
- * @description Sistema para transformar resultados técnicos de execução em respostas conversacionais
- *
- * OBJETIVO:
- * Fechar o loop de conversa conectando a pergunta original do usuário com os resultados
- * da execução, criando uma resposta natural e útil.
- */
-
 import { createLogger } from '../../observability/index.js';
 import type { LLMAdapter } from '../../adapters/llm/index.js';
 import type { ActionResult } from '../planning/planner-factory.js';
@@ -17,21 +8,13 @@ import {
 } from '../planning/planner-factory.js';
 import { UNIFIED_STATUS } from '../../core/types/planning-shared.js';
 
-// const logger = createLogger('response-synthesizer');
-
-// ==================== TYPES ====================
-
 export interface ResponseSynthesisContext {
-    /** Pergunta/input original do usuário */
     originalQuery: string;
 
-    /** Tipo de planner usado (plan-execute, react, etc.) */
     plannerType: string;
 
-    /** Todos os resultados da execução */
     executionResults: ActionResult[];
 
-    /** Steps do plano (se disponível) */
     planSteps?: Array<{
         id: string;
         description: string;
@@ -42,10 +25,8 @@ export interface ResponseSynthesisContext {
         result?: unknown;
     }>;
 
-    /** ✅ FRAMEWORK PATTERN: Reasoning do planner (especialmente importante para empty plans) */
     plannerReasoning?: string;
 
-    /** Metadata adicional sobre a execução */
     metadata: {
         totalSteps: number;
         completedSteps: number;
@@ -57,16 +38,9 @@ export interface ResponseSynthesisContext {
 }
 
 export interface SynthesizedResponse {
-    /** Resposta final conversacional para o usuário */
     content: string;
-
-    /** Se precisa de mais clarificação do usuário */
     needsClarification: boolean;
-
-    /** Se a resposta inclui erros que o usuário deve saber */
     includesError: boolean;
-
-    /** Metadata sobre a synthesis */
     metadata: {
         synthesisStrategy: string;
         discoveryCount: number;
@@ -81,8 +55,6 @@ export type SynthesisStrategy =
     | 'problem-solution'
     | 'technical';
 
-// ==================== CORE SYNTHESIZER ====================
-
 export class ResponseSynthesizer {
     private logger = createLogger('response-synthesizer');
 
@@ -94,9 +66,6 @@ export class ResponseSynthesizer {
         });
     }
 
-    /**
-     * 🎯 Método principal: transforma resultados em resposta conversacional
-     */
     async synthesize(
         context: ResponseSynthesisContext,
         strategy: SynthesisStrategy = 'conversational',
@@ -112,10 +81,7 @@ export class ResponseSynthesizer {
         });
 
         try {
-            // 1. Analisar resultados para extrair descobertas principais
             const analysis = this.analyzeExecutionResults(context);
-
-            // 2. Aplicar estratégia de synthesis
             const synthesizedContent = await this.applySynthesisStrategy(
                 strategy,
                 context,
@@ -147,23 +113,16 @@ export class ResponseSynthesizer {
                 strategy,
             });
 
-            // Fallback: resposta básica
             return this.createFallbackResponse(context, error as Error);
         }
     }
 
-    // ==================== ANALYSIS METHODS ====================
-
-    /**
-     * Analisa todos os resultados para extrair insights principais
-     */
     private analyzeExecutionResults(context: ResponseSynthesisContext) {
         const rawResults: unknown[] = [];
         const errors: string[] = [];
         const warnings: string[] = [];
         let hasAmbiguousResults = false;
 
-        // Coletar resultados brutos
         context.executionResults.forEach((result, resultIndex) => {
             if (isErrorResult(result)) {
                 const errorMsg = getResultError(result);
@@ -178,7 +137,6 @@ export class ResponseSynthesizer {
             }
         });
 
-        // Coletar resultados dos steps do plano
         if (context.planSteps) {
             context.planSteps.forEach((step) => {
                 if (step.status === UNIFIED_STATUS.FAILED) {
@@ -192,7 +150,6 @@ export class ResponseSynthesizer {
             });
         }
 
-        // Detectar ambiguidade
         if (rawResults.length === 0 && errors.length === 0) {
             hasAmbiguousResults = true;
             warnings.push('No clear results found');
@@ -209,11 +166,6 @@ export class ResponseSynthesizer {
         };
     }
 
-    // ==================== SYNTHESIS STRATEGIES ====================
-
-    /**
-     * Aplica estratégia de synthesis escolhida
-     */
     private async applySynthesisStrategy(
         strategy: SynthesisStrategy,
         context: ResponseSynthesisContext,
@@ -235,9 +187,6 @@ export class ResponseSynthesizer {
         }
     }
 
-    /**
-     * 🗣️ Estratégia Conversational: Resposta natural e fluida
-     */
     private async conversationalSynthesis(
         context: ResponseSynthesisContext,
         analysis: ReturnType<
@@ -311,9 +260,6 @@ ${analysis.errors.length > 0 ? `\nERRORS:\n${analysis.errors.join('\n')}` : ''}
         }
     }
 
-    /**
-     * ✅ REFACTORED: Summary synthesis using LLM
-     */
     private async summarySynthesis(
         context: ResponseSynthesisContext,
         analysis: ReturnType<
@@ -358,9 +304,6 @@ Response:`;
         }
     }
 
-    /**
-     * ✅ REFACTORED: Problem-Solution synthesis using LLM
-     */
     private async problemSolutionSynthesis(
         context: ResponseSynthesisContext,
         analysis: ReturnType<
@@ -405,9 +348,6 @@ Response:`;
         }
     }
 
-    /**
-     * ✅ REFACTORED: Technical synthesis using LLM
-     */
     private async technicalSynthesis(
         context: ResponseSynthesisContext,
         analysis: ReturnType<
@@ -466,20 +406,12 @@ Response:`;
         }
     }
 
-    // ==================== HELPER METHODS ====================
-
-    /**
-     * ✅ REFACTORED: Basic fallback response (minimal formatting)
-     * This should only be used when LLM is completely unavailable
-     */
     private createBasicResponse(
         context: ResponseSynthesisContext,
         analysis: ReturnType<
             typeof ResponseSynthesizer.prototype.analyzeExecutionResults
         >,
     ): string {
-        // ✅ FRAMEWORK BEST PRACTICE: Return raw data when LLM unavailable
-        // Let the application layer handle formatting if needed
         const response = {
             request: context.originalQuery,
             results: analysis.rawResults,
@@ -494,15 +426,10 @@ Response:`;
         return JSON.stringify(response, null, 2);
     }
 
-    /**
-     * ✅ REFACTORED: Fallback response returns raw error data
-     */
     private createFallbackResponse(
         context: ResponseSynthesisContext,
         error: Error,
     ): SynthesizedResponse {
-        // ✅ FRAMEWORK BEST PRACTICE: Return raw data on error
-        // Never use hardcoded strings in any language
         const errorResponse = {
             type: 'synthesis_error',
             request: context.originalQuery,
@@ -527,11 +454,6 @@ Response:`;
     }
 }
 
-// ==================== FACTORY ====================
-
-/**
- * Factory function para criar Response Synthesizer
- */
 export function createResponseSynthesizer(
     llmAdapter: LLMAdapter,
 ): ResponseSynthesizer {

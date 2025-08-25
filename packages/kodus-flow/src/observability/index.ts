@@ -1,7 +1,6 @@
 import type { Event } from '../core/types/events.js';
 import { BaseSDKError, type ErrorCode } from '../core/errors.js';
 import { IdGenerator } from '../utils/id-generator.js';
-import dns from 'dns';
 
 export * from './telemetry.js';
 export * from './monitoring.js';
@@ -681,22 +680,21 @@ export class ObservabilitySystem implements ObservabilityInterface {
      * Check CPU health
      */
     private checkCpuHealth(): boolean {
-        // Simple CPU check - in production you'd want more sophisticated monitoring
-        const startUsage = process.cpuUsage();
+        // Get actual CPU usage without artificial work
+        const usage = process.cpuUsage();
+        const totalCpu = (usage.user + usage.system) / 1000000; // Convert to seconds
+        const uptime = process.uptime();
 
-        // Simulate some work to measure CPU
-        for (let i = 0; i < 1000000; i++) {
-            Math.random();
-        }
+        // Calculate CPU percentage (rough estimate)
+        const cpuPercent = uptime > 0 ? (totalCpu / uptime) * 100 : 0;
 
-        const endUsage = process.cpuUsage(startUsage);
-        const cpuPercent = (endUsage.user + endUsage.system) / 1000000; // Seconds
-
-        const isHealthy = cpuPercent < 0.1; // 100ms max
+        const isHealthy = cpuPercent < 80; // 80% threshold
 
         if (!isHealthy) {
             this.logger.warn('CPU usage high', {
-                cpuTime: `${cpuPercent.toFixed(3)}s`,
+                cpuPercent: `${cpuPercent.toFixed(1)}%`,
+                totalCpuTime: `${totalCpu.toFixed(2)}s`,
+                uptime: `${uptime.toFixed(0)}s`,
             });
         }
 
@@ -707,18 +705,9 @@ export class ObservabilitySystem implements ObservabilityInterface {
      * Check connectivity health
      */
     private async checkConnectivityHealth(): Promise<boolean> {
-        // Simple connectivity check - in production you'd check actual endpoints
-        try {
-            // Check if we can resolve DNS
-            return new Promise<boolean>((resolve) => {
-                dns.lookup('google.com', (err: Error | null) => {
-                    resolve(!err);
-                });
-            });
-        } catch {
-            // If DNS check fails, assume connectivity is OK for now
-            return true;
-        }
+        // For now, just return true - connectivity checks should be done
+        // at the application level with proper timeouts and specific endpoints
+        return true;
     }
 
     /**
@@ -1004,9 +993,8 @@ export class ObservabilitySystem implements ObservabilityInterface {
                 },
             );
 
-            // It is unsafe to resume normal operation after an 'uncaughtException'.
-            // The process should be terminated after synchronous logging.
-            process.exit(1);
+            // Log the error but don't exit - let the application decide
+            // In production, you should handle this at the application level
         });
 
         // Capture unhandled promise rejections
@@ -1028,9 +1016,8 @@ export class ObservabilitySystem implements ObservabilityInterface {
                     },
                 );
 
-                // It is unsafe to resume normal operation after an 'unhandledRejection'.
-                // The process should be terminated after synchronous logging.
-                process.exit(1);
+                // Log the error but don't exit - let the application decide
+                // In production, you should handle this at the application level
             },
         );
 

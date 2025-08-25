@@ -1,8 +1,3 @@
-/**
- * @module core/storage/factory
- * @description Unified factory for creating storage adapters
- */
-
 import { createLogger } from '../../observability/logger.js';
 import type {
     BaseStorage,
@@ -14,23 +9,14 @@ import { MongoDBStorageAdapter } from './adapters/mongodb-adapter.js';
 
 const logger = createLogger('storage-factory');
 
-/**
- * Storage adapter types
- */
-export type StorageType = 'memory' | 'mongodb' | 'redis' | 'temporal';
+export type StorageType = 'memory' | 'mongodb';
 
-/**
- * Storage adapter configuration
- */
 export interface StorageAdapterConfig extends BaseStorageConfig {
     type: StorageType;
     connectionString?: string;
     options?: Record<string, unknown>;
 }
 
-/**
- * Default storage configuration
- */
 export interface StorageDefaultConfig {
     maxItems: number;
     enableCompression: boolean;
@@ -43,9 +29,6 @@ export interface StorageDefaultConfig {
     options?: Record<string, unknown>;
 }
 
-/**
- * Default configurations for each storage type
- */
 export const STORAGE_DEFAULTS: Record<StorageType, StorageDefaultConfig> = {
     memory: {
         maxItems: 1000,
@@ -75,54 +58,24 @@ export const STORAGE_DEFAULTS: Record<StorageType, StorageDefaultConfig> = {
             collection: 'storage',
         },
     },
-    redis: {
-        maxItems: 1000,
-        enableCompression: true,
-        cleanupInterval: 300000,
-        timeout: 5000,
-        retries: 3,
-        enableObservability: true,
-        enableHealthChecks: true,
-        enableMetrics: true,
-    },
-    temporal: {
-        maxItems: 1000,
-        enableCompression: true,
-        cleanupInterval: 300000,
-        timeout: 5000,
-        retries: 3,
-        enableObservability: true,
-        enableHealthChecks: true,
-        enableMetrics: true,
-    },
 };
 
-/**
- * Storage adapter factory
- * Unified factory for creating storage adapters
- */
 export class StorageAdapterFactory {
     private static adapters = new Map<string, BaseStorage<BaseStorageItem>>();
 
-    /**
-     * Create a storage adapter
-     */
     static async create<T extends BaseStorage<BaseStorageItem>>(
         config: StorageAdapterConfig,
     ): Promise<T> {
         logger.info('Creating storage adapter', { type: config.type, config });
 
         const collection = (config.options?.collection ?? 'default') as string;
-
         const adapterKey = `${config.type}_${config.connectionString || 'default'}_${collection}`;
 
-        // Check if adapter already exists
         if (this.adapters.has(adapterKey)) {
             logger.info('Returning cached adapter', { adapterKey });
             return this.adapters.get(adapterKey) as T;
         }
 
-        // Merge with defaults
         const defaults =
             STORAGE_DEFAULTS[config.type] || STORAGE_DEFAULTS.memory;
         const mergedConfig = {
@@ -146,30 +99,12 @@ export class StorageAdapterFactory {
                     adapter = new MongoDBStorageAdapter(mergedConfig);
                     break;
 
-                case 'redis':
-                    logger.warn(
-                        'Redis adapter not yet implemented, using memory',
-                        { type: 'redis' },
-                    );
-                    adapter = new InMemoryStorageAdapter(mergedConfig);
-                    break;
-
-                case 'temporal':
-                    logger.warn(
-                        'Temporal adapter not yet implemented, using memory',
-                        { type: 'temporal' },
-                    );
-                    adapter = new InMemoryStorageAdapter(mergedConfig);
-                    break;
-
                 default:
                     throw new Error(`Unknown storage type: ${config.type}`);
             }
 
-            // Initialize adapter
             await adapter.initialize();
 
-            // Cache adapter
             this.adapters.set(adapterKey, adapter);
 
             logger.info('Storage adapter created', {
@@ -187,9 +122,6 @@ export class StorageAdapterFactory {
         }
     }
 
-    /**
-     * Get cached adapter
-     */
     static getCached<T extends BaseStorage<BaseStorageItem>>(
         type: StorageType,
         connectionString?: string,
@@ -198,9 +130,6 @@ export class StorageAdapterFactory {
         return (this.adapters.get(adapterKey) as T) || null;
     }
 
-    /**
-     * Clear cached adapters
-     */
     static async clearCache(): Promise<void> {
         const adapters = Array.from(this.adapters.values());
         await Promise.all(adapters.map((adapter) => adapter.cleanup()));
@@ -208,22 +137,13 @@ export class StorageAdapterFactory {
         logger.info('Storage adapter cache cleared');
     }
 
-    /**
-     * Get all cached adapters
-     */
     static getCachedAdapters(): Map<string, BaseStorage<BaseStorageItem>> {
         return new Map(this.adapters);
     }
 }
 
-/**
- * Global storage adapter management
- */
 let globalStorageAdapter: BaseStorage<BaseStorageItem> | null = null;
 
-/**
- * Get global storage adapter
- */
 export function getGlobalStorageAdapter(): BaseStorage<BaseStorageItem> {
     if (!globalStorageAdapter) {
         throw new Error(
@@ -233,9 +153,6 @@ export function getGlobalStorageAdapter(): BaseStorage<BaseStorageItem> {
     return globalStorageAdapter;
 }
 
-/**
- * Set global storage adapter
- */
 export function setGlobalStorageAdapter(
     adapter: BaseStorage<BaseStorageItem>,
 ): void {
@@ -245,9 +162,6 @@ export function setGlobalStorageAdapter(
     });
 }
 
-/**
- * Reset global storage adapter
- */
 export function resetGlobalStorageAdapter(): void {
     globalStorageAdapter = null;
     logger.info('Reset global storage adapter');

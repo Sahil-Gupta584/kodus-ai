@@ -688,7 +688,7 @@ export interface ObservabilityConfig extends MiddlewareConfig {
 export interface CacheConfig extends MiddlewareConfig {
     ttlMs?: number;
     key?: string | ((context: MiddlewareContext) => string);
-    storage?: 'memory' | 'redis' | 'custom';
+    storage?: 'memory' | 'custom';
     maxSize?: number;
 }
 

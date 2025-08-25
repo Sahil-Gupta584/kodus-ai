@@ -4,11 +4,25 @@ import { ContextStateService } from './state-service.js';
 import { SessionId, ThreadId, TenantId } from '@/core/types/base-types.js';
 import { StorageSessionAdapter } from './storage-session-adapter.js';
 import type { StorageType } from '../../storage/factory.js';
-// Conversation types moved to conversation-manager
-export type {
-    ConversationMessage,
-    ConversationHistory,
-} from './conversation-manager.js';
+
+export interface ConversationMessage {
+    role: 'user' | 'assistant' | 'tool' | 'system';
+    content: string;
+    timestamp: number;
+    metadata?: {
+        model?: string;
+        agentName?: string;
+        responseTimeMs?: number;
+        tokensUsed?: number;
+        toolsUsed?: string[];
+        toolCallsCount?: number;
+        source?: string;
+        connectionId?: string;
+        [key: string]: unknown;
+    };
+}
+
+export type ConversationHistory = ConversationMessage[];
 
 export type Session = {
     id: string;
@@ -19,6 +33,7 @@ export type Session = {
     status: 'active' | 'paused' | 'expired' | 'closed';
     metadata: Record<string, unknown>;
     contextData: Record<string, unknown>;
+    conversationHistory: ConversationHistory;
     currentExecutionId?: string; // Track current execution
 };
 
@@ -40,7 +55,7 @@ export interface SessionContext {
     tenantId: TenantId;
     stateManager: ContextStateService;
     metadata: Record<string, unknown>;
-    // conversationHistory removed - now handled by ConversationManager
+    conversationHistory: ConversationHistory;
 }
 
 export class SessionService {
@@ -220,6 +235,7 @@ export class SessionService {
             status: 'active',
             metadata,
             contextData: {},
+            conversationHistory: [],
         };
 
         // Criar state manager para a sessão
@@ -347,7 +363,7 @@ export class SessionService {
                         },
                     );
                     this.sessionStateManagers.set(found.id, stateManager);
-                    // Note: Conversation history now handled by ConversationManager
+                    // Note: Conversation history handled in conversationHistory field
                     return found;
                 }
             } catch (error) {
@@ -384,13 +400,9 @@ export class SessionService {
             tenantId: session.tenantId,
             stateManager,
             metadata: session.metadata,
+            conversationHistory: session.conversationHistory,
         };
     }
-
-    /**
-     * Note: Conversation methods moved to ConversationManager
-     * Use ConversationManager.addMessage() and ConversationManager.getHistory()
-     */
 
     /**
      * Atualizar metadados da sessão
@@ -633,7 +645,7 @@ export class SessionService {
                 session.status = 'expired';
                 // CRÍTICO: Limpar state manager para evitar memory leak
                 this.sessionStateManagers.delete(sessionId);
-                // Note: Conversation cleanup now handled by ConversationManager
+                // Note: Conversation cleanup handled automatically with session
                 cleanedCount++;
             }
         }
@@ -891,6 +903,102 @@ export class SessionService {
     async getCurrentExecutionId(sessionId: string): Promise<string | null> {
         const session = await this.getSession(sessionId);
         return session?.currentExecutionId || null;
+    }
+
+    /**
+     * Add message to conversation history
+     */
+    async addMessage(
+        sessionId: string,
+        role: 'user' | 'assistant' | 'tool' | 'system',
+        content: string,
+        metadata?: ConversationMessage['metadata'],
+        tenantId?: string,
+    ): Promise<boolean> {
+        if (!content || typeof content !== 'string') {
+            this.logger.warn('Invalid message content', {
+                sessionId,
+                role,
+                content,
+            });
+            return false;
+        }
+
+        const session = await this.getSession(sessionId);
+        if (!session) {
+            this.logger.warn('Session not found for adding message', {
+                sessionId,
+            });
+            return false;
+        }
+
+        // Security: Validate session belongs to tenant
+        if (tenantId && session.tenantId !== tenantId) {
+            throw new Error(
+                `Session ${sessionId} does not belong to tenant ${tenantId}`,
+            );
+        }
+
+        const message: ConversationMessage = {
+            role,
+            content,
+            timestamp: Date.now(),
+            metadata: metadata || {},
+        };
+
+        // Add to conversation history
+        session.conversationHistory.push(message);
+
+        // Apply max history limit
+        const maxHistory = this.config.maxConversationHistory || 100;
+        if (session.conversationHistory.length > maxHistory) {
+            session.conversationHistory.shift();
+        }
+
+        // Update last activity
+        session.lastActivity = Date.now();
+
+        // Save to storage if persistent
+        if (this.config.persistent && this.storage) {
+            try {
+                await this.storage.storeSession(session);
+            } catch (error) {
+                this.logger.warn(
+                    'Failed to persist session after adding message',
+                    {
+                        sessionId,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
+                );
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Get conversation history for a session
+     */
+    async getConversationHistory(
+        sessionId: string,
+        tenantId?: string,
+    ): Promise<ConversationHistory> {
+        const session = await this.getSession(sessionId);
+        if (!session) {
+            return [];
+        }
+
+        // Security: Validate session belongs to tenant
+        if (tenantId && session.tenantId !== tenantId) {
+            throw new Error(
+                `Session ${sessionId} does not belong to tenant ${tenantId}`,
+            );
+        }
+
+        return session.conversationHistory || [];
     }
 }
 

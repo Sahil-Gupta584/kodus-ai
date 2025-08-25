@@ -157,7 +157,7 @@ export type ResultAnalysis = {
  * This ensures consistency between planner and AI SDK components
  */
 export type StepExecution =
-    import('../../core/context/step-execution.js').AgentStepResult;
+    import('../../core/context/execution-tracker.js').StepResult;
 
 /**
  * ✅ REMOVED: StepExecutionMetadata is no longer needed

@@ -19,11 +19,7 @@ import { AgentIdentity } from './agent-definition.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextStateService } from '../context/services/state-service.js';
 import { Persistor } from '../../persistor/index.js';
-import {
-    ContextManager,
-    EnhancedMessageContext,
-    StepExecution,
-} from '../context/index.js';
+import { ExecutionTracker } from '../context/index.js';
 
 interface SimpleExecutionRuntime {
     startExecution(agentName: string): Promise<void>;
@@ -418,9 +414,8 @@ export interface AgentContext {
     agentIdentity?: AgentIdentity;
     agentExecutionOptions?: AgentExecutionOptions;
     allTools?: ToolDefinition<unknown, unknown>[];
-    stepExecution?: StepExecution;
-    messageContext?: EnhancedMessageContext;
-    contextManager?: ContextManager;
+    stepExecution?: ExecutionTracker;
+    messageContext?: ExecutionTracker;
 }
 
 /**
