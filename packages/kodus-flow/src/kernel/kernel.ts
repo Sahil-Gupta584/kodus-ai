@@ -3,7 +3,7 @@ import { getObservability } from '../observability/index.js';
 import { withObservability } from '../runtime/middleware/index.js';
 import { KernelError } from '../core/errors.js';
 
-import { ContextStateService } from '../core/context/index.js';
+import { SimpleContextStateService as ContextStateService } from '../core/context/services/simple-state-service.js';
 import {
     createRuntime,
     type Runtime,
@@ -275,16 +275,10 @@ export class ExecutionKernel {
                 maxMemoryUsage: 100 * 1024 * 1024,
             });
 
-        this.stateService = new ContextStateService(
-            {
-                tenantId: config.tenantId,
-                jobId: config.jobId || IdGenerator.executionId(),
-            },
-            {
-                maxNamespaceSize: 1000,
-                maxNamespaces: 100,
-            },
-        );
+        this.stateService = new ContextStateService({
+            tenantId: config.tenantId,
+            jobId: config.jobId || IdGenerator.executionId(),
+        });
 
         // Initialize state
         const jobId = config.jobId || IdGenerator.executionId();

@@ -6,7 +6,7 @@ import {
     setGlobalMemoryManager,
 } from '../memory/memory-manager.js';
 import { SessionService } from './services/session-service.js';
-import { ContextStateService } from './services/state-service.js';
+import { SimpleContextStateService as ContextStateService } from './services/simple-state-service.js';
 
 import type {
     AgentContext,
@@ -148,10 +148,9 @@ export class ContextBuilder {
                 });
             }
 
-            const workingState = new ContextStateService(
-                { sessionId: session.id },
-                { maxNamespaceSize: 1000, maxNamespaces: 50 },
-            );
+            const workingState = new ContextStateService({
+                sessionId: session.id,
+            });
 
             const agentContext = await this.buildAgentContext({
                 session,
@@ -279,7 +278,7 @@ export class ContextBuilder {
                     }
                 },
                 // Check if there are unsaved changes
-                hasChanges: () => workingState.hasUnsavedChanges(),
+                hasChanges: () => false,
             },
 
             conversation: {

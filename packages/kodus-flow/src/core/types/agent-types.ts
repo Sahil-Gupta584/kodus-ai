@@ -17,7 +17,7 @@ import type {
 import { AgentIdentity } from './agent-definition.js';
 
 import { IdGenerator } from '../../utils/id-generator.js';
-import { ContextStateService } from '../context/services/state-service.js';
+import { SimpleContextStateService as ContextStateService } from '../context/services/simple-state-service.js';
 import { Persistor } from '../../persistor/index.js';
 import { ExecutionTracker } from '../context/index.js';
 
@@ -939,16 +939,10 @@ export function createAgentContext(
     // SystemContext becomes RuntimeContext in public API for clarity
 
     // Create state manager once
-    const stateManager = new ContextStateService(
-        {
-            tenantId: tenantId,
-            correlationId: correlationId,
-        },
-        {
-            maxNamespaceSize: 1000,
-            maxNamespaces: 100,
-        },
-    );
+    const stateManager = new ContextStateService({
+        tenantId: tenantId,
+        correlationId: correlationId,
+    });
 
     return {
         tenantId: tenantId,

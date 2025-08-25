@@ -1,6 +1,6 @@
 import { IdGenerator } from '../../../utils/id-generator.js';
 import { createLogger } from '../../../observability/index.js';
-import { ContextStateService } from './state-service.js';
+import { SimpleContextStateService as ContextStateService } from './simple-state-service.js';
 import { SessionId, ThreadId, TenantId } from '@/core/types/base-types.js';
 import { StorageSessionAdapter } from './storage-session-adapter.js';
 import type { StorageType } from '../../storage/factory.js';
@@ -239,13 +239,7 @@ export class SessionService {
         };
 
         // Criar state manager para a sessão
-        const stateManager = new ContextStateService(
-            { sessionId },
-            {
-                maxNamespaceSize: 1000,
-                maxNamespaces: 50,
-            },
-        );
+        const stateManager = new ContextStateService({ sessionId });
 
         // ✅ HYBRID: Store in both RAM cache and persistent storage
         this.sessions.set(sessionId, session);
@@ -287,13 +281,7 @@ export class SessionService {
                 // Cache the loaded session
                 this.sessions.set(sessionId, session);
                 // Recreate state manager
-                const stateManager = new ContextStateService(
-                    { sessionId },
-                    {
-                        maxNamespaceSize: 1000,
-                        maxNamespaces: 50,
-                    },
-                );
+                const stateManager = new ContextStateService({ sessionId });
                 this.sessionStateManagers.set(sessionId, stateManager);
             }
         }
@@ -355,13 +343,9 @@ export class SessionService {
                 if (found) {
                     // Cachear e criar state manager
                     this.sessions.set(found.id, found);
-                    const stateManager = new ContextStateService(
-                        { sessionId: found.id },
-                        {
-                            maxNamespaceSize: 1000,
-                            maxNamespaces: 50,
-                        },
-                    );
+                    const stateManager = new ContextStateService({
+                        sessionId: found.id,
+                    });
                     this.sessionStateManagers.set(found.id, stateManager);
                     // Note: Conversation history handled in conversationHistory field
                     return found;

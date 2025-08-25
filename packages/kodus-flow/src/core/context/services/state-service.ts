@@ -34,7 +34,7 @@ import type { StateManager } from '../../../utils/thread-safe-state.js';
 import { createLogger } from '../../../observability/index.js';
 import {
     STATE_NAMESPACES,
-    isValidStateNamespace,
+    type StateNamespace,
 } from '../namespace-constants.js';
 
 /**
@@ -326,7 +326,11 @@ export class ContextStateService implements StateManager {
             }
 
             // Optional: Warn about non-standard namespace usage
-            if (!isValidStateNamespace(namespace)) {
+            if (
+                !Object.values(STATE_NAMESPACES).includes(
+                    namespace as StateNamespace,
+                )
+            ) {
                 this.logger.warn('Using non-standard namespace', {
                     namespace,
                     standardNamespaces: Object.values(STATE_NAMESPACES),
