@@ -8,11 +8,7 @@
  */
 
 import type { AgentContext, AgentExecutionOptions } from './agent-types.js';
-import type {
-    StepExecution,
-    EnhancedMessageContext,
-    ContextManager,
-} from '../context/step-execution.js';
+import type { ExecutionTracker } from '../context/execution-tracker.js';
 
 // ============================================================================
 // ENHANCED AGENT CONTEXT INTERFACE
@@ -20,9 +16,8 @@ import type {
 
 export interface EnhancedAgentContext extends AgentContext {
     // ⭐ NOVO: Componentes AI SDK
-    stepExecution: StepExecution;
-    messageContext: EnhancedMessageContext;
-    contextManager: ContextManager;
+    stepExecution: ExecutionTracker;
+    messageContext: ExecutionTracker;
 }
 
 // ============================================================================

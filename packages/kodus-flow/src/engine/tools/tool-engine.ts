@@ -16,11 +16,7 @@ import type {
     ToolMetadataForLLM,
 } from '../../core/types/tool-types.js';
 import { createToolContext } from '../../core/types/tool-types.js';
-import {
-    getBuiltInTools,
-    isBuiltInTool,
-    executeBuiltInTool,
-} from './built-in-tools.js';
+
 import type {
     ParallelToolsAction,
     SequentialToolsAction,
@@ -180,13 +176,6 @@ export class ToolEngine {
             tenantId?: string;
         },
     ): Promise<TOutput> {
-        if (isBuiltInTool(toolName)) {
-            const result = executeBuiltInTool(toolName);
-
-            // Built-in tools always fail now - throw error to indicate no built-in tools available
-            throw new Error(result.error);
-        }
-
         const tool = this.tools.get(toolName) as ToolDefinition<
             TInput,
             TOutput
@@ -200,7 +189,6 @@ export class ToolEngine {
                     toolName,
                     callId,
                     availableTools: Array.from(this.tools.keys()),
-                    builtInTools: getBuiltInTools().map((t) => t.name),
                     trace: {
                         source: 'tool-engine',
                         step: 'tool-not-found',
@@ -321,50 +309,11 @@ export class ToolEngine {
      * Includes both built-in tools and external tools
      */
     getAvailableTools(): ToolMetadataForPlanner[] {
-        const builtInTools = getBuiltInTools();
         const externalTools = Array.from(this.tools.values()).map((tool) =>
             this.convertToolToPlannerFormat(tool),
         );
 
-        // ✅ Convert built-in tools to planner format
-        const builtInToolsForPlanner = builtInTools.map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: {
-                type: 'object' as const,
-                properties: this.extractPropertiesWithRequiredFlag(
-                    (tool.parameters?.properties as Record<string, unknown>) ||
-                        {},
-                    (tool.parameters?.required as string[]) || [],
-                ),
-                required: (tool.parameters?.required as string[]) || [],
-            },
-            config: {
-                timeout: 30000,
-                requiresAuth: false,
-                allowParallel: true,
-                maxConcurrentCalls: 10,
-                source: 'system' as const,
-            },
-            categories: [],
-            dependencies: [],
-            tags: ['built-in', 'conversational'],
-            examples: [],
-            plannerHints: {
-                useWhen: [`When you need to use ${tool.name}`],
-                avoidWhen: [],
-                combinesWith: [],
-                conflictsWith: [],
-            },
-            errorHandling: {
-                retryStrategy: 'none' as const,
-                maxRetries: 0,
-                fallbackAction: 'continue',
-                errorMessages: {},
-            },
-        }));
-
-        return [...builtInToolsForPlanner, ...externalTools];
+        return [...externalTools];
     }
 
     /**
@@ -458,12 +407,11 @@ export class ToolEngine {
     }
 
     getToolsForLLM(): ToolMetadataForLLM[] {
-        const builtInTools = getBuiltInTools();
         const externalTools = this.listTools()?.map((tool) =>
             this.convertToolToLLMFormat(tool),
         );
 
-        return [...builtInTools, ...externalTools];
+        return [...externalTools];
     }
 
     /**

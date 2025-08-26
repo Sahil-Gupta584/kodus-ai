@@ -259,11 +259,11 @@ export type FactoryInput =
     | ChatVertexAIOptions
     | ChatNovitaAIOptions;
 
+type FactoryArgs = FactoryInput & { baseURL?: string; json?: boolean };
+
 export interface ModelStrategy {
     readonly provider: string;
-    readonly factory: (
-        args: FactoryInput & { baseURL?: string; json?: boolean },
-    ) => BaseChatModel | Runnable;
+    readonly factory: (args: FactoryArgs) => BaseChatModel | Runnable;
     readonly modelName: string;
     readonly defaultMaxTokens: number;
     readonly baseURL?: string;
@@ -275,25 +275,25 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     // OpenAI
     [LLMModelProvider.OPENAI_GPT_4O]: {
         provider: 'openai',
-        factory: getChatGPT,
+        factory: getChatGPT as (args: FactoryArgs) => BaseChatModel | Runnable,
         modelName: 'gpt-4o',
         defaultMaxTokens: -1,
     },
     [LLMModelProvider.OPENAI_GPT_4O_MINI]: {
         provider: 'openai',
-        factory: getChatGPT,
+        factory: getChatGPT as (args: FactoryArgs) => BaseChatModel | Runnable,
         modelName: 'gpt-4o-mini',
         defaultMaxTokens: -1,
     },
     [LLMModelProvider.OPENAI_GPT_4_1]: {
         provider: 'openai',
-        factory: getChatGPT,
+        factory: getChatGPT as (args: FactoryArgs) => BaseChatModel | Runnable,
         modelName: 'gpt-4.1',
         defaultMaxTokens: -1,
     },
     [LLMModelProvider.OPENAI_GPT_O4_MINI]: {
         provider: 'openai',
-        factory: getChatGPT,
+        factory: getChatGPT as (args: FactoryArgs) => BaseChatModel | Runnable,
         modelName: 'o4-mini',
         defaultMaxTokens: -1,
     },
@@ -301,7 +301,9 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     // Anthropic
     [LLMModelProvider.CLAUDE_3_5_SONNET]: {
         provider: 'anthropic',
-        factory: getChatAnthropic,
+        factory: getChatAnthropic as (
+            args: FactoryArgs,
+        ) => BaseChatModel | Runnable,
         modelName: 'claude-3-5-sonnet-20241022',
         defaultMaxTokens: -1,
     },
@@ -309,14 +311,18 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     // Google Gemini
     [LLMModelProvider.GEMINI_2_0_FLASH]: {
         provider: 'google',
-        factory: getChatGemini,
+        factory: getChatGemini as (
+            args: FactoryArgs,
+        ) => BaseChatModel | Runnable,
         modelName: 'gemini-2.0-flash',
         defaultMaxTokens: 8000,
         maxReasoningTokens: 15000,
     },
     [LLMModelProvider.GEMINI_2_5_PRO]: {
         provider: 'google',
-        factory: getChatGemini,
+        factory: getChatGemini as (
+            args: FactoryArgs,
+        ) => BaseChatModel | Runnable,
         modelName: 'gemini-2.5-pro',
         defaultMaxTokens: 60000,
         inputMaxTokens: 1000000,
@@ -324,7 +330,9 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     },
     [LLMModelProvider.GEMINI_2_5_FLASH]: {
         provider: 'google',
-        factory: getChatGemini,
+        factory: getChatGemini as (
+            args: FactoryArgs,
+        ) => BaseChatModel | Runnable,
         modelName: 'gemini-2.5-flash',
         defaultMaxTokens: 60000,
         maxReasoningTokens: 15000,
@@ -333,21 +341,27 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     // Vertex AI
     [LLMModelProvider.VERTEX_GEMINI_2_0_FLASH]: {
         provider: 'vertex',
-        factory: getChatVertexAI,
+        factory: getChatVertexAI as (
+            args: FactoryArgs,
+        ) => BaseChatModel | Runnable,
         modelName: 'gemini-2.0-flash',
         defaultMaxTokens: 8000,
         maxReasoningTokens: 15000,
     },
     [LLMModelProvider.VERTEX_GEMINI_2_5_PRO]: {
         provider: 'vertex',
-        factory: getChatVertexAI,
+        factory: getChatVertexAI as (
+            args: FactoryArgs,
+        ) => BaseChatModel | Runnable,
         modelName: 'gemini-2.5-pro',
         defaultMaxTokens: 60000,
         maxReasoningTokens: 15000,
     },
     [LLMModelProvider.VERTEX_GEMINI_2_5_FLASH]: {
         provider: 'vertex',
-        factory: getChatVertexAI,
+        factory: getChatVertexAI as (
+            args: FactoryArgs,
+        ) => BaseChatModel | Runnable,
         modelName: 'gemini-2.5-flash',
         defaultMaxTokens: 60000,
         maxReasoningTokens: 15000,
@@ -355,7 +369,9 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
 
     [LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET]: {
         provider: 'vertex',
-        factory: getChatVertexAI,
+        factory: getChatVertexAI as (
+            args: FactoryArgs,
+        ) => BaseChatModel | Runnable,
         modelName: 'claude-3-5-sonnet-v2@20241022',
         defaultMaxTokens: 4000,
         inputMaxTokens: 200000,
@@ -365,25 +381,25 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     // Deepseek
     [LLMModelProvider.NOVITA_DEEPSEEK_V3]: {
         provider: 'novita',
-        factory: getNovitaAI,
+        factory: getNovitaAI as (args: FactoryArgs) => BaseChatModel | Runnable,
         modelName: 'deepseek/deepseek_v3',
         defaultMaxTokens: 20000,
     },
     [LLMModelProvider.NOVITA_DEEPSEEK_V3_0324]: {
         provider: 'novita',
-        factory: getNovitaAI,
+        factory: getNovitaAI as (args: FactoryArgs) => BaseChatModel | Runnable,
         modelName: 'deepseek/deepseek-v3-0324',
         defaultMaxTokens: 20000,
     },
     [LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507]: {
         provider: 'novita',
-        factory: getNovitaAI,
+        factory: getNovitaAI as (args: FactoryArgs) => BaseChatModel | Runnable,
         modelName: 'qwen/qwen3-235b-a22b-thinking-2507',
         defaultMaxTokens: 20000,
     },
     [LLMModelProvider.NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT]: {
         provider: 'novita',
-        factory: getNovitaAI,
+        factory: getNovitaAI as (args: FactoryArgs) => BaseChatModel | Runnable,
         modelName: 'moonshotai/kimi-k2-instruct',
         defaultMaxTokens: 20000,
     },

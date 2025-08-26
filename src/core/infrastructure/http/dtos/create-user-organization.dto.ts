@@ -28,6 +28,5 @@ export class SignUpDTO {
 
     @IsString()
     @IsOptional()
-    @IsUUID()
     public organizationId: string;
 }

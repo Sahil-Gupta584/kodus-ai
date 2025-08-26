@@ -733,6 +733,7 @@ export interface Event<K extends EventType = EventType> {
         correlationId?: string;
         deliveryGuarantee?: 'at-most-once' | 'at-least-once' | 'exactly-once';
         tenantId?: string;
+        executionId?: string;
         timestamp?: number;
         [key: string]: unknown;
     };

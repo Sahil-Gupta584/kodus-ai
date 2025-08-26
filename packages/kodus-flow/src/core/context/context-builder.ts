@@ -1,4 +1,4 @@
-import { createLogger } from '../../observability/index.js';
+import { createLogger, getObservability } from '../../observability/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import {
     getGlobalMemoryManager,
@@ -6,7 +6,7 @@ import {
     setGlobalMemoryManager,
 } from '../memory/memory-manager.js';
 import { SessionService } from './services/session-service.js';
-import { ContextStateService } from './services/state-service.js';
+import { SimpleContextStateService as ContextStateService } from './services/simple-state-service.js';
 
 import type {
     AgentContext,
@@ -16,11 +16,7 @@ import type { Session, SessionConfig } from './services/session-service.js';
 import type { ToolEngine } from '../../engine/tools/tool-engine.js';
 import { StorageType } from '../storage/index.js';
 
-import {
-    StepExecution,
-    EnhancedMessageContext,
-    ContextManager,
-} from './step-execution.js';
+import { ExecutionTracker } from './execution-tracker.js';
 
 export interface ContextBuilderConfig {
     memory?: {
@@ -60,17 +56,10 @@ export class ContextBuilder {
 
         const sessionConfig = {
             maxSessions: 1000,
-            sessionTimeout: 60 * 60 * 1000, // 1 hour
+            sessionTimeout: 60 * 60 * 1000,
             enableAutoCleanup: true,
             ...config.session,
         };
-
-        this.logger.info('🔍 [DEBUG] Creating SessionService with config', {
-            sessionConfig,
-            hasConnectionString: !!sessionConfig.connectionString,
-            adapterType: sessionConfig.adapterType,
-            originalConfigSession: config.session,
-        });
 
         this.sessionService = new SessionService(sessionConfig);
 
@@ -94,18 +83,6 @@ export class ContextBuilder {
     }
 
     static configure(config: ContextBuilderConfig): ContextBuilder {
-        const logger = createLogger('ContextBuilder');
-
-        logger.info('🔍 [DEBUG] ContextBuilder.configure called', {
-            config,
-            hasMemory: !!config.memory,
-            hasSession: !!config.session,
-            hasSnapshot: !!config.snapshot,
-            memoryAdapterType: config.memory?.adapterType,
-            sessionAdapterType: config.session?.adapterType,
-            snapshotAdapterType: config.snapshot?.adapterType,
-        });
-
         ContextBuilder.resetInstance();
         return ContextBuilder.getInstance(config);
     }
@@ -150,21 +127,34 @@ export class ContextBuilder {
                 tenantId,
             );
             if (!session) {
+                this.logger.info(
+                    'No existing session found, creating new session',
+                    {
+                        threadId,
+                        tenantId,
+                    },
+                );
                 session = await this.sessionService.createSession(
                     tenantId,
                     threadId,
                     {},
                 );
+                // Conversation history initialized as empty array in SessionService
+            } else {
+                this.logger.info('Found existing session, reusing', {
+                    sessionId: session.id,
+                    threadId,
+                    tenantId,
+                });
             }
 
-            const workingMemory = new ContextStateService(
-                { sessionId: session.id },
-                { maxNamespaceSize: 1000, maxNamespaces: 50 },
-            );
+            const workingState = new ContextStateService({
+                sessionId: session.id,
+            });
 
             const agentContext = await this.buildAgentContext({
                 session,
-                workingMemory,
+                workingState,
                 options,
             });
 
@@ -186,23 +176,24 @@ export class ContextBuilder {
 
     private async buildAgentContext({
         session,
-        workingMemory,
+        workingState,
         options,
     }: {
         session: Session;
-        workingMemory: ContextStateService;
+        workingState: ContextStateService;
         options: AgentExecutionOptions;
     }): Promise<AgentContext> {
         const invocationId = IdGenerator.executionId();
 
-        // Instâncias únicas e compartilhadas para rastreabilidade consistente
-        const sharedStepExecution = new StepExecution();
-        const sharedContextManager = new ContextManager(sharedStepExecution);
-        const sharedMessageContext = new EnhancedMessageContext(
-            sharedContextManager,
+        const observability = getObservability();
+        observability.updateContextWithExecution(
+            invocationId,
+            session.id,
+            session.tenantId,
         );
 
-        // Reidratar workingMemory com contexto persistido por sessão (por namespace)
+        const executionTracker = new ExecutionTracker();
+
         try {
             const contextData = (session.contextData || {}) as Record<
                 string,
@@ -217,10 +208,9 @@ export class ContextBuilder {
                     const entries = Object.entries(
                         nsValue as Record<string, unknown>,
                     );
-                    for (const [key, value] of entries) {
-                        // each key/value re-hydrated into working memory
 
-                        await workingMemory.set(namespace, key, value);
+                    for (const [key, value] of entries) {
+                        await workingState.set(namespace, key, value);
                     }
                 }
             }
@@ -244,142 +234,72 @@ export class ContextBuilder {
         return {
             sessionId: session.id,
             tenantId: session.tenantId,
+            agentName: options.agentName || 'default-agent',
             correlationId: options.correlationId || IdGenerator.correlationId(),
             thread: options.thread,
-            agentName: options.agentName,
             invocationId,
-
             state: {
+                // Pure working memory operations - NO automatic persistence
                 get: <T>(namespace: string, key: string, _threadId?: string) =>
-                    workingMemory.get<T>(namespace, key),
+                    workingState.get<T>(namespace, key),
                 set: async (
                     namespace: string,
                     key: string,
                     value: unknown,
                     _threadId?: string,
                 ) => {
-                    await workingMemory.set(namespace, key, value);
-                    // Espelhar no SessionService como contexto persistente por namespace
-                    await this.sessionService.updateSessionContext(session.id, {
-                        [namespace]: { [key]: value },
-                    });
+                    await workingState.set(namespace, key, value);
                 },
-                clear: (namespace: string) => workingMemory.clear(namespace),
+                clear: (namespace: string) => workingState.clear(namespace),
                 getNamespace: async (namespace: string) => {
-                    const nsMap = workingMemory.getNamespace(namespace);
+                    const nsMap = workingState.getNamespace(namespace);
                     return nsMap ? new Map(Object.entries(nsMap)) : undefined;
                 },
-            },
-
-            memory: {
-                store: async (content: unknown, type = 'general') => {
-                    // Suporta dois formatos:
-                    // 1) store(value, type)
-                    // 2) store({ content, type?, key?, metadata?, entityId?, sessionId?, tenantId?, contextId?, expireAt? })
-                    if (
-                        content &&
-                        typeof content === 'object' &&
-                        'content' in (content as Record<string, unknown>)
-                    ) {
-                        const input = content as {
-                            content: unknown;
-                            type?: string;
-                            key?: string;
-                            metadata?: Record<string, unknown>;
-                            entityId?: string;
-                            sessionId?: string;
-                            tenantId?: string;
-                            contextId?: string;
-                            expireAt?: number;
-                        };
-
-                        const stored = await this.memoryManager.store({
-                            key: input.key,
-                            content: input.content,
-                            type: input.type ?? type,
-                            entityId: input.entityId,
-                            sessionId: input.sessionId ?? session.id,
-                            tenantId: input.tenantId ?? session.tenantId,
-                            contextId: input.contextId,
-                            metadata: input.metadata,
-                            expireAt: input.expireAt,
-                        });
-                        return stored.id;
+                // EXPLICIT persistence methods
+                persist: async (namespace?: string) => {
+                    if (namespace) {
+                        // Persist specific namespace
+                        const data = workingState.getNamespace(namespace);
+                        if (data) {
+                            await this.sessionService.updateSessionContext(
+                                session.id,
+                                {
+                                    [namespace]: data,
+                                },
+                            );
+                        }
+                    } else {
+                        // Persist all namespaces
+                        const allData = workingState.getAllNamespaces();
+                        await this.sessionService.updateSessionContext(
+                            session.id,
+                            allData,
+                        );
                     }
-
-                    const stored = await this.memoryManager.store({
-                        content,
-                        type,
-                        sessionId: session.id,
-                        tenantId: session.tenantId,
-                    });
-                    return stored.id;
                 },
-                get: async (id: string) => {
-                    const item = await this.memoryManager.get(id);
-                    return item?.value;
-                },
-                search: async (query: string, limit = 5) => {
-                    const results = await this.memoryManager.search(query, {
-                        topK: limit,
-                        filter: {
-                            tenantId: session.tenantId,
-                            sessionId: session.id,
-                        },
-                    });
-                    return results.map(
-                        (r) => r.metadata?.content || r.text || 'No content',
-                    );
-                },
-                getRecent: async (limit = 5) => {
-                    // Buscar itens recentes escopados ao tenant/session do contexto
-                    const results = await this.memoryManager.query({
-                        tenantId: session.tenantId,
-                        sessionId: session.id,
-                        until: Date.now(),
-                        limit,
-                    });
-                    // Ordenar por timestamp desc para garantir ordem
-                    const sorted = results.sort(
-                        (a, b) => b.timestamp - a.timestamp,
-                    );
-                    return sorted.map((item) => item.value);
-                },
-                query: async (filters: {
-                    type?: string;
-                    key?: string;
-                    since?: number;
-                    until?: number;
-                    limit?: number;
-                }) => {
-                    const results = await this.memoryManager.query({
-                        type: filters.type,
-                        // key support depende do adapter; incluímos via keyPattern ≈ exato
-                        // mas como MemoryQuery não possui key diretamente no manager, fica para adapter
-                        // aqui focamos em filtros multi-tenant/sessão e tempo
-                        tenantId: session.tenantId,
-                        sessionId: session.id,
-                        since: filters.since,
-                        until: filters.until,
-                        limit: filters.limit,
-                    });
-                    return results.map((r) => r.value);
-                },
+                // Check if there are unsaved changes
+                hasChanges: () => false,
             },
 
-            session: {
-                addEntry: async (input: unknown, output: unknown) => {
-                    await this.sessionService.addConversationEntry(
+            conversation: {
+                addMessage: async (
+                    role: 'user' | 'assistant' | 'system',
+                    content: string,
+                    metadata?: Record<string, unknown>,
+                ) => {
+                    await this.sessionService.addMessage(
                         session.id,
-                        input,
-                        output,
+                        role,
+                        content,
+                        metadata,
+                        session.tenantId,
                     );
                 },
                 getHistory: async () => {
-                    const currentSession = await this.sessionService.getSession(
+                    return await this.sessionService.getConversationHistory(
                         session.id,
+                        session.tenantId,
                     );
-                    return currentSession?.conversationHistory || [];
                 },
                 updateMetadata: async (metadata: Record<string, unknown>) => {
                     await this.sessionService.updateSessionMetadata(
@@ -388,64 +308,11 @@ export class ContextBuilder {
                     );
                 },
             },
-
-            track: {
-                toolUsage: async (
-                    toolName: string,
-                    params: unknown,
-                    result: unknown,
-                    success: boolean,
-                ) => {
-                    await this.sessionService.addConversationEntry(
-                        session.id,
-                        { type: 'tool_call', toolName, params },
-                        { type: 'tool_result', result, success },
-                        'system',
-                        { timestamp: Date.now() },
-                    );
-                },
-                plannerStep: async (step: unknown) => {
-                    await this.sessionService.addConversationEntry(
-                        session.id,
-                        { type: 'planner_step', step },
-                        null,
-                        'system',
-                        { timestamp: Date.now() },
-                    );
-                },
-                error: async (error: Error, context?: unknown) => {
-                    await this.sessionService.addConversationEntry(
-                        session.id,
-                        { type: 'error', context },
-                        {
-                            type: 'error_details',
-                            message: error.message,
-                            stack: error.stack,
-                            timestamp: Date.now(),
-                        },
-                        'system',
-                    );
-                },
-            },
-
+            availableTools: [],
             signal: new AbortController().signal,
-
             cleanup: async () => {},
-
             executionRuntime: {
-                addContextValue: async (update: Record<string, unknown>) => {
-                    const contextValues =
-                        (await workingMemory.get<unknown[]>(
-                            'runtime',
-                            'contextValues',
-                        )) || [];
-                    contextValues.push({ ...update, timestamp: Date.now() });
-                    await workingMemory.set(
-                        'runtime',
-                        'contextValues',
-                        contextValues,
-                    );
-                },
+                // Store tool usage patterns in long-term memory
                 storeToolUsagePattern: async (
                     toolName: string,
                     input: unknown,
@@ -460,6 +327,7 @@ export class ContextBuilder {
                         tenantId: session.tenantId,
                     });
                 },
+                // Store execution patterns in long-term memory
                 storeExecutionPattern: async (
                     patternType: string,
                     action: unknown,
@@ -473,21 +341,13 @@ export class ContextBuilder {
                         tenantId: session.tenantId,
                     });
                 },
-                setState: async (
-                    namespace: string,
-                    key: string,
-                    value: unknown,
-                ) => {
-                    await workingMemory.set(namespace, key, value);
-                },
+                // REMOVED duplicated methods - use state.set() directly
             },
             agentIdentity: undefined,
             agentExecutionOptions: options,
             allTools: this.toolEngine?.listTools() || [],
-
-            stepExecution: sharedStepExecution,
-            messageContext: sharedMessageContext,
-            contextManager: sharedContextManager,
+            stepExecution: executionTracker,
+            messageContext: executionTracker,
         };
     }
 
@@ -543,3 +403,66 @@ export const createAgentContext = (
 ): Promise<AgentContext> => {
     return ContextBuilder.getInstance().createAgentContext(options);
 };
+
+/**
+ * Simple base context creation for basic use cases
+ */
+export function createBaseContext(config: {
+    tenantId: string;
+    executionId?: string;
+}): {
+    executionId: string;
+    tenantId: string;
+    startTime: number;
+    status: 'RUNNING' | 'COMPLETED' | 'FAILED';
+    cleanup: () => Promise<void>;
+} {
+    // Validate tenantId for security
+    if (
+        !config.tenantId ||
+        typeof config.tenantId !== 'string' ||
+        config.tenantId.trim() === ''
+    ) {
+        throw new Error(
+            'Valid tenantId is required for multi-tenant isolation',
+        );
+    }
+
+    // Sanitize tenantId - only allow alphanumeric, underscore, and hyphen
+    if (!/^[a-zA-Z0-9_-]+$/.test(config.tenantId)) {
+        throw new Error('TenantId contains invalid characters');
+    }
+
+    return {
+        executionId:
+            config.executionId ||
+            `exec_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+        tenantId: config.tenantId,
+        startTime: Date.now(),
+        status: 'RUNNING' as const,
+        cleanup: async () => {
+            // Simple cleanup placeholder
+        },
+    };
+}
+
+/**
+ * Unified context factory for various context types
+ */
+export class UnifiedContextFactory {
+    createBaseContext(config: { tenantId: string; executionId?: string }) {
+        return createBaseContext(config);
+    }
+
+    createWorkflowContext(config: { tenantId: string; workflowName: string }) {
+        return {
+            ...createBaseContext(config),
+            workflowName: config.workflowName,
+            data: {},
+            currentSteps: [],
+            completedSteps: [],
+            failedSteps: [],
+            metadata: {},
+        };
+    }
+}

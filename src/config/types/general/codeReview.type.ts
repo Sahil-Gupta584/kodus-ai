@@ -301,6 +301,7 @@ export type CodeReviewConfig = {
     isRequestChangesActive?: boolean;
     kodyRulesGeneratorEnabled?: boolean;
     reviewModeConfig?: ReviewModeConfig;
+    ideRulesSyncEnabled?: boolean;
     kodyFineTuningConfig?: KodyFineTuningConfig;
     isCommitMode?: boolean;
     configLevel?: ConfigLevel;

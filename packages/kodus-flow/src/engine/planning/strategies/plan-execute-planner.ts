@@ -1,4 +1,10 @@
-import { createLogger } from '../../../observability/index.js';
+import {
+    createLogger,
+    getObservability,
+} from '../../../observability/index.js';
+import { createEvent, EVENT_TYPES } from '../../../core/types/events.js';
+import { IdGenerator } from '../../../utils/id-generator.js';
+import { getGlobalMemoryManager } from '../../../core/memory/memory-manager.js';
 import type { LLMAdapter } from '../../../adapters/llm/index.js';
 import type {
     Planner,
@@ -37,6 +43,22 @@ export type {
     PlanStep,
     ExecutionPlan,
 } from '../../../core/types/planning-shared.js';
+
+/**
+ * Helper to create a proper Event for telemetry
+ */
+function createTelemetryEvent(
+    type: string,
+    data: Record<string, unknown> = {},
+) {
+    return createEvent(
+        EVENT_TYPES.SYSTEM_INFO,
+        { message: type, ...data },
+        {
+            threadId: IdGenerator.callId(),
+        },
+    );
+}
 
 export class PlanAndExecutePlanner implements Planner {
     readonly name = 'Plan-and-Execute';
@@ -108,25 +130,34 @@ export class PlanAndExecutePlanner implements Planner {
         try {
             const { agentContext } = context;
 
+            // Guard clause for missing agentContext
+            if (!agentContext) {
+                throw new Error(
+                    'AgentContext is required for final response generation',
+                );
+            }
+
             const blocks: string[] = [];
 
-            const memories = await agentContext?.memory.search(
-                context?.input,
-                3,
-            );
-
-            if (memories && memories.length > 0) {
-                for (const mem of memories) {
-                    const s =
-                        typeof mem === 'string'
-                            ? mem
-                            : JSON.stringify(mem, null, 2);
-                    blocks.push(`<observation>\n${s}\n</observation>`);
+            // 1) Observations from memory (relevant knowledge)
+            const memoryManager = getGlobalMemoryManager();
+            const searchResults = await memoryManager.search(context.input, {
+                topK: 3,
+                filter: {
+                    tenantId: agentContext.tenantId,
+                    sessionId: agentContext.sessionId,
+                },
+            });
+            if (searchResults && searchResults.length > 0) {
+                for (const result of searchResults) {
+                    const content =
+                        result.metadata?.content || result.text || 'No content';
+                    blocks.push(`<observation>\n${content}\n</observation>`);
                 }
             }
 
-            const sessionHistory = await agentContext?.session.getHistory();
-
+            // 2) Recent session entries (tool calls/results, messages, errors, planning events)
+            const sessionHistory = await agentContext.conversation.getHistory();
             if (sessionHistory && sessionHistory.length > 0) {
                 const recent = sessionHistory.slice(-3);
                 for (const entry of recent) {
@@ -470,106 +501,25 @@ export class PlanAndExecutePlanner implements Planner {
 
             const contextParts: string[] = [];
 
-            // 🚀 NEW: Include previous execution results for replan context
-            // if (context.previousExecution) {
-            //     contextParts.push('\n🔄 Previous Execution Results:');
-
-            //     const { plan, result, preservedSteps } =
-            //         context.previousExecution;
-
-            //     // Previous plan summary
-            //     contextParts.push(`**Previous Plan:** ${plan.goal}`);
-            //     contextParts.push(`**Strategy:** ${plan.strategy}`);
-            //     contextParts.push(`**Total Steps:** ${plan.steps.length}`);
-
-            //     // Execution results
-            //     contextParts.push(`**Execution Result:** ${result.type}`);
-            //     contextParts.push(
-            //         `**Successful Steps:** ${result.successfulSteps.length}`,
-            //     );
-            //     contextParts.push(
-            //         `**Failed Steps:** ${result.failedSteps.length}`,
-            //     );
-            //     contextParts.push(
-            //         `**Execution Time:** ${result.executionTime}ms`,
-            //     );
-
-            //     // Preserved steps (successful ones that can be reused)
-            //     if (preservedSteps.length > 0) {
-            //         contextParts.push(
-            //             `**Preserved Steps (${preservedSteps.length}):**`,
-            //         );
-            //         preservedSteps.forEach((step, i) => {
-            //             contextParts.push(
-            //                 `  ${i + 1}. ${step.step.description} (${step.step.tool})`,
-            //             );
-            //             if (step.result) {
-            //                 const resultStr =
-            //                     typeof step.result === 'string'
-            //                         ? step.result
-            //                         : JSON.stringify(step.result);
-            //                 contextParts.push(
-            //                     `     Result: ${resultStr.substring(0, 100)}${
-            //                         resultStr.length > 100 ? '...' : ''
-            //                     }`,
-            //                 );
-            //             }
-            //         });
-            //     }
-
-            //     // Failed steps for analysis
-            //     if (result.failedSteps.length > 0) {
-            //         contextParts.push(
-            //             `**Failed Steps (${result.failedSteps.length}):**`,
-            //         );
-            //         result.failedSteps.forEach((stepId, i) => {
-            //             const step = plan.steps.find((s) => s.id === stepId);
-            //             if (step) {
-            //                 contextParts.push(
-            //                     `  ${i + 1}. ${step.description} (${step.tool})`,
-            //                 );
-            //             }
-            //         });
-            //     }
-
-            //     // Feedback from previous execution
-            //     if (result.feedback) {
-            //         contextParts.push(
-            //             `**Previous Feedback:** ${result.feedback}`,
-            //         );
-            //     }
-
-            //     // Failure analysis if available
-            //     if (context.previousExecution.failureAnalysis) {
-            //         const analysis = context.previousExecution.failureAnalysis;
-            //         contextParts.push(
-            //             `**Primary Cause:** ${analysis.primaryCause}`,
-            //         );
-            //         if (analysis.failurePatterns.length > 0) {
-            //             contextParts.push(
-            //                 `**Failure Patterns:** ${analysis.failurePatterns.join(', ')}`,
-            //             );
-            //         }
-            //     }
-            // }
-
-            const memories = await context.agentContext.memory.search(
-                currentInput,
-                3,
-            );
-            if (memories && memories.length > 0) {
+            const memoryManager = getGlobalMemoryManager();
+            const searchResults = await memoryManager.search(currentInput, {
+                topK: 3,
+                filter: {
+                    tenantId: context.agentContext.tenantId,
+                    sessionId: context.agentContext.sessionId,
+                },
+            });
+            if (searchResults && searchResults.length > 0) {
                 contextParts.push('\n📚 Relevant knowledge:');
-                memories.forEach((memory, i) => {
+                searchResults.forEach((result, i) => {
                     const memoryStr =
-                        typeof memory === 'string'
-                            ? memory
-                            : JSON.stringify(memory);
+                        result.metadata?.content || result.text || 'No content';
                     contextParts.push(`${i + 1}. ${memoryStr}`);
                 });
             }
 
             const sessionHistory =
-                await context.agentContext.session.getHistory();
+                await context.agentContext.conversation.getHistory();
             if (sessionHistory && sessionHistory.length > 0) {
                 const relevantEntries = sessionHistory
                     .filter((entry) => {
@@ -612,37 +562,30 @@ export class PlanAndExecutePlanner implements Planner {
                 }
             }
 
-            // ✅ ENHANCED: Use ContextManager for unified operations
-            if (context.agentContext.contextManager) {
-                await context.agentContext.contextManager.addToContext(
-                    'state',
-                    'planner_lastInput',
-                    currentInput,
-                    context.agentContext,
-                );
-
-                await context.agentContext.contextManager.addToContext(
-                    'session',
-                    'memory_context_request',
-                    { input: currentInput, timestamp: Date.now() },
-                    context.agentContext,
-                );
-            } else {
-                // ✅ FALLBACK: Use traditional APIs
+            // Context operations simplified
+            if (context.agentContext) {
                 await context.agentContext.state.set(
                     'planner',
                     'lastInput',
                     currentInput,
                 );
 
-                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Add session entry
-                await context.agentContext.session.addEntry(
-                    { type: 'memory_context_request', input: currentInput },
-                    {
-                        type: 'memory_context_response',
-                        context: contextParts.join('\n'),
-                    },
-                );
+                // ✅ CLEAN ARCHITECTURE: Use telemetry for runtime debug data instead of polluting conversation
+                if (context.agentContext) {
+                    const observability = getObservability();
+                    void observability.telemetry.traceEvent(
+                        createTelemetryEvent('memory_context_request', {
+                            input: currentInput,
+                            context: contextParts.join('\n'),
+                            sessionId: context.agentContext.sessionId,
+                            agentName: context.agentContext.agentName,
+                            correlationId: context.agentContext.correlationId,
+                        }),
+                        async () => {
+                            return {};
+                        },
+                    );
+                }
             }
 
             return contextParts.join('\n');
@@ -1022,11 +965,10 @@ export class PlanAndExecutePlanner implements Planner {
                 const replansCount = (
                     previousPlan.metadata as Record<string, unknown> | undefined
                 )?.replansCount;
-                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Add replan completed entry
-                await context.agentContext.session.addEntry(
-                    { type: 'planner.replan.completed' },
-                    {
-                        type: 'replan_completed_details',
+                // ✅ CLEAN ARCHITECTURE: Use telemetry for runtime debug data instead of polluting conversation
+                const observability = getObservability();
+                void observability.telemetry.traceEvent(
+                    createTelemetryEvent('planner.replan.completed', {
                         previousPlanId: previousPlan.id,
                         newPlanId: newPlan.id,
                         replansCount,
@@ -1036,6 +978,12 @@ export class PlanAndExecutePlanner implements Planner {
                                 | Record<string, unknown>
                                 | undefined
                         )?.replanCause,
+                        sessionId: context.agentContext.sessionId,
+                        agentName: context.agentContext.agentName,
+                        correlationId: context.agentContext.correlationId,
+                    }),
+                    async () => {
+                        return {};
                     },
                 );
             } catch {}
@@ -1058,24 +1006,29 @@ export class PlanAndExecutePlanner implements Planner {
                     suggestedNextStep,
                 });
 
-                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Salvar entrada na session
-                await context.agentContext.session.addEntry(
-                    {
-                        type: 'plan_created',
-                        goal: input,
-                        stepsCount: newPlan.steps.length,
-                    },
-                    {
-                        type: 'plan_details',
-                        planId: newPlan.id,
-                        strategy: newPlan.strategy,
-                        signals: newPlan.metadata?.signals,
-                        needs: needs,
-                        noDiscoveryPath,
-                        errors: errorsFromSignals,
-                        suggestedNextStep,
-                    },
-                );
+                // ✅ CLEAN ARCHITECTURE: Use telemetry for runtime debug data instead of polluting conversation
+                if (context.agentContext) {
+                    const observability = getObservability();
+                    void observability.telemetry.traceEvent(
+                        createTelemetryEvent('plan_created', {
+                            goal: input,
+                            stepsCount: newPlan.steps.length,
+                            planId: newPlan.id,
+                            strategy: newPlan.strategy,
+                            signals: newPlan.metadata?.signals,
+                            needs: needs,
+                            noDiscoveryPath,
+                            errors: errorsFromSignals,
+                            suggestedNextStep,
+                            sessionId: context.agentContext.sessionId,
+                            agentName: context.agentContext.agentName,
+                            correlationId: context.agentContext.correlationId,
+                        }),
+                        async () => {
+                            return {};
+                        },
+                    );
+                }
             } catch (error) {
                 this.logger.warn('Failed to persist plan data', {
                     error: error as Error,
@@ -1157,15 +1110,20 @@ export class PlanAndExecutePlanner implements Planner {
                         ? Date.now() -
                           (currentPlan.metadata.startTime as number)
                         : undefined;
-                    // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Add session entry
-                    await context.agentContext.session.addEntry(
-                        { type: 'planner.replan.completed' },
-                        {
-                            type: 'replan_completed_details',
+                    // ✅ CLEAN ARCHITECTURE: Use telemetry for runtime debug data instead of polluting conversation
+                    const observability = getObservability();
+                    void observability.telemetry.traceEvent(
+                        createTelemetryEvent('planner.replan.completed', {
                             planId: currentPlan.id,
                             completedAt: Date.now(),
                             elapsedMs: elapsed,
                             cause: currentPlan.metadata?.replanCause,
+                            sessionId: context.agentContext.sessionId,
+                            agentName: context.agentContext.agentName,
+                            correlationId: context.agentContext.correlationId,
+                        }),
+                        async () => {
+                            return {};
                         },
                     );
                 } catch {}
@@ -1176,21 +1134,10 @@ export class PlanAndExecutePlanner implements Planner {
                 const stepId = `step-final-${Date.now()}`;
                 const endTime = Date.now();
 
-                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Track context operations
-                context.agentContext.stepExecution.addContextOperation(
-                    stepId,
-                    'session',
-                    'final_answer',
-                    { content: result.content, timestamp: endTime },
-                );
-
-                // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Track context operations
-                context.agentContext.stepExecution.addContextOperation(
-                    stepId,
-                    'session',
-                    'final_answer',
-                    { content: result.content, timestamp: endTime },
-                );
+                // Context operations simplified
+                // TODO: entender
+                context.agentContext.stepExecution.addContextOperation();
+                context.agentContext.stepExecution.addContextOperation();
 
                 // TODO: MOVER PARA CAMADA DE OBSERVABILIDADE - Update step with real duration
                 context.agentContext.stepExecution.updateStep(stepId, {
@@ -1243,15 +1190,7 @@ export class PlanAndExecutePlanner implements Planner {
                         shouldContinue: false,
                     },
                     duration: 0,
-                    metadata: {
-                        contextOperations: [],
-                        toolCalls: [],
-                        performance: {
-                            thinkDuration: 0,
-                            actDuration: 0,
-                            observeDuration: 0,
-                        },
-                    },
+                    toolCalls: [],
                 };
                 context.history.push(stepExecution);
             }
@@ -1270,12 +1209,19 @@ export class PlanAndExecutePlanner implements Planner {
                         },
                     );
 
-                    // TODO: MOVER PARA CAMADA DE KERNEL/STATE - Add session entry
-                    await context.agentContext.session.addEntry(
-                        { type: 'plan_completed', planId: currentPlan.id },
-                        {
-                            type: 'final_result',
+                    // ✅ CLEAN ARCHITECTURE: Use telemetry for runtime debug data instead of polluting conversation
+                    const observability = getObservability();
+                    void observability.telemetry.traceEvent(
+                        createTelemetryEvent('plan_completed', {
+                            planId: currentPlan.id,
                             content: result.content,
+                            synthesized: result.content,
+                            sessionId: context.agentContext.sessionId,
+                            agentName: context.agentContext.agentName,
+                            correlationId: context.agentContext.correlationId,
+                        }),
+                        async () => {
+                            return {};
                         },
                     );
                 } catch (error) {
