@@ -228,11 +228,9 @@ export class ResponseSynthesizer {
                             typeof step.result === 'string'
                                 ? step.result
                                 : JSON.stringify(step.result);
-                        parts.push(
-                            `    <output>${resultStr.substring(0, 200)}${resultStr.length > 200 ? '...' : ''}</output>`,
-                        );
+                        parts.push(`<output>${resultStr}</output>`);
                     }
-                    parts.push('  </step>');
+                    parts.push('</step>');
                 });
                 parts.push('</success>');
             }
@@ -249,11 +247,9 @@ export class ResponseSynthesizer {
                             typeof step.result === 'string'
                                 ? step.result
                                 : JSON.stringify(step.result);
-                        parts.push(
-                            `    <error>${errorStr.substring(0, 200)}${errorStr.length > 200 ? '...' : ''}</error>`,
-                        );
+                        parts.push(`    <error>${errorStr}</error>`);
                     }
-                    parts.push('  </step>');
+                    parts.push('</step>');
                 });
                 parts.push('</errors>');
             }
@@ -279,9 +275,7 @@ export class ResponseSynthesizer {
                             ? result
                             : JSON.stringify(result);
                     parts.push(`  <result index="${idx + 1}">`);
-                    parts.push(
-                        `    <output>${resultStr.substring(0, 200)}${resultStr.length > 200 ? '...' : ''}</output>`,
-                    );
+                    parts.push(`    <output>${resultStr}</output>`);
                     parts.push('  </result>');
                 });
                 parts.push('</success>');

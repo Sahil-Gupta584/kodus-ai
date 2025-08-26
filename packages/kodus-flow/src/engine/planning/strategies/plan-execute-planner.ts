@@ -33,6 +33,7 @@ import type {
     PlanStep,
     ExecutionPlan,
     ReplanContext,
+    PlanSignals,
 } from '../../../core/types/planning-shared.js';
 import { UNIFIED_STATUS } from '../../../core/types/planning-shared.js';
 
@@ -507,6 +508,7 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         try {
+            // ✅ PRIORITY 1: Use enhanced message context if available
             if (context.agentContext.messageContext) {
                 const enhancedContext =
                     await context.agentContext.messageContext.getContextForModel(
@@ -521,6 +523,9 @@ export class PlanAndExecutePlanner implements Planner {
 
             const contextParts: string[] = [];
 
+            // ✅ PRIORITY 2: Semantic memory search (knowledge base)
+            // NOTE: This is also handled by ExecutionTracker, but we keep it here
+            // for cases where messageContext is not available
             const memoryManager = getGlobalMemoryManager();
             const searchResults = await memoryManager.search(currentInput, {
                 topK: 3,
@@ -538,6 +543,7 @@ export class PlanAndExecutePlanner implements Planner {
                 });
             }
 
+            // ✅ PRIORITY 3: Session history with specific filtering
             const sessionHistory =
                 await context.agentContext.conversation.getHistory();
             if (sessionHistory && sessionHistory.length > 0) {
@@ -546,16 +552,17 @@ export class PlanAndExecutePlanner implements Planner {
                         const entryObj = entry as Record<string, unknown>;
                         const input = entryObj.input as Record<string, unknown>;
 
-                        // Only include user inputs and final responses
+                        // Only include specific types that are relevant for planning
                         return (
                             input?.type === 'memory_context_request' ||
-                            input?.type === 'plan_completed'
+                            input?.type === 'plan_completed' ||
+                            input?.type === 'plan_created'
                         );
                     })
                     .slice(-3); // Get last 3 relevant entries
 
                 if (relevantEntries.length > 0) {
-                    contextParts.push('\n💬 Recent conversation:');
+                    contextParts.push('\n💬 Planning context:');
                     relevantEntries.forEach((entry, i) => {
                         const formattedEntry = this.formatSessionEntry(entry);
                         if (formattedEntry) {
@@ -565,7 +572,7 @@ export class PlanAndExecutePlanner implements Planner {
                 }
             }
 
-            // 3. WORKING STATE: Get relevant planner state
+            // ✅ PRIORITY 4: Working state (planner context only)
             const plannerState =
                 await context.agentContext.state.getNamespace('planner');
             if (plannerState && plannerState.size > 0) {
@@ -582,30 +589,13 @@ export class PlanAndExecutePlanner implements Planner {
                 }
             }
 
-            // Context operations simplified
+            // ✅ SIMPLIFIED: Just save current input, no telemetry pollution
             if (context.agentContext) {
                 await context.agentContext.state.set(
                     'planner',
                     'lastInput',
                     currentInput,
                 );
-
-                // ✅ CLEAN ARCHITECTURE: Use telemetry for runtime debug data instead of polluting conversation
-                if (context.agentContext) {
-                    const observability = getObservability();
-                    void observability.telemetry.traceEvent(
-                        createTelemetryEvent('memory_context_request', {
-                            input: currentInput,
-                            context: contextParts.join('\n'),
-                            sessionId: context.agentContext.sessionId,
-                            agentName: context.agentContext.agentName,
-                            correlationId: context.agentContext.correlationId,
-                        }),
-                        async () => {
-                            return {};
-                        },
-                    );
-                }
             }
 
             return contextParts.join('\n');
@@ -635,11 +625,6 @@ export class PlanAndExecutePlanner implements Planner {
                 return `User: "${userInput}"`;
             }
 
-            if (inputObj.type === 'execution_step') {
-                const thought = inputObj.thought as string;
-                return `Agent: ${thought}`;
-            }
-
             if (inputObj.type === 'plan_created') {
                 const goal = inputObj.goal as string;
                 return `Planning: "${goal}"`;
@@ -652,21 +637,6 @@ export class PlanAndExecutePlanner implements Planner {
                               .synthesized as string)
                         : 'Completed';
                 return `Response: "${synthesized}"`;
-            }
-
-            if (inputObj.type === 'step_execution_start') {
-                const tool = inputObj.tool as string;
-                return `Tool: ${tool}`;
-            }
-        }
-
-        if (output && typeof output === 'object') {
-            const outputObj = output as Record<string, unknown>;
-            if (outputObj.synthesized) {
-                return `Response: "${outputObj.synthesized as string}"`;
-            }
-            if (outputObj.observation) {
-                return `Result: "${outputObj.observation as string}"`;
             }
         }
 
@@ -768,7 +738,7 @@ export class PlanAndExecutePlanner implements Planner {
 
         const memoryContext = await this.getMemoryContext(context, input);
 
-        const planningHistory = this.buildPlanningHistory(context);
+        // const planningHistory = this.buildPlanningHistory(context); // REMOVED to reduce context noise
 
         const agentIdentity = context.agentContext?.agentIdentity;
 
@@ -790,7 +760,6 @@ export class PlanAndExecutePlanner implements Planner {
             goal: input,
             availableTools: this.getAvailableToolsForPlanning(context),
             memoryContext,
-            planningHistory,
             additionalContext: {
                 ...context.plannerMetadata,
                 agentIdentity,
@@ -1511,26 +1480,6 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         return invalidSteps;
-    }
-
-    private buildPlanningHistory(context: PlannerExecutionContext): string {
-        if (context.history.length === 0) {
-            return 'No execution history available';
-        }
-
-        const recentActions = context.history.slice(-3);
-        let history = '\nRecent execution history:\n';
-
-        recentActions.forEach((entry, index) => {
-            const actionType = entry.action?.type || 'unknown';
-            const success = !entry.result || entry.result.type !== 'error';
-            history += `${index + 1}. ${actionType} - ${success ? '✅ Success' : '❌ Failed'}\n`;
-            if (entry.observation?.feedback) {
-                history += `   Result: ${entry.observation.feedback}\n`;
-            }
-        });
-
-        return history;
     }
 
     private validateDependencies(steps: PlanStep[]): {
@@ -2935,16 +2884,7 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
                 }));
         }
 
-        // Extract signals from first executed step
-        const signals = {
-            failurePatterns: [] as string[],
-            primaryCause: '',
-            suggestedStrategy: 'plan-execute',
-            needs: [] as string[],
-            noDiscoveryPath: [] as string[],
-            errors: [] as string[],
-            suggestedNextStep: '',
-        };
+        const signals: PlanSignals = {};
 
         if (executedSteps.length > 0) {
             const firstStep = executedSteps[0] as Record<string, unknown>;
@@ -2956,25 +2896,58 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
                 | undefined;
 
             if (planExecutionResult) {
-                const failurePatterns = planExecutionResult.failurePatterns as
-                    | string[]
-                    | undefined;
-                const primaryCause = planExecutionResult.primaryCause as
-                    | string
-                    | undefined;
-                const suggestedStrategy =
-                    planExecutionResult.suggestedStrategy as string | undefined;
-
-                if (failurePatterns && Array.isArray(failurePatterns)) {
-                    signals.failurePatterns = failurePatterns;
+                if (planExecutionResult.failurePatterns) {
+                    signals.failurePatterns =
+                        planExecutionResult.failurePatterns as string[];
                 }
-                if (primaryCause) {
-                    signals.primaryCause = primaryCause;
+                if (planExecutionResult.needs) {
+                    signals.needs = planExecutionResult.needs as string[];
                 }
-                if (suggestedStrategy) {
-                    signals.suggestedStrategy = suggestedStrategy;
+                if (planExecutionResult.noDiscoveryPath) {
+                    signals.noDiscoveryPath =
+                        planExecutionResult.noDiscoveryPath as string[];
+                }
+                if (planExecutionResult.errors) {
+                    signals.errors = planExecutionResult.errors as string[];
+                }
+                if (planExecutionResult.suggestedNextStep) {
+                    signals.suggestedNextStep =
+                        planExecutionResult.suggestedNextStep as string;
                 }
             }
+        }
+
+        // Generate additional signals from execution data
+        if (toolsThatFailed.length > 0) {
+            const failureReasons = toolsThatFailed.map(
+                (tool: Record<string, unknown>) => {
+                    const error = tool.error as string;
+                    const toolName = tool.tool as string;
+                    return `${toolName}: ${error}`;
+                },
+            );
+
+            if (!signals.failurePatterns) {
+                signals.failurePatterns = [];
+            }
+
+            signals.failurePatterns.push(...failureReasons);
+        }
+
+        if (toolsNotExecuted.length > 0) {
+            const missingTools = toolsNotExecuted.map(
+                (tool: Record<string, unknown>) => {
+                    const toolName = tool.tool as string;
+                    const description = tool.description as string;
+                    return `${toolName}: ${description}`;
+                },
+            );
+
+            if (!signals.noDiscoveryPath) {
+                signals.noDiscoveryPath = [];
+            }
+
+            signals.noDiscoveryPath.push(...missingTools);
         }
 
         // Build current plan execution data

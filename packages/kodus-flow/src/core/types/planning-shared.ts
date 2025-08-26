@@ -172,19 +172,6 @@ export interface PlanStep {
 }
 
 /**
- * Plan execution signals (from planner output)
- */
-export interface PlanSignals {
-    needs?: string[];
-    noDiscoveryPath?: string[];
-    errors?: string[];
-    suggestedNextStep?: string;
-    confidence?: number;
-    estimatedDuration?: number;
-    riskLevel?: 'low' | 'medium' | 'high';
-}
-
-/**
  * Execution plan interface
  */
 export interface ExecutionPlan {
@@ -273,14 +260,16 @@ export interface PlanExecutionData {
         toolsThatFailed?: unknown[];
         toolsNotExecuted?: unknown[];
     };
-    signals?: {
-        failurePatterns?: string[];
-        needs?: string[];
-        noDiscoveryPath?: string[];
-        errors?: string[];
-        suggestedNextStep?: string;
-    };
+    signals?: PlanSignals;
 }
+
+export type PlanSignals = {
+    failurePatterns?: string[];
+    needs?: string[];
+    noDiscoveryPath?: string[];
+    errors?: string[];
+    suggestedNextStep?: string;
+};
 
 export interface ReplanContext {
     isReplan: boolean;

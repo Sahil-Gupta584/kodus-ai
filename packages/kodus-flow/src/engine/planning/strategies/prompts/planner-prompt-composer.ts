@@ -158,25 +158,14 @@ export class PlannerPromptComposer {
     private composeUserPrompt(context: PromptCompositionContext): string {
         const sections: string[] = [];
 
-        // 1. Tool usage instructions
         sections.push(this.getToolUsageInstructions());
 
-        // 2. Available tools - enhanced list
         sections.push(this.formatAvailableTools(context.availableTools));
 
-        // 3. Context information
         if (context.memoryContext) {
             sections.push(`## 📋 CONTEXT\n${context.memoryContext.trim()}`);
         }
 
-        // 4. Planning history
-        if (context.planningHistory) {
-            sections.push(
-                `## 📚 PREVIOUS ATTEMPTS\n${context.planningHistory.trim()}`,
-            );
-        }
-
-        // 5. Replan context (if this is a replan attempt) - SKIP additionalContext to save tokens
         if (context?.replanContext?.isReplan) {
             sections.push(
                 this.formatReplanContext({
@@ -184,23 +173,19 @@ export class PlannerPromptComposer {
                     isReplan: context.replanContext?.isReplan,
                 }),
             );
-            // Skip additionalContext in replan mode - save 15K+ tokens
-        } else {
-            // 6. Additional context (user-provided info only) - ONLY in normal mode
-            if (
-                context.additionalContext &&
-                Object.keys(context.additionalContext).length > 0
-            ) {
-                sections.push(
-                    this.formatAdditionalContext(context.additionalContext),
-                );
-            }
         }
 
-        // 6. The user request
+        if (
+            context.additionalContext &&
+            Object.keys(context.additionalContext).length > 0
+        ) {
+            sections.push(
+                this.formatAdditionalContext(context.additionalContext),
+            );
+        }
+
         sections.push(`## 🎯 USER REQUEST\n"${context.goal}"`);
 
-        // 7. Final instruction
         sections.push(
             '## ✅ TASK\nCreate an executable plan using the available tools above.',
         );
@@ -1426,29 +1411,6 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
             });
         }
 
-        // Handle generic metadata fields (agnostic approach)
-        const metadataFields = Object.entries(additionalContext)
-            .filter(([key, value]) => {
-                // Skip already handled fields and system fields
-                const skipFields = [
-                    'userContext',
-                    'agentIdentity',
-                    'replanContext',
-                    'isReplan',
-                ];
-                return (
-                    !skipFields.includes(key) &&
-                    value !== undefined &&
-                    value !== null
-                );
-            })
-            .map(([key, value]) => `**${key}:** ${formatValue(value)}`);
-
-        if (metadataFields.length > 0) {
-            sections.push('### 📋 METADATA');
-            sections.push(...metadataFields);
-        }
-
         return sections.join('\n');
     }
 
@@ -1466,7 +1428,6 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
                 unknown
             >;
 
-            // 📋 Executed Plan Info
             if (replan.executedPlan) {
                 const executedPlan = replan.executedPlan as Record<
                     string,
@@ -1475,26 +1436,31 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
                 const plan = executedPlan.plan as Record<string, unknown>;
 
                 sections.push('### 📋 EXECUTED PLAN');
-                if (plan.id) sections.push(`**Plan ID:** ${plan.id}`);
-                if (plan.goal) sections.push(`**Goal:** "${plan.goal}"`);
-                // 📊 Execution Data
+                if (plan.id) {
+                    sections.push(`**Plan ID:** ${plan.id}`);
+                }
+
                 const executionData = executedPlan.executionData as Record<
                     string,
                     unknown
                 >;
+
                 if (executionData) {
-                    sections.push('### 📊 EXECUTION DATA');
+                    sections.push('###EXECUTION DATA');
 
                     const toolsThatWorked =
                         executionData.toolsThatWorked as unknown[];
                     if (toolsThatWorked && toolsThatWorked.length > 0) {
-                        sections.push(
-                            `**✅ Successful Tools:** ${toolsThatWorked.length}`,
-                        );
                         toolsThatWorked.forEach((tool: unknown) => {
                             const toolData = tool as Record<string, unknown>;
+                            const toolName = toolData.tool || toolData.stepId;
+                            const description =
+                                toolData.description || 'No description';
+                            const result = toolData.result || 'No result';
+
+                            sections.push(`  - ${toolName}: ${description}`);
                             sections.push(
-                                `  - ${toolData.tool || toolData.stepId}: ${toolData.description || 'No description'}`,
+                                `    Result: ${typeof result === 'string' ? result : JSON.stringify(result)}`,
                             );
                         });
                     }
@@ -1503,7 +1469,7 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
                         executionData.toolsThatFailed as unknown[];
                     if (toolsThatFailed && toolsThatFailed.length > 0) {
                         sections.push(
-                            `**❌ Failed Tools:** ${toolsThatFailed.length}`,
+                            `**Failed Tools:** ${toolsThatFailed.length}`,
                         );
                         toolsThatFailed.forEach((tool: unknown) => {
                             const toolData = tool as Record<string, unknown>;
@@ -1517,7 +1483,7 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
                         executionData.toolsNotExecuted as unknown[];
                     if (toolsNotExecuted && toolsNotExecuted.length > 0) {
                         sections.push(
-                            `**⏭️ Not Executed:** ${toolsNotExecuted.length}`,
+                            `**Not Executed:** ${toolsNotExecuted.length}`,
                         );
                         toolsNotExecuted.forEach((tool: unknown) => {
                             const toolData = tool as Record<string, unknown>;
@@ -1528,27 +1494,34 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
                     }
                 }
 
-                // 🚨 Signals Analysis
                 const signals = executedPlan.signals as Record<string, unknown>;
                 if (signals) {
-                    sections.push('### 🚨 SIGNALS ANALYSIS');
-
                     const failurePatterns = signals.failurePatterns as string[];
-                    if (failurePatterns && failurePatterns.length > 0) {
-                        sections.push(
-                            `**Failure Patterns:** ${failurePatterns.join(', ')}`,
-                        );
-                    }
-
                     const needs = signals.needs as string[];
-                    if (needs && needs.length > 0) {
-                        sections.push(`**Needs:** ${needs.join(', ')}`);
-                    }
+                    const suggestedNextStep = signals.suggestedNextStep;
 
-                    if (signals.suggestedNextStep) {
-                        sections.push(
-                            `**Suggested Next Step:** ${signals.suggestedNextStep}`,
-                        );
+                    if (
+                        (failurePatterns && failurePatterns.length > 0) ||
+                        (needs && needs.length > 0) ||
+                        suggestedNextStep
+                    ) {
+                        sections.push('### 🚨 SIGNALS ANALYSIS');
+
+                        if (failurePatterns && failurePatterns.length > 0) {
+                            sections.push(
+                                `**Failure Patterns:** ${failurePatterns.join(', ')}`,
+                            );
+                        }
+
+                        if (needs && needs.length > 0) {
+                            sections.push(`**Needs:** ${needs.join(', ')}`);
+                        }
+
+                        if (suggestedNextStep) {
+                            sections.push(
+                                `**Suggested Next Step:** ${suggestedNextStep}`,
+                            );
+                        }
                     }
                 }
             }

@@ -3815,12 +3815,6 @@ export abstract class AgentCore<
 
                 executionHistory.push(iterationResult);
 
-                await this.updateExecutionState(
-                    context,
-                    iterationResult,
-                    iterations,
-                );
-
                 if (
                     this.shouldStopExecution(
                         iterationResult,
@@ -4236,43 +4230,6 @@ export abstract class AgentCore<
         }
 
         return finalResult;
-    }
-
-    private async updateExecutionState(
-        context: AgentContext,
-        iterationResult: {
-            thought: AgentThought;
-            action: AgentAction;
-            result: ActionResult;
-            observation: ResultAnalysis;
-        },
-        iterations: number,
-    ): Promise<void> {
-        // ✅ CLEAN ARCHITECTURE: Use telemetry for runtime debug data instead of polluting conversation
-        //const observability = getObservability();
-        // TODO: Fix telemetry Event structure
-        // await observability.telemetry.traceEvent(...);
-        // Log for now
-        this.logger.debug('Execution step', {
-            iteration: iterations,
-            thought: iterationResult.thought.reasoning,
-            action: iterationResult.action,
-        });
-
-        // ✅ CLEAN ARCHITECTURE: Use state for agent execution data
-        await context.state.set('agent', 'last_action', iterationResult.action);
-        await context.state.set('agent', 'current_iteration', iterations);
-        await context.state.set('agent', 'last_result', iterationResult.result);
-        await context.state.set(
-            'agent',
-            'last_observation',
-            iterationResult.observation,
-        );
-        await context.state.set(
-            'agent',
-            'is_complete',
-            iterationResult.observation.isComplete,
-        );
     }
 
     private shouldStopExecution(
