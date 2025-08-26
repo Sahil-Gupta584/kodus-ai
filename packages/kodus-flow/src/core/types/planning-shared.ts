@@ -286,7 +286,6 @@ export interface ReplanContext {
         strategy: string;
     };
     preservedSteps: unknown[];
-    suggestions?: unknown;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
