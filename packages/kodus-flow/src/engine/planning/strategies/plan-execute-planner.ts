@@ -2854,11 +2854,7 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
         );
 
         const toolsThatWorked = allExecutedSteps
-            .filter(
-                (execStep) =>
-                    (execStep.result as Record<string, unknown>)?.success ===
-                    true,
-            )
+            .filter((execStep) => execStep.success === true)
             .map((execStep) => {
                 const stepResult = execStep.result as Record<string, unknown>;
                 const stepData = execStep.step as Record<string, unknown>;
@@ -2867,7 +2863,7 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
                     stepId: execStep.stepId as string,
                     tool: stepData?.tool as string,
                     description: stepData?.description as string,
-                    success: true,
+                    success: execStep.success,
                     result: stepResult,
                     executedAt: stepResult?.executedAt as number,
                     duration: stepResult?.duration as number,
@@ -2875,11 +2871,7 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
             });
 
         const toolsThatFailed = allExecutedSteps
-            .filter(
-                (execStep) =>
-                    (execStep.result as Record<string, unknown>)?.success ===
-                    false,
-            )
+            .filter((execStep) => execStep.success === false)
             .map((execStep) => {
                 const stepResult = execStep.result as Record<string, unknown>;
                 const stepData = execStep.step as Record<string, unknown>;
@@ -2888,7 +2880,7 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
                     stepId: execStep.stepId as string,
                     tool: stepData?.tool as string,
                     description: stepData?.description as string,
-                    success: false,
+                    success: execStep.success,
                     error: stepResult?.error as string,
                     result: stepResult,
                     executedAt: stepResult?.executedAt as number,
@@ -2896,15 +2888,52 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
                 };
             });
 
-        const toolsNotExecuted = allPlanSteps
-            .filter((planStep) => !executedStepIds.has(planStep.id as string))
-            .map((planStep) => ({
-                stepId: planStep.id as string,
-                tool: planStep.tool as string,
-                description: planStep.description as string,
-                status: planStep.status as string,
-                notExecuted: true,
-            }));
+        // Extract replanContext from executed steps if available
+        let toolsNotExecuted: Array<Record<string, unknown>> = [];
+
+        // Try to get replanContext from executed steps
+        for (const step of executedSteps) {
+            const stepData = step as Record<string, unknown>;
+            const result = stepData.result as
+                | Record<string, unknown>
+                | undefined;
+            const replanContext = result?.replanContext as
+                | Record<string, unknown>
+                | undefined;
+
+            const toolsNotExecutedData = (
+                replanContext as {
+                    executedPlan?: {
+                        executionData?: {
+                            toolsNotExecuted?: Array<Record<string, unknown>>;
+                        };
+                    };
+                }
+            )?.executedPlan?.executionData?.toolsNotExecuted;
+            if (toolsNotExecutedData) {
+                toolsNotExecuted = toolsNotExecutedData as Array<
+                    Record<string, unknown>
+                >;
+                break;
+            }
+        }
+
+        // Fallback: build from plan steps if no replanContext data found
+        if (toolsNotExecuted.length === 0) {
+            // Fallback: build from plan steps
+            toolsNotExecuted = allPlanSteps
+                .filter(
+                    (planStep: Record<string, unknown>) =>
+                        !executedStepIds.has(planStep.id as string),
+                )
+                .map((planStep: Record<string, unknown>) => ({
+                    stepId: planStep.id as string,
+                    tool: planStep.tool as string,
+                    description: planStep.description as string,
+                    status: planStep.status as string,
+                    notExecuted: true,
+                }));
+        }
 
         // Extract signals from first executed step
         const signals = {
