@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Patch, Post, Query } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    Get,
+    Inject,
+    Patch,
+    Post,
+    Query,
+} from '@nestjs/common';
 import { GetUserUseCase } from '@/core/application/use-cases/user/get-user.use-case';
 import { InviteDataUserUseCase } from '@/core/application/use-cases/user/invite-data.use-case';
 
@@ -6,10 +14,11 @@ import { AcceptUserInvitationDto } from '../dtos/accept-user-invitation.dto';
 import { AcceptUserInvitationUseCase } from '@/core/application/use-cases/user/accept-user-invitation.use-case';
 import { CheckUserWithEmailUserUseCase } from '@/core/application/use-cases/user/check-user-email.use-case';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
-import { UpdateUserUseCase } from '@/core/application/use-cases/user/update.use-case';
-import { UpdateUserDto } from '../dtos/update.dto';
 import { JoinOrganizationDto } from '../dtos/join-organization.dto';
 import { JoinOrganizationUseCase } from '@/core/application/use-cases/user/join-organization.use-case';
+import { UpdateUserDto } from '../dtos/update.dto';
+import { UpdateUserUseCase } from '@/core/application/use-cases/user/update.use-case';
+import { REQUEST } from '@nestjs/core';
 
 @Controller('user')
 export class UsersController {
@@ -19,6 +28,12 @@ export class UsersController {
         private readonly acceptUserInvitationUseCase: AcceptUserInvitationUseCase,
         private readonly checkUserWithEmailUserUseCase: CheckUserWithEmailUserUseCase,
         private readonly joinOrganizationUseCase: JoinOrganizationUseCase,
+        private readonly updateUserUseCase: UpdateUserUseCase,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: { organization: { uuid: string }; uuid: string };
+        },
     ) {}
 
     @Get('/email')
@@ -50,5 +65,16 @@ export class UsersController {
     @Post('/join-organization')
     public async joinOrganization(@Body() body: JoinOrganizationDto) {
         return await this.joinOrganizationUseCase.execute(body);
+    }
+
+    @Patch('/')
+    public async update(@Body() body: UpdateUserDto) {
+        const userId = this.request.user?.uuid;
+
+        if (!userId) {
+            throw new Error('User not found in request');
+        }
+
+        return await this.updateUserUseCase.execute(userId, body);
     }
 }

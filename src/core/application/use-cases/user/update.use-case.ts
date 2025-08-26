@@ -10,6 +10,8 @@ import {
 } from '@/core/domain/user/contracts/user.service.contract';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import posthogClient from '@/shared/utils/posthog';
+import { UpdateUserDto } from '@/core/infrastructure/http/dtos/update.dto';
+import { UserRole } from '@/core/domain/user/enums/userRole.enum';
 
 export class UpdateUserUseCase implements IUseCase {
     constructor(
@@ -19,7 +21,7 @@ export class UpdateUserUseCase implements IUseCase {
         private readonly passwordService: IPasswordService,
     ) {}
 
-    public async execute(uuid: string, data: Partial<IUser>): Promise<IUser> {
+    public async execute(uuid: string, data: UpdateUserDto): Promise<IUser> {
         const usersExists = await this.usersService.count({ uuid });
 
         if (!usersExists) {
@@ -33,7 +35,18 @@ export class UpdateUserUseCase implements IUseCase {
             );
         }
 
-        const user = await this.usersService.update({ uuid }, data);
+        let role: UserRole[] | undefined = undefined;
+        if (data.role) {
+            role = [data.role];
+        }
+
+        const user = await this.usersService.update(
+            { uuid },
+            {
+                ...data,
+                role,
+            },
+        );
 
         posthogClient.userIdentify(user);
 
