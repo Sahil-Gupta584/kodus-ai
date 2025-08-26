@@ -11,10 +11,7 @@ import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextBuilder } from '../../core/context/context-builder.js';
-import {
-    ExecutionTracker,
-    StepResult,
-} from '../../core/context/execution-tracker.js';
+import { StepResult } from '../../core/context/execution-tracker.js';
 import type {
     AgentContext,
     TenantId,
@@ -171,7 +168,7 @@ export abstract class AgentCore<
     protected router?: Router;
 
     // ✅ Step execution and context tracking
-    protected stepExecution: ExecutionTracker;
+    // REMOVED: Use context.stepExecution instead of duplicated tracker
 
     // Multi-agent mode (LAZY INITIALIZATION)
     private _agents?: Map<string, AgentDefinition<unknown, unknown, unknown>>;
@@ -374,8 +371,8 @@ export abstract class AgentCore<
 
         this.initializePlannerComponents();
 
-        // ✅ Initialize step execution and context tracking
-        this.stepExecution = new ExecutionTracker();
+        // ✅ Step execution tracking handled by context layer
+        // REMOVED: Duplicated ExecutionTracker - use context.stepExecution
 
         if (this.config.enableMessaging) {
             this.startDeliveryProcessor();
@@ -463,16 +460,16 @@ export abstract class AgentCore<
         startTime: number,
         correlationId?: string,
     ): Promise<void> {
-        console.log(
-            'trackExecutionStart',
-            context,
+        this.logger.debug('Execution started', {
             executionId,
-            startTime,
+            agentName: context.agentName,
+            sessionId: context.sessionId,
             correlationId,
-        );
-        // TODO: Fix telemetry Event structure
-        // const observability = getObservability();
-        // await observability.telemetry.traceEvent(...);
+            startTime,
+        });
+
+        // ✅ Telemetria será implementada futuramente
+        // TODO: Implement proper telemetry event structure
     }
 
     private async addConversationEntry(
@@ -1515,7 +1512,7 @@ export abstract class AgentCore<
                 const currentStepId =
                     context.stepExecution?.getCurrentStep()?.stepId;
                 if (currentStepId && context.stepExecution) {
-                    context.stepExecution.addToolCall(
+                    context.stepExecution?.addToolCall(
                         currentStepId,
                         tool.toolName,
                         tool.arguments,
@@ -1584,7 +1581,7 @@ export abstract class AgentCore<
                     const currentStepId =
                         context.stepExecution?.getCurrentStep()?.stepId;
                     if (currentStepId && context.stepExecution) {
-                        context.stepExecution.addToolCall(
+                        context.stepExecution?.addToolCall(
                             currentStepId,
                             r.toolName,
                             input,
@@ -1645,7 +1642,7 @@ export abstract class AgentCore<
                     const currentStepId =
                         context.stepExecution?.getCurrentStep()?.stepId;
                     if (currentStepId && context.stepExecution) {
-                        context.stepExecution.addToolCall(
+                        context.stepExecution?.addToolCall(
                             currentStepId,
                             r.toolName,
                             input,
@@ -1737,7 +1734,7 @@ export abstract class AgentCore<
                 const currentStepId =
                     context.stepExecution?.getCurrentStep()?.stepId;
                 if (currentStepId && context.stepExecution) {
-                    context.stepExecution.addToolCall(
+                    context.stepExecution?.addToolCall(
                         currentStepId,
                         r.toolName,
                         input,
@@ -3844,6 +3841,9 @@ export abstract class AgentCore<
             finalExecutionContext,
         );
 
+        // ✅ SMART EXECUTION LOGGING - Log complex executions automatically
+        await this.logExecutionWithCriteria(context);
+
         return finalResult as TOutput;
     }
 
@@ -3864,8 +3864,10 @@ export abstract class AgentCore<
             ?.getKernelByNamespace('agent');
         const initialEventCount = kernel?.getState().eventCount || 0;
 
-        // ✅ START NEW STEP FOR TRACKING
-        const stepId = this.stepExecution.startStep(iterations);
+        // ✅ START NEW STEP FOR TRACKING - Use context.stepExecution
+        const stepId =
+            context.stepExecution?.startStep(iterations) ||
+            `step-${iterations}-${Date.now()}`;
 
         // ✅ SIMPLIFICADO: Think
         const thought = await this.executeThinkPhase(
@@ -3940,15 +3942,38 @@ export abstract class AgentCore<
         obs: ObservabilitySystem,
         context: AgentContext,
         plannerInput: PlannerExecutionContext,
-        stepId: string, // ✅ Add stepId parameter
+        stepId: string,
     ): Promise<ActionResult> {
         if (!thought.action) {
             throw new Error('Thought action is undefined');
         }
 
+        // ✅ LIFECYCLE: Transition step from 'initialized' to 'executing'
+        if (context.stepExecution) {
+            context.stepExecution.startExecuting(
+                stepId,
+                thought,
+                thought.action,
+            );
+        }
+
         // ✅ SIMPLIFICADO: Handle execute_plan action
         if (isExecutePlanAction(thought.action)) {
-            return await this.executePlanAction(context, plannerInput);
+            const res = await this.executePlanAction(
+                context,
+                plannerInput,
+                stepId,
+            );
+
+            if (stepId && context.stepExecution) {
+                try {
+                    context.stepExecution.updateStep(stepId, {
+                        action: thought.action,
+                        result: res,
+                    });
+                } catch {}
+            }
+            return res;
         }
 
         // ✅ SIMPLIFICADO: Handle regular actions
@@ -3961,7 +3986,7 @@ export abstract class AgentCore<
 
         return obs.telemetry.withSpan(actSpan, async () => {
             try {
-                const res = await this.act(thought.action, stepId); // ✅ Pass stepId
+                const res = await this.act(thought.action, context, stepId); // ✅ Pass context and stepId
                 markSpanOk(actSpan);
                 return res;
             } catch (err) {
@@ -3997,17 +4022,130 @@ export abstract class AgentCore<
         });
     }
 
+    private isExecutionPlan(x: unknown): x is ExecutionPlan {
+        return !!x && typeof x === 'object' && 'id' in x && 'steps' in x;
+    }
+
+    // private async executePlanAction(
+    //     context: AgentContext,
+    //     plannerContext: PlannerExecutionContext,
+    //     stepId?: string,
+    // ): Promise<ActionResult> {
+    //     const plan = this.planner?.getPlanForContext?.(plannerContext);
+
+    //     if (!plan) {
+    //         throw new Error('No plan available for execute_plan');
+    //     }
+
+    //     // ✅ SIMPLIFICADO: Usar act diretamente com observabilidade
+    //     const act = async (action: AgentAction) => {
+    //         const obs = getObservability();
+    //         const actSpan = startAgentSpan(obs.telemetry, 'act', {
+    //             agentName: this.config.agentName || 'unknown',
+    //             correlationId: context.correlationId || 'unknown',
+    //             iteration: 0,
+    //             attributes: {
+    //                 actionType: action.type || 'unknown',
+    //                 source: 'plan-executor',
+    //             },
+    //         });
+
+    //         return obs.telemetry.withSpan(actSpan, async () => {
+    //             try {
+    //                 const res = await this.act(action, context);
+    //                 markSpanOk(actSpan);
+    //                 return res;
+    //             } catch (err) {
+    //                 applyErrorToSpan(actSpan, err, {
+    //                     phase: 'act',
+    //                     source: 'plan-executor',
+    //                 });
+    //                 throw err;
+    //             }
+    //         });
+    //     };
+
+    //     const resolveArgs = (
+    //         rawArgs: Record<string, unknown>,
+    //         stepList: unknown[],
+    //         contextForResolution: PlannerExecutionContext,
+    //     ) =>
+    //         this.planner!.resolveArgs
+    //             ? this.planner!.resolveArgs(
+    //                   rawArgs,
+    //                   stepList,
+    //                   contextForResolution,
+    //               )
+    //             : Promise.resolve({ args: rawArgs, missing: [] });
+
+    //     const executor = new PlanExecutor(act, resolveArgs, {
+    //         enableReWOO: true,
+    //     });
+
+    //     const obsRes = await executor.run(
+    //         plan as ExecutionPlan,
+    //         plannerContext,
+    //     );
+
+    //     if (stepId && context.stepExecution) {
+    //         try {
+    //             context.stepExecution.updateStep(stepId, {
+    //                 action: {
+    //                     type: 'execute_plan',
+    //                     planId: plan.id,
+    //                 } as AgentAction,
+    //             });
+    //         } catch {}
+    //     }
+
+    //     let finalResult: ActionResult;
+    //     if (obsRes.type === 'needs_replan') {
+    //         finalResult = {
+    //             type: 'error',
+    //             replanContext: obsRes.replanContext,
+    //             feedback: obsRes.feedback,
+    //             status: 'needs_replan',
+    //             error: obsRes.feedback,
+    //             planExecutionResult: obsRes,
+    //         } as ActionResult;
+    //     } else if (obsRes.type === 'execution_complete') {
+    //         finalResult = {
+    //             type: 'final_answer',
+    //             content: obsRes.feedback,
+    //             planExecutionResult: obsRes,
+    //         } as ActionResult;
+    //     } else {
+    //         finalResult = {
+    //             type: 'error',
+    //             error: obsRes.feedback,
+    //             planExecutionResult: obsRes,
+    //         } as ActionResult;
+    //     }
+
+    //     // ✅ Update step with the final result of plan execution
+    //     if (stepId && context.stepExecution) {
+    //         try {
+    //             context.stepExecution.updateStep(stepId, {
+    //                 result: finalResult,
+    //             });
+    //         } catch {}
+    //     }
+
+    //     return finalResult;
+    // }
+    // 3) executePlanAction (refatorado)
     private async executePlanAction(
         context: AgentContext,
         plannerContext: PlannerExecutionContext,
+        stepId?: string,
     ): Promise<ActionResult> {
-        const plan = this.planner?.getPlanForContext?.(plannerContext);
-
-        if (!plan) {
+        const maybePlan = this.planner?.getPlanForContext?.(plannerContext);
+        if (!this.isExecutionPlan(maybePlan)) {
             throw new Error('No plan available for execute_plan');
         }
+        const plan: ExecutionPlan = maybePlan as ExecutionPlan;
 
-        // ✅ SIMPLIFICADO: Usar act diretamente com observabilidade
+        // act wrapper agora propaga stepId p/ rastreio
         const act = async (action: AgentAction) => {
             const obs = getObservability();
             const actSpan = startAgentSpan(obs.telemetry, 'act', {
@@ -4022,7 +4160,7 @@ export abstract class AgentCore<
 
             return obs.telemetry.withSpan(actSpan, async () => {
                 try {
-                    const res = await this.act(action);
+                    const res = await this.act(action, context, stepId); // <= passa stepId
                     markSpanOk(actSpan);
                     return res;
                 } catch (err) {
@@ -4035,9 +4173,10 @@ export abstract class AgentCore<
             });
         };
 
+        // tipa o stepList como PlanStep[]
         const resolveArgs = (
             rawArgs: Record<string, unknown>,
-            stepList: unknown[],
+            stepList: PlanStep[],
             contextForResolution: PlannerExecutionContext,
         ) =>
             this.planner!.resolveArgs
@@ -4051,26 +4190,52 @@ export abstract class AgentCore<
         const executor = new PlanExecutor(act, resolveArgs, {
             enableReWOO: true,
         });
+        const obsRes = await executor.run(plan, plannerContext);
 
-        const obsRes = await executor.run(
-            plan as ExecutionPlan,
-            plannerContext,
-        );
+        if (stepId && context.stepExecution) {
+            try {
+                context.stepExecution.updateStep(stepId, {
+                    action: {
+                        type: 'execute_plan',
+                        planId: plan.id,
+                    } as AgentAction,
+                });
+            } catch {}
+        }
 
-        // ✅ CORREÇÃO: Retornar replanContext quando necessário
+        let finalResult: ActionResult;
         if (obsRes.type === 'needs_replan') {
-            return {
+            finalResult = {
                 type: 'error',
                 replanContext: obsRes.replanContext,
                 feedback: obsRes.feedback,
                 status: 'needs_replan',
                 error: obsRes.feedback,
+                planExecutionResult: obsRes,
+            };
+        } else if (obsRes.type === 'execution_complete') {
+            finalResult = {
+                type: 'final_answer',
+                content: obsRes.feedback,
+                planExecutionResult: obsRes,
+            };
+        } else {
+            finalResult = {
+                type: 'error',
+                error: obsRes.feedback,
+                planExecutionResult: obsRes,
             };
         }
 
-        return obsRes.type === 'execution_complete'
-            ? { type: 'final_answer', content: obsRes.feedback }
-            : { type: 'error', error: obsRes.feedback };
+        if (stepId && context.stepExecution) {
+            try {
+                context.stepExecution.updateStep(stepId, {
+                    result: finalResult,
+                });
+            } catch {}
+        }
+
+        return finalResult;
     }
 
     private async updateExecutionState(
@@ -4241,18 +4406,17 @@ export abstract class AgentCore<
         const thinkStart = Date.now();
 
         try {
-            // ✅ Get enhanced context for better reasoning if stepId provided
-            let enhancedContext = context;
-            if (stepId && context.agentContext) {
+            let enhancedContext = { ...context, stepId };
+            if (stepId && context.agentContext?.stepExecution) {
                 const relevantContext =
-                    await this.stepExecution.getContextForModel(
+                    await context.agentContext.stepExecution.getContextForModel(
                         context.agentContext,
                         context.input,
                     );
 
-                // Add enhanced context to planner input
                 enhancedContext = {
                     ...context,
+                    stepId,
                     plannerMetadata: {
                         ...context.plannerMetadata,
                         enhancedContext: relevantContext,
@@ -4260,11 +4424,13 @@ export abstract class AgentCore<
                 };
             }
 
-            const thought = await this.planner.think(enhancedContext);
+            const thought = await this.planner.think(enhancedContext, stepId);
             const thinkDuration = Date.now() - thinkStart;
 
-            if (stepId && this.stepExecution) {
-                this.stepExecution.updateStep(stepId, { thought });
+            if (stepId && context.agentContext?.stepExecution) {
+                context.agentContext.stepExecution.updateStep(stepId, {
+                    thought,
+                });
 
                 this.logger.debug('Think phase completed', {
                     stepId,
@@ -4277,7 +4443,7 @@ export abstract class AgentCore<
         } catch (error) {
             const thinkDuration = Date.now() - thinkStart;
 
-            if (stepId && this.stepExecution) {
+            if (stepId && context.agentContext?.stepExecution) {
                 this.logger.warn('Think phase failed', {
                     stepId,
                     thinkDuration,
@@ -4291,6 +4457,7 @@ export abstract class AgentCore<
 
     private async act(
         action: AgentAction,
+        context: AgentContext,
         stepId?: string,
     ): Promise<ActionResult> {
         const actStart = Date.now();
@@ -4304,8 +4471,8 @@ export abstract class AgentCore<
                 const toolDuration = Date.now() - toolStart;
 
                 // ✅ Record tool call in step
-                if (stepId && this.stepExecution) {
-                    this.stepExecution.addToolCall(
+                if (stepId && context.stepExecution) {
+                    context.stepExecution?.addToolCall(
                         stepId,
                         action.toolName,
                         action.input,
@@ -4330,8 +4497,8 @@ export abstract class AgentCore<
             const actDuration = Date.now() - actStart;
 
             // ✅ Update step with action result
-            if (stepId && this.stepExecution) {
-                this.stepExecution.updateStep(stepId, {
+            if (stepId && context.stepExecution) {
+                context.stepExecution?.updateStep(stepId, {
                     action,
                     result,
                 });
@@ -4348,8 +4515,8 @@ export abstract class AgentCore<
         } catch (error) {
             const actDuration = Date.now() - actStart;
 
-            if (stepId && this.stepExecution) {
-                this.stepExecution.updateStep(stepId, {
+            if (stepId && context.stepExecution) {
+                context.stepExecution?.updateStep(stepId, {
                     result: { type: 'error', error: String(error) },
                 });
 
@@ -4776,15 +4943,39 @@ export abstract class AgentCore<
 
             const observeDuration = Date.now() - observeStart;
 
-            if (stepId && this.stepExecution) {
-                this.stepExecution.updateStep(stepId, {
-                    observation: analysis,
-                });
+            if (stepId && context.agentContext?.stepExecution) {
+                // ✅ LIFECYCLE: Mark step as completed or failed based on synthesized analysis
+                const synthesizedAnalysis = {
+                    ...analysis,
+                    feedback: synthesizedResponse,
+                };
+
+                if (analysis.isComplete) {
+                    if (analysis.isSuccessful) {
+                        context.agentContext.stepExecution.markCompleted(
+                            stepId,
+                            result,
+                            synthesizedAnalysis,
+                        );
+                    } else {
+                        context.agentContext.stepExecution.markFailed(
+                            stepId,
+                            result,
+                            synthesizedAnalysis,
+                        );
+                    }
+                } else {
+                    // Still executing, just update the step
+                    context.agentContext.stepExecution.updateStep(stepId, {
+                        observation: synthesizedAnalysis,
+                    });
+                }
 
                 this.logger.debug('Observe phase completed (synthesis)', {
                     stepId,
                     observeDuration,
                     analysisComplete: analysis.isComplete,
+                    isSuccessful: analysis.isSuccessful,
                     synthesized: true,
                 });
             }
@@ -4797,16 +4988,36 @@ export abstract class AgentCore<
 
         const observeDuration = Date.now() - observeStart;
 
-        if (stepId && this.stepExecution) {
-            this.stepExecution.updateStep(stepId, {
-                observation: analysis,
-                duration: observeDuration,
-            });
+        if (stepId && context.agentContext?.stepExecution) {
+            // ✅ LIFECYCLE: Mark step as completed or failed based on analysis
+            if (analysis.isComplete) {
+                if (analysis.isSuccessful) {
+                    context.agentContext.stepExecution.markCompleted(
+                        stepId,
+                        result,
+                        analysis,
+                    );
+                } else {
+                    context.agentContext.stepExecution.markFailed(
+                        stepId,
+                        result,
+                        analysis,
+                    );
+                }
+            } else {
+                // Still executing, just update the step
+                context.agentContext.stepExecution.updateStep(stepId, {
+                    observation: analysis,
+                    duration: observeDuration,
+                });
+            }
 
             this.logger.debug('Observe phase completed (continuing)', {
                 stepId,
                 observeDuration,
                 shouldContinue: analysis.shouldContinue,
+                isComplete: analysis.isComplete,
+                isSuccessful: analysis.isSuccessful,
                 synthesized: false,
             });
         }
@@ -4917,6 +5128,7 @@ export abstract class AgentCore<
             result: entry.result,
             observation: entry.observation,
             duration: 0,
+            startedAt: Date.now(), // Timestamp placeholder for historical steps
             toolCalls: [],
         }));
 
@@ -4937,6 +5149,29 @@ export abstract class AgentCore<
             update: () => {}, // Interface compatibility only
             getCurrentSituation: () => this.getCurrentSituation(history),
             getFinalResult: () => this.buildFinalResult(history, iterations),
+            getCurrentPlan: () =>
+                this.planner?.getPlanForContext
+                    ? this.planner.getPlanForContext({
+                          input,
+                          history: stepHistory,
+                          iterations,
+                          maxIterations,
+                          plannerMetadata: {
+                              agentName: agentContext.agentName,
+                              correlationId: agentContext.correlationId,
+                              tenantId: agentContext.tenantId,
+                              thread: agentContext.thread,
+                              startTime: Date.now(),
+                          },
+                          agentContext,
+                          isComplete: this.isExecutionComplete(history),
+                          update: () => {},
+                          getCurrentSituation: () =>
+                              this.getCurrentSituation(history),
+                          getFinalResult: () =>
+                              this.buildFinalResult(history, iterations),
+                      })
+                    : null,
         };
     }
 
@@ -5054,6 +5289,196 @@ export abstract class AgentCore<
      */
     public getRawTimeline(_executionId: string): undefined {
         return undefined;
+    }
+
+    /**
+     * ✅ SMART EXECUTION LOGGING - Log execution with criteria-based persistence
+     */
+    private async logExecutionWithCriteria(
+        context: AgentContext,
+    ): Promise<void> {
+        if (!context.stepExecution) {
+            this.logger.debug('No stepExecution available for logging');
+            return;
+        }
+
+        const steps = context.stepExecution.getAllSteps();
+        if (steps.length === 0) {
+            this.logger.debug('No steps to log');
+            return;
+        }
+
+        const startTime =
+            typeof steps[0]?.thought?.metadata?.startTime === 'number'
+                ? steps[0].thought.metadata.startTime
+                : Date.now() - 1000; // Default to 1 second ago if no start time
+        const endTime = Date.now();
+
+        // Calculate execution criteria for smart persistence
+        const executionCriteria = {
+            hasToolCalls: steps.some(
+                (step) => step.toolCalls && step.toolCalls.length > 0,
+            ),
+            executionTimeMs: endTime - startTime,
+            multipleSteps: steps.length > 1,
+            hasErrors: steps.some((step) => !step.observation?.isSuccessful),
+            isDebugMode: this.config.debug || false,
+        };
+
+        // Get SimpleExecutionLogger from ContextBuilder
+        const contextBuilder = ContextBuilder.getInstance();
+        const executionLogger = contextBuilder
+            .getServices()
+            .getExecutionLogger();
+
+        // Log execution with smart persistence logic
+        const logResult = executionLogger.logExecution(
+            context.invocationId,
+            context.sessionId,
+            context.agentName,
+            startTime,
+            endTime,
+            steps,
+            executionCriteria,
+        );
+
+        // Auto-persist if criteria met
+        if (logResult.shouldPersist) {
+            // ✅ ENHANCED EXECUTION CONTEXT: Criar estrutura rica para persistence
+            const executionSummary =
+                context.stepExecution?.getExecutionSummary();
+            const allSteps = context.stepExecution?.getAllSteps() || [];
+
+            // ✅ COLLECT PLAN DATA from planner if available
+            const planData: Record<string, unknown> = {};
+            if (this.planner && 'getCurrentPlan' in this.planner) {
+                try {
+                    const plannerWithGetPlan = this.planner as {
+                        getCurrentPlan?: (context: unknown) => unknown;
+                    };
+                    const currentPlan = plannerWithGetPlan.getCurrentPlan?.(
+                        this.executionContext,
+                    ) as Record<string, unknown> | undefined;
+                    if (
+                        currentPlan &&
+                        typeof currentPlan === 'object' &&
+                        'id' in currentPlan
+                    ) {
+                        const planId = String(currentPlan.id);
+                        const metadata = currentPlan.metadata as
+                            | Record<string, unknown>
+                            | undefined;
+                        planData[planId] = {
+                            goal: currentPlan.goal,
+                            strategy: currentPlan.strategy,
+                            steps: currentPlan.steps || [],
+                            signals: currentPlan.signals || metadata?.signals,
+                            reasoning: currentPlan.reasoning,
+                            status: currentPlan.status,
+                            executionTime:
+                                currentPlan.updatedAt && currentPlan.createdAt
+                                    ? Number(currentPlan.updatedAt) -
+                                      Number(currentPlan.createdAt)
+                                    : 0,
+                            createdAt: currentPlan.createdAt,
+                            updatedAt: currentPlan.updatedAt,
+                        };
+                    }
+                } catch (error) {
+                    // Planner não suporta getCurrentPlan ou erro na extração
+                    this.logger.debug(
+                        'Could not extract plan data for persistence',
+                        { error },
+                    );
+                }
+            }
+
+            // ✅ COLLECT AGENT DECISIONS from execution history
+            const decisions: Array<{
+                step: string;
+                decision: string;
+                reasoning: string;
+                fallback?: string;
+                timestamp: number;
+            }> = [];
+
+            allSteps.forEach((step, index) => {
+                if (step.thought?.reasoning && step.action) {
+                    const decision = {
+                        step: `step-${index}`,
+                        decision: step.action.type,
+                        reasoning: step.thought.reasoning,
+                        timestamp: Date.now(),
+                        fallback: undefined as string | undefined,
+                    };
+
+                    // Detectar decisões específicas - manter tipos válidos
+                    if (step.action.type === 'execute_plan') {
+                        decision.decision = 'execute_plan';
+                    }
+                    if (
+                        step.result?.type === 'error' &&
+                        step.observation?.isSuccessful
+                    ) {
+                        decision.decision = 'final_answer'; // Recovery bem-sucedido
+                        decision.fallback = 'continue_execution';
+                    }
+
+                    decisions.push(decision);
+                }
+            });
+
+            // ✅ HIERARCHICAL STRUCTURE: Organizar dados hierarquicamente
+            const enhancedExecutionData = {
+                session: {
+                    summary: executionSummary,
+                    logResult: logResult.summary,
+                },
+                planning: {
+                    plans: planData,
+                    decisions: decisions,
+                },
+                tooling: {
+                    availableTools:
+                        context.availableTools?.map((t) => t.name) || [],
+                    toolCallsAttempted: allSteps.reduce(
+                        (acc, step) => acc + (step.toolCalls?.length || 0),
+                        0,
+                    ),
+                    toolCallsSuccessful: allSteps.reduce(
+                        (acc, step) =>
+                            acc +
+                            (step.toolCalls?.filter((tc) => tc.result).length ||
+                                0),
+                        0,
+                    ),
+                },
+                synthesis: {
+                    totalSteps: allSteps.length,
+                    completedSteps: allSteps.filter(
+                        (s) => s.observation?.isComplete,
+                    ).length,
+                    strategy: 'enhanced_context_persistence',
+                    persistedAt: Date.now(),
+                },
+                steps: allSteps, // ✅ Manter steps para compatibilidade
+            };
+
+            await context.state.set(
+                'execution',
+                'enhanced',
+                enhancedExecutionData,
+            );
+            await context.state.persist?.('execution');
+
+            this.logger.info('Complex execution persisted', {
+                executionId: context.invocationId,
+                complexity: logResult.summary.complexityScore,
+                duration: logResult.summary.totalDuration,
+                toolCalls: logResult.summary.toolCallsCount,
+                stepsCount: allSteps.length,
+            });
+        }
     }
 }
 

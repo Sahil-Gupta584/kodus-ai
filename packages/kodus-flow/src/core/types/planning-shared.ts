@@ -217,12 +217,6 @@ export interface StepExecutionResult {
     executedAt: number;
     duration: number;
     retryCount?: number;
-    metrics?: {
-        memoryUsage?: number;
-        cpuTime?: number;
-        ioOperations?: number;
-        networkCalls?: number;
-    };
 }
 
 /**
@@ -290,20 +284,8 @@ export interface ReplanContext {
         id: string;
         goal: string;
         strategy: string;
-        totalSteps: number;
-    };
-    executionSummary: {
-        type: string;
-        executionTime: number;
-        successfulSteps: number;
-        failedSteps: number;
-        feedback: string;
     };
     preservedSteps: unknown[];
-    failureAnalysis: {
-        primaryCause: string;
-        failurePatterns: string[];
-    };
     suggestions?: unknown;
 }
 

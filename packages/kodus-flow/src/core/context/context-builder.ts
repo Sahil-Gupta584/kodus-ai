@@ -17,6 +17,7 @@ import type { ToolEngine } from '../../engine/tools/tool-engine.js';
 import { StorageType } from '../storage/index.js';
 
 import { ExecutionTracker } from './execution-tracker.js';
+import { SimpleExecutionLogger } from './services/simple-execution-log.js';
 
 export interface ContextBuilderConfig {
     memory?: {
@@ -44,6 +45,7 @@ export class ContextBuilder {
     private memoryManager!: MemoryManager;
     private sessionService: SessionService;
     private toolEngine?: ToolEngine;
+    private executionLogger: SimpleExecutionLogger;
 
     private constructor(config: ContextBuilderConfig = {}) {
         this.contextBuilderConfig = config;
@@ -63,10 +65,14 @@ export class ContextBuilder {
 
         this.sessionService = new SessionService(sessionConfig);
 
+        // Initialize Simple Execution Logger
+        this.executionLogger = new SimpleExecutionLogger();
+
         this.logger.info('ContextBuilder initialized', {
             memoryConfig: config.memory ? 'configured' : 'default',
             sessionConfig: config.session ? 'configured' : 'default',
             snapshotConfig: config.snapshot ? 'configured' : 'default',
+            executionLogging: 'enabled',
         });
     }
 
@@ -364,6 +370,9 @@ export class ContextBuilder {
             memoryManager: this.memoryManager,
             sessionService: this.sessionService,
             toolEngine: this.toolEngine,
+
+            // NEW: Access to execution logger for debugging and analytics
+            getExecutionLogger: () => this.executionLogger,
         };
     }
 

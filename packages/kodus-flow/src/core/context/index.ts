@@ -19,6 +19,11 @@ export type {
 
 // ===== EXECUTION TRACKING =====
 export { ExecutionTracker, type StepResult } from './execution-tracker.js';
+export {
+    SimpleExecutionLogger,
+    type SimpleExecutionLog,
+    type ExecutionCriteria,
+} from './services/simple-execution-log.js';
 
 // ===== NAMESPACE CONSTANTS =====
 export {

@@ -42,7 +42,7 @@ export type PlannerType = 'react' | 'tot' | 'reflexion' | 'plan-execute';
 export interface Planner<
     TContext extends PlannerExecutionContext = PlannerExecutionContext,
 > {
-    think(context: TContext): Promise<AgentThought>;
+    think(context: TContext, stepId?: string): Promise<AgentThought>;
     analyzeResult(
         result: ActionResult,
         context: TContext,
@@ -126,6 +126,7 @@ export interface FinalAnswerResult {
     type: 'final_answer';
     content: string;
     metadata?: ActionResultMetadata;
+    planExecutionResult?: import('../../core/types/planning-shared.js').PlanExecutionResult; // ✅ Para capturar dados do PlanExecutor
 }
 
 export interface ErrorResult {
@@ -135,6 +136,7 @@ export interface ErrorResult {
     status?: string;
     replanContext?: import('../../core/types/planning-shared.js').PlanExecutionResult['replanContext'];
     feedback?: string;
+    planExecutionResult?: import('../../core/types/planning-shared.js').PlanExecutionResult; // ✅ Para capturar dados do PlanExecutor
 }
 
 export interface NeedsReplanResult {
@@ -146,7 +148,7 @@ export interface NeedsReplanResult {
 
 export type ResultAnalysis = {
     isComplete: boolean;
-    isSuccessful: boolean;
+    isSuccessful: boolean | null; // null = não executado ainda
     feedback: string;
     shouldContinue: boolean;
     suggestedNextAction?: string;
@@ -283,6 +285,7 @@ export interface PlannerExecutionContext {
     ): void;
     getCurrentSituation(): string;
     getFinalResult(): AgentExecutionResult;
+    getCurrentPlan?(): unknown | null; // Access to current plan state
 }
 
 // Enhanced context configuration for advanced execution features
@@ -512,6 +515,27 @@ export function getResultError(result: ActionResult): string | undefined {
 
 // Helper function to get content from any result type
 export function getResultContent(result: ActionResult): unknown {
+    // ✅ PRIORIDADE: Extrair dados completos do PlanExecutor quando disponível
+    if (
+        (isFinalAnswerResult(result) || isErrorResult(result)) &&
+        result.planExecutionResult
+    ) {
+        // Se temos planExecutionResult, extrair signals e execution data
+        const { signals, feedback, executedSteps } = result.planExecutionResult;
+        return {
+            planResult: result.planExecutionResult.type,
+            feedback,
+            signals,
+            executedSteps: executedSteps.map((step) => ({
+                stepId: step.stepId,
+                success: step.success,
+                result: step.result,
+                error: step.error,
+            })),
+        };
+    }
+
+    // ✅ FALLBACK: Content padrão para outros tipos
     if (isToolResult(result)) {
         return result.content;
     }

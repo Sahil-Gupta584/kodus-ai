@@ -171,13 +171,13 @@ export class PlanExecutor {
     }
 
     private async emitSessionEvent(
-        context: PlannerExecutionContext,
-        type: string,
-        input: Record<string, unknown>,
-        details?: Record<string, unknown>,
+        _context: PlannerExecutionContext,
+        _type: string,
+        _input: Record<string, unknown>,
+        _details?: Record<string, unknown>,
     ): Promise<void> {
         try {
-            console.log('emitSessionEvent', context, type, input, details);
+            // TODO: Implement proper telemetry event structure
             // TODO: Convert to telemetry - runtime debug data should not go to conversation
             // await context.agentContext?.session.addEntry(
             //     { type, ...input },
@@ -708,9 +708,9 @@ export class PlanExecutor {
     }
 
     private async emitCompletionEvent(
-        context: PlannerExecutionContext,
-        planId: string,
-        details: {
+        _context: PlannerExecutionContext,
+        _planId: string,
+        _details: {
             executionTime: number;
             resultType: PlanExecutionResult['type'];
             summary: ExecutionSummary;
@@ -718,7 +718,7 @@ export class PlanExecutor {
         },
     ): Promise<void> {
         try {
-            console.log('emitCompletionEvent', details, context, planId);
+            // TODO: Implement proper telemetry event structure
             // TODO: Convert to telemetry - runtime plan data should not go to conversation
             // await context.agentContext?.session.addEntry(
             //     {
