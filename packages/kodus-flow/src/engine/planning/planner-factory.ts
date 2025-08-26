@@ -9,7 +9,6 @@ import type { LLMAdapter } from '../../adapters/llm/index.js';
 import { PlanAndExecutePlanner } from './strategies/plan-execute-planner.js';
 import type { ReplanPolicyConfig } from './strategies/plan-execute-planner.js';
 import { Thread } from '../../core/types/common-types.js';
-import { AgentIdentity } from '@/core/types/agent-definition.js';
 
 // Import comprehensive action types from agent-types
 import type {
@@ -300,123 +299,6 @@ export interface ContextEnhancementConfig {
  */
 export function isSuccessResult(result: ActionResult): boolean {
     return result.type !== 'error';
-}
-
-/**
- * Generate execution hints automatically from history and context
- */
-export function generateExecutionHints(
-    history: StepExecution[],
-    agentIdentity?: AgentIdentity,
-): ExecutionHints {
-    const hints: ExecutionHints = {};
-
-    // Find last successful action
-    const lastSuccessfulEntry = [...history]
-        .reverse()
-        .find((entry) => isSuccessResult(entry.result));
-
-    if (lastSuccessfulEntry) {
-        hints.lastSuccessfulAction = `${lastSuccessfulEntry.action.type}: ${
-            isToolCallAction(lastSuccessfulEntry.action)
-                ? lastSuccessfulEntry.action.toolName
-                : 'completed successfully'
-        }`;
-    }
-
-    // Extract current goal from agent identity
-    if (agentIdentity?.goal) {
-        hints.currentGoal = agentIdentity.goal;
-    }
-
-    // Determine user urgency based on iteration count and constraints
-    if (history.length > 5) {
-        hints.userUrgency = 'high'; // Many iterations suggest urgency
-    } else if (history.length > 2) {
-        hints.userUrgency = 'medium';
-    } else {
-        hints.userUrgency = 'low';
-    }
-
-    // Set user preferences based on agent personality/style
-    if (agentIdentity?.style || agentIdentity?.personality) {
-        hints.userPreferences = {
-            preferredStyle:
-                agentIdentity.style === 'formal'
-                    ? 'formal'
-                    : agentIdentity.style === 'casual'
-                      ? 'casual'
-                      : 'technical',
-            verbosity: agentIdentity.personality?.includes('concise')
-                ? 'concise'
-                : agentIdentity.personality?.includes('detailed')
-                  ? 'detailed'
-                  : 'verbose',
-            riskTolerance: agentIdentity.personality?.includes('careful')
-                ? 'conservative'
-                : agentIdentity.personality?.includes('bold')
-                  ? 'aggressive'
-                  : 'moderate',
-        };
-    }
-
-    return hints;
-}
-
-/**
- * Generate learning context from execution history
- */
-export function generateLearningContext(
-    history: StepExecution[],
-): LearningContext {
-    const context: LearningContext = {
-        commonMistakes: [],
-        successPatterns: [],
-        userFeedback: [],
-        preferredTools: [],
-    };
-
-    // Analyze errors for common mistakes
-    const errorEntries = history.filter((entry) => isErrorResult(entry.result));
-    const errorPatterns = errorEntries.map((entry) => {
-        const action = entry.action;
-        const errorResult = entry.result as ErrorResult;
-        return `${action.type} failures: ${errorResult.error || 'unknown error'}`;
-    });
-    context.commonMistakes = [...new Set(errorPatterns)].slice(0, 5);
-
-    // Analyze successes for patterns
-    const successEntries = history.filter((entry) =>
-        isSuccessResult(entry.result),
-    );
-    const successPatterns = successEntries.map((entry) => {
-        const action = entry.action;
-        return `${action.type} succeeded: ${entry.observation.feedback || 'completed successfully'}`;
-    });
-    context.successPatterns = [...new Set(successPatterns)].slice(0, 5);
-
-    // Find preferred tools (most successful)
-    const toolUsage = new Map<string, { total: number; successful: number }>();
-    history.forEach((entry) => {
-        if (entry.action.type === 'tool_call') {
-            const toolName = (entry.action as ToolCallAction).toolName;
-            const current = toolUsage.get(toolName) || {
-                total: 0,
-                successful: 0,
-            };
-            current.total++;
-            if (isSuccessResult(entry.result)) current.successful++;
-            toolUsage.set(toolName, current);
-        }
-    });
-
-    context.preferredTools = Array.from(toolUsage.entries())
-        .filter(([, stats]) => stats.successful / stats.total > 0.7) // 70% success rate
-        .sort((a, b) => b[1].successful - a[1].successful)
-        .map(([toolName]) => toolName)
-        .slice(0, 5);
-
-    return context;
 }
 
 // Specific metadata types for execution results

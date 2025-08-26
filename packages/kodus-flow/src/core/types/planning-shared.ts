@@ -132,7 +132,6 @@ export type PlanStatus = UnifiedStatus;
  * Unified PlanStep interface (consolidates all conflicting definitions)
  */
 export interface PlanStep {
-    // Identity
     id: string;
     description: string;
     type?:
@@ -247,13 +246,7 @@ export interface PlanExecutionResult {
     executionTime: number;
     feedback: string;
     confidence?: number;
-    replanContext?: {
-        preservedSteps: StepExecutionResult[];
-        failurePatterns: string[];
-        primaryCause: string;
-        suggestedStrategy: string;
-        contextForReplan: Record<string, unknown>;
-    };
+    replanContext?: ReplanContext;
 }
 
 /**
@@ -265,27 +258,34 @@ export interface ReplanPolicyConfig {
 }
 
 /**
- * Replan context data structure
- */
-export interface ReplanContextData {
-    preservedSteps: StepExecutionResult[];
-    failurePatterns: string[];
-    primaryCause: string;
-    suggestedStrategy: string;
-    contextForReplan: Record<string, unknown>;
-}
-
-/**
  * Structured replan context for planning optimization
  */
-export interface ReplanContext {
-    isReplan: boolean;
-    previousPlan: {
+export interface PlanExecutionData {
+    plan: {
         id: string;
         goal: string;
-        strategy: string;
+        strategy?: string;
+        totalSteps?: number;
+        steps?: unknown[];
     };
-    preservedSteps: unknown[];
+    executionData: {
+        toolsThatWorked?: unknown[];
+        toolsThatFailed?: unknown[];
+        toolsNotExecuted?: unknown[];
+    };
+    signals?: {
+        failurePatterns?: string[];
+        needs?: string[];
+        noDiscoveryPath?: string[];
+        errors?: string[];
+        suggestedNextStep?: string;
+    };
+}
+
+export interface ReplanContext {
+    isReplan: boolean;
+    executedPlan: PlanExecutionData;
+    planHistory?: PlanExecutionData[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -1466,92 +1466,118 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
                 unknown
             >;
 
-            // 📋 Previous Plan Info
-            if (replan.previousPlan) {
-                const plan = replan.previousPlan as Record<string, unknown>;
-                sections.push('### 📋 PREVIOUS PLAN');
+            // 📋 Executed Plan Info
+            if (replan.executedPlan) {
+                const executedPlan = replan.executedPlan as Record<
+                    string,
+                    unknown
+                >;
+                const plan = executedPlan.plan as Record<string, unknown>;
+
+                sections.push('### 📋 EXECUTED PLAN');
                 if (plan.id) sections.push(`**Plan ID:** ${plan.id}`);
                 if (plan.goal) sections.push(`**Goal:** "${plan.goal}"`);
-                if (plan.strategy)
-                    sections.push(`**Strategy:** ${plan.strategy}`);
-                if (plan.totalSteps)
-                    sections.push(`**Total Steps:** ${plan.totalSteps}`);
-            }
-
-            // 📊 Execution Summary
-            if (replan.executionSummary) {
-                const summary = replan.executionSummary as Record<
+                // 📊 Execution Data
+                const executionData = executedPlan.executionData as Record<
                     string,
                     unknown
                 >;
-                sections.push('### 📊 EXECUTION SUMMARY');
-                if (summary.type) sections.push(`**Result:** ${summary.type}`);
-                if (summary.executionTime)
-                    sections.push(`**Duration:** ${summary.executionTime}ms`);
-                if (summary.successfulSteps)
-                    sections.push(
-                        `**✅ Successful:** ${summary.successfulSteps}`,
-                    );
-                if (summary.failedSteps)
-                    sections.push(`**❌ Failed:** ${summary.failedSteps}`);
-                if (summary.feedback)
-                    sections.push(`**Feedback:** ${summary.feedback}`);
-            }
+                if (executionData) {
+                    sections.push('### 📊 EXECUTION DATA');
 
-            // 🎯 Preserved Steps (with results)
-            if (replan.preservedSteps && Array.isArray(replan.preservedSteps)) {
-                sections.push('### 🎯 PRESERVED STEPS & RESULTS');
-                sections.push(
-                    `**Total Preserved:** ${replan.preservedSteps.length}`,
-                );
-
-                // Process each preserved step
-                (
-                    replan.preservedSteps as Array<Record<string, unknown>>
-                ).forEach((step, index) => {
-                    sections.push(
-                        `\n**Step ${index + 1}:** ${step.description || step.id}`,
-                    );
-                    if (step.tool) sections.push(`**Tool:** ${step.tool}`);
-
-                    // Extract CRITICAL result data (UUIDs, IDs, counts)
-                    if (step.result) {
-                        const critical = this.extractCriticalResultData(
-                            step.result as Record<string, unknown>,
+                    const toolsThatWorked =
+                        executionData.toolsThatWorked as unknown[];
+                    if (toolsThatWorked && toolsThatWorked.length > 0) {
+                        sections.push(
+                            `**✅ Successful Tools:** ${toolsThatWorked.length}`,
                         );
-                        if (critical) {
-                            sections.push(`**Result:** ${critical}`);
-                        }
+                        toolsThatWorked.forEach((tool: unknown) => {
+                            const toolData = tool as Record<string, unknown>;
+                            sections.push(
+                                `  - ${toolData.tool || toolData.stepId}: ${toolData.description || 'No description'}`,
+                            );
+                        });
                     }
-                });
-            }
 
-            // 🚨 Failure Analysis
-            if (replan.failureAnalysis) {
-                const analysis = replan.failureAnalysis as Record<
-                    string,
-                    unknown
-                >;
-                sections.push('### 🚨 FAILURE ANALYSIS');
-                if (analysis.primaryCause)
-                    sections.push(
-                        `**Primary Cause:** ${analysis.primaryCause}`,
-                    );
-                if (
-                    analysis.failurePatterns &&
-                    Array.isArray(analysis.failurePatterns)
-                ) {
-                    const patterns = analysis.failurePatterns as string[];
-                    if (patterns.length > 0) {
-                        sections.push(`**Patterns:** ${patterns.join(', ')}`);
+                    const toolsThatFailed =
+                        executionData.toolsThatFailed as unknown[];
+                    if (toolsThatFailed && toolsThatFailed.length > 0) {
+                        sections.push(
+                            `**❌ Failed Tools:** ${toolsThatFailed.length}`,
+                        );
+                        toolsThatFailed.forEach((tool: unknown) => {
+                            const toolData = tool as Record<string, unknown>;
+                            sections.push(
+                                `  - ${toolData.tool || toolData.stepId}: ${toolData.error || 'Unknown error'}`,
+                            );
+                        });
+                    }
+
+                    const toolsNotExecuted =
+                        executionData.toolsNotExecuted as unknown[];
+                    if (toolsNotExecuted && toolsNotExecuted.length > 0) {
+                        sections.push(
+                            `**⏭️ Not Executed:** ${toolsNotExecuted.length}`,
+                        );
+                        toolsNotExecuted.forEach((tool: unknown) => {
+                            const toolData = tool as Record<string, unknown>;
+                            sections.push(
+                                `  - ${toolData.tool || toolData.stepId}: ${toolData.description || 'No description'}`,
+                            );
+                        });
+                    }
+                }
+
+                // 🚨 Signals Analysis
+                const signals = executedPlan.signals as Record<string, unknown>;
+                if (signals) {
+                    sections.push('### 🚨 SIGNALS ANALYSIS');
+
+                    const failurePatterns = signals.failurePatterns as string[];
+                    if (failurePatterns && failurePatterns.length > 0) {
+                        sections.push(
+                            `**Failure Patterns:** ${failurePatterns.join(', ')}`,
+                        );
+                    }
+
+                    const needs = signals.needs as string[];
+                    if (needs && needs.length > 0) {
+                        sections.push(`**Needs:** ${needs.join(', ')}`);
+                    }
+
+                    if (signals.suggestedNextStep) {
+                        sections.push(
+                            `**Suggested Next Step:** ${signals.suggestedNextStep}`,
+                        );
                     }
                 }
             }
 
-            // 💡 Suggestions
-            if (replan.suggestions) {
-                sections.push('### 💡 SUGGESTIONS');
-                sections.push(`${replan.suggestions}`);
+            // 📚 Plan History
+            if (replan.planHistory && Array.isArray(replan.planHistory)) {
+                const history = replan.planHistory as Array<
+                    Record<string, unknown>
+                >;
+                if (history.length > 0) {
+                    sections.push('### 📚 PLAN HISTORY');
+                    sections.push(`**Previous Attempts:** ${history.length}`);
+
+                    history.forEach((planData, index) => {
+                        const plan = planData.plan as Record<string, unknown>;
+                        sections.push(
+                            `\n**Attempt ${index + 1}:** ${plan.id || 'Unknown Plan'}`,
+                        );
+                        if (plan.goal) sections.push(`  Goal: "${plan.goal}"`);
+
+                        const signals = planData.signals as Record<
+                            string,
+                            unknown
+                        >;
+                        if (signals?.primaryCause) {
+                            sections.push(`  Failed: ${signals.primaryCause}`);
+                        }
+                    });
+                }
             }
         }
 
@@ -1559,238 +1585,6 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
             '\n**⚠️ REPLAN MODE:** Use the preserved results and failure analysis to create a better plan.',
         );
         return sections.join('\n');
-    }
-
-    // /**
-    //  * Extract meaningful information from tool results (fully agnostic approach)
-    //  */
-    // private _extractToolResult(result: Record<string, unknown>): string | null {
-    //     try {
-    //         // Handle MCP tool result structure
-    //         if (result.type === 'tool_result' && result.content) {
-    //             const content = result.content as Record<string, unknown>;
-
-    //             // Try different possible field names
-    //             const possibleResultFields = [
-    //                 'result',
-    //                 'results',
-    //                 'data',
-    //                 'response',
-    //             ];
-
-    //             for (const fieldName of possibleResultFields) {
-    //                 if (content[fieldName]) {
-    //                     const toolResult = content[fieldName] as Record<
-    //                         string,
-    //                         unknown
-    //                     >;
-
-    //                     // Try different content structures
-    //                     const possibleContentFields = [
-    //                         'content',
-    //                         'data',
-    //                         'text',
-    //                         'message',
-    //                     ];
-
-    //                     for (const contentField of possibleContentFields) {
-    //                         if (toolResult[contentField]) {
-    //                             const contentData = toolResult[contentField];
-
-    //                             // Handle array content
-    //                             if (Array.isArray(contentData)) {
-    //                                 for (const item of contentData) {
-    //                                     if (item && typeof item === 'object') {
-    //                                         const itemObj = item as Record<
-    //                                             string,
-    //                                             unknown
-    //                                         >;
-
-    //                                         // Try to extract text from different possible fields
-    //                                         const possibleTextFields = [
-    //                                             'text',
-    //                                             'content',
-    //                                             'data',
-    //                                             'message',
-    //                                         ];
-
-    //                                         for (const textField of possibleTextFields) {
-    //                                             if (
-    //                                                 itemObj[textField] &&
-    //                                                 typeof itemObj[
-    //                                                     textField
-    //                                                 ] === 'string'
-    //                                             ) {
-    //                                                 const text = itemObj[
-    //                                                     textField
-    //                                                 ] as string;
-
-    //                                                 // Try to parse as JSON
-    //                                                 try {
-    //                                                     const parsedText =
-    //                                                         JSON.parse(text);
-
-    //                                                     // Handle success/failure
-    //                                                     if (
-    //                                                         parsedText.successful ===
-    //                                                         false
-    //                                                     ) {
-    //                                                         return `❌ Error: ${parsedText.error || 'Unknown error'}`;
-    //                                                     }
-
-    //                                                     if (
-    //                                                         parsedText.successful ===
-    //                                                         true
-    //                                                     ) {
-    //                                                         // Extract any data field (agnostic)
-    //                                                         if (
-    //                                                             parsedText.data
-    //                                                         ) {
-    //                                                             const dataStr =
-    //                                                                 JSON.stringify(
-    //                                                                     parsedText.data,
-    //                                                                 );
-    //                                                             if (
-    //                                                                 dataStr.length >
-    //                                                                 100
-    //                                                             ) {
-    //                                                                 return `✅ Data extracted (${dataStr.length} chars)`;
-    //                                                             }
-    //                                                             return `✅ Data: ${dataStr}`;
-    //                                                         }
-    //                                                         return '✅ Success';
-    //                                                     }
-    //                                                 } catch {
-    //                                                     // If JSON parsing fails, return the raw text
-    //                                                     if (text.length > 100) {
-    //                                                         return `✅ Raw data (${text.length} chars)`;
-    //                                                     }
-    //                                                     return `✅ Raw: ${text}`;
-    //                                                 }
-    //                                             }
-    //                                         }
-    //                                     }
-    //                                 }
-    //                             }
-
-    //                             // Handle direct string content
-    //                             if (typeof contentData === 'string') {
-    //                                 try {
-    //                                     const parsedData =
-    //                                         JSON.parse(contentData);
-    //                                     if (parsedData.successful === false) {
-    //                                         return `❌ Error: ${parsedData.error || 'Unknown error'}`;
-    //                                     }
-    //                                     if (parsedData.successful === true) {
-    //                                         if (parsedData.data) {
-    //                                             const dataStr = JSON.stringify(
-    //                                                 parsedData.data,
-    //                                             );
-    //                                             if (dataStr.length > 100) {
-    //                                                 return `✅ Data extracted (${dataStr.length} chars)`;
-    //                                             }
-    //                                             return `✅ Data: ${dataStr}`;
-    //                                         }
-    //                                         return '✅ Success';
-    //                                     }
-    //                                 } catch {
-    //                                     if (contentData.length > 100) {
-    //                                         return `✅ Raw data (${contentData.length} chars)`;
-    //                                     }
-    //                                     return `✅ Raw: ${contentData}`;
-    //                                 }
-    //                             }
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //         }
-
-    //         // Handle direct success/failure
-    //         if (result.success === true) {
-    //             return '✅ Success';
-    //         }
-    //         if (result.success === false) {
-    //             return '❌ Failed';
-    //         }
-
-    //         // Fallback: try to extract any result field
-    //         const possibleFields = [
-    //             'result',
-    //             'results',
-    //             'data',
-    //             'response',
-    //             'content',
-    //         ];
-
-    //         for (const field of possibleFields) {
-    //             if (result[field]) {
-    //                 const fieldData = result[field];
-    //                 const fieldStr = JSON.stringify(fieldData);
-    //                 if (fieldStr.length > 100) {
-    //                     return `✅ ${field} (${fieldStr.length} chars)`;
-    //                 }
-    //                 return `✅ ${field}: ${fieldStr}`;
-    //             }
-    //         }
-
-    //         return null;
-    //     } catch {
-    //         return '❓ Unknown result format';
-    //     }
-    // }
-
-    /**
-     * Extract CRITICAL result data (UUIDs, IDs, counts) for replan context
-     */
-    private extractCriticalResultData(
-        result: Record<string, unknown>,
-    ): string | null {
-        try {
-            const criticalData: string[] = [];
-
-            // Helper to extract critical values from any object
-            const extractCritical = (obj: unknown, prefix = ''): void => {
-                if (!obj || typeof obj !== 'object') return;
-
-                const data = obj as Record<string, unknown>;
-
-                Object.entries(data).forEach(([key, value]) => {
-                    const fullKey = prefix ? `${prefix}.${key}` : key;
-
-                    // Check for UUIDs, IDs, counts, and other critical identifiers
-                    if (
-                        key.toLowerCase().includes('id') ||
-                        key.toLowerCase().includes('uuid') ||
-                        key.toLowerCase().includes('count') ||
-                        key.toLowerCase().includes('total') ||
-                        key.toLowerCase().includes('status')
-                    ) {
-                        if (
-                            typeof value === 'string' ||
-                            typeof value === 'number'
-                        ) {
-                            criticalData.push(`${key}: ${value}`);
-                        }
-                    }
-
-                    // Recurse into nested objects (limit depth to avoid infinite loops)
-                    if (
-                        typeof value === 'object' &&
-                        value !== null &&
-                        prefix.split('.').length < 3
-                    ) {
-                        extractCritical(value, fullKey);
-                    }
-                });
-            };
-
-            extractCritical(result);
-
-            return criticalData.length > 0 ? criticalData.join(', ') : null;
-        } catch {
-            return null;
-        }
     }
 
     /**
@@ -1820,7 +1614,6 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
      * Estimate token count (rough approximation)
      */
     private estimateTokenCount(text: string): number {
-        // Rough estimation: 1 token ≈ 4 characters for English text
         return Math.ceil(text.length / 4);
     }
 

@@ -2782,21 +2782,45 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
         currentPlan: unknown,
     ): ReplanContext | null {
         // Filter only executed steps (skip 'initialized')
-        const executedSteps = allSteps.filter((step) => {
-            const s = step as Record<string, unknown>;
-            return s.status !== 'initialized';
-        });
+        const executedSteps = allSteps.filter(
+            (step) =>
+                (step as Record<string, unknown>).status !== 'initialized',
+        );
 
         // No executed steps = first execution, no replan needed
         if (executedSteps.length === 0) {
             return null;
         }
 
-        // Check if any executed step failed or if multiple iterations (retry scenario)
+        // Check if any step has errors (status error, result.type error, or success: false)
         const hasErrors = executedSteps.some((step) => {
             const s = step as Record<string, unknown>;
-            const obs = s.observation as Record<string, unknown> | undefined;
-            return obs?.isSuccessful === false;
+            const status = s.status as string;
+            const result = s.result as Record<string, unknown> | undefined;
+            const resultType = result?.type as string;
+
+            // Check step-level errors
+            if (status === 'error' || resultType === 'error') {
+                return true;
+            }
+
+            // Check plan execution errors
+            const planExecutionResult = result?.planExecutionResult as
+                | Record<string, unknown>
+                | undefined;
+            const executedSteps = planExecutionResult?.executedSteps as
+                | Array<Record<string, unknown>>
+                | undefined;
+
+            if (!executedSteps || !Array.isArray(executedSteps)) {
+                return false;
+            }
+
+            return executedSteps.some(
+                (execStep) =>
+                    (execStep.result as Record<string, unknown>)?.success ===
+                    false,
+            );
         });
 
         // No replan needed if no errors and first iteration
@@ -2804,126 +2828,76 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
             return null;
         }
 
-        // Extract the current plan
+        // Extract plan data
         const plan = currentPlan as Record<string, unknown> | null;
+        const allPlanSteps =
+            (plan?.steps as Array<Record<string, unknown>>) || [];
 
-        // Get all steps from the plan
-        const planSteps = plan?.steps as
-            | Array<Record<string, unknown>>
-            | undefined;
-        const allPlanSteps = planSteps || [];
-
-        // Build tools that worked (successful steps)
-        const toolsThatWorked = executedSteps.flatMap((step) => {
+        // Helper to extract executed steps from plan execution result
+        const extractExecutedSteps = (step: unknown) => {
             const s = step as Record<string, unknown>;
             const result = s.result as Record<string, unknown> | undefined;
             const planExecutionResult = result?.planExecutionResult as
                 | Record<string, unknown>
                 | undefined;
-            const executedSteps = planExecutionResult?.executedSteps as
-                | Array<Record<string, unknown>>
-                | undefined;
+            return (
+                (planExecutionResult?.executedSteps as Array<
+                    Record<string, unknown>
+                >) || []
+            );
+        };
 
-            if (!executedSteps || !Array.isArray(executedSteps)) {
-                return [];
-            }
+        // Build execution data
+        const allExecutedSteps = executedSteps.flatMap(extractExecutedSteps);
+        const executedStepIds = new Set(
+            allExecutedSteps.map((s) => s.stepId as string),
+        );
 
-            return executedSteps
-                .filter((execStep) => {
-                    const stepResult = execStep.result as
-                        | Record<string, unknown>
-                        | undefined;
-                    return stepResult?.success === true;
-                })
-                .map((execStep) => {
-                    const stepResult = execStep.result as
-                        | Record<string, unknown>
-                        | undefined;
-                    const stepData = execStep.step as
-                        | Record<string, unknown>
-                        | undefined;
+        const toolsThatWorked = allExecutedSteps
+            .filter(
+                (execStep) =>
+                    (execStep.result as Record<string, unknown>)?.success ===
+                    true,
+            )
+            .map((execStep) => {
+                const stepResult = execStep.result as Record<string, unknown>;
+                const stepData = execStep.step as Record<string, unknown>;
 
-                    return {
-                        stepId: execStep.stepId as string,
-                        tool: stepData?.tool as string,
-                        description: stepData?.description as string,
-                        success: true,
-                        result: stepResult,
-                        executedAt: stepResult?.executedAt as number,
-                        duration: stepResult?.duration as number,
-                    };
-                });
-        });
+                return {
+                    stepId: execStep.stepId as string,
+                    tool: stepData?.tool as string,
+                    description: stepData?.description as string,
+                    success: true,
+                    result: stepResult,
+                    executedAt: stepResult?.executedAt as number,
+                    duration: stepResult?.duration as number,
+                };
+            });
 
-        // Build tools that failed
-        const toolsThatFailed = executedSteps.flatMap((step) => {
-            const s = step as Record<string, unknown>;
-            const result = s.result as Record<string, unknown> | undefined;
-            const planExecutionResult = result?.planExecutionResult as
-                | Record<string, unknown>
-                | undefined;
-            const executedSteps = planExecutionResult?.executedSteps as
-                | Array<Record<string, unknown>>
-                | undefined;
+        const toolsThatFailed = allExecutedSteps
+            .filter(
+                (execStep) =>
+                    (execStep.result as Record<string, unknown>)?.success ===
+                    false,
+            )
+            .map((execStep) => {
+                const stepResult = execStep.result as Record<string, unknown>;
+                const stepData = execStep.step as Record<string, unknown>;
 
-            if (!executedSteps || !Array.isArray(executedSteps)) {
-                return [];
-            }
-
-            return executedSteps
-                .filter((execStep) => {
-                    const stepResult = execStep.result as
-                        | Record<string, unknown>
-                        | undefined;
-                    return stepResult?.success === false;
-                })
-                .map((execStep) => {
-                    const stepResult = execStep.result as
-                        | Record<string, unknown>
-                        | undefined;
-                    const stepData = execStep.step as
-                        | Record<string, unknown>
-                        | undefined;
-
-                    return {
-                        stepId: execStep.stepId as string,
-                        tool: stepData?.tool as string,
-                        description: stepData?.description as string,
-                        success: false,
-                        error: stepResult?.error as string,
-                        result: stepResult,
-                        executedAt: stepResult?.executedAt as number,
-                        duration: stepResult?.duration as number,
-                    };
-                });
-        });
-
-        // Build tools not executed (steps that were not executed)
-        const executedStepIds = new Set<string>();
-
-        // Collect all executed step IDs
-        executedSteps.forEach((step) => {
-            const s = step as Record<string, unknown>;
-            const result = s.result as Record<string, unknown> | undefined;
-            const planExecutionResult = result?.planExecutionResult as
-                | Record<string, unknown>
-                | undefined;
-            const executedSteps = planExecutionResult?.executedSteps as
-                | Array<Record<string, unknown>>
-                | undefined;
-
-            if (executedSteps && Array.isArray(executedSteps)) {
-                executedSteps.forEach((execStep) => {
-                    executedStepIds.add(execStep.stepId as string);
-                });
-            }
-        });
+                return {
+                    stepId: execStep.stepId as string,
+                    tool: stepData?.tool as string,
+                    description: stepData?.description as string,
+                    success: false,
+                    error: stepResult?.error as string,
+                    result: stepResult,
+                    executedAt: stepResult?.executedAt as number,
+                    duration: stepResult?.duration as number,
+                };
+            });
 
         const toolsNotExecuted = allPlanSteps
-            .filter((planStep) => {
-                const stepId = planStep.id as string;
-                return !executedStepIds.has(stepId);
-            })
+            .filter((planStep) => !executedStepIds.has(planStep.id as string))
             .map((planStep) => ({
                 stepId: planStep.id as string,
                 tool: planStep.tool as string,
@@ -2932,27 +2906,69 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
                 notExecuted: true,
             }));
 
-        return {
-            isReplan: true,
-            previousPlan: {
+        // Extract signals from first executed step
+        const signals = {
+            failurePatterns: [] as string[],
+            primaryCause: '',
+            suggestedStrategy: 'plan-execute',
+            needs: [] as string[],
+            noDiscoveryPath: [] as string[],
+            errors: [] as string[],
+            suggestedNextStep: '',
+        };
+
+        if (executedSteps.length > 0) {
+            const firstStep = executedSteps[0] as Record<string, unknown>;
+            const result = firstStep.result as
+                | Record<string, unknown>
+                | undefined;
+            const planExecutionResult = result?.planExecutionResult as
+                | Record<string, unknown>
+                | undefined;
+
+            if (planExecutionResult) {
+                const failurePatterns = planExecutionResult.failurePatterns as
+                    | string[]
+                    | undefined;
+                const primaryCause = planExecutionResult.primaryCause as
+                    | string
+                    | undefined;
+                const suggestedStrategy =
+                    planExecutionResult.suggestedStrategy as string | undefined;
+
+                if (failurePatterns && Array.isArray(failurePatterns)) {
+                    signals.failurePatterns = failurePatterns;
+                }
+                if (primaryCause) {
+                    signals.primaryCause = primaryCause;
+                }
+                if (suggestedStrategy) {
+                    signals.suggestedStrategy = suggestedStrategy;
+                }
+            }
+        }
+
+        // Build current plan execution data
+        const currentPlanData = {
+            plan: {
                 id: (plan?.id as string) || 'current-execution',
                 goal: context.input,
                 strategy: 'plan-execute',
+                totalSteps: allPlanSteps.length,
+                steps: allPlanSteps,
             },
-            preservedSteps: [
-                {
-                    plan: {
-                        id: (plan?.id as string) || 'current-execution',
-                        goal: context.input,
-                        strategy: 'plan-execute',
-                        totalSteps: allPlanSteps.length,
-                        steps: allPlanSteps,
-                    },
-                    toolsThatWorked,
-                    toolsThatFailed,
-                    toolsNotExecuted,
-                },
-            ],
+            executionData: {
+                toolsThatWorked,
+                toolsThatFailed,
+                toolsNotExecuted,
+            },
+            signals,
+        };
+
+        return {
+            isReplan: true,
+            executedPlan: currentPlanData,
+            planHistory: context.iterations > 1 ? [currentPlanData] : undefined,
         };
     }
 }
