@@ -74,6 +74,7 @@ import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeMan
 import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
+import { CacheService } from '@/shared/utils/cache/cache.service';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
@@ -109,6 +110,7 @@ export class GitlabService
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
         private readonly configService: ConfigService,
+        private readonly cacheService: CacheService,
     ) {}
 
     async getPullRequestAuthors(params: {
@@ -2029,50 +2031,109 @@ export class GitlabService
     ): Promise<any[] | null> {
         const { organizationAndTeamData, repository, prNumber } = params;
 
-        const gitlabAuthDetail = await this.getAuthDetails(
-            organizationAndTeamData,
-        );
-
-        const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
-
-        const commits = await gitlabAPI.MergeRequests.allCommits(
-            repository.id,
-            prNumber,
-        );
-
-        const commitDetails = await Promise.all(
-            commits.map(async (commit) => {
-                const user = await this.getUserByEmailOrName({
-                    organizationAndTeamData,
-                    email: commit?.author_email,
-                    userName: commit?.author_name,
+        const prCacheKey = `gitlab-commits-pr-${repository.id}-${prNumber}`;
+        
+        try {
+            const cachedCommits = await this.cacheService.getFromCache(prCacheKey);
+            if (cachedCommits) {
+                this.logger.log({
+                    message: `Found cached commits for PR #${prNumber} in repository ${repository.id}`,
+                    context: GitlabService.name,
+                    serviceName: 'GitlabService getCommitsForPullRequestForCodeReview',
+                    metadata: { prNumber, repositoryId: repository.id, cached: true },
                 });
+                return cachedCommits as any[];
+            }
+        } catch (cacheError) {
+            this.logger.warn({
+                message: 'Error reading commits from cache, continuing with API call',
+                context: GitlabService.name,
+                serviceName: 'GitlabService getCommitsForPullRequestForCodeReview',
+                error: cacheError,
+            });
+        }
 
-                return {
-                    sha: commit?.id,
-                    message: commit?.message,
-                    created_at: commit?.created_at,
-                    author: {
-                        name: commit?.author_name,
-                        email: commit?.author_email,
-                        date: commit?.authored_date,
-                        username: user ? user.username : null,
-                        id: user && user.id ? user.id : null,
-                    },
-                    parents:
-                        commit?.parent_ids
-                            ?.map((p) => ({ sha: p ?? '' }))
-                            ?.filter((p) => p.sha) ?? [],
-                };
-            }),
-        );
-
-        return commitDetails.sort((a, b) => {
-            return (
-                new Date(a?.created_at).getTime() -
-                new Date(b?.created_at).getTime()
+        try {
+            const gitlabAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
             );
-        });
+
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const commits = await gitlabAPI.MergeRequests.allCommits(
+                repository.id,
+                prNumber,
+            );
+
+            this.logger.log({
+                message: `Processing ${commits.length} commits for PR #${prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService getCommitsForPullRequestForCodeReview',
+                metadata: { prNumber, repositoryId: repository.id, commitsCount: commits.length },
+            });
+
+            const commitDetails = await Promise.all(
+                commits.map(async (commit) => {
+                    const user = await this.getUserByEmailOrNameWithRetry({
+                        organizationAndTeamData,
+                        email: commit?.author_email,
+                        userName: commit?.author_name,
+                    });
+
+                    return {
+                        sha: commit?.id,
+                        message: commit?.message,
+                        created_at: commit?.created_at,
+                        author: {
+                            name: commit?.author_name,
+                            email: commit?.author_email,
+                            date: commit?.authored_date,
+                            username: user ? user.username : null,
+                            id: user && user.id ? user.id : null,
+                        },
+                        parents:
+                            commit?.parent_ids
+                                ?.map((p) => ({ sha: p ?? '' }))
+                                ?.filter((p) => p.sha) ?? [],
+                    };
+                }),
+            );
+
+            const sortedCommits = commitDetails.sort((a, b) => {
+                return (
+                    new Date(a?.created_at).getTime() -
+                    new Date(b?.created_at).getTime()
+                );
+            });
+
+            try {
+                await this.cacheService.addToCache(prCacheKey, sortedCommits, 1800000); // 30 minutos
+                this.logger.log({
+                    message: `Cached commits for PR #${prNumber} in repository ${repository.id}`,
+                    context: GitlabService.name,
+                    serviceName: 'GitlabService getCommitsForPullRequestForCodeReview',
+                    metadata: { prNumber, repositoryId: repository.id, cached: true },
+                });
+            } catch (cacheError) {
+                this.logger.warn({
+                    message: 'Error saving commits to cache',
+                    context: GitlabService.name,
+                    serviceName: 'GitlabService getCommitsForPullRequestForCodeReview',
+                    error: cacheError,
+                });
+            }
+
+            return sortedCommits;
+        } catch (error) {
+            this.logger.error({
+                message: `Error fetching commits for PR #${prNumber}`,
+                context: GitlabService.name,
+                serviceName: 'GitlabService getCommitsForPullRequestForCodeReview',
+                error: error,
+                metadata: params,
+            });
+            throw error;
+        }
     }
 
     async createMergeRequestWebhook(params: any) {
@@ -2581,6 +2642,85 @@ export class GitlabService
             });
             return [];
         }
+    }
+
+    private async getUserByEmailOrNameWithRetry(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        email?: string;
+        userName: string;
+    }, maxRetries: number = 3, timeout: number = 5000): Promise<any | null> {
+        const { userName, email } = params;
+        
+        // Chave de cache única para este usuário
+        const cacheKey = `gitlab-user-${email || 'no-email'}-${userName}`;
+        
+        try {
+            const cachedUser = await this.cacheService.getFromCache(cacheKey);
+            if (cachedUser) {
+                return cachedUser;
+            }
+        } catch (cacheError) {
+            this.logger.warn({
+                message: 'Error reading from cache, continuing with API call',
+                context: GitlabService.name,
+                serviceName: 'GitlabService getUserByEmailOrNameWithRetry',
+                error: cacheError,
+            });
+        }
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error('Request timeout')), timeout);
+                });
+
+                const userPromise = this.getUserByEmailOrName({
+                    organizationAndTeamData: params.organizationAndTeamData,
+                    email: params.email || '',
+                    userName: params.userName,
+                });
+                
+                const user = await Promise.race([userPromise, timeoutPromise]);
+                
+                if (user) {
+                    try {
+                        await this.cacheService.addToCache(cacheKey, user, 1800000); // 30 minutos
+                    } catch (cacheError) {
+                        this.logger.warn({
+                            message: 'Error saving to cache',
+                            context: GitlabService.name,
+                            serviceName: 'GitlabService getUserByEmailOrNameWithRetry',
+                            error: cacheError,
+                        });
+                    }
+                }
+                
+                return user;
+            } catch (error) {
+                this.logger.warn({
+                    message: `Attempt ${attempt}/${maxRetries} failed for user: ${email || userName}`,
+                    context: GitlabService.name,
+                    serviceName: 'GitlabService getUserByEmailOrNameWithRetry',
+                    error: error,
+                    metadata: { attempt, maxRetries, email, userName },
+                });
+
+                if (attempt === maxRetries) {
+                    this.logger.error({
+                        message: `All ${maxRetries} attempts failed for user: ${email || userName}, returning null to continue flow`,
+                        context: GitlabService.name,
+                        serviceName: 'GitlabService getUserByEmailOrNameWithRetry',
+                        error: error,
+                        metadata: params,
+                    });
+                    return null;
+                }
+
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+            }
+        }
+
+        return null;
     }
 
     async getUserByEmailOrName(params: {
