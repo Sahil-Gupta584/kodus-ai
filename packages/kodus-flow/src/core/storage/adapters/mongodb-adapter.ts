@@ -1,10 +1,11 @@
-import { createLogger } from '../../../observability/logger.js';
-import type {
+import {
     BaseStorage,
     BaseStorageItem,
     BaseStorageStats,
-} from '../../types/base-storage.js';
-import type { StorageAdapterConfig } from '../factory.js';
+    StorageAdapterConfig,
+} from '@/core/types/allTypes.js';
+import { createLogger } from '../../../observability/logger.js';
+
 import type { MongoClient, Db, Collection } from 'mongodb';
 
 const logger = createLogger('mongodb-storage-adapter');

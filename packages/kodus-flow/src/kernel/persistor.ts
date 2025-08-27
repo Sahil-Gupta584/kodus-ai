@@ -1,27 +1,17 @@
-/**
- * @module kernel/persistor
- * @description Defines base implementations for snapshot persistence.
- * Uses the Persistor and DeltaSnapshot interfaces from common-types.ts.
- * Now uses unified storage system with BaseStorage interface.
- */
-
-import type {
-    Persistor,
-    Snapshot,
+import {
+    AnyEvent,
     DeltaSnapshot,
+    Persistor,
     PersistorStats,
+    Snapshot,
     SnapshotOptions,
-} from '../core/types/common-types.js';
-import type { AnyEvent } from '../core/types/events.js';
+} from '@/core/types/allTypes.js';
 import {
     createPersistor as createPersistorFromFactory,
     getGlobalPersistor as getGlobalPersistorFromFactory,
     setGlobalPersistor as setGlobalPersistorFromFactory,
 } from '../persistor/factory.js';
 
-/**
- * Simple delta calculation using object diffing
- */
 function calculateDelta(
     oldData: unknown,
     newData: unknown,
@@ -146,10 +136,6 @@ function applyDelta(baseSnap: Snapshot, delta: DeltaSnapshot): Snapshot {
     };
 }
 
-/**
- * Base class for persistor implementations
- * Provides common functionality and enforces the Persistor interface
- */
 export abstract class BasePersistor implements Persistor {
     /**
      * Save a snapshot

@@ -1,13 +1,6 @@
-/**
- * @module core/llm/providers/gemini-provider-simple
- * @description Simplified Google Gemini Provider para LLM Adapter
- *
- * Implementação simplificada que funciona com Gemini 2.0 Flash
- */
-
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createLogger } from '../../../observability/index.js';
-import type { LLMMessage, LLMResponse } from '../../../adapters/llm/index.js';
+import { LLMMessage, LLMResponse } from '@/core/types/allTypes.js';
 
 // Simple provider interface for legacy providers
 export interface LLMProvider {

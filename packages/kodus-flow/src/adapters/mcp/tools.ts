@@ -1,21 +1,5 @@
-import type { MCPToolRawWithServer } from './types.js';
-import { z } from 'zod';
 import { safeJsonSchemaToZod } from '../../core/utils/json-schema-to-zod.js';
-
-/**
- * Tool structure expected by the engine
- */
-export interface EngineTool {
-    name: string;
-    description: string;
-    inputZodSchema: z.ZodSchema;
-    inputSchema: unknown;
-    outputSchema?: unknown;
-    outputZodSchema?: z.ZodSchema;
-    annotations?: Record<string, unknown>;
-    title?: string;
-    execute: (args: unknown, ctx: unknown) => Promise<unknown>;
-}
+import { EngineTool, MCPToolRawWithServer } from '@/core/types/allTypes.js';
 
 /**
  * Validate MCP tool schema

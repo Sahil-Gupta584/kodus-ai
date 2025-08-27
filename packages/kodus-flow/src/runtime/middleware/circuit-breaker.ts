@@ -1,57 +1,22 @@
-/**
- * Middleware de Circuit Breaker
- *
- * Integra o Circuit Breaker com o sistema de middleware do runtime
- */
-
-import type { Middleware, MiddlewareFactoryType } from './types.js';
 import { CircuitBreaker } from '../core/circuit-breaker.js';
-import type {
+import {
+    createLogger,
+    ObservabilitySystem,
+} from '../../observability/index.js';
+import {
     CircuitBreakerConfig,
+    CircuitBreakerMiddlewareConfig,
     CircuitResult,
-} from '../core/circuit-breaker.js';
-import type { ObservabilitySystem } from '../../observability/index.js';
-import { createLogger } from '../../observability/index.js';
-import type { Event } from '../../core/types/events.js';
-import type { EventHandler } from '../../core/types/common-types.js';
+    EventHandler,
+    Middleware,
+    MiddlewareFactoryType,
+} from '@/core/types/allTypes.js';
 
-/**
- * Configuração do middleware de Circuit Breaker
- */
-export interface CircuitBreakerMiddlewareConfig extends CircuitBreakerConfig {
-    /**
-     * Chave para identificar o circuito (opcional, usa event.type se não fornecido)
-     */
-    circuitKey?: string;
-
-    /**
-     * Função para gerar chave do circuito baseada no evento
-     */
-    keyGenerator?: (event: unknown) => string;
-
-    /**
-     * Função para determinar se o evento deve ser protegido
-     */
-    shouldProtect?: (event: unknown) => boolean;
-
-    /**
-     * Callback para quando operação é rejeitada
-     */
-    onRejected?: (event: unknown, result: CircuitResult<unknown>) => void;
-}
-
-/**
- * Circuit Breaker Manager
- * Gerencia múltiplos circuit breakers
- */
 export class CircuitBreakerManager {
     private circuits = new Map<string, CircuitBreaker>();
 
     constructor(private observability: ObservabilitySystem) {}
 
-    /**
-     * Obter ou criar circuito
-     */
     getCircuit(config: CircuitBreakerConfig): CircuitBreaker {
         const key = config.name;
 

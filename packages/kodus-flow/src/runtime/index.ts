@@ -1,73 +1,34 @@
-/**
- * @module runtime/index
- * @description Runtime - Sistema de processamento de eventos e workflows
- *
- * API principal para processamento de eventos com:
- * - Registro de handlers
- * - Emissão de eventos
- * - Processamento em batch
- * - Stream processing
- * - Middleware configurável
- * - Observabilidade integrada
- * - Garantias de delivery
- * - Suporte multi-tenant
- */
-
-// Core components
 import { EventQueue } from './core/event-queue.js';
 import { OptimizedEventProcessor } from './core/event-processor-optimized.js';
 import { createPersistorFromConfig } from '../persistor/factory.js';
 import { StreamManager } from './core/stream-manager.js';
 import { MemoryMonitor } from './core/memory-monitor.js';
-import { createEvent } from '../core/types/events.js';
 import { createEventStore, type EventStore } from './core/event-store.js';
 
-// Types imports
-import type {
-    AnyEvent,
-    EventType,
-    EventPayloads,
-    Event,
-} from '../core/types/events.js';
-import type { EventHandler, EventStream } from '../core/types/common-types.js';
-import type { Middleware } from './middleware/types.js';
 import type { ObservabilitySystem } from '../observability/index.js';
-import type { WorkflowContext } from '../core/types/workflow-types.js';
-import type { MemoryMonitorConfig } from './core/memory-monitor.js';
-// Enhanced queue config type (now part of EventQueueConfig)
-import type { Persistor } from '../persistor/index.js';
-import type { PersistorType } from '../persistor/config.js';
-
-export { EventQueue } from './core/event-queue.js';
-export type { EventQueueConfig, QueueItem } from './core/event-queue.js';
 
 export { EventStore, createEventStore } from './core/event-store.js';
-export type { EventStoreConfig } from './core/event-store.js';
 
-// Import for internal use
-import type { EventQueueConfig } from './core/event-queue.js';
+import {
+    AnyEvent,
+    createEvent,
+    EmitOptions,
+    EmitResult,
+    EventHandler,
+    EventPayloads,
+    EventType,
+    Runtime,
+    RuntimeConfig,
+    WorkflowContext,
+} from '@/core/types/allTypes.js';
 
 export { OptimizedEventProcessor } from './core/event-processor-optimized.js';
-export type { OptimizedEventProcessorConfig } from './core/event-processor-optimized.js';
 
 export { StreamManager } from './core/stream-manager.js';
 export { MemoryMonitor } from './core/memory-monitor.js';
-export type {
-    MemoryMonitorConfig,
-    MemoryMetrics,
-    MemoryAlert,
-    MemoryMonitorStats,
-} from './core/memory-monitor.js';
-export {
-    workflowEvent,
-    isEventType,
-    isEventTypeGroup,
-    extractEventData,
-} from './core/event-factory.js';
 
 // Middleware
 export * from './middleware/index.js';
-export type { Middleware } from './middleware/types.js';
 
 // Constants
 export {
@@ -75,179 +36,6 @@ export {
     DEFAULT_RETRY_CONFIG,
     DEFAULT_CONCURRENCY_OPTIONS,
 } from './constants.js';
-
-/**
- * Configuração do Runtime - Simplificada
- */
-export interface RuntimeConfig {
-    // Core settings
-    queueSize?: number; // Default: 1000
-    batchSize?: number; // Default: 100
-    enableObservability?: boolean; // Default: true
-
-    // Event processing limits
-    maxEventDepth?: number; // Default: 100
-    maxEventChainLength?: number; // Default: 1000
-
-    // Memory management
-    cleanupInterval?: number; // Default: 2min
-    staleThreshold?: number; // Default: 10min
-    memoryMonitor?: MemoryMonitorConfig;
-
-    // Middleware pipeline
-    middleware?: Middleware[];
-
-    // Delivery guarantees (simplified)
-    enableAcks?: boolean; // Default: true (controls ACK/NACK system)
-    ackTimeout?: number; // Default: 30s
-
-    // Multi-tenant support
-    tenantId?: string;
-
-    // Persistence (unified configuration)
-    persistor?: Persistor;
-    executionId?: string;
-
-    // Queue configuration (direct access to EventQueue config)
-    queueConfig?: Partial<EventQueueConfig>;
-
-    // Event Store configuration
-    enableEventStore?: boolean; // Default: false
-    eventStoreConfig?: {
-        persistorType?: PersistorType;
-        persistorOptions?: Record<string, unknown>;
-        replayBatchSize?: number;
-        maxStoredEvents?: number;
-    };
-
-    // Batching configuration
-    batching?: {
-        enabled?: boolean; // Default: false
-        defaultBatchSize?: number; // Default: 50
-        defaultBatchTimeout?: number; // Default: 100ms
-        maxBatchSize?: number; // Default: 1000
-        flushOnEventTypes?: string[]; // Event types that trigger immediate flush
-    };
-}
-
-/**
- * Opções de emissão de eventos
- */
-export interface EmitOptions {
-    deliveryGuarantee?: 'at-most-once' | 'at-least-once' | 'exactly-once';
-    priority?: number;
-    timeout?: number;
-    retryPolicy?: {
-        maxRetries: number;
-        backoff: 'linear' | 'exponential';
-        initialDelay: number;
-    };
-    correlationId?: string;
-    tenantId?: string;
-
-    // Batching options
-    batch?: boolean; // Enable batching for this event
-    batchSize?: number; // Override default batch size
-    batchTimeout?: number; // Override default batch timeout (ms)
-    flushBatch?: boolean; // Force flush the batch after this event
-}
-
-/**
- * Resultado da emissão
- */
-export interface EmitResult {
-    success: boolean;
-    eventId: string;
-    queued: boolean;
-    error?: Error;
-    correlationId?: string;
-}
-
-/**
- * Runtime - Interface principal
- */
-export interface Runtime {
-    // Event handling
-    on(eventType: EventType, handler: EventHandler<AnyEvent>): void;
-    emit<T extends EventType>(
-        eventType: T,
-        data?: EventPayloads[T],
-        options?: EmitOptions,
-    ): EmitResult;
-    emitAsync<T extends EventType>(
-        eventType: T,
-        data?: EventPayloads[T],
-        options?: EmitOptions,
-    ): Promise<EmitResult>;
-    off(eventType: EventType, handler: EventHandler<AnyEvent>): void;
-
-    // Processing
-    process(withStats?: boolean): Promise<void | {
-        processed: number;
-        acked: number;
-        failed: number;
-    }>;
-
-    // ACK/NACK para delivery guarantees
-    ack(eventId: string): Promise<void>;
-    nack(eventId: string, error?: Error): Promise<void>;
-
-    // Event factory
-    createEvent<T extends EventType>(
-        type: T,
-        data?: EventPayloads[T],
-    ): Event<T>;
-
-    // Stream processing
-    createStream<S extends AnyEvent>(
-        generator: () => AsyncGenerator<S>,
-    ): EventStream<S>;
-
-    // Multi-tenant
-    forTenant(tenantId: string): Runtime;
-
-    // Statistics
-    getStats(): Record<string, unknown>;
-    getRecentEvents?(limit?: number): Array<{
-        eventId: string;
-        eventType: string;
-        timestamp: number;
-        correlationId?: string;
-    }>;
-
-    // Enhanced queue access (if available)
-    getEnhancedQueue?(): EventQueue | null;
-    getQueueSnapshot?(limit?: number): Array<{
-        eventId: string;
-        eventType: string;
-        priority: number;
-        retryCount: number;
-        timestamp: number;
-        correlationId?: string;
-        tenantId?: string;
-    }>;
-    reprocessFromDLQ?(eventId: string): Promise<boolean>;
-    reprocessDLQByCriteria?(criteria: {
-        maxAge?: number;
-        limit?: number;
-        eventType?: string;
-    }): Promise<{ reprocessedCount: number; events: AnyEvent[] }>;
-
-    // Event Store access
-    getEventStore?(): EventStore | null;
-    replayEvents?(
-        fromTimestamp: number,
-        options?: {
-            toTimestamp?: number;
-            onlyUnprocessed?: boolean;
-            batchSize?: number;
-        },
-    ): AsyncGenerator<AnyEvent[]>;
-
-    // Cleanup
-    clear(): void;
-    cleanup(): Promise<void>;
-}
 
 /**
  * Criar Runtime - API principal
@@ -504,7 +292,6 @@ export function createRuntime(
     return {
         // Event handling
         on(eventType: EventType, handler: EventHandler<AnyEvent>) {
-            // Registrar handler no OptimizedEventProcessor para aplicar middlewares
             eventProcessor.registerHandler(eventType, handler);
         },
 

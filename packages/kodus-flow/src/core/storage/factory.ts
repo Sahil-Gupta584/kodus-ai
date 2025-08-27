@@ -1,64 +1,15 @@
 import { createLogger } from '../../observability/logger.js';
-import type {
+import {
     BaseStorage,
-    BaseStorageConfig,
     BaseStorageItem,
-} from '../types/base-storage.js';
+    STORAGE_DEFAULTS,
+    StorageAdapterConfig,
+    StorageEnum,
+} from '../types/allTypes.js';
 import { InMemoryStorageAdapter } from './adapters/in-memory-adapter.js';
 import { MongoDBStorageAdapter } from './adapters/mongodb-adapter.js';
 
 const logger = createLogger('storage-factory');
-
-export type StorageType = 'memory' | 'mongodb';
-
-export interface StorageAdapterConfig extends BaseStorageConfig {
-    type: StorageType;
-    connectionString?: string;
-    options?: Record<string, unknown>;
-}
-
-export interface StorageDefaultConfig {
-    maxItems: number;
-    enableCompression: boolean;
-    cleanupInterval: number;
-    timeout: number;
-    retries: number;
-    enableObservability: boolean;
-    enableHealthChecks: boolean;
-    enableMetrics: boolean;
-    options?: Record<string, unknown>;
-}
-
-export const STORAGE_DEFAULTS: Record<StorageType, StorageDefaultConfig> = {
-    memory: {
-        maxItems: 1000,
-        enableCompression: true,
-        cleanupInterval: 300000,
-        timeout: 5000,
-        retries: 3,
-        enableObservability: true,
-        enableHealthChecks: true,
-        enableMetrics: true,
-    },
-    mongodb: {
-        maxItems: 1000,
-        enableCompression: true,
-        cleanupInterval: 300000,
-        timeout: 10000,
-        retries: 3,
-        enableObservability: true,
-        enableHealthChecks: true,
-        enableMetrics: true,
-        options: {
-            maxPoolSize: 10,
-            serverSelectionTimeoutMS: 5000,
-            connectTimeoutMS: 10000,
-            socketTimeoutMS: 45000,
-            database: 'kodus',
-            collection: 'storage',
-        },
-    },
-};
 
 export class StorageAdapterFactory {
     private static adapters = new Map<string, BaseStorage<BaseStorageItem>>();
@@ -123,7 +74,7 @@ export class StorageAdapterFactory {
     }
 
     static getCached<T extends BaseStorage<BaseStorageItem>>(
-        type: StorageType,
+        type: StorageEnum,
         connectionString?: string,
     ): T | null {
         const adapterKey = `${type}_${connectionString || 'default'}`;

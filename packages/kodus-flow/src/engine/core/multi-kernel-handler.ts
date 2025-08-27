@@ -1,16 +1,26 @@
-/**
- * @module engine/core/multi-kernel-handler
- * @description Multi-Kernel Handler for proper separation of concerns
- *
- * Replaces the single-kernel KernelHandler with a multi-kernel approach:
- * - Observability kernel (no persistence, fire-and-forget)
- * - Agent kernel (with persistence, snapshots, recovery)
- * - Automatic routing based on event type namespace
- */
+import {
+    MultiKernelManager,
+    createMultiKernelManager,
+    createObservabilityKernelSpec,
+    createAgentKernelSpec,
+} from '../../kernel/multi-kernel-manager.js';
+import { createLogger } from '../../observability/index.js';
+import { IdGenerator } from '../../utils/id-generator.js';
 
-/**
- * Simple mutex implementation for thread-safe operations
- */
+import {
+    AnyEvent,
+    createWorkflow,
+    EventHandler,
+    EventPayloads,
+    EventType,
+    ExecutionId,
+    KernelSpec,
+    MultiKernelConfig,
+    MultiKernelExecutionResult,
+    MultiKernelHandlerConfig,
+    Workflow,
+} from '@/core/types/allTypes.js';
+
 class SimpleMutex {
     private locked = false;
     private queue: (() => void)[] = [];
@@ -45,110 +55,6 @@ class SimpleMutex {
     }
 }
 
-import {
-    MultiKernelManager,
-    createMultiKernelManager,
-    createObservabilityKernelSpec,
-    createAgentKernelSpec,
-    type MultiKernelConfig,
-    type KernelSpec,
-} from '../../kernel/multi-kernel-manager.js';
-import { createLogger } from '../../observability/index.js';
-import { createWorkflow } from '../../core/types/common-types.js';
-import { IdGenerator } from '../../utils/id-generator.js';
-import type {
-    EventType,
-    EventPayloads,
-    AnyEvent,
-} from '../../core/types/events.js';
-import type { EventHandler, Workflow } from '../../core/types/common-types.js';
-import type { ExecutionId } from '../../core/types/base-types.js';
-import type { Middleware } from '../../runtime/middleware/types.js';
-import type { PersistorType } from '../../persistor/config.js';
-
-/**
- * Multi-Kernel Handler Configuration
- */
-export interface MultiKernelHandlerConfig {
-    tenantId: string;
-    debug?: boolean;
-    monitor?: boolean;
-
-    // Observability kernel configuration
-    observability?: {
-        enabled?: boolean;
-        workflow?: Workflow;
-        performance?: {
-            enableBatching?: boolean;
-            enableLazyLoading?: boolean;
-        };
-    };
-
-    // Agent kernel configuration
-    agent?: {
-        enabled?: boolean;
-        workflow?: Workflow;
-        quotas?: {
-            maxEvents?: number;
-            maxDuration?: number;
-            maxMemory?: number;
-        };
-        runtimeConfig?: {
-            queueSize?: number;
-            batchSize?: number;
-            middleware?: Middleware[];
-        };
-        performance?: {
-            enableBatching?: boolean;
-            enableCaching?: boolean;
-            autoSnapshot?: {
-                enabled?: boolean;
-                intervalMs?: number;
-                eventInterval?: number;
-                useDelta?: boolean;
-            };
-        };
-    };
-
-    // Global configuration
-    global?: {
-        persistorType?: PersistorType;
-        persistorOptions?: Record<string, unknown>;
-        enableCrossKernelLogging?: boolean;
-    };
-
-    // Infinite loop protection
-    loopProtection?: {
-        enabled?: boolean;
-        maxEventCount?: number;
-        maxEventRate?: number;
-        windowSize?: number;
-    };
-}
-
-/**
- * Execution result for multi-kernel operations
- */
-export interface MultiKernelExecutionResult<T = unknown> {
-    status: 'completed' | 'failed' | 'paused';
-    data?: T;
-    error?: {
-        message: string;
-        details?: unknown;
-    };
-    metadata: {
-        executionId: ExecutionId;
-        duration: number;
-        kernelsUsed: string[];
-        agentEventCount: number;
-        observabilityEventCount: number;
-        snapshotId?: string;
-    };
-}
-
-/**
- * Multi-Kernel Handler - Proper separation between observability and agent kernels
- */
 export class MultiKernelHandler {
     private readonly config: MultiKernelHandlerConfig;
     private readonly logger: ReturnType<typeof createLogger>;

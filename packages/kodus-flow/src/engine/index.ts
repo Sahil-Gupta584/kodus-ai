@@ -2,8 +2,6 @@ export {
     MultiKernelHandler,
     createMultiKernelHandler,
     createDefaultMultiKernelHandler,
-    type MultiKernelHandlerConfig,
-    type MultiKernelExecutionResult,
 } from './core/multi-kernel-handler.js';
 
 export { AgentEngine, createAgent } from './agents/agent-engine.js';
@@ -20,21 +18,6 @@ export {
     type AgentRegistryEntry,
     type LifecycleStats,
 } from './agents/agent-lifecycle.js';
-
-export type {
-    AgentCapability,
-    AgentMessage,
-    AgentCoordinationStrategy,
-    AgentSelectionCriteria,
-    MultiAgentContext,
-    MultiAgentResult,
-    WorkflowStep,
-    WorkflowStepContext,
-    MessageStatus,
-    TrackedMessage,
-    DelegationContext,
-    DelegationResult,
-} from './agents/multi-agent-types.js';
 
 export { AgentExecutor, createWorkflowAgent } from './agents/agent-executor.js';
 
@@ -72,11 +55,3 @@ export {
     type PlanningAgent,
     type PlanningContext,
 } from './planning/planner.js';
-
-export type {
-    AgentContext,
-    AgentThought,
-    AgentAction,
-} from '../core/types/common-types.js';
-
-export type { AgentMetrics } from '../core/types/agent-types.js';

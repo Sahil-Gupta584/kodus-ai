@@ -1,17 +1,3 @@
-/**
- * @module core/llm/providers/langchain-provider
- * @description LangChain Provider - Adapter para integrar com LangChain LLMs
- *
- * CARACTERÍSTICAS:
- * ✅ Compatível com qualquer LLM do LangChain
- * ✅ Suporte a tool calling
- * ✅ Streaming support
- * ✅ Conversion entre formatos
- * ✅ Error handling robusto
- */
-
-import type { LLMMessage, LLMResponse } from '../../../adapters/llm/index.js';
-
 // Simple provider interface for legacy providers
 export interface LLMProvider {
     name: string;
@@ -41,6 +27,7 @@ export interface LLMOptions {
         | 'none'
         | { type: 'function'; function: { name: string } };
 }
+import { LLMMessage, LLMResponse } from '@/core/types/allTypes.js';
 import { createLogger } from '../../../observability/index.js';
 import { EngineError } from '../../errors.js';
 

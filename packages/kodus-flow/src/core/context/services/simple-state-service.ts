@@ -1,19 +1,10 @@
-/**
- * Simplified State Service Implementation
- *
- * Core namespaced key-value storage without enterprise features
- */
-
-import type { StateManager } from '../../../utils/thread-safe-state.js';
-import { createLogger } from '../../../observability/index.js';
 import {
     STATE_NAMESPACES,
-    type StateNamespace,
-} from '../namespace-constants.js';
+    StateManager,
+    StateNamespace,
+} from '@/core/types/allTypes.js';
+import { createLogger } from '../../../observability/index.js';
 
-/**
- * Simplified context-based state service using WeakMap for automatic cleanup
- */
 export class SimpleContextStateService implements StateManager {
     private readonly stateMap = new WeakMap<
         object,

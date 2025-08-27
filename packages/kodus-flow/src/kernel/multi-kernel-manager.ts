@@ -1,76 +1,19 @@
-import { ExecutionKernel, createKernel, type KernelConfig } from './kernel.js';
+import { ExecutionKernel, createKernel } from './kernel.js';
 import { createPersistor } from '../persistor/factory.js';
 import { createLogger } from '../observability/index.js';
-import type {
-    EventType,
-    EventPayloads,
+import {
     AnyEvent,
-} from '../core/types/events.js';
-import type { EventHandler } from '../core/types/common-types.js';
-import type { Workflow } from '../core/types/workflow-types.js';
-import type { PersistorType } from '../persistor/config.js';
+    CrossKernelBridge,
+    EventHandler,
+    EventPayloads,
+    EventType,
+    KernelConfig,
+    KernelSpec,
+    ManagedKernel,
+    MultiKernelConfig,
+    Workflow,
+} from '@/core/types/allTypes.js';
 
-/**
- * Kernel specification for different purposes
- */
-export interface KernelSpec {
-    kernelId: string;
-    namespace: string;
-    workflow: Workflow;
-    needsPersistence: boolean;
-    needsSnapshots: boolean;
-    quotas?: KernelConfig['quotas'];
-    performance?: KernelConfig['performance'];
-    runtimeConfig?: KernelConfig['runtimeConfig'];
-}
-
-/**
- * Cross-kernel event bridge configuration
- */
-export interface CrossKernelBridge {
-    fromNamespace: string;
-    toNamespace: string;
-    eventPattern: string;
-    transform?: (event: AnyEvent) => AnyEvent;
-    enableLogging?: boolean;
-}
-
-/**
- * Multi-kernel manager configuration
- */
-export interface MultiKernelConfig {
-    tenantId: string;
-    kernels: KernelSpec[];
-    bridges?: CrossKernelBridge[];
-    global?: {
-        persistorType?: PersistorType;
-        persistorOptions?: Record<string, unknown>;
-        enableCrossKernelLogging?: boolean;
-        maxConcurrentKernels?: number;
-    };
-}
-
-/**
- * Kernel instance with metadata
- */
-interface ManagedKernel {
-    spec: KernelSpec;
-    instance: ExecutionKernel | null;
-    status: 'initializing' | 'running' | 'paused' | 'failed' | 'stopped';
-    startTime: number;
-    lastActivity: number;
-    eventCount: number;
-}
-
-/**
- * Multi-Kernel Manager
- *
- * Manages multiple isolated kernels within the same tenant:
- * - Agent execution kernels (with persistence & snapshots)
- * - Observability kernels (fire-and-forget, no persistence)
- * - Cross-kernel communication via event bridges
- * - Namespace isolation with controlled communication
- */
 export class MultiKernelManager {
     private readonly config: MultiKernelConfig;
     private readonly logger: ReturnType<typeof createLogger>;

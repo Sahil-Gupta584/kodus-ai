@@ -1,30 +1,15 @@
 import { createLogger } from '../../observability/index.js';
 import { getGlobalMemoryManager } from '../memory/memory-manager.js';
-import type { AgentContext } from '../types/agent-types.js';
-import type { AgentThought, AgentAction } from '../types/agent-types.js';
-import type {
-    ActionResult,
-    ResultAnalysis,
-} from '../../engine/planning/planner-factory.js';
-import { STATE_NAMESPACES } from './namespace-constants.js';
 
-export interface StepResult {
-    stepId: string;
-    iteration: number;
-    thought: AgentThought;
-    action: AgentAction;
-    status: string;
-    result: ActionResult;
-    observation: ResultAnalysis;
-    duration: number;
-    startedAt: number;
-    toolCalls: Array<{
-        toolName: string;
-        input: unknown;
-        result: unknown;
-        duration: number;
-    }>;
-}
+import {
+    ActionResult,
+    AgentAction,
+    AgentContext,
+    AgentThought,
+    ResultAnalysis,
+    STATE_NAMESPACES,
+    StepResult,
+} from '../types/allTypes.js';
 
 export class ExecutionTracker {
     private steps: Map<string, StepResult> = new Map();

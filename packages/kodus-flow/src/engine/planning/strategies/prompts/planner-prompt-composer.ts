@@ -1,10 +1,9 @@
-import type { ToolMetadataForLLM } from '../../../../core/types/tool-types.js';
-import type {
+import {
+    ComposedPrompt,
     PlannerPromptConfig,
     PromptCompositionContext,
-    ComposedPrompt,
-    PlanningExample,
-} from '../../types/prompt-types.js';
+    ToolMetadataForLLM,
+} from '@/core/types/allTypes.js';
 import { createLogger } from '../../../../observability/index.js';
 
 type Logger = ReturnType<typeof createLogger>;
@@ -100,8 +99,6 @@ export class PlannerPromptComposer {
                 estimatedTokens: this.estimateTokenCount(
                     systemPrompt + userPrompt,
                 ),
-                exampleCount: this.countIncludedExamples(),
-                patternCount: this.countIncludedPatterns(),
                 includesSmartAnalysis: false,
                 timestamp: Date.now(),
                 version: PlannerPromptComposer.version,
@@ -136,17 +133,6 @@ export class PlannerPromptComposer {
         const additionalPatterns = this.gatherAdditionalPatterns();
         if (additionalPatterns.length > 0) {
             sections.push(this.formatAdditionalPatterns(additionalPatterns));
-        }
-
-        // 3. Custom examples
-        const examples = this.gatherExamples();
-        if (examples.length > 0) {
-            sections.push(this.formatExamples(examples));
-        }
-
-        // 4. Constraints
-        if (this.config.constraints?.length) {
-            sections.push(this.formatConstraints(this.config.constraints));
         }
 
         return sections.join('\n\n');
@@ -557,54 +543,6 @@ Response: {
      */
     private formatAdditionalPatterns(patterns: string[]): string {
         return `## 🔧 DOMAIN-SPECIFIC PATTERNS\n${patterns.map((pattern, i) => `${i + 1}. ${pattern}`).join('\n')}`;
-    }
-
-    /**
-     * Gather examples from various sources
-     */
-    private gatherExamples(): PlanningExample[] {
-        const examples: PlanningExample[] = [];
-
-        // Add custom examples from config
-        if (this.config.customExamples) {
-            examples.push(...this.config.customExamples);
-        }
-
-        // Add examples from provider
-        if (this.config.examplesProvider) {
-            examples.push(...this.config.examplesProvider.getExamples());
-        }
-
-        // Sort by weight (if specified) and limit to prevent token overflow
-        return examples
-            .sort((a, b) => (b.weight || 1) - (a.weight || 1))
-            .slice(0, 3); // Limit to 3 examples for token efficiency
-    }
-
-    /**
-     * Format examples section
-     */
-    private formatExamples(examples: PlanningExample[]): string {
-        const formatted = examples
-            .map(
-                (example, i) => `
-### Example ${i + 1}: ${example.scenario}
-**Context:** ${example.context}
-**Available Tools:** [${example.availableTools.join(', ')}]
-
-**Response:**
-${JSON.stringify(example.expectedPlan, null, 2)}`,
-            )
-            .join('\n');
-
-        return `## 📚 EXAMPLES${formatted}`;
-    }
-
-    /**
-     * Format constraints section
-     */
-    private formatConstraints(constraints: string[]): string {
-        return `## ⚠️ CONSTRAINTS\n${constraints.map((c) => `• ${c}`).join('\n')}`;
     }
 
     private formatAvailableTools(
@@ -1588,25 +1526,6 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
      */
     private estimateTokenCount(text: string): number {
         return Math.ceil(text.length / 4);
-    }
-
-    /**
-     * Count included examples for metadata
-     */
-    private countIncludedExamples(): number {
-        const examples = this.gatherExamples();
-        return examples.length;
-    }
-
-    /**
-     * Count included patterns for metadata
-     */
-    private countIncludedPatterns(): number {
-        const patterns = this.gatherAdditionalPatterns();
-        return (
-            patterns.length +
-            (this.config.features?.includeUniversalPatterns !== false ? 4 : 0)
-        );
     }
 
     /**

@@ -1,8 +1,6 @@
 import { createLogger, getObservability } from '../observability/index.js';
-import type { ObservabilityConfig } from '../observability/index.js';
 import { EngineError } from '../core/errors.js';
 import { ToolEngine } from '../engine/tools/tool-engine.js';
-import { defineTool } from '../core/types/tool-types.js';
 import { AgentEngine } from '../engine/agents/agent-engine.js';
 import { AgentExecutor } from '../engine/agents/agent-executor.js';
 import { IdGenerator } from '../utils/id-generator.js';
@@ -10,134 +8,27 @@ import {
     createDefaultMultiKernelHandler,
     createMultiKernelHandler,
 } from '../engine/core/multi-kernel-handler.js';
+import { ContextBuilder } from '../core/context/context-builder.js';
+import { safeJsonSchemaToZod } from '../core/utils/json-schema-to-zod.js';
 import {
-    ContextBuilder,
-    ContextBuilderConfig,
-} from '../core/context/context-builder.js';
-import type { LLMAdapter } from '../adapters/llm/index.js';
-import type { PlannerType } from '../engine/planning/planner-factory.js';
-import type {
+    AgentConfig,
+    AgentCoreConfig,
+    AgentData,
     AgentDefinition,
     AgentExecutionOptions,
-} from '../core/types/agent-types.js';
-import { agentIdentitySchema } from '../core/types/agent-types.js';
-import type { AgentCoreConfig } from '../engine/agents/agent-core.js';
-import type {
+    ContextBuilderConfig,
+    defineTool,
+    MCPAdapter,
+    OrchestrationConfig,
+    OrchestrationConfigInternal,
+    OrchestrationResult,
+    SessionId,
+    Thread,
+    ToolConfig,
     ToolDefinition,
     ToolId,
-    ToolContext,
-} from '../core/types/tool-types.js';
-import type { MCPAdapter } from '../adapters/mcp/types.js';
-import type { AgentData } from './types.js';
-import { z } from 'zod';
-import { safeJsonSchemaToZod } from '../core/utils/json-schema-to-zod.js';
-import { AgentIdentity } from '@/core/types/agent-definition.js';
-import { SessionId, UserContext } from '@/core/types/base-types.js';
-import { Thread } from '@/core/types/common-types.js';
-import type { StorageType } from '../core/storage/factory.js';
-import { ReplanPolicyConfig } from '@/engine/planning/strategies/plan-execute-planner.js';
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🏗️ CLEAN ORCHESTRATOR INTERFACES
-// ──────────────────────────────────────────────────────────────────────────────
-
-export interface OrchestrationConfig {
-    llmAdapter: LLMAdapter;
-    tenantId?: string;
-    mcpAdapter?: MCPAdapter;
-    enableObservability?: boolean;
-    defaultTimeout?: number;
-    defaultPlanner?: PlannerType;
-    defaultMaxIterations?: number;
-    storage?: {
-        memory?: {
-            type: StorageType;
-            connectionString?: string;
-            database?: string;
-            collection?: string;
-            maxItems?: number;
-            enableCompression?: boolean;
-            cleanupInterval?: number;
-        };
-        session?: {
-            type: StorageType;
-            connectionString?: string;
-            database?: string;
-            collection?: string;
-            maxSessions?: number;
-            sessionTimeout?: number;
-            enableCompression?: boolean;
-            cleanupInterval?: number;
-        };
-        snapshot?: {
-            type: StorageType;
-            connectionString?: string;
-            database?: string;
-            collection?: string;
-            maxSnapshots?: number;
-            enableCompression?: boolean;
-            enableDeltaCompression?: boolean;
-            cleanupInterval?: number;
-            ttl?: number;
-        };
-    };
-    observability?: Partial<ObservabilityConfig>;
-    kernel?: {
-        performance?: {
-            autoSnapshot?: {
-                enabled?: boolean;
-                intervalMs?: number;
-                eventInterval?: number;
-                useDelta?: boolean;
-            };
-        };
-    };
-}
-
-export interface OrchestrationConfigInternal
-    extends Omit<OrchestrationConfig, 'mcpAdapter'> {
-    mcpAdapter: MCPAdapter | null;
-}
-
-export type AgentConfig = {
-    name: string;
-    identity: AgentIdentity;
-    maxIterations?: number;
-    executionMode?: 'simple' | 'workflow';
-    constraints?: string[];
-    enableSession?: boolean; // Default: true
-    enableState?: boolean; // Default: true
-    enableMemory?: boolean; // Default: true
-    timeout?: number;
-    plannerOptions?: {
-        planner?: PlannerType;
-        replanPolicy?: Partial<ReplanPolicyConfig>;
-    };
-};
-
-export interface ToolConfig {
-    name: string;
-    title?: string;
-    description: string;
-    inputSchema: z.ZodSchema<unknown>;
-    outputSchema?: z.ZodSchema<unknown>;
-    execute: (input: unknown, context: ToolContext) => Promise<unknown>;
-    categories?: string[];
-    dependencies?: string[];
-    annotations?: Record<string, unknown>;
-}
-
-export interface OrchestrationResult<T = unknown> {
-    success: boolean;
-    result?: T;
-    error?: string;
-    context: Record<string, unknown>;
-    metadata?: Record<string, unknown>;
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🚀 CLEAN SDK ORCHESTRATOR
-// ──────────────────────────────────────────────────────────────────────────────
+    UserContext,
+} from '@/core/types/allTypes.js';
 
 export class SDKOrchestrator {
     private agents = new Map<string, AgentData>();
@@ -955,10 +846,6 @@ const orchestrator = new SDKOrchestrator({
         }
     }
 
-    /**
-     * ✅ NEW: Get storage config for ContextBuilder
-     * Converts OrchestrationConfig.storage to ContextBuilderConfig format
-     */
     getStorageConfig(): ContextBuilderConfig {
         const result: ContextBuilderConfig = {};
 

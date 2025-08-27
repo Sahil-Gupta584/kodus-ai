@@ -1,158 +1,21 @@
-/**
- * @module engine/kernel-handler
- * @description Handler centralizado para comunicação com Kernel
- *
- * Interface única para todos os componentes do Engine:
- * - Agents
- * - Tools
- * - Workflows
- * - Multi-agent systems
- *
- * Responsabilidades:
- * - Gerenciar conexão com Kernel
- * - Fornecer métodos padronizados
- * - Abstrair complexidade do Kernel
- * - Garantir consistência na comunicação
- *
- * IMPORTANTE: KernelHandler só fala com Kernel, não com Runtime diretamente
- */
-
+import {
+    AnyEvent,
+    createWorkflow,
+    EventHandler,
+    EventType,
+    ExecutionId,
+    ExecutionResult,
+    KernelHandlerConfig,
+    KernelHandlerInterface,
+    Workflow,
+    WorkflowContext,
+} from '@/core/types/allTypes.js';
 import { createKernel, type ExecutionKernel } from '../../kernel/index.js';
 import { createLogger, getObservability } from '../../observability/index.js';
 
-import type { KernelConfig } from '../../kernel/kernel.js';
-import type { Middleware } from '../../runtime/middleware/types.js';
-import { AnyEvent, EventType } from '../../core/types/events.js';
-import {
-    createWorkflow,
-    EventHandler,
-    Workflow,
-    WorkflowContext,
-} from '../../core/types/common-types.js';
-import { ExecutionId } from '../../core/types/base-types.js';
 import { CircuitBreaker } from '../../runtime/core/circuit-breaker.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 
-/**
- * Resultado de execução (migrado do ExecutionEngine)
- */
-export interface ExecutionResult<T = unknown> {
-    status: 'completed' | 'failed' | 'paused';
-    data?: T;
-    error?: {
-        message: string;
-        details?: unknown;
-    };
-    metadata: {
-        executionId: ExecutionId;
-        duration: number;
-        eventCount: number;
-        snapshotId?: string;
-    };
-}
-
-/**
- * Configuração do KernelHandler
- */
-export interface KernelHandlerConfig {
-    tenantId: string;
-    debug?: boolean;
-    monitor?: boolean;
-
-    // Kernel configuration
-    kernelConfig?: Partial<KernelConfig>;
-
-    // Runtime configuration (passado para o Kernel)
-    runtimeConfig?: {
-        queueSize?: number;
-        batchSize?: number;
-        middleware?: Middleware[];
-    };
-
-    // Performance (passado para o Kernel)
-    performance?: {
-        enableBatching?: boolean;
-        enableCaching?: boolean;
-        enableLazyLoading?: boolean;
-    };
-
-    // Infinite loop protection
-    loopProtection?: {
-        enabled?: boolean;
-        maxEventCount?: number;
-        maxEventRate?: number;
-        windowSize?: number;
-        circuitBreakerConfig?: {
-            failureThreshold?: number;
-            timeout?: number;
-            resetTimeout?: number;
-        };
-    };
-}
-
-/**
- * Interface para comunicação com Kernel
- */
-export interface KernelHandlerInterface {
-    // Lifecycle
-    initialize(): Promise<void>;
-    isInitialized(): boolean;
-    cleanup(): Promise<void>;
-
-    // Context management (via Kernel)
-    getContext<T = unknown>(
-        namespace: string,
-        key: string,
-        threadId?: string,
-    ): T | undefined;
-    setContext(
-        namespace: string,
-        key: string,
-        value: unknown,
-        threadId?: string,
-    ): void;
-    incrementContext(
-        namespace: string,
-        key: string,
-        delta?: number,
-        threadId?: string,
-    ): number;
-
-    // Event management (via Kernel → Runtime)
-    emit<T extends EventType>(eventType: T, data?: unknown): void;
-    on<T extends AnyEvent>(eventType: string, handler: EventHandler<T>): void;
-    off(eventType: string, handler: EventHandler<AnyEvent>): void;
-
-    // Stream processing (via Kernel → Runtime)
-    createStream<S extends AnyEvent>(
-        generator: () => AsyncGenerator<S>,
-    ): unknown;
-
-    // Workflow management
-    registerWorkflow(workflow: Workflow): void;
-    getWorkflowContext(): WorkflowContext | null;
-
-    // State management (via Kernel)
-    pause(reason?: string): Promise<string>;
-    resume(snapshotId: string): Promise<void>;
-    getStatus(): Record<string, unknown>;
-
-    // Direct access (apenas Kernel, não Runtime)
-    getKernel(): ExecutionKernel | null;
-
-    // Execution methods (migrados do ExecutionEngine)
-    run(startEvent: AnyEvent): Promise<ExecutionResult>;
-    getExecutionStatus(): {
-        executionId: ExecutionId;
-        tenantId: string;
-        status: Record<string, unknown>;
-        uptime: number;
-    };
-}
-
-/**
- * KernelHandler - Interface centralizada para comunicação com Kernel
- */
 export class KernelHandler implements KernelHandlerInterface {
     private kernel: ExecutionKernel | null = null;
     private workflowContext: WorkflowContext | null = null;

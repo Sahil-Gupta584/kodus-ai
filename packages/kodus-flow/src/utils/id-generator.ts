@@ -1,8 +1,3 @@
-/**
- * @module utils/id-generator
- * @description Robust ID generation utilities for engines
- */
-
 import {
     CallId,
     CorrelationId,
@@ -10,7 +5,7 @@ import {
     ExecutionId,
     SessionId,
     TenantId,
-} from '@/core/types/base-types.js';
+} from '@/core/types/allTypes.js';
 import { randomBytes } from 'crypto';
 
 /**

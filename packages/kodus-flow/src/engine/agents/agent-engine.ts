@@ -1,42 +1,21 @@
-/**
- * @module engine/agents/agent_new/agent-engine
- * @description Engine para execução direta de agentes - sem workflow
- *
- * CARACTERÍSTICAS:
- * ✅ Execução direta e rápida
- * ✅ Sem overhead de workflow
- * ✅ Sem pause/resume
- * ✅ Ideal para agentes simples e autônomos
- * ✅ Suporte completo a tools e multi-agent
- */
-
 import { createLogger, getObservability } from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
-import type { ToolEngine } from '../tools/tool-engine.js';
-
-// ✅ ADICIONAR: MemoryManager para Engine Layer
-import type { MemoryManager } from '../../core/memory/memory-manager.js';
-
-// Types do sistema
-import type {
+import { AgentCore } from './agent-core.js';
+import { MemoryManager } from '@/core/memory/index.js';
+import {
+    AgentCoreConfig,
     AgentDefinition,
     AgentExecutionOptions,
     AgentExecutionResult,
-    AgentStartPayload,
-    AgentStopPayload,
+    AgentLifecycleResult,
     AgentPausePayload,
     AgentResumePayload,
     AgentSchedulePayload,
-    AgentLifecycleResult,
+    AgentStartPayload,
+    AgentStopPayload,
     AgentThought,
-} from '../../core/types/agent-types.js';
-
-import type { AgentCoreConfig } from './agent-core.js';
-import { AgentCore } from './agent-core.js';
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🚀 AGENT ENGINE IMPLEMENTATION
-// ──────────────────────────────────────────────────────────────────────────────
+} from '@/core/types/allTypes.js';
+import { ToolEngine } from '../tools/tool-engine.js';
 
 /**
  * Engine para execução direta de agentes

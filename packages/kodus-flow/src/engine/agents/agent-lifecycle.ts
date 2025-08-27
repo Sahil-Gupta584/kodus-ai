@@ -1,79 +1,22 @@
-/**
- * @file agent-lifecycle.ts
- * @description Agent Lifecycle Handler - Gerencia ciclo de vida dos agentes
- *
- * Funcionalidades:
- * ✅ Registro e gerenciamento de agentes
- * ✅ Lifecycle events (start, stop, pause, resume)
- * ✅ Health checks e monitoring
- * ✅ Resource management
- * ✅ Integração com KernelHandler para snapshots
- * ✅ Metrics e observabilidade
- */
-
 import { createLogger } from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
-import type { Event } from '../../core/types/events.js';
-
 import {
-    type AgentStatus,
-    type AgentScheduleConfig,
-    type AgentStartPayload,
-    type AgentStopPayload,
-    type AgentPausePayload,
-    type AgentResumePayload,
-    type AgentSchedulePayload,
-    isValidStatusTransition,
-} from '../../core/types/agent-types.js';
-import type { TenantId, ExecutionId } from '../../core/types/base-types.js';
-import {
+    agentLifecycleEvents,
+    AgentPausePayload,
+    AgentRegistryEntry,
+    AgentResumePayload,
+    AgentSchedulePayload,
+    AgentStartPayload,
+    AgentStatus,
+    AgentStopPayload,
     createEvent,
     EVENT_TYPES,
-    agentLifecycleEvents,
-} from '../../core/types/events.js';
+    ExecutionId,
+    isValidStatusTransition,
+    LifecycleStats,
+    TenantId,
+} from '@/core/types/allTypes.js';
 
-// ──────────────────────────────────────────────────────────────────────────────
-// 📊 AGENT REGISTRY TYPES
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Entrada no registry de agents
- */
-export interface AgentRegistryEntry {
-    agentName: string;
-    tenantId: TenantId;
-    status: AgentStatus;
-    executionId?: ExecutionId;
-    startedAt?: number;
-    pausedAt?: number;
-    stoppedAt?: number;
-    snapshotId?: string;
-    config?: Record<string, unknown>;
-    context?: Record<string, unknown>;
-    error?: Error;
-    scheduleConfig?: AgentScheduleConfig;
-    scheduleTimer?: NodeJS.Timeout;
-}
-
-/**
- * Estatísticas do lifecycle handler
- */
-export interface LifecycleStats {
-    totalAgents: number;
-    agentsByStatus: Record<AgentStatus, number>;
-    agentsByTenant: Record<string, number>;
-    totalTransitions: number;
-    totalErrors: number;
-    uptime: number;
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🔄 AGENT LIFECYCLE HANDLER
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Handler principal para lifecycle de agents
- */
 export class AgentLifecycleHandler {
     private logger = createLogger('agent-lifecycle-handler');
     private agents = new Map<string, AgentRegistryEntry>();

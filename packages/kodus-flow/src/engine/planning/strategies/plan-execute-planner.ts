@@ -2,51 +2,35 @@ import {
     createLogger,
     getObservability,
 } from '../../../observability/index.js';
-import { createEvent, EVENT_TYPES } from '../../../core/types/events.js';
 import { IdGenerator } from '../../../utils/id-generator.js';
 import { getGlobalMemoryManager } from '../../../core/memory/memory-manager.js';
-import type { LLMAdapter } from '../../../adapters/llm/index.js';
-import type {
-    Planner,
-    AgentThought,
-    AgentAction,
-    ActionResult,
-    ResultAnalysis,
-    PlannerExecutionContext,
-} from '../planner-factory.js';
 
-import {
-    isErrorResult,
-    getResultError,
-    getResultContent,
-} from '../planner-factory.js';
-import { ToolMetadataForLLM } from '../../../core/types/tool-types.js';
-import {
-    createResponseSynthesizer,
-    type ResponseSynthesisContext,
-} from '../../response/response-synthesizer.js';
+import { createResponseSynthesizer } from '../../response/response-synthesizer.js';
 import { PlannerPromptComposer } from './prompts/planner-prompt-composer.js';
-import { createPlannerPromptComposer } from './prompts/factory.js';
-import type { PlannerPromptConfig } from '../types/prompt-types.js';
-import type {
-    ReplanPolicyConfig,
-    PlanStep,
+import {
+    ActionResult,
+    AgentAction,
+    AgentThought,
+    createEvent,
+    EVENT_TYPES,
     ExecutionPlan,
-    ReplanContext,
+    getResultContent,
+    getResultError,
+    isErrorResult,
+    LLMAdapter,
+    Planner,
+    PlannerExecutionContext,
+    PlannerPromptConfig,
     PlanSignals,
-} from '../../../core/types/planning-shared.js';
-import { UNIFIED_STATUS } from '../../../core/types/planning-shared.js';
-
-// Re-export for compatibility
-export type {
-    ReplanPolicyConfig,
     PlanStep,
-    ExecutionPlan,
-} from '../../../core/types/planning-shared.js';
+    ReplanContext,
+    ReplanPolicyConfig,
+    ResponseSynthesisContext,
+    ResultAnalysis,
+    ToolMetadataForLLM,
+    UNIFIED_STATUS,
+} from '@/core/types/allTypes.js';
 
-/**
- * Helper to create a proper Event for telemetry
- */
 function createTelemetryEvent(
     type: string,
     data: Record<string, unknown> = {},
@@ -67,7 +51,6 @@ export class PlanAndExecutePlanner implements Planner {
     private responseSynthesizer: ReturnType<typeof createResponseSynthesizer>;
     private promptComposer: PlannerPromptComposer;
 
-    // Replan policy configuration (from agent config)
     private replanPolicy: ReplanPolicyConfig;
 
     constructor(
@@ -78,7 +61,7 @@ export class PlanAndExecutePlanner implements Planner {
         this.responseSynthesizer = createResponseSynthesizer(this.llmAdapter);
         this.promptComposer = createPlannerPromptComposer(promptConfig);
         this.replanPolicy = replanPolicy ?? {
-            maxReplans: 5, // ✅ DEFAULT: Fallback configuration
+            maxReplans: 5,
             toolUnavailable: 'replan',
         };
     }
@@ -508,7 +491,6 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         try {
-            // ✅ PRIORITY 1: Use enhanced message context if available
             if (context.agentContext.messageContext) {
                 const enhancedContext =
                     await context.agentContext.messageContext.getContextForModel(
@@ -522,10 +504,6 @@ export class PlanAndExecutePlanner implements Planner {
             }
 
             const contextParts: string[] = [];
-
-            // ✅ PRIORITY 2: Semantic memory search (knowledge base)
-            // NOTE: This is also handled by ExecutionTracker, but we keep it here
-            // for cases where messageContext is not available
             const memoryManager = getGlobalMemoryManager();
             const searchResults = await memoryManager.search(currentInput, {
                 topK: 3,
@@ -534,6 +512,7 @@ export class PlanAndExecutePlanner implements Planner {
                     sessionId: context.agentContext.sessionId,
                 },
             });
+
             if (searchResults && searchResults.length > 0) {
                 contextParts.push('\n📚 Relevant knowledge:');
                 searchResults.forEach((result, i) => {
@@ -543,7 +522,6 @@ export class PlanAndExecutePlanner implements Planner {
                 });
             }
 
-            // ✅ PRIORITY 3: Session history with specific filtering
             const sessionHistory =
                 await context.agentContext.conversation.getHistory();
             if (sessionHistory && sessionHistory.length > 0) {
@@ -559,7 +537,7 @@ export class PlanAndExecutePlanner implements Planner {
                             input?.type === 'plan_created'
                         );
                     })
-                    .slice(-3); // Get last 3 relevant entries
+                    .slice(-3);
 
                 if (relevantEntries.length > 0) {
                     contextParts.push('\n💬 Planning context:');
@@ -572,14 +550,16 @@ export class PlanAndExecutePlanner implements Planner {
                 }
             }
 
-            // ✅ PRIORITY 4: Working state (planner context only)
             const plannerState =
                 await context.agentContext.state.getNamespace('planner');
             if (plannerState && plannerState.size > 0) {
                 contextParts.push('\n⚡ Current context:');
                 let count = 0;
                 for (const [key, value] of plannerState) {
-                    if (count >= 3) break; // Limit to 3 items
+                    if (count >= 3) {
+                        break;
+                    }
+
                     const valueStr =
                         typeof value === 'string'
                             ? value
@@ -589,7 +569,6 @@ export class PlanAndExecutePlanner implements Planner {
                 }
             }
 
-            // ✅ SIMPLIFIED: Just save current input, no telemetry pollution
             if (context.agentContext) {
                 await context.agentContext.state.set(
                     'planner',
@@ -681,9 +660,6 @@ export class PlanAndExecutePlanner implements Planner {
                             },
                         };
                     }
-
-                    // ✅ Sempre executar via PlanExecutor - mesmo planos vazios
-                    // O executor vai detectar e tratar planos vazios corretamente
 
                     return {
                         reasoning: 'Plan created. Executing…',
@@ -806,7 +782,6 @@ export class PlanAndExecutePlanner implements Planner {
             },
         };
 
-        // Use planner signals (if provided) to gate execution
         const rawSignals = (plan as Record<string, unknown>)?.signals as
             | {
                   needs?: unknown;
@@ -933,51 +908,27 @@ export class PlanAndExecutePlanner implements Planner {
             } catch {}
         }
 
-        // TODO: MOVER PARA CAMADA DE KERNEL/STATE - Persistir dados do plano no state e session
         if (context.agentContext) {
-            try {
-                // TODO: MOVER PARA CAMADA DE KERNEL/STATE - Salvar plano no state
-                await context.agentContext.state.set('planner', 'currentPlan', {
-                    id: newPlan.id,
-                    goal: newPlan.goal,
+            const observability = getObservability();
+            void observability.telemetry.traceEvent(
+                createTelemetryEvent('plan_created', {
+                    goal: input,
                     stepsCount: newPlan.steps.length,
-                    status: newPlan.status,
-                    createdAt: Date.now(),
+                    planId: newPlan.id,
+                    strategy: newPlan.strategy,
                     signals: newPlan.metadata?.signals,
                     needs: needs,
                     noDiscoveryPath,
                     errors: errorsFromSignals,
                     suggestedNextStep,
-                });
-
-                // ✅ CLEAN ARCHITECTURE: Use telemetry for runtime debug data instead of polluting conversation
-                if (context.agentContext) {
-                    const observability = getObservability();
-                    void observability.telemetry.traceEvent(
-                        createTelemetryEvent('plan_created', {
-                            goal: input,
-                            stepsCount: newPlan.steps.length,
-                            planId: newPlan.id,
-                            strategy: newPlan.strategy,
-                            signals: newPlan.metadata?.signals,
-                            needs: needs,
-                            noDiscoveryPath,
-                            errors: errorsFromSignals,
-                            suggestedNextStep,
-                            sessionId: context.agentContext.sessionId,
-                            agentName: context.agentContext.agentName,
-                            correlationId: context.agentContext.correlationId,
-                        }),
-                        async () => {
-                            return {};
-                        },
-                    );
-                }
-            } catch (error) {
-                this.logger.warn('Failed to persist plan data', {
-                    error: error as Error,
-                });
-            }
+                    sessionId: context.agentContext.sessionId,
+                    agentName: context.agentContext.agentName,
+                    correlationId: context.agentContext.correlationId,
+                }),
+                async () => {
+                    return {};
+                },
+            );
         }
 
         if (
@@ -1044,11 +995,8 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         if (result.type === 'final_answer') {
-            // ✅ Só atualizar estado do plano - outras responsabilidades movidas para Agent Core
             currentPlan.status = UNIFIED_STATUS.COMPLETED;
             this.setCurrentPlan(context, currentPlan);
-
-            // ✅ Step tracking, telemetria e persistência movidos para Agent Core
 
             return {
                 isComplete: true,
@@ -1061,11 +1009,9 @@ export class PlanAndExecutePlanner implements Planner {
         const currentStep = currentPlan.steps[currentPlan.currentStepIndex];
 
         if (!currentStep) {
-            // ✅ VERIFICAR SE PRECISA REPLAN
             const shouldReplan = this.shouldReplan(context);
 
             if (shouldReplan) {
-                // ✅ PRECISA REPLAN - Continua execução
                 return {
                     isComplete: false,
                     isSuccessful: false,
@@ -1074,7 +1020,6 @@ export class PlanAndExecutePlanner implements Planner {
                     suggestedNextAction: 'Create new execution plan',
                 };
             } else {
-                // ✅ PLANO EXECUTADO COM SUCESSO
                 return {
                     isComplete: true,
                     isSuccessful: true,
@@ -1115,15 +1060,13 @@ export class PlanAndExecutePlanner implements Planner {
                         shouldContinue: false,
                     };
                 } else if (this.shouldStopForMaxReplans(currentPlan)) {
-                    // ✅ MAX REPLANS - Para com resposta ao usuário
                     return {
                         isComplete: true,
-                        isSuccessful: true, // ← NÃO É FALHA!
+                        isSuccessful: true,
                         feedback: 'Need more information to proceed',
                         shouldContinue: false,
                     };
                 } else {
-                    // ✅ FALHA TEMPORÁRIA - Continua
                     return {
                         isComplete: false,
                         isSuccessful: false,
@@ -1191,7 +1134,6 @@ export class PlanAndExecutePlanner implements Planner {
             };
         }
 
-        // ❌ STEP EM ANDAMENTO = Comunicação interna, não resposta final
         return {
             isComplete: false,
             isSuccessful: true,
@@ -1205,7 +1147,6 @@ export class PlanAndExecutePlanner implements Planner {
         const replanCause = (plan.metadata as Record<string, unknown>)
             ?.replanCause as string;
 
-        // ✅ APENAS FALHAS REAIS
         const definitiveCauses = [
             'permission_denied',
             'not_found',
@@ -1262,7 +1203,6 @@ export class PlanAndExecutePlanner implements Planner {
     ): Promise<boolean> {
         const errorMessage = getResultError(result)?.toLowerCase() || '';
 
-        // Tool unavailable
         if (
             errorMessage.includes('tool not found') ||
             errorMessage.includes('unknown tool')
@@ -1278,15 +1218,14 @@ export class PlanAndExecutePlanner implements Planner {
             return this.replanPolicy.toolUnavailable === 'replan';
         }
 
-        // Unrecoverable errors → prefer not to replan
         const unrecoverableErrors = [
             'permission denied',
             'not found',
             'invalid credentials',
             'unauthorized',
         ];
+
         if (unrecoverableErrors.some((err) => errorMessage.includes(err))) {
-            // ✅ SETAR REPLAN_CAUSE para falha definitiva
             const currentPlan = this.getCurrentPlan(context);
             if (currentPlan) {
                 const matchedError = unrecoverableErrors.find((err) =>
@@ -1303,19 +1242,12 @@ export class PlanAndExecutePlanner implements Planner {
             return false;
         }
 
-        // Simple early-iteration replan
         return context.iterations < 3;
     }
 
-    // Confidence heuristic removed
-
-    /**
-     * Convert LLM response to execution steps
-     */
     private convertLLMResponseToSteps(llmResponse: unknown): PlanStep[] {
         const response = llmResponse as Record<string, unknown>;
 
-        // Try to extract steps from LLM response
         let rawSteps: Record<string, unknown>[] = [];
 
         if (response?.steps && Array.isArray(response.steps)) {
@@ -1325,7 +1257,6 @@ export class PlanAndExecutePlanner implements Planner {
         } else if (Array.isArray(response)) {
             rawSteps = response;
         } else {
-            // Fallback: create a single step with the response content
             rawSteps = [
                 {
                     description:
@@ -1337,7 +1268,6 @@ export class PlanAndExecutePlanner implements Planner {
             ];
         }
 
-        // Convert to PlanStep format with placeholder validation
         const convertedSteps = rawSteps.map((step, index) => ({
             id: (step.id as string) || `step-${index + 1}`,
             description:
@@ -1354,18 +1284,12 @@ export class PlanAndExecutePlanner implements Planner {
                 step.args ||
                 step.parameters ||
                 step.argsTemplate) as Record<string, unknown>,
-            dependencies:
-                (step.dependsOn as string[]) ||
-                (index > 0 ? [`step-${index}`] : []),
+            dependencies: (step.dependsOn as string[]) || [],
             status: 'pending' as const,
-            retry: 0,
             parallel: (step.parallel as boolean) || false,
         }));
 
-        // ✅ ENHANCED: Validate both placeholders and dependencies
-        const invalidSteps = this.validateStepsForPlaceholders(convertedSteps);
-
-        // ✅ NEW: Validate step dependencies
+        // Validate only dependencies - placeholder validation removed
         const tempPlan: ExecutionPlan = {
             id: 'temp-validation',
             goal: '',
@@ -1380,10 +1304,16 @@ export class PlanAndExecutePlanner implements Planner {
 
         const dependencyValidation = this.validatePlanDependencies(tempPlan);
 
-        if (invalidSteps.length > 0 || !dependencyValidation.isValid) {
-            // ✅ DEBUG: Log validation errors
+        // Log validation results for debugging
+        this.logger.debug('Plan dependency validation', {
+            isValid: dependencyValidation.isValid,
+            errors: dependencyValidation.errors,
+            stepsCount: convertedSteps.length,
+            stepIds: convertedSteps.map((s) => s.id),
+        });
+
+        if (!dependencyValidation.isValid) {
             this.logger.warn('Plan validation failed', {
-                invalidSteps: invalidSteps.length,
                 dependencyValid: dependencyValidation.isValid,
                 dependencyErrors: dependencyValidation.errors,
                 convertedSteps: convertedSteps.length,
@@ -1392,23 +1322,13 @@ export class PlanAndExecutePlanner implements Planner {
             let errorMessage =
                 'I could not create an executable plan. I found the following problems:\n\n';
 
-            // Add placeholder errors
-            for (const invalidStep of invalidSteps) {
-                errorMessage += `Step "${invalidStep.id}" (${invalidStep.tool || 'unknown tool'}):\n`;
-                errorMessage += `  - Problemas encontrados: ${invalidStep.placeholders.join(', ')}\n\n`;
+            errorMessage += '**Problems with dependencies:**\n';
+            for (const error of dependencyValidation.errors) {
+                errorMessage += `  - ${error}\n`;
             }
+            errorMessage += '\n';
 
-            // Add dependency errors
-            if (!dependencyValidation.isValid) {
-                errorMessage += '**Problemas de Dependências:**\n';
-                for (const error of dependencyValidation.errors) {
-                    errorMessage += `  - ${error}\n`;
-                }
-                errorMessage += '\n';
-            }
-
-            errorMessage +=
-                'I need concrete values to execute the tools. Please provide the specific values required.';
+            errorMessage += 'Please fix the dependency issues and try again.';
 
             return [
                 {
@@ -1423,63 +1343,6 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         return convertedSteps;
-    }
-
-    /**
-     * ✅ SIMPLE: Check steps for obviously bad placeholder values
-     * Focused validation - only catch real problems, not valid template usage
-     */
-    private validateStepsForPlaceholders(steps: PlanStep[]): Array<{
-        id: string;
-        tool?: string;
-        placeholders: string[];
-    }> {
-        const invalidSteps: Array<{
-            id: string;
-            tool?: string;
-            placeholders: string[];
-        }> = [];
-
-        // Only check for obviously problematic placeholders
-        const badPlaceholders = [
-            'REPOSITORY_ID',
-            'USER_ID',
-            'TEAM_ID',
-            'ORG_ID',
-            'TODO',
-            'PLACEHOLDER',
-            'FILL_IN',
-            'REPLACE_WITH',
-            'YOUR_*_HERE',
-            'INSERT_*_HERE',
-            'CHANGE_THIS',
-            'UPDATE_ME',
-        ];
-
-        for (const step of steps) {
-            // ✅ SKIP steps without arguments or tools
-            if (!step.arguments || !step.tool) continue;
-
-            const argsStr = JSON.stringify(step.arguments).toUpperCase();
-            const foundPlaceholders: string[] = [];
-
-            // Check for obviously bad placeholders
-            for (const placeholder of badPlaceholders) {
-                if (argsStr.includes(placeholder)) {
-                    foundPlaceholders.push(placeholder);
-                }
-            }
-
-            if (foundPlaceholders.length > 0) {
-                invalidSteps.push({
-                    id: step.id,
-                    tool: step.tool,
-                    placeholders: [...new Set(foundPlaceholders)], // Remove duplicates
-                });
-            }
-        }
-
-        return invalidSteps;
     }
 
     private validateDependencies(steps: PlanStep[]): {
@@ -1506,9 +1369,6 @@ export class PlanAndExecutePlanner implements Planner {
         return { isValid: errors.length === 0, errors };
     }
 
-    /**
-     * ✅ NEW: Check for circular dependencies using DFS
-     */
     private hasCircularDependency(
         step: PlanStep,
         allSteps: PlanStep[],
@@ -1516,17 +1376,16 @@ export class PlanAndExecutePlanner implements Planner {
         recursionStack: Set<string>,
     ): boolean {
         if (recursionStack.has(step.id)) {
-            return true; // Circular dependency found
+            return true;
         }
 
         if (visited.has(step.id)) {
-            return false; // Already processed
+            return false;
         }
 
         visited.add(step.id);
         recursionStack.add(step.id);
 
-        // Check dependencies of this step
         if (step.dependencies) {
             for (const depId of step.dependencies) {
                 const depStep = allSteps.find((s) => s.id === depId);
@@ -1544,7 +1403,6 @@ export class PlanAndExecutePlanner implements Planner {
             }
         }
 
-        // Check data dependencies (template references)
         if (step.arguments) {
             const argsStr = JSON.stringify(step.arguments);
             const stepRefPattern = /\{\{([^.}]+)\.result/g;
@@ -1567,6 +1425,7 @@ export class PlanAndExecutePlanner implements Planner {
                                 recursionStack,
                             )
                         ) {
+                            recursionStack.delete(step.id);
                             return true;
                         }
                     }
@@ -1578,9 +1437,6 @@ export class PlanAndExecutePlanner implements Planner {
         return false;
     }
 
-    /**
-     * ✅ NEW: Validate that all referenced steps exist
-     */
     private validateStepReferences(steps: PlanStep[]): {
         isValid: boolean;
         errors: string[];
@@ -1589,7 +1445,6 @@ export class PlanAndExecutePlanner implements Planner {
         const stepIds = new Set(steps.map((s) => s.id));
 
         for (const step of steps) {
-            // Check template references in arguments
             if (step.arguments) {
                 const argsStr = JSON.stringify(step.arguments);
                 const matches = argsStr.match(/\{\{([^.}]+)\.result/g);
@@ -1606,7 +1461,6 @@ export class PlanAndExecutePlanner implements Planner {
                 }
             }
 
-            // Check explicit dependencies
             if (step.dependencies) {
                 for (const depId of step.dependencies) {
                     if (!stepIds.has(depId)) {
@@ -1621,22 +1475,17 @@ export class PlanAndExecutePlanner implements Planner {
         return { isValid: errors.length === 0, errors };
     }
 
-    /**
-     * ✅ NEW: Comprehensive validation of plan dependencies
-     */
     private validatePlanDependencies(plan: ExecutionPlan): {
         isValid: boolean;
         errors: string[];
     } {
         const errors: string[] = [];
 
-        // Validate step references
         const refValidation = this.validateStepReferences(plan.steps);
         if (!refValidation.isValid) {
             errors.push(...refValidation.errors);
         }
 
-        // Validate circular dependencies
         const depValidation = this.validateDependencies(plan.steps);
         if (!depValidation.isValid) {
             errors.push(...depValidation.errors);
@@ -1650,7 +1499,6 @@ export class PlanAndExecutePlanner implements Planner {
         allSteps: PlanStep[],
         context?: PlannerExecutionContext,
     ): Promise<{ args: Record<string, unknown>; missing: string[] }> {
-        // ✅ NEW: Runtime validation to prevent infinite loops
         const visitedReferences = new Set<string>();
 
         const validateCircularReference = (
@@ -1683,7 +1531,6 @@ export class PlanAndExecutePlanner implements Planner {
             })),
         });
 
-        // ✅ NEW: Recursive function to resolve templates in any value
         const missingInputs = new Set<string>();
 
         const resolveContextPath = (fullPath: string): unknown => {
@@ -2690,35 +2537,6 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
             });
             return 'NOT_FOUND';
         }
-    }
-
-    /**
-     * 🆕 Update prompt configuration dynamically
-     * Allows runtime customization of prompt behavior
-     */
-    updatePromptConfig(config: PlannerPromptConfig): void {
-        this.promptComposer = createPlannerPromptComposer(config);
-    }
-
-    /**
-     * 🆕 Get current prompt composition statistics
-     */
-    getPromptStats(): {
-        cacheSize: number;
-        version: string;
-    } {
-        const cacheStats = this.promptComposer.getCacheStats();
-        return {
-            cacheSize: cacheStats.size,
-            version: '1.0.0',
-        };
-    }
-
-    /**
-     * 🆕 Clear prompt cache (useful for testing or memory management)
-     */
-    clearPromptCache(): void {
-        this.promptComposer.clearCache();
     }
 
     /**

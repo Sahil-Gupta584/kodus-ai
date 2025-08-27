@@ -1,5 +1,4 @@
-import type { Event } from '../core/types/events.js';
-import { BaseSDKError, type ErrorCode } from '../core/errors.js';
+import { BaseSDKError } from '../core/errors.js';
 import { IdGenerator } from '../utils/id-generator.js';
 
 export * from './telemetry.js';
@@ -16,236 +15,31 @@ export {
     type LLMSpanAttributes,
 } from './telemetry.js';
 
-export type { LogLevel, LogContext } from './logger.js';
-export { createLogger, type Logger } from './logger.js';
+export { createLogger } from './logger.js';
 
-import {
-    createLogger,
-    type Logger,
-    type LogLevel,
-    type LogContext,
-    setLogContextProvider,
-} from './logger.js';
-import {
-    getTelemetry,
-    type TelemetrySystem,
-    type TelemetryConfig,
-} from './telemetry.js';
+import { getTelemetry, TelemetrySystem } from './telemetry.js';
 import {
     getLayeredMetricsSystem,
-    type LayeredMetricsSystem as ResourceMonitor,
-    type MetricsConfig as MonitoringConfig,
-    type SystemMetrics as ResourceMetrics,
+    LayeredMetricsSystem as ResourceMonitor,
 } from './monitoring.js';
+import { DebugSystem, getGlobalDebugSystem } from './debugging.js';
+import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import {
-    getGlobalDebugSystem,
-    type DebugSystem,
-    type DebugConfig,
-    type DebugReport,
-} from './debugging.js';
+    DebugReport,
+    DEFAULT_CONFIG,
+    HealthStatus,
+    LogContext,
+    Logger,
+    ObservabilityConfig,
+    ObservabilityContext,
+    ObservabilityInterface,
+    ResourceLeak,
+    Span,
+    UnifiedReport,
+    type SystemMetrics as ResourceMetrics,
+} from '@/core/types/allTypes.js';
+import { createLogger, setLogContextProvider } from './logger.js';
 
-/**
- * OpenTelemetry-compatible context
- */
-export interface OtelContext {
-    traceId?: string;
-    spanId?: string;
-    parentSpanId?: string;
-    correlationId?: string;
-    [key: string]: unknown;
-}
-
-/**
- * Unified observability configuration
- */
-export interface ObservabilityConfig {
-    enabled: boolean;
-    environment: 'development' | 'production' | 'test';
-    debug: boolean;
-    logging?: {
-        enabled?: boolean;
-        level?: LogLevel;
-        outputs?: string[];
-        filePath?: string;
-    };
-    telemetry?: Partial<TelemetryConfig>;
-    monitoring?: Partial<MonitoringConfig>;
-    debugging?: Partial<DebugConfig>;
-    mongodb?: {
-        type: 'mongodb';
-        connectionString?: string;
-        database?: string;
-        collections?: {
-            logs?: string;
-            telemetry?: string;
-            metrics?: string;
-            errors?: string;
-        };
-        batchSize?: number;
-        flushIntervalMs?: number;
-        ttlDays?: number;
-        enableObservability?: boolean;
-    };
-    correlation?: {
-        enabled: boolean;
-        generateIds: boolean;
-        propagateContext: boolean;
-    };
-}
-
-/**
- * Observability context for correlated operations
- */
-export interface ObservabilityContext extends OtelContext {
-    tenantId?: string;
-    executionId?: string;
-    sessionId?: string; // ✅ NEW: Link to session for proper hierarchy
-    metadata?: Record<string, unknown>;
-}
-
-/**
- * Resource leak information
- */
-interface ResourceLeak {
-    type: string;
-    severity: 'low' | 'medium' | 'high' | 'critical';
-    description: string;
-    timestamp: number;
-}
-
-/**
- * Unified observability interface
- */
-export interface ObservabilityInterface {
-    logger: Logger;
-    telemetry: TelemetrySystem;
-    monitor: ResourceMonitor | null;
-    debug: DebugSystem;
-    createContext(correlationId?: string): ObservabilityContext;
-    setContext(context: ObservabilityContext): void;
-    getContext(): ObservabilityContext | undefined;
-    clearContext(): void;
-
-    trace<T>(
-        name: string,
-        fn: () => T | Promise<T>,
-        context?: Partial<ObservabilityContext>,
-    ): Promise<T>;
-    measure<T>(
-        name: string,
-        fn: () => T | Promise<T>,
-        category?: string,
-    ): Promise<{ result: T; duration: number }>;
-
-    logError(
-        error: Error | BaseSDKError,
-        message: string,
-        context?: Partial<ObservabilityContext>,
-    ): void;
-    wrapAndLogError(
-        error: unknown,
-        code: ErrorCode,
-        message?: string,
-        context?: Partial<ObservabilityContext>,
-    ): BaseSDKError;
-
-    getHealthStatus(): HealthStatus;
-    generateReport(): UnifiedReport;
-
-    updateConfig(config: Partial<ObservabilityConfig>): void;
-
-    flush(): Promise<void>;
-    dispose(): Promise<void>;
-}
-
-/**
- * Health status interface
- */
-export interface HealthStatus {
-    overall: 'healthy' | 'degraded' | 'unhealthy';
-    components: {
-        logging: { status: 'ok' | 'warning' | 'error'; message?: string };
-        telemetry: { status: 'ok' | 'warning' | 'error'; message?: string };
-        monitoring: { status: 'ok' | 'warning' | 'error'; message?: string };
-        debugging: { status: 'ok' | 'warning' | 'error'; message?: string };
-    };
-    lastCheck: number;
-}
-
-/**
- * Unified observability report
- */
-export interface UnifiedReport {
-    timestamp: number;
-    environment: string;
-    health: HealthStatus;
-
-    // Summary insights
-    insights: {
-        warnings: string[];
-        recommendations: string[];
-        criticalIssues: string[];
-    };
-}
-
-/**
- * Default observability configuration
- */
-const DEFAULT_CONFIG: ObservabilityConfig = {
-    enabled: true,
-    environment: 'development',
-    debug: false,
-
-    logging: {
-        enabled: true,
-        level: 'warn',
-        outputs: ['console'],
-    },
-
-    telemetry: {
-        enabled: true,
-        serviceName: 'kodus-flow',
-        sampling: { rate: 1.0, strategy: 'probabilistic' },
-        features: {
-            traceEvents: true,
-            traceKernel: true,
-            traceSnapshots: false,
-            tracePersistence: false,
-            metricsEnabled: true,
-        },
-    },
-
-    monitoring: {
-        enabled: true,
-        collectionIntervalMs: 30000,
-        retentionPeriodMs: 24 * 60 * 60 * 1000, // 24 hours
-        enableRealTime: true,
-        enableHistorical: true,
-        maxMetricsHistory: 1000,
-        exportFormats: ['json'] as ('json' | 'prometheus' | 'statsd')[],
-    },
-
-    debugging: {
-        enabled: false, // Disabled by default
-        level: 'debug',
-        features: {
-            eventTracing: true,
-            performanceProfiling: true,
-            stateInspection: true,
-            errorAnalysis: true,
-        },
-    },
-
-    correlation: {
-        enabled: true,
-        generateIds: true,
-        propagateContext: true,
-    },
-};
-
-/**
- * Main observability system
- */
 export class ObservabilitySystem implements ObservabilityInterface {
     private config: ObservabilityConfig;
     private currentContext?: ObservabilityContext;
@@ -1347,7 +1141,7 @@ export async function shutdownObservability(): Promise<void> {
  * Apply error details to a span with consistent attributes and status
  */
 export function applyErrorToSpan(
-    span: import('./telemetry.js').Span,
+    span: Span,
     error: unknown,
     attributes?: Record<string, string | number | boolean>,
 ): void {
@@ -1367,7 +1161,7 @@ export function applyErrorToSpan(
  * Mark span as successful with optional attributes
  */
 export function markSpanOk(
-    span: import('./telemetry.js').Span,
+    span: Span,
     attributes?: Record<string, string | number | boolean>,
 ): void {
     if (attributes) span.setAttributes(attributes);

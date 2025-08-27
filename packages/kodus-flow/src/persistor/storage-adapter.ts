@@ -1,31 +1,27 @@
 import { createLogger } from '../observability/logger.js';
-import type { Persistor } from './index.js';
-import type {
-    Snapshot,
-    SnapshotOptions,
-    PersistorStats,
-} from '../core/types/common-types.js';
 import { StorageAdapterFactory } from '../core/storage/factory.js';
-import type {
+import {
     BaseStorage,
     BaseStorageItem,
-} from '../core/types/base-storage.js';
+    Persistor,
+    PersistorStats,
+    Snapshot,
+    SnapshotOptions,
+    StorageEnum,
+} from '@/core/types/allTypes.js';
 
 const logger = createLogger('persistor-storage-adapter');
 
-/**
- * Adapter that implements the old Persistor interface using the new BaseStorage
- */
 export class StoragePersistorAdapter implements Persistor {
     private storage: BaseStorage<BaseStorageItem> | null = null;
     private isInitialized = false;
 
     constructor(
         private config: {
-            type: 'memory' | 'mongodb';
+            type: StorageEnum;
             connectionString?: string;
             options?: Record<string, unknown>;
-        } = { type: 'memory' },
+        } = { type: StorageEnum.INMEMORY },
         private persistorConfig?: {
             maxSnapshots?: number;
             enableCompression?: boolean;

@@ -1,36 +1,10 @@
-/**
- * Simple Execution Log Service
- *
- * KISS approach - in-memory logging with conditional persistence to session context
- */
-
+import {
+    ExecutionCriteria,
+    SimpleExecutionLog,
+    StepResult,
+} from '@/core/types/allTypes.js';
 import { createLogger } from '../../../observability/index.js';
-import type { StepResult } from '../execution-tracker.js';
 
-export interface SimpleExecutionLog {
-    executionId: string;
-    sessionId: string;
-    agentName: string;
-    startTime: number;
-    endTime: number;
-    totalDuration: number;
-    toolCallsCount: number;
-    complexityScore: number;
-    finalStatus: 'success' | 'error' | 'timeout';
-    // Only store essential data - not full steps to keep it lightweight
-}
-
-export interface ExecutionCriteria {
-    hasToolCalls: boolean;
-    executionTimeMs: number;
-    multipleSteps: boolean;
-    hasErrors: boolean;
-    isDebugMode: boolean;
-}
-
-/**
- * Simple in-memory execution logging with smart persistence
- */
 export class SimpleExecutionLogger {
     private logs: Map<string, SimpleExecutionLog> = new Map();
     private readonly logger = createLogger('simple-execution-logger');

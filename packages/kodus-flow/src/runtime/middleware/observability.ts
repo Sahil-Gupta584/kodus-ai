@@ -1,24 +1,14 @@
-/**
- * @module runtime/middleware/observability
- * @description Middleware de observabilidade: cria spans por evento e propaga contexto
- */
-
-import type { Event } from '../../core/types/events.js';
-import type { EventHandler } from '../../core/types/common-types.js';
-import type { Middleware, MiddlewareFactoryType } from './types.js';
+import {
+    EventHandler,
+    Middleware,
+    MiddlewareFactoryType,
+    ObservabilityOptions,
+} from '@/core/types/allTypes.js';
 import {
     getObservability,
     applyErrorToSpan,
     markSpanOk,
 } from '../../observability/index.js';
-
-export interface ObservabilityOptions {
-    namePrefix?: string;
-    includeSensitiveData?: boolean;
-    // Filtro opcional por tipo de evento
-    includeEventTypes?: string[];
-    excludeEventTypes?: string[];
-}
 
 /**
  * Middleware que cria um span por processamento de evento e registra erros

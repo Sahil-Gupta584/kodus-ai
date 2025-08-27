@@ -1,14 +1,14 @@
-/**
- * @module core/memory/storage-adapter
- * @description Adapter to bridge old MemoryAdapter interface with new BaseStorage
- */
-
 import { createLogger } from '../../observability/logger.js';
-
-import type { MemoryItem, MemoryQuery } from '../types/memory-types.js';
-import type { BaseStorage, BaseStorageItem } from '../types/base-storage.js';
-import { MemoryAdapter, MemoryAdapterConfig } from './types.js';
 import { StorageAdapterFactory } from '../storage/factory.js';
+import {
+    BaseStorage,
+    BaseStorageItem,
+    MemoryAdapter,
+    MemoryAdapterConfig,
+    MemoryItem,
+    MemoryQuery,
+    StorageEnum,
+} from '../types/allTypes.js';
 
 const logger = createLogger('memory-storage-adapter');
 
@@ -18,11 +18,12 @@ const logger = createLogger('memory-storage-adapter');
 export class StorageMemoryAdapter implements MemoryAdapter {
     private storage: BaseStorage<BaseStorageItem> | null = null;
     private isInitialized = false;
-    // Cache opcional em memória para queries simples sobre metadata
     private inMemoryIndex: Map<string, BaseStorageItem> = new Map();
 
     constructor(
-        private config: MemoryAdapterConfig = { adapterType: 'memory' },
+        private config: MemoryAdapterConfig = {
+            adapterType: StorageEnum.INMEMORY,
+        },
     ) {}
 
     async initialize(): Promise<void> {

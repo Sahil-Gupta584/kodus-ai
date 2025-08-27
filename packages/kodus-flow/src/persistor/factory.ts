@@ -1,13 +1,9 @@
-import type { Persistor } from './index.js';
 import { StoragePersistorAdapter } from './storage-adapter.js';
-import type { PersistorConfig } from './config.js';
 import { createLogger } from '../observability/logger.js';
+import { Persistor, PersistorConfig } from '@/core/types/allTypes.js';
 
 const logger = createLogger('persistor-factory');
 
-/**
- * Create persistor instance based on configuration
- */
 export function createPersistorFromConfig(config: PersistorConfig): Persistor {
     logger.info('Creating persistor', { type: config.type });
 

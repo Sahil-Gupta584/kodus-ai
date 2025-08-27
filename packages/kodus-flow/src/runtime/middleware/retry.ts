@@ -1,20 +1,12 @@
-// runtime/middleware/retry.ts
-import type { Event } from '../../core/types/events.js';
-import type { RetryOptions } from '../../core/types/retry-types.js';
+import {
+    DEFAULT,
+    HasCostCtx,
+    Middleware,
+    MiddlewareFactoryType,
+    RetryOptions,
+} from '@/core/types/allTypes.js';
 import { KernelError } from '../../core/errors.js';
-import { getActiveSpan } from '../../observability/index.js'; // span helper
-import type { Middleware, MiddlewareFactoryType } from './types.js';
-
-const DEFAULT: RetryOptions = {
-    maxRetries: 3,
-    initialDelayMs: 100,
-    maxDelayMs: 5_000,
-    maxTotalMs: 60_000, // ⬅️ novo
-    backoffFactor: 2,
-    jitter: true,
-    retryableErrorCodes: ['NETWORK_ERROR', 'TIMEOUT_ERROR', 'TIMEOUT_EXCEEDED'],
-    retryableStatusCodes: [408, 429, 500, 502, 503, 504],
-};
+import { getActiveSpan } from '../../observability/index.js';
 
 function backoff(attempt: number, opt: RetryOptions) {
     const { initialDelayMs, backoffFactor, jitter, maxDelayMs } = opt;
@@ -55,9 +47,6 @@ function isRetryable(err: unknown, opt: RetryOptions): boolean {
     return false;
 }
 
-interface HasCostCtx {
-    ctx?: { cost?: { retries: number } };
-}
 function hasCostCtx(x: unknown): x is HasCostCtx {
     return typeof x === 'object' && x !== null && 'ctx' in x;
 }

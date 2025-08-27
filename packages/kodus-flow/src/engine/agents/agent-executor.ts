@@ -1,48 +1,25 @@
-/**
- * @module engine/agents/agent_new/agent-executor
- * @description Executor para agentes via workflow - com lifecycle completo
- *
- * CARACTERÍSTICAS:
- * ✅ Execução via workflow com pause/resume
- * ✅ Lifecycle completo (usa AgentLifecycleHandler existente)
- * ✅ Snapshots e persistência
- * ✅ Middleware e observabilidade avançada
- * ✅ Ideal para agentes complexos e long-running
- */
-
 import { createLogger } from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
 import { IdGenerator } from '../../utils/id-generator.js';
-import type { ToolEngine } from '../tools/tool-engine.js';
 
-// Types do sistema
-import type {
+import { AgentCore } from './agent-core.js';
+
+import { AgentLifecycleHandler } from './agent-lifecycle.js';
+import {
+    AgentCoreConfig,
     AgentDefinition,
     AgentExecutionOptions,
     AgentExecutionResult,
-    AgentStartPayload,
-    AgentStopPayload,
+    AgentLifecycleResult,
     AgentPausePayload,
     AgentResumePayload,
     AgentSchedulePayload,
-    AgentLifecycleResult,
+    AgentStartPayload,
+    AgentStopPayload,
     AgentThought,
-} from '../../core/types/agent-types.js';
+} from '@/core/types/allTypes.js';
+import { ToolEngine } from '../tools/tool-engine.js';
 
-import type { AgentCoreConfig } from './agent-core.js';
-import { AgentCore } from './agent-core.js';
-
-// Importar o AgentLifecycleHandler existente
-import { AgentLifecycleHandler } from './agent-lifecycle.js';
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🚀 AGENT EXECUTOR IMPLEMENTATION
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Executor para agentes via workflow
- * Execução com lifecycle completo usando AgentLifecycleHandler existente
- */
 export class AgentExecutor<
     TInput = unknown,
     TOutput = unknown,

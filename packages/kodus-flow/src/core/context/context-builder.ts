@@ -8,34 +8,16 @@ import {
 import { SessionService } from './services/session-service.js';
 import { SimpleContextStateService as ContextStateService } from './services/simple-state-service.js';
 
-import type {
-    AgentContext,
-    AgentExecutionOptions,
-} from '../types/agent-types.js';
-import type { Session, SessionConfig } from './services/session-service.js';
 import type { ToolEngine } from '../../engine/tools/tool-engine.js';
-import { StorageType } from '../storage/index.js';
 
 import { ExecutionTracker } from './execution-tracker.js';
 import { SimpleExecutionLogger } from './services/simple-execution-log.js';
-
-export interface ContextBuilderConfig {
-    memory?: {
-        adapterType?: StorageType;
-        adapterConfig?: {
-            connectionString?: string;
-            options?: Record<string, unknown>;
-        };
-    };
-    session?: SessionConfig;
-    snapshot?: {
-        adapterType?: StorageType;
-        adapterConfig?: {
-            connectionString?: string;
-            options?: Record<string, unknown>;
-        };
-    };
-}
+import {
+    AgentContext,
+    AgentExecutionOptions,
+    ContextBuilderConfig,
+    Session,
+} from '../types/allTypes.js';
 
 export class ContextBuilder {
     private static instance: ContextBuilder | undefined;

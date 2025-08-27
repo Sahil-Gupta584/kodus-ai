@@ -1,22 +1,8 @@
-// runtime/middleware/concurrency.ts
-import type { Event } from '../../core/types/events.js';
-import type { Middleware } from './types.js';
-
-export interface ConcurrencyOptions {
-    maxConcurrent: number;
-    getKey?: (ev: Event) => string;
-    queueTimeoutMs?: number; // 0 = drop (default)
-    emitMetrics?: boolean;
-    context?: { cost?: { concurrencyDrops: number } };
-}
-
-// defaultOptions fora da função para não recriar
-const DEFAULT_OPTS: ConcurrencyOptions = {
-    maxConcurrent: 5,
-    getKey: (ev) => ev.type,
-    queueTimeoutMs: 0,
-    emitMetrics: true,
-};
+import {
+    ConcurrencyOptions,
+    DEFAULT_OPTS,
+    Middleware,
+} from '@/core/types/allTypes.js';
 
 /* ───── ConcurrencyManager singleton ───── */
 class ConcurrencyManager {

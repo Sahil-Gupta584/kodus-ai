@@ -1,11 +1,11 @@
-import { StorageType } from '../../types/storage-types.js';
 import { createLogger } from '../../../observability/logger.js';
-import type {
+import {
     BaseStorage,
     BaseStorageItem,
     BaseStorageStats,
-} from '../../types/base-storage.js';
-import type { StorageAdapterConfig } from '../factory.js';
+    StorageAdapterConfig,
+    StorageEnum,
+} from '@/core/types/allTypes.js';
 
 const logger = createLogger('in-memory-storage-adapter');
 
@@ -101,7 +101,7 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
             totalSize,
             averageItemSize:
                 this.items.size > 0 ? totalSize / this.items.size : 0,
-            adapterType: StorageType.INMEMORY,
+            adapterType: StorageEnum.INMEMORY,
         };
     }
 

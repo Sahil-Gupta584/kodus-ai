@@ -1,31 +1,17 @@
-import { createLogger } from '../../../observability/logger.js';
-import type { Session } from './session-service.js';
-import type {
-    BaseStorage,
-    BaseStorageItem,
-    BaseStorageStats,
-} from '../../types/base-storage.js';
 import {
-    StorageAdapterFactory,
-    StorageType,
+    BaseStorage,
+    BaseStorageStats,
+    Session,
+    SessionAdapterConfig,
+    SessionForStorage,
+    SessionFromStorage,
+    SessionStorageItem,
     StorageAdapterConfig,
-} from '../../storage/factory.js';
+} from '@/core/types/allTypes.js';
+import { createLogger } from '../../../observability/logger.js';
+import { StorageAdapterFactory } from '@/core/storage/index.js';
 
 const logger = createLogger('storage-session-adapter');
-
-type SessionForStorage = Omit<Session, 'createdAt' | 'lastActivity'> & {
-    createdAt: string;
-    lastActivity: string;
-    createdAtTimestamp: number;
-    lastActivityTimestamp: number;
-};
-
-type SessionFromStorage = Omit<Session, 'createdAt' | 'lastActivity'> & {
-    createdAt: string | number;
-    lastActivity: string | number;
-    createdAtTimestamp?: number;
-    lastActivityTimestamp?: number;
-};
 
 class DateUtils {
     static timestampToFormattedDate(timestamp: number): string {
@@ -149,18 +135,6 @@ class DateUtils {
     }
 }
 
-export interface SessionAdapterConfig {
-    adapterType: StorageType;
-    connectionString?: string;
-    options?: Record<string, unknown>;
-    timeout?: number;
-    retries?: number;
-}
-
-interface SessionStorageItem extends BaseStorageItem {
-    sessionData: SessionForStorage;
-}
-
 export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
     private storage: BaseStorage<SessionStorageItem> | null = null;
     private config: StorageAdapterConfig;
@@ -270,6 +244,7 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
         );
 
         logger.debug('Session loaded', { sessionId });
+
         return sessionData;
     }
 

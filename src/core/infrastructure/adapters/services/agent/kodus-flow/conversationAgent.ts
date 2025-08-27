@@ -39,14 +39,35 @@ export class ConversationAgentProvider {
         const base = this.llmProviderService.getLLMProvider({
             model: LLMModelProvider.GEMINI_2_5_PRO,
             temperature: 0,
-            maxTokens: 8000,
+            maxTokens: 20000,
             maxReasoningTokens: 800,
-            jsonMode: true,
         });
 
         function sanitizeName(name: string) {
             const cleaned = name.replace(/[^\w.\-]/g, '_');
             return cleaned.slice(0, 64);
+        }
+
+        function contentToString(content: unknown): string {
+            if (typeof content === 'string') {
+                return content;
+            }
+            if (Array.isArray(content)) {
+                return content
+                    .filter(
+                        (b: unknown): b is { type: string; text?: string } =>
+                            !!b &&
+                            typeof b === 'object' &&
+                            'type' in (b as any),
+                    )
+                    .map((b) =>
+                        (b as any).type === 'text'
+                            ? String((b as any).text ?? '')
+                            : '',
+                    )
+                    .join('');
+            }
+            return '';
         }
 
         const wrappedLLM = {
@@ -91,8 +112,10 @@ export class ConversationAgentProvider {
 
                 console.log('LLM response:', JSON.stringify(resp, null, 2));
 
+                const text = contentToString(resp.content);
+
                 return {
-                    content: resp.content,
+                    content: text,
                     usage: resp.usage_metadata ?? {
                         promptTokens: 0,
                         completionTokens: 0,

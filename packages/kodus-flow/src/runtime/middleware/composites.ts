@@ -1,29 +1,13 @@
-/**
- * @module runtime/middleware/composites
- * @description Composite middleware utilities
- */
-
-import type { Event } from '../../core/types/events.js';
-import type { EventHandler } from '../../core/types/common-types.js';
-import { composeMiddleware, type Middleware } from './types.js';
 import { withRetry } from './retry.js';
 import { withTimeout } from './timeout.js';
 import { withConcurrency } from './concurrency.js';
-import type { RetryOptions } from '../../core/types/retry-types.js';
+import {
+    composeMiddleware,
+    EventHandler,
+    Middleware,
+    StandardMiddlewareOptions,
+} from '@/core/types/allTypes.js';
 
-/**
- * Standard middleware configuration options
- */
-export interface StandardMiddlewareOptions {
-    retry?: Partial<RetryOptions> | boolean;
-    timeout?: number;
-    concurrency?: number;
-    monitoring?: boolean;
-}
-
-/**
- * Create a standard middleware stack with common patterns
- */
 export function createStandardMiddleware<TEvent extends Event = Event>(
     options: StandardMiddlewareOptions = {},
 ): Middleware<TEvent> {

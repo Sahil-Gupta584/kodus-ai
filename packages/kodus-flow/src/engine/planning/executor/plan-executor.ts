@@ -1,62 +1,22 @@
-import type {
-    AgentAction,
-    ActionResult,
-    PlannerExecutionContext,
-} from '../../planning/planner-factory.js';
-import type {
-    ExecutionPlan,
-    PlanStep,
-    StepExecutionResult,
-    PlanExecutionResult,
-    ReplanContext,
-    PlanExecutionData,
-} from '../../../core/types/planning-shared.js';
 import {
+    ActionResult,
+    AgentAction,
+    ExecutionPlan,
+    ExecutionSummary,
     getReadySteps,
+    InnerToolResult,
+    PlanExecutionData,
+    PlanExecutionResult,
+    PlanExecutorConfig,
+    PlannerExecutionContext,
+    PlanSignals,
+    PlanStep,
+    ReplanContext,
+    StepAnalysis,
+    StepExecutionResult,
     UNIFIED_STATUS,
-} from '../../../core/types/planning-shared.js';
-
-interface PlanExecutorConfig {
-    enableReWOO?: boolean;
-    maxRetries?: number;
-    maxExecutionRounds?: number;
-}
-
-interface WrappedToolResult {
-    result: {
-        isError?: boolean;
-        content: Array<{
-            type: string;
-            text: string;
-        }>;
-    };
-}
-
-interface InnerToolResult {
-    successful?: boolean;
-    error?: string;
-    data?: Record<string, unknown>;
-}
-
-interface PlanSignals {
-    needs?: string[];
-    noDiscoveryPath?: string[];
-    errors?: string[];
-    suggestedNextStep?: string;
-}
-
-interface StepAnalysis {
-    success: boolean;
-    shouldReplan: boolean;
-}
-
-interface ExecutionSummary {
-    successfulSteps: string[];
-    failedSteps: string[];
-    skippedSteps: string[];
-    allStepsProcessed: boolean;
-    hasNoMoreExecutableSteps: boolean;
-}
+    WrappedToolResult,
+} from '@/core/types/allTypes.js';
 
 export class PlanExecutor {
     private readonly maxExecutionRounds: number;

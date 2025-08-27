@@ -1,111 +1,20 @@
-/**
- * @module observability/debugging
- * @description Ferramentas de debugging essenciais para agentes e workflows
- *
- * Funcionalidades focadas no essencial:
- * - Event tracing para workflows
- * - Performance profiling para agentes
- * - State inspection para troubleshooting
- * - Error analysis
- */
-
 import fs from 'fs';
 import { getTelemetry } from './telemetry.js';
 import { IdGenerator } from '../utils/index.js';
-import type { Event } from '../core/types/events.js';
-import z from 'zod';
 import { createLogger } from './logger.js';
+import {
+    DebugConfig,
+    DebugContext,
+    DebugEntry,
+    DebugOutput,
+    DebugReport,
+    EventTrace,
+    LogLevel,
+    PerformanceInsights,
+    PerformanceMeasurement,
+    StateSnapshot,
+} from '@/core/types/allTypes.js';
 
-export const logLevelSchema = z.enum(['debug', 'info', 'warn', 'error']);
-export type LogLevel = z.infer<typeof logLevelSchema>;
-
-/**
- * Configuração de debugging simplificada
- */
-export interface DebugConfig {
-    enabled: boolean;
-    level: LogLevel;
-    features: {
-        eventTracing: boolean;
-        performanceProfiling: boolean;
-        stateInspection: boolean;
-        errorAnalysis: boolean;
-    };
-
-    // Output configuration
-    outputs: DebugOutput[];
-
-    // History settings
-    maxEventHistory: number;
-    maxMeasurementHistory: number;
-
-    // Auto-flush settings
-    autoFlush: boolean;
-    flushInterval: number; // milliseconds
-}
-
-/**
- * Debug output interface
- */
-export interface DebugOutput {
-    name: string;
-    write(entry: DebugEntry): void | Promise<void>;
-    flush?(): void | Promise<void>;
-}
-
-/**
- * Debug entry simplificada
- */
-export interface DebugEntry {
-    timestamp: number;
-    level: LogLevel;
-    category: 'event' | 'performance' | 'state' | 'error';
-    message: string;
-    data?: Record<string, unknown>;
-    correlationId?: string;
-}
-
-/**
- * Performance measurement simplificada
- */
-export interface PerformanceMeasurement {
-    id: string;
-    name: string;
-    startTime: number;
-    endTime?: number;
-    duration?: number;
-    category: string;
-    correlationId?: string;
-}
-
-/**
- * Event trace simplificada
- */
-export interface EventTrace {
-    id: string;
-    event: Event;
-    timestamp: number;
-    correlationId: string;
-    processingDuration?: number;
-    result?: Event | void;
-    error?: Error;
-}
-
-/**
- * State snapshot simplificada
- */
-export interface StateSnapshot {
-    id: string;
-    entityName: string;
-    entityType: 'agent' | 'workflow' | 'system';
-    timestamp: number;
-    state: Record<string, unknown>;
-    correlationId?: string;
-}
-
-/**
- * Console debug output
- */
 export class ConsoleDebugOutput implements DebugOutput {
     name = 'console';
 
@@ -784,39 +693,6 @@ export class DebugSystem {
 }
 
 /**
- * Relatório de debugging
- */
-export interface DebugReport {
-    timestamp: number;
-    config: DebugConfig;
-    summary: {
-        tracedEvents: number;
-        completedMeasurements: number;
-        stateSnapshots: number;
-        activeMeasurements: number;
-        avgEventProcessingTime: number;
-        avgMeasurementTime: number;
-    };
-    eventTypeDistribution: Record<string, number>;
-    recentErrors: Array<{
-        eventType: string;
-        error: string;
-        timestamp: number;
-        traceId: string;
-    }>;
-    performanceInsights: PerformanceInsights;
-}
-
-/**
- * Insights de performance
- */
-export interface PerformanceInsights {
-    slowOperations: Array<{ name: string; duration: number; category: string }>;
-    fastOperations: Array<{ name: string; duration: number; category: string }>;
-    recommendations: string[];
-}
-
-/**
  * Sistema global de debugging
  */
 let globalDebugSystem: DebugSystem | null = null;
@@ -878,33 +754,6 @@ export function withDebug(debugSystem?: DebugSystem) {
             }
         };
     };
-}
-
-/**
- * Contexto de debugging
- */
-export interface DebugContext {
-    setCorrelationId(id: string): void;
-    clearCorrelationId(): void;
-
-    log(level: LogLevel, message: string, data?: Record<string, unknown>): void;
-    trace(event: Event, source?: string): string;
-
-    measure<T>(
-        name: string,
-        fn: () => T | Promise<T>,
-        metadata?: Record<string, unknown>,
-    ): Promise<{ result: T; measurement: PerformanceMeasurement }>;
-    startMeasurement(name: string, metadata?: Record<string, unknown>): string;
-    endMeasurement(id: string): PerformanceMeasurement | undefined;
-
-    captureSnapshot(
-        entityName: string,
-        entityType: 'agent' | 'workflow' | 'system',
-        state: Record<string, unknown>,
-    ): string;
-
-    generateReport(): DebugReport;
 }
 
 /**

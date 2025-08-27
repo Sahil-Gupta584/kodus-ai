@@ -1,28 +1,17 @@
-/**
- * @module runtime/middleware/conditional
- * @description Middleware condicional - aplica middlewares apenas quando necessário
- *
- * Responsabilidades:
- * - Aplicar middlewares baseado em condições
- * - Utilitários para criar condições
- * - Factory para middlewares condicionais
- * - Estatísticas de aplicação
- */
-
-import type {
-    MiddlewareContext,
-    MiddlewareFunction,
-    MiddlewareCondition,
+import {
+    ConcurrencyConfig,
     ConditionalMiddleware,
-    MiddlewareConfig,
     ConditionUtils,
+    MiddlewareCondition,
+    MiddlewareConfig,
+    MiddlewareContext,
     MiddlewareFactory,
+    MiddlewareFunction,
+    ObservabilityConfig,
     RetryConfig,
     TimeoutConfig,
-    ConcurrencyConfig,
     ValidationConfig,
-    ObservabilityConfig,
-} from './types.js';
+} from '@/core/types/allTypes.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
 
 /**

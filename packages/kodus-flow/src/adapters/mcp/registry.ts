@@ -1,18 +1,12 @@
+import { SpecCompliantMCPClient } from './client.js';
+import { createLogger } from '../../observability/index.js';
 import {
     MCPClientConfig,
+    MCPRegistryOptions,
     MCPServerConfig,
     MCPToolRawWithServer,
     TransportType,
-} from './types.js';
-import { SpecCompliantMCPClient } from './client.js';
-import { createLogger } from '../../observability/index.js';
-
-export interface MCPRegistryOptions {
-    /** timeout padrão dos clientes (ms) */
-    defaultTimeout?: number;
-    /** tentativas de retry */
-    maxRetries?: number;
-}
+} from '@/core/types/allTypes.js';
 
 export class MCPRegistry {
     private clients = new Map<string, SpecCompliantMCPClient>();

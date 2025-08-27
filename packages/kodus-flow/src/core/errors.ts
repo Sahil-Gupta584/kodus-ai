@@ -1,121 +1,13 @@
-/**
- * Core Error Types
- *
- * This module defines the error types used throughout the SDK.
- * All errors follow a consistent pattern for better error handling and debugging.
- */
+import {
+    EngineErrorCode,
+    ErrorCode,
+    KernelErrorCode,
+    MiddlewareErrorCode,
+    OrchestrationErrorCode,
+    RuntimeErrorCode,
+    SDKErrorOptions,
+} from './types/allTypes.js';
 
-/**
- * Error codes used by the kernel
- */
-export type KernelErrorCode =
-    | 'RETRY_EXCEEDED'
-    | 'TIMEOUT_EXCEEDED'
-    | 'ABORTED'
-    | 'VALIDATION_ERROR'
-    | 'UNKNOWN'
-    | 'INTERNAL_ERROR'
-    | 'KERNEL_QUOTA_EXCEEDED'
-    | 'KERNEL_CONTEXT_CORRUPTION'
-    | 'KERNEL_STATE_SYNC_FAILED'
-    | 'KERNEL_INITIALIZATION_FAILED'
-    | 'KERNEL_SHUTDOWN_FAILED'
-    | 'KERNEL_OPERATION_TIMEOUT';
-
-/**
- * Error codes for runtime operations
- */
-export type RuntimeErrorCode =
-    | 'EVENT_LOOP_DETECTED'
-    | 'EVENT_CHAIN_TOO_LONG'
-    | 'CIRCULAR_EVENT_DETECTED'
-    | 'CONTEXT_NOT_INITIALIZED'
-    | 'WORKFLOW_ABORTED'
-    | 'BUFFER_OVERFLOW'
-    | 'HANDLER_NOT_FOUND'
-    | 'STREAM_ERROR'
-    | 'RUNTIME_EVENT_PROCESSING_TIMEOUT'
-    | 'RUNTIME_MIDDLEWARE_CHAIN_BROKEN'
-    | 'RUNTIME_STREAM_BUFFER_FULL'
-    | 'RUNTIME_EVENT_QUEUE_FULL'
-    | 'RUNTIME_MEMORY_EXCEEDED'
-    | 'RUNTIME_PROCESSING_FAILED';
-
-/**
- * Error codes for engine operations
- */
-export type EngineErrorCode =
-    | 'AGENT_ERROR'
-    | 'TOOL_ERROR'
-    | 'WORKFLOW_ERROR'
-    | 'STEP_FAILED'
-    | 'TOOL_NOT_FOUND'
-    | 'INVALID_TOOL_INPUT'
-    | 'AGENT_TIMEOUT'
-    | 'WORKFLOW_CYCLE_DETECTED'
-    | 'EXECUTION_TIMEOUT'
-    | 'AGENT_LOOP_DETECTED'
-    | 'ENGINE_AGENT_INITIALIZATION_FAILED'
-    | 'ENGINE_TOOL_EXECUTION_TIMEOUT'
-    | 'ENGINE_WORKFLOW_VALIDATION_FAILED'
-    | 'ENGINE_PLANNING_FAILED'
-    | 'ENGINE_ROUTING_FAILED'
-    | 'ENGINE_COORDINATION_FAILED'
-    | 'LLM_ERROR';
-
-/**
- * Error codes for middleware operations
- */
-export type MiddlewareErrorCode =
-    | 'CONCURRENCY_DROP'
-    | 'CONCURRENCY_TIMEOUT'
-    | 'SCHEDULE_ERROR'
-    | 'STATE_ERROR'
-    | 'MIDDLEWARE_INIT_ERROR'
-    | 'MIDDLEWARE_VALIDATION_FAILED'
-    | 'MIDDLEWARE_RETRY_EXCEEDED'
-    | 'MIDDLEWARE_CIRCUIT_BREAKER_OPEN'
-    | 'MIDDLEWARE_TIMEOUT_ERROR'
-    | 'MIDDLEWARE_RATE_LIMIT_EXCEEDED';
-
-/**
- * Error codes for orchestration operations
- */
-export type OrchestrationErrorCode =
-    | 'ORCHESTRATION_AGENT_NOT_FOUND'
-    | 'ORCHESTRATION_TOOL_NOT_FOUND'
-    | 'ORCHESTRATION_WORKFLOW_NOT_FOUND'
-    | 'ORCHESTRATION_INVALID_CONFIGURATION'
-    | 'ORCHESTRATION_TENANT_NOT_FOUND'
-    | 'ORCHESTRATION_PERMISSION_DENIED'
-    | 'ORCHESTRATION_RESOURCE_LIMIT_EXCEEDED'
-    | 'ORCHESTRATION_OPERATION_FAILED';
-
-/**
- * All possible error codes
- */
-export type ErrorCode =
-    | KernelErrorCode
-    | RuntimeErrorCode
-    | EngineErrorCode
-    | MiddlewareErrorCode
-    | OrchestrationErrorCode;
-
-/**
- * Base error interface for all SDK errors
- */
-export interface SDKErrorOptions<T extends ErrorCode = ErrorCode> {
-    code: T;
-    message?: string;
-    cause?: Error | unknown;
-    context?: Record<string, unknown>;
-    recoverable?: boolean;
-    retryable?: boolean;
-}
-
-/**
- * Base error class for all SDK errors
- */
 export abstract class BaseSDKError<
     T extends ErrorCode = ErrorCode,
 > extends Error {

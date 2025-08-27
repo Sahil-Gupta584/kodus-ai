@@ -1,45 +1,12 @@
-/**
- * @module observability/otel-adapter
- * Adapter mínimo para usar OpenTelemetry (api) como tracer externo do TelemetrySystem.
- * - Sem dependência estática de pacotes OTEL além de import dinâmico de '@opentelemetry/api'
- * - Seguro para produção: apenas cria spans e delega ao tracer global do OTEL
- */
-
-import type {
-    Tracer as KodusTracer,
-    Span as KodusSpan,
+import {
+    LooseOtelAPI,
+    LooseOtelSpan,
     SpanOptions,
     SpanStatus,
-} from './telemetry.js';
-
-// Tipos soltos para evitar dependência rígida em @opentelemetry/* tipos
-type UnknownRecord = Record<string, unknown>;
-
-interface LooseOtelSpan {
-    setAttribute: (k: string, v: unknown) => unknown;
-    addEvent: (name: string, attributes?: UnknownRecord) => unknown;
-    setStatus: (s: UnknownRecord) => unknown;
-    recordException: (e: unknown) => unknown;
-    end: (t?: number) => unknown;
-    spanContext: () => { traceId: string; spanId: string; traceFlags: number };
-    isRecording: () => boolean;
-}
-
-interface LooseTracer {
-    startSpan: (
-        name: string,
-        options?: UnknownRecord,
-        ctx?: unknown,
-    ) => LooseOtelSpan;
-}
-
-interface LooseOtelAPI {
-    trace: {
-        getTracer: (name: string) => LooseTracer;
-        setSpan: (ctx: unknown, span: unknown) => unknown;
-    };
-    context: { active: () => unknown };
-}
+    UnknownRecord,
+    Tracer as KodusTracer,
+    Span as KodusSpan,
+} from '@/core/types/allTypes.js';
 
 class OtelSpanWrapper implements KodusSpan {
     private readonly span: LooseOtelSpan;

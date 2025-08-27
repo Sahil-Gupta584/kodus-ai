@@ -1,72 +1,19 @@
-/**
- * @module runtime/core/event-processor-optimized
- * @description Event Processor Otimizado - Performance máxima
- *
- * Inclui todas as otimizações do runtime original:
- * - Circular buffers para evitar memory leaks
- * - Handler tracking com cleanup automático
- * - Event chain tracking para prevenir loops infinitos
- * - Batch processing para performance
- * - WeakRef para garbage collection
- */
-
-import type { AnyEvent } from '../../core/types/events.js';
-import type {
-    WorkflowContext,
+import {
+    AnyEvent,
+    CircularBuffer,
+    DEFAULT_TIMEOUT_MS,
     EventHandler,
+    EventProcessingContext,
     HandlerReturn,
-} from '../../core/types/common-types.js';
+    Middleware,
+    OptimizedEventProcessorConfig,
+    OptimizedHandlerMap,
+    TrackedEventHandler,
+    WorkflowContext,
+} from '@/core/types/allTypes.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
-import type { Middleware } from '../middleware/types.js';
-import { DEFAULT_TIMEOUT_MS } from '../constants.js';
 
-/**
- * Configuração do processador otimizado
- */
-export interface OptimizedEventProcessorConfig {
-    maxEventDepth?: number;
-    maxEventChainLength?: number;
-    enableObservability?: boolean;
-    middleware?: Middleware[];
-    batchSize?: number;
-    cleanupInterval?: number;
-    staleThreshold?: number;
-    operationTimeoutMs?: number; // Usar DEFAULT_TIMEOUT_MS como padrão
-}
-
-/**
- * Handler com tracking para otimização
- */
-interface TrackedEventHandler extends EventHandler<AnyEvent> {
-    _handlerId?: string;
-    _lastUsed?: number;
-    _isActive?: boolean;
-}
-
-/**
- * Mapa otimizado de handlers
- */
-interface OptimizedHandlerMap {
-    exact: Map<string, TrackedEventHandler[]>;
-    wildcard: TrackedEventHandler[];
-    patterns: Map<RegExp, TrackedEventHandler[]>;
-    _cleanupTimer?: NodeJS.Timeout;
-}
-
-/**
- * Contexto de processamento com tracking
- */
-interface EventProcessingContext {
-    depth: number;
-    eventChain: EventChainTracker;
-    startTime: number;
-    correlationId?: string;
-}
-
-/**
- * Circular buffer para event chain tracking
- */
-class EventChainTracker {
+export class EventChainTracker {
     private events: string[] = [];
     private head = 0;
     private size = 0;
@@ -114,17 +61,6 @@ class EventChainTracker {
         this.head = 0;
         this.size = 0;
     }
-}
-
-/**
- * Circular buffer genérico para performance
- */
-interface CircularBuffer<T> {
-    items: T[];
-    head: number;
-    tail: number;
-    size: number;
-    capacity: number;
 }
 
 function createCircularBuffer<T>(capacity: number = 10000): CircularBuffer<T> {

@@ -1,29 +1,13 @@
-/**
- * @module core/llm/response-validator
- * @description AJV-based validation for LLM responses with type safety and error handling
- *
- * PHILOSOPHY:
- * ✅ Industry-standard validation with AJV
- * ✅ Type-safe schema definitions
- * ✅ Detailed error reporting
- * ✅ Flexible response parsing
- * ✅ Performance optimized with compiled validators
- */
-
 import { default as Ajv } from 'ajv';
 import { default as addFormats } from 'ajv-formats';
-import { createLogger } from '../../observability/index.js';
-import type {
-    PlanningResult,
-    RoutingResult,
+import {
     LangChainResponse,
-} from './direct-llm-adapter.js';
-
-const logger = createLogger('response-validator');
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🎯 AJV INSTANCE - Configured for LLM response validation
-// ──────────────────────────────────────────────────────────────────────────────
+    llmResponseSchema,
+    PlanningResult,
+    planningResultSchema,
+    routingResultSchema,
+} from '../types/allTypes.js';
+import { createLogger } from '@/observability/index.js';
 
 const ajvConstructor = Ajv as unknown as typeof Ajv.default;
 const ajv = new ajvConstructor({
@@ -40,227 +24,11 @@ const ajv = new ajvConstructor({
 });
 
 // Add format validators (email, uri, date-time, etc)
-const addFormatsFunction = addFormats as unknown as typeof addFormats.default;
+export const addFormatsFunction =
+    addFormats as unknown as typeof addFormats.default;
 addFormatsFunction(ajv);
 
-// ──────────────────────────────────────────────────────────────────────────────
-// 📋 JSON SCHEMAS FOR VALIDATION
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Schema for PlanStep in PlanningResult
- */
-const planStepSchema = {
-    type: 'object',
-    properties: {
-        id: { type: 'string', pattern: '^[a-z0-9-]+$' }, // kebab-case
-        description: { type: 'string', minLength: 1 },
-        tool: { type: 'string', nullable: true },
-        arguments: {
-            type: 'object',
-            additionalProperties: true,
-            nullable: true,
-        },
-        dependencies: {
-            type: 'array',
-            items: { type: 'string' },
-            nullable: true,
-        },
-        type: {
-            type: 'string',
-            enum: [
-                'analysis',
-                'action',
-                'decision',
-                'observation',
-                'verification',
-            ],
-        },
-        parallel: { type: 'boolean', nullable: true },
-        argsTemplate: {
-            type: 'object',
-            additionalProperties: true,
-            nullable: true,
-        },
-        expectedOutcome: { type: 'string', nullable: true },
-        retry: { type: 'number', nullable: true },
-        status: {
-            type: 'string',
-            enum: ['pending', 'executing', 'completed', 'failed', 'skipped'],
-            nullable: true,
-        },
-    },
-    required: ['id', 'description'],
-    additionalProperties: true,
-};
-
-/**
- * Schema for PlanningResult
- */
-const planningResultSchema = {
-    type: 'object',
-    properties: {
-        strategy: { type: 'string', minLength: 1 },
-        goal: { type: 'string', minLength: 1 },
-        steps: {
-            type: 'array',
-            items: planStepSchema,
-            minItems: 0,
-        },
-        plan: {
-            type: 'array',
-            items: planStepSchema,
-            minItems: 0,
-        },
-        signals: {
-            type: 'object',
-            properties: {
-                needs: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    nullable: true,
-                },
-                noDiscoveryPath: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    nullable: true,
-                },
-                errors: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    nullable: true,
-                },
-                suggestedNextStep: { type: 'string', nullable: true },
-            },
-            additionalProperties: true,
-            nullable: true,
-        },
-        audit: {
-            type: 'array',
-            items: { type: 'string' },
-            nullable: true,
-        },
-        reasoning: {
-            oneOf: [
-                { type: 'string' },
-                {
-                    type: 'array',
-                    items: { type: 'string' },
-                },
-            ],
-        },
-        complexity: {
-            type: 'string',
-            enum: ['simple', 'medium', 'complex'],
-            nullable: true,
-        },
-        estimatedTime: { type: 'number', nullable: true },
-        metadata: {
-            type: 'object',
-            additionalProperties: true,
-            nullable: true,
-        },
-    },
-    oneOf: [
-        { required: ['strategy', 'goal', 'steps'] },
-        { required: ['strategy', 'goal', 'plan'] },
-    ],
-    additionalProperties: true,
-};
-
-/**
- * Schema for RoutingResult
- */
-const routingResultSchema = {
-    type: 'object',
-    properties: {
-        strategy: { type: 'string', minLength: 1 },
-        selectedTool: { type: 'string', minLength: 1 },
-        confidence: {
-            type: 'number',
-            minimum: 0,
-            maximum: 1,
-        },
-        reasoning: { type: 'string', minLength: 1 },
-        alternatives: {
-            type: 'array',
-            items: {
-                type: 'object',
-                properties: {
-                    tool: { type: 'string', minLength: 1 },
-                    confidence: {
-                        type: 'number',
-                        minimum: 0,
-                        maximum: 1,
-                    },
-                    reason: { type: 'string' },
-                },
-                required: ['tool', 'confidence'],
-            },
-            nullable: true,
-        },
-    },
-    required: ['strategy', 'selectedTool', 'confidence', 'reasoning'],
-    additionalProperties: true,
-};
-
-/**
- * Schema for generic LLM response
- */
-const llmResponseSchema = {
-    type: 'object',
-    properties: {
-        content: { type: 'string' },
-        toolCalls: {
-            type: 'array',
-            items: {
-                type: 'object',
-                properties: {
-                    id: { type: 'string' },
-                    type: { type: 'string' },
-                    function: {
-                        type: 'object',
-                        properties: {
-                            name: { type: 'string' },
-                            arguments: { type: 'string' },
-                        },
-                        required: ['name', 'arguments'],
-                    },
-                },
-                required: ['id', 'type', 'function'],
-            },
-            nullable: true,
-        },
-        usage: {
-            type: 'object',
-            properties: {
-                promptTokens: { type: 'number', nullable: true },
-                completionTokens: { type: 'number', nullable: true },
-                totalTokens: { type: 'number', nullable: true },
-            },
-            nullable: true,
-        },
-        additionalKwargs: {
-            type: 'object',
-            additionalProperties: true,
-            nullable: true,
-        },
-    },
-    required: ['content'],
-    additionalProperties: true,
-};
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🚀 COMPILED VALIDATORS - For performance
-// ──────────────────────────────────────────────────────────────────────────────
-
-const validatePlanningResultSchema = ajv.compile(planningResultSchema);
-const validateRoutingResultSchema = ajv.compile(routingResultSchema);
-const validateLLMResponseSchema = ajv.compile(llmResponseSchema);
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🛡️ VALIDATION FUNCTIONS
-// ──────────────────────────────────────────────────────────────────────────────
+const logger = createLogger('response-validator');
 
 /**
  * Extract content from various response formats
@@ -528,61 +296,6 @@ export function validateLLMResponse(response: unknown): LangChainResponse {
 }
 
 /**
- * Validate routing response
- */
-export function validateRoutingResponse(response: unknown): RoutingResult {
-    try {
-        // Extract content
-        const content = extractContent(response);
-
-        // Parse JSON
-        const parsed = parseJSON(content);
-
-        // Validate with AJV
-        if (validateRoutingResultSchema(parsed)) {
-            const validData = parsed as unknown as RoutingResult;
-            logger.debug('Routing response validated successfully', {
-                selectedTool: validData.selectedTool,
-                confidence: validData.confidence,
-            });
-            return validData;
-        }
-
-        // Validation failed - log errors
-        // ✅ AJV BEST PRACTICE: Copy errors before they're overwritten
-        const validationErrors = validateRoutingResultSchema.errors
-            ? [...validateRoutingResultSchema.errors]
-            : [];
-
-        logger.warn('Routing response validation failed', {
-            errors: validationErrors,
-            parsedData: parsed,
-        });
-
-        throw new Error(
-            `Validation failed: ${JSON.stringify(validationErrors)}`,
-        );
-    } catch (error) {
-        logger.error('Failed to validate routing response', error as Error);
-
-        // Return fallback
-        return {
-            strategy: 'error-recovery',
-            selectedTool: 'unknown',
-            confidence: 0,
-            reasoning:
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to parse routing response',
-        };
-    }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🔧 UTILITY FUNCTIONS
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
  * Get detailed validation errors in human-readable format
  */
 export function getValidationErrors(validator: {
@@ -613,3 +326,7 @@ export function validateCustomSchema(data: unknown, schema: object): boolean {
 
     return valid;
 }
+
+export const validatePlanningResultSchema = ajv.compile(planningResultSchema);
+export const validateRoutingResultSchema = ajv.compile(routingResultSchema);
+export const validateLLMResponseSchema = ajv.compile(llmResponseSchema);

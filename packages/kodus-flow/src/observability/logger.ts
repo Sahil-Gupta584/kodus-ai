@@ -1,36 +1,15 @@
-/**
- * @module observability/logger
- * @description Logger simples e direto para o framework Kodus Flow
- *
- * Responsabilidades:
- * - Logging estruturado básico
- * - Contexto simples
- * - Performance mínima
- * - Compatibilidade com todo o framework
- */
+// Add module-level re-entrancy guard
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-
-export interface LogContext {
-    [key: string]: unknown;
-}
-
-type LogContextProvider = () => LogContext | undefined;
-let globalLogContextProvider: LogContextProvider | undefined;
-
-/**
- * Log processor type for external processing (e.g. MongoDB export)
- */
-type LogProcessor = (
-    level: LogLevel,
-    message: string,
-    component: string,
-    context?: LogContext,
-    error?: Error,
-) => void;
-
-let globalLogProcessors: LogProcessor[] = [];
-let isProcessingLog = false; // Add module-level re-entrancy guard
+import {
+    globalLogContextProvider,
+    globalLogProcessors,
+    isProcessingLog,
+    LogContext,
+    LogContextProvider,
+    Logger,
+    LogLevel,
+    LogProcessor,
+} from '@/core/types/allTypes.js';
 
 export function setLogContextProvider(
     provider: LogContextProvider | undefined,
@@ -82,7 +61,9 @@ function processLog(
     context?: LogContext,
     error?: Error,
 ): void {
-    if (isProcessingLog || globalLogProcessors.length === 0) return;
+    if (isProcessingLog || globalLogProcessors.length === 0) {
+        return;
+    }
 
     isProcessingLog = true;
     try {
@@ -98,19 +79,6 @@ function processLog(
     }
 }
 
-/**
- * Logger interface simples
- */
-export interface Logger {
-    debug(message: string, context?: LogContext): void;
-    info(message: string, context?: LogContext): void;
-    warn(message: string, context?: LogContext): void;
-    error(message: string, error?: Error, context?: LogContext): void;
-}
-
-/**
- * Logger simples para o framework
- */
 class SimpleLogger implements Logger {
     private componentName: string;
     private level: LogLevel;
@@ -179,16 +147,8 @@ class SimpleLogger implements Logger {
     }
 }
 
-/**
- * Criar logger para o framework
- * ✅ SIMPLIFIED: Always use simple logger for better UX
- * No more environment variable dependencies
- */
 export function createLogger(name: string, level?: LogLevel): Logger {
     return new SimpleLogger(name, level);
 }
 
-/**
- * Logger global para compatibilidade
- */
 export const logger = createLogger('kodus-flow');

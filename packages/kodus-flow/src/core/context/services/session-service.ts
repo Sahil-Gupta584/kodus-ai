@@ -1,62 +1,15 @@
 import { IdGenerator } from '../../../utils/id-generator.js';
 import { createLogger } from '../../../observability/index.js';
 import { SimpleContextStateService as ContextStateService } from './simple-state-service.js';
-import { SessionId, ThreadId, TenantId } from '@/core/types/base-types.js';
 import { StorageSessionAdapter } from './storage-session-adapter.js';
-import type { StorageType } from '../../storage/factory.js';
-
-export interface ConversationMessage {
-    role: 'user' | 'assistant' | 'tool' | 'system';
-    content: string;
-    timestamp: number;
-    metadata?: {
-        model?: string;
-        agentName?: string;
-        responseTimeMs?: number;
-        tokensUsed?: number;
-        toolsUsed?: string[];
-        toolCallsCount?: number;
-        source?: string;
-        connectionId?: string;
-        [key: string]: unknown;
-    };
-}
-
-export type ConversationHistory = ConversationMessage[];
-
-export type Session = {
-    id: string;
-    threadId: string;
-    tenantId: string;
-    createdAt: number;
-    lastActivity: number;
-    status: 'active' | 'paused' | 'expired' | 'closed';
-    metadata: Record<string, unknown>;
-    contextData: Record<string, unknown>;
-    conversationHistory: ConversationHistory;
-    currentExecutionId?: string; // Track current execution
-};
-
-export interface SessionConfig {
-    maxSessions?: number;
-    sessionTimeout?: number; // ms
-    maxConversationHistory?: number;
-    enableAutoCleanup?: boolean;
-    cleanupInterval?: number; // ms
-    persistent?: boolean;
-    adapterType?: StorageType;
-    connectionString?: string;
-    adapterOptions?: Record<string, unknown>;
-}
-
-export interface SessionContext {
-    id: SessionId;
-    threadId: ThreadId;
-    tenantId: TenantId;
-    stateManager: ContextStateService;
-    metadata: Record<string, unknown>;
-    conversationHistory: ConversationHistory;
-}
+import {
+    ConversationHistory,
+    ConversationMessage,
+    Session,
+    SessionConfig,
+    SessionContext,
+    StorageEnum,
+} from '@/core/types/allTypes.js';
 
 export class SessionService {
     private sessions = new Map<string, Session>();
@@ -82,7 +35,7 @@ export class SessionService {
             enableAutoCleanup: config.enableAutoCleanup !== false,
             cleanupInterval: config.cleanupInterval || 5 * 60 * 1000, // 5 min
             persistent: config.persistent ?? true,
-            adapterType: config.adapterType || 'memory',
+            adapterType: config?.adapterType || StorageEnum.INMEMORY,
             connectionString: config.connectionString || '',
             adapterOptions: config.adapterOptions || {},
         };
@@ -270,24 +223,22 @@ export class SessionService {
     async getSession(sessionId: string): Promise<Session | undefined> {
         await this.ensureInitialized();
 
-        // ✅ HYBRID: Check RAM cache first
         let session = this.sessions.get(sessionId);
 
-        // ✅ FALLBACK: If not in cache and persistent mode, try loading from storage
         if (!session && this.config.persistent && this.storage) {
             const loadedSession = await this.storage.retrieveSession(sessionId);
+
             if (loadedSession) {
                 session = loadedSession;
-                // Cache the loaded session
+
                 this.sessions.set(sessionId, session);
-                // Recreate state manager
+
                 const stateManager = new ContextStateService({ sessionId });
                 this.sessionStateManagers.set(sessionId, stateManager);
             }
         }
 
         if (session) {
-            // Verificar se sessão expirou ANTES de atualizar lastActivity
             if (this.isSessionExpired(session)) {
                 session.status = 'expired';
                 this.sessionStateManagers.delete(sessionId);

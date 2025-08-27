@@ -1,53 +1,17 @@
-/**
- * @module kernel/snapshot
- * @description Defines functions for creating, restoring, validating, and persisting workflow snapshots.
- * Supports future extensions for delta compression and different storage backends.
- */
-
-import { z } from 'zod';
-import type {
+import {
     BaseContext,
-    Snapshot,
     DeltaSnapshot,
-    Event,
+    ExtendedContext,
     Persistor,
+    Snapshot,
     SnapshotOptions,
-} from '../core/types/common-types.js';
-
+} from '@/core/types/allTypes.js';
 import {
     getGlobalPersistor as getGlobalPersistorFromFactory,
     setGlobalPersistor as setGlobalPersistorFromFactory,
 } from '../persistor/factory.js';
 import { IdGenerator } from '../utils/id-generator.js';
 
-// Re-export Snapshot type for convenience
-export type { Snapshot, DeltaSnapshot } from '../core/types/common-types.js';
-
-// Internal schema for validating snapshot structure.
-const snapshotSchema = z.object({
-    xcId: z.string(),
-    ts: z.number(),
-    events: z.array(z.unknown()), // ✅ Zod v4: Mais type-safe que z.any()
-    state: z.unknown(),
-    hash: z.string(),
-});
-
-// Extended schema for delta snapshots
-const deltaSnapshotSchema = snapshotSchema.extend({
-    isDelta: z.literal(true),
-    baseHash: z.string(),
-    eventsDelta: z.unknown().optional(),
-    stateDelta: z.unknown().optional(),
-});
-
-type ExtendedContext = BaseContext & { jobId?: string };
-
-/**
- * Converts a JavaScript value to a deterministically serialized JSON string.
- * Ensures that the output is always the same for the same input.
- * @param obj The object to serialize.
- * @returns A deterministically serialized JSON string.
- */
 function stringifyDeterministic(obj: unknown): string {
     if (obj === null || obj === undefined) {
         return String(obj);

@@ -1,7 +1,5 @@
-import {
-    SDKOrchestrator,
-    type OrchestrationConfig,
-} from './sdk-orchestrator.js';
+import { OrchestrationConfig } from '@/core/types/allTypes.js';
+import { SDKOrchestrator } from './sdk-orchestrator.js';
 
 export function createOrchestration(
     config?: OrchestrationConfig,
@@ -12,8 +10,3 @@ export function createOrchestration(
 
     return new SDKOrchestrator(config);
 }
-
-export type {
-    OrchestrationConfig,
-    OrchestrationResult,
-} from './sdk-orchestrator.js';

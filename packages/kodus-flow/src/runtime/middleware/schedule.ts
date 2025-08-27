@@ -1,64 +1,10 @@
-/**
- * Schedule Middleware
- *
- * Implements interval-based triggers for scheduled events.
- * (Cron support will be added in future versions)
- */
-
-/**
- * Schedule Middleware
- *
- * Implements interval-based triggers for scheduled events.
- * (Cron support will be added in future versions)
- */
+import {
+    DEFAULT_SCHEDULE_OPTIONS,
+    ScheduleOptions,
+} from '@/core/types/allTypes.js';
 import { IdGenerator } from '../../utils/id-generator.js';
-import type { Event } from '../../core/types/events.js';
 
-/**
- * Options for scheduling events
- */
-export interface ScheduleOptions {
-    /**
-     * Interval in milliseconds between event triggers
-     */
-    intervalMs: number;
-
-    /**
-     * Maximum number of times to trigger the event (optional)
-     * If not provided, the event will be triggered indefinitely
-     */
-    maxTriggers?: number;
-
-    /**
-     * Whether to trigger the event immediately upon registration
-     * Default: false (wait for first interval)
-     */
-    triggerImmediately?: boolean;
-
-    /**
-     * Function to generate event data for each trigger
-     * If not provided, the original event data will be used
-     */
-    generateData?: (triggerCount: number, originalEvent: Event) => unknown;
-}
-
-/**
- * Default schedule options
- */
-const DEFAULT_SCHEDULE_OPTIONS: Partial<ScheduleOptions> = {
-    triggerImmediately: false,
-};
-
-/**
- * Schedule middleware factory
- *
- * Creates a scheduled event emitter that triggers events at specified intervals.
- *
- * @param options - Schedule configuration options
- * @returns A function that sets up the schedule when called with a workflow context
- */
 export function schedule(options: ScheduleOptions) {
-    // Merge provided options with defaults
     const scheduleOptions: ScheduleOptions = {
         ...DEFAULT_SCHEDULE_OPTIONS,
         ...options,

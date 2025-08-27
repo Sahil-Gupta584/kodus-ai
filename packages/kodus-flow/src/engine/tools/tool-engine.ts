@@ -6,58 +6,43 @@ import {
     markSpanOk,
 } from '../../observability/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
-import type {
-    ToolDefinition,
-    ToolEngineConfig,
-    ToolId,
-    ToolCall,
-    ToolDependency,
-    ToolMetadataForPlanner,
-    ToolMetadataForLLM,
-} from '../../core/types/tool-types.js';
-import { createToolContext } from '../../core/types/tool-types.js';
 
-import type {
-    ParallelToolsAction,
-    SequentialToolsAction,
-    ConditionalToolsAction,
-} from '../../core/types/agent-types.js';
 import {
     validateWithZod,
     zodToJSONSchema,
 } from '../../core/utils/zod-to-json-schema.js';
 import { createToolError } from '../../core/error-unified.js';
-import type { MultiKernelHandler } from '../core/multi-kernel-handler.js';
-import type { Router } from '../routing/router.js';
-import type { AnyEvent } from '../../core/types/events.js';
-import type { Plan, PlanStep } from '../planning/planner.js';
 import {
-    extractDependenciesFromPlan,
-    type PlanDependencyExtractionConfig,
-} from '../planning/plan-dependency-extractor.js';
+    AnyEvent,
+    ConditionalToolsAction,
+    createToolContext,
+    ParallelToolsAction,
+    SequentialToolsAction,
+    ToolCall,
+    ToolDefinition,
+    ToolDependency,
+    ToolEngineConfig,
+    ToolId,
+    ToolMetadataForLLM,
+    ToolMetadataForPlanner,
+} from '@/core/types/allTypes.js';
+import { MultiKernelHandler } from '../core/multi-kernel-handler.js';
 
-/**
- * Enhanced Tool Engine with Manus-style prefix validation
- * Implements consistent tool naming with category-based control
- */
 export class ToolEngine {
     private logger: ReturnType<typeof createLogger>;
     private tools = new Map<ToolId, ToolDefinition<unknown, unknown>>();
     private config: ToolEngineConfig;
     private kernelHandler?: MultiKernelHandler;
-    private router?: Router;
 
     constructor(
         config: ToolEngineConfig = {},
         kernelHandler?: MultiKernelHandler,
-        router?: Router,
     ) {
         this.config = {
             validateSchemas: true,
             ...config,
         };
         this.kernelHandler = kernelHandler;
-        this.router = router;
         this.logger = createLogger('tool-engine');
     }
 
@@ -675,25 +660,10 @@ export class ToolEngine {
     }
 
     /**
-     * Set Router (for intelligent tool execution)
-     */
-    setRouter(router: Router): void {
-        this.router = router;
-        this.logger.info('Router set for ToolEngine');
-    }
-
-    /**
      * Get KernelHandler status
      */
     hasKernelHandler(): boolean {
         return !!this.kernelHandler;
-    }
-
-    /**
-     * Get Router status
-     */
-    hasRouter(): boolean {
-        return !!this.router;
     }
 
     /**
@@ -958,505 +928,6 @@ export class ToolEngine {
 
         return allResults;
     }
-
-    // ===== 🧠 NEW: ROUTER-INTELLIGENT TOOL EXECUTION =====
-
-    /**
-     * Execute tools using Router intelligence for optimal strategy
-     */
-    async executeWithRouterStrategy<TOutput = unknown>(
-        tools: ToolCall[],
-        context: Record<string, unknown> = {},
-        constraints?: {
-            timeLimit?: number;
-            resourceLimit?: number;
-            qualityThreshold?: number;
-        },
-    ): Promise<Array<{ toolName: string; result?: TOutput; error?: string }>> {
-        if (!this.router) {
-            this.logger.warn(
-                'Router not available, falling back to parallel execution',
-            );
-            return this.executeParallelTools<TOutput>({
-                type: 'parallel_tools',
-                tools,
-                concurrency: 5,
-                timeout: 60000,
-                failFast: false,
-            });
-        }
-
-        const startTime = Date.now();
-        const toolNames = tools.map((t) => t.toolName);
-
-        this.logger.info('Analyzing tools with Router intelligence', {
-            tools: toolNames,
-            hasConstraints: !!constraints,
-        });
-
-        // Get Router intelligence
-        const strategy = this.router.determineToolExecutionStrategy(
-            toolNames,
-            context,
-            constraints,
-        );
-
-        this.logger.info('Router strategy determined', {
-            strategy: strategy.strategy,
-            confidence: strategy.confidence,
-            reasoning: strategy.reasoning,
-            estimatedTime: strategy.executionPlan.totalEstimatedTime,
-            riskLevel: strategy.executionPlan.riskLevel,
-        });
-
-        // Execute based on Router recommendation
-        let results: Array<{
-            toolName: string;
-            result?: TOutput;
-            error?: string;
-        }>;
-
-        switch (strategy.strategy) {
-            case 'parallel':
-                results = await this.executeParallelTools<TOutput>({
-                    type: 'parallel_tools',
-                    tools,
-                    concurrency: this.calculateOptimalConcurrency(
-                        strategy,
-                        constraints,
-                    ),
-                    timeout: constraints?.timeLimit || 60000,
-                    failFast: strategy.executionPlan.riskLevel === 'high',
-                    reasoning: `Router-optimized parallel execution: ${strategy.reasoning}`,
-                });
-                break;
-
-            case 'sequential':
-                results = await this.executeSequentialTools<TOutput>({
-                    type: 'sequential_tools',
-                    tools,
-                    stopOnError: strategy.executionPlan.riskLevel === 'high',
-                    passResults: this.shouldPassResults(strategy, context),
-                    timeout: constraints?.timeLimit || 120000,
-                    reasoning: `Router-optimized sequential execution: ${strategy.reasoning}`,
-                });
-                break;
-
-            case 'conditional':
-                results = await this.executeConditionalTools<TOutput>({
-                    type: 'conditional_tools',
-                    tools,
-                    conditions: this.extractConditionsFromContext(context),
-                    evaluateAll: strategy.confidence > 0.8,
-                    reasoning: `Router-optimized conditional execution: ${strategy.reasoning}`,
-                });
-                break;
-
-            case 'adaptive':
-            default:
-                results = await this.executeAdaptiveWithRouterPlan(
-                    tools,
-                    strategy,
-                    context,
-                );
-                break;
-        }
-
-        const executionTime = Date.now() - startTime;
-
-        this.logger.info('Router-guided execution completed', {
-            strategy: strategy.strategy,
-            actualTime: executionTime,
-            estimatedTime: strategy.executionPlan.totalEstimatedTime,
-            accuracy:
-                Math.abs(
-                    executionTime - strategy.executionPlan.totalEstimatedTime,
-                ) / strategy.executionPlan.totalEstimatedTime,
-            successCount: results.filter((r) => !r.error).length,
-            errorCount: results.filter((r) => r.error).length,
-        });
-
-        return results;
-    }
-
-    /**
-     * Execute adaptive strategy with Router execution plan
-     */
-    private async executeAdaptiveWithRouterPlan<TOutput = unknown>(
-        tools: ToolCall[],
-        strategy: ReturnType<Router['determineToolExecutionStrategy']>,
-        _context: Record<string, unknown>,
-    ): Promise<Array<{ toolName: string; result?: TOutput; error?: string }>> {
-        const allResults: Array<{
-            toolName: string;
-            result?: TOutput;
-            error?: string;
-        }> = [];
-
-        // Execute each phase according to Router plan
-        for (let i = 0; i < strategy.executionPlan.phases.length; i++) {
-            const phase = strategy.executionPlan.phases[i];
-            if (!phase) continue;
-
-            this.logger.debug('Executing Router-planned phase', {
-                phase: i + 1,
-                totalPhases: strategy.executionPlan.phases.length,
-                tools: phase.tools,
-                strategy: phase.strategy,
-                estimatedTime: phase.estimatedTime,
-            });
-
-            const phaseTools = tools.filter((t) =>
-                phase.tools.includes(t.toolName),
-            );
-
-            if (phaseTools.length === 0) continue;
-
-            let phaseResults: Array<{
-                toolName: string;
-                result?: TOutput;
-                error?: string;
-            }>;
-
-            if (phase.strategy === 'parallel') {
-                phaseResults = await this.executeParallelTools<TOutput>({
-                    type: 'parallel_tools',
-                    tools: phaseTools,
-                    concurrency: Math.min(phaseTools.length, 3),
-                    timeout: phase.estimatedTime * 1.5, // 50% buffer
-                    failFast: false,
-                });
-            } else {
-                phaseResults = await this.executeSequentialTools<TOutput>({
-                    type: 'sequential_tools',
-                    tools: phaseTools,
-                    stopOnError: false,
-                    passResults: true,
-                    timeout: phase.estimatedTime * 1.5,
-                });
-            }
-
-            allResults.push(...phaseResults);
-
-            // Check if we should continue based on phase results
-            const phaseErrorCount = phaseResults.filter((r) => r.error).length;
-            if (
-                phaseErrorCount > 0 &&
-                strategy.executionPlan.riskLevel === 'high'
-            ) {
-                this.logger.warn(
-                    'Stopping adaptive execution due to phase errors',
-                    {
-                        phase: i + 1,
-                        errors: phaseErrorCount,
-                        riskLevel: strategy.executionPlan.riskLevel,
-                    },
-                );
-                break;
-            }
-        }
-
-        return allResults;
-    }
-
-    /**
-     * Calculate optimal concurrency based on Router strategy
-     */
-    private calculateOptimalConcurrency(
-        strategy: ReturnType<Router['determineToolExecutionStrategy']>,
-        constraints?: { resourceLimit?: number },
-    ): number {
-        let baseConcurrency = 5; // Default
-
-        // Adjust based on risk level
-        switch (strategy.executionPlan.riskLevel) {
-            case 'low':
-                baseConcurrency = 8;
-                break;
-            case 'medium':
-                baseConcurrency = 5;
-                break;
-            case 'high':
-                baseConcurrency = 2;
-                break;
-        }
-
-        // Adjust based on confidence
-        if (strategy.confidence > 0.9) {
-            baseConcurrency += 2;
-        } else if (strategy.confidence < 0.5) {
-            baseConcurrency = Math.max(1, baseConcurrency - 2);
-        }
-
-        // Apply resource constraints
-        if (constraints?.resourceLimit && constraints.resourceLimit < 0.5) {
-            baseConcurrency = Math.max(1, Math.floor(baseConcurrency * 0.6));
-        }
-
-        return baseConcurrency;
-    }
-
-    /**
-     * Extract conditions from context for conditional execution
-     */
-    private extractConditionsFromContext(
-        context: Record<string, unknown>,
-    ): Record<string, unknown> {
-        const conditions: Record<string, unknown> = {};
-
-        // Extract known condition patterns
-        Object.keys(context).forEach((key) => {
-            if (key.startsWith('condition_') || key.endsWith('_condition')) {
-                conditions[key] = context[key];
-            }
-        });
-
-        // Add common conditions
-        conditions.hasAuth = !!context.token || !!context.apiKey;
-        conditions.hasData = !!context.data || !!context.input;
-        conditions.isProduction = context.environment === 'production';
-
-        return conditions;
-    }
-
-    // ===== 🧠 NEW: PLANNER DEPENDENCIES INTEGRATION =====
-
-    /**
-     * Execute tools respecting Planner-generated dependencies
-     */
-    async executeRespectingPlannerDependencies<TOutput = unknown>(
-        plan: Plan,
-        config?: PlanDependencyExtractionConfig,
-    ): Promise<Array<{ toolName: string; result?: TOutput; error?: string }>> {
-        const startTime = Date.now();
-
-        this.logger.info('Executing tools with Planner dependencies', {
-            planId: plan.id,
-            stepCount: plan.steps.length,
-            strategy: plan.strategy,
-        });
-
-        // Extract dependencies from plan
-        const extraction = extractDependenciesFromPlan(plan, config);
-
-        // Log warnings se houver
-        if (extraction.warnings.length > 0) {
-            extraction.warnings.forEach((warning) => {
-                this.logger.warn('Plan extraction warning', {
-                    warning,
-                    planId: plan.id,
-                });
-            });
-        }
-
-        this.logger.debug('Plan dependencies extracted', {
-            planId: plan.id,
-            toolCallsCount: extraction.toolCalls.length,
-            dependenciesCount: extraction.dependencies.length,
-            warningsCount: extraction.warnings.length,
-        });
-
-        // Execute using existing dependency system
-        const results = await this.executeWithDependencies(
-            extraction.toolCalls,
-            extraction.dependencies,
-            {
-                maxConcurrency: this.determineConcurrencyFromPlan(plan),
-                timeout: this.determineTimeoutFromPlan(plan),
-                failFast: this.determineFastFailFromPlan(plan),
-            },
-        );
-
-        const executionTime = Date.now() - startTime;
-
-        this.logger.info('Planner-guided tool execution completed', {
-            planId: plan.id,
-            executionTime,
-            successCount: results.filter((r) => !r.error).length,
-            errorCount: results.filter((r) => r.error).length,
-        });
-
-        return results as Array<{
-            toolName: string;
-            result?: TOutput;
-            error?: string;
-        }>;
-    }
-
-    /**
-     * Execute plan steps directly (alternative interface)
-     */
-    async executePlanSteps<TOutput = unknown>(
-        planSteps: PlanStep[],
-        planId: string = `plan-${Date.now()}`,
-        config?: PlanDependencyExtractionConfig,
-    ): Promise<Array<{ toolName: string; result?: TOutput; error?: string }>> {
-        // Create a minimal plan for extraction
-        const plan: Plan = {
-            id: planId,
-            goal: 'Execute plan steps',
-            strategy: 'graph', // Assume graph for dependency handling
-            steps: planSteps,
-            context: {},
-            createdAt: Date.now(),
-            agentName: 'tool-engine',
-            status: 'executing',
-        };
-
-        return this.executeRespectingPlannerDependencies(plan, config);
-    }
-
-    /**
-     * Check if plan has tool dependencies that should be respected
-     */
-    planHasDependencies(plan: Plan): boolean {
-        return plan.steps.some(
-            (step) =>
-                (step.dependencies && step.dependencies.length > 0) ||
-                (step.toolDependencies && step.toolDependencies.length > 0),
-        );
-    }
-
-    /**
-     * Get plan dependency analysis without executing
-     */
-    analyzePlanDependencies(
-        plan: Plan,
-        config?: PlanDependencyExtractionConfig,
-    ) {
-        const extraction = extractDependenciesFromPlan(plan, config);
-
-        return {
-            hasDependencies: extraction.dependencies.length > 0,
-            toolCount: extraction.toolCalls.length,
-            dependencyCount: extraction.dependencies.length,
-            warningsCount: extraction.warnings.length,
-            warnings: extraction.warnings,
-            executionPhases: this.calculateExecutionPhases(
-                extraction.toolCalls,
-                extraction.dependencies,
-            ),
-            estimatedTime: this.estimateExecutionTime(plan),
-            recommendedConcurrency: this.determineConcurrencyFromPlan(plan),
-        };
-    }
-
-    /**
-     * Calculate execution phases for plan
-     */
-    private calculateExecutionPhases(
-        tools: ToolCall[],
-        dependencies: ToolDependency[],
-    ) {
-        const { executionOrder } = this.resolveToolDependencies(
-            tools,
-            dependencies,
-        );
-        return {
-            phaseCount: executionOrder.length,
-            phases: executionOrder.map((phase, index) => ({
-                phase: index + 1,
-                tools: phase.map((t) => t.toolName),
-                canRunInParallel: phase.length > 1,
-            })),
-        };
-    }
-
-    /**
-     * Determine optimal concurrency based on plan characteristics
-     */
-    private determineConcurrencyFromPlan(plan: Plan): number {
-        const parallelSteps = plan.steps.filter(
-            (step) => step.canRunInParallel !== false,
-        );
-        const highComplexitySteps = plan.steps.filter(
-            (step) => step.complexity === 'high',
-        );
-
-        // Conservative approach for plans with many high-complexity steps
-        if (highComplexitySteps.length > parallelSteps.length * 0.5) {
-            return Math.max(1, Math.floor(parallelSteps.length * 0.3));
-        }
-
-        // Moderate concurrency for mixed complexity
-        if (plan.steps.some((step) => step.complexity === 'high')) {
-            return Math.max(2, Math.floor(parallelSteps.length * 0.6));
-        }
-
-        // Higher concurrency for low-complexity plans
-        return Math.min(8, Math.max(3, parallelSteps.length));
-    }
-
-    /**
-     * Determine timeout based on plan characteristics
-     */
-    private determineTimeoutFromPlan(plan: Plan): number {
-        const estimatedDurations = plan.steps
-            .map((step) => step.estimatedDuration || 30000)
-            .filter(Boolean);
-
-        if (estimatedDurations.length === 0) {
-            return 120000; // 2 minutes default
-        }
-
-        const totalEstimated = estimatedDurations.reduce(
-            (sum, duration) => sum + duration,
-            0,
-        );
-
-        // Add 50% buffer
-        return Math.max(60000, totalEstimated * 1.5);
-    }
-
-    /**
-     * Determine failFast setting based on plan criticality
-     */
-    private determineFastFailFromPlan(plan: Plan): boolean {
-        const criticalSteps = plan.steps.filter(
-            (step) => step.critical === true,
-        );
-
-        // Fail fast if majority of steps are critical
-        return criticalSteps.length > plan.steps.length * 0.6;
-    }
-
-    /**
-     * Estimate total execution time for plan
-     */
-    private estimateExecutionTime(plan: Plan): number {
-        const extraction = extractDependenciesFromPlan(plan);
-        const { executionOrder } = this.resolveToolDependencies(
-            extraction.toolCalls,
-            extraction.dependencies,
-        );
-
-        let totalTime = 0;
-
-        for (const phase of executionOrder) {
-            if (phase.length === 0) continue;
-
-            // For parallel phase, take the maximum estimated time
-            const phaseSteps = phase
-                .map((tool) => plan.steps.find((step) => step.id === tool.id))
-                .filter(Boolean);
-
-            const phaseTimes = phaseSteps.map(
-                (step) => step?.estimatedDuration || 30000,
-            );
-
-            if (phase.length === 1) {
-                // Sequential execution
-                totalTime += phaseTimes[0] || 30000;
-            } else {
-                // Parallel execution - take max time
-                totalTime += Math.max(...phaseTimes);
-            }
-        }
-
-        return totalTime;
-    }
-
-    // ===== 🚀 NEW: PARALLEL TOOL EXECUTION METHODS =====
 
     /**
      * Execute multiple tools in parallel
@@ -1969,19 +1440,6 @@ export class ToolEngine {
         }
     }
 
-    private shouldPassResults(
-        strategy: ReturnType<Router['determineToolExecutionStrategy']>,
-        context: Record<string, unknown>,
-    ): boolean {
-        // Pass results if strategy indicates dependencies or sequential processing benefits
-        return (
-            strategy.strategy === 'sequential' &&
-            (strategy.reasoning.includes('dependencies') ||
-                strategy.reasoning.includes('pipeline') ||
-                context.passResults === true)
-        );
-    }
-
     /**
      * Extract missing parameters from validation error
      */
@@ -2036,5 +1494,3 @@ export class ToolEngine {
         this.logger.info('Tool engine cleaned up');
     }
 }
-
-export { defineTool } from '../../core/types/tool-types.js';

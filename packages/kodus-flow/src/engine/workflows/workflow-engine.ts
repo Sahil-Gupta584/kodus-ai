@@ -1,36 +1,12 @@
-/**
- * @module engine/workflow-engine
- * @description Enhanced workflow engine with step support and context management
- */
-
-import { workflowEvent } from '../../runtime/index.js';
+import {
+    EVENT_TYPES,
+    Step,
+    StepContext,
+    WorkflowDefinition,
+    workflowEvent,
+} from '@/core/types/allTypes.js';
 import { createLogger } from '../../observability/index.js';
-import type { Event } from '../../core/types/events.js';
-import { EVENT_TYPES } from '../../core/types/events.js';
-import type { MultiKernelHandler } from '../core/multi-kernel-handler.js';
-
-// Step definition
-export interface Step<TInput = unknown, TOutput = unknown> {
-    readonly name: string;
-    readonly handler: (input: TInput, ctx: StepContext) => Promise<TOutput>;
-}
-
-// Step context
-export interface StepContext {
-    readonly executionId: string;
-    readonly correlationId: string;
-    readonly state: Map<string, unknown>;
-    readonly logger: ReturnType<typeof createLogger>;
-    getState<T = unknown>(key: string): T | undefined;
-    setState<T = unknown>(key: string, value: T): void;
-}
-
-// Workflow definition
-export interface WorkflowDefinition {
-    readonly name: string;
-    readonly steps: ReadonlyArray<Step<unknown, unknown>>;
-    readonly metadata?: Readonly<Record<string, unknown>>;
-}
+import { MultiKernelHandler } from '../core/multi-kernel-handler.js';
 
 // Workflow engine
 export class WorkflowEngine {
@@ -96,13 +72,12 @@ export class WorkflowEngine {
                     workflowName: this.definition.name,
                     stepIndex: index,
                     totalSteps: this.definition.steps.length,
-                    dependencies: [], // Step não tem dependencies na interface atual
+                    dependencies: [],
                     tenantId: 'default',
                     executionId: Date.now().toString(),
                     correlationId: Date.now().toString(),
                 };
 
-                // Criar StepContext compatível com a interface existente
                 const stepContextEnhanced: StepContext = {
                     executionId: stepContext.executionId,
                     correlationId:

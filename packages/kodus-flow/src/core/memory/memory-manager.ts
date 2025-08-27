@@ -1,20 +1,18 @@
-/**
- * @module core/memory/memory-manager-v2
- * @description Enhanced memory manager with adapter support
- */
-
 import { createLogger } from '../../observability/logger.js';
-import type {
-    MemoryItem,
-    MemoryQuery,
-    MemoryVectorQuery,
-    MemoryVectorSearchResult,
-    MemoryManagerOptions,
-} from '../types/memory-types.js';
-import type { MemoryAdapter, AdapterType } from './types.js';
+
 import { StorageMemoryAdapter } from './storage-adapter.js';
 import { VectorStore } from './vector-store.js';
 import { IdGenerator } from '../../utils/id-generator.js';
+import {
+    AdapterType,
+    MemoryAdapter,
+    MemoryItem,
+    MemoryManagerOptions,
+    MemoryQuery,
+    MemoryVectorQuery,
+    MemoryVectorSearchResult,
+    StorageEnum,
+} from '../types/allTypes.js';
 
 const logger = createLogger('memory-manager-v2');
 
@@ -81,7 +79,7 @@ export class MemoryManager {
     ): Promise<void> {
         try {
             // Create primary adapter
-            const adapterType = options.adapterType || 'memory';
+            const adapterType = options.adapterType || StorageEnum.INMEMORY;
             const adapterConfig = {
                 adapterType,
                 connectionString: options.adapterConfig?.connectionString,
@@ -131,7 +129,7 @@ export class MemoryManager {
                         error instanceof Error
                             ? error.message
                             : 'Unknown error',
-                    adapterType: options.adapterType || 'memory',
+                    adapterType: options.adapterType || StorageEnum.INMEMORY,
                     connectionString: options.adapterConfig?.connectionString
                         ? '[CONFIGURED]'
                         : '[NOT SET]',
@@ -143,7 +141,7 @@ export class MemoryManager {
             this.primaryAdapter = new (
                 await import('./storage-adapter.js')
             ).StorageMemoryAdapter({
-                adapterType: 'memory',
+                adapterType: StorageEnum.INMEMORY,
                 timeout: 5000,
                 retries: 1,
             });
