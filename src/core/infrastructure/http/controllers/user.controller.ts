@@ -3,6 +3,7 @@ import {
     Controller,
     Get,
     Inject,
+    Param,
     Patch,
     Post,
     Query,
@@ -110,8 +111,12 @@ export class UsersController {
     @Patch('/:targetUserId')
     public async updateAnother(
         @Body() body: UpdateAnotherUserDto,
-        @Query('targetUserId') targetUserId: string,
+        @Param('targetUserId') targetUserId: string,
     ): Promise<IUser> {
+        if (!targetUserId) {
+            throw new Error('targetUserId is required');
+        }
+
         const userId = this.request.user?.uuid;
 
         if (!userId) {
