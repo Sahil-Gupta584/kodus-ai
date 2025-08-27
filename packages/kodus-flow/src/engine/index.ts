@@ -68,7 +68,6 @@ export {
     type PlanningStrategy,
     type Plan,
     type PlanStep,
-    type PlanExecutionResult,
     type PlannerOptions,
     type PlanningAgent,
     type PlanningContext,

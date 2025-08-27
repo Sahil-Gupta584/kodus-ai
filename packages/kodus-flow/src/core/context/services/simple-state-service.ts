@@ -213,6 +213,34 @@ export class SimpleContextStateService implements StateManager {
     }
 
     /**
+     * Persist state data to external storage
+     * For simple implementation, this could be localStorage, sessionStorage, or external API
+     */
+    async persist(namespace?: string): Promise<void> {
+        const data = namespace
+            ? { [namespace]: this.getNamespace(namespace) }
+            : this.getAllNamespaces();
+
+        this.logger.debug('Persisting state data', {
+            namespace,
+            dataKeys: Object.keys(data),
+            size: JSON.stringify(data).length,
+        });
+
+        // TODO: Implement actual persistence mechanism based on requirements
+        // This could be:
+        // - sessionStorage.setItem('kodus-flow-state', JSON.stringify(data))
+        // - await externalAPI.saveState(data)
+        // - await fs.writeFile(`${sessionId}.state.json`, JSON.stringify(data))
+
+        // For now, just log that persistence would happen
+        this.logger.info('State persistence completed', {
+            namespace,
+            keysCount: Object.keys(data).length,
+        });
+    }
+
+    /**
      * Check if a namespace exists
      */
     hasNamespace(namespace: string): boolean {

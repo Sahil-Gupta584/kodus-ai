@@ -187,6 +187,116 @@ export class ResponseSynthesizer {
         }
     }
 
+    private composeStructuredExecutionTrace(
+        context: ResponseSynthesisContext,
+        analysis: ReturnType<
+            typeof ResponseSynthesizer.prototype.analyzeExecutionResults
+        >,
+    ): string {
+        const hasData =
+            analysis.rawResults.length > 0 ||
+            analysis.errors.length > 0 ||
+            context.planSteps?.length;
+
+        if (!hasData) {
+            return 'No execution data available.';
+        }
+
+        const parts: string[] = [];
+
+        // Use planSteps if available (more structured), otherwise fallback to executionResults
+        if (context.planSteps && context.planSteps.length > 0) {
+            const successSteps = context.planSteps.filter(
+                (step) => step.status === UNIFIED_STATUS.COMPLETED,
+            );
+            const failedSteps = context.planSteps.filter(
+                (step) => step.status === UNIFIED_STATUS.FAILED,
+            );
+            const skippedSteps = context.planSteps.filter(
+                (step) => step.status === UNIFIED_STATUS.SKIPPED,
+            );
+
+            if (successSteps.length > 0) {
+                parts.push('<success>');
+                successSteps.forEach((step) => {
+                    parts.push(`  <step id="${step.id}" status="completed">`);
+                    parts.push(
+                        `    <description>${step.description}</description>`,
+                    );
+                    if (step.result) {
+                        const resultStr =
+                            typeof step.result === 'string'
+                                ? step.result
+                                : JSON.stringify(step.result);
+                        parts.push(`<output>${resultStr}</output>`);
+                    }
+                    parts.push('</step>');
+                });
+                parts.push('</success>');
+            }
+
+            if (failedSteps.length > 0) {
+                parts.push('<errors>');
+                failedSteps.forEach((step) => {
+                    parts.push(`  <step id="${step.id}" status="failed">`);
+                    parts.push(
+                        `    <description>${step.description}</description>`,
+                    );
+                    if (step.result) {
+                        const errorStr =
+                            typeof step.result === 'string'
+                                ? step.result
+                                : JSON.stringify(step.result);
+                        parts.push(`    <error>${errorStr}</error>`);
+                    }
+                    parts.push('</step>');
+                });
+                parts.push('</errors>');
+            }
+
+            if (skippedSteps.length > 0) {
+                parts.push('<skipped>');
+                skippedSteps.forEach((step) => {
+                    parts.push(`  <step id="${step.id}" status="skipped">`);
+                    parts.push(
+                        `    <description>${step.description}</description>`,
+                    );
+                    parts.push('  </step>');
+                });
+                parts.push('</skipped>');
+            }
+        } else {
+            // Fallback to analysis data if planSteps not available
+            if (analysis.rawResults.length > 0) {
+                parts.push('<success>');
+                analysis.rawResults.forEach((result, idx) => {
+                    const resultStr =
+                        typeof result === 'string'
+                            ? result
+                            : JSON.stringify(result);
+                    parts.push(`  <result index="${idx + 1}">`);
+                    parts.push(`    <output>${resultStr}</output>`);
+                    parts.push('  </result>');
+                });
+                parts.push('</success>');
+            }
+
+            if (analysis.errors.length > 0) {
+                parts.push('<errors>');
+                analysis.errors.forEach((error, idx) => {
+                    parts.push(`  <error index="${idx + 1}">`);
+                    parts.push(`    <message>${error}</message>`);
+                    parts.push('  </error>');
+                });
+                parts.push('</errors>');
+            }
+        }
+
+        return parts.length > 0
+            ? parts.join('\n')
+            : 'No structured execution data available.';
+    }
+
     private async conversationalSynthesis(
         context: ResponseSynthesisContext,
         analysis: ReturnType<
@@ -240,8 +350,7 @@ Now produce the response using USER REQUEST and EXECUTION RESULTS.
 USER REQUEST: "${context.originalQuery}"
 
 EXECUTION RESULTS:
-${analysis.rawResults.length > 0 ? JSON.stringify(analysis.rawResults, null, 2) : 'No data found.'}
-${analysis.errors.length > 0 ? `\nERRORS:\n${analysis.errors.join('\n')}` : ''}
+${this.composeStructuredExecutionTrace(context, analysis)}
 `;
 
         try {

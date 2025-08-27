@@ -17,6 +17,7 @@ export interface StepResult {
     result: ActionResult;
     observation: ResultAnalysis;
     duration: number;
+    startedAt: number;
     toolCalls: Array<{
         toolName: string;
         input: unknown;
@@ -34,15 +35,16 @@ export class ExecutionTracker {
         const stepId = `step-${iteration}-${Date.now()}`;
         this.currentStepId = stepId;
 
+        const startTime = Date.now();
         this.steps.set(stepId, {
             stepId,
             iteration,
             thought: {
                 reasoning: '',
-                action: { type: 'final_answer', content: '' },
+                action: { type: 'initialized', content: '' },
             },
-            action: { type: 'final_answer', content: '' },
-            status: 'final_answer',
+            action: { type: 'initialized', content: '' },
+            status: 'initialized',
             result: { type: 'error', error: 'Not executed yet' },
             observation: {
                 isComplete: false,
@@ -51,6 +53,7 @@ export class ExecutionTracker {
                 shouldContinue: false,
             },
             duration: 0,
+            startedAt: startTime,
             toolCalls: [],
         });
 
@@ -62,6 +65,68 @@ export class ExecutionTracker {
 
         if (step) {
             Object.assign(step, updates);
+        }
+    }
+
+    /**
+     * Transition step from 'initialized' to 'executing'
+     */
+    startExecuting(
+        stepId: string,
+        thought: AgentThought,
+        action: AgentAction,
+    ): void {
+        const step = this.steps.get(stepId);
+        if (step && step.status === 'initialized') {
+            step.status = 'executing';
+            step.thought = thought;
+            step.action = action;
+            step.observation.isComplete = false;
+            step.observation.isSuccessful = null; // Executando, ainda não sabemos
+            step.observation.feedback = 'Step executing';
+            step.observation.shouldContinue = true;
+        }
+    }
+
+    /**
+     * Mark step as completed successfully
+     */
+    markCompleted(
+        stepId: string,
+        result: ActionResult,
+        observation: ResultAnalysis,
+    ): void {
+        const step = this.steps.get(stepId);
+        if (step && step.status === 'executing') {
+            step.status = 'completed';
+            step.result = result;
+            step.observation = {
+                ...observation,
+                isComplete: true,
+                isSuccessful: true,
+            };
+            step.duration = Date.now() - (step.startedAt || Date.now());
+        }
+    }
+
+    /**
+     * Mark step as failed
+     */
+    markFailed(
+        stepId: string,
+        result: ActionResult,
+        observation: ResultAnalysis,
+    ): void {
+        const step = this.steps.get(stepId);
+        if (step && step.status === 'executing') {
+            step.status = 'failed';
+            step.result = result;
+            step.observation = {
+                ...observation,
+                isComplete: true,
+                isSuccessful: false,
+            };
+            step.duration = Date.now() - (step.startedAt || Date.now());
         }
     }
 

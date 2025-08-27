@@ -117,20 +117,6 @@ export interface Plan {
 }
 
 /**
- * Plan execution result
- */
-export interface PlanExecutionResult {
-    planId: string;
-    stepId?: string;
-    success: boolean;
-    result?: unknown;
-    error?: string;
-    duration: number;
-    completedSteps: number;
-    totalSteps: number;
-}
-
-/**
  * Planner interface (MINHA IMPLEMENTAÇÃO)
  */
 export interface Planner {
@@ -146,14 +132,6 @@ export interface Planner {
         options?: PlannerOptions,
         callbacks?: PlannerCallbacks,
     ): Promise<Plan>;
-
-    /**
-     * Execute plan (opcional - pode ser implementado pelo agent)
-     */
-    executePlan?(
-        plan: Plan,
-        context: AgentContext,
-    ): Promise<PlanExecutionResult>;
 }
 
 /**

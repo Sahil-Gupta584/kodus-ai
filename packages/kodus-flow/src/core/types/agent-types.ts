@@ -58,6 +58,7 @@ interface SimpleExecutionRuntime {
  * Agent action types - what an agent can decide to do
  */
 export const agentActionTypeSchema = z.enum([
+    'initialized',
     'final_answer',
     'need_more_info',
     'tool_call',

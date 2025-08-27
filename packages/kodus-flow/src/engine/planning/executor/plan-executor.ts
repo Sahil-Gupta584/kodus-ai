@@ -8,6 +8,8 @@ import type {
     PlanStep,
     StepExecutionResult,
     PlanExecutionResult,
+    ReplanContext,
+    PlanExecutionData,
 } from '../../../core/types/planning-shared.js';
 import {
     getReadySteps,
@@ -68,7 +70,7 @@ export class PlanExecutor {
         ) => Promise<{ args: Record<string, unknown>; missing: string[] }>,
         private readonly config: PlanExecutorConfig = {},
     ) {
-        this.maxExecutionRounds = config.maxExecutionRounds ?? 10;
+        this.maxExecutionRounds = this.config.maxExecutionRounds ?? 10;
     }
 
     async run(
@@ -82,19 +84,6 @@ export class PlanExecutor {
 
         const signals = this.extractSignals(plan);
         const hasSignalsProblems = this.hasSignalsProblems(signals);
-
-        await this.emitSessionEvent(
-            context,
-            'plan.execution.started',
-            { planId: plan.id },
-            {
-                type: 'plan_started',
-                at: Date.now(),
-                totalSteps: plan.steps.length,
-                hasSignalsProblems,
-                signals,
-            },
-        );
 
         const executedResults = await this.executeAllPossibleSteps(
             plan,
@@ -110,19 +99,13 @@ export class PlanExecutor {
             signals,
         );
 
-        await this.emitCompletionEvent(context, plan.id, {
-            executionTime,
-            resultType,
-            summary,
-            hasSignalsProblems,
-        });
-
         const replanContext = this.buildReplanContext(
             resultType,
             executedResults,
             summary,
             hasSignalsProblems,
             signals,
+            plan,
         );
 
         return {
@@ -170,35 +153,18 @@ export class PlanExecutor {
         }
     }
 
-    private async emitSessionEvent(
-        context: PlannerExecutionContext,
-        type: string,
-        input: Record<string, unknown>,
-        details?: Record<string, unknown>,
-    ): Promise<void> {
-        try {
-            console.log('emitSessionEvent', context, type, input, details);
-            // TODO: Convert to telemetry - runtime debug data should not go to conversation
-            // await context.agentContext?.session.addEntry(
-            //     { type, ...input },
-            //     details ?? {},
-            // );
-        } catch {
-            // Silent fail for session events
-        }
-    }
-
     private async resumeIfWaitingInput(
         plan: ExecutionPlan,
         context: PlannerExecutionContext,
     ): Promise<void> {
-        if (plan.status !== UNIFIED_STATUS.WAITING_INPUT) return;
+        if (plan.status !== UNIFIED_STATUS.WAITING_INPUT) {
+            return;
+        }
 
         const nextPendingStep = plan.steps.find(
             (step) => step.status === UNIFIED_STATUS.PENDING,
         );
 
-        // ✅ MELHORIA: Lógica mais simples
         if (!nextPendingStep?.arguments) {
             plan.status = UNIFIED_STATUS.EXECUTING;
         } else {
@@ -213,18 +179,6 @@ export class PlanExecutor {
                     ? 'executing'
                     : 'waiting_input';
         }
-
-        await this.emitSessionEvent(
-            context,
-            'plan.status.changed',
-            { planId: plan.id },
-            {
-                type: 'status_changed',
-                from: 'waiting_input',
-                to: plan.status,
-                at: Date.now(),
-            },
-        );
     }
 
     private extractSignals(plan: ExecutionPlan): PlanSignals | undefined {
@@ -232,7 +186,9 @@ export class PlanExecutor {
     }
 
     private hasSignalsProblems(signals: PlanSignals | undefined): boolean {
-        if (!signals) return false;
+        if (!signals) {
+            return false;
+        }
 
         return (
             (signals.needs?.length || 0) > 0 ||
@@ -292,13 +248,7 @@ export class PlanExecutor {
                 });
             }
 
-            // ✅ MELHORIA: Executar step
-            return await this.executeStepWithEvents(
-                step,
-                plan,
-                context,
-                startTime,
-            );
+            return await this.executeStepWithEvents(step, startTime);
         } catch (error) {
             return this.markStepAsFailed(step, {
                 error: error instanceof Error ? error.message : String(error),
@@ -321,12 +271,9 @@ export class PlanExecutor {
 
     private async executeStepWithEvents(
         step: PlanStep,
-        plan: ExecutionPlan,
-        context: PlannerExecutionContext,
         startTime: number,
     ): Promise<StepExecutionResult> {
         step.status = UNIFIED_STATUS.EXECUTING;
-        await this.emitStepStartedEvent(context, plan.id, step);
 
         const result = await this.executeStepAction(step);
         const analysis = this.analyzeStepResult(result);
@@ -335,13 +282,6 @@ export class PlanExecutor {
             ? UNIFIED_STATUS.COMPLETED
             : UNIFIED_STATUS.FAILED;
         step.result = result.type === 'tool_result' ? result.content : result;
-
-        await this.emitStepFinishedEvent(
-            context,
-            plan.id,
-            step,
-            analysis.success,
-        );
 
         return this.createStepResult(step, {
             result,
@@ -370,7 +310,6 @@ export class PlanExecutor {
             context,
         );
 
-        // ✅ ADDITIONAL CHECK: Detect invalid values even after resolution
         const invalidValues = [
             'NOT_FOUND',
             'MISSING',
@@ -445,46 +384,7 @@ export class PlanExecutor {
         };
     }
 
-    private async emitStepStartedEvent(
-        context: PlannerExecutionContext,
-        planId: string,
-        step: PlanStep,
-    ): Promise<void> {
-        await this.emitSessionEvent(
-            context,
-            'plan.step.started',
-            { planId, stepId: step.id },
-            {
-                type: 'step_started',
-                at: Date.now(),
-                description: step.description,
-                tool: step.tool,
-                rewooMode: this.config.enableReWOO || false,
-            },
-        );
-    }
-
-    private async emitStepFinishedEvent(
-        context: PlannerExecutionContext,
-        planId: string,
-        step: PlanStep,
-        success: boolean,
-    ): Promise<void> {
-        await this.emitSessionEvent(
-            context,
-            'plan.step.finished',
-            { planId, stepId: step.id },
-            {
-                type: 'step_finished',
-                at: Date.now(),
-                success,
-                rewooMode: this.config.enableReWOO || false,
-            },
-        );
-    }
-
     private analyzeStepResult(result: ActionResult): StepAnalysis {
-        // ✅ MELHORIA: Análise mais limpa e direta
         if (this.isWrappedToolResult(result)) {
             return this.analyzeWrappedToolResult(result);
         }
@@ -518,7 +418,6 @@ export class PlanExecutor {
 
     private analyzeWrappedToolResult(result: WrappedToolResult): StepAnalysis {
         try {
-            // ✅ MELHORIA: Lógica mais clara e direta
             if (result.result.isError === true) {
                 return { success: false, shouldReplan: true };
             }
@@ -530,7 +429,6 @@ export class PlanExecutor {
 
             const innerResult = JSON.parse(innerJsonString) as InnerToolResult;
 
-            // Se explicitamente falhou, falhar
             if (innerResult.successful === false) {
                 const shouldReplan = this.shouldReplanForError(
                     innerResult.error || 'Tool execution failed',
@@ -538,17 +436,14 @@ export class PlanExecutor {
                 return { success: false, shouldReplan };
             }
 
-            // Se explicitamente sucesso, sucesso (mesmo com data vazia)
             if (innerResult.successful === true) {
                 return { success: true, shouldReplan: false };
             }
 
-            // Se não tem data, falhar
             if (!innerResult.data) {
                 return { success: false, shouldReplan: true };
             }
 
-            // Se tem data vazia, falhar (a menos que seja explicitamente sucesso)
             if (this.isEmptyObject(innerResult.data)) {
                 return { success: false, shouldReplan: true };
             }
@@ -700,45 +595,10 @@ export class PlanExecutor {
         summary: ExecutionSummary,
         signals: PlanSignals | undefined,
     ): { resultType: PlanExecutionResult['type']; feedback: string } {
-        // ✅ SIMPLE: Executor just reports signals, Planner decides what to do
         return {
             resultType: 'needs_replan',
             feedback: `Plan needs replanning due to signals. Success: ${summary.successfulSteps.length}, Failed: ${summary.failedSteps.length}, Signals: ${JSON.stringify(signals)}`,
         };
-    }
-
-    private async emitCompletionEvent(
-        context: PlannerExecutionContext,
-        planId: string,
-        details: {
-            executionTime: number;
-            resultType: PlanExecutionResult['type'];
-            summary: ExecutionSummary;
-            hasSignalsProblems: boolean;
-        },
-    ): Promise<void> {
-        try {
-            console.log('emitCompletionEvent', details, context, planId);
-            // TODO: Convert to telemetry - runtime plan data should not go to conversation
-            // await context.agentContext?.session.addEntry(
-            //     {
-            //         type: 'plan.execution.completed',
-            //         planId,
-            //     },
-            //     {
-            //         type: 'plan_completed',
-            //         at: Date.now(),
-            //         executionTime: details.executionTime,
-            //         resultType: details.resultType,
-            //         successfulSteps: details.summary.successfulSteps.length,
-            //         failedSteps: details.summary.failedSteps.length,
-            //         skippedSteps: details.summary.skippedSteps.length,
-            //         hasSignalsProblems: details.hasSignalsProblems,
-            //     },
-            // );
-        } catch {
-            // Silent fail for completion events
-        }
     }
 
     private buildReplanContext(
@@ -747,7 +607,8 @@ export class PlanExecutor {
         summary: ExecutionSummary,
         hasSignalsProblems: boolean,
         signals: PlanSignals | undefined,
-    ): PlanExecutionResult['replanContext'] {
+        plan: ExecutionPlan,
+    ): ReplanContext | undefined {
         if (
             resultType !== 'needs_replan' ||
             (summary.failedSteps.length === 0 && !hasSignalsProblems)
@@ -755,24 +616,73 @@ export class PlanExecutor {
             return undefined;
         }
 
-        const preservedSteps = executedResults.filter(
-            (result) => result.success,
-        );
         const failurePatterns = this.extractFailurePatterns(executedResults);
-        const primaryCause = this.determinePrimaryCause(executedResults);
+        // const primaryCause = this.determinePrimaryCause(executedResults);
+
+        // Build tools that worked (successful steps)
+        const toolsThatWorked = executedResults
+            .filter((result) => result.success)
+            .map((result) => ({
+                stepId: result.stepId,
+                tool: result.step.tool,
+                description: result.step.description,
+                success: true,
+                result: result.result,
+                executedAt: result.executedAt,
+                duration: result.duration,
+            }));
+
+        // Build tools that failed
+        const toolsThatFailed = executedResults
+            .filter((result) => !result.success)
+            .map((result) => ({
+                stepId: result.stepId,
+                tool: result.step.tool,
+                description: result.step.description,
+                success: false,
+                error: result.error,
+                result: result.result,
+                executedAt: result.executedAt,
+                duration: result.duration,
+            }));
+
+        // Build tools not executed
+        const executedStepIds = new Set(executedResults.map((r) => r.stepId));
+        const toolsNotExecuted = plan.steps
+            .filter((step) => !executedStepIds.has(step.id))
+            .map((step) => ({
+                stepId: step.id,
+                tool: step.tool,
+                description: step.description,
+                status: step.status,
+                notExecuted: true,
+            }));
+
+        const executedPlan: PlanExecutionData = {
+            plan: {
+                id: plan.id,
+                goal: plan.goal,
+                strategy: plan.strategy,
+                totalSteps: plan.steps.length,
+                steps: plan.steps,
+            },
+            executionData: {
+                toolsThatWorked,
+                toolsThatFailed,
+                toolsNotExecuted,
+            },
+            signals: {
+                failurePatterns: [...new Set(failurePatterns)],
+                needs: signals?.needs || [],
+                noDiscoveryPath: signals?.noDiscoveryPath || [],
+                errors: signals?.errors || [],
+                suggestedNextStep: signals?.suggestedNextStep || '',
+            },
+        };
 
         return {
-            preservedSteps,
-            failurePatterns: [...new Set(failurePatterns)],
-            primaryCause,
-            suggestedStrategy: 'plan-execute',
-            contextForReplan: {
-                successfulSteps: summary.successfulSteps,
-                failedSteps: summary.failedSteps,
-                skippedSteps: summary.skippedSteps,
-                hasSignalsProblems,
-                signals: signals || {},
-            },
+            isReplan: true,
+            executedPlan,
         };
     }
 
@@ -790,33 +700,39 @@ export class PlanExecutor {
             });
     }
 
-    private determinePrimaryCause(
-        executedResults: StepExecutionResult[],
-    ): string {
-        const firstFailure = executedResults.find(
-            (result) => !result.success && result.error,
-        );
-        if (!firstFailure?.error) return 'Unknown failure';
+    // private determinePrimaryCause(
+    //     executedResults: StepExecutionResult[],
+    // ): string {
+    //     const firstFailure = executedResults.find(
+    //         (result) => !result.success && result.error,
+    //     );
+    //     if (!firstFailure?.error) {
+    //         return 'Unknown failure';
+    //     }
 
-        const errorStr =
-            typeof firstFailure.error === 'string'
-                ? firstFailure.error
-                : JSON.stringify(firstFailure.error);
+    //     const errorStr =
+    //         typeof firstFailure.error === 'string'
+    //             ? firstFailure.error
+    //             : JSON.stringify(firstFailure.error);
 
-        const errorLower = errorStr.toLowerCase();
+    //     const errorLower = errorStr.toLowerCase();
 
-        if (errorLower.includes('invalid')) return 'Invalid input provided';
-        if (errorLower.includes('not found')) return 'Resource not found';
-        if (errorLower.includes('permission') || errorLower.includes('auth')) {
-            return 'Permission or authentication error';
-        }
-        if (
-            errorLower.includes('timeout') ||
-            errorLower.includes('unavailable')
-        ) {
-            return 'Service unavailable or timeout';
-        }
+    //     if (errorLower.includes('invalid')) {
+    //         return 'Invalid input provided';
+    //     }
+    //     if (errorLower.includes('not found')) {
+    //         return 'Resource not found';
+    //     }
+    //     if (errorLower.includes('permission') || errorLower.includes('auth')) {
+    //         return 'Permission or authentication error';
+    //     }
+    //     if (
+    //         errorLower.includes('timeout') ||
+    //         errorLower.includes('unavailable')
+    //     ) {
+    //         return 'Service unavailable or timeout';
+    //     }
 
-        return errorStr;
-    }
+    //     return errorStr;
+    // }
 }

@@ -132,7 +132,6 @@ export type PlanStatus = UnifiedStatus;
  * Unified PlanStep interface (consolidates all conflicting definitions)
  */
 export interface PlanStep {
-    // Identity
     id: string;
     description: string;
     type?:
@@ -173,19 +172,6 @@ export interface PlanStep {
 }
 
 /**
- * Plan execution signals (from planner output)
- */
-export interface PlanSignals {
-    needs?: string[];
-    noDiscoveryPath?: string[];
-    errors?: string[];
-    suggestedNextStep?: string;
-    confidence?: number;
-    estimatedDuration?: number;
-    riskLevel?: 'low' | 'medium' | 'high';
-}
-
-/**
  * Execution plan interface
  */
 export interface ExecutionPlan {
@@ -217,12 +203,6 @@ export interface StepExecutionResult {
     executedAt: number;
     duration: number;
     retryCount?: number;
-    metrics?: {
-        memoryUsage?: number;
-        cpuTime?: number;
-        ioOperations?: number;
-        networkCalls?: number;
-    };
 }
 
 /**
@@ -253,13 +233,7 @@ export interface PlanExecutionResult {
     executionTime: number;
     feedback: string;
     confidence?: number;
-    replanContext?: {
-        preservedSteps: StepExecutionResult[];
-        failurePatterns: string[];
-        primaryCause: string;
-        suggestedStrategy: string;
-        contextForReplan: Record<string, unknown>;
-    };
+    replanContext?: ReplanContext;
 }
 
 /**
@@ -271,40 +245,36 @@ export interface ReplanPolicyConfig {
 }
 
 /**
- * Replan context data structure
- */
-export interface ReplanContextData {
-    preservedSteps: StepExecutionResult[];
-    failurePatterns: string[];
-    primaryCause: string;
-    suggestedStrategy: string;
-    contextForReplan: Record<string, unknown>;
-}
-
-/**
  * Structured replan context for planning optimization
  */
-export interface ReplanContext {
-    isReplan: boolean;
-    previousPlan: {
+export interface PlanExecutionData {
+    plan: {
         id: string;
         goal: string;
-        strategy: string;
-        totalSteps: number;
+        strategy?: string;
+        totalSteps?: number;
+        steps?: unknown[];
     };
-    executionSummary: {
-        type: string;
-        executionTime: number;
-        successfulSteps: number;
-        failedSteps: number;
-        feedback: string;
+    executionData: {
+        toolsThatWorked?: unknown[];
+        toolsThatFailed?: unknown[];
+        toolsNotExecuted?: unknown[];
     };
-    preservedSteps: unknown[];
-    failureAnalysis: {
-        primaryCause: string;
-        failurePatterns: string[];
-    };
-    suggestions?: unknown;
+    signals?: PlanSignals;
+}
+
+export type PlanSignals = {
+    failurePatterns?: string[];
+    needs?: string[];
+    noDiscoveryPath?: string[];
+    errors?: string[];
+    suggestedNextStep?: string;
+};
+
+export interface ReplanContext {
+    isReplan: boolean;
+    executedPlan: PlanExecutionData;
+    planHistory?: PlanExecutionData[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
