@@ -7,6 +7,10 @@ export const RULE_FILE_PATTERNS = [
     '.github/copilot-instructions.md',
     '.github/instructions/**/*.instructions.md',
 
+    // Agentic
+    '.agents.md',
+    '.agent.md',
+
     // Claude
     'CLAUDE.md',
     '.claude/settings.json',
