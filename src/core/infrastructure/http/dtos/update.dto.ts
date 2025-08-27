@@ -1,10 +1,4 @@
-import {
-    IsBoolean,
-    IsEmail,
-    IsEnum,
-    IsOptional,
-    IsString,
-} from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsString } from 'class-validator';
 import { UserRole } from '@/core/domain/user/enums/userRole.enum';
 import { STATUS } from '@/config/types/database/status.type';
 
@@ -18,7 +12,7 @@ export class UpdateUserDto {
     @IsOptional()
     password?: string;
 
-    @IsBoolean()
+    @IsOptional()
     @IsEnum(STATUS)
     status?: STATUS;
 
