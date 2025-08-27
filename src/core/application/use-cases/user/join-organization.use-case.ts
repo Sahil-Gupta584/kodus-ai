@@ -120,7 +120,7 @@ export class JoinOrganizationUseCase implements IUseCase {
                 },
                 {
                     role: [UserRole.USER],
-                    status: STATUS.PENDING,
+                    status: STATUS.AWAITING_APPROVAL,
                     organization,
                 },
             );

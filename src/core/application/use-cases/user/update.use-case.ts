@@ -1,5 +1,5 @@
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
-import { Inject, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
     IPasswordService,
     PASSWORD_SERVICE_TOKEN,
@@ -13,6 +13,7 @@ import posthogClient from '@/shared/utils/posthog';
 import { UpdateUserDto } from '@/core/infrastructure/http/dtos/update.dto';
 import { UserRole } from '@/core/domain/user/enums/userRole.enum';
 
+@Injectable()
 export class UpdateUserUseCase implements IUseCase {
     constructor(
         @Inject(USER_SERVICE_TOKEN)

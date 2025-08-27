@@ -19,6 +19,9 @@ import { JoinOrganizationUseCase } from '@/core/application/use-cases/user/join-
 import { UpdateUserDto } from '../dtos/update.dto';
 import { UpdateUserUseCase } from '@/core/application/use-cases/user/update.use-case';
 import { REQUEST } from '@nestjs/core';
+import { GetUsersAwaitingApprovalUseCase } from '@/core/application/use-cases/user/get-awaiting-approval.use-case';
+import { UpdateAnotherUserDto } from '../dtos/update-another-user.dto';
+import { UpdateAnotherUserUseCase } from '@/core/application/use-cases/user/update-another.use-case';
 
 @Controller('user')
 export class UsersController {
@@ -29,6 +32,8 @@ export class UsersController {
         private readonly checkUserWithEmailUserUseCase: CheckUserWithEmailUserUseCase,
         private readonly joinOrganizationUseCase: JoinOrganizationUseCase,
         private readonly updateUserUseCase: UpdateUserUseCase,
+        private readonly getUsersAwaitingApprovalUseCase: GetUsersAwaitingApprovalUseCase,
+        private readonly updateAnotherUserUseCase: UpdateAnotherUserUseCase,
 
         @Inject(REQUEST)
         private readonly request: Request & {
@@ -76,5 +81,47 @@ export class UsersController {
         }
 
         return await this.updateUserUseCase.execute(userId, body);
+    }
+
+    @Get('/awaiting-approval')
+    public async getUsersAwaitingApproval(
+        @Query('teamId') teamId: string,
+    ): Promise<IUser[]> {
+        const userId = this.request.user?.uuid;
+        if (!userId) {
+            throw new Error('User not found in request');
+        }
+
+        const organizationId = this.request.user?.organization.uuid;
+        if (!organizationId) {
+            throw new Error('Organization not found in request');
+        }
+
+        if (!teamId) {
+            throw new Error('TeamId is required');
+        }
+
+        return await this.getUsersAwaitingApprovalUseCase.execute(userId, {
+            organizationId,
+            teamId,
+        });
+    }
+
+    @Patch('/:targetUserId')
+    public async updateAnother(
+        @Body() body: UpdateAnotherUserDto,
+        @Query('targetUserId') targetUserId: string,
+    ): Promise<IUser> {
+        const userId = this.request.user?.uuid;
+
+        if (!userId) {
+            throw new Error('User not found in request');
+        }
+
+        return await this.updateAnotherUserUseCase.execute(
+            userId,
+            targetUserId,
+            body,
+        );
     }
 }
