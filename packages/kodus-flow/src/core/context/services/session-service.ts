@@ -96,9 +96,9 @@ export class SessionService {
         try {
             const storageConfig = {
                 adapterType:
-                    this.config.adapterType === 'mongodb'
-                        ? ('mongodb' as const)
-                        : ('memory' as const),
+                    this.config.adapterType === StorageEnum.MONGODB
+                        ? StorageEnum.MONGODB
+                        : StorageEnum.INMEMORY,
                 connectionString: this.config.connectionString,
                 options: {
                     ...this.config.adapterOptions,

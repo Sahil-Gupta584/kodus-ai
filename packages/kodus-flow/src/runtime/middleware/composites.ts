@@ -6,9 +6,10 @@ import {
     EventHandler,
     Middleware,
     StandardMiddlewareOptions,
+    TEvent,
 } from '@/core/types/allTypes.js';
 
-export function createStandardMiddleware<TEvent extends Event = Event>(
+export function createStandardMiddleware<IEvent extends TEvent = TEvent>(
     options: StandardMiddlewareOptions = {},
 ): Middleware<TEvent> {
     const middlewares: Array<Middleware<TEvent>> = [];
@@ -52,7 +53,7 @@ export function createStandardMiddleware<TEvent extends Event = Event>(
 /**
  * Create a resilient handler with error handling and retries
  */
-export function createResilientHandler<TEvent extends Event = Event>(
+export function createResilientHandler<TEvent extends TEvent = TEvent>(
     handler: EventHandler<TEvent>,
     options: {
         maxRetries?: number;
@@ -135,7 +136,7 @@ export function createCachedHandler<TEvent extends Event = Event>(
         string,
         { result: Awaited<ReturnType<typeof handler>>; timestamp: number }
     >();
-    const ttl = options.ttl || 180000;
+    const ttl = options.ttl || 60000; // 1 minute default
     const maxSize = options.maxSize || 1000;
     const keyFn =
         options.keyFn || ((event: TEvent) => JSON.stringify(event.data));
@@ -175,7 +176,7 @@ export function createCircuitBreakerHandler<TEvent extends Event = Event>(
     } = {},
 ): EventHandler<TEvent> {
     const failureThreshold = options.failureThreshold || 5;
-    const resetTimeout = options.resetTimeout || 180000;
+    const resetTimeout = options.resetTimeout || 60000; // 1 minute
     const halfOpenRequests = options.halfOpenRequests || 1;
 
     let failures = 0;

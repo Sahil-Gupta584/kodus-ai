@@ -3,6 +3,7 @@ import {
     Middleware,
     MiddlewareFactoryType,
     ObservabilityOptions,
+    TEvent,
 } from '@/core/types/allTypes.js';
 import {
     getObservability,
@@ -15,7 +16,7 @@ import {
  */
 export const withObservability: MiddlewareFactoryType<
     ObservabilityOptions | undefined,
-    Event
+    TEvent
 > = (options: ObservabilityOptions | undefined) => {
     const namePrefix = options?.namePrefix ?? 'event.process';
     const include = options?.includeEventTypes?.length
@@ -25,7 +26,7 @@ export const withObservability: MiddlewareFactoryType<
         ? new Set(options.excludeEventTypes)
         : undefined;
 
-    const middleware = (<T extends Event>(
+    const middleware = (<T extends TEvent>(
         handler: EventHandler<T>,
     ): EventHandler<T> => {
         return async (event: T) => {
@@ -78,7 +79,7 @@ export const withObservability: MiddlewareFactoryType<
                 throw error;
             }
         };
-    }) as Middleware<Event>;
+    }) as Middleware<TEvent>;
 
     middleware.kind = 'handler';
     // Avoid assigning to Function.name (read-only). Use displayName instead.

@@ -1,11 +1,11 @@
 import {
-    LooseOtelAPI,
-    LooseOtelSpan,
     SpanOptions,
     SpanStatus,
-    UnknownRecord,
     Tracer as KodusTracer,
     Span as KodusSpan,
+    LooseOtelSpan,
+    LooseOtelAPI,
+    UnknownRecord,
 } from '@/core/types/allTypes.js';
 
 class OtelSpanWrapper implements KodusSpan {

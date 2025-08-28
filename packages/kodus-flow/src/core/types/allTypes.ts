@@ -38,8 +38,18 @@ export type AgentIdentity = {
     systemPrompt?: string;
 };
 
+export const agentIdentitySchema = z.object({
+    role: z.string().optional(),
+    goal: z.string().optional(),
+    description: z.string().optional(),
+    expertise: z.array(z.string()).optional(),
+    personality: z.string().optional(),
+    style: z.string().optional(),
+    systemPrompt: z.string().optional(),
+});
+
 export interface AgentAction<TContent = unknown> {
-    type: AgentActionType;
+    type: string;
     content?: TContent;
     reasoning?: string;
 }
@@ -70,119 +80,6 @@ export type AgentConfig = {
         replanPolicy?: Partial<ReplanPolicyConfig>;
     };
 };
-
-export type ThinkStatus =
-    | 'thinking'
-    | 'planning'
-    | 'replanning'
-    | 'analyzing'
-    | 'deciding'
-    | 'thinking_complete'
-    | 'thinking_failed';
-
-export type ActStatus =
-    | 'acting'
-    | 'tool_calling'
-    | 'plan_executing'
-    | 'waiting_response'
-    | 'acting_complete'
-    | 'acting_failed';
-
-export type ObserveStatus =
-    | 'observing'
-    | 'evaluating'
-    | 'synthesizing'
-    | 'observing_complete'
-    | 'observing_failed';
-
-export type PlanStatus =
-    | 'plan_created'
-    | 'plan_executing'
-    | 'plan_paused'
-    | 'plan_completed'
-    | 'plan_failed'
-    | 'plan_cancelled'
-    | 'plan_waiting_input'
-    | 'plan_replanning';
-
-export type StepStatus =
-    | 'step_pending'
-    | 'step_blocked'
-    | 'step_executing'
-    | 'step_completed'
-    | 'step_failed'
-    | 'step_skipped'
-    | 'step_cancelled'
-    | 'step_retrying';
-
-export type ExecutionStatus =
-    | 'execution_started'
-    | 'execution_running'
-    | 'execution_paused'
-    | 'execution_completed'
-    | 'execution_failed'
-    | 'execution_cancelled'
-    | 'execution_timeout'
-    | 'execution_deadlock'
-    | 'execution_waiting';
-
-export type ReplanStatus =
-    | 'replan_triggered'
-    | 'replan_analyzing'
-    | 'replan_preserving'
-    | 'replan_generating'
-    | 'replan_completed'
-    | 'replan_failed'
-    | 'replan_limit_reached'
-    | 'replan_cancelled';
-
-export type AgentOverallStatus =
-    | 'agent_idle'
-    | 'agent_initializing'
-    | 'agent_ready'
-    | 'agent_running'
-    | 'agent_paused'
-    | 'agent_completed'
-    | 'agent_failed'
-    | 'agent_error'
-    | 'agent_timeout'
-    | 'agent_cancelled'
-    | 'agent_waiting_input'
-    | 'agent_stagnated';
-
-export type ErrorStatus =
-    | 'error_tool_unavailable'
-    | 'error_tool_failed'
-    | 'error_invalid_input'
-    | 'error_missing_parameters'
-    | 'error_permission_denied'
-    | 'error_rate_limit'
-    | 'error_timeout'
-    | 'error_network'
-    | 'error_unknown'
-    | 'error_llm_failed'
-    | 'error_planning_failed'
-    | 'error_execution_failed';
-
-export type SuccessStatus =
-    | 'success_completed'
-    | 'success_partial'
-    | 'success_with_warnings'
-    | 'success_alternative'
-    | 'success_cached'
-    | 'success_optimized';
-
-export type AgentStatus =
-    | ThinkStatus
-    | ActStatus
-    | ObserveStatus
-    | PlanStatus
-    | StepStatus
-    | ExecutionStatus
-    | ReplanStatus
-    | AgentOverallStatus
-    | ErrorStatus
-    | SuccessStatus;
 
 export interface SimpleExecutionRuntime {
     startExecution(agentName: string): Promise<void>;
@@ -217,25 +114,25 @@ export interface SimpleExecutionRuntime {
     };
 }
 
-export const agentActionTypeSchema = z.enum([
-    'initialized',
-    'final_answer',
-    'need_more_info',
-    'tool_call',
-    'execute_plan',
-    'delegate_to_agent',
-    'request_human_input',
-    'wait_for_condition',
-    'parallel_execution',
-    'conditional_branch',
+// export const agentActionTypeSchema = z.enum([
+//     'initialized',
+//     'final_answer',
+//     'need_more_info',
+//     'tool_call',
+//     'execute_plan',
+//     'delegate_to_agent',
+//     'request_human_input',
+//     'wait_for_condition',
+//     'parallel_execution',
+//     'conditional_branch',
 
-    'parallel_tools',
-    'sequential_tools',
-    'conditional_tools',
-    'mixed_tools',
-    'dependency_tools',
-]);
-export type AgentActionType = z.infer<typeof agentActionTypeSchema>;
+//     'parallel_tools',
+//     'sequential_tools',
+//     'conditional_tools',
+//     'mixed_tools',
+//     'dependency_tools',
+// ]);
+// export type AgentActionType = z.infer<typeof agentActionTypeSchema>;
 
 export interface ParallelToolsAction extends AgentAction {
     type: 'parallel_tools';
@@ -495,8 +392,8 @@ export interface AgentScheduleConfig {
 export interface AgentLifecycleResult extends BaseExecutionResult<unknown> {
     agentName: string;
     operation: string;
-    previousStatus: AgentStatus;
-    currentStatus: AgentStatus;
+    previousStatus: string;
+    currentStatus: string;
 
     metadata: Metadata & {
         snapshotId?: string;
@@ -964,14 +861,14 @@ export interface EventPayloads {
         agentName: string;
         tenantId: string;
         executionId: string;
-        status: AgentStatus;
+        status: string;
         startedAt: number;
     };
 
     [EVENT_TYPES.AGENT_LIFECYCLE_STOPPED]: {
         agentName: string;
         tenantId: string;
-        status: AgentStatus;
+        status: string;
         stoppedAt: number;
         reason?: string;
     };
@@ -979,7 +876,7 @@ export interface EventPayloads {
     [EVENT_TYPES.AGENT_LIFECYCLE_PAUSED]: {
         agentName: string;
         tenantId: string;
-        status: AgentStatus;
+        status: string;
         pausedAt: number;
         snapshotId?: string;
         reason?: string;
@@ -988,7 +885,7 @@ export interface EventPayloads {
     [EVENT_TYPES.AGENT_LIFECYCLE_RESUMED]: {
         agentName: string;
         tenantId: string;
-        status: AgentStatus;
+        status: string;
         resumedAt: number;
         snapshotId?: string;
     };
@@ -996,7 +893,7 @@ export interface EventPayloads {
     [EVENT_TYPES.AGENT_LIFECYCLE_SCHEDULED]: {
         agentName: string;
         tenantId: string;
-        status: AgentStatus;
+        status: string;
         scheduleTime: number;
         scheduleConfig: unknown;
     };
@@ -1013,8 +910,8 @@ export interface EventPayloads {
     [EVENT_TYPES.AGENT_LIFECYCLE_STATUS_CHANGED]: {
         agentName: string;
         tenantId: string;
-        fromStatus: AgentStatus;
-        toStatus: AgentStatus;
+        fromStatus: string;
+        toStatus: string;
         reason?: string;
         timestamp: number;
     };
@@ -1294,7 +1191,7 @@ export interface EventPayloads {
     };
 
     [EVENT_TYPES.STREAM_ERROR]: {
-        originalEvent: Event<EventType>;
+        originalEvent: TEvent<EventType>;
         handler: string;
         error: unknown;
         timestamp: number;
@@ -1303,12 +1200,12 @@ export interface EventPayloads {
     };
 
     [EVENT_TYPES.STREAM_BATCH]: {
-        events: Event<EventType>[];
+        events: TEvent<EventType>[];
         size: number;
     };
 
     [EVENT_TYPES.ERROR]: {
-        originalEvent: Event<EventType>;
+        originalEvent: TEvent<EventType>;
         handler: string;
         error: unknown;
         timestamp: number;
@@ -1423,7 +1320,7 @@ export interface EventPayloads {
     [key: string]: unknown;
 }
 
-export interface Event<K extends EventType = EventType> {
+export interface TEvent<K extends EventType = EventType> {
     readonly id: string;
     readonly type: K;
     readonly data: EventPayloads[K];
@@ -1439,18 +1336,18 @@ export interface Event<K extends EventType = EventType> {
     };
 }
 
-export type AnyEvent = Event<EventType>;
+export type AnyEvent = TEvent<EventType>;
 
 export type EventDef<P, K extends EventType> = {
     type: K;
-    with(data: P): Event<K>;
-    include(event: AnyEvent): event is Event<K>;
+    with(data: P): TEvent<K>;
+    include(event: AnyEvent): event is TEvent<K>;
 };
 
 export function isEventType<K extends EventType>(
     event: AnyEvent,
     eventType: K,
-): event is Event<K> {
+): event is TEvent<K> {
     return event.type === eventType;
 }
 
@@ -1462,7 +1359,7 @@ export function createEvent<K extends EventType>(
         timestamp?: number;
         threadId?: string;
     },
-): Event<K> {
+): TEvent<K> {
     const eventId = options?.id || IdGenerator.callId();
 
     return {
@@ -1952,15 +1849,6 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown>
         errorMessages?: Record<string, string>;
     };
 
-    plannerHints?: {
-        useWhen?: string[];
-
-        avoidWhen?: string[];
-
-        combinesWith?: string[];
-
-        conflictsWith?: string[];
-    };
     dependencies?: string[];
     tags?: string[];
 }
@@ -2299,9 +2187,9 @@ export interface WorkflowContext extends BaseContext {
 
     isPaused: boolean;
 
-    stream?: EventStream<Event>;
-    sendEvent?: (event: Event) => Promise<void>;
-    emit?: (event: Event) => void;
+    stream?: EventStream<TEvent>;
+    sendEvent?: (event: TEvent) => Promise<void>;
+    emit?: (event: TEvent) => void;
 
     resourceManager?: {
         addTimer: (timer: NodeJS.Timeout) => void;
@@ -2934,7 +2822,7 @@ export interface DebugContext {
     clearCorrelationId(): void;
 
     log(level: LogLevel, message: string, data?: Record<string, unknown>): void;
-    trace(event: Event, source?: string): string;
+    trace(event: TEvent, source?: string): string;
 
     measure<T>(
         name: string,
@@ -2998,11 +2886,11 @@ export interface PerformanceMeasurement {
 
 export interface EventTrace {
     id: string;
-    event: Event;
+    event: TEvent;
     timestamp: number;
     correlationId: string;
     processingDuration?: number;
-    result?: Event | void;
+    result?: TEvent | void;
     error?: Error;
 }
 
@@ -3362,17 +3250,10 @@ export function getResultContent(result: ActionResult): unknown {
 
 export interface PlannerPromptConfig {
     additionalPatterns?: string[];
-
     constraints?: string[];
-
     features?: {
-        includeUniversalPatterns?: boolean;
-
-        includeDynamicHints?: boolean;
-
         enablePromptCaching?: boolean;
     };
-
     templates?: {
         system?: string;
 
@@ -3910,7 +3791,7 @@ export interface Runtime {
     createEvent<T extends EventType>(
         type: T,
         data?: EventPayloads[T],
-    ): Event<T>;
+    ): TEvent<T>;
 
     createStream<S extends AnyEvent>(
         generator: () => AsyncGenerator<S>,
@@ -3957,7 +3838,7 @@ export interface Runtime {
     cleanup(): Promise<void>;
 }
 
-export interface TrackedEventHandler<TEvent extends Event = Event>
+export interface TrackedEventHandler<TEvent extends AnyEvent = AnyEvent>
     extends EventHandler<TEvent> {
     _handlerId?: string;
     _lastUsed?: number;
@@ -3966,7 +3847,7 @@ export interface TrackedEventHandler<TEvent extends Event = Event>
 
 export type MiddlewareKind = 'pipeline' | 'handler';
 
-export type Middleware<TEvent extends Event = Event> = ((
+export type Middleware<TEvent extends AnyEvent = AnyEvent> = ((
     handler: EventHandler<TEvent>,
 ) => EventHandler<TEvent>) & {
     kind?: MiddlewareKind;
@@ -3974,11 +3855,12 @@ export type Middleware<TEvent extends Event = Event> = ((
     displayName?: string;
 };
 
-export type MiddlewareFactoryType<TConfig, TEvent extends Event = Event> = (
-    config: TConfig,
-) => Middleware<TEvent>;
+export type MiddlewareFactoryType<
+    TConfig,
+    TEvent extends AnyEvent = AnyEvent,
+> = (config: TConfig) => Middleware<TEvent>;
 
-export function composeMiddleware<TEvent extends Event = Event>(
+export function composeMiddleware<TEvent extends AnyEvent = AnyEvent>(
     ...middlewares: Array<Middleware<TEvent>>
 ): Middleware<TEvent> {
     return (handler: EventHandler<TEvent>) => {
@@ -4378,7 +4260,7 @@ export const workflowEvent: WorkflowEventFactory = <
 
     const def: EventDef<P, K> = {
         type: type,
-        with(data: P): Event<K> {
+        with(data: P): TEvent<K> {
             return {
                 id: IdGenerator.callId(),
                 type: type,
@@ -4387,7 +4269,7 @@ export const workflowEvent: WorkflowEventFactory = <
                 ts: Date.now(),
             };
         },
-        include(ev): ev is Event<K> {
+        include(ev): ev is TEvent<K> {
             return ev.type === type;
         },
     };
@@ -4576,7 +4458,6 @@ export interface LogContext {
 }
 
 export type LogContextProvider = () => LogContext | undefined;
-export let globalLogContextProvider: LogContextProvider | undefined;
 
 export type LogProcessor = (
     level: LogLevel,
@@ -4585,9 +4466,6 @@ export type LogProcessor = (
     context?: LogContext,
     error?: Error,
 ) => void;
-
-export const globalLogProcessors: LogProcessor[] = [];
-export const isProcessingLog = false;
 
 export interface Logger {
     debug(message: string, context?: LogContext): void;
@@ -4996,7 +4874,7 @@ export interface ScheduleOptions {
 
     triggerImmediately?: boolean;
 
-    generateData?: (triggerCount: number, originalEvent: Event) => unknown;
+    generateData?: (triggerCount: number, originalEvent: TEvent) => unknown;
 }
 
 export const DEFAULT_SCHEDULE_OPTIONS: Partial<ScheduleOptions> = {
@@ -5005,7 +4883,7 @@ export const DEFAULT_SCHEDULE_OPTIONS: Partial<ScheduleOptions> = {
 
 export interface ConcurrencyOptions {
     maxConcurrent: number;
-    getKey?: (ev: Event) => string;
+    getKey?: (ev: TEvent) => string;
     queueTimeoutMs?: number;
     emitMetrics?: boolean;
     context?: { cost?: { concurrencyDrops: number } };
@@ -5109,6 +4987,22 @@ export interface ObservabilityStorageConfig {
     flushIntervalMs?: number;
     ttlDays?: number;
     enableObservability?: boolean;
+}
+
+export interface MongoDBExporterConfig {
+    connectionString: string;
+    database: string;
+    collections: {
+        logs: string;
+        telemetry: string;
+        metrics: string;
+        errors: string;
+    };
+    batchSize: number;
+    flushIntervalMs: number;
+    maxRetries: number;
+    ttlDays: number;
+    enableObservability: boolean;
 }
 
 export interface MongoDBLogItem {
@@ -5656,7 +5550,6 @@ export interface PlanningResult {
             | 'verification';
     }>;
     reasoning: string;
-    estimatedTime?: number;
     signals?: {
         needs?: string[];
         noDiscoveryPath?: string[];
@@ -5698,8 +5591,6 @@ export const planStepSchema = {
             additionalProperties: true,
             nullable: true,
         },
-        expectedOutcome: { type: 'string', nullable: true },
-        retry: { type: 'number', nullable: true },
         status: {
             type: 'string',
             enum: ['pending', 'executing', 'completed', 'failed', 'skipped'],
@@ -5761,17 +5652,6 @@ export const planningResultSchema = {
                     items: { type: 'string' },
                 },
             ],
-        },
-        complexity: {
-            type: 'string',
-            enum: ['simple', 'medium', 'complex'],
-            nullable: true,
-        },
-        estimatedTime: { type: 'number', nullable: true },
-        metadata: {
-            type: 'object',
-            additionalProperties: true,
-            nullable: true,
         },
     },
     oneOf: [
@@ -6003,3 +5883,33 @@ export interface AgentData {
         };
     };
 }
+
+export type UnknownRecord = Record<string, unknown>;
+export type LooseOtelSpan = {
+    setAttribute: (key: string, value: string | number | boolean) => void;
+    setStatus: (status: { code: number; message?: string }) => void;
+    recordException: (exception: Error) => void;
+    addEvent: (name: string, attributes?: UnknownRecord) => void;
+    end: (endTime?: number) => void;
+    spanContext: () => { traceId: string; spanId: string; traceFlags: number };
+    isRecording: () => boolean;
+};
+export type LooseOtelAPI = {
+    trace: {
+        getTracer: (name: string) => {
+            startSpan: (
+                name: string,
+                options?: {
+                    kind?: number;
+                    startTime?: number;
+                    attributes?: UnknownRecord;
+                },
+                context?: unknown,
+            ) => LooseOtelSpan;
+        };
+        setSpan: (context: unknown, span: unknown) => unknown;
+    };
+    context: {
+        active: () => unknown;
+    };
+};

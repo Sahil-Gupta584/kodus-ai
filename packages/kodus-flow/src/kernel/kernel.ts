@@ -16,6 +16,7 @@ import {
     EventPayloads,
     EventStream,
     EventType,
+    TEvent,
     KernelConfig,
     KernelState,
     Middleware,
@@ -233,7 +234,7 @@ export class ExecutionKernel {
                     } else {
                         // Create default workflow context for testing
                         this.workflowContext = {
-                            sendEvent: async (event: Event) => {
+                            sendEvent: async (event: TEvent) => {
                                 if (this.runtime) {
                                     await this.runtime.emitAsync(
                                         event.type,
@@ -278,8 +279,7 @@ export class ExecutionKernel {
                         persistor: this.persistor,
                         executionId: this.state.id,
                         tenantId: this.config.tenantId,
-                        middleware,
-                        // Configure batching if performance batching is enabled
+                        middleware: middleware as Middleware<TEvent>[],
                         batching: this.config.performance?.enableBatching
                             ? {
                                   enabled: true,
@@ -393,7 +393,7 @@ export class ExecutionKernel {
     /**
      * Run workflow with optimized event processing
      */
-    async run(event: Event): Promise<void> {
+    async run(event: AnyEvent): Promise<void> {
         if (!this.runtime) {
             throw new KernelError(
                 'KERNEL_INITIALIZATION_FAILED',
@@ -415,7 +415,7 @@ export class ExecutionKernel {
     /**
      * Send event to runtime with context preparation
      */
-    async sendEvent(event: Event): Promise<void> {
+    async sendEvent(event: AnyEvent): Promise<void> {
         if (!this.runtime) {
             throw new KernelError(
                 'KERNEL_INITIALIZATION_FAILED',
@@ -840,7 +840,7 @@ export class ExecutionKernel {
     /**
      * Prepare context for event processing
      */
-    private prepareContextForEvent(event: Event): void {
+    private prepareContextForEvent(event: AnyEvent): void {
         // Performance: Lazy load context data
         if (this.config.performance?.enableLazyLoading) {
             // Only load essential context data
@@ -852,14 +852,14 @@ export class ExecutionKernel {
             this.state.contextData['lastEventTime'] = Date.now();
             this.state.contextData['eventHistory'] =
                 this.state.contextData['eventHistory'] || [];
-            (this.state.contextData['eventHistory'] as Event[]).push(event);
+            (this.state.contextData['eventHistory'] as AnyEvent[]).push(event);
         }
     }
 
     /**
      * Update state from event
      */
-    private updateStateFromEvent(_event: Event): void {
+    private updateStateFromEvent(_event: AnyEvent): void {
         this.state.eventCount++;
 
         // Autosnapshot baseado em contagem de eventos
@@ -1474,7 +1474,7 @@ export class ExecutionKernel {
     createEvent<T extends EventType>(
         type: T,
         data?: EventPayloads[T],
-    ): Event<T> {
+    ): TEvent<T> {
         const runtime = this.getRuntimeSafely();
         return runtime.createEvent(type, data);
     }

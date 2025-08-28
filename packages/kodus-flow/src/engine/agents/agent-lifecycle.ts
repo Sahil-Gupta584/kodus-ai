@@ -9,6 +9,7 @@ import {
     AgentStartPayload,
     AgentStatus,
     AgentStopPayload,
+    AnyEvent,
     createEvent,
     EVENT_TYPES,
     ExecutionId,
@@ -33,7 +34,7 @@ export class AgentLifecycleHandler {
     /**
      * Handle lifecycle events
      */
-    async handleLifecycleEvent(event: Event): Promise<Event> {
+    async handleLifecycleEvent(event: AnyEvent): Promise<AnyEvent> {
         try {
             switch (event.type) {
                 case 'agent.lifecycle.start':
@@ -89,7 +90,7 @@ export class AgentLifecycleHandler {
     /**
      * Start agent
      */
-    private async handleStartAgent(event: Event): Promise<Event> {
+    private async handleStartAgent(event: AnyEvent): Promise<AnyEvent> {
         const payload = event.data as AgentStartPayload;
         const { agentName, tenantId, config, context } = payload;
         const agentKey = `${tenantId}:${agentName}`;
@@ -156,7 +157,7 @@ export class AgentLifecycleHandler {
     /**
      * Stop agent
      */
-    private async handleStopAgent(event: Event): Promise<Event> {
+    private async handleStopAgent(event: AnyEvent): Promise<AnyEvent> {
         const payload = event.data as AgentStopPayload;
         const { agentName, tenantId, reason, force } = payload;
         const agentKey = `${tenantId}:${agentName}`;
@@ -235,7 +236,7 @@ export class AgentLifecycleHandler {
     /**
      * Pause agent
      */
-    private async handlePauseAgent(event: Event): Promise<Event> {
+    private async handlePauseAgent(event: AnyEvent): Promise<AnyEvent> {
         const payload = event.data as AgentPausePayload;
         const { agentName, tenantId, reason, saveSnapshot = true } = payload;
         const agentKey = `${tenantId}:${agentName}`;
@@ -307,7 +308,7 @@ export class AgentLifecycleHandler {
     /**
      * Resume agent
      */
-    private async handleResumeAgent(event: Event): Promise<Event> {
+    private async handleResumeAgent(event: AnyEvent): Promise<AnyEvent> {
         const payload = event.data as AgentResumePayload;
         const { agentName, tenantId, snapshotId, context } = payload;
         const agentKey = `${tenantId}:${agentName}`;
@@ -377,7 +378,7 @@ export class AgentLifecycleHandler {
     /**
      * Schedule agent
      */
-    private async handleScheduleAgent(event: Event): Promise<Event> {
+    private async handleScheduleAgent(event: AnyEvent): Promise<AnyEvent> {
         const payload = event.data as AgentSchedulePayload;
         const { agentName, tenantId, schedule, config } = payload;
         const agentKey = `${tenantId}:${agentName}`;

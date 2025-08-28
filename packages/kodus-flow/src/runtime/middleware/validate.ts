@@ -1,6 +1,6 @@
 import { KernelError } from '../../core/errors.js';
 import {
-    Event,
+    TEvent,
     EventHandler,
     KernelErrorCode,
     Middleware,
@@ -12,11 +12,11 @@ export function withValidateMiddleware(
     schema: SchemaLike,
     options?: ValidateOptions,
 ) {
-    const middleware = function <E extends Event>(
+    const middleware = function <E extends TEvent>(
         handler: EventHandler<E>,
     ): EventHandler<E> {
         return withValidate(schema, handler, options);
-    } as Middleware<Event>;
+    } as Middleware<TEvent>;
 
     middleware.kind = 'handler';
     (middleware as unknown as { displayName?: string }).displayName =
@@ -25,7 +25,7 @@ export function withValidateMiddleware(
     return middleware;
 }
 
-export function withValidate<T extends Event>(
+export function withValidate<T extends TEvent>(
     schema: SchemaLike,
     handler: EventHandler<T>,
     options?: ValidateOptions,

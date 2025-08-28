@@ -1,6 +1,7 @@
 import {
     AgentPhase,
     AgentSpanAttributes,
+    AnyEvent,
     LLMSpanAttributes,
     Metrics,
     Span,
@@ -462,7 +463,7 @@ export class TelemetrySystem {
     /**
      * Trace an event execution
      */
-    traceEvent<T>(event: Event, handler: () => T | Promise<T>): Promise<T> {
+    traceEvent<T>(event: AnyEvent, handler: () => T | Promise<T>): Promise<T> {
         if (!this.config.features.traceEvents) {
             return Promise.resolve(handler());
         }

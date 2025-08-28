@@ -16,6 +16,7 @@ import {
     AgentData,
     AgentDefinition,
     AgentExecutionOptions,
+    agentIdentitySchema,
     ContextBuilderConfig,
     defineTool,
     MCPAdapter,
@@ -161,6 +162,8 @@ const orchestrator = new SDKOrchestrator({
                 );
             },
             config: {
+                name: config.name,
+                identity: config.identity,
                 enableSession: config.enableSession ?? true,
                 enableState: config.enableState ?? true,
                 enableMemory: config.enableMemory ?? true,
@@ -664,8 +667,6 @@ const orchestrator = new SDKOrchestrator({
                 categories: tool.categories,
                 schema: tool.inputSchema,
                 outputSchema: tool.outputSchema,
-                examples: tool.examples,
-                plannerHints: tool.plannerHints,
                 annotations,
             };
         });

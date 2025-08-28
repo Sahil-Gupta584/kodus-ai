@@ -2,6 +2,7 @@ import {
     ConcurrencyOptions,
     DEFAULT_OPTS,
     Middleware,
+    TEvent,
 } from '@/core/types/allTypes.js';
 
 /* ───── ConcurrencyManager singleton ───── */
@@ -58,7 +59,7 @@ const manager = new ConcurrencyManager();
 export function withConcurrency(opts: Partial<ConcurrencyOptions> = {}) {
     const cfg = { ...DEFAULT_OPTS, ...opts };
 
-    const middleware = function <E extends Event, R = Event | void>(
+    const middleware = function <E extends TEvent, R = TEvent | void>(
         handler: (ev: E) => Promise<R> | R,
     ) {
         const withConcurrencyWrapped = async function wrapped(
@@ -94,7 +95,7 @@ export function withConcurrency(opts: Partial<ConcurrencyOptions> = {}) {
         };
 
         return withConcurrencyWrapped;
-    } as Middleware<Event>;
+    } as Middleware<TEvent>;
 
     middleware.kind = 'pipeline';
     (middleware as unknown as { displayName?: string }).displayName =

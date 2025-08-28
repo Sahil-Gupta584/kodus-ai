@@ -333,7 +333,7 @@ export class LayeredMetricsSystem {
                 memoryUsageBytes: process.memoryUsage().heapUsed,
                 cpuUsagePercent: this.calculateCpuUsage(),
             },
-        };
+        } as SystemMetrics;
     }
 
     /**

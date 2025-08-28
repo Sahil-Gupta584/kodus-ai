@@ -3,6 +3,7 @@ import { getTelemetry } from './telemetry.js';
 import { IdGenerator } from '../utils/index.js';
 import { createLogger } from './logger.js';
 import {
+    AnyEvent,
     DebugConfig,
     DebugContext,
     DebugEntry,
@@ -13,6 +14,7 @@ import {
     PerformanceInsights,
     PerformanceMeasurement,
     StateSnapshot,
+    TEvent,
 } from '@/core/types/allTypes.js';
 
 export class ConsoleDebugOutput implements DebugOutput {
@@ -243,7 +245,7 @@ export class DebugSystem {
     /**
      * Trace de evento
      */
-    traceEvent(event: Event, source?: string): string {
+    traceEvent(event: TEvent, source?: string): string {
         if (!this.isFeatureEnabled('eventTracing')) {
             return '';
         }
@@ -715,7 +717,7 @@ export function getGlobalDebugSystem(
 export function withDebug(debugSystem?: DebugSystem) {
     const debug = debugSystem || getGlobalDebugSystem();
 
-    return function debugMiddleware<E extends Event, R = Event | void>(
+    return function debugMiddleware<E extends TEvent, R = TEvent | void>(
         handler: (ev: E) => Promise<R> | R,
         handlerName?: string,
     ) {
@@ -771,7 +773,7 @@ export function createDebugContext(debugSystem?: DebugSystem): DebugContext {
             message: string,
             data?: Record<string, unknown>,
         ) => debug.log(level, 'general', message, data),
-        trace: (event: Event, source?: string) =>
+        trace: (event: AnyEvent, source?: string) =>
             debug.traceEvent(event, source),
 
         measure: <T>(

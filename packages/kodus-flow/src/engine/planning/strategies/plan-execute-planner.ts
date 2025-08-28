@@ -29,6 +29,11 @@ import {
     ResultAnalysis,
     ToolMetadataForLLM,
     UNIFIED_STATUS,
+    PlanningStrategy,
+    AgentContext,
+    PlannerOptions,
+    PlannerCallbacks,
+    Plan,
 } from '@/core/types/allTypes.js';
 
 function createTelemetryEvent(
@@ -46,6 +51,7 @@ function createTelemetryEvent(
 
 export class PlanAndExecutePlanner implements Planner {
     readonly name = 'Plan-and-Execute';
+    readonly strategy: PlanningStrategy = 'plan-execute';
     private logger = createLogger('plan-execute-planner');
     private plansByThread = new Map<string, ExecutionPlan>();
     private responseSynthesizer: ReturnType<typeof createResponseSynthesizer>;
@@ -707,10 +713,13 @@ export class PlanAndExecutePlanner implements Planner {
         }
     }
 
-    private async createPlan(
-        context: PlannerExecutionContext,
-    ): Promise<AgentThought> {
-        const input = context.input;
+    public async createPlan(
+        goal: string | string[],
+        context: AgentContext,
+        options?: PlannerOptions,
+        callbacks?: PlannerCallbacks,
+    ): Promise<Plan> {
+        const input = goal as string;
 
         const memoryContext = await this.getMemoryContext(context, input);
 

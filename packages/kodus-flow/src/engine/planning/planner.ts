@@ -9,6 +9,7 @@ import {
     PlannerOptions,
     PlanningContext,
     PlanningStrategy,
+    TEvent,
 } from '@/core/types/allTypes.js';
 import { MultiKernelHandler } from '../core/multi-kernel-handler.js';
 
@@ -45,7 +46,7 @@ export class PlannerHandler {
         });
     }
 
-    async handlePlanning(event: Event): Promise<Event> {
+    async handlePlanning(event: TEvent): Promise<TEvent> {
         const startTime = Date.now();
         this.planningStats.total++;
 
@@ -439,7 +440,7 @@ export function createPlanningContext(
         getPlanner(): PlanningStrategy {
             const plannerName = plannerHandler.getAgentPlanner(agentName);
             const planner = plannerHandler['planners'].get(plannerName);
-            return planner?.strategy || 'cot';
+            return planner?.strategy || 'plan-execute';
         },
     };
 }

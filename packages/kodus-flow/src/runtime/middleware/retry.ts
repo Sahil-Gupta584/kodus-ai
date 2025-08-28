@@ -4,6 +4,7 @@ import {
     Middleware,
     MiddlewareFactoryType,
     RetryOptions,
+    TEvent,
 } from '@/core/types/allTypes.js';
 import { KernelError } from '../../core/errors.js';
 import { getActiveSpan } from '../../observability/index.js';
@@ -51,12 +52,12 @@ function hasCostCtx(x: unknown): x is HasCostCtx {
     return typeof x === 'object' && x !== null && 'ctx' in x;
 }
 
-export const withRetry: MiddlewareFactoryType<Partial<RetryOptions>, Event> = (
+export const withRetry: MiddlewareFactoryType<Partial<RetryOptions>, TEvent> = (
     opts = {},
 ) => {
     const cfg: RetryOptions = { ...DEFAULT, ...opts };
 
-    const middleware = function <E extends Event, R = Event | void>(
+    const middleware = function <E extends TEvent, R = TEvent | void>(
         handler: (ev: E, signal?: AbortSignal) => Promise<R> | R,
     ) {
         const wrapped = async function withRetryWrapped(
@@ -120,7 +121,7 @@ export const withRetry: MiddlewareFactoryType<Partial<RetryOptions>, Event> = (
         };
 
         return wrapped;
-    } as Middleware<Event>;
+    } as Middleware<TEvent>;
 
     middleware.kind = 'pipeline';
     (middleware as unknown as { displayName?: string }).displayName =

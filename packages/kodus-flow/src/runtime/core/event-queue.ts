@@ -6,7 +6,6 @@ import {
     Persistor,
     QueueItem,
     QueueItemSnapshot,
-    SystemMetrics,
 } from '@/core/types/allTypes.js';
 import { EventStore } from '../index.js';
 
@@ -148,7 +147,14 @@ export class EventQueue {
     /**
      * Obter métricas do sistema
      */
-    private getSystemMetrics(): SystemMetrics {
+    private getSystemMetrics(): {
+        timestamp: number;
+        memoryUsage: number;
+        cpuUsage: number;
+        queueDepth: number;
+        processingRate: number;
+        averageProcessingTime: number;
+    } {
         const memoryUsage = this.getMemoryUsage();
         const cpuUsage = this.getCpuUsage();
 

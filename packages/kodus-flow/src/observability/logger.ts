@@ -1,15 +1,17 @@
 // Add module-level re-entrancy guard
 
 import {
-    globalLogContextProvider,
-    globalLogProcessors,
-    isProcessingLog,
     LogContext,
     LogContextProvider,
     Logger,
     LogLevel,
     LogProcessor,
 } from '@/core/types/allTypes.js';
+
+// Global state for logging
+export let globalLogContextProvider: LogContextProvider | undefined;
+export let globalLogProcessors: LogProcessor[] = [];
+export let isProcessingLog = false;
 
 export function setLogContextProvider(
     provider: LogContextProvider | undefined,

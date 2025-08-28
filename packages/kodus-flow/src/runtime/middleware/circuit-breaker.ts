@@ -10,6 +10,7 @@ import {
     EventHandler,
     Middleware,
     MiddlewareFactoryType,
+    TEvent,
 } from '@/core/types/allTypes.js';
 
 export class CircuitBreakerManager {
@@ -68,9 +69,9 @@ export class CircuitBreakerManager {
  */
 export const circuitBreakerMiddleware: MiddlewareFactoryType<
     CircuitBreakerMiddlewareConfig,
-    Event
+    TEvent
 > = (config: CircuitBreakerMiddlewareConfig) => {
-    const middleware = (<T extends Event>(
+    const middleware = (<T extends TEvent>(
         handler: EventHandler<T>,
     ): EventHandler<T> => {
         // Criar observability mock simples
@@ -150,7 +151,7 @@ export const circuitBreakerMiddleware: MiddlewareFactoryType<
             // Retornar resultado
             return result.result;
         };
-    }) as Middleware<Event>;
+    }) as Middleware<TEvent>;
 
     middleware.kind = 'pipeline';
     (middleware as unknown as { displayName?: string }).displayName =

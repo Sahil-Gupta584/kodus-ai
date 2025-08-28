@@ -1,7 +1,9 @@
 import {
+    AnyEvent,
     EVENT_TYPES,
     Step,
     StepContext,
+    TEvent,
     WorkflowDefinition,
     workflowEvent,
 } from '@/core/types/allTypes.js';
@@ -65,7 +67,7 @@ export class WorkflowEngine {
                 return;
             }
 
-            workflow.on(`step.${step.name}`, async (event: Event) => {
+            workflow.on(`step.${step.name}`, async (event: AnyEvent) => {
                 // Criar contexto do step inline
                 const stepContext = {
                     stepName: step.name,
@@ -175,7 +177,7 @@ export class WorkflowEngine {
         });
 
         // Start handler
-        workflow.on('workflow.start', async (event: Event) => {
+        workflow.on('workflow.start', async (event: AnyEvent) => {
             const firstStep = this.definition.steps[0];
             if (!firstStep) {
                 return {
@@ -226,13 +228,13 @@ export class WorkflowEngine {
         const ctx = workflow.createContext();
 
         const resultPromise = new Promise<TOutput>((resolve, reject) => {
-            workflow.on('workflow.complete', (event: Event) => {
+            workflow.on('workflow.complete', (event: AnyEvent) => {
                 resolve(
                     (event.data as { result?: TOutput })?.result as TOutput,
                 );
             });
 
-            workflow.on('workflow.error', (event: Event) => {
+            workflow.on('workflow.error', (event: TEvent) => {
                 reject((event.data as { error?: Error })?.error);
             });
         });

@@ -1,6 +1,7 @@
 import {
     DEFAULT_SCHEDULE_OPTIONS,
     ScheduleOptions,
+    TEvent,
 } from '@/core/types/allTypes.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 
@@ -12,8 +13,8 @@ export function schedule(options: ScheduleOptions) {
 
     // Return a function that sets up the schedule when called
     return function setupSchedule(
-        event: Event,
-        sendEvent: (event: Event) => void,
+        event: TEvent,
+        sendEvent: (event: TEvent) => void,
     ): () => void {
         let triggerCount = 0;
         let active = true;
@@ -37,7 +38,7 @@ export function schedule(options: ScheduleOptions) {
                 : event.data;
 
             // Create and send the scheduled event
-            const scheduledEvent: Event = {
+            const scheduledEvent: TEvent = {
                 id: IdGenerator.callId(),
                 type: event.type,
                 threadId: event.threadId,

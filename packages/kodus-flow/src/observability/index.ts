@@ -10,12 +10,8 @@ export { startAgentSpan, startToolSpan, startLLMSpan } from './telemetry.js';
 export { createLogger } from './logger.js';
 
 import { getTelemetry, TelemetrySystem } from './telemetry.js';
-import {
-    getLayeredMetricsSystem,
-    LayeredMetricsSystem as ResourceMonitor,
-} from './monitoring.js';
+import { LayeredMetricsSystem as ResourceMonitor } from './monitoring.js';
 import { DebugSystem, getGlobalDebugSystem } from './debugging.js';
-import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import {
     DebugReport,
     DEFAULT_CONFIG,
@@ -27,8 +23,10 @@ import {
     ObservabilityInterface,
     ResourceLeak,
     Span,
+    TEvent,
     UnifiedReport,
     type SystemMetrics as ResourceMetrics,
+    ErrorCode,
 } from '@/core/types/allTypes.js';
 import { createLogger, setLogContextProvider } from './logger.js';
 
@@ -40,10 +38,6 @@ export class ObservabilitySystem implements ObservabilityInterface {
     public readonly logger: Logger;
     public readonly telemetry: TelemetrySystem;
     public readonly monitor: ResourceMonitor | null = null;
-    private setMonitor(system: ResourceMonitor | null): void {
-        (this as unknown as { monitor: ResourceMonitor | null }).monitor =
-            system;
-    }
     public readonly debug: DebugSystem;
     private mongodbExporter: {
         initialize(): Promise<void>;
@@ -93,50 +87,7 @@ export class ObservabilitySystem implements ObservabilityInterface {
                   }
                 : undefined;
         });
-        // Auto-init metrics if enabled and not present (DX)
-        if (this.config.monitoring?.enabled) {
-            const existing = getLayeredMetricsSystem();
-            if (existing) {
-                this.setMonitor(existing);
-            } else {
-                // Lazy schedule init to avoid await in ctor
-                this.setMonitor(null);
-                const doInit = async () => {
-                    try {
-                        const { ensureMetricsSystem } = await import(
-                            './monitoring.js'
-                        );
-                        this.setMonitor(
-                            ensureMetricsSystem({
-                                enabled: true,
-                                collectionIntervalMs:
-                                    this.config.monitoring
-                                        ?.collectionIntervalMs ?? 30000,
-                                retentionPeriodMs:
-                                    this.config.monitoring?.retentionPeriodMs ??
-                                    24 * 60 * 60 * 1000,
-                                enableRealTime:
-                                    this.config.monitoring?.enableRealTime ??
-                                    true,
-                                enableHistorical:
-                                    this.config.monitoring?.enableHistorical ??
-                                    true,
-                                maxMetricsHistory:
-                                    this.config.monitoring?.maxMetricsHistory ??
-                                    1000,
-                                exportFormats: this.config.monitoring
-                                    ?.exportFormats ?? ['json'],
-                            }),
-                        );
-                    } catch {
-                        // ignore
-                    }
-                };
-                void doInit();
-            }
-        } else {
-            this.setMonitor(null);
-        }
+
         this.debug = getGlobalDebugSystem(this.config.debugging);
 
         // Initialize MongoDB Exporter if configured (legacy or via storage)
@@ -187,7 +138,6 @@ export class ObservabilitySystem implements ObservabilityInterface {
             components: {
                 logging: this.config.logging?.enabled,
                 telemetry: this.config.telemetry?.enabled,
-                monitoring: this.config.monitoring?.enabled,
                 debugging: this.config.debugging?.enabled,
             },
         } as LogContext);
@@ -199,6 +149,8 @@ export class ObservabilitySystem implements ObservabilityInterface {
     createContext(correlationId?: string): ObservabilityContext {
         const context: ObservabilityContext = {
             correlationId: correlationId || this.generateCorrelationId(),
+            tenantId: '',
+            startTime: Date.now(),
             // ✅ NEW: Initialize executionId - will be populated by SessionService when needed
             executionId: undefined,
         };
@@ -646,12 +598,6 @@ export class ObservabilitySystem implements ObservabilityInterface {
                 },
             };
         } else if (this.config.environment === 'test') {
-            // Test optimizations
-            this.config.monitoring = {
-                ...this.config.monitoring,
-                enabled: false, // Disable monitoring in tests
-            };
-
             this.config.telemetry = {
                 ...this.config.telemetry,
                 enabled: false, // Disable telemetry in tests
@@ -1093,10 +1039,10 @@ export function createObservabilityMiddleware(
 ) {
     const obs = getObservability(config);
 
-    return function observabilityMiddleware<E extends Event, R = Event | void>(
-        handler: (ev: E) => Promise<R> | R,
-        handlerName?: string,
-    ) {
+    return function observabilityMiddleware<
+        E extends TEvent,
+        R = TEvent | void,
+    >(handler: (ev: E) => Promise<R> | R, handlerName?: string) {
         return async function observedHandler(ev: E): Promise<R | void> {
             const context = obs.createContext();
             context.metadata = { eventType: ev.type, handlerName };

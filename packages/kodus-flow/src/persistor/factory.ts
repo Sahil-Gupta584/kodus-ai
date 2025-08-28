@@ -1,6 +1,10 @@
 import { StoragePersistorAdapter } from './storage-adapter.js';
 import { createLogger } from '../observability/logger.js';
-import { Persistor, PersistorConfig } from '@/core/types/allTypes.js';
+import {
+    Persistor,
+    PersistorConfig,
+    StorageEnum,
+} from '@/core/types/allTypes.js';
 
 const logger = createLogger('persistor-factory');
 
@@ -12,7 +16,7 @@ export function createPersistorFromConfig(config: PersistorConfig): Persistor {
     switch (type) {
         case 'memory':
             return new StoragePersistorAdapter(
-                { type: 'memory' },
+                { type: StorageEnum.INMEMORY },
                 {
                     maxSnapshots: config.maxSnapshots,
                     enableCompression: config.enableCompression,
@@ -24,7 +28,7 @@ export function createPersistorFromConfig(config: PersistorConfig): Persistor {
         case 'mongodb':
             return new StoragePersistorAdapter(
                 {
-                    type: 'mongodb',
+                    type: StorageEnum.MONGODB,
                     connectionString: config.connectionString,
                     options: {
                         database: config.database,

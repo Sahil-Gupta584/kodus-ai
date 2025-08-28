@@ -19,6 +19,7 @@ import {
     EventType,
     Runtime,
     RuntimeConfig,
+    TEvent,
     WorkflowContext,
 } from '@/core/types/allTypes.js';
 
@@ -709,7 +710,7 @@ export function createRuntime(
         createEvent<T extends EventType>(
             type: T,
             data?: EventPayloads[T],
-        ): Event<T> {
+        ): TEvent<T> {
             return createEvent(type, data);
         },
 

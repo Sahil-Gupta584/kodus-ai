@@ -56,9 +56,6 @@ export class PlannerPromptComposer {
 
     constructor(private readonly config: PlannerPromptConfig) {
         this.logger.debug('PlannerPromptComposer initialized', {
-            hasCustomExamples: !!config.customExamples?.length,
-            hasExamplesProvider: !!config.examplesProvider,
-            hasPatternsProvider: !!config.patternsProvider,
             additionalPatterns: config.additionalPatterns?.length || 0,
             constraints: config.constraints?.length || 0,
             features: config.features || {},
@@ -524,11 +521,6 @@ Response: {
      */
     private gatherAdditionalPatterns(): string[] {
         const patterns: string[] = [];
-
-        // Add patterns from provider
-        if (this.config.patternsProvider) {
-            patterns.push(...this.config.patternsProvider.getPatterns());
-        }
 
         // Add additional patterns from config
         if (this.config.additionalPatterns) {

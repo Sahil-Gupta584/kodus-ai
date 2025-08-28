@@ -10,7 +10,20 @@ import type { ObservabilitySystem } from '../../observability/index.js';
  * Circuit Breaker
  */
 export class CircuitBreaker {
-    private config: Required<CircuitBreakerConfig>;
+    private config: CircuitBreakerConfig & {
+        name: string;
+        failureThreshold: number;
+        recoveryTimeout: number;
+        successThreshold: number;
+        operationTimeout: number;
+        enabled: boolean;
+        onStateChange: (
+            state: CircuitState,
+            previousState: CircuitState,
+        ) => void;
+        onFailure: (error: Error, context?: unknown) => void;
+        onSuccess: (result: unknown, context?: unknown) => void;
+    };
     private state: CircuitState = CircuitState.CLOSED;
     private failureCount = 0;
     private successCount = 0;

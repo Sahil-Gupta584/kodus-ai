@@ -1,10 +1,13 @@
 import {
     BaseContext,
     DeltaSnapshot,
+    deltaSnapshotSchema,
     ExtendedContext,
     Persistor,
     Snapshot,
     SnapshotOptions,
+    snapshotSchema,
+    TEvent,
 } from '@/core/types/allTypes.js';
 import {
     getGlobalPersistor as getGlobalPersistorFromFactory,
@@ -71,7 +74,7 @@ export function stableHash(value: string | number | object): string {
  */
 export function createSnapshot(
     context: BaseContext,
-    events: Event[] = [],
+    events: TEvent[] = [],
     state: unknown = {},
 ): Snapshot {
     const payload = { events, state };
@@ -101,7 +104,7 @@ export function createSnapshot(
 export async function createAndPersistSnapshot(
     context: BaseContext,
     persistor: Persistor,
-    events: Event[] = [],
+    events: TEvent[] = [],
     state: unknown = {},
     options: SnapshotOptions = {},
 ): Promise<Snapshot> {
@@ -121,7 +124,7 @@ export async function createAndPersistSnapshot(
  */
 export function restoreSnapshot(snap: Snapshot): {
     state: unknown;
-    events: Event[];
+    events: TEvent[];
 } {
     validateSnapshot(snap);
     return {
