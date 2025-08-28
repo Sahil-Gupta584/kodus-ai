@@ -111,20 +111,7 @@ export class AuthService implements IAuthService {
                 uuid: payload.sub,
             });
 
-            let authDetails = refreshTokenAuth.authDetails;
-
-            // if (refreshTokenAuth.authProvider !== AuthProvider.CREDENTIALS) {
-            //     const { refreshToken, accessToken, refreshTokenExpiresAt } =
-            //         await this.refreshThirdPartyToken(
-            //             refreshTokenAuth.authDetails.refreshToken,
-            //             refreshTokenAuth.authProvider,
-            //         );
-
-            //     authDetails = {
-            //         refreshToken,
-            //         expiresAt: refreshTokenExpiresAt,
-            //     };
-            // }
+            const authDetails = refreshTokenAuth.authDetails;
 
             const teamMember = await this.teamMemberService.findOne({
                 user: { uuid: userEntity?.uuid },
