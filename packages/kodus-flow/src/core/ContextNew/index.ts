@@ -344,14 +344,14 @@ const contextRuntime = createContextRuntime('mongodb://localhost:27017');
 async createFinalResponse(plannerContext: PlannerExecutionContext) {
     // 🔥 THE SOLUTION - Complete context for rich responses!
     const finalContext = await contextRuntime.buildFinalResponseContext(plannerContext);
-    
+
     // Now you have EVERYTHING:
     // - finalContext.runtime.messages (conversation)
     // - finalContext.runtime.entities (references like "esse card")
     // - finalContext.executionSummary (what was executed, success rates)
     // - finalContext.recovery (if session was recovered from gap)
     // - finalContext.inferences ("esse card" -> "PROJ-123")
-    
+
     return {
         response: buildRichResponse(finalContext),
         confidence: calculateContextualConfidence(finalContext),

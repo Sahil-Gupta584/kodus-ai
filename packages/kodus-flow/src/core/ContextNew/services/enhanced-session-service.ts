@@ -19,11 +19,12 @@ import {
 
 // ✅ USE: Existing storage adapter pattern
 import { StorageEnum } from '../../types/allTypes.js';
+
+import { createLogger } from '../../../observability/logger.js';
 import {
     StorageContextSessionAdapter,
     StorageSnapshotAdapter,
 } from './storage-context-adapter.js';
-import { createLogger } from '../../../observability/logger.js';
 
 const logger = createLogger('enhanced-session-service');
 

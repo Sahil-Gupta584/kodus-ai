@@ -4,7 +4,7 @@ import {
 } from '../../../observability/index.js';
 import { IdGenerator } from '../../../utils/id-generator.js';
 import { getGlobalMemoryManager } from '../../../core/memory/memory-manager.js';
-import { EnhancedContextBuilder } from '../../../core/ContextNew/index.js';
+import { EnhancedContextBuilder } from '../../../core/contextNew/index.js';
 
 import { createResponseSynthesizer } from '../../response/response-synthesizer.js';
 import { PlannerPromptComposer } from './prompts/planner-prompt-composer.js';

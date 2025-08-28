@@ -11,7 +11,7 @@ import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextBuilder } from '../../core/context/context-builder.js';
-import { EnhancedContextBuilder } from '../../core/ContextNew/index.js';
+import { EnhancedContextBuilder } from '../../core/contextNew/index.js';
 import {
     createDefaultMultiKernelHandler,
     MultiKernelHandler,

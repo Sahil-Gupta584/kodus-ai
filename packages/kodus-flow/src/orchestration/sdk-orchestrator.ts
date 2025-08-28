@@ -9,7 +9,7 @@ import {
     createMultiKernelHandler,
 } from '../engine/core/multi-kernel-handler.js';
 import { ContextBuilder } from '../core/context/context-builder.js';
-import { EnhancedContextBuilder } from '../core/ContextNew/index.js';
+import { EnhancedContextBuilder } from '../core/contextNew/index.js';
 import { safeJsonSchemaToZod } from '../core/utils/json-schema-to-zod.js';
 import {
     AgentConfig,
