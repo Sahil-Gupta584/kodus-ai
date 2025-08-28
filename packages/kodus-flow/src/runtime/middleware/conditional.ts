@@ -215,7 +215,7 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
         const retryMiddleware: MiddlewareFunction = async (context, next) => {
             const maxAttempts = config?.maxAttempts || 3;
             const backoffMs = config?.backoffMs || 1000;
-            const maxBackoffMs = config?.maxBackoffMs || 10000;
+            const maxBackoffMs = config?.maxBackoffMs || 180000;
 
             let lastError: Error;
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -265,7 +265,7 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
      */
     createTimeoutMiddleware(config?: TimeoutConfig): ConditionalMiddleware {
         const timeoutMiddleware: MiddlewareFunction = async (context, next) => {
-            const timeoutMs = config?.timeoutMs || 5000;
+            const timeoutMs = config?.timeoutMs || 180000;
 
             const timeoutPromise = new Promise<never>((_, reject) => {
                 setTimeout(() => {

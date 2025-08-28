@@ -29,10 +29,10 @@ export class CircuitBreaker {
     ) {
         this.config = {
             name: config.name,
-            failureThreshold: config.failureThreshold ?? 5,
-            recoveryTimeout: config.recoveryTimeout ?? 150000, // ✅ 2.5 minutes
-            successThreshold: config.successThreshold ?? 3,
-            operationTimeout: config.operationTimeout ?? 60000, // ✅ UNIFIED: 60s timeout
+            failureThreshold: config.failureThreshold ?? 3,
+            recoveryTimeout: config.recoveryTimeout ?? 180000,
+            successThreshold: config.successThreshold ?? 2,
+            operationTimeout: config.operationTimeout ?? 180000,
             enabled: config.enabled ?? true,
             onStateChange: config.onStateChange ?? (() => {}),
             onFailure: config.onFailure ?? (() => {}),

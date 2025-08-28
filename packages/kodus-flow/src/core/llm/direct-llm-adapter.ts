@@ -13,7 +13,6 @@ import {
     LangChainOptions,
     LLMAdapter,
     PlanningResult,
-    TOKEN_PRESETS,
     ToolMetadataForLLM,
 } from '../types/allTypes.js';
 import {
@@ -67,7 +66,7 @@ export class DirectLLMAdapter implements LLMAdapter {
         const obs = getObservability();
         const options: LangChainOptions = {
             ...DEFAULT_LLM_SETTINGS,
-            maxTokens: TOKEN_PRESETS.REACT_COMPLEX,
+            maxTokens: 20000,
         };
 
         if (context?.tools && context.tools.length > 0) {

@@ -15,7 +15,7 @@ export const DEFAULT_ENHANCED_CONFIG = {
     // Retry settings
     maxRetries: 3,
     baseRetryDelay: 1000,
-    maxRetryDelay: 30000,
+    maxRetryDelay: 180000,
     enableJitter: true,
     jitterRatio: 0.1,
 

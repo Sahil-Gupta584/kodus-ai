@@ -10,13 +10,13 @@ import { SimpleContextStateService as ContextStateService } from './services/sim
 
 import type { ToolEngine } from '../../engine/tools/tool-engine.js';
 
-import { ExecutionTracker } from './execution-tracker.js';
 import { SimpleExecutionLogger } from './services/simple-execution-log.js';
 import {
     AgentContext,
     AgentExecutionOptions,
     ContextBuilderConfig,
     Session,
+    StorageEnum,
 } from '../types/allTypes.js';
 
 export class ContextBuilder {
@@ -83,7 +83,7 @@ export class ContextBuilder {
         memoryConfig: NonNullable<ContextBuilderConfig['memory']>,
     ): void {
         const memoryManager = new MemoryManager({
-            adapterType: memoryConfig.adapterType || 'memory',
+            adapterType: memoryConfig.adapterType || StorageEnum.INMEMORY,
             adapterConfig: memoryConfig.adapterConfig,
         });
 
@@ -91,7 +91,7 @@ export class ContextBuilder {
         this.memoryManager = memoryManager;
 
         this.logger.info('MemoryManager initialized with custom config', {
-            adapterType: memoryConfig.adapterType || 'memory',
+            adapterType: memoryConfig.adapterType || StorageEnum.INMEMORY,
             hasConnectionString: !!memoryConfig.adapterConfig?.connectionString,
         });
     }
@@ -180,7 +180,8 @@ export class ContextBuilder {
             session.tenantId,
         );
 
-        const executionTracker = new ExecutionTracker();
+        // TODO: verificar
+        //const executionTracker = new ExecutionTracker();
 
         try {
             const contextData = (session.contextData || {}) as Record<
@@ -329,13 +330,10 @@ export class ContextBuilder {
                         tenantId: session.tenantId,
                     });
                 },
-                // REMOVED duplicated methods - use state.set() directly
             },
             agentIdentity: undefined,
             agentExecutionOptions: options,
             allTools: this.toolEngine?.listTools() || [],
-            stepExecution: executionTracker,
-            messageContext: executionTracker,
         };
     }
 
@@ -353,7 +351,6 @@ export class ContextBuilder {
             sessionService: this.sessionService,
             toolEngine: this.toolEngine,
 
-            // NEW: Access to execution logger for debugging and analytics
             getExecutionLogger: () => this.executionLogger,
         };
     }

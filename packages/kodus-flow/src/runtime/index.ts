@@ -27,19 +27,6 @@ export { OptimizedEventProcessor } from './core/event-processor-optimized.js';
 export { StreamManager } from './core/stream-manager.js';
 export { MemoryMonitor } from './core/memory-monitor.js';
 
-// Middleware
-export * from './middleware/index.js';
-
-// Constants
-export {
-    DEFAULT_TIMEOUT_MS,
-    DEFAULT_RETRY_CONFIG,
-    DEFAULT_CONCURRENCY_OPTIONS,
-} from './constants.js';
-
-/**
- * Criar Runtime - API principal
- */
 export function createRuntime(
     context: WorkflowContext,
     observability: ObservabilitySystem,
@@ -47,16 +34,16 @@ export function createRuntime(
 ): Runtime {
     const {
         queueSize = 1000,
-        batchSize = 100,
+        batchSize = 50,
         enableObservability = true,
-        maxEventDepth = 100,
-        maxEventChainLength = 1000,
-        cleanupInterval = 2 * 60 * 1000,
-        staleThreshold = 10 * 60 * 1000,
+        maxEventDepth = 50,
+        maxEventChainLength = 500,
+        cleanupInterval = 60 * 1000,
+        staleThreshold = 5 * 60 * 1000,
         middleware = [],
         memoryMonitor,
-        enableAcks = true,
-        ackTimeout = 30000, // ✅ REDUZIDO: 30s em vez de 60s para evitar acúmulo
+        enableAcks = false,
+        ackTimeout = 180000,
         tenantId,
         persistor,
         executionId,
@@ -155,13 +142,13 @@ export function createRuntime(
         { event: AnyEvent; timestamp: number }
     >();
 
-    // Batching configuration
+    // Batching configuration - simplified
     const batchingConfig = {
-        enabled: batching.enabled || false,
-        defaultBatchSize: batching.defaultBatchSize || 50,
-        defaultBatchTimeout: batching.defaultBatchTimeout || 100,
-        maxBatchSize: batching.maxBatchSize || 1000,
-        flushOnEventTypes: batching.flushOnEventTypes || [],
+        enabled: batching.enabled ?? false,
+        defaultBatchSize: batching.defaultBatchSize ?? 10,
+        defaultBatchTimeout: batching.defaultBatchTimeout ?? 200,
+        maxBatchSize: batching.maxBatchSize ?? 100,
+        flushOnEventTypes: batching.flushOnEventTypes ?? [],
     };
 
     // Batch queue for buffering events

@@ -5,15 +5,7 @@ export * from './telemetry.js';
 export * from './monitoring.js';
 export * from './debugging.js';
 export { createOtelTracerAdapter, OtelTracerAdapter } from './otel-adapter.js';
-export {
-    startAgentSpan,
-    startToolSpan,
-    startLLMSpan,
-    type AgentPhase,
-    type AgentSpanAttributes,
-    type ToolSpanAttributes,
-    type LLMSpanAttributes,
-} from './telemetry.js';
+export { startAgentSpan, startToolSpan, startLLMSpan } from './telemetry.js';
 
 export { createLogger } from './logger.js';
 

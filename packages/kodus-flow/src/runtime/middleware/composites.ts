@@ -135,7 +135,7 @@ export function createCachedHandler<TEvent extends Event = Event>(
         string,
         { result: Awaited<ReturnType<typeof handler>>; timestamp: number }
     >();
-    const ttl = options.ttl || 60000; // 1 minute default
+    const ttl = options.ttl || 180000;
     const maxSize = options.maxSize || 1000;
     const keyFn =
         options.keyFn || ((event: TEvent) => JSON.stringify(event.data));
@@ -175,7 +175,7 @@ export function createCircuitBreakerHandler<TEvent extends Event = Event>(
     } = {},
 ): EventHandler<TEvent> {
     const failureThreshold = options.failureThreshold || 5;
-    const resetTimeout = options.resetTimeout || 60000; // 1 minute
+    const resetTimeout = options.resetTimeout || 180000;
     const halfOpenRequests = options.halfOpenRequests || 1;
 
     let failures = 0;

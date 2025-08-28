@@ -7,6 +7,7 @@ import {
     SessionFromStorage,
     SessionStorageItem,
     StorageAdapterConfig,
+    StorageEnum,
 } from '@/core/types/allTypes.js';
 import { createLogger } from '../../../observability/logger.js';
 import { StorageAdapterFactory } from '@/core/storage/index.js';
@@ -140,7 +141,9 @@ export class StorageSessionAdapter implements BaseStorage<SessionStorageItem> {
     private config: StorageAdapterConfig;
     private isInitialized = false;
 
-    constructor(config: SessionAdapterConfig = { adapterType: 'memory' }) {
+    constructor(
+        config: SessionAdapterConfig = { adapterType: StorageEnum.INMEMORY },
+    ) {
         this.config = {
             type: config.adapterType,
             connectionString: config.connectionString,

@@ -5,7 +5,6 @@ import {
     llmResponseSchema,
     PlanningResult,
     planningResultSchema,
-    routingResultSchema,
 } from '../types/allTypes.js';
 import { createLogger } from '@/observability/index.js';
 
@@ -328,5 +327,4 @@ export function validateCustomSchema(data: unknown, schema: object): boolean {
 }
 
 export const validatePlanningResultSchema = ajv.compile(planningResultSchema);
-export const validateRoutingResultSchema = ajv.compile(routingResultSchema);
 export const validateLLMResponseSchema = ajv.compile(llmResponseSchema);

@@ -24,22 +24,22 @@ export class MemoryMonitor {
         config: MemoryMonitorConfig = {},
     ) {
         this.config = {
-            intervalMs: 60000, // ✅ AUMENTADO: 60s em vez de 30s para produção
-            enabled: true,
+            intervalMs: 30000,
+            enabled: false,
             onAlert: () => {},
             ...config,
             thresholds: {
-                heapUsed: 512 * 1024 * 1024, // 512 MB
-                rss: 1024 * 1024 * 1024, // 1 GB
-                external: 256 * 1024 * 1024, // 256 MB
-                heapTotal: 1024 * 1024 * 1024, // 1 GB
+                heapUsed: 512 * 1024 * 1024,
+                rss: 512 * 1024 * 1024,
+                external: 512 * 1024 * 1024,
+                heapTotal: 512 * 1024 * 1024,
                 ...config.thresholds,
             },
             leakDetection: {
-                enabled: true,
-                samples: 10,
-                minGrowthMb: 50,
-                sampleIntervalMs: 120000, // ✅ AUMENTADO: 2min em vez de 1min
+                enabled: false,
+                samples: 5,
+                minGrowthMb: 100,
+                sampleIntervalMs: 60000,
                 ...config.leakDetection,
             },
         };
