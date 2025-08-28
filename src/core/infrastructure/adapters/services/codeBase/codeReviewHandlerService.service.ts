@@ -96,6 +96,7 @@ export class CodeReviewHandlerService {
                 noteId: result?.initialCommentData?.noteId,
                 threadId: result?.initialCommentData?.threadId,
                 automaticReviewStatus: result?.automaticReviewStatus,
+                status: result?.status,
             };
         } catch (error) {
             this.logger.error({

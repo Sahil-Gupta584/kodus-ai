@@ -39,7 +39,6 @@ export interface IPullRequests {
     suggestionsByPR?: ISuggestionByPR[];
     prLevelSuggestions?: ISuggestionByPR[];
     isDraft: boolean;
-    executions?: PullRequestExecution[];
 }
 
 export interface ICommit {
@@ -176,27 +175,3 @@ export interface ISuggestionByPR {
     createdAt?: string;
     updatedAt?: string;
 }
-
-export enum ExecutionTrigger {
-    AUTOMATIC = 'AUTOMATIC',
-    COMMAND = 'COMMAND',
-    COMMIT_PUSH = 'COMMIT_PUSH',
-}
-
-export enum ExecutionStatus {
-    PENDING = 'PENDING',
-    IN_PROGRESS = 'IN_PROGRESS',
-    COMPLETED = 'COMPLETED',
-    FAILED = 'FAILED',
-    SKIPPED = 'SKIPPED',
-}
-
-export type PullRequestExecution = {
-    id: string;
-    trigger: ExecutionTrigger;
-    status: ExecutionStatus;
-    lastCommit: string;
-    dependsOn: PullRequestExecution['id'];
-    createdAt: string;
-    updatedAt: string;
-};

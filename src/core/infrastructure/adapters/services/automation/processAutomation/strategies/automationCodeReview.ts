@@ -23,6 +23,17 @@ import {
     IOrganizationService,
     ORGANIZATION_SERVICE_TOKEN,
 } from '@/core/domain/organization/contracts/organization.service.contract';
+import { CreateCodeReviewExecutionForPRUseCase } from '@/core/application/use-cases/codeReviewExecution/create-for-pr.use-case';
+import {
+    CodeReviewExecutionStatus,
+    CodeReviewExecutionTrigger,
+} from '@/core/domain/codeReviewExecutions/enum/codeReviewExecution.enum';
+import {
+    CODE_REVIEW_EXECUTION_SERVICE,
+    ICodeReviewExecutionService,
+} from '@/core/domain/codeReviewExecutions/contracts/codeReviewExecution.service.contract';
+import { PipelineStatus } from '../../../pipeline/interfaces/pipeline-context.interface';
+import { CodeReviewExecution } from '@/core/domain/codeReviewExecutions/interfaces/codeReviewExecution.interface';
 
 @Injectable()
 export class AutomationCodeReviewService
@@ -44,6 +55,11 @@ export class AutomationCodeReviewService
         private readonly organizationService: IOrganizationService,
 
         private readonly codeReviewHandlerService: CodeReviewHandlerService,
+
+        private readonly createCodeReviewExecutionForPRUseCase: CreateCodeReviewExecutionForPRUseCase,
+
+        @Inject(CODE_REVIEW_EXECUTION_SERVICE)
+        private readonly codeReviewExecutionService: ICodeReviewExecutionService,
 
         private readonly logger: PinoLoggerService,
     ) {}
@@ -105,6 +121,30 @@ export class AutomationCodeReviewService
                 status: true,
             });
 
+            let execution =
+                await this.createCodeReviewExecutionForPRUseCase.execute(
+                    pullRequest?.number,
+                    organizationAndTeamData,
+                    repository,
+                    {
+                        status: CodeReviewExecutionStatus.IN_PROGRESS,
+                        startedAt: new Date(),
+                        trigger: this.getTrigger(action, origin),
+                    },
+                );
+
+            if (!execution) {
+                this.logger.warn({
+                    message: `Could not create code review execution for PR #${pullRequest?.number}`,
+                    context: AutomationCodeReviewService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        repository,
+                        pullRequestNumber: pullRequest?.number,
+                    },
+                });
+            }
+
             const result =
                 await this.codeReviewHandlerService.handlePullRequest(
                     {
@@ -145,10 +185,26 @@ export class AutomationCodeReviewService
                             noteId: result.noteId,
                             threadId: result.threadId,
                             repositoryId: repository?.id,
-                            automaticReviewStatus: result?.automaticReviewStatus,
+                            automaticReviewStatus:
+                                result?.automaticReviewStatus,
                         },
                         teamAutomationId,
                         'System',
+                    );
+                }
+
+                if (execution) {
+                    execution = await this.codeReviewExecutionService.update(
+                        execution.uuid,
+                        {
+                            status: this.pipelineStatusToCodeReviewStatus(
+                                result?.status,
+                            ),
+                            finishedAt: new Date(),
+                            lastCommitSha: validLastAnalyzedCommit
+                                ? result.lastAnalyzedCommit.sha
+                                : undefined,
+                        },
                     );
                 }
 
@@ -260,5 +316,40 @@ export class AutomationCodeReviewService
         );
 
         return true;
+    }
+
+    private pipelineStatusToCodeReviewStatus(
+        status: PipelineStatus,
+    ): CodeReviewExecution['status'] {
+        switch (status) {
+            case PipelineStatus.FAIL:
+                return CodeReviewExecutionStatus.FAILED;
+            case PipelineStatus.SKIP:
+                return CodeReviewExecutionStatus.SKIPPED;
+            default:
+                return CodeReviewExecutionStatus.COMPLETED;
+        }
+    }
+
+    private getTrigger(
+        action: string,
+        origin: string,
+    ): CodeReviewExecution['trigger'] {
+        if (origin === 'command') {
+            return CodeReviewExecutionTrigger.COMMAND;
+        }
+
+        const updateActions = [
+            'synchronize',
+            'update',
+            'updated',
+            'git.pullrequest.updated',
+        ];
+
+        if (updateActions.includes(action)) {
+            return CodeReviewExecutionTrigger.COMMIT_PUSH;
+        }
+
+        return CodeReviewExecutionTrigger.AUTOMATIC;
     }
 }

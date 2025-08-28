@@ -67,6 +67,7 @@ import { TokenChunkingModule } from './tokenChunking.module';
 import { PullRequestMessagesModule } from './pullRequestMessages.module';
 import { LLMModule } from '@kodus/kodus-common/llm';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { CodeReviewExecutionModule } from './codeReviewExecution.module';
 
 @Module({
     imports: [
@@ -138,6 +139,7 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
             logger: PinoLoggerService,
             global: true,
         }),
+        CodeReviewExecutionModule,
     ],
     providers: [
         {
