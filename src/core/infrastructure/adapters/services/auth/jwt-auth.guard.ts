@@ -76,7 +76,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
             '/azure-repos/webhook',
             '/mcp',
             '/user-log/status-change',
-            '/organization/domain',
         ];
 
         // Allow access to public routes

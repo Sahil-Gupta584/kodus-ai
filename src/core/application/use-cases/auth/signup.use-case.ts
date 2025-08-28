@@ -29,6 +29,7 @@ import {
     TEAM_SERVICE_TOKEN,
 } from '@/core/domain/team/contracts/team.service.contract';
 import { TeamMemberRole } from '@/core/domain/teamMembers/enums/teamMemberRole.enum';
+import { ITeam } from '@/core/domain/team/interfaces/team.interface';
 
 @Injectable()
 export class SignUpUseCase implements IUseCase {
@@ -108,13 +109,19 @@ export class SignUpUseCase implements IUseCase {
                 name,
             });
 
-            if (user.role.includes(UserRole.OWNER)) {
-                await this.createTeamUseCase.execute({
+            let team: ITeam;
+            const isOwner = user.role.includes(UserRole.OWNER);
+            if (isOwner) {
+                team = await this.createTeamUseCase.execute({
                     teamName: `${name} - team`,
                     organizationId: createdUser.organization.uuid,
                 });
+
+                if (!team) {
+                    throw new Error('Team creation failed');
+                }
             } else {
-                const team = await this.teamService.findOne({
+                team = await this.teamService.findOne({
                     organization: {
                         uuid: createdUser.organization.uuid,
                     },
@@ -123,19 +130,21 @@ export class SignUpUseCase implements IUseCase {
                 if (!team) {
                     throw new Error('Team not found for the organization');
                 }
+            }
 
-                const member = await this.teamMembersService.create({
-                    user: createdUser,
-                    name,
-                    organization: createdUser.organization,
-                    team,
-                    teamRole: TeamMemberRole.MEMBER,
-                    status: false,
-                });
+            const member = await this.teamMembersService.create({
+                user: createdUser,
+                name,
+                organization: createdUser.organization,
+                team,
+                teamRole: isOwner
+                    ? TeamMemberRole.TEAM_LEADER
+                    : TeamMemberRole.MEMBER,
+                status: isOwner,
+            });
 
-                if (!member) {
-                    throw new Error('Failed to create team member');
-                }
+            if (!member) {
+                throw new Error('Failed to create team member');
             }
 
             identify(createdUser.uuid, {
@@ -150,10 +159,12 @@ export class SignUpUseCase implements IUseCase {
             posthogClient.organizationIdentify(
                 user.organization as IOrganization,
             );
+            posthogClient.userIdentify(createdUser);
+            posthogClient.teamIdentify(team);
 
             await this.sendWebhook(user, payload, user.organization.name);
 
-            return createdUser;
+            return createdUser.toObject();
         } catch (error) {
             this.logger.error({
                 message: 'Error during sign up',
