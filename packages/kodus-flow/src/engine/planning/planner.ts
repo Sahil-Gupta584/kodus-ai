@@ -10,8 +10,15 @@ import {
     PlanningContext,
     PlanningStrategy,
     TEvent,
+    AgentAction,
+    ActionResult,
+    PlanStep,
+    PlannerExecutionContext,
+    ExecutionPlan,
+    PlanExecutionResult,
 } from '@/core/types/allTypes.js';
 import { MultiKernelHandler } from '../core/multi-kernel-handler.js';
+import { PlanExecutor } from './executor/plan-executor.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 🧠 PLANNER HANDLER & REGISTRY
@@ -27,12 +34,7 @@ export class PlannerHandler {
     private agentPlanners = new Map<string, string>(); // agentName -> plannerName
     private kernelHandler?: MultiKernelHandler;
     private callbacks?: PlannerCallbacks;
-    private planningStats = {
-        total: 0,
-        success: 0,
-        failed: 0,
-        duration: 0,
-    };
+    private planExecutor?: PlanExecutor;
 
     constructor(
         kernelHandler?: MultiKernelHandler,
@@ -47,15 +49,12 @@ export class PlannerHandler {
     }
 
     async handlePlanning(event: TEvent): Promise<TEvent> {
-        const startTime = Date.now();
-        this.planningStats.total++;
-
         // Emit planning start event via KernelHandler
         if (this.kernelHandler) {
             await this.kernelHandler.emit('planner.start', {
                 eventId: event.id,
                 eventType: event.type,
-                startTime,
+                startTime: Date.now(),
             });
         }
 
@@ -113,10 +112,8 @@ export class PlannerHandler {
                 correlationId, // Optional - will be generated if not provided
             });
 
-            // 🔥 CALLBACK: onPlanStart
             this.callbacks?.onPlanStart?.(goal, agentContext, planner.strategy);
 
-            // Create plan using selected planner (callbacks já são chamados dentro da estratégia)
             const plan = await planner.createPlan(
                 goal,
                 agentContext,
@@ -127,16 +124,6 @@ export class PlannerHandler {
             // Store active plan
             this.activePlans.set(plan.id, plan);
 
-            // Update stats
-            this.updatePlanningStats(
-                true,
-                Date.now() - startTime,
-                planner.strategy,
-            );
-
-            // 🔥 CALLBACK: onPlanComplete (já chamado dentro da estratégia)
-
-            // Emit planning success event via KernelHandler
             if (this.kernelHandler) {
                 await this.kernelHandler.emit('planner.success', {
                     planId: plan.id,
@@ -144,7 +131,6 @@ export class PlannerHandler {
                     stepsCount: plan.steps.length,
                     agentName,
                     correlationId,
-                    duration: Date.now() - startTime,
                 });
             }
 
@@ -170,20 +156,15 @@ export class PlannerHandler {
                 ts: Date.now(),
             };
         } catch (error) {
-            // 🔥 CALLBACK: onPlanError
             this.callbacks?.onPlanError?.(
                 error instanceof Error ? error : new Error(String(error)),
             );
 
-            // Emit planning error event via KernelHandler
             if (this.kernelHandler) {
                 await this.kernelHandler.emit('planner.error', {
                     error: (error as Error).message,
-                    duration: Date.now() - startTime,
                 });
             }
-
-            this.updatePlanningStats(false, Date.now() - startTime);
 
             this.logger.error('Planning failed', error as Error);
 
@@ -236,42 +217,6 @@ export class PlannerHandler {
             plannerName: name,
             strategy: planner.strategy,
         });
-    }
-
-    /**
-     * Update planning statistics
-     */
-    private updatePlanningStats(
-        success: boolean,
-        duration: number,
-        _strategy?: PlanningStrategy,
-    ): void {
-        if (success) {
-            this.planningStats.success++;
-        } else {
-            this.planningStats.failed++;
-        }
-
-        // Update average planning time
-        const currentAvg = this.planningStats.duration;
-        const total = this.planningStats.total;
-        this.planningStats.duration =
-            (currentAvg * (total - 1) + duration) / total;
-    }
-
-    /**
-     * Get planning statistics
-     */
-    getPlanningStats(): typeof this.planningStats & { successRate: number } {
-        const successRate =
-            this.planningStats.total > 0
-                ? this.planningStats.success / this.planningStats.total
-                : 0;
-
-        return {
-            ...this.planningStats,
-            successRate,
-        };
     }
 
     /**
@@ -391,6 +336,43 @@ export class PlannerHandler {
     hasKernelHandler(): boolean {
         return !!this.kernelHandler;
     }
+
+    /**
+     * Get singleton PlanExecutor instance
+     */
+    getPlanExecutor(
+        act: (action: AgentAction) => Promise<ActionResult>,
+        resolveArgs: (
+            rawArgs: Record<string, unknown>,
+            stepList: PlanStep[],
+            context: PlannerExecutionContext,
+        ) => Promise<{ args: Record<string, unknown>; missing: string[] }>,
+    ): PlanExecutor {
+        if (!this.planExecutor) {
+            this.logger.info('🏗️ Creating singleton PlanExecutor');
+            this.planExecutor = new PlanExecutor(act, resolveArgs, {
+                enableReWOO: true,
+            });
+        }
+        return this.planExecutor;
+    }
+
+    /**
+     * Execute plan using managed PlanExecutor
+     */
+    async executePlan(
+        plan: ExecutionPlan,
+        context: PlannerExecutionContext,
+        act: (action: AgentAction) => Promise<ActionResult>,
+        resolveArgs: (
+            rawArgs: Record<string, unknown>,
+            stepList: PlanStep[],
+            context: PlannerExecutionContext,
+        ) => Promise<{ args: Record<string, unknown>; missing: string[] }>,
+    ): Promise<PlanExecutionResult> {
+        const executor = this.getPlanExecutor(act, resolveArgs);
+        return await executor.run(plan, context);
+    }
 }
 
 export function createPlannerHandler(
@@ -440,7 +422,7 @@ export function createPlanningContext(
         getPlanner(): PlanningStrategy {
             const plannerName = plannerHandler.getAgentPlanner(agentName);
             const planner = plannerHandler['planners'].get(plannerName);
-            return planner?.strategy || 'plan-execute';
+            return planner?.strategy || PlanningStrategy.PLAN_EXECUTE;
         },
     };
 }

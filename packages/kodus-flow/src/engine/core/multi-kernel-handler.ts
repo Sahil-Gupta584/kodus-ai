@@ -654,7 +654,7 @@ export class MultiKernelHandler {
             await this.processEvents();
 
             const duration = Date.now() - startTime;
-            const kernelsUsed = [];
+            const kernelsUsed: string[] = [];
 
             // Thread-safe read of current event counts
             const currentEventCounts = await this.eventCountsMutex.withLock(

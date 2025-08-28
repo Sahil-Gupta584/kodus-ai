@@ -2,6 +2,7 @@ import { withRetry } from './retry.js';
 import { withTimeout } from './timeout.js';
 import { withConcurrency } from './concurrency.js';
 import {
+    AnyEvent,
     composeMiddleware,
     EventHandler,
     Middleware,
@@ -9,7 +10,7 @@ import {
     TEvent,
 } from '@/core/types/allTypes.js';
 
-export function createStandardMiddleware<IEvent extends TEvent = TEvent>(
+export function createStandardMiddleware(
     options: StandardMiddlewareOptions = {},
 ): Middleware<TEvent> {
     const middlewares: Array<Middleware<TEvent>> = [];
@@ -53,7 +54,7 @@ export function createStandardMiddleware<IEvent extends TEvent = TEvent>(
 /**
  * Create a resilient handler with error handling and retries
  */
-export function createResilientHandler<TEvent extends TEvent = TEvent>(
+export function createResilientHandler<TEvent extends AnyEvent = AnyEvent>(
     handler: EventHandler<TEvent>,
     options: {
         maxRetries?: number;
@@ -89,7 +90,7 @@ export function createResilientHandler<TEvent extends TEvent = TEvent>(
 /**
  * Create a rate-limited handler
  */
-export function createRateLimitedHandler<TEvent extends Event = Event>(
+export function createRateLimitedHandler<TEvent extends AnyEvent = AnyEvent>(
     handler: EventHandler<TEvent>,
     options: {
         maxPerSecond: number;
@@ -124,7 +125,7 @@ export function createRateLimitedHandler<TEvent extends Event = Event>(
 /**
  * Create a cached handler that memoizes results
  */
-export function createCachedHandler<TEvent extends Event = Event>(
+export function createCachedHandler<TEvent extends AnyEvent = AnyEvent>(
     handler: EventHandler<TEvent>,
     options: {
         ttl?: number;
@@ -167,7 +168,7 @@ export function createCachedHandler<TEvent extends Event = Event>(
 /**
  * Create a handler with circuit breaker pattern
  */
-export function createCircuitBreakerHandler<TEvent extends Event = Event>(
+export function createCircuitBreakerHandler<TEvent extends AnyEvent = AnyEvent>(
     handler: EventHandler<TEvent>,
     options: {
         failureThreshold?: number;

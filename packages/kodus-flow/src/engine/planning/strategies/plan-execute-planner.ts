@@ -4,6 +4,7 @@ import {
 } from '../../../observability/index.js';
 import { IdGenerator } from '../../../utils/id-generator.js';
 import { getGlobalMemoryManager } from '../../../core/memory/memory-manager.js';
+import { EnhancedContextBuilder } from '../../../core/ContextNew/index.js';
 
 import { createResponseSynthesizer } from '../../response/response-synthesizer.js';
 import { PlannerPromptComposer } from './prompts/planner-prompt-composer.js';
@@ -31,8 +32,6 @@ import {
     UNIFIED_STATUS,
     PlanningStrategy,
     AgentContext,
-    PlannerOptions,
-    PlannerCallbacks,
     Plan,
 } from '@/core/types/allTypes.js';
 
@@ -49,9 +48,9 @@ function createTelemetryEvent(
     );
 }
 
-export class PlanAndExecutePlanner implements Planner {
+export class PlanAndExecutePlanner {
     readonly name = 'Plan-and-Execute';
-    readonly strategy: PlanningStrategy = 'plan-execute';
+    readonly strategy = PlanningStrategy.PLAN_EXECUTE;
     private logger = createLogger('plan-execute-planner');
     private plansByThread = new Map<string, ExecutionPlan>();
     private responseSynthesizer: ReturnType<typeof createResponseSynthesizer>;
@@ -65,7 +64,7 @@ export class PlanAndExecutePlanner implements Planner {
         replanPolicy?: ReplanPolicyConfig,
     ) {
         this.responseSynthesizer = createResponseSynthesizer(this.llmAdapter);
-        this.promptComposer = createPlannerPromptComposer(promptConfig);
+        this.promptComposer = new PlannerPromptComposer(promptConfig || {});
         this.replanPolicy = replanPolicy ?? {
             maxReplans: 5,
             toolUnavailable: 'replan',
@@ -126,251 +125,448 @@ export class PlanAndExecutePlanner implements Planner {
                 );
             }
 
+            // 🔥 SOLUTION: Use ContextBridge to get complete context
+            let finalContext;
+            try {
+                const contextBuilder = EnhancedContextBuilder.getInstance();
+                finalContext =
+                    await contextBuilder.buildFinalResponseContext(context);
+
+                this.logger.info(
+                    '✅ ContextBridge: Complete context retrieved',
+                    {
+                        sessionId: finalContext.runtime.sessionId,
+                        messagesCount: finalContext.runtime.messages.length,
+                        entitiesCount: Object.keys(
+                            finalContext.runtime.entities,
+                        ).length,
+                        executionSummary: {
+                            totalExecutions:
+                                finalContext.executionSummary.totalExecutions,
+                            successRate:
+                                finalContext.executionSummary.successRate,
+                            replanCount:
+                                finalContext.executionSummary.replanCount,
+                        },
+                        wasRecovered: finalContext.recovery?.wasRecovered,
+                        inferencesCount: Object.keys(
+                            finalContext.inferences || {},
+                        ).length,
+                    },
+                );
+            } catch (bridgeError) {
+                this.logger.warn(
+                    '❌ ContextBridge failed, falling back to legacy approach',
+                    {
+                        error:
+                            bridgeError instanceof Error
+                                ? bridgeError.message
+                                : String(bridgeError),
+                    },
+                );
+                // Fall back to legacy approach if ContextBridge fails
+                finalContext = null;
+            }
+
             const blocks: string[] = [];
 
-            // 1) Observations from memory (relevant knowledge)
-            const memoryManager = getGlobalMemoryManager();
-            const searchResults = await memoryManager.search(context.input, {
-                topK: 3,
-                filter: {
-                    tenantId: agentContext.tenantId,
-                    sessionId: agentContext.sessionId,
-                },
-            });
-            if (searchResults && searchResults.length > 0) {
-                for (const result of searchResults) {
-                    const content =
-                        result.metadata?.content || result.text || 'No content';
-                    blocks.push(`<observation>\n${content}\n</observation>`);
-                }
-            }
+            if (finalContext) {
+                // 🎯 NEW: Use enhanced context from ContextBridge
 
-            // 2) Execution steps with tool calls and results - Filter only completed steps
-            const allSteps = agentContext.stepExecution?.getAllSteps() || [];
-            const completedSteps = allSteps.filter(
-                (step) =>
-                    step.observation?.isSuccessful &&
-                    step.toolCalls &&
-                    step.toolCalls.length > 0,
-            );
-
-            for (const step of completedSteps) {
-                // Tool calls from this step
-                for (const toolCall of step.toolCalls) {
-                    blocks.push(
-                        `<action name="${toolCall.toolName}">\n${JSON.stringify(
-                            toolCall.input,
-                            null,
-                            2,
-                        )}\n</action>`,
-                    );
-
-                    blocks.push(
-                        `<result name="${toolCall.toolName}">\n${JSON.stringify(
-                            toolCall.result,
-                            null,
-                            2,
-                        )}\n</result>`,
-                    );
-                }
-            }
-
-            // Add step errors separately (only real errors, not initialization)
-            const failedSteps = allSteps.filter(
-                (step) =>
-                    step.observation?.isSuccessful === false &&
-                    step.observation?.feedback !== 'Step initialized',
-            );
-
-            for (const step of failedSteps) {
-                const errorMessage =
-                    step.observation?.feedback || 'Step failed';
-                blocks.push(
-                    `<error>\n${JSON.stringify(
-                        { message: errorMessage, step: step.stepId },
-                        null,
-                        2,
-                    )}\n</error>`,
-                );
-            }
-
-            // 3) Recent conversation history for context
-            const sessionHistory = await agentContext.conversation.getHistory();
-            if (sessionHistory && sessionHistory.length > 0) {
-                const recentMessages = sessionHistory.slice(-3);
-                for (const entry of recentMessages) {
-                    if (entry.role && entry.content) {
-                        const content =
-                            typeof entry.content === 'string'
-                                ? entry.content
-                                : JSON.stringify(entry.content, null, 2);
+                // 1) Conversation context (enhanced)
+                if (finalContext.runtime.messages.length > 0) {
+                    for (const message of finalContext.runtime.messages) {
                         blocks.push(
-                            entry.role === 'user'
-                                ? `<human>\n${content}\n</human>`
-                                : `<assistant>\n${content}\n</assistant>`,
+                            message.role === 'user'
+                                ? `<human>\n${message.content}\n</human>`
+                                : `<assistant>\n${message.content}\n</assistant>`,
                         );
+                    }
+                }
+
+                // 2) Entity context (for reference resolution)
+                if (Object.keys(finalContext.runtime.entities).length > 0) {
+                    blocks.push('<entities>');
+                    for (const [entityType, entities] of Object.entries(
+                        finalContext.runtime.entities,
+                    )) {
+                        if (Array.isArray(entities)) {
+                            entities.forEach((entity) => {
+                                blocks.push(
+                                    `${entityType}: ${entity.id} (${entity.title || 'no title'})`,
+                                );
+                            });
+                        } else if (
+                            typeof entities === 'object' &&
+                            entities !== null
+                        ) {
+                            // Handle key-value entities like toolResults
+                            for (const [key, value] of Object.entries(
+                                entities,
+                            )) {
+                                blocks.push(
+                                    `${entityType}.${key}: ${String(value)}`,
+                                );
+                            }
+                        }
+                    }
+                    blocks.push('</entities>');
+                }
+
+                // 3) Execution context (enhanced)
+                const execution = finalContext.runtime.execution;
+                if (
+                    execution.completedSteps.length > 0 ||
+                    execution.failedSteps.length > 0
+                ) {
+                    blocks.push('<execution_summary>');
+                    blocks.push(`Status: ${execution.status || 'unknown'}`);
+                    if (execution.planId)
+                        blocks.push(`Plan ID: ${execution.planId}`);
+                    blocks.push(
+                        `Completed Steps: ${execution.completedSteps.length}`,
+                    );
+                    blocks.push(
+                        `Failed Steps: ${execution.failedSteps.length}`,
+                    );
+                    if (execution.replanCount && execution.replanCount > 0) {
+                        blocks.push(`Replan Count: ${execution.replanCount}`);
+                    }
+                    if (execution.currentTool) {
+                        blocks.push(`Current Tool: ${execution.currentTool}`);
+                    }
+                    if (execution.lastError) {
+                        blocks.push(`Last Error: ${execution.lastError}`);
+                    }
+                    blocks.push('</execution_summary>');
+                }
+
+                // 4) Recovery context (if session was recovered)
+                if (finalContext.recovery?.wasRecovered) {
+                    blocks.push('<recovery_info>');
+                    blocks.push(
+                        `Session recovered after ${Math.round(finalContext.recovery.gapDuration / 1000)}s gap`,
+                    );
+                    blocks.push(
+                        `Recovery confidence: ${(finalContext.recovery.confidence * 100).toFixed(1)}%`,
+                    );
+                    if (Object.keys(finalContext.inferences || {}).length > 0) {
+                        blocks.push('Entity inferences:');
+                        for (const [ref, resolved] of Object.entries(
+                            finalContext.inferences || {},
+                        )) {
+                            blocks.push(`  "${ref}" → ${resolved}`);
+                        }
+                    }
+                    blocks.push('</recovery_info>');
+                }
+
+                // 5) Performance metrics
+                blocks.push('<performance_metrics>');
+                blocks.push(
+                    `Success Rate: ${finalContext.executionSummary.successRate.toFixed(1)}%`,
+                );
+                blocks.push(
+                    `Total Executions: ${finalContext.executionSummary.totalExecutions}`,
+                );
+                blocks.push(
+                    `Average Execution Time: ${finalContext.executionSummary.averageExecutionTime}ms`,
+                );
+                blocks.push('</performance_metrics>');
+            } else {
+                // 🔄 FALLBACK: Legacy approach
+                this.logger.info('Using legacy context approach');
+
+                // 1) Observations from memory (relevant knowledge)
+                const memoryManager = getGlobalMemoryManager();
+                const searchResults = await memoryManager.search(
+                    context.input,
+                    {
+                        topK: 3,
+                        filter: {
+                            tenantId: agentContext.tenantId,
+                            sessionId: agentContext.sessionId,
+                        },
+                    },
+                );
+                if (searchResults && searchResults.length > 0) {
+                    for (const result of searchResults) {
+                        const content =
+                            result.metadata?.content ||
+                            result.text ||
+                            'No content';
+                        blocks.push(
+                            `<observation>\n${content}\n</observation>`,
+                        );
+                    }
+                }
+
+                // 2) Execution steps with tool calls and results - Filter only completed steps
+                // const allSteps =
+                //     agentContext.stepExecution?.getAllSteps() || [];
+                // const completedSteps = allSteps.filter(
+                //     (step) =>
+                //         step.observation?.isSuccessful &&
+                //         step.toolCalls &&
+                //         step.toolCalls.length > 0,
+                // );
+
+                // for (const step of completedSteps) {
+                //     // Tool calls from this step
+                //     for (const toolCall of step.toolCalls) {
+                //         blocks.push(
+                //             `<action name="${toolCall.toolName}">\n${JSON.stringify(
+                //                 toolCall.input,
+                //                 null,
+                //                 2,
+                //             )}\n</action>`,
+                //         );
+
+                //         blocks.push(
+                //             `<result name="${toolCall.toolName}">\n${JSON.stringify(
+                //                 toolCall.result,
+                //                 null,
+                //                 2,
+                //             )}\n</result>`,
+                //         );
+                //     }
+                // }
+
+                // // Add step errors separately (only real errors, not initialization)
+                // const failedSteps = allSteps.filter(
+                //     (step) =>
+                //         step.observation?.isSuccessful === false &&
+                //         step.observation?.feedback !== 'Step initialized',
+                // );
+
+                // for (const step of failedSteps) {
+                //     const errorMessage =
+                //         step.observation?.feedback || 'Step failed';
+                //     blocks.push(
+                //         `<error>\n${JSON.stringify(
+                //             { message: errorMessage, step: step.stepId },
+                //             null,
+                //             2,
+                //         )}\n</error>`,
+                //     );
+                // }
+
+                // 3) Recent conversation history for context
+                const sessionHistory =
+                    await agentContext.conversation.getHistory();
+                if (sessionHistory && sessionHistory.length > 0) {
+                    const recentMessages = sessionHistory.slice(-3);
+                    for (const entry of recentMessages) {
+                        if (entry.role && entry.content) {
+                            const content =
+                                typeof entry.content === 'string'
+                                    ? entry.content
+                                    : JSON.stringify(entry.content, null, 2);
+                            blocks.push(
+                                entry.role === 'user'
+                                    ? `<human>\n${content}\n</human>`
+                                    : `<assistant>\n${content}\n</assistant>`,
+                            );
+                        }
                     }
                 }
             }
 
             // ✅ CORREÇÃO: Usar execution results E plan signals para resposta inteligente
-            const executionResults = context.history
-                .map((h) => h.result)
-                .filter((result) => {
-                    // ✅ Priorizar results com planExecutionResult (dados do PlanExecutor)
-                    if (
-                        result &&
-                        typeof result === 'object' &&
-                        'planExecutionResult' in result
-                    ) {
-                        return true;
-                    }
-                    // ✅ Manter outros results válidos
-                    return (
-                        result && typeof result === 'object' && 'type' in result
-                    );
-                });
+            // const executionResults = context.history
+            //     .map((h) => h.result)
+            //     .filter((result) => {
+            //         // ✅ Priorizar results com planExecutionResult (dados do PlanExecutor)
+            //         if (
+            //             result &&
+            //             typeof result === 'object' &&
+            //             'planExecutionResult' in result
+            //         ) {
+            //             return true;
+            //         }
+            //         // ✅ Manter outros results válidos
+            //         return (
+            //             result && typeof result === 'object' && 'type' in result
+            //         );
+            //     });
 
             // ✅ AGENT INTELLIGENCE: Se não há execution results mas tem plan signals, usar signals!
-            const planSignals = (
-                currentPlan?.metadata as Record<string, unknown>
-            )?.signals;
-            if (executionResults.length === 0 && planSignals && currentPlan) {
-                const signals = planSignals as {
-                    errors?: string[];
-                    suggestedNextStep?: string;
-                };
-                executionResults.push({
-                    type: 'final_answer',
-                    content: JSON.stringify({
-                        planResult: 'no_tools_available',
-                        errors: signals.errors || [],
-                        suggestedNextStep: signals.suggestedNextStep,
-                        reason: 'Plan created but no compatible tools found',
-                        planId: currentPlan.id,
-                    }),
-                    planExecutionResult: {
-                        type: 'execution_complete',
-                        planId: currentPlan.id,
-                        strategy: 'plan-execute',
-                        totalSteps: 0,
-                        executedSteps: [],
-                        successfulSteps: [],
-                        failedSteps: [],
-                        skippedSteps: [],
-                        hasSignalsProblems: true,
-                        signals: signals,
-                        executionTime: 0,
-                        feedback:
-                            signals.suggestedNextStep ||
-                            'No compatible tools available',
-                    },
-                });
-            }
+            // const planSignals = (
+            //     currentPlan?.metadata as Record<string, unknown>
+            // )?.signals;
+            // if (executionResults.length === 0 && planSignals && currentPlan) {
+            //     const signals = planSignals as {
+            //         errors?: string[];
+            //         suggestedNextStep?: string;
+            //     };
+            //     executionResults.push({
+            //         type: 'final_answer',
+            //         content: JSON.stringify({
+            //             planResult: 'no_tools_available',
+            //             errors: signals.errors || [],
+            //             suggestedNextStep: signals.suggestedNextStep,
+            //             reason: 'Plan created but no compatible tools found',
+            //             planId: currentPlan.id,
+            //         }),
+            //         planExecutionResult: {
+            //             type: 'execution_complete',
+            //             planId: currentPlan.id,
+            //             strategy: 'plan-execute',
+            //             totalSteps: 0,
+            //             executedSteps: [],
+            //             successfulSteps: [],
+            //             failedSteps: [],
+            //             skippedSteps: [],
+            //             hasSignalsProblems: true,
+            //             signals: signals,
+            //             executionTime: 0,
+            //             feedback:
+            //                 signals.suggestedNextStep ||
+            //                 'No compatible tools available',
+            //         },
+            //     });
+            // }
 
-            const synthesisContext: ResponseSynthesisContext = {
-                originalQuery: context.input,
-                plannerType: 'plan-execute',
-                executionResults,
-                planSteps: currentPlan?.steps
-                    .filter(
-                        (step) =>
-                            step.status === UNIFIED_STATUS.COMPLETED ||
-                            step.status === UNIFIED_STATUS.FAILED ||
-                            step.status === UNIFIED_STATUS.SKIPPED,
-                    )
-                    .map((step) => ({
-                        id: step.id,
-                        description: step.description,
-                        status: step.status as
-                            | 'completed'
-                            | 'failed'
-                            | 'skipped',
-                        result: step.result,
-                    })),
+            // // 🎯 Enhanced synthesis context using ContextBridge data
+            // const synthesisContext: ResponseSynthesisContext = {
+            //     originalQuery: context.input,
+            //     plannerType: 'plan-execute',
+            //     executionResults,
+            //     planSteps: currentPlan?.steps
+            //         .filter(
+            //             (step) =>
+            //                 step.status === UNIFIED_STATUS.COMPLETED ||
+            //                 step.status === UNIFIED_STATUS.FAILED ||
+            //                 step.status === UNIFIED_STATUS.SKIPPED,
+            //         )
+            //         .map((step) => ({
+            //             id: step.id,
+            //             description: step.description,
+            //             status: step.status as
+            //                 | 'completed'
+            //                 | 'failed'
+            //                 | 'skipped',
+            //             result: step.result,
+            //         })),
 
-                metadata: {
-                    totalSteps: currentPlan?.steps.length || 0,
-                    completedSteps:
-                        currentPlan?.steps.filter(
-                            (s) => s.status === UNIFIED_STATUS.COMPLETED,
-                        ).length || 0,
-                    failedSteps:
-                        currentPlan?.steps.filter(
-                            (s) => s.status === UNIFIED_STATUS.FAILED,
-                        ).length || 0,
-                    executionTime:
-                        Date.now() -
-                        ((currentPlan?.metadata?.startTime as number) ||
-                            Date.now()),
-                    iterationCount: context.iterations,
-                    planId: currentPlan?.id,
-                    strategy: currentPlan?.strategy,
-                },
-            };
+            //     metadata: finalContext
+            //         ? {
+            //               // 🔥 Use enhanced metadata from ContextBridge
+            //               totalSteps: currentPlan?.steps.length || 0,
+            //               completedSteps:
+            //                   finalContext.runtime.execution.completedSteps
+            //                       .length,
+            //               failedSteps:
+            //                   finalContext.runtime.execution.failedSteps.length,
+            //               executionTime:
+            //                   finalContext.executionSummary
+            //                       .averageExecutionTime,
+            //               iterationCount: context.iterations,
+            //               planId: currentPlan?.id,
+            //               strategy: currentPlan?.strategy,
+            //               // ✨ Additional ContextNew data
+            //               sessionId: finalContext.runtime.sessionId,
+            //               userId: finalContext.runtime.userId,
+            //               entitiesCount: Object.keys(
+            //                   finalContext.runtime.entities,
+            //               ).length,
+            //               messagesCount: finalContext.runtime.messages.length,
+            //               successRate:
+            //                   finalContext.executionSummary.successRate,
+            //               totalExecutions:
+            //                   finalContext.executionSummary.totalExecutions,
+            //               replanCount:
+            //                   finalContext.executionSummary.replanCount,
+            //               wasRecovered:
+            //                   finalContext.recovery?.wasRecovered || false,
+            //               recoveryConfidence: finalContext.recovery?.confidence,
+            //               lastUserIntent:
+            //                   finalContext.runtime.state.lastUserIntent,
+            //               contextPhase: finalContext.runtime.state.phase,
+            //           }
+            //         : {
+            //               // Legacy metadata fallback
+            //               totalSteps: currentPlan?.steps.length || 0,
+            //               completedSteps:
+            //                   currentPlan?.steps.filter(
+            //                       (s) => s.status === UNIFIED_STATUS.COMPLETED,
+            //                   ).length || 0,
+            //               failedSteps:
+            //                   currentPlan?.steps.filter(
+            //                       (s) => s.status === UNIFIED_STATUS.FAILED,
+            //                   ).length || 0,
+            //               executionTime:
+            //                   Date.now() -
+            //                   ((currentPlan?.metadata?.startTime as number) ||
+            //                       Date.now()),
+            //               iterationCount: context.iterations,
+            //               planId: currentPlan?.id,
+            //               strategy: currentPlan?.strategy,
+            //           },
+            // };
 
             // ✅ FALLBACK COM ATÉ 2 TENTATIVAS
-            let synthesizedResponse;
-            let lastError: Error | null = null;
+            // let synthesizedResponse;
+            // let lastError: Error | null = null;
 
-            for (let attempt = 1; attempt <= 3; attempt++) {
-                try {
-                    synthesizedResponse =
-                        await this.responseSynthesizer.synthesize(
-                            synthesisContext,
-                            'conversational',
-                        );
+            // for (let attempt = 1; attempt <= 3; attempt++) {
+            //     try {
+            //         synthesizedResponse =
+            //             await this.responseSynthesizer.synthesize(
+            //                 synthesisContext,
+            //                 'conversational',
+            //             );
 
-                    const finalText = this.extractFinalText(
-                        synthesizedResponse.content,
-                    );
+            //         const finalText = this.extractFinalText(
+            //             synthesizedResponse.content,
+            //         );
 
-                    if (finalText && finalText.trim()) {
-                        // ✅ SETAR STATUS FINAL_ANSWER_RESULT
-                        if (currentPlan) {
-                            currentPlan.status =
-                                UNIFIED_STATUS.FINAL_ANSWER_RESULT;
-                            this.setCurrentPlan(context, currentPlan);
-                        }
+            //         if (finalText && finalText.trim()) {
+            //             // ✅ SETAR STATUS FINAL_ANSWER_RESULT
+            //             if (currentPlan) {
+            //                 currentPlan.status =
+            //                     UNIFIED_STATUS.FINAL_ANSWER_RESULT;
+            //                 this.setCurrentPlan(context, currentPlan);
+            //             }
 
-                        return finalText;
-                    }
+            //             return finalText;
+            //         }
 
-                    this.logger.warn('Empty response from LLM, retrying...', {
-                        attempt,
-                        planId: currentPlan?.id,
-                    });
-                } catch (error) {
-                    lastError = error as Error;
+            //         this.logger.warn('Empty response from LLM, retrying...', {
+            //             attempt,
+            //             planId: currentPlan?.id,
+            //         });
+            //     } catch (error) {
+            //         lastError = error as Error;
 
-                    this.logger.warn('LLM synthesis failed, retrying...', {
-                        attempt,
-                        error: lastError.message,
-                        planId: currentPlan?.id,
-                    });
+            //         this.logger.warn('LLM synthesis failed, retrying...', {
+            //             attempt,
+            //             error: lastError.message,
+            //             planId: currentPlan?.id,
+            //         });
 
-                    if (attempt === 3) {
-                        break;
-                    }
+            //         if (attempt === 3) {
+            //             break;
+            //         }
 
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
-                }
-            }
+            //         await new Promise((resolve) => setTimeout(resolve, 1000));
+            //     }
+            // }
 
-            this.logger.error(
-                'All LLM synthesis attempts failed',
-                lastError as Error,
-                {
-                    planId: currentPlan?.id,
-                    attempts: 3,
-                },
-            );
+            // this.logger.error(
+            //     'All LLM synthesis attempts failed',
+            //     lastError as Error,
+            //     {
+            //         planId: currentPlan?.id,
+            //         attempts: 3,
+            //     },
+            // );
 
-            throw new Error(
-                `LLM synthesis failed after 3 attempts: ${
-                    lastError?.message || 'Unknown error'
-                }`,
-            );
+            // throw new Error(
+            //     `LLM synthesis failed after 3 attempts: ${
+            //         lastError?.message || 'Unknown error'
+            //     }`,
+            // );
         } catch (error) {
             this.logger.error(
                 'Failed to synthesize final response',
@@ -497,17 +693,17 @@ export class PlanAndExecutePlanner implements Planner {
         }
 
         try {
-            if (context.agentContext.messageContext) {
-                const enhancedContext =
-                    await context.agentContext.messageContext.getContextForModel(
-                        context.agentContext,
-                        currentInput,
-                    );
+            // if (context.agentContext.messageContext) {
+            //     const enhancedContext =
+            //         await context.agentContext.messageContext.getContextForModel(
+            //             context.agentContext,
+            //             currentInput,
+            //         );
 
-                if (enhancedContext) {
-                    return enhancedContext;
-                }
-            }
+            //     if (enhancedContext) {
+            //         return enhancedContext;
+            //     }
+            // }
 
             const contextParts: string[] = [];
             const memoryManager = getGlobalMemoryManager();
@@ -638,7 +834,12 @@ export class PlanAndExecutePlanner implements Planner {
             const shouldReplan = this.shouldReplan(context);
 
             if (!currentPlan || shouldReplan) {
-                const result = await this.createPlan(context);
+                if (!context.agentContext) {
+                    throw new Error(
+                        'AgentContext is required for plan creation',
+                    );
+                }
+                const result = await this.createPlan(context.agentContext);
                 const current = this.getCurrentPlan(context);
 
                 if (current) {
@@ -676,7 +877,13 @@ export class PlanAndExecutePlanner implements Planner {
                     };
                 }
 
-                return result;
+                return {
+                    reasoning: 'Plan created. Executing…',
+                    action: {
+                        type: 'execute_plan' as const,
+                        planId: result.id,
+                    } as AgentAction,
+                };
             }
 
             const current = this.getCurrentPlan(context);
@@ -713,13 +920,8 @@ export class PlanAndExecutePlanner implements Planner {
         }
     }
 
-    public async createPlan(
-        goal: string | string[],
-        context: AgentContext,
-        options?: PlannerOptions,
-        callbacks?: PlannerCallbacks,
-    ): Promise<Plan> {
-        const input = goal as string;
+    public async createPlan(context: PlannerExecutionContext): Promise<Plan> {
+        const input = context.input;
 
         const memoryContext = await this.getMemoryContext(context, input);
 
@@ -731,8 +933,7 @@ export class PlanAndExecutePlanner implements Planner {
             throw new Error('LLM adapter must support createPlan method');
         }
 
-        const allSteps =
-            context.agentContext?.stepExecution?.getAllSteps() || [];
+        const allSteps = [];
         const currentPlan = this.getCurrentPlan(context);
 
         const replanContext = this.buildReplanContextFromFreshData(
@@ -917,7 +1118,7 @@ export class PlanAndExecutePlanner implements Planner {
             } catch {}
         }
 
-        if (context.agentContext) {
+        if (context) {
             const observability = getObservability();
             void observability.telemetry.traceEvent(
                 createTelemetryEvent('plan_created', {
@@ -930,9 +1131,9 @@ export class PlanAndExecutePlanner implements Planner {
                     noDiscoveryPath,
                     errors: errorsFromSignals,
                     suggestedNextStep,
-                    sessionId: context.agentContext.sessionId,
-                    agentName: context.agentContext.agentName,
-                    correlationId: context.agentContext.correlationId,
+                    sessionId: context.sessionId,
+                    agentName: context.agentName,
+                    correlationId: context.correlationId,
                 }),
                 async () => {
                     return {};
@@ -1973,7 +2174,7 @@ export class PlanAndExecutePlanner implements Planner {
 
                 return resolvedValue;
             } else if (Array.isArray(value)) {
-                const resolvedArray = [];
+                const resolvedArray: unknown[] = [];
                 for (const item of value) {
                     resolvedArray.push(await resolveValue(item));
                 }

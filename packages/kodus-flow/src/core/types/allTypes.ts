@@ -1650,7 +1650,7 @@ export interface PlanStep {
     dependencies?: string[];
     dependents?: string[];
 
-    status: StepStatus;
+    status: string;
     parallel?: boolean;
     optional?: boolean;
     retry?: number;
@@ -2241,7 +2241,7 @@ export interface StepExecution {
     id: string;
     stepId: string;
     executionId: string;
-    status: StepStatus;
+    status: string;
 
     inputs?: Record<string, unknown>;
     outputs?: Record<string, unknown>;
@@ -5216,7 +5216,10 @@ export interface PlanStep {
     };
 }
 
-export type PlanningStrategy = 'react' | 'plan-execute';
+export enum PlanningStrategy {
+    REACT = 'react',
+    PLAN_EXECUTE = 'plan-execute',
+}
 
 export interface Plan {
     id: string;
@@ -5318,7 +5321,7 @@ export interface ExecutionSummary {
 export interface AgentRegistryEntry {
     agentName: string;
     tenantId: TenantId;
-    status: AgentStatus;
+    status: string;
     executionId?: ExecutionId;
     startedAt?: number;
     pausedAt?: number;
@@ -5333,7 +5336,7 @@ export interface AgentRegistryEntry {
 
 export interface LifecycleStats {
     totalAgents: number;
-    agentsByStatus: Record<AgentStatus, number>;
+    agentsByStatus: Record<string, number>;
     agentsByTenant: Record<string, number>;
     totalTransitions: number;
     totalErrors: number;

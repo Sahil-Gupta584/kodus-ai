@@ -7,7 +7,6 @@ import {
     AgentResumePayload,
     AgentSchedulePayload,
     AgentStartPayload,
-    AgentStatus,
     AgentStopPayload,
     AnyEvent,
     createEvent,
@@ -16,6 +15,7 @@ import {
     isValidStatusTransition,
     LifecycleStats,
     TenantId,
+    UNIFIED_STATUS,
 } from '@/core/types/allTypes.js';
 
 export class AgentLifecycleHandler {
@@ -489,7 +489,7 @@ export class AgentLifecycleHandler {
      */
     private async transitionStatus(
         agentKey: string,
-        newStatus: AgentStatus,
+        newStatus: string,
         reason?: string,
     ): Promise<void> {
         const entry = this.agents.get(agentKey);
@@ -497,8 +497,36 @@ export class AgentLifecycleHandler {
 
         const previousStatus = entry.status;
 
-        // Validate transition
-        if (!isValidStatusTransition(previousStatus, newStatus)) {
+        // Validate transition - map lifecycle status to UnifiedStatus
+        const mapToUnifiedStatus = (status: string): string => {
+            switch (status) {
+                case 'starting':
+                    return UNIFIED_STATUS.PENDING;
+                case 'running':
+                    return UNIFIED_STATUS.EXECUTING;
+                case 'stopping':
+                    return UNIFIED_STATUS.CANCELLED;
+                case 'stopped':
+                    return UNIFIED_STATUS.CANCELLED;
+                case 'pausing':
+                    return UNIFIED_STATUS.PAUSED;
+                case 'paused':
+                    return UNIFIED_STATUS.PAUSED;
+                case 'resuming':
+                    return UNIFIED_STATUS.EXECUTING;
+                case 'scheduled':
+                    return UNIFIED_STATUS.PENDING;
+                case 'error':
+                    return UNIFIED_STATUS.FAILED;
+                default:
+                    return status;
+            }
+        };
+
+        const unifiedFrom = mapToUnifiedStatus(previousStatus) as any;
+        const unifiedTo = mapToUnifiedStatus(newStatus) as any;
+
+        if (!isValidStatusTransition(unifiedFrom, unifiedTo)) {
             throw new EngineError(
                 'AGENT_ERROR',
                 `Invalid status transition from ${previousStatus} to ${newStatus}`,
@@ -573,7 +601,7 @@ export class AgentLifecycleHandler {
      * Get lifecycle statistics
      */
     getStats(): LifecycleStats {
-        const agentsByStatus: Record<AgentStatus, number> = {
+        const agentsByStatus: Record<string, number> = {
             stopped: 0,
             starting: 0,
             running: 0,
@@ -588,7 +616,8 @@ export class AgentLifecycleHandler {
         const agentsByTenant: Record<string, number> = {};
 
         for (const entry of this.agents.values()) {
-            agentsByStatus[entry.status]++;
+            agentsByStatus[entry.status] =
+                (agentsByStatus[entry.status] || 0) + 1;
             agentsByTenant[entry.tenantId] =
                 (agentsByTenant[entry.tenantId] || 0) + 1;
         }

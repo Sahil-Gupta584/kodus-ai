@@ -57,7 +57,6 @@ export class PlannerPromptComposer {
     constructor(private readonly config: PlannerPromptConfig) {
         this.logger.debug('PlannerPromptComposer initialized', {
             additionalPatterns: config.additionalPatterns?.length || 0,
-            constraints: config.constraints?.length || 0,
             features: config.features || {},
         });
     }
@@ -123,14 +122,7 @@ export class PlannerPromptComposer {
     private composeSystemPrompt(isReplan = false): string {
         const sections: string[] = [];
 
-        if (this.config.features?.includeUniversalPatterns !== false) {
-            sections.push(this.getUniversalPlanningPatterns(isReplan));
-        }
-
-        const additionalPatterns = this.gatherAdditionalPatterns();
-        if (additionalPatterns.length > 0) {
-            sections.push(this.formatAdditionalPatterns(additionalPatterns));
-        }
+        sections.push(this.getUniversalPlanningPatterns(isReplan));
 
         return sections.join('\n\n');
     }
@@ -516,27 +508,6 @@ Response: {
 `;
     }
 
-    /**
-     * Gather additional patterns from various sources
-     */
-    private gatherAdditionalPatterns(): string[] {
-        const patterns: string[] = [];
-
-        // Add additional patterns from config
-        if (this.config.additionalPatterns) {
-            patterns.push(...this.config.additionalPatterns);
-        }
-
-        return patterns;
-    }
-
-    /**
-     * Format additional patterns section
-     */
-    private formatAdditionalPatterns(patterns: string[]): string {
-        return `## 🔧 DOMAIN-SPECIFIC PATTERNS\n${patterns.map((pattern, i) => `${i + 1}. ${pattern}`).join('\n')}`;
-    }
-
     private formatAvailableTools(
         tools:
             | ToolMetadataForLLM[]
@@ -734,7 +705,7 @@ Response: {
                 const minLength = schema.minLength as number;
                 const maxLength = schema.maxLength as number;
                 if (minLength !== undefined || maxLength !== undefined) {
-                    const constraints = [];
+                    const constraints: string[] = [];
                     if (minLength !== undefined)
                         constraints.push(`min: ${minLength}`);
                     if (maxLength !== undefined)
@@ -754,7 +725,7 @@ Response: {
                 const minimum = schema.minimum as number;
                 const maximum = schema.maximum as number;
                 if (minimum !== undefined || maximum !== undefined) {
-                    const constraints = [];
+                    const constraints: string[] = [];
                     if (minimum !== undefined)
                         constraints.push(`min: ${minimum}`);
                     if (maximum !== undefined)
@@ -802,7 +773,7 @@ Response: {
                 const maxItems = schema.maxItems as number;
                 let constraints = '';
                 if (minItems !== undefined || maxItems !== undefined) {
-                    const constraintList = [];
+                    const constraintList: string[] = [];
                     if (minItems !== undefined)
                         constraintList.push(`min: ${minItems}`);
                     if (maxItems !== undefined)
@@ -1501,8 +1472,6 @@ Response: {
                 .sort()
                 .join(','),
             config: {
-                hasExamples: !!this.config.customExamples?.length,
-                hasProvider: !!this.config.examplesProvider,
                 patterns: this.config.additionalPatterns?.join(',') || '',
                 constraints: this.config.constraints?.join(',') || '',
             },

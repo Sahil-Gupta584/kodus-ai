@@ -11,6 +11,7 @@ import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextBuilder } from '../../core/context/context-builder.js';
+import { EnhancedContextBuilder } from '../../core/ContextNew/index.js';
 import {
     createDefaultMultiKernelHandler,
     MultiKernelHandler,
@@ -291,6 +292,24 @@ export abstract class AgentCore<
             this.logger.info('ToolEngine configured in ContextBuilder', {
                 toolCount: this.toolEngine.listTools().length,
             });
+
+            // 🔥 Also verify EnhancedContextBuilder availability
+            try {
+                EnhancedContextBuilder.getInstance();
+                this.logger.info(
+                    '✅ EnhancedContextBuilder available for enhanced context',
+                );
+            } catch (error) {
+                this.logger.warn(
+                    '⚠️ EnhancedContextBuilder not configured, will use legacy context only',
+                    {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
+                );
+            }
         }
     }
 
@@ -668,6 +687,34 @@ export abstract class AgentCore<
         // 2. ✅ ELEGANT: Enrich context with AgentDefinition data
         if (this.singleAgentDefinition?.identity) {
             context.agentIdentity = this.singleAgentDefinition.identity;
+        }
+
+        // 3. 🔥 Initialize Enhanced session for ContextNew integration
+        try {
+            const enhancedContextBuilder = EnhancedContextBuilder.getInstance();
+            await enhancedContextBuilder.initializeAgentSession(
+                context.sessionId,
+                config.tenantId || 'default',
+                config.tenantId || 'default',
+                {
+                    availableTools:
+                        this.toolEngine?.listTools().map((t) => t.name) || [],
+                    activeConnections: {}, // Will be populated by MCP adapters
+                },
+            );
+            this.logger.debug('✅ Enhanced session initialized', {
+                sessionId: context.sessionId,
+                toolCount: this.toolEngine?.listTools().length || 0,
+            });
+        } catch (error) {
+            this.logger.warn(
+                '⚠️ Enhanced session initialization failed, continuing with legacy context',
+                {
+                    sessionId: context.sessionId,
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                },
+            );
         }
 
         return context;
@@ -2580,10 +2627,17 @@ export abstract class AgentCore<
                   )
                 : Promise.resolve({ args: rawArgs, missing: [] });
 
-        const executor = new PlanExecutor(act, resolveArgs, {
-            enableReWOO: true,
-        });
-        const obsRes = await executor.run(plan, plannerContext);
+        // ✅ FIXED: Use PlannerHandler's managed executor
+        const obsRes = this.plannerHandler
+            ? await this.plannerHandler.executePlan(
+                  plan,
+                  plannerContext,
+                  act,
+                  resolveArgs,
+              )
+            : await new PlanExecutor(act, resolveArgs, {
+                  enableReWOO: true,
+              }).run(plan, plannerContext);
 
         if (stepId && context.stepExecution) {
             try {

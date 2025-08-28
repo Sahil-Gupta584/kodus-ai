@@ -1,16 +1,4 @@
-/**
- * 🧠 CORE CONTEXT TYPES - SIMPLIFIED & EFFICIENT
- *
- * Clean, efficient context types following agent framework best practices
- * Focused on essential information for agent decision-making
- */
-
-import {
-    ExecutionPhase,
-    StopReason,
-    AgentAction,
-    PlannerExecutionContext,
-} from '../../types/allTypes.js';
+import { PlannerExecutionContext } from '../../types/allTypes.js';
 
 // ===============================================
 // 🎯 RUNTIME CONTEXT (What agent needs NOW)
@@ -37,15 +25,8 @@ export interface AgentRuntimeContext {
     // Essential conversation (last 6 messages max)
     messages: ChatMessage[];
 
-    // Entities for reference resolution ("esse card" -> "PROJ-123")
-    entities: {
-        kodyRules?: EntityRef[];
-        jiraCards?: EntityRef[];
-        pullRequests?: EntityRef[];
-        notionPages?: EntityRef[];
-        files?: EntityRef[];
-        toolResults?: Record<string, string>; // "lastKodyRule" -> "uuid-123"
-    };
+    // Entities for reference resolution (framework agnostic)
+    entities: Record<string, EntityRef[] | Record<string, object>>;
 
     // Current execution state (minimal)
     execution: {
@@ -68,14 +49,14 @@ export interface AgentRuntimeContext {
             toolCall?: {
                 name: string;
                 arguments: string; // JSON string
-                result?: any;
+                result?: Record<string, object>;
             };
         };
     };
 
-    // Available tools/connections
-    availableTools: string[]; // ["KODUS_CREATE_KODY_RULE", "NOTION_SEARCH_NOTION_PAGE"]
-    activeConnections: Record<string, ConnectionStatus>;
+    // Available tools/connections (RUNTIME ONLY - not persisted)
+    availableTools: string[]; // ["KODUS_CREATE_KODY_RULE", "NOTION_SEARCH_NOTION_PAGE"] - rebuilt from ToolEngine
+    activeConnections: Record<string, ConnectionStatus>; // Connection status - rebuilt on recovery
 }
 
 /**
@@ -87,8 +68,8 @@ export interface ChatMessage {
     timestamp: number;
 
     // For tool calls/responses
-    tool_calls?: ToolCall[];
-    tool_call_id?: string;
+    toolCalls?: ToolCall[];
+    toolCallId?: string;
     name?: string; // For tool responses
 }
 
@@ -134,7 +115,7 @@ export interface PlanStep {
     toolCall?: {
         name: string;
         arguments: string; // JSON string
-        result?: any;
+        result?: Record<string, object>;
     };
     error?: string;
     dependencies?: string[];
@@ -221,14 +202,14 @@ export interface ExecutionSnapshot {
  */
 export interface StepResult {
     status: 'success' | 'error';
-    output?: any; // Tool output
+    output?: Record<string, object>;
     error?: string;
     duration?: number;
     toolCall?: {
         tool: string;
         method: string;
-        params: any;
-        result: any;
+        params: Record<string, object>;
+        result: Record<string, object>;
     };
 }
 

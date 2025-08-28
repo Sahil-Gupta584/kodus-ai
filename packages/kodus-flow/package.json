@@ -38,7 +38,8 @@
         "publish:quick": "source scripts/refresh-token.sh && yarn build && yarn publish:gar",
         "yalc:publish": "yalc publish --sig",
         "yalc:push": "yalc push --changed --sig",
-        "dev:yalc": "chokidar 'dist/**/*' -c 'yalc push --changed --sig'"
+        "dev:yalc": "chokidar 'dist/**/*' -c 'yalc push --changed --sig'",
+        "example:planner-integration-fixed": "tsx --tsconfig tsconfig.examples.json examples/planner-integration-fixed.ts"
     },
     "keywords": [
         "ai",
