@@ -1,8 +1,3 @@
-/**
- * @module core/storage/adapters/in-memory-adapter
- * @description In-memory storage adapter for development and testing
- */
-
 import { StorageType } from '../../types/storage-types.js';
 import { createLogger } from '../../../observability/logger.js';
 import type {
@@ -14,10 +9,6 @@ import type { StorageAdapterConfig } from '../factory.js';
 
 const logger = createLogger('in-memory-storage-adapter');
 
-/**
- * In-memory storage adapter
- * Stores items in a Map in memory
- */
 export class InMemoryStorageAdapter<T extends BaseStorageItem>
     implements BaseStorage<T>
 {
@@ -29,15 +20,11 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
         this.config = config;
     }
 
-    /**
-     * Initialize the adapter
-     */
     async initialize(): Promise<void> {
         if (this.isInitialized) {
             return;
         }
 
-        // Start cleanup interval
         this.startCleanupInterval();
 
         this.isInitialized = true;
@@ -47,13 +34,9 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
         });
     }
 
-    /**
-     * Store an item
-     */
     async store(item: T): Promise<void> {
         await this.ensureInitialized();
 
-        // Check if we need to remove old items
         if (this.items.size >= this.config.maxItems) {
             await this.removeOldestItems();
         }
@@ -66,9 +49,6 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
         });
     }
 
-    /**
-     * Retrieve an item by ID
-     */
     async retrieve(id: string): Promise<T | null> {
         await this.ensureInitialized();
 
@@ -77,7 +57,6 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
             return null;
         }
 
-        // Check if item has expired
         if (
             item.metadata?.expireAt &&
             typeof item.metadata.expireAt === 'number' &&
@@ -90,9 +69,6 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
         return item;
     }
 
-    /**
-     * Delete an item by ID
-     */
     async delete(id: string): Promise<boolean> {
         await this.ensureInitialized();
 
@@ -105,9 +81,6 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
         return deleted;
     }
 
-    /**
-     * Clear all items
-     */
     async clear(): Promise<void> {
         await this.ensureInitialized();
 
@@ -115,9 +88,6 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
         logger.info('All items cleared');
     }
 
-    /**
-     * Get storage statistics
-     */
     async getStats(): Promise<BaseStorageStats> {
         await this.ensureInitialized();
 
@@ -135,34 +105,22 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
         };
     }
 
-    /**
-     * Check if adapter is healthy
-     */
     async isHealthy(): Promise<boolean> {
         return this.isInitialized;
     }
 
-    /**
-     * Cleanup resources
-     */
     async cleanup(): Promise<void> {
         this.items.clear();
         this.isInitialized = false;
         logger.info('InMemoryStorageAdapter cleaned up');
     }
 
-    /**
-     * Ensure adapter is initialized
-     */
     private async ensureInitialized(): Promise<void> {
         if (!this.isInitialized) {
             await this.initialize();
         }
     }
 
-    /**
-     * Start cleanup interval
-     */
     private startCleanupInterval(): void {
         if (this.config.cleanupInterval > 0) {
             setInterval(async () => {
@@ -171,16 +129,11 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
         }
     }
 
-    /**
-     * Remove oldest items when limit is reached
-     */
     private async removeOldestItems(): Promise<void> {
         const items = Array.from(this.items.entries());
 
-        // Sort by timestamp (oldest first)
         items.sort(([, a], [, b]) => a.timestamp - b.timestamp);
 
-        // Remove oldest items
         const toRemove = items.slice(0, Math.floor(this.config.maxItems * 0.1)); // Remove 10%
 
         for (const [id] of toRemove) {
@@ -193,9 +146,6 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
         });
     }
 
-    /**
-     * Cleanup expired items
-     */
     private async cleanupExpiredItems(): Promise<void> {
         const now = Date.now();
         let expiredCount = 0;
@@ -219,9 +169,6 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
         }
     }
 
-    /**
-     * Get all items (for testing/debugging)
-     */
     getAllItems(): Map<string, T> {
         return new Map(this.items);
     }

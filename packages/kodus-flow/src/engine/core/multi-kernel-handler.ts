@@ -64,6 +64,7 @@ import type {
 import type { EventHandler, Workflow } from '../../core/types/common-types.js';
 import type { ExecutionId } from '../../core/types/base-types.js';
 import type { Middleware } from '../../runtime/middleware/types.js';
+import type { PersistorType } from '../../persistor/config.js';
 
 /**
  * Multi-Kernel Handler Configuration
@@ -111,7 +112,7 @@ export interface MultiKernelHandlerConfig {
 
     // Global configuration
     global?: {
-        persistorType?: 'memory' | 'mongodb' | 'redis' | 'temporal';
+        persistorType?: PersistorType;
         persistorOptions?: Record<string, unknown>;
         enableCrossKernelLogging?: boolean;
     };
@@ -1327,7 +1328,7 @@ export function createMultiKernelHandler(
 export function createDefaultMultiKernelHandler(
     tenantId: string,
     persistorConfig?: {
-        type: 'memory' | 'mongodb' | 'redis' | 'temporal';
+        type: 'memory' | 'mongodb';
         options?: Record<string, unknown>;
     },
 ): MultiKernelHandler {

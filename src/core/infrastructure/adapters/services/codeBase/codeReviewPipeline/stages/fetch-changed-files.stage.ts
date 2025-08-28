@@ -81,11 +81,14 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
 
         const filesWithLineNumbers = this.prepareFilesWithLineNumbers(files);
 
+        const stats = this.getStatsForPR(filesWithLineNumbers);
+
         return this.updateContext(context, (draft) => {
             draft.changedFiles = filesWithLineNumbers;
             draft.pipelineMetadata = {
                 ...draft.pipelineMetadata,
             };
+            draft.pullRequest.stats = stats;
         });
     }
 
@@ -131,5 +134,24 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
                 return file;
             }
         });
+    }
+
+    private getStatsForPR(
+        files: FileChange[],
+    ): CodeReviewPipelineContext['pullRequest']['stats'] {
+        let totalAdditions = 0;
+        let totalDeletions = 0;
+
+        files.forEach((file) => {
+            totalAdditions += file.additions || 0;
+            totalDeletions += file.deletions || 0;
+        });
+
+        return {
+            total_additions: totalAdditions,
+            total_deletions: totalDeletions,
+            total_files: files.length,
+            total_lines_changed: totalAdditions + totalDeletions,
+        };
     }
 }

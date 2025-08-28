@@ -151,7 +151,7 @@ export const stateManagerOptionsSchema = z.object({
     // Storage backend configuration
     storage: z
         .object({
-            type: z.enum(['memory', 'redis', 'custom']),
+            type: z.enum(['memory', 'custom']),
             config: z.record(z.string(), z.unknown()).optional(),
         })
         .optional(),

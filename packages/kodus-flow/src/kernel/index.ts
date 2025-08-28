@@ -1,9 +1,3 @@
-/**
- * @module kernel
- * @description Kernel - Central orchestration layer
- */
-
-// Core kernel functionality
 export {
     ExecutionKernel,
     createKernel,
@@ -11,7 +5,6 @@ export {
     type KernelState,
 } from './kernel.js';
 
-// Snapshot functionality
 export {
     createSnapshot,
     restoreSnapshot,
@@ -23,7 +16,6 @@ export {
     type DeltaSnapshot,
 } from './snapshot.js';
 
-// Persistor functionality
 export {
     createPersistor,
     getPersistor,

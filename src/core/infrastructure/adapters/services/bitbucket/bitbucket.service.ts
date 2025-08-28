@@ -121,12 +121,14 @@ export class BitbucketService
             const endDate = new Date(startDate);
             endDate.setDate(startDate.getDate() - 60);
 
-            const pullRequests = await this.getPullRequests({
+            // Use optimized method that limits PRs per repository for better performance
+            const pullRequests = await this.getPullRequestsForAuthors({
                 organizationAndTeamData: params.organizationAndTeamData,
                 filters: {
                     startDate: endDate, // Reversing the dates to fetch the last 15 days
                     endDate: startDate,
                 },
+                limitPerRepo: 100, // Limit to 100 most recent PRs per repository
             });
 
             // Group the PRs by author and count the contributions
@@ -183,98 +185,6 @@ export class BitbucketService
         }
     }
 
-    async getPullRequestAuthors_OLD(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-    }): Promise<PullRequestAuthor[]> {
-        try {
-            const { organizationAndTeamData } = params;
-
-            if (!organizationAndTeamData.organizationId) {
-                return [];
-            }
-
-            const bitbucketAuthDetail = await this.getAuthDetails(
-                organizationAndTeamData,
-            );
-            const repositories = <Repositories[]>(
-                await this.findOneByOrganizationAndTeamDataAndConfigKey(
-                    organizationAndTeamData,
-                    IntegrationConfigKey.REPOSITORIES,
-                )
-            );
-
-            if (!bitbucketAuthDetail || !repositories) {
-                return [];
-            }
-
-            const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
-            const since = new Date();
-            since.setDate(since.getDate() - 60);
-
-            const authorsSet = new Set<string>();
-            const authorsData = new Map<string, PullRequestAuthor>();
-
-            const repoPromises = repositories.map(async (repo) => {
-                try {
-                    const prs = await bitbucketAPI.pullrequests
-                        .list({
-                            repo_slug: `{${repo.id}}`,
-                            workspace: `{${repo.workspaceId}}`,
-                            sort: '-created_on',
-                            pagelen: 100,
-                        })
-                        .then((res) =>
-                            this.getPaginatedResults(bitbucketAPI, res),
-                        );
-
-                    // Para na primeira contribuição de cada usuário
-                    for (const pr of prs) {
-                        if (new Date(pr.created_on) < since) continue;
-
-                        if (pr.author?.uuid) {
-                            const userId = this.sanitizeUUID(pr.author.uuid);
-
-                            if (!authorsSet.has(userId)) {
-                                authorsSet.add(userId);
-                                authorsData.set(userId, {
-                                    id: userId,
-                                    name:
-                                        (pr.author.display_name as string) ||
-                                        (pr.author.nickname as string),
-                                });
-                            }
-                        }
-                    }
-                } catch (error) {
-                    this.logger.error({
-                        message: 'Error in getPullRequestAuthors',
-                        context: BitbucketService.name,
-                        error: error,
-                        metadata: {
-                            organizationAndTeamData,
-                            repositoryId: repo.id,
-                        },
-                    });
-                }
-            });
-
-            await Promise.all(repoPromises);
-
-            return Array.from(authorsData.values()).sort((a, b) =>
-                a.name.localeCompare(b.name),
-            );
-        } catch (err) {
-            this.logger.error({
-                message: 'Error in getPullRequestAuthors',
-                context: BitbucketService.name,
-                error: err,
-                metadata: {
-                    organizationAndTeamData: params?.organizationAndTeamData,
-                },
-            });
-            return [];
-        }
-    }
     async getPullRequestsWithChangesRequested(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: Partial<Repository>;
@@ -483,6 +393,117 @@ export class BitbucketService
     }
 
     /**
+     * Retrieves pull requests from Bitbucket with optimization for author discovery.
+     * Limits the number of PRs fetched per repository to improve performance.
+     * @param params - The parameters for fetching pull requests.
+     * @param params.organizationAndTeamData - The organization and team data.
+     * @param params.repository - Optional filter for a specific repository name.
+     * @param params.filters - Optional filters for dates, state, author, and branch.
+     * @param params.limitPerRepo - Maximum number of PRs to fetch per repository (default: 100).
+     * @returns A promise that resolves to an array of transformed PullRequest objects.
+     */
+    async getPullRequestsForAuthors(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository?: {
+            id: string;
+            name: string;
+        };
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            state?: PullRequestState;
+            author?: string;
+            branch?: string;
+        };
+        limitPerRepo?: number;
+    }): Promise<PullRequest[]> {
+        const { organizationAndTeamData, repository, filters = {}, limitPerRepo = 100 } = params;
+
+        try {
+            if (!organizationAndTeamData.organizationId) {
+                this.logger.warn({
+                    message:
+                        'Organization ID is required to fetch pull requests',
+                    context: BitbucketService.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            const bitbucketAuthDetail = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            const allRepositories = <Repositories[]>(
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                )
+            );
+
+            if (
+                !bitbucketAuthDetail ||
+                !allRepositories ||
+                allRepositories.length === 0
+            ) {
+                this.logger.warn({
+                    message: 'Bitbucket auth details or repositories not found',
+                    context: BitbucketService.name,
+                    metadata: params,
+                });
+
+                return [];
+            }
+
+            let reposToProcess = allRepositories;
+
+            if (repository && (repository.name || repository.id)) {
+                const foundRepo = allRepositories.find(
+                    (r) => r.name === repository.name || r.id === repository.id,
+                );
+
+                if (!foundRepo) {
+                    this.logger.warn({
+                        message: `Repository ${repository.name} (id: ${repository.id}) not found in the list of repositories.`,
+                        context: BitbucketService.name,
+                        metadata: params,
+                    });
+
+                    return [];
+                }
+                reposToProcess = [foundRepo];
+            }
+
+            const bitbucketAPI = this.instanceBitbucketApi(bitbucketAuthDetail);
+
+            const promises = reposToProcess.map((r) =>
+                this.getPullRequestsByRepoForAuthors({
+                    bitbucketAPI,
+                    repo: r,
+                    filters,
+                    limit: limitPerRepo,
+                }),
+            );
+
+            const results = await Promise.all(promises);
+            const rawPullRequests = results.flat();
+
+            return rawPullRequests.map((rawPr) =>
+                this.transformPullRequest(rawPr, organizationAndTeamData),
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Error fetching pull requests for authors from Bitbucket',
+                context: BitbucketService.name,
+                error,
+                metadata: params,
+            });
+            return [];
+        }
+    }
+
+    /**
      * Retrieves pull requests from a specific Bitbucket repository.
      * @param params - The parameters for fetching, including the API instance, repository object, and filters.
      * @returns A promise that resolves to an array of raw pull request data.
@@ -538,6 +559,96 @@ export class BitbucketService
         const pullRequests = await this.getPaginatedResults(
             bitbucketAPI,
             response,
+        );
+
+        return pullRequests.filter((pr) => {
+            let isValid = true;
+
+            if (isValid && startDate) {
+                isValid = new Date(pr.created_on) >= startDate;
+            }
+
+            if (isValid && endDate) {
+                isValid = new Date(pr.created_on) <= endDate;
+            }
+
+            if (isValid && author) {
+                isValid =
+                    pr?.author?.display_name?.toLowerCase() ===
+                    author.toLowerCase();
+            }
+
+            if (isValid && branch) {
+                isValid =
+                    pr.destination?.branch?.name?.toLowerCase() ===
+                    branch.toLowerCase();
+            }
+
+            return isValid;
+        });
+    }
+
+    /**
+     * Retrieves pull requests from a specific Bitbucket repository with a limit for optimization.
+     * Used specifically for scenarios where we only need recent data (like authors).
+     * @param params - The parameters for fetching, including the API instance, repository object, and filters.
+     * @param limit - Maximum number of pull requests to fetch per repository.
+     * @returns A promise that resolves to an array of raw pull request data (limited).
+     */
+    private async getPullRequestsByRepoForAuthors(params: {
+        bitbucketAPI: InstanceType<typeof Bitbucket>;
+        repo: Repositories;
+        filters?: {
+            startDate?: Date;
+            endDate?: Date;
+            state?: PullRequestState;
+            author?: string;
+            branch?: string;
+        };
+        limit?: number;
+    }): Promise<Schema.Pullrequest[]> {
+        const { bitbucketAPI, repo, filters = {}, limit = 100 } = params;
+        const { startDate, endDate, state, author, branch } = filters;
+
+        // see https://github.com/MunifTanjim/node-bitbucket/issues/74
+        bitbucketAPI.pullrequests.list =
+            // @ts-ignore
+            bitbucketAPI.pullrequests.list.defaults({
+                request: {
+                    validate: {
+                        state: {
+                            enum: undefined,
+                            type: 'array',
+                            items: {
+                                enum: [
+                                    'OPEN',
+                                    'DECLINED',
+                                    'MERGED',
+                                    'SUPERSEDED',
+                                ],
+                                type: 'string',
+                            },
+                        },
+                    },
+                },
+            });
+
+        const response = await bitbucketAPI.pullrequests.list({
+            repo_slug: `{${repo.id}}`,
+            workspace: `{${repo.workspaceId}}`,
+            // @ts-ignore - see above
+            state: state
+                ? this._prStateMapReversed.get(state)
+                : this._prStateMapReversed.get(PullRequestState.ALL), // get all states if not specified
+            sort: '-created_on', // Sort by creation date, descending
+            fields: '+values.participants,+values.reviewers,+values.draft',
+        });
+
+        // Use the limited pagination method
+        const pullRequests = await this.getPaginatedResultsWithLimit(
+            bitbucketAPI,
+            response,
+            limit,
         );
 
         return pullRequests.filter((pr) => {
@@ -3740,6 +3851,38 @@ export class BitbucketService
         }
 
         return allResults;
+    }
+
+    /**
+     * Retrieves paginated results with a limit for optimization.
+     * Used specifically for scenarios where we only need recent data (like authors).
+     * @param bitbucketAPI - The Bitbucket API client.
+     * @param response - The initial response from the API.
+     * @param limit - Maximum number of items to fetch.
+     * @returns A promise that resolves to an array of items (limited).
+     */
+    private async getPaginatedResultsWithLimit<T>(
+        bitbucketAPI: APIClient,
+        response: BitbucketResponse<{ values?: T[] }>,
+        limit: number = 100,
+    ): Promise<T[]> {
+        let allResults = [...response.data.values];
+        let currentResults = response.data;
+
+        // Early termination if we already have enough results
+        if (allResults.length >= limit) {
+            return allResults.slice(0, limit);
+        }
+
+        while (bitbucketAPI.hasNextPage(currentResults) && allResults.length < limit) {
+            currentResults = (await bitbucketAPI.getNextPage(currentResults))
+                .data;
+
+            allResults = allResults.concat(currentResults.values);
+        }
+
+        // Return only up to the limit
+        return allResults.slice(0, limit);
     }
 
     /** Bitbucket's API returns IDs with curly braces around them (e.g. "{123}").

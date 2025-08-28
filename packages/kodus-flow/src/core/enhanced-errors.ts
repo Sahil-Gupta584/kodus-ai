@@ -1,13 +1,3 @@
-/**
- * Enhanced Error System - Nova camada de error handling
- *
- * Estende o sistema atual com:
- * - Severity levels
- * - Recovery hints
- * - User-friendly messages
- * - Business impact tracking
- */
-
 import { BaseSDKError, type ErrorCode } from './errors.js';
 
 // ✅ NOVAS INTERFACES

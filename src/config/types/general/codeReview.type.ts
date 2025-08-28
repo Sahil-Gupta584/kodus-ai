@@ -11,6 +11,7 @@ import { TaskStatus } from '@kodus/kodus-proto/task';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { ConfigLevel } from './pullRequestMessages.type';
 import z from 'zod';
+import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/context/code-review-pipeline.context';
 
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
@@ -58,7 +59,7 @@ export type Repository = {
 };
 
 export type AnalysisContext = {
-    pullRequest?: any;
+    pullRequest: CodeReviewPipelineContext['pullRequest'];
     repository?: Partial<Repository>;
     organizationAndTeamData: OrganizationAndTeamData;
     codeReviewConfig?: CodeReviewConfig;
@@ -258,7 +259,7 @@ export interface SummaryConfig {
     generatePRSummary?: boolean;
     customInstructions?: string;
     behaviourForExistingDescription?: BehaviourForExistingDescription;
-    behaviourForNewCommits?: BehaviourForNewCommits; 
+    behaviourForNewCommits?: BehaviourForNewCommits;
 }
 
 export interface SuggestionControlConfig {

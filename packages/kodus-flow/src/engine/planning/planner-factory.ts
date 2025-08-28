@@ -9,7 +9,6 @@ import type { LLMAdapter } from '../../adapters/llm/index.js';
 import { PlanAndExecutePlanner } from './strategies/plan-execute-planner.js';
 import type { ReplanPolicyConfig } from './strategies/plan-execute-planner.js';
 import { Thread } from '../../core/types/common-types.js';
-import { AgentIdentity } from '@/core/types/agent-definition.js';
 
 // Import comprehensive action types from agent-types
 import type {
@@ -42,7 +41,7 @@ export type PlannerType = 'react' | 'tot' | 'reflexion' | 'plan-execute';
 export interface Planner<
     TContext extends PlannerExecutionContext = PlannerExecutionContext,
 > {
-    think(context: TContext): Promise<AgentThought>;
+    think(context: TContext, stepId?: string): Promise<AgentThought>;
     analyzeResult(
         result: ActionResult,
         context: TContext,
@@ -126,6 +125,7 @@ export interface FinalAnswerResult {
     type: 'final_answer';
     content: string;
     metadata?: ActionResultMetadata;
+    planExecutionResult?: import('../../core/types/planning-shared.js').PlanExecutionResult; // ✅ Para capturar dados do PlanExecutor
 }
 
 export interface ErrorResult {
@@ -135,6 +135,7 @@ export interface ErrorResult {
     status?: string;
     replanContext?: import('../../core/types/planning-shared.js').PlanExecutionResult['replanContext'];
     feedback?: string;
+    planExecutionResult?: import('../../core/types/planning-shared.js').PlanExecutionResult; // ✅ Para capturar dados do PlanExecutor
 }
 
 export interface NeedsReplanResult {
@@ -146,7 +147,7 @@ export interface NeedsReplanResult {
 
 export type ResultAnalysis = {
     isComplete: boolean;
-    isSuccessful: boolean;
+    isSuccessful: boolean | null; // null = não executado ainda
     feedback: string;
     shouldContinue: boolean;
     suggestedNextAction?: string;
@@ -157,7 +158,7 @@ export type ResultAnalysis = {
  * This ensures consistency between planner and AI SDK components
  */
 export type StepExecution =
-    import('../../core/context/step-execution.js').AgentStepResult;
+    import('../../core/context/execution-tracker.js').StepResult;
 
 /**
  * ✅ REMOVED: StepExecutionMetadata is no longer needed
@@ -283,6 +284,7 @@ export interface PlannerExecutionContext {
     ): void;
     getCurrentSituation(): string;
     getFinalResult(): AgentExecutionResult;
+    getCurrentPlan?(): unknown | null; // Access to current plan state
 }
 
 // Enhanced context configuration for advanced execution features
@@ -297,123 +299,6 @@ export interface ContextEnhancementConfig {
  */
 export function isSuccessResult(result: ActionResult): boolean {
     return result.type !== 'error';
-}
-
-/**
- * Generate execution hints automatically from history and context
- */
-export function generateExecutionHints(
-    history: StepExecution[],
-    agentIdentity?: AgentIdentity,
-): ExecutionHints {
-    const hints: ExecutionHints = {};
-
-    // Find last successful action
-    const lastSuccessfulEntry = [...history]
-        .reverse()
-        .find((entry) => isSuccessResult(entry.result));
-
-    if (lastSuccessfulEntry) {
-        hints.lastSuccessfulAction = `${lastSuccessfulEntry.action.type}: ${
-            isToolCallAction(lastSuccessfulEntry.action)
-                ? lastSuccessfulEntry.action.toolName
-                : 'completed successfully'
-        }`;
-    }
-
-    // Extract current goal from agent identity
-    if (agentIdentity?.goal) {
-        hints.currentGoal = agentIdentity.goal;
-    }
-
-    // Determine user urgency based on iteration count and constraints
-    if (history.length > 5) {
-        hints.userUrgency = 'high'; // Many iterations suggest urgency
-    } else if (history.length > 2) {
-        hints.userUrgency = 'medium';
-    } else {
-        hints.userUrgency = 'low';
-    }
-
-    // Set user preferences based on agent personality/style
-    if (agentIdentity?.style || agentIdentity?.personality) {
-        hints.userPreferences = {
-            preferredStyle:
-                agentIdentity.style === 'formal'
-                    ? 'formal'
-                    : agentIdentity.style === 'casual'
-                      ? 'casual'
-                      : 'technical',
-            verbosity: agentIdentity.personality?.includes('concise')
-                ? 'concise'
-                : agentIdentity.personality?.includes('detailed')
-                  ? 'detailed'
-                  : 'verbose',
-            riskTolerance: agentIdentity.personality?.includes('careful')
-                ? 'conservative'
-                : agentIdentity.personality?.includes('bold')
-                  ? 'aggressive'
-                  : 'moderate',
-        };
-    }
-
-    return hints;
-}
-
-/**
- * Generate learning context from execution history
- */
-export function generateLearningContext(
-    history: StepExecution[],
-): LearningContext {
-    const context: LearningContext = {
-        commonMistakes: [],
-        successPatterns: [],
-        userFeedback: [],
-        preferredTools: [],
-    };
-
-    // Analyze errors for common mistakes
-    const errorEntries = history.filter((entry) => isErrorResult(entry.result));
-    const errorPatterns = errorEntries.map((entry) => {
-        const action = entry.action;
-        const errorResult = entry.result as ErrorResult;
-        return `${action.type} failures: ${errorResult.error || 'unknown error'}`;
-    });
-    context.commonMistakes = [...new Set(errorPatterns)].slice(0, 5);
-
-    // Analyze successes for patterns
-    const successEntries = history.filter((entry) =>
-        isSuccessResult(entry.result),
-    );
-    const successPatterns = successEntries.map((entry) => {
-        const action = entry.action;
-        return `${action.type} succeeded: ${entry.observation.feedback || 'completed successfully'}`;
-    });
-    context.successPatterns = [...new Set(successPatterns)].slice(0, 5);
-
-    // Find preferred tools (most successful)
-    const toolUsage = new Map<string, { total: number; successful: number }>();
-    history.forEach((entry) => {
-        if (entry.action.type === 'tool_call') {
-            const toolName = (entry.action as ToolCallAction).toolName;
-            const current = toolUsage.get(toolName) || {
-                total: 0,
-                successful: 0,
-            };
-            current.total++;
-            if (isSuccessResult(entry.result)) current.successful++;
-            toolUsage.set(toolName, current);
-        }
-    });
-
-    context.preferredTools = Array.from(toolUsage.entries())
-        .filter(([, stats]) => stats.successful / stats.total > 0.7) // 70% success rate
-        .sort((a, b) => b[1].successful - a[1].successful)
-        .map(([toolName]) => toolName)
-        .slice(0, 5);
-
-    return context;
 }
 
 // Specific metadata types for execution results
@@ -512,6 +397,27 @@ export function getResultError(result: ActionResult): string | undefined {
 
 // Helper function to get content from any result type
 export function getResultContent(result: ActionResult): unknown {
+    // ✅ PRIORIDADE: Extrair dados completos do PlanExecutor quando disponível
+    if (
+        (isFinalAnswerResult(result) || isErrorResult(result)) &&
+        result.planExecutionResult
+    ) {
+        // Se temos planExecutionResult, extrair signals e execution data
+        const { signals, feedback, executedSteps } = result.planExecutionResult;
+        return {
+            planResult: result.planExecutionResult.type,
+            feedback,
+            signals,
+            executedSteps: executedSteps.map((step) => ({
+                stepId: step.stepId,
+                success: step.success,
+                result: step.result,
+                error: step.error,
+            })),
+        };
+    }
+
+    // ✅ FALLBACK: Content padrão para outros tipos
     if (isToolResult(result)) {
         return result.content;
     }

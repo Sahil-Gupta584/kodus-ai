@@ -36,6 +36,7 @@ import type { WorkflowContext } from '../core/types/workflow-types.js';
 import type { MemoryMonitorConfig } from './core/memory-monitor.js';
 // Enhanced queue config type (now part of EventQueueConfig)
 import type { Persistor } from '../persistor/index.js';
+import type { PersistorType } from '../persistor/config.js';
 
 export { EventQueue } from './core/event-queue.js';
 export type { EventQueueConfig, QueueItem } from './core/event-queue.js';
@@ -113,7 +114,7 @@ export interface RuntimeConfig {
     // Event Store configuration
     enableEventStore?: boolean; // Default: false
     eventStoreConfig?: {
-        persistorType?: 'memory' | 'mongodb' | 'redis' | 'temporal';
+        persistorType?: PersistorType;
         persistorOptions?: Record<string, unknown>;
         replayBatchSize?: number;
         maxStoredEvents?: number;

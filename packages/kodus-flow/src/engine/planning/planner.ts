@@ -117,20 +117,6 @@ export interface Plan {
 }
 
 /**
- * Plan execution result
- */
-export interface PlanExecutionResult {
-    planId: string;
-    stepId?: string;
-    success: boolean;
-    result?: unknown;
-    error?: string;
-    duration: number;
-    completedSteps: number;
-    totalSteps: number;
-}
-
-/**
  * Planner interface (MINHA IMPLEMENTAÇÃO)
  */
 export interface Planner {
@@ -146,14 +132,6 @@ export interface Planner {
         options?: PlannerOptions,
         callbacks?: PlannerCallbacks,
     ): Promise<Plan>;
-
-    /**
-     * Execute plan (opcional - pode ser implementado pelo agent)
-     */
-    executePlan?(
-        plan: Plan,
-        context: AgentContext,
-    ): Promise<PlanExecutionResult>;
 }
 
 /**
@@ -338,20 +316,15 @@ export class CoTPlanner implements Planner {
                 });
 
                 // Add to context state for agent intelligence
-                await context.executionRuntime.setState(
-                    'main',
-                    'plannerSuggestions',
-                    [
-                        {
-                            stepId: 'parallel-execution',
-                            toolStrategy: 'parallel',
-                            tools: parallelTools,
-                            confidence: 0.8,
-                            reasoning:
-                                'Goal benefits from parallel tool execution',
-                        },
-                    ],
-                );
+                await context.state.set('main', 'plannerSuggestions', [
+                    {
+                        stepId: 'parallel-execution',
+                        toolStrategy: 'parallel',
+                        tools: parallelTools,
+                        confidence: 0.8,
+                        reasoning: 'Goal benefits from parallel tool execution',
+                    },
+                ]);
             }
         }
 

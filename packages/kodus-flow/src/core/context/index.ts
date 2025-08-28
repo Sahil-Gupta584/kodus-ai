@@ -1,43 +1,32 @@
-/**
- * Context Module - Clean and Essential
- *
- * Core context management for agents and workflows
- */
-
-// ===== MAIN ENTRY POINT =====
 export {
     ContextBuilder,
     createAgentContext,
+    createBaseContext,
+    UnifiedContextFactory,
     type ContextBuilderConfig,
 } from './context-builder.js';
 
 // ===== CORE SERVICES =====
-export { ContextStateService } from './services/state-service.js';
+export { SimpleContextStateService as ContextStateService } from './services/simple-state-service.js';
 export { SessionService } from './services/session-service.js';
 export type {
     Session,
     SessionConfig,
     SessionContext,
     ConversationHistory,
+    ConversationMessage,
 } from './services/session-service.js';
 
-// ===== ENHANCED CONTEXT INTEGRATION (AI SDK INSPIRED) =====
+// ===== EXECUTION TRACKING =====
+export { ExecutionTracker, type StepResult } from './execution-tracker.js';
 export {
-    EnhancedContextBuilder,
-    createEnhancedContext,
-    withContext,
-    type EnhancedContextConfig,
-    type ContextLayer,
-    type ContextOperation,
-    type ContextEntry,
-    type ContextQuery,
-} from './enhanced-context-builder.js';
+    SimpleExecutionLogger,
+    type SimpleExecutionLog,
+    type ExecutionCriteria,
+} from './services/simple-execution-log.js';
 
-// ===== AI SDK COMPONENTS =====
+// ===== NAMESPACE CONSTANTS =====
 export {
-    StepExecution,
-    EnhancedMessageContext,
-    ContextManager,
-    type AgentStepResult,
-    type MessageEntry,
-} from './step-execution.js';
+    STATE_NAMESPACES,
+    type StateNamespace,
+} from './namespace-constants.js';

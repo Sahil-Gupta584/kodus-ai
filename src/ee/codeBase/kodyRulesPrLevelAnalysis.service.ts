@@ -925,6 +925,12 @@ export class KodyRulesPrLevelAnalysisService
         const analyzerPayload: KodyRulesPrLevelPayload = {
             pr_title: context.pullRequest.title,
             pr_description: context.pullRequest.body || '',
+            stats: context.pullRequest.stats ?? {
+                total_additions: 0,
+                total_deletions: 0,
+                total_files: 0,
+                total_lines_changed: 0,
+            },
             files: filesChunk,
             rules: kodyRulesPrLevel,
             language,

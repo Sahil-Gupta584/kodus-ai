@@ -1,8 +1,3 @@
-/**
- * @module persistor/storage-adapter
- * @description Adapter to bridge old Persistor interface with new BaseStorage
- */
-
 import { createLogger } from '../observability/logger.js';
 import type { Persistor } from './index.js';
 import type {
@@ -27,7 +22,7 @@ export class StoragePersistorAdapter implements Persistor {
 
     constructor(
         private config: {
-            type: 'memory' | 'mongodb' | 'redis' | 'temporal';
+            type: 'memory' | 'mongodb';
             connectionString?: string;
             options?: Record<string, unknown>;
         } = { type: 'memory' },
@@ -40,15 +35,16 @@ export class StoragePersistorAdapter implements Persistor {
     ) {}
 
     async initialize(): Promise<void> {
-        if (this.isInitialized) return;
+        if (this.isInitialized) {
+            return;
+        }
 
         this.storage = await StorageAdapterFactory.create({
             type: this.config.type,
             connectionString: this.config.connectionString,
             options: {
                 ...this.config.options,
-                // ✅ PERSISTOR: Use specific collection for Persistor data
-                database: this.config.options?.database || 'kodus',
+                database: this.config.options?.database || 'kodus-flow',
                 collection: this.config.options?.collection || 'snapshots',
             },
             maxItems: this.persistorConfig?.maxSnapshots ?? 1000,
@@ -75,7 +71,6 @@ export class StoragePersistorAdapter implements Persistor {
             timestamp: Date.now(),
             metadata: {
                 xcId: s.xcId,
-                // Store full snapshot for simple adapters (memory)
                 snapshot: s,
                 ...options,
             },
@@ -87,10 +82,11 @@ export class StoragePersistorAdapter implements Persistor {
 
     async *load(xcId: string): AsyncIterable<Snapshot> {
         await this.ensureInitialized();
-        // Try to iterate items if storage supports getAllItems (in-memory)
+
         const storageAny = this.storage as unknown as {
             getAllItems?: () => Map<string, BaseStorageItem>;
         };
+
         if (storageAny.getAllItems) {
             const items = storageAny.getAllItems();
             for (const [, item] of items) {
@@ -105,7 +101,7 @@ export class StoragePersistorAdapter implements Persistor {
             }
             return;
         }
-        // Fallback: nothing available
+
         logger.warn('load() not supported by underlying storage');
     }
 
@@ -120,7 +116,10 @@ export class StoragePersistorAdapter implements Persistor {
         await this.ensureInitialized();
 
         const item = await this.storage!.retrieve(hash);
-        if (!item) return null;
+        if (!item) {
+            return null;
+        }
+
         const snap = item.metadata?.['snapshot'] as Snapshot | undefined;
         return snap ?? null;
     }
@@ -131,14 +130,17 @@ export class StoragePersistorAdapter implements Persistor {
         const storageAny = this.storage as unknown as {
             getAllItems?: () => Map<string, BaseStorageItem>;
         };
+
         if (storageAny.getAllItems) {
             for (const [id, item] of storageAny.getAllItems()!) {
                 if (item.metadata && item.metadata['xcId'] === xcId) {
                     result.push(id);
                 }
             }
+
             return result;
         }
+
         logger.warn('listHashes() not supported by underlying storage');
         return result;
     }
@@ -152,7 +154,7 @@ export class StoragePersistorAdapter implements Persistor {
             snapshotCount: stats.itemCount,
             totalSizeBytes: stats.totalSize,
             avgSnapshotSizeBytes: stats.averageItemSize,
-            deltaCompressionRatio: 0, // Not implemented in storage adapter
+            deltaCompressionRatio: 0,
         };
     }
 

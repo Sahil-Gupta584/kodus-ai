@@ -158,25 +158,14 @@ export class PlannerPromptComposer {
     private composeUserPrompt(context: PromptCompositionContext): string {
         const sections: string[] = [];
 
-        // 1. Tool usage instructions
         sections.push(this.getToolUsageInstructions());
 
-        // 2. Available tools - enhanced list
         sections.push(this.formatAvailableTools(context.availableTools));
 
-        // 3. Context information
         if (context.memoryContext) {
             sections.push(`## 📋 CONTEXT\n${context.memoryContext.trim()}`);
         }
 
-        // 4. Planning history
-        if (context.planningHistory) {
-            sections.push(
-                `## 📚 PREVIOUS ATTEMPTS\n${context.planningHistory.trim()}`,
-            );
-        }
-
-        // 5. Replan context (if this is a replan attempt)
         if (context?.replanContext?.isReplan) {
             sections.push(
                 this.formatReplanContext({
@@ -186,7 +175,6 @@ export class PlannerPromptComposer {
             );
         }
 
-        // 6. Additional context (user-provided info only)
         if (
             context.additionalContext &&
             Object.keys(context.additionalContext).length > 0
@@ -196,10 +184,8 @@ export class PlannerPromptComposer {
             );
         }
 
-        // 6. The user request
         sections.push(`## 🎯 USER REQUEST\n"${context.goal}"`);
 
-        // 7. Final instruction
         sections.push(
             '## ✅ TASK\nCreate an executable plan using the available tools above.',
         );
@@ -1425,29 +1411,6 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
             });
         }
 
-        // Handle generic metadata fields (agnostic approach)
-        const metadataFields = Object.entries(additionalContext)
-            .filter(([key, value]) => {
-                // Skip already handled fields and system fields
-                const skipFields = [
-                    'userContext',
-                    'agentIdentity',
-                    'replanContext',
-                    'isReplan',
-                ];
-                return (
-                    !skipFields.includes(key) &&
-                    value !== undefined &&
-                    value !== null
-                );
-            })
-            .map(([key, value]) => `**${key}:** ${formatValue(value)}`);
-
-        if (metadataFields.length > 0) {
-            sections.push('### 📋 METADATA');
-            sections.push(...metadataFields);
-        }
-
         return sections.join('\n');
     }
 
@@ -1465,92 +1428,129 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
                 unknown
             >;
 
-            // 📋 Previous Plan Info
-            if (replan.previousPlan) {
-                const plan = replan.previousPlan as Record<string, unknown>;
-                sections.push('### 📋 PREVIOUS PLAN');
-                if (plan.id) sections.push(`**Plan ID:** ${plan.id}`);
-                if (plan.goal) sections.push(`**Goal:** "${plan.goal}"`);
-                if (plan.strategy)
-                    sections.push(`**Strategy:** ${plan.strategy}`);
-                if (plan.totalSteps)
-                    sections.push(`**Total Steps:** ${plan.totalSteps}`);
-            }
-
-            // 📊 Execution Summary
-            if (replan.executionSummary) {
-                const summary = replan.executionSummary as Record<
+            if (replan.executedPlan) {
+                const executedPlan = replan.executedPlan as Record<
                     string,
                     unknown
                 >;
-                sections.push('### 📊 EXECUTION SUMMARY');
-                if (summary.type) sections.push(`**Result:** ${summary.type}`);
-                if (summary.executionTime)
-                    sections.push(`**Duration:** ${summary.executionTime}ms`);
-                if (summary.successfulSteps)
-                    sections.push(
-                        `**✅ Successful:** ${summary.successfulSteps}`,
-                    );
-                if (summary.failedSteps)
-                    sections.push(`**❌ Failed:** ${summary.failedSteps}`);
-                if (summary.feedback)
-                    sections.push(`**Feedback:** ${summary.feedback}`);
-            }
+                const plan = executedPlan.plan as Record<string, unknown>;
 
-            // 🎯 Preserved Steps (with results)
-            if (replan.preservedSteps && Array.isArray(replan.preservedSteps)) {
-                sections.push('### 🎯 PRESERVED STEPS & RESULTS');
-                sections.push(
-                    `**Total Preserved:** ${replan.preservedSteps.length}`,
-                );
+                sections.push('### 📋 EXECUTED PLAN');
+                if (plan.id) {
+                    sections.push(`**Plan ID:** ${plan.id}`);
+                }
 
-                // Process each preserved step
-                (
-                    replan.preservedSteps as Array<Record<string, unknown>>
-                ).forEach((step, index) => {
-                    sections.push(
-                        `\n**Step ${index + 1}:** ${step.description || step.id}`,
-                    );
-                    if (step.tool) sections.push(`**Tool:** ${step.tool}`);
+                const executionData = executedPlan.executionData as Record<
+                    string,
+                    unknown
+                >;
 
-                    // Extract and format tool result
-                    if (step.result) {
-                        const result = this.extractToolResult(
-                            step.result as Record<string, unknown>,
-                        );
-                        if (result) {
-                            sections.push(`**Result:** ${result}`);
-                        }
+                if (executionData) {
+                    sections.push('###EXECUTION DATA');
+
+                    const toolsThatWorked =
+                        executionData.toolsThatWorked as unknown[];
+                    if (toolsThatWorked && toolsThatWorked.length > 0) {
+                        toolsThatWorked.forEach((tool: unknown) => {
+                            const toolData = tool as Record<string, unknown>;
+                            const toolName = toolData.tool || toolData.stepId;
+                            const description =
+                                toolData.description || 'No description';
+                            const result = toolData.result || 'No result';
+
+                            sections.push(`  - ${toolName}: ${description}`);
+                            sections.push(
+                                `    Result: ${typeof result === 'string' ? result : JSON.stringify(result)}`,
+                            );
+                        });
                     }
-                });
-            }
 
-            // 🚨 Failure Analysis
-            if (replan.failureAnalysis) {
-                const analysis = replan.failureAnalysis as Record<
-                    string,
-                    unknown
-                >;
-                sections.push('### 🚨 FAILURE ANALYSIS');
-                if (analysis.primaryCause)
-                    sections.push(
-                        `**Primary Cause:** ${analysis.primaryCause}`,
-                    );
-                if (
-                    analysis.failurePatterns &&
-                    Array.isArray(analysis.failurePatterns)
-                ) {
-                    const patterns = analysis.failurePatterns as string[];
-                    if (patterns.length > 0) {
-                        sections.push(`**Patterns:** ${patterns.join(', ')}`);
+                    const toolsThatFailed =
+                        executionData.toolsThatFailed as unknown[];
+                    if (toolsThatFailed && toolsThatFailed.length > 0) {
+                        sections.push(
+                            `**Failed Tools:** ${toolsThatFailed.length}`,
+                        );
+                        toolsThatFailed.forEach((tool: unknown) => {
+                            const toolData = tool as Record<string, unknown>;
+                            sections.push(
+                                `  - ${toolData.tool || toolData.stepId}: ${toolData.error || 'Unknown error'}`,
+                            );
+                        });
+                    }
+
+                    const toolsNotExecuted =
+                        executionData.toolsNotExecuted as unknown[];
+                    if (toolsNotExecuted && toolsNotExecuted.length > 0) {
+                        sections.push(
+                            `**Not Executed:** ${toolsNotExecuted.length}`,
+                        );
+                        toolsNotExecuted.forEach((tool: unknown) => {
+                            const toolData = tool as Record<string, unknown>;
+                            sections.push(
+                                `  - ${toolData.tool || toolData.stepId}: ${toolData.description || 'No description'}`,
+                            );
+                        });
+                    }
+                }
+
+                const signals = executedPlan.signals as Record<string, unknown>;
+                if (signals) {
+                    const failurePatterns = signals.failurePatterns as string[];
+                    const needs = signals.needs as string[];
+                    const suggestedNextStep = signals.suggestedNextStep;
+
+                    if (
+                        (failurePatterns && failurePatterns.length > 0) ||
+                        (needs && needs.length > 0) ||
+                        suggestedNextStep
+                    ) {
+                        sections.push('### 🚨 SIGNALS ANALYSIS');
+
+                        if (failurePatterns && failurePatterns.length > 0) {
+                            sections.push(
+                                `**Failure Patterns:** ${failurePatterns.join(', ')}`,
+                            );
+                        }
+
+                        if (needs && needs.length > 0) {
+                            sections.push(`**Needs:** ${needs.join(', ')}`);
+                        }
+
+                        if (suggestedNextStep) {
+                            sections.push(
+                                `**Suggested Next Step:** ${suggestedNextStep}`,
+                            );
+                        }
                     }
                 }
             }
 
-            // 💡 Suggestions
-            if (replan.suggestions) {
-                sections.push('### 💡 SUGGESTIONS');
-                sections.push(`${replan.suggestions}`);
+            // 📚 Plan History
+            if (replan.planHistory && Array.isArray(replan.planHistory)) {
+                const history = replan.planHistory as Array<
+                    Record<string, unknown>
+                >;
+                if (history.length > 0) {
+                    sections.push('### 📚 PLAN HISTORY');
+                    sections.push(`**Previous Attempts:** ${history.length}`);
+
+                    history.forEach((planData, index) => {
+                        const plan = planData.plan as Record<string, unknown>;
+                        sections.push(
+                            `\n**Attempt ${index + 1}:** ${plan.id || 'Unknown Plan'}`,
+                        );
+                        if (plan.goal) sections.push(`  Goal: "${plan.goal}"`);
+
+                        const signals = planData.signals as Record<
+                            string,
+                            unknown
+                        >;
+                        if (signals?.primaryCause) {
+                            sections.push(`  Failed: ${signals.primaryCause}`);
+                        }
+                    });
+                }
             }
         }
 
@@ -1558,185 +1558,6 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
             '\n**⚠️ REPLAN MODE:** Use the preserved results and failure analysis to create a better plan.',
         );
         return sections.join('\n');
-    }
-
-    /**
-     * Extract meaningful information from tool results (fully agnostic approach)
-     */
-    private extractToolResult(result: Record<string, unknown>): string | null {
-        try {
-            // Handle MCP tool result structure
-            if (result.type === 'tool_result' && result.content) {
-                const content = result.content as Record<string, unknown>;
-
-                // Try different possible field names
-                const possibleResultFields = [
-                    'result',
-                    'results',
-                    'data',
-                    'response',
-                ];
-
-                for (const fieldName of possibleResultFields) {
-                    if (content[fieldName]) {
-                        const toolResult = content[fieldName] as Record<
-                            string,
-                            unknown
-                        >;
-
-                        // Try different content structures
-                        const possibleContentFields = [
-                            'content',
-                            'data',
-                            'text',
-                            'message',
-                        ];
-
-                        for (const contentField of possibleContentFields) {
-                            if (toolResult[contentField]) {
-                                const contentData = toolResult[contentField];
-
-                                // Handle array content
-                                if (Array.isArray(contentData)) {
-                                    for (const item of contentData) {
-                                        if (item && typeof item === 'object') {
-                                            const itemObj = item as Record<
-                                                string,
-                                                unknown
-                                            >;
-
-                                            // Try to extract text from different possible fields
-                                            const possibleTextFields = [
-                                                'text',
-                                                'content',
-                                                'data',
-                                                'message',
-                                            ];
-
-                                            for (const textField of possibleTextFields) {
-                                                if (
-                                                    itemObj[textField] &&
-                                                    typeof itemObj[
-                                                        textField
-                                                    ] === 'string'
-                                                ) {
-                                                    const text = itemObj[
-                                                        textField
-                                                    ] as string;
-
-                                                    // Try to parse as JSON
-                                                    try {
-                                                        const parsedText =
-                                                            JSON.parse(text);
-
-                                                        // Handle success/failure
-                                                        if (
-                                                            parsedText.successful ===
-                                                            false
-                                                        ) {
-                                                            return `❌ Error: ${parsedText.error || 'Unknown error'}`;
-                                                        }
-
-                                                        if (
-                                                            parsedText.successful ===
-                                                            true
-                                                        ) {
-                                                            // Extract any data field (agnostic)
-                                                            if (
-                                                                parsedText.data
-                                                            ) {
-                                                                const dataStr =
-                                                                    JSON.stringify(
-                                                                        parsedText.data,
-                                                                    );
-                                                                if (
-                                                                    dataStr.length >
-                                                                    100
-                                                                ) {
-                                                                    return `✅ Data extracted (${dataStr.length} chars)`;
-                                                                }
-                                                                return `✅ Data: ${dataStr}`;
-                                                            }
-                                                            return '✅ Success';
-                                                        }
-                                                    } catch {
-                                                        // If JSON parsing fails, return the raw text
-                                                        if (text.length > 100) {
-                                                            return `✅ Raw data (${text.length} chars)`;
-                                                        }
-                                                        return `✅ Raw: ${text}`;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Handle direct string content
-                                if (typeof contentData === 'string') {
-                                    try {
-                                        const parsedData =
-                                            JSON.parse(contentData);
-                                        if (parsedData.successful === false) {
-                                            return `❌ Error: ${parsedData.error || 'Unknown error'}`;
-                                        }
-                                        if (parsedData.successful === true) {
-                                            if (parsedData.data) {
-                                                const dataStr = JSON.stringify(
-                                                    parsedData.data,
-                                                );
-                                                if (dataStr.length > 100) {
-                                                    return `✅ Data extracted (${dataStr.length} chars)`;
-                                                }
-                                                return `✅ Data: ${dataStr}`;
-                                            }
-                                            return '✅ Success';
-                                        }
-                                    } catch {
-                                        if (contentData.length > 100) {
-                                            return `✅ Raw data (${contentData.length} chars)`;
-                                        }
-                                        return `✅ Raw: ${contentData}`;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Handle direct success/failure
-            if (result.success === true) {
-                return '✅ Success';
-            }
-            if (result.success === false) {
-                return '❌ Failed';
-            }
-
-            // Fallback: try to extract any result field
-            const possibleFields = [
-                'result',
-                'results',
-                'data',
-                'response',
-                'content',
-            ];
-
-            for (const field of possibleFields) {
-                if (result[field]) {
-                    const fieldData = result[field];
-                    const fieldStr = JSON.stringify(fieldData);
-                    if (fieldStr.length > 100) {
-                        return `✅ ${field} (${fieldStr.length} chars)`;
-                    }
-                    return `✅ ${field}: ${fieldStr}`;
-                }
-            }
-
-            return null;
-        } catch {
-            return '❓ Unknown result format';
-        }
     }
 
     /**
@@ -1766,7 +1587,6 @@ ${JSON.stringify(example.expectedPlan, null, 2)}`,
      * Estimate token count (rough approximation)
      */
     private estimateTokenCount(text: string): number {
-        // Rough estimation: 1 token ≈ 4 characters for English text
         return Math.ceil(text.length / 4);
     }
 

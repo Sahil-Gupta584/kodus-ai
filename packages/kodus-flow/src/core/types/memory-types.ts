@@ -79,7 +79,7 @@ export const memoryStoreOptionsSchema = z.object({
     // Storage backend configuration
     storage: z
         .object({
-            type: z.enum(['memory', 'redis', 'custom']),
+            type: z.enum(['memory', 'custom']),
             config: z.record(z.string(), z.unknown()).optional(),
         })
         .optional(),
@@ -136,7 +136,7 @@ export const memoryVectorStoreOptionsSchema = z.object({
     // Storage backend configuration
     storage: z
         .object({
-            type: z.enum(['memory', 'redis', 'pinecone', 'qdrant', 'custom']),
+            type: z.enum(['memory', 'pinecone', 'qdrant', 'custom']),
             config: z.record(z.string(), z.unknown()).optional(),
         })
         .optional(),

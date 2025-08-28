@@ -363,7 +363,7 @@ export class MemoryPersistor extends BasePersistor {
  * @returns A persistor instance
  */
 export function createPersistor(
-    type: 'memory' | 'mongodb' | 'redis' | 'temporal' = 'memory',
+    type: 'memory' | 'mongodb' = 'memory',
     options: Record<string, unknown> = {},
 ): Persistor {
     // Use the unified factory from persistor module

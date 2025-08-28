@@ -17,7 +17,7 @@ import type {
     Metadata,
 } from './base-types.js';
 
-import { ContextStateService } from '../context/services/state-service.js';
+import { SimpleContextStateService as ContextStateService } from '../context/services/simple-state-service.js';
 // import { MemoryService } from '../context/context-factory.js';
 import { Persistor, EventStream, Event } from './common-types.js';
 import { IdGenerator } from '../../utils/id-generator.js';
@@ -285,7 +285,7 @@ export interface WorkflowEngineConfig extends BaseEngineConfig {
 
     // State management
     storage?: {
-        type: 'memory' | 'redis' | 'custom';
+        type: 'memory' | 'custom';
         config?: Record<string, unknown>;
     };
 
@@ -505,13 +505,7 @@ export function createWorkflowContext(
         workflowName,
         //memoryService: options.memoryService,
         persistorService: options.persistorService,
-        stateManager: new ContextStateService(
-            {},
-            {
-                maxNamespaceSize: 1000,
-                maxNamespaces: 100,
-            },
-        ),
+        stateManager: new ContextStateService({}),
         data: {},
         currentSteps: [],
         completedSteps: [],

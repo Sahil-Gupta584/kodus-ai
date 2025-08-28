@@ -1,8 +1,3 @@
-/**
- * @module kernel/multi-kernel-manager
- * @description Multi-Kernel Architecture with Namespace Isolation
- */
-
 import { ExecutionKernel, createKernel, type KernelConfig } from './kernel.js';
 import { createPersistor } from '../persistor/factory.js';
 import { createLogger } from '../observability/index.js';
@@ -13,26 +8,19 @@ import type {
 } from '../core/types/events.js';
 import type { EventHandler } from '../core/types/common-types.js';
 import type { Workflow } from '../core/types/workflow-types.js';
+import type { PersistorType } from '../persistor/config.js';
 
 /**
  * Kernel specification for different purposes
  */
 export interface KernelSpec {
-    /** Kernel identifier */
     kernelId: string;
-    /** Namespace for event isolation */
     namespace: string;
-    /** Purpose-specific workflow */
     workflow: Workflow;
-    /** Whether this kernel needs persistence (agents=true, logs=false) */
     needsPersistence: boolean;
-    /** Whether this kernel needs snapshots for recovery */
     needsSnapshots: boolean;
-    /** Quotas for this kernel (null for observability kernels) */
     quotas?: KernelConfig['quotas'];
-    /** Performance configuration */
     performance?: KernelConfig['performance'];
-    /** Runtime configuration */
     runtimeConfig?: KernelConfig['runtimeConfig'];
 }
 
@@ -40,15 +28,10 @@ export interface KernelSpec {
  * Cross-kernel event bridge configuration
  */
 export interface CrossKernelBridge {
-    /** Source kernel namespace */
     fromNamespace: string;
-    /** Target kernel namespace */
     toNamespace: string;
-    /** Event type pattern to bridge (e.g., "metrics.*") */
     eventPattern: string;
-    /** Transform function for cross-kernel events */
     transform?: (event: AnyEvent) => AnyEvent;
-    /** Whether to log cross-kernel communications */
     enableLogging?: boolean;
 }
 
@@ -56,21 +39,13 @@ export interface CrossKernelBridge {
  * Multi-kernel manager configuration
  */
 export interface MultiKernelConfig {
-    /** Tenant ID for all kernels */
     tenantId: string;
-    /** Kernel specifications */
     kernels: KernelSpec[];
-    /** Cross-kernel communication bridges */
     bridges?: CrossKernelBridge[];
-    /** Global configuration */
     global?: {
-        /** Base persistor type for kernels that need persistence */
-        persistorType?: 'memory' | 'mongodb' | 'redis' | 'temporal';
-        /** Persistor options for configuration */
+        persistorType?: PersistorType;
         persistorOptions?: Record<string, unknown>;
-        /** Enable cross-kernel event logging */
         enableCrossKernelLogging?: boolean;
-        /** Maximum concurrent kernels */
         maxConcurrentKernels?: number;
     };
 }
@@ -117,7 +92,6 @@ export class MultiKernelManager {
         this.config = config;
         this.logger = createLogger(`multi-kernel:${config.tenantId}`);
 
-        // Register event bridges
         if (config.bridges) {
             for (const bridge of config.bridges) {
                 const bridgeKey = `${bridge.fromNamespace}->${bridge.toNamespace}`;

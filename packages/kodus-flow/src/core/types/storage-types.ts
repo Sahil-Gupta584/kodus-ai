@@ -9,8 +9,6 @@
 export enum StorageType {
     INMEMORY = 'memory',
     MONGODB = 'mongodb',
-    REDIS = 'redis',
-    TEMPORAL = 'temporal',
 }
 
 /**
@@ -36,10 +34,7 @@ export function stringToAdapterType(type: string): StorageType {
             return StorageType.INMEMORY;
         case 'mongodb':
             return StorageType.MONGODB;
-        case 'redis':
-            return StorageType.REDIS;
-        case 'temporal':
-            return StorageType.TEMPORAL;
+
         case 'memory':
             return StorageType.INMEMORY;
         default:

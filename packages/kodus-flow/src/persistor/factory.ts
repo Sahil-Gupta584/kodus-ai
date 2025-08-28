@@ -1,8 +1,3 @@
-/**
- * @module persistor/factory
- * @description Unified factory for creating persistor instances
- */
-
 import type { Persistor } from './index.js';
 import { StoragePersistorAdapter } from './storage-adapter.js';
 import type { PersistorConfig } from './config.js';
@@ -54,28 +49,6 @@ export function createPersistorFromConfig(config: PersistorConfig): Persistor {
                 },
             );
 
-        case 'redis':
-            return new StoragePersistorAdapter(
-                { type: 'redis' },
-                {
-                    maxSnapshots: config.maxSnapshots,
-                    enableCompression: config.enableCompression,
-                    enableDeltaCompression: config.enableDeltaCompression,
-                    cleanupInterval: config.cleanupInterval,
-                },
-            );
-
-        case 'temporal':
-            return new StoragePersistorAdapter(
-                { type: 'temporal' },
-                {
-                    maxSnapshots: config.maxSnapshots,
-                    enableCompression: config.enableCompression,
-                    enableDeltaCompression: config.enableDeltaCompression,
-                    cleanupInterval: config.cleanupInterval,
-                },
-            );
-
         default:
             throw new Error(`Unknown persistor type: ${type}`);
     }
@@ -85,7 +58,7 @@ export function createPersistorFromConfig(config: PersistorConfig): Persistor {
  * Create persistor with simple type and options
  */
 export function createPersistor(
-    type: 'memory' | 'mongodb' | 'redis' | 'temporal' = 'memory',
+    type: 'memory' | 'mongodb' = 'memory',
     options: Record<string, unknown> = {},
 ): Persistor {
     const config: PersistorConfig = {
