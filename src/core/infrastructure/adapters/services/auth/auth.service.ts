@@ -153,11 +153,13 @@ export class AuthService implements IAuthService {
             const user = await this.validateUser({
                 email,
             });
-            if (!user|| !user.uuid) {
+            if (!user || !user.uuid) {
                 throw new UnauthorizedException('api.users.unauthorized');
             }
-             if (user.uuid !== uuid) {
-                 throw new UnauthorizedException('User ID does not match the provided email.');
+            if (user.uuid !== uuid) {
+                throw new UnauthorizedException(
+                    'User ID does not match the provided email.',
+                );
             }
             const token = await this.jwtService.signAsync(
                 { uuid, email },
@@ -190,8 +192,9 @@ export class AuthService implements IAuthService {
         try {
             const payload = {
                 email: user.email,
-                role: user?.role,
-                teamRole: teamMember?.teamRole ?? '',
+                role: user.role,
+                teamRole: teamMember?.teamRole,
+                status: user.status,
                 sub: user.uuid,
                 organizationId: user.organization.uuid,
                 iss: 'kodus-orchestrator',
@@ -228,9 +231,7 @@ export class AuthService implements IAuthService {
 
             const userModel = mapSimpleEntityToModel(userEntity, UserModel);
 
-            const expiryDate = await getExpiryDate(
-                this.jwtConfig.refreshExpiresIn,
-            );
+            const expiryDate = getExpiryDate(this.jwtConfig.refreshExpiresIn);
 
             if (authProvider === AuthProvider.CREDENTIALS) {
                 authDetails = {

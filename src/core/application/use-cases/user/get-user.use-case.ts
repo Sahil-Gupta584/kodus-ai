@@ -19,6 +19,7 @@ export class GetUserUseCase implements IUseCase {
             user: { organization: { uuid: string }; uuid: string };
         },
     ) {}
+
     public async execute(): Promise<IUser> {
         const userId = this.request.user?.uuid;
         const organizationId = this.request.user?.organization.uuid;

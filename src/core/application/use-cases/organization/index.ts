@@ -1,4 +1,3 @@
-import { CreateOrganizationFromOAuthUseCase } from './create-from-oauth.use-case';
 import { CreateOrganizationUseCase } from './create.use-case';
 import { GetOrganizationNameUseCase } from './get-organization-name';
 import { GetOrganizationNameByTenantUseCase } from './get-organization-name-by-tenant';
@@ -11,7 +10,6 @@ export const UseCases = [
     GetOrganizationNameUseCase,
     GetOrganizationTenantNameUseCase,
     GetOrganizationNameByTenantUseCase,
-    CreateOrganizationFromOAuthUseCase,
     UpdateInfoOrganizationAndPhoneUseCase,
     GetOrganizationsByDomainUseCase,
 ];

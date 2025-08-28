@@ -17,7 +17,6 @@ import { JwtStrategy } from '@/core/infrastructure/adapters/services/auth/jwt-au
 import { CreateOrganizationUseCase } from '@/core/application/use-cases/organization/create.use-case';
 import { OrganizationModule } from './organization.module';
 import { TeamMembersModule } from './teamMembers.module';
-import { CreateOrganizationFromOAuthUseCase } from '@/core/application/use-cases/organization/create-from-oauth.use-case';
 import { ProfilesModule } from './profiles.module';
 import { TeamsModule } from './team.module';
 
@@ -54,7 +53,6 @@ import { TeamsModule } from './team.module';
             useClass: AuthService,
         },
         CreateOrganizationUseCase,
-        CreateOrganizationFromOAuthUseCase,
     ],
     exports: [AUTH_SERVICE_TOKEN, JwtModule],
     controllers: [AuthController],

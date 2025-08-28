@@ -74,4 +74,8 @@ export class AddLibraryKodyRulesDto {
     @IsOptional()
     @IsEnum(KodyRulesStatus)
     status?: KodyRulesStatus;
+
+    @IsOptional()
+    @IsString()
+    scope?: string;
 }
