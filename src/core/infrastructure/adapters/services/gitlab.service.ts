@@ -2031,28 +2031,6 @@ export class GitlabService
     ): Promise<any[] | null> {
         const { organizationAndTeamData, repository, prNumber } = params;
 
-        const prCacheKey = `gitlab-commits-pr-${repository.id}-${prNumber}`;
-        
-        try {
-            const cachedCommits = await this.cacheService.getFromCache(prCacheKey);
-            if (cachedCommits) {
-                this.logger.log({
-                    message: `Found cached commits for PR #${prNumber} in repository ${repository.id}`,
-                    context: GitlabService.name,
-                    serviceName: 'GitlabService getCommitsForPullRequestForCodeReview',
-                    metadata: { prNumber, repositoryId: repository.id, cached: true },
-                });
-                return cachedCommits as any[];
-            }
-        } catch (cacheError) {
-            this.logger.warn({
-                message: 'Error reading commits from cache, continuing with API call',
-                context: GitlabService.name,
-                serviceName: 'GitlabService getCommitsForPullRequestForCodeReview',
-                error: cacheError,
-            });
-        }
-
         try {
             const gitlabAuthDetail = await this.getAuthDetails(
                 organizationAndTeamData,
@@ -2105,23 +2083,6 @@ export class GitlabService
                     new Date(b?.created_at).getTime()
                 );
             });
-
-            try {
-                await this.cacheService.addToCache(prCacheKey, sortedCommits, 1800000); // 30 minutos
-                this.logger.log({
-                    message: `Cached commits for PR #${prNumber} in repository ${repository.id}`,
-                    context: GitlabService.name,
-                    serviceName: 'GitlabService getCommitsForPullRequestForCodeReview',
-                    metadata: { prNumber, repositoryId: repository.id, cached: true },
-                });
-            } catch (cacheError) {
-                this.logger.warn({
-                    message: 'Error saving commits to cache',
-                    context: GitlabService.name,
-                    serviceName: 'GitlabService getCommitsForPullRequestForCodeReview',
-                    error: cacheError,
-                });
-            }
 
             return sortedCommits;
         } catch (error) {
