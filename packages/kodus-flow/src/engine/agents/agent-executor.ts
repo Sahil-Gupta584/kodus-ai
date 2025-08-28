@@ -68,7 +68,7 @@ export class AgentExecutor<
     async executeViaWorkflow(
         input: TInput,
         options?: AgentExecutionOptions,
-    ): Promise<AgentExecutionResult<TOutput>> {
+    ): Promise<AgentExecutionResult> {
         const correlationId =
             options?.correlationId || IdGenerator.correlationId();
         const sessionId = options?.sessionId;
@@ -119,7 +119,7 @@ export class AgentExecutor<
                 };
             }
 
-            return result as AgentExecutionResult<TOutput>;
+            return result as AgentExecutionResult;
         } catch (error) {
             this.logError(
                 'Agent workflow execution failed',
@@ -140,7 +140,7 @@ export class AgentExecutor<
     async executeWithValidation(
         input: unknown,
         options?: AgentExecutionOptions,
-    ): Promise<AgentExecutionResult<TOutput>> {
+    ): Promise<AgentExecutionResult> {
         const definition = this.getDefinition();
         if (!definition) {
             throw new EngineError('AGENT_ERROR', 'Agent definition not found');
@@ -432,39 +432,6 @@ export class AgentExecutor<
             pauseReason: this.pauseReason,
             snapshotId: this.snapshotId,
             lifecycleStatus: 'running', // TODO: Get from lifecycle handler
-        };
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // 📊 STATUS & MONITORING
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Get executor status
-     */
-    getExecutorStatus(): {
-        executorType: 'workflow';
-        agentName: string;
-        isReady: boolean;
-        lifecycleStatus: string;
-        workflowStatus: string;
-        activeExecutions: number;
-        totalExecutions: number;
-        isPaused: boolean;
-    } {
-        const status = this.getStatus();
-        const definition = this.getDefinition();
-        const workflowStatus = this.getWorkflowStatus();
-
-        return {
-            executorType: 'workflow',
-            agentName: definition?.name || 'unknown',
-            isReady: status.initialized && !this.isPaused,
-            lifecycleStatus: workflowStatus.lifecycleStatus,
-            workflowStatus: this.isPaused ? 'paused' : 'running',
-            activeExecutions: status.activeExecutions,
-            totalExecutions: status.eventCount,
-            isPaused: this.isPaused,
         };
     }
 

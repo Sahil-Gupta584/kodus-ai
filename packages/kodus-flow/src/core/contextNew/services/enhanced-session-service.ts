@@ -251,7 +251,7 @@ export class EnhancedSessionService implements SessionManager {
                 // For toolResults object
                 const existing = updatedEntities[
                     entityType as keyof typeof updatedEntities
-                ] as Record<string, string> | undefined;
+                ] as Record<string, unknown> | undefined;
                 (updatedEntities as any)[entityType] = {
                     ...(existing || {}),
                     ...entityData,

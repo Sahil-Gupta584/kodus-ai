@@ -8,7 +8,6 @@ import {
     createDefaultMultiKernelHandler,
     createMultiKernelHandler,
 } from '../engine/core/multi-kernel-handler.js';
-import { ContextBuilder } from '../core/context/context-builder.js';
 import { EnhancedContextBuilder } from '../core/contextNew/index.js';
 import { safeJsonSchemaToZod } from '../core/utils/json-schema-to-zod.js';
 import {
@@ -18,12 +17,12 @@ import {
     AgentDefinition,
     AgentExecutionOptions,
     agentIdentitySchema,
-    ContextBuilderConfig,
     defineTool,
     MCPAdapter,
     OrchestrationConfig,
     OrchestrationConfigInternal,
     OrchestrationResult,
+    PlannerType,
     SessionId,
     StorageEnum,
     Thread,
@@ -74,7 +73,7 @@ const orchestrator = new SDKOrchestrator({
             mcpAdapter: config.mcpAdapter || null,
             enableObservability: config.enableObservability ?? true,
             defaultTimeout: config.defaultTimeout || 60000, //UNIFIED: 60s timeout
-            defaultPlanner: config.defaultPlanner || 'plan-execute',
+            defaultPlanner: config.defaultPlanner || PlannerType.REWOO,
             defaultMaxIterations: config.defaultMaxIterations || 15,
             storage: config.storage || {},
             observability: config.observability || {},
@@ -91,7 +90,7 @@ const orchestrator = new SDKOrchestrator({
                 storageKeys: Object.keys(this.config.storage || {}),
             },
         );
-        this.configureContextBuilder();
+        this.initializeEnhancedContext();
 
         if (this.config.kernel?.performance?.autoSnapshot) {
             this.kernelHandler = createMultiKernelHandler({
@@ -140,8 +139,7 @@ const orchestrator = new SDKOrchestrator({
     ): Promise<AgentDefinition<unknown, unknown, unknown>> {
         this.logger.info('Creating agent', {
             name: config.name,
-            planner:
-                config.plannerOptions?.planner || this.config.defaultPlanner,
+            planner: config.plannerOptions?.type || this.config.defaultPlanner,
             executionMode: config.executionMode || 'simple',
         });
 
@@ -177,15 +175,15 @@ const orchestrator = new SDKOrchestrator({
         const agentCoreConfig: AgentCoreConfig = {
             tenantId: this.config.tenantId,
             agentName: config.name,
-            planner:
-                config?.plannerOptions?.planner || this.config.defaultPlanner,
             llmAdapter: this.config.llmAdapter, // Pass LLM adapter
             maxThinkingIterations:
                 config.maxIterations || this.config.defaultMaxIterations,
             enableKernelIntegration: true,
             debug: process.env.NODE_ENV === 'development',
             monitoring: this.config.enableObservability,
-            plannerOptions: config?.plannerOptions,
+            plannerOptions: config?.plannerOptions || {
+                type: this.config.defaultPlanner,
+            },
         };
 
         let agentInstance:
@@ -202,8 +200,7 @@ const orchestrator = new SDKOrchestrator({
             this.logger.info('Agent created via AgentExecutor (workflow)', {
                 agentName: config.name,
                 planner:
-                    config?.plannerOptions?.planner ||
-                    this.config.defaultPlanner,
+                    config?.plannerOptions?.type || this.config.defaultPlanner,
             });
         } else {
             agentInstance = new AgentEngine(
@@ -215,8 +212,7 @@ const orchestrator = new SDKOrchestrator({
             this.logger.info('Agent created via AgentEngine (simple)', {
                 agentName: config.name,
                 planner:
-                    config?.plannerOptions?.planner ||
-                    this.config.defaultPlanner,
+                    config?.plannerOptions?.type || this.config.defaultPlanner,
             });
         }
 
@@ -804,181 +800,117 @@ const orchestrator = new SDKOrchestrator({
     // ──────────────────────────────────────────────────────────────────────────────
 
     /**
-     * Configure ContextBuilder with storage settings
+     * 🔥 Initialize EnhancedContextBuilder with new storage config
      */
-    private configureContextBuilder(): void {
-        this.logger.info('🔍 [DEBUG] Starting configureContextBuilder', {
-            hasStorageInConfig: !!this.config.storage,
-            storageKeys: Object.keys(this.config.storage || {}),
-            fullStorageConfig: this.config.storage,
-        });
-
-        const contextConfig = this.getStorageConfig();
-
-        this.logger.info(
-            '🔍 [DEBUG] Generated contextConfig from getStorageConfig',
-            {
-                contextConfig,
-                hasMemory: !!contextConfig.memory,
-                hasSession: !!contextConfig.session,
-                hasSnapshot: !!contextConfig.snapshot,
-                memoryConnectionString:
-                    contextConfig.memory?.adapterConfig?.connectionString,
-                sessionConnectionString:
-                    contextConfig.session?.connectionString,
-            },
-        );
-
+    private initializeEnhancedContext(): void {
         try {
-            // 🏗️ Configure original ContextBuilder (legacy support)
-            ContextBuilder.configure(contextConfig);
-
-            // 🔥 Configure EnhancedContextBuilder (ContextNew)
             const enhancedConfig = this.getEnhancedContextConfig();
             EnhancedContextBuilder.configure(enhancedConfig);
 
-            this.logger.info(
-                '✅ Both ContextBuilder and EnhancedContextBuilder configured',
-                {
-                    legacy: {
-                        hasMemoryConfig: !!contextConfig.memory,
-                        hasSessionConfig: !!contextConfig.session,
-                        memoryAdapter: contextConfig.memory?.adapterType,
-                        sessionAdapter: contextConfig.session?.adapterType,
-                    },
-                    enhanced: {
-                        adapterType: enhancedConfig.adapterType,
-                        dbName: enhancedConfig.dbName,
-                        sessionsCollection: enhancedConfig.sessionsCollection,
-                        snapshotsCollection: enhancedConfig.snapshotsCollection,
-                        hasConnectionString: !!enhancedConfig.connectionString,
-                    },
+            this.logger.info('✅ EnhancedContextBuilder configured', {
+                mode:
+                    enhancedConfig.adapterType === StorageEnum.MONGODB
+                        ? 'MongoDB'
+                        : 'InMemory',
+                database: enhancedConfig.dbName,
+                collections: {
+                    sessions: enhancedConfig.sessionsCollection,
+                    snapshots: enhancedConfig.snapshotsCollection,
+                    memory: enhancedConfig.memory?.adapterConfig?.options
+                        ?.collection,
                 },
-            );
+            });
         } catch (error) {
             this.logger.error(
-                'Failed to configure Context systems',
+                'Failed to configure EnhancedContextBuilder',
                 error instanceof Error ? error : new Error('Unknown error'),
             );
+            throw error;
         }
-    }
-
-    getStorageConfig(): ContextBuilderConfig {
-        const result: ContextBuilderConfig = {};
-
-        // ✅ Convert memory config to ContextBuilder format
-        if (this.config.storage?.memory) {
-            const memoryConfig = this.config.storage.memory;
-            result.memory = {
-                adapterType: memoryConfig.type,
-                adapterConfig: {
-                    connectionString: memoryConfig.connectionString,
-                    options: {
-                        database: memoryConfig.database || 'kodus',
-                        collection: memoryConfig.collection || 'memories',
-                        maxItems: memoryConfig.maxItems || 10000,
-                        enableCompression:
-                            memoryConfig.enableCompression ?? true,
-                        cleanupInterval: memoryConfig.cleanupInterval || 300000,
-                    },
-                },
-            };
-        }
-
-        // ✅ Convert session config to SessionConfig format
-        if (this.config.storage?.session) {
-            const sessionConfig = this.config.storage.session;
-            result.session = {
-                maxSessions: sessionConfig.maxSessions || 1000,
-                sessionTimeout: sessionConfig.sessionTimeout || 30 * 60 * 1000,
-                enableAutoCleanup: true,
-                persistent: sessionConfig.type === 'mongodb',
-                adapterType: sessionConfig.type,
-                connectionString: sessionConfig.connectionString,
-                adapterOptions: {
-                    database: sessionConfig.database || 'kodus',
-                    collection: sessionConfig.collection || 'sessions',
-                },
-                cleanupInterval: sessionConfig.cleanupInterval || 300000,
-            };
-        }
-
-        if (this.config.storage?.snapshot) {
-            const snapshotConfig = this.config.storage.snapshot;
-            result.snapshot = {
-                adapterType: snapshotConfig.type,
-                adapterConfig: {
-                    connectionString: snapshotConfig.connectionString,
-                    options: {
-                        database: snapshotConfig.database || 'kodus',
-                        collection: snapshotConfig.collection || 'snapshots',
-                        maxSnapshots: snapshotConfig.maxSnapshots || 1000,
-                        enableCompression:
-                            snapshotConfig.enableCompression ?? true,
-                        enableDeltaCompression:
-                            snapshotConfig.enableDeltaCompression ?? true,
-                        cleanupInterval:
-                            snapshotConfig.cleanupInterval || 300000,
-                    },
-                },
-            };
-        }
-
-        return result;
     }
 
     /**
      * 🔥 Get EnhancedContextBuilder configuration from storage settings
      */
     getEnhancedContextConfig() {
-        // Use session storage config as primary source for connection string
-        const sessionConfig = this.config.storage?.session;
-        const memoryConfig = this.config.storage?.memory;
+        const storage = this.config.storage;
 
-        // Get connection string from session or memory config
-        const connectionString =
-            sessionConfig?.connectionString || memoryConfig?.connectionString;
+        // 🎯 REGRA: Se não tem storage config = InMemory
+        if (!storage) {
+            return {
+                adapterType: StorageEnum.INMEMORY,
+                dbName: 'kodus-flow-memory',
+                sessionsCollection: 'sessions',
+                snapshotsCollection: 'snapshots',
+                sessionTTL: 24 * 60 * 60 * 1000, // 24h
+                snapshotTTL: 7 * 24 * 60 * 60 * 1000, // 7 days
+                memory: {
+                    adapterType: StorageEnum.INMEMORY,
+                    adapterConfig: {
+                        connectionString: undefined,
+                        options: {
+                            database: 'kodus-flow-memory',
+                            collection: 'memories',
+                            maxItems: 10000,
+                            enableCompression: true,
+                            cleanupInterval: 300000,
+                        },
+                    },
+                },
+            };
+        }
 
-        // Determine adapter type
-        const adapterType = connectionString
+        // 🎯 REGRA: Se tem connectionString = MongoDB, senão InMemory
+        const adapterType = storage.connectionString
             ? StorageEnum.MONGODB
             : StorageEnum.INMEMORY;
 
-        // Get database name (prefer session, then memory, then default)
-        const dbName =
-            sessionConfig?.database || memoryConfig?.database || 'kodus-flow';
+        // 🎯 Collections com defaults inteligentes
+        const collections = storage.collections || {};
+        const sessionsCollection = collections.sessions || 'sessions';
+        const snapshotsCollection = collections.snapshots || 'snapshots';
+        const memoryCollection = collections.memory || 'memories';
+
+        // 🎯 Configurações com defaults
+        const options = storage.options || {};
+        const sessionTTL = options.sessionTTL || 24 * 60 * 60 * 1000; // 24h
+        const snapshotTTL = options.snapshotTTL || 7 * 24 * 60 * 60 * 1000; // 7 days
 
         const enhancedConfig = {
-            connectionString,
+            connectionString: storage.connectionString,
             adapterType,
-            dbName,
-            // 🎯 Use custom collection names for ContextNew to avoid conflicts
-            sessionsCollection: 'kodus-agent-sessions-v2', // v2 to differentiate from legacy
-            snapshotsCollection: 'kodus-execution-snapshots-v2', // v2 to differentiate
-            sessionTTL: 24 * 60 * 60 * 1000, // 24 hours
-            snapshotTTL: 7 * 24 * 60 * 60 * 1000, // 7 days
-            // Pass memory config if exists
-            memory: memoryConfig
-                ? {
-                      adapterType: memoryConfig.type,
-                      adapterConfig: {
-                          connectionString: memoryConfig.connectionString,
-                          options: {
-                              database: memoryConfig.database || 'kodus-flow',
-                              collection: memoryConfig.collection || 'memories',
-                          },
-                      },
-                  }
-                : undefined,
+            dbName: storage.database || 'kodus-flow',
+            sessionsCollection,
+            snapshotsCollection,
+            sessionTTL,
+            snapshotTTL,
+            memory: {
+                adapterType,
+                adapterConfig: {
+                    connectionString: storage.connectionString,
+                    options: {
+                        database: storage.database || 'kodus-flow',
+                        collection: memoryCollection,
+                        maxItems: options.maxItems || 10000,
+                        enableCompression: options.enableCompression ?? true,
+                        cleanupInterval: options.cleanupInterval || 300000,
+                    },
+                },
+            },
         };
 
-        this.logger.debug('🔥 Enhanced context config generated', {
-            adapterType,
-            dbName,
-            sessionsCollection: enhancedConfig.sessionsCollection,
-            snapshotsCollection: enhancedConfig.snapshotsCollection,
-            hasConnectionString: !!connectionString,
-            hasMemoryConfig: !!enhancedConfig.memory,
+        this.logger.debug('🔥 Enhanced context config (NEW)', {
+            mode: adapterType === StorageEnum.MONGODB ? 'MongoDB' : 'InMemory',
+            database: enhancedConfig.dbName,
+            collections: {
+                sessions: sessionsCollection,
+                snapshots: snapshotsCollection,
+                memory: memoryCollection,
+            },
+            ttl: {
+                sessions: `${sessionTTL / (60 * 60 * 1000)}h`,
+                snapshots: `${snapshotTTL / (24 * 60 * 60 * 1000)}d`,
+            },
         });
 
         return enhancedConfig;

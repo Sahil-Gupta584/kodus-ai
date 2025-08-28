@@ -6,7 +6,6 @@ import { IdGenerator } from '../../../utils/id-generator.js';
 import { getGlobalMemoryManager } from '../../../core/memory/memory-manager.js';
 import { EnhancedContextBuilder } from '../../../core/contextNew/index.js';
 
-import { createResponseSynthesizer } from '../../response/response-synthesizer.js';
 import { PlannerPromptComposer } from './prompts/planner-prompt-composer.js';
 import {
     ActionResult,
@@ -19,19 +18,16 @@ import {
     getResultError,
     isErrorResult,
     LLMAdapter,
-    Planner,
     PlannerExecutionContext,
     PlannerPromptConfig,
     PlanSignals,
     PlanStep,
     ReplanContext,
     ReplanPolicyConfig,
-    ResponseSynthesisContext,
     ResultAnalysis,
     ToolMetadataForLLM,
     UNIFIED_STATUS,
     PlanningStrategy,
-    AgentContext,
     Plan,
 } from '@/core/types/allTypes.js';
 
@@ -53,7 +49,7 @@ export class PlanAndExecutePlanner {
     readonly strategy = PlanningStrategy.PLAN_EXECUTE;
     private logger = createLogger('plan-execute-planner');
     private plansByThread = new Map<string, ExecutionPlan>();
-    private responseSynthesizer: ReturnType<typeof createResponseSynthesizer>;
+    // private responseSynthesizer: ReturnType<typeof createResponseSynthesizer>;
     private promptComposer: PlannerPromptComposer;
 
     private replanPolicy: ReplanPolicyConfig;
@@ -63,7 +59,7 @@ export class PlanAndExecutePlanner {
         promptConfig?: PlannerPromptConfig,
         replanPolicy?: ReplanPolicyConfig,
     ) {
-        this.responseSynthesizer = createResponseSynthesizer(this.llmAdapter);
+        //this.responseSynthesizer = createResponseSynthesizer(this.llmAdapter);
         this.promptComposer = new PlannerPromptComposer(promptConfig || {});
         this.replanPolicy = replanPolicy ?? {
             maxReplans: 5,
@@ -110,9 +106,10 @@ export class PlanAndExecutePlanner {
         }
     }
 
+    //TODO ajustar type
     public async createFinalResponse(
         context: PlannerExecutionContext,
-    ): Promise<string> {
+    ): Promise<any> {
         const currentPlan = this.getCurrentPlan(context);
 
         try {
@@ -580,62 +577,62 @@ export class PlanAndExecutePlanner {
         }
     }
 
-    private extractFinalText(content: unknown): string {
-        if (typeof content === 'string') {
-            return content;
-        }
+    // private extractFinalText(content: unknown): string {
+    //     if (typeof content === 'string') {
+    //         return content;
+    //     }
 
-        if (Array.isArray(content)) {
-            const textEntry = content.find(
-                (item) =>
-                    item &&
-                    typeof item === 'object' &&
-                    'type' in item &&
-                    item.type === 'text',
-            );
+    //     if (Array.isArray(content)) {
+    //         const textEntry = content.find(
+    //             (item) =>
+    //                 item &&
+    //                 typeof item === 'object' &&
+    //                 'type' in item &&
+    //                 item.type === 'text',
+    //         );
 
-            if (
-                textEntry &&
-                'text' in textEntry &&
-                typeof textEntry.text === 'string'
-            ) {
-                return textEntry.text;
-            }
+    //         if (
+    //             textEntry &&
+    //             'text' in textEntry &&
+    //             typeof textEntry.text === 'string'
+    //         ) {
+    //             return textEntry.text;
+    //         }
 
-            return content
-                .filter((item) => item && typeof item === 'object')
-                .map((item) => {
-                    if ('text' in item) {
-                        return item.text;
-                    }
-                    if ('content' in item) {
-                        return item.content;
-                    }
+    //         return content
+    //             .filter((item) => item && typeof item === 'object')
+    //             .map((item) => {
+    //                 if ('text' in item) {
+    //                     return item.text;
+    //                 }
+    //                 if ('content' in item) {
+    //                     return item.content;
+    //                 }
 
-                    return 'No content available';
-                })
-                .filter(Boolean)
-                .join(' ');
-        }
+    //                 return 'No content available';
+    //             })
+    //             .filter(Boolean)
+    //             .join(' ');
+    //     }
 
-        if (typeof content === 'object' && content !== null) {
-            const obj = content as Record<string, unknown>;
+    //     if (typeof content === 'object' && content !== null) {
+    //         const obj = content as Record<string, unknown>;
 
-            if ('text' in obj && typeof obj.text === 'string') {
-                return obj.text;
-            }
+    //         if ('text' in obj && typeof obj.text === 'string') {
+    //             return obj.text;
+    //         }
 
-            if ('content' in obj && typeof obj.content === 'string') {
-                return obj.content;
-            }
-        }
+    //         if ('content' in obj && typeof obj.content === 'string') {
+    //             return obj.content;
+    //         }
+    //     }
 
-        if (!content) {
-            throw new Error('LLM response content is empty or null');
-        }
+    //     if (!content) {
+    //         throw new Error('LLM response content is empty or null');
+    //     }
 
-        return String(content);
-    }
+    //     return String(content);
+    // }
 
     private getAvailableToolsForContext(
         context: PlannerExecutionContext,
@@ -839,7 +836,7 @@ export class PlanAndExecutePlanner {
                         'AgentContext is required for plan creation',
                     );
                 }
-                const result = await this.createPlan(context.agentContext);
+                const result = await this.createPlan(context);
                 const current = this.getCurrentPlan(context);
 
                 if (current) {
@@ -1131,9 +1128,9 @@ export class PlanAndExecutePlanner {
                     noDiscoveryPath,
                     errors: errorsFromSignals,
                     suggestedNextStep,
-                    sessionId: context.sessionId,
-                    agentName: context.agentName,
-                    correlationId: context.correlationId,
+                    sessionId: context.agentContext?.sessionId,
+                    agentName: context.agentContext?.agentName,
+                    correlationId: context.agentContext?.correlationId,
                 }),
                 async () => {
                     return {};
@@ -1148,6 +1145,14 @@ export class PlanAndExecutePlanner {
         ) {
             const maxReplans = this.replanPolicy.maxReplans;
             return {
+                id: newPlan.id,
+                goal: newPlan.goal,
+                strategy: PlanningStrategy.PLAN_EXECUTE,
+                steps: newPlan.steps,
+                context: {},
+                createdAt: newPlan.createdAt,
+                agentName: context.agentContext?.agentName || 'unknown',
+                status: 'failed',
                 reasoning:
                     'Max replans exceeded - cannot create valid plan due to missing inputs',
                 action: {
@@ -1167,6 +1172,14 @@ export class PlanAndExecutePlanner {
         }
 
         return {
+            id: newPlan.id,
+            goal: newPlan.goal,
+            strategy: PlanningStrategy.PLAN_EXECUTE,
+            steps: newPlan.steps,
+            context: {},
+            createdAt: newPlan.createdAt,
+            agentName: context.agentContext?.agentName || 'unknown',
+            status: 'created',
             reasoning: 'Plan created. Ready to execute.',
             action: {
                 type: 'execute_plan' as const,

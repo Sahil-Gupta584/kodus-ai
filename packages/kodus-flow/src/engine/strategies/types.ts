@@ -21,8 +21,8 @@ export type AgentActionType =
 export interface AgentAction {
     type: AgentActionType;
     toolName?: string;
-    input?: Record<string, unknown>;
-    content?: unknown;
+    input?: Record<string, any>;
+    content?: any;
     question?: string;
     agentName?: string;
     planId?: string;

@@ -14,7 +14,7 @@ import {
     TelemetrySystem,
 } from '@/observability/index.js';
 import { zodToJSONSchema } from '../utils/zod-to-json-schema.js';
-import { ContextStateService } from '../context/index.js';
+// ContextStateService removed - using contextNew architecture
 import { EventStore } from '@/runtime/index.js';
 import { EventChainTracker } from '@/runtime/core/event-processor-optimized.js';
 import { ExecutionKernel } from '@/kernel/kernel.js';
@@ -52,6 +52,8 @@ export interface AgentAction<TContent = unknown> {
     type: string;
     content?: TContent;
     reasoning?: string;
+    toolName?: string;
+    input?: any;
 }
 
 export interface AgentThought<TContent = unknown> {
@@ -76,7 +78,7 @@ export type AgentConfig = {
     enableMemory?: boolean;
     timeout?: number;
     plannerOptions?: {
-        planner?: PlannerType;
+        type: PlannerType;
         replanPolicy?: Partial<ReplanPolicyConfig>;
     };
 };
@@ -303,6 +305,8 @@ export interface AgentContext {
     agentIdentity?: AgentIdentity;
     agentExecutionOptions?: AgentExecutionOptions;
     allTools?: ToolDefinition<unknown, unknown>[];
+    //TODO: Remove this
+    stepExecution: any;
 }
 
 export type AgentExecutionOptions = {
@@ -317,12 +321,11 @@ export type AgentExecutionOptions = {
     timeout?: number;
     maxIterations?: number;
 
-    userContext?: Record<string, unknown>;
+    userContext?: Record<string, any>;
 };
 
-export interface AgentExecutionResult<TOutput = unknown>
-    extends BaseExecutionResult<TOutput> {
-    output?: TOutput;
+export interface AgentExecutionResult extends BaseExecutionResult {
+    output?: any;
     reasoning?: string;
     correlationId?: string;
     sessionId?: string;
@@ -484,7 +487,7 @@ export interface BaseExecutionResult<T = unknown> {
     success: boolean;
     data?: T;
     error?: Error;
-    duration: number;
+    duration?: number;
     metadata?: Metadata;
 }
 
@@ -1968,7 +1971,7 @@ export interface ToolCall {
     metadata?: Metadata;
 }
 
-export interface ToolResult<TOutput = unknown> {
+export interface ToolResult<TOutput = any> {
     type: 'tool_result';
     callId: string;
     toolName: string;
@@ -2172,7 +2175,7 @@ export interface WorkflowContext extends BaseContext {
 
     persistorService?: Persistor;
 
-    stateManager: ContextStateService;
+    stateManager: any; // Legacy ContextStateService replaced by contextNew
 
     data: Record<string, unknown>;
 
@@ -2277,7 +2280,7 @@ export function createWorkflowContext(
         workflowName,
 
         persistorService: options.persistorService,
-        stateManager: new ContextStateService({}),
+        stateManager: {}, // Legacy ContextStateService replaced by contextNew
         data: {},
         currentSteps: [],
         completedSteps: [],
@@ -2731,7 +2734,7 @@ export interface SessionContext {
     id: SessionId;
     threadId: ThreadId;
     tenantId: TenantId;
-    stateManager: ContextStateService;
+    stateManager: any; // Legacy ContextStateService replaced by contextNew
     metadata: Record<string, unknown>;
     conversationHistory: ConversationHistory;
 }
@@ -3057,7 +3060,10 @@ export const STATE_NAMESPACES = {
 export type StateNamespace =
     (typeof STATE_NAMESPACES)[keyof typeof STATE_NAMESPACES];
 
-export type PlannerType = 'react' | 'tot' | 'reflexion' | 'plan-execute';
+export enum PlannerType {
+    REACT = 'react',
+    REWOO = 'rewoo',
+}
 
 export interface Planner<
     TContext extends PlannerExecutionContext = PlannerExecutionContext,
@@ -5230,6 +5236,8 @@ export interface Plan {
     createdAt: number;
     agentName: string;
     status: 'created' | 'executing' | 'completed' | 'failed';
+    reasoning?: string;
+    action?: AgentAction;
 
     metadata?: Record<string, unknown>;
 }
@@ -5346,8 +5354,6 @@ export interface LifecycleStats {
 export interface AgentCoreConfig {
     tenantId: TenantId;
     agentName?: string;
-
-    planner?: PlannerType;
     llmAdapter?: LLMAdapter;
     maxThinkingIterations?: number;
     thinkingTimeout?: number;
@@ -5380,8 +5386,9 @@ export interface AgentCoreConfig {
 
     enableKernelIntegration?: boolean;
 
-    plannerOptions?: {
+    plannerOptions: {
         replanPolicy?: Partial<ReplanPolicyConfig>;
+        type: PlannerType;
     };
 }
 
@@ -5794,35 +5801,26 @@ export interface OrchestrationConfig {
     defaultPlanner?: PlannerType;
     defaultMaxIterations?: number;
     storage?: {
-        memory?: {
-            type: StorageEnum;
-            connectionString?: string;
-            database?: string;
-            collection?: string;
+        // Se não especificado = InMemory
+        // Se tem connectionString = MongoDB
+        type?: 'mongodb' | 'inmemory';
+        connectionString?: string;
+        database?: string;
+
+        // Collections opcionais (usa defaults inteligentes)
+        collections?: {
+            memory?: string; // default: 'memories'
+            sessions?: string; // default: 'sessions'
+            snapshots?: string; // default: 'snapshots'
+        };
+
+        // Configurações avançadas (opcionais)
+        options?: {
+            sessionTTL?: number; // default: 24h
+            snapshotTTL?: number; // default: 7 days
             maxItems?: number;
             enableCompression?: boolean;
             cleanupInterval?: number;
-        };
-        session?: {
-            type: StorageEnum;
-            connectionString?: string;
-            database?: string;
-            collection?: string;
-            maxSessions?: number;
-            sessionTimeout?: number;
-            enableCompression?: boolean;
-            cleanupInterval?: number;
-        };
-        snapshot?: {
-            type: StorageEnum;
-            connectionString?: string;
-            database?: string;
-            collection?: string;
-            maxSnapshots?: number;
-            enableCompression?: boolean;
-            enableDeltaCompression?: boolean;
-            cleanupInterval?: number;
-            ttl?: number;
         };
     };
     observability?: Partial<ObservabilityConfig>;

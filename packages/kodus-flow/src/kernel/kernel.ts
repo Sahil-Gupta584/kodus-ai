@@ -3,7 +3,7 @@ import { getObservability } from '../observability/index.js';
 import { withObservability } from '../runtime/middleware/index.js';
 import { KernelError } from '../core/errors.js';
 
-import { SimpleContextStateService as ContextStateService } from '../core/context/services/simple-state-service.js';
+// import { SimpleContextStateService as ContextStateService } from '../core/context/services/simple-state-service.js';
 import { createRuntime } from '../runtime/index.js';
 import { stableHash } from './snapshot.js';
 import { IdGenerator } from '../utils/id-generator.js';
@@ -135,7 +135,7 @@ export class ExecutionKernel {
     private quotaTimers = new Set<NodeJS.Timeout>();
     private readonly maxQuotaTimers = 100;
 
-    private stateService: ContextStateService;
+    private stateService: any; // Legacy state service replaced by contextNew
 
     private runtime: Runtime | null = null;
     private workflowContext: WorkflowContext | null = null;
@@ -169,10 +169,11 @@ export class ExecutionKernel {
                 maxMemoryUsage: 100 * 1024 * 1024,
             });
 
-        this.stateService = new ContextStateService({
+        this.stateService = {
+            // Mock state service - replaced by contextNew
             tenantId: config.tenantId,
             jobId: config.jobId || IdGenerator.executionId(),
-        });
+        };
 
         // Initialize state
         const jobId = config.jobId || IdGenerator.executionId();
@@ -245,7 +246,7 @@ export class ExecutionKernel {
                             workflowName: 'default-workflow',
                             executionId: this.state.id,
                             correlationId: 'default-correlation',
-                            stateManager: new ContextStateService({}),
+                            stateManager: {}, // Mock state manager - replaced by contextNew
                             data: {},
                             currentSteps: [],
                             completedSteps: [],
