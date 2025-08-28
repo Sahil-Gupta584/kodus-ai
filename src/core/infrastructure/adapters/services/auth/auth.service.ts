@@ -64,7 +64,12 @@ export class AuthService implements IAuthService {
         authProvider: AuthProvider,
         authDetails?: any,
     ): Promise<any> {
-        const tokens = await this.createToken(userEntity);
+        const teamMember = await this.teamMemberService.findOne({
+            user: { uuid: userEntity?.uuid },
+            organization: { uuid: userEntity?.organization?.uuid },
+        });
+
+        const tokens = await this.createToken(userEntity, teamMember);
 
         await this.createAuth(userEntity, tokens, authProvider, authDetails);
 
@@ -120,7 +125,12 @@ export class AuthService implements IAuthService {
                 };
             }
 
-            const tokens = await this.createToken(userEntity);
+            const teamMember = await this.teamMemberService.findOne({
+                user: { uuid: userEntity?.uuid },
+                organization: { uuid: userEntity?.organization?.uuid },
+            });
+
+            const tokens = await this.createToken(userEntity, teamMember);
 
             await this.markTokenAsUsed(refreshTokenAuth);
             await this.createAuth(
@@ -177,10 +187,14 @@ export class AuthService implements IAuthService {
 
     private async createToken(
         user: Partial<UserEntity>,
+        teamMember?: Partial<TeamMemberEntity>,
     ): Promise<TokenResponse> {
         try {
             const payload = {
                 email: user.email,
+                role: user.role,
+                teamRole: teamMember?.teamRole,
+                status: user.status,
                 sub: user.uuid,
                 organizationId: user.organization.uuid,
                 iss: 'kodus-orchestrator',
