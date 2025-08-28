@@ -1,11 +1,9 @@
-import { z } from 'zod';
-
 // ============================================================================
 // CORE STRATEGY TYPES
 // ============================================================================
 
 // Strategy Pattern Types (baseados em padrões estabelecidos)
-export type ExecutionStrategy = 'react' | 'rewoo' | 'auto';
+export type ExecutionStrategy = 'react' | 'rewoo';
 
 // ============================================================================
 // AGENT TYPES (específicos para estratégias)
@@ -270,7 +268,8 @@ export interface PlannerExecutionContext {
 // CONFIGURATION TYPES
 // ============================================================================
 
-export type StopCondition<TContext = unknown> = (context: {
+// Stop Conditions (baseado em AI SDK Vercel/VoltAgent)
+export type StopCondition<TContext = any> = (context: {
     steps: ExecutionStep[];
     currentStep: ExecutionStep;
     context: TContext;
@@ -280,13 +279,6 @@ export type StopCondition<TContext = unknown> = (context: {
 export interface StrategyConfig {
     // Estratégia de execução
     executionStrategy?: ExecutionStrategy;
-
-    // Thresholds para auto-detection
-    strategyDetection?: {
-        reactThreshold?: number; // Default: 3
-        rewooThreshold?: number; // Default: 5
-        enableAutoDetection?: boolean; // Default: true
-    };
 
     // Stop conditions por estratégia
     stopConditions?: {
@@ -308,7 +300,6 @@ export interface StrategyConfig {
     enableStreaming?: boolean; // Streaming de steps
 }
 
-// Execution Metadata
 export interface ExecutionMetadata {
     strategy: ExecutionStrategy;
     complexity: number;
@@ -317,101 +308,4 @@ export interface ExecutionMetadata {
     agentName?: string;
     sessionId?: string;
     correlationId?: string;
-}
-
-// ============================================================================
-// SCHEMAS (Zod validation)
-// ============================================================================
-
-// Schemas para validação
-export const executionStepSchema = z.object({
-    id: z.string(),
-    type: z.enum(['think', 'act', 'observe', 'plan', 'execute', 'synthesize']),
-    thought: z.any().optional(),
-    action: z.any().optional(),
-    result: z.any().optional(),
-    observation: z.any().optional(),
-    timestamp: z.number(),
-    duration: z.number().optional(),
-    metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-export const executionResultSchema = z.object({
-    output: z.unknown(),
-    strategy: z.enum(['react', 'rewoo', 'auto']),
-    complexity: z.number(),
-    executionTime: z.number(),
-    steps: z.array(executionStepSchema),
-    success: z.boolean(),
-    error: z.string().optional(),
-});
-
-export const strategyConfigSchema = z.object({
-    executionStrategy: z.enum(['react', 'rewoo', 'auto']).optional(),
-    strategyDetection: z
-        .object({
-            reactThreshold: z.number().optional(),
-            rewooThreshold: z.number().optional(),
-            enableAutoDetection: z.boolean().optional(),
-        })
-        .optional(),
-    stopConditions: z
-        .object({
-            react: z
-                .object({
-                    maxTurns: z.number().optional(),
-                    maxToolCalls: z.number().optional(),
-                    customConditions: z.array(z.any()).optional(),
-                })
-                .optional(),
-            rewoo: z
-                .object({
-                    maxPlanSteps: z.number().optional(),
-                    maxToolCalls: z.number().optional(),
-                    customConditions: z.array(z.any()).optional(),
-                })
-                .optional(),
-        })
-        .optional(),
-    maxExecutionTime: z.number().optional(),
-    enableReasoning: z.boolean().optional(),
-    enableStreaming: z.boolean().optional(),
-});
-
-// ============================================================================
-// UTILITY TYPES
-// ============================================================================
-
-// Strategy Interface
-export interface IExecutionStrategy {
-    readonly name: ExecutionStrategy;
-    execute(context: StrategyExecutionContext): Promise<ExecutionResult>;
-    canHandle(context: StrategyExecutionContext): boolean;
-    estimateComplexity(context: StrategyExecutionContext): number;
-}
-
-// Complexity Analysis
-export interface ComplexityAnalysis {
-    score: number;
-    factors: {
-        toolCount: number;
-        inputLength: number;
-        hasComplexKeywords: boolean;
-        hasMultipleActions: boolean;
-        keywordComplexity: number;
-        actionComplexity: number;
-    };
-    reasoning: string;
-}
-
-// Strategy Selection Result
-export interface StrategySelectionResult {
-    recommendedStrategy: ExecutionStrategy;
-    complexity: number;
-    reasoning: string;
-    alternatives: Array<{
-        strategy: ExecutionStrategy;
-        complexity: number;
-        reason: string;
-    }>;
 }
