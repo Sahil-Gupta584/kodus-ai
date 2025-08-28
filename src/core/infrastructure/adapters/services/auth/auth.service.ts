@@ -31,6 +31,7 @@ import {
 } from '@/core/domain/teamMembers/contracts/teamMembers.service.contracts';
 import { TeamMemberEntity } from '@/core/domain/teamMembers/entities/teamMember.entity';
 import { AuthProvider } from '@/shared/domain/enums/auth-provider.enum';
+import axios, { AxiosResponse } from 'axios';
 
 @Injectable()
 export class AuthService implements IAuthService {
@@ -112,18 +113,18 @@ export class AuthService implements IAuthService {
 
             let authDetails = refreshTokenAuth.authDetails;
 
-            if (refreshTokenAuth.authProvider !== AuthProvider.CREDENTIALS) {
-                const { refreshToken, accessToken, refreshTokenExpiresAt } =
-                    await this.refreshThirdPartyToken(
-                        refreshTokenAuth.authDetails.refreshToken,
-                        refreshTokenAuth.authProvider,
-                    );
+            // if (refreshTokenAuth.authProvider !== AuthProvider.CREDENTIALS) {
+            //     const { refreshToken, accessToken, refreshTokenExpiresAt } =
+            //         await this.refreshThirdPartyToken(
+            //             refreshTokenAuth.authDetails.refreshToken,
+            //             refreshTokenAuth.authProvider,
+            //         );
 
-                authDetails = {
-                    refreshToken,
-                    expiresAt: refreshTokenExpiresAt,
-                };
-            }
+            //     authDetails = {
+            //         refreshToken,
+            //         expiresAt: refreshTokenExpiresAt,
+            //     };
+            // }
 
             const teamMember = await this.teamMemberService.findOne({
                 user: { uuid: userEntity?.uuid },
@@ -136,7 +137,7 @@ export class AuthService implements IAuthService {
             await this.createAuth(
                 userEntity,
                 tokens,
-                AuthProvider.CREDENTIALS,
+                refreshTokenAuth.authProvider,
                 authDetails,
             );
 
@@ -336,26 +337,40 @@ export class AuthService implements IAuthService {
                 throw new UnauthorizedException('Invalid auth provider');
         }
 
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
+        type RefreshResponse = {
+            refresh_token: string;
+            access_token: string;
+            expires_at: number;
+        };
+
+        const response = await axios.post(
+            url,
+            {
                 client_id: clientId,
                 client_secret: clientSecret,
                 refresh_token: refreshToken,
                 grant_type: 'refresh_token',
-            }),
-        });
+            },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            },
+        );
 
-        if (!response.ok) {
+        if (!response || response.status !== 200) {
             throw new UnauthorizedException(
                 `Error refreshing third party token from ${authProvider}`,
             );
         }
 
-        const data = (await response.json()) as any;
+        const data = JSON.parse(response.data) as RefreshResponse;
+
+        if (!data.refresh_token || !data.access_token || !data.expires_at) {
+            throw new UnauthorizedException(
+                `Invalid response from ${authProvider} token refresh`,
+            );
+        }
 
         return {
             refreshToken: data.refresh_token,
