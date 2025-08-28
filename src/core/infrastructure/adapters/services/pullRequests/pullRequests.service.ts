@@ -475,6 +475,7 @@ export class PullRequestsService implements IPullRequestsService {
                 syncedWithIssues: false,
                 prLevelSuggestions: [],
                 isDraft: pullRequest.isDraft ?? false,
+                executions: [],
             };
         } catch (error) {
             this.logger.log({
