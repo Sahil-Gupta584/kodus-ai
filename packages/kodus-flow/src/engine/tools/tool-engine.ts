@@ -6,7 +6,7 @@ import {
     markSpanOk,
 } from '../../observability/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
-import { EnhancedContextBuilder } from '../../core/contextNew/index.js';
+import { ContextService } from '../../core/contextNew/index.js';
 
 import {
     validateWithZod,
@@ -20,6 +20,7 @@ import {
     ParallelToolsAction,
     SequentialToolsAction,
     ToolCall,
+    ToolContext,
     ToolDefinition,
     ToolDependency,
     ToolEngineConfig,
@@ -85,8 +86,8 @@ export class ToolEngine {
         // 🔥 REGISTRAR INÍCIO DA TOOL CALL no contextNew
         if (options?.threadId) {
             try {
-                const contextBuilder = EnhancedContextBuilder.getInstance();
-                const sessionManager = contextBuilder.getSessionManager();
+                // 🎯 CLEAN API: Direct ContextService usage
+                const sessionManager = ContextService;
 
                 await sessionManager.updateExecution(options.threadId, {
                     currentTool: String(toolName),
@@ -149,10 +150,8 @@ export class ToolEngine {
                     // 🔥 REGISTRAR SUCESSO DA TOOL CALL no contextNew
                     if (options?.threadId) {
                         try {
-                            const contextBuilder =
-                                EnhancedContextBuilder.getInstance();
-                            const sessionManager =
-                                contextBuilder.getSessionManager();
+                            // 🎯 CLEAN API: Direct ContextService usage
+                            const sessionManager = ContextService;
 
                             // Atualizar execution
                             await sessionManager.updateExecution(
@@ -233,8 +232,8 @@ export class ToolEngine {
             // 🔥 REGISTRAR ERRO DA TOOL CALL no contextNew
             if (options?.threadId) {
                 try {
-                    const contextBuilder = EnhancedContextBuilder.getInstance();
-                    const sessionManager = contextBuilder.getSessionManager();
+                    // 🎯 CLEAN API: Direct ContextService usage
+                    const sessionManager = ContextService;
 
                     await sessionManager.updateExecution(options.threadId, {
                         currentTool: undefined, // Limpar tool atual
@@ -307,16 +306,14 @@ export class ToolEngine {
         let error: Error | undefined;
 
         try {
-            // Create tool context using factory function
-            const context = createToolContext(
+            // 🔥 ENHANCED: Create tool context with contextNew integration
+            const context = await this.createEnhancedToolContext(
                 tool.name,
                 callId,
                 `exec-${Date.now()}`,
                 options?.tenantId || 'default',
                 input as Record<string, unknown>,
-                {
-                    correlationId: options?.correlationId,
-                },
+                options,
             );
 
             // Execute tool using execute function
@@ -328,6 +325,95 @@ export class ToolEngine {
         }
 
         return result;
+    }
+
+    /**
+     * 🔥 ENHANCED: Create tool context with contextNew integration
+     */
+    private async createEnhancedToolContext(
+        toolName: string,
+        callId: string,
+        executionId: string,
+        tenantId: string,
+        parameters: Record<string, unknown>,
+        options?: {
+            threadId?: string;
+            correlationId?: string;
+            parentId?: string;
+            metadata?: any;
+        },
+    ): Promise<ToolContext> {
+        // Start with basic tool context
+        const basicContext = createToolContext(
+            toolName,
+            callId,
+            executionId,
+            tenantId,
+            parameters,
+            {
+                correlationId: options?.correlationId,
+                parentId: options?.parentId,
+                metadata: options?.metadata,
+            },
+        );
+
+        // Try to enhance with contextNew data
+        if (options?.threadId) {
+            try {
+                // 🎯 CLEAN API: Direct ContextService usage
+                // 🎯 CLEAN API: Using ContextService.getContext() directly
+
+                // Get enhanced runtime context
+                const runtimeContext = await ContextService.getContext(
+                    options.threadId,
+                );
+
+                // Enhance basic context with contextNew data
+                const enhancedContext: ToolContext = {
+                    ...basicContext,
+                    // Add contextNew session information
+                    sessionId: runtimeContext.sessionId,
+                    threadId: runtimeContext.threadId,
+                    executionId: runtimeContext.executionId,
+                    // Add current execution state
+                    currentPhase: runtimeContext.state.phase,
+                    lastUserIntent: runtimeContext.state.lastUserIntent,
+                    // Add recent conversation context (last 3 messages for context)
+                    recentMessages: runtimeContext.messages.slice(-3),
+                    // Add relevant entities
+                    availableEntities: runtimeContext.entities,
+                    // Add execution history
+                    completedSteps: runtimeContext.execution.completedSteps,
+                    failedSteps: runtimeContext.execution.failedSteps,
+                } as any;
+
+                this.logger.debug('✅ Tool context enhanced with contextNew', {
+                    toolName,
+                    sessionId: runtimeContext.sessionId,
+                    threadId: runtimeContext.threadId,
+                    phase: runtimeContext.state.phase,
+                    messagesCount: runtimeContext.messages.length,
+                    entitiesCount: Object.keys(runtimeContext.entities).length,
+                });
+
+                return enhancedContext;
+            } catch (contextError) {
+                this.logger.warn(
+                    '⚠️ Failed to enhance tool context with contextNew',
+                    {
+                        toolName,
+                        threadId: options.threadId,
+                        error:
+                            contextError instanceof Error
+                                ? contextError.message
+                                : String(contextError),
+                    },
+                );
+                // Return basic context on failure
+            }
+        }
+
+        return basicContext;
     }
 
     /**

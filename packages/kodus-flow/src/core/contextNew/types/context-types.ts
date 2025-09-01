@@ -24,6 +24,9 @@ export interface AgentRuntimeContext {
         lastUserIntent: string; // "create-kody-rule-and-notion", "validate-pr", etc
         pendingActions: string[]; // Actions that need to be completed
         currentStep?: string; // Current step being executed
+        // 📊 OPTIMIZATION: Iteration tracking
+        currentIteration?: number;
+        totalIterations?: number;
     };
 
     // Essential conversation (last 6 messages max)
@@ -57,11 +60,12 @@ export interface AgentRuntimeContext {
             };
             error?: string; // Para casos de falha
         };
+        // 📊 OPTIMIZATION: Simple counters instead of detailed tracking
+        toolCallCount?: number;
+        iterationCount?: number;
     };
 
-    // Available tools/connections (RUNTIME ONLY - not persisted)
-    availableTools: string[]; // ["KODUS_CREATE_KODY_RULE", "NOTION_SEARCH_NOTION_PAGE"] - rebuilt from ToolEngine
-    activeConnections: Record<string, ConnectionStatus>; // Connection status - rebuilt on recovery
+    // Tools and connections are handled by ToolEngine, not stored in context
 }
 
 /**
@@ -397,8 +401,7 @@ export function isValidRuntimeContext(obj: any): obj is AgentRuntimeContext {
         typeof obj.executionId === 'string' &&
         obj.state &&
         Array.isArray(obj.messages) &&
-        obj.execution &&
-        Array.isArray(obj.availableTools)
+        obj.execution
     );
 }
 

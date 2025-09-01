@@ -1,22 +1,14 @@
-import {
-    createLogger,
-    // getObservability,
-    // startAgentSpan,
-    // applyErrorToSpan,
-    // markSpanOk,
-    // ObservabilitySystem,
-} from '../../observability/index.js';
+import { createLogger } from '../../observability/index.js';
 import { CircuitBreaker } from '../../runtime/core/circuit-breaker.js';
 import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
-import { EnhancedContextBuilder } from '../../core/contextNew/index.js';
+import { ContextService } from '../../core/contextNew/index.js';
 import {
     createDefaultMultiKernelHandler,
     MultiKernelHandler,
 } from '../core/multi-kernel-handler.js';
 
-// import { PlannerFactory } from '../planning/planner-factory.js'; // Removed - using EnhancedContextBuilder
 import {
     AgentCapability,
     AgentContext,
@@ -25,46 +17,24 @@ import {
     AgentExecutionOptions,
     AgentExecutionResult,
     AgentInputEnum,
-    //AgentThought,
     AnyEvent,
-    ConditionalToolsAction,
     DelegationContext,
-    DependencyToolsAction,
-    // ExecutionPlan,
-    // getResultError,
-    // isErrorResult,
-    // isExecutePlanAction,
-    // isFinalAnswerAction,
-    // isNeedMoreInfoAction,
-    // isToolCallAction,
-    // isToolResult,
     LLMAdapter,
-    MixedToolsAction,
-    ParallelToolsAction,
     Planner,
     PlannerExecutionContext,
     PlannerType,
-    // PlanStep,
-    // ResultAnalysis,
-    SequentialToolsAction,
-    // StepResult,
-    ToolCall,
-    ToolId,
     TrackedMessage,
 } from '../../core/types/allTypes.js';
 import { ToolEngine } from '../tools/tool-engine.js';
 import { SharedStrategyMethods } from '../strategies/shared-methods.js';
 import {
     AgentAction,
-    //AgentThought,
+    PlanExecuteStrategy,
     ReActStrategy,
     ReWooStrategy,
     StrategyFactory,
 } from '../strategies/index.js';
 
-/**
- * Core compartilhado para agentes com suporte multi-agent avançado
- */
 export abstract class AgentCore<
     TInput = unknown,
     TOutput = unknown,
@@ -201,7 +171,7 @@ export abstract class AgentCore<
 
     protected planner?: Planner;
     protected llmAdapter?: LLMAdapter;
-    protected strategy?: ReActStrategy | ReWooStrategy;
+    protected strategy?: ReActStrategy | ReWooStrategy | PlanExecuteStrategy;
 
     protected executionContext?: PlannerExecutionContext;
 
@@ -225,6 +195,11 @@ export abstract class AgentCore<
                 },
             };
             this.config.agentName = definitionOrConfig.name;
+
+            // 🔥 Configure SharedStrategyMethods with ToolEngine
+            if (this.toolEngine) {
+                this.setToolEngine(this.toolEngine);
+            }
         } else {
             // Multi-agent mode
             this.config = definitionOrConfig as AgentCoreConfig;
@@ -284,23 +259,10 @@ export abstract class AgentCore<
                 toolCount: this.toolEngine.listTools().length,
             });
 
-            // 🔥 Also verify EnhancedContextBuilder availability
-            try {
-                EnhancedContextBuilder.getInstance();
-                this.logger.info(
-                    '✅ EnhancedContextBuilder available for enhanced context',
-                );
-            } catch (error) {
-                this.logger.warn(
-                    '⚠️ EnhancedContextBuilder not configured, will use legacy context only',
-                    {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
-                    },
-                );
-            }
+            // 🔥 ContextService availability will be checked during execution
+            this.logger.info(
+                '✅ ContextService will be verified during execution',
+            );
         }
     }
 
@@ -319,12 +281,43 @@ export abstract class AgentCore<
         const executionId = IdGenerator.executionId();
         const { correlationId } = agentExecutionOptions;
 
+        // 🔥 FIX: Initialize enhanced session FIRST (contextNew architecture)
+        await this.initializeEnhancedSession(agentExecutionOptions);
+
         const context = await this.createAgentContext(
             executionId,
             agentExecutionOptions,
         );
 
         await this.addConversationEntry(context, input);
+
+        // 🚀 PROGRESSIVE PERSISTENCE: Create placeholder assistant message immediately
+        const threadId = context.thread?.id || context.sessionId;
+        if (!threadId) {
+            throw new Error('Missing threadId for Progressive Persistence');
+        }
+
+        const assistantMessageId = await ContextService.addMessage(threadId, {
+            role: AgentInputEnum.ASSISTANT,
+            content: '⏳ Processing your request...',
+            metadata: {
+                agentName: agent.name,
+                executionId,
+                correlationId,
+                status: 'processing',
+                source: 'agent-placeholder',
+            },
+        });
+
+        this.logger.info(
+            '🚀 Progressive Persistence: Placeholder message created',
+            {
+                threadId,
+                assistantMessageId,
+                agentName: agent.name,
+                executionId,
+            },
+        );
 
         try {
             const result = await this.processAgentThinking(
@@ -342,12 +335,32 @@ export abstract class AgentCore<
                 correlationId,
             );
 
-            await this.updateConversationEntry(
-                context,
-                result.output,
-                agent.name,
-                { correlationId, executionId, success: true },
+            // 🔄 PROGRESSIVE PERSISTENCE: Update placeholder with final response
+            this.logger.info(
+                '🔄 Progressive Persistence: Updating with final response',
+                {
+                    threadId,
+                    assistantMessageId,
+                    hasOutput: !!result.output,
+                    outputType: typeof result.output,
+                },
             );
+
+            await ContextService.updateMessage(threadId, assistantMessageId, {
+                content:
+                    typeof result.output === 'string'
+                        ? result.output
+                        : JSON.stringify(result.output),
+                metadata: {
+                    agentName: agent.name,
+                    executionId,
+                    correlationId,
+                    status: 'completed',
+                    success: true,
+                    source: 'agent-output',
+                    processingDuration: duration,
+                },
+            });
 
             return this.buildExecutionResult(
                 result,
@@ -358,6 +371,32 @@ export abstract class AgentCore<
                 agent.name,
             );
         } catch (error) {
+            // 🚨 PROGRESSIVE PERSISTENCE: Update placeholder with error
+            this.logger.error(
+                '🚨 Progressive Persistence: Updating with error',
+                error instanceof Error ? error : undefined,
+                {
+                    threadId,
+                    assistantMessageId,
+                    errorMessage:
+                        error instanceof Error ? error.message : String(error),
+                },
+            );
+
+            await ContextService.updateMessage(threadId, assistantMessageId, {
+                content: `❌ Error processing your request: ${error instanceof Error ? error.message : String(error)}`,
+                metadata: {
+                    agentName: agent.name,
+                    executionId,
+                    correlationId,
+                    status: 'error',
+                    success: false,
+                    source: 'agent-error',
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                },
+            });
+
             throw error;
         }
     }
@@ -367,14 +406,11 @@ export abstract class AgentCore<
         input: unknown,
     ): Promise<void> {
         try {
-            const builder = EnhancedContextBuilder.getInstance();
-            const sessionManager = builder.getSessionManager();
-
-            await sessionManager.addMessage(context.thread.id, {
+            // 🎯 CLEAN API: Direct method call via ContextService
+            await ContextService.addMessage(context.thread.id, {
                 role: AgentInputEnum.USER,
                 content:
                     typeof input === 'string' ? input : JSON.stringify(input),
-                timestamp: Date.now(),
                 metadata: {
                     agentName: context.agentName,
                     source: 'agent-input',
@@ -431,58 +467,6 @@ export abstract class AgentCore<
                 correlationId,
                 agentName: context.agentName,
             });
-        }
-    }
-
-    private async updateConversationEntry(
-        context: AgentContext,
-        output: unknown,
-        agentName: string,
-        metadata: {
-            correlationId?: string;
-            executionId: string;
-            success: boolean;
-        },
-    ): Promise<void> {
-        if (!context.sessionId) {
-            return;
-        }
-
-        // ✅ Use ContextNew for saving assistant response
-        try {
-            const builder = EnhancedContextBuilder.getInstance();
-            const sessionManager = builder.getSessionManager();
-            // Use thread.id as session identifier
-            const sessionKey = context.thread?.id || context.sessionId;
-            await sessionManager.addMessage(sessionKey, {
-                role: AgentInputEnum.ASSISTANT,
-                content:
-                    typeof output === 'string'
-                        ? output
-                        : JSON.stringify(output),
-                timestamp: Date.now(),
-                metadata: {
-                    agentName,
-                    executionId: metadata.executionId,
-                    correlationId: metadata.correlationId,
-                    success: metadata.success,
-                    source: 'agent-output',
-                },
-            });
-            this.logger.debug('Assistant response saved to ContextNew', {
-                sessionId: context.sessionId,
-                role: AgentInputEnum.ASSISTANT,
-                success: metadata.success,
-            });
-        } catch (error) {
-            this.logger.warn(
-                'Failed to save assistant response to ContextNew',
-                {
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                    sessionId: context.sessionId,
-                },
-            );
         }
     }
 
@@ -647,671 +631,264 @@ export abstract class AgentCore<
         return 'final_answer';
     }
 
+    /**
+     * 🔥 Initialize Enhanced Session FIRST (contextNew architecture)
+     */
+    private async initializeEnhancedSession(
+        agentExecutionOptions: AgentExecutionOptions,
+    ): Promise<void> {
+        const availableTools = this.toolEngine?.listTools() ?? [];
+
+        // 🎯 CLEAN API: Single method call, all complexity encapsulated
+        await ContextService.initializeSession(
+            agentExecutionOptions.thread.id,
+            agentExecutionOptions.tenantId || 'default',
+        );
+
+        this.logger.info(
+            '✅ Enhanced session initialized FIRST via ContextService',
+            {
+                threadId: agentExecutionOptions.thread.id,
+                tenantId: agentExecutionOptions.tenantId,
+                toolCount: availableTools.length,
+            },
+        );
+    }
+
     protected async createAgentContext(
         executionId: string,
         agentExecutionOptions: AgentExecutionOptions,
     ): Promise<AgentContext> {
-        const availableTools = this.toolEngine?.listTools() ?? [];
+        let availableTools = this.toolEngine?.listTools() ?? [];
+
+        this.logger.info('🔧 TOOL AVAILABILITY DEBUG', {
+            hasToolEngine: !!this.toolEngine,
+            toolEngineClass: this.toolEngine?.constructor?.name,
+            availableToolsCount: availableTools.length,
+            toolNames: availableTools.map((t) => t.name),
+            executionId,
+        });
+
+        if (availableTools.length === 0 && this.toolEngine) {
+            try {
+                const alternativeTools = this.toolEngine.getAvailableTools();
+                this.logger.info('🔄 Using alternative tools method', {
+                    alternativeToolsCount: alternativeTools.length,
+                    alternativeToolNames: alternativeTools.map((t) => t.name),
+                });
+
+                availableTools = alternativeTools.map(
+                    (tool) =>
+                        ({
+                            name: tool.name,
+                            description: tool.description,
+                            inputJsonSchema: tool.inputSchema,
+                            outputJsonSchema: {
+                                type: 'object',
+                                properties: {},
+                            },
+                            handler: async () => ({}), // Placeholder
+                        }) as any,
+                );
+            } catch (altError) {
+                this.logger.warn('Failed to get alternative tools', {
+                    altError,
+                });
+            }
+        }
+
+        const enhancedRuntimeContext = await ContextService.getContext(
+            agentExecutionOptions.thread.id,
+        );
+
+        const { sessionId, threadId } = this.ensureSessionConsistency(
+            enhancedRuntimeContext,
+            agentExecutionOptions,
+        );
 
         const context = {
-            sessionId: agentExecutionOptions.sessionId,
+            sessionId,
             tenantId: agentExecutionOptions.tenantId,
             correlationId: agentExecutionOptions.correlationId,
-            thread: agentExecutionOptions.thread,
+            thread: { ...agentExecutionOptions.thread, id: threadId },
             agentName: agentExecutionOptions.agentName || 'agent',
             invocationId: IdGenerator.callId(),
             executionId: executionId,
             allTools: availableTools,
             agentExecutionOptions,
-        } as any; // Temporary - EnhancedContextBuilder provides real context
+            enhancedRuntimeContext,
+        } as any;
 
-        // 2. ✅ ELEGANT: Enrich context with AgentDefinition data
         if (this.singleAgentDefinition?.identity) {
             context.agentIdentity = this.singleAgentDefinition.identity;
-        }
-
-        // 3. 🔥 Initialize Enhanced session for ContextNew integration
-        try {
-            const enhancedContextBuilder = EnhancedContextBuilder.getInstance();
-
-            await enhancedContextBuilder.initializeAgentSession(
-                context.thread.id,
-                context.tenantId,
-                {
-                    availableTools: availableTools.map((tool) => tool.name),
-                },
-            );
-            this.logger.info('✅ Enhanced session initialized', {
-                sessionId: context.sessionId,
-                toolCount: this.toolEngine?.listTools().length || 0,
-            });
-        } catch (error) {
-            this.logger.warn(
-                '⚠️ Enhanced session initialization failed, continuing with legacy context',
-                {
-                    sessionId: context.sessionId,
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                },
-            );
         }
 
         return context;
     }
 
-    /**
-     * Extract tools from action for processing
-     */
-    private extractToolsFromAction(action: {
-        type?: string;
-        tools?: ToolCall[];
-        content?: unknown;
-    }): ToolCall[] {
-        // Direct structure: { type: 'parallel_tools', tools: [...] }
-        if (action.tools && Array.isArray(action.tools)) {
-            return action.tools;
-        }
+    private ensureSessionConsistency(
+        enhancedRuntimeContext: any,
+        agentExecutionOptions: AgentExecutionOptions,
+    ): { sessionId: string; threadId: string } {
+        const enhancedSessionId = enhancedRuntimeContext?.sessionId;
+        const enhancedThreadId = enhancedRuntimeContext?.threadId;
+        const optionsSessionId = agentExecutionOptions.sessionId;
+        const optionsThreadId = agentExecutionOptions.thread?.id;
 
-        // Content structure: { type: 'parallel_tools', content: { tools: [...] } }
-        if (
-            action.content &&
-            typeof action.content === 'object' &&
-            action.content !== null &&
-            'tools' in action.content &&
-            Array.isArray((action.content as { tools: ToolCall[] }).tools)
-        ) {
-            return (action.content as { tools: ToolCall[] }).tools;
-        }
-
-        return [];
-    }
-
-    /**
-     * Process parallel tools action
-     */
-    protected async processParallelToolsAction(
-        action: ParallelToolsAction,
-        context: AgentContext,
-    ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
-        const { correlationId } = context.agentExecutionOptions || {};
-
-        if (!this.toolEngine) {
-            throw new EngineError('AGENT_ERROR', 'Tool engine not available');
-        }
-
-        const tools = this.extractToolsFromAction(action);
-
-        this.logger.info('Processing parallel tools action', {
-            agentName: context.agentName,
-            toolCount: tools.length,
-            concurrency: action.concurrency,
-            correlationId,
+        this.logger.debug('🔍 Session consistency check', {
+            enhancedSessionId,
+            enhancedThreadId,
+            optionsSessionId,
+            optionsThreadId,
         });
 
-        // Emit parallel tools start event
-        if (this.kernelHandler) {
-            // ✅ Use kernelHandler.emitAsync() instead of accessing runtime directly
-            if (this.kernelHandler.emitAsync) {
-                const emitResult = await this.kernelHandler.emitAsync(
-                    'agent.parallel.tools.start',
+        if (enhancedSessionId && enhancedThreadId) {
+            if (optionsThreadId && optionsThreadId !== enhancedThreadId) {
+                this.logger.warn(
+                    '⚠️ ThreadId mismatch - using enhanced context',
                     {
-                        agentName: context.agentName,
-                        toolNames: tools.map((t) => t.toolName),
-                        correlationId,
-                        sessionId: context.sessionId,
-                    },
-                    {
-                        deliveryGuarantee: 'at-least-once',
-                        correlationId,
+                        optionsThreadId,
+                        enhancedThreadId,
                     },
                 );
-
-                if (!emitResult.success) {
-                    this.logger.warn(
-                        'Failed to emit agent.parallel.tools.start',
-                        {
-                            error: emitResult.error,
-                            correlationId,
-                        },
-                    );
-                }
             }
-        }
-
-        // Create properly structured action for ToolEngine
-        const toolEngineAction: ParallelToolsAction = {
-            ...action,
-            tools: tools,
-        };
-
-        const results = this.kernelHandler
-            ? await this.kernelHandler.request(
-                  'tool.parallel.execute.request',
-                  'tool.parallel.execute.response',
-                  {
-                      tools: toolEngineAction.tools,
-                      metadata: {
-                          agentName: context.agentName,
-                          sessionId: context.sessionId,
-                          correlationId,
-                      },
-                  },
-                  { correlationId },
-              )
-            : await this.toolEngine.executeParallelTools(toolEngineAction);
-
-        // Emit completion event
-        if (this.kernelHandler) {
-            // ✅ Use kernelHandler.emitAsync() instead of accessing runtime directly
-            if (this.kernelHandler.emitAsync) {
-                const emitResult = await this.kernelHandler.emitAsync(
-                    'agent.parallel.tools.completed',
-                    {
-                        agentName: context.agentName,
-                        results,
-                        correlationId,
-                        sessionId: context.sessionId,
-                    },
-                    {
-                        deliveryGuarantee: 'at-least-once',
-                        correlationId,
-                    },
-                );
-
-                if (!emitResult.success) {
-                    this.logger.warn(
-                        'Failed to emit agent.parallel.tools.completed',
-                        {
-                            error: emitResult.error,
-                            correlationId,
-                        },
-                    );
-                }
-            }
-        }
-
-        return results as Array<{
-            toolName: string;
-            result?: unknown;
-            error?: string;
-        }>;
-    }
-
-    /**
-     * Process sequential tools action
-     */
-    protected async processSequentialToolsAction(
-        action: SequentialToolsAction,
-        context: AgentContext,
-    ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
-        const { correlationId } = context.agentExecutionOptions || {};
-
-        if (!this.toolEngine) {
-            throw new EngineError('AGENT_ERROR', 'Tool engine not available');
-        }
-
-        const tools = this.extractToolsFromAction(action);
-
-        this.logger.info('Processing sequential tools action', {
-            agentName: context.agentName,
-            toolCount: tools.length,
-            stopOnError: action.stopOnError,
-            correlationId,
-        });
-
-        // Create properly structured action for ToolEngine
-        const toolEngineAction: SequentialToolsAction = {
-            ...action,
-            tools: tools,
-        };
-
-        const results = this.kernelHandler
-            ? await this.kernelHandler.request(
-                  'tool.sequential.execute.request',
-                  'tool.sequential.execute.response',
-                  {
-                      tools: toolEngineAction.tools,
-                      stopOnError: toolEngineAction.stopOnError,
-                      metadata: {
-                          agentName: context.agentName,
-                          sessionId: context.sessionId,
-                          correlationId,
-                      },
-                  },
-                  { correlationId },
-              )
-            : await this.toolEngine.executeSequentialTools(toolEngineAction);
-        return results as Array<{
-            toolName: string;
-            result?: unknown;
-            error?: string;
-        }>;
-    }
-
-    /**
-     * Process conditional tools action
-     */
-    protected async processConditionalToolsAction(
-        action: ConditionalToolsAction,
-        context: AgentContext,
-    ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
-        const { correlationId } = context.agentExecutionOptions || {};
-
-        if (!this.toolEngine) {
-            throw new EngineError('AGENT_ERROR', 'Tool engine not available');
-        }
-
-        const tools = this.extractToolsFromAction(action);
-
-        this.logger.info('Processing conditional tools action', {
-            agentName: context.agentName,
-            toolCount: tools.length,
-            hasConditions: Object.keys(action.conditions || {}).length > 0,
-            correlationId,
-        });
-
-        // Create properly structured action for ToolEngine
-        const toolEngineAction: ConditionalToolsAction = {
-            ...action,
-            tools: tools,
-        };
-
-        const results = this.kernelHandler
-            ? await this.kernelHandler.request(
-                  'tool.conditional.execute.request',
-                  'tool.conditional.execute.response',
-                  {
-                      tools: toolEngineAction.tools,
-                      conditions: toolEngineAction.conditions,
-                      metadata: {
-                          agentName: context.agentName,
-                          sessionId: context.sessionId,
-                          correlationId,
-                      },
-                  },
-                  { correlationId },
-              )
-            : await this.toolEngine.executeConditionalTools(toolEngineAction);
-        return results as Array<{
-            toolName: string;
-            result?: unknown;
-            error?: string;
-        }>;
-    }
-
-    /**
-     * Process mixed tools action (adaptive strategy)
-     */
-    protected async processMixedToolsAction(
-        action: MixedToolsAction,
-        context: AgentContext,
-    ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
-        const { correlationId } = context.agentExecutionOptions || {};
-
-        if (!this.toolEngine) {
-            throw new EngineError('AGENT_ERROR', 'Tool engine not available');
-        }
-
-        const tools = this.extractToolsFromAction(action);
-
-        this.logger.info('Processing mixed tools action', {
-            agentName: context.agentName,
-            strategy: action.strategy,
-            toolCount: tools.length,
-            correlationId,
-        });
-
-        // Convert mixed action to specific action based on strategy
-        switch (action.strategy) {
-            case 'parallel': {
-                const parallelAction: ParallelToolsAction = {
-                    type: 'parallel_tools',
-                    tools: tools,
-                    concurrency: action.config?.concurrency,
-                    timeout: action.config?.timeout,
-                    failFast: action.config?.failFast,
-                    reasoning: action.reasoning,
-                };
-                return this.kernelHandler
-                    ? await this.kernelHandler.request(
-                          'tool.parallel.execute.request',
-                          'tool.parallel.execute.response',
-                          {
-                              tools: parallelAction.tools,
-                              concurrency: parallelAction.concurrency,
-                              timeout: parallelAction.timeout,
-                              failFast: parallelAction.failFast,
-                              metadata: {
-                                  agentName: context.agentName,
-                                  sessionId: context.sessionId,
-                                  correlationId,
-                              },
-                          },
-                          { correlationId },
-                      )
-                    : await this.toolEngine.executeParallelTools(
-                          parallelAction,
-                      );
-            }
-            case 'sequential': {
-                const sequentialAction: SequentialToolsAction = {
-                    type: 'sequential_tools',
-                    tools: tools,
-                    timeout: action.config?.timeout,
-                    reasoning: action.reasoning,
-                };
-                return this.kernelHandler
-                    ? await this.kernelHandler.request(
-                          'tool.sequential.execute.request',
-                          'tool.sequential.execute.response',
-                          {
-                              tools: sequentialAction.tools,
-                              timeout: sequentialAction.timeout,
-                              metadata: {
-                                  agentName: context.agentName,
-                                  sessionId: context.sessionId,
-                                  correlationId,
-                              },
-                          },
-                          { correlationId },
-                      )
-                    : await this.toolEngine.executeSequentialTools(
-                          sequentialAction,
-                      );
-            }
-            case 'conditional': {
-                const conditionalAction: ConditionalToolsAction = {
-                    type: 'conditional_tools',
-                    tools: tools,
-                    conditions: action.config?.conditions || {},
-                    reasoning: action.reasoning,
-                };
-                return this.kernelHandler
-                    ? await this.kernelHandler.request(
-                          'tool.conditional.execute.request',
-                          'tool.conditional.execute.response',
-                          {
-                              tools: conditionalAction.tools,
-                              conditions: conditionalAction.conditions,
-                              metadata: {
-                                  agentName: context.agentName,
-                                  sessionId: context.sessionId,
-                                  correlationId,
-                              },
-                          },
-                          { correlationId },
-                      )
-                    : await this.toolEngine.executeConditionalTools(
-                          conditionalAction,
-                      );
-            }
-            case 'adaptive':
-            default:
-                // For adaptive strategy, analyze tools and choose best approach
-                return await this.executeAdaptiveToolStrategy(action, context);
-        }
-    }
-
-    /**
-     * Execute adaptive tool strategy (intelligence-based decision)
-     */
-    protected async executeAdaptiveToolStrategy(
-        action: MixedToolsAction,
-        context: AgentContext,
-    ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
-        const { correlationId } = context.agentExecutionOptions || {};
-        const tools = this.extractToolsFromAction(action);
-        const toolCount = tools.length;
-
-        if (toolCount === 1) {
-            const tool = tools[0];
-
-            if (!tool) {
-                return [{ toolName: 'unknown', error: 'No tool available' }];
-            }
-
-            try {
-                const toolStartTime = Date.now();
-                const result = this.kernelHandler
-                    ? await this.kernelHandler.requestToolExecution(
-                          tool.toolName,
-                          tool.arguments,
-                          { correlationId },
-                      )
-                    : await this.toolEngine!.executeCall(
-                          tool.toolName as ToolId,
-                          tool.arguments,
-                          {
-                              correlationId,
-                              tenantId: context.tenantId,
-                              threadId: context.thread?.id,
-                          },
-                      );
-                const duration = Date.now() - toolStartTime;
-
-                const currentStepId = (
-                    context as any
-                ).stepExecution?.getCurrentStep()?.stepId;
-                if (currentStepId && (context as any).stepExecution) {
-                    (context as any).stepExecution?.addToolCall(
-                        currentStepId,
-                        tool.toolName,
-                        tool.arguments,
-                        result,
-                        duration,
-                    );
-                }
-
-                return [{ toolName: tool.toolName, result }];
-            } catch (error) {
-                const errorMessage =
-                    error instanceof Error ? error.message : String(error);
-                return [{ toolName: tool.toolName, error: errorMessage }];
-            }
-        } else if (toolCount <= 3) {
-            const parallelAction: ParallelToolsAction = {
-                type: 'parallel_tools',
-                tools: tools,
-                concurrency: toolCount,
-                reasoning: `Adaptive strategy: parallel execution for ${toolCount} tools`,
+            return {
+                sessionId: enhancedSessionId,
+                threadId: enhancedThreadId,
             };
-            const parallelResults = this.kernelHandler
-                ? await this.kernelHandler.request(
-                      'tool.parallel.execute.request',
-                      'tool.parallel.execute.response',
-                      {
-                          tools: parallelAction.tools,
-                          concurrency: parallelAction.concurrency,
-                          metadata: {
-                              agentName: context.agentName,
-                              sessionId: context.sessionId,
-                              correlationId,
-                          },
-                      },
-                      { correlationId },
-                  )
-                : await this.toolEngine!.executeParallelTools(parallelAction);
-
-            try {
-                for (const r of parallelResults as Array<{
-                    toolName: string;
-                    result?: unknown;
-                    error?: string;
-                }>) {
-                    const input = parallelAction.tools.find(
-                        (t) => t.toolName === r.toolName,
-                    )?.arguments;
-                    const currentStepId = (
-                        context as any
-                    ).stepExecution?.getCurrentStep()?.stepId;
-                    if (currentStepId && (context as any).stepExecution) {
-                        (context as any).stepExecution?.addToolCall(
-                            currentStepId,
-                            r.toolName,
-                            input,
-                            r.result ?? { error: r.error },
-                            0,
-                        );
-                    }
-                }
-            } catch {
-                // best-effort
-            }
-
-            return parallelResults as Array<{
-                toolName: string;
-                result?: unknown;
-                error?: string;
-            }>;
-        } else {
-            // Large number of tools - execute sequentially to avoid resource issues
-            const sequentialAction: SequentialToolsAction = {
-                type: 'sequential_tools',
-                tools: tools,
-                reasoning: `Adaptive strategy: sequential execution for ${toolCount} tools`,
-            };
-            const sequentialResults = this.kernelHandler
-                ? await this.kernelHandler.request(
-                      'tool.sequential.execute.request',
-                      'tool.sequential.execute.response',
-                      {
-                          tools: sequentialAction.tools,
-                          metadata: {
-                              agentName: context.agentName,
-                              sessionId: context.sessionId,
-                              correlationId,
-                          },
-                      },
-                      { correlationId },
-                  )
-                : await this.toolEngine!.executeSequentialTools(
-                      sequentialAction,
-                  );
-
-            try {
-                for (const r of sequentialResults as Array<{
-                    toolName: string;
-                    result?: unknown;
-                    error?: string;
-                }>) {
-                    const input = sequentialAction.tools.find(
-                        (t) => t.toolName === r.toolName,
-                    )?.arguments;
-                    const currentStepId = (
-                        context as any
-                    ).stepExecution?.getCurrentStep()?.stepId;
-                    if (currentStepId && (context as any).stepExecution) {
-                        (context as any).stepExecution?.addToolCall(
-                            currentStepId,
-                            r.toolName,
-                            input,
-                            r.result ?? { error: r.error },
-                            0,
-                        );
-                    }
-                    // await context.track?.toolUsage?.(
-                    //     r.toolName,
-                    //     input,
-                    //     r.result ?? { error: r.error },
-                    //     !r.error,
-                    // );
-                }
-            } catch {
-                // best-effort
-            }
-
-            return sequentialResults as Array<{
-                toolName: string;
-                result?: unknown;
-                error?: string;
-            }>;
         }
+
+        if (optionsThreadId) {
+            this.logger.warn('⚠️ Using fallback sessionId from options', {
+                optionsSessionId,
+                optionsThreadId,
+                reason: 'enhanced_context_incomplete',
+            });
+            return {
+                sessionId: optionsSessionId || optionsThreadId,
+                threadId: optionsThreadId,
+            };
+        }
+
+        const error = new Error(
+            'Cannot determine sessionId/threadId - both enhanced context and options are invalid',
+        );
+        this.logger.error('❌ Session consistency failure', error, {
+            enhancedRuntimeContext: !!enhancedRuntimeContext,
+            agentExecutionOptions: !!agentExecutionOptions,
+        });
+        throw error;
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // 🔥 CENTRALIZED SESSION MANAGER METHODS (Eliminate 6+ duplications)
+    // ──────────────────────────────────────────────────────────────────────────
+
     /**
-     * Process dependency tools action (explicit dependency resolution)
+     * 🎯 Centralized session execution update (eliminates duplications)
      */
-    protected async processDependencyToolsAction(
-        action: DependencyToolsAction,
-        context: AgentContext,
-    ): Promise<Array<{ toolName: string; result?: unknown; error?: string }>> {
-        const { correlationId } = context.agentExecutionOptions || {};
-
-        if (!this.toolEngine) {
-            throw new EngineError('AGENT_ERROR', 'Tool engine not available');
-        }
-
-        const tools = this.extractToolsFromAction(action);
-
-        this.logger.info('Processing dependency tools action', {
-            agentName: context.agentName,
-            toolCount: tools.length,
-            dependencyCount: action.dependencies.length,
-            correlationId,
-        });
-
-        // Use the ToolEngine's dependency-aware execution
-        const results = this.kernelHandler
-            ? await this.kernelHandler.request(
-                  'tool.dependency.execute.request',
-                  'tool.dependency.execute.response',
-                  {
-                      tools,
-                      dependencies: action.dependencies,
-                      config: {
-                          maxConcurrency: action.config?.maxConcurrency || 5,
-                          timeout: action.config?.timeout || 60000,
-                          failFast: action.config?.failFast || false,
-                      },
-                      metadata: {
-                          agentName: context.agentName,
-                          sessionId: context.sessionId,
-                          correlationId,
-                      },
-                  },
-                  { correlationId },
-              )
-            : await this.toolEngine.executeWithDependencies(
-                  tools,
-                  action.dependencies,
-                  {
-                      maxConcurrency: action.config?.maxConcurrency || 5,
-                      timeout: action.config?.timeout || 60000,
-                      failFast: action.config?.failFast || false,
-                  },
-              );
-
+    protected async updateSessionExecution(
+        threadId: string,
+        executionData: {
+            planId?: string;
+            status?: 'in_progress' | 'success' | 'error' | 'partial';
+            completedSteps?: string[];
+            failedSteps?: string[];
+            currentTool?: string;
+            lastError?: string;
+            replanCount?: number;
+        },
+    ): Promise<void> {
         try {
-            for (const r of results as Array<{
-                toolName: string;
-                result?: unknown;
-                error?: string;
-            }>) {
-                const input = tools.find(
-                    (t) => t.toolName === r.toolName,
-                )?.arguments;
-                const currentStepId = (
-                    context as any
-                ).stepExecution?.getCurrentStep()?.stepId;
-                if (currentStepId && (context as any).stepExecution) {
-                    (context as any).stepExecution?.addToolCall(
-                        currentStepId,
-                        r.toolName,
-                        input,
-                        r.result ?? { error: r.error },
-                        0,
-                    );
-                }
-            }
-        } catch {
-            // best-effort
-        }
+            // 🎯 CLEAN API: Direct method call via ContextService
+            await ContextService.updateExecution(threadId, executionData);
 
-        return results as Array<{
-            toolName: string;
-            result?: unknown;
-            error?: string;
-        }>;
+            this.logger.debug('✅ Session execution updated', {
+                threadId,
+                status: executionData.status,
+                completedSteps: executionData.completedSteps?.length,
+                failedSteps: executionData.failedSteps?.length,
+            });
+        } catch (error) {
+            this.logger.error(
+                '❌ Failed to update session execution',
+                error instanceof Error ? error : undefined,
+                {
+                    threadId,
+                    executionData,
+                },
+            );
+            // Don't throw - session updates shouldn't break execution flow
+        }
+    }
+
+    /**
+     * 🎯 Centralized session message addition (eliminates duplications)
+     */
+    protected async addSessionMessage(
+        threadId: string,
+        message: {
+            role: 'user' | 'assistant' | 'system' | 'tool';
+            content: string;
+            toolCalls?: any[];
+            toolCallId?: string;
+            name?: string;
+            metadata?: Record<string, unknown>;
+        },
+    ): Promise<void> {
+        try {
+            // 🎯 CLEAN API: Direct method call via ContextService
+            await ContextService.addMessage(threadId, message);
+
+            this.logger.debug('✅ Session message added', {
+                threadId,
+                role: message.role,
+                contentLength: message.content.length,
+                hasToolCalls: !!message.toolCalls?.length,
+            });
+        } catch (error) {
+            this.logger.error(
+                '❌ Failed to add session message',
+                error instanceof Error ? error : undefined,
+                {
+                    threadId,
+                    messageRole: message.role,
+                },
+            );
+            // Don't throw - session updates shouldn't break execution flow
+        }
+    }
+
+    /**
+     * 🎯 Centralized session entities addition (eliminates duplications)
+     */
+    protected async addSessionEntities(
+        threadId: string,
+        entities: Record<string, any>,
+    ): Promise<void> {
+        try {
+            // 🎯 CLEAN API: Direct method call via ContextService
+            await ContextService.addEntities(threadId, entities);
+
+            this.logger.debug('✅ Session entities added', {
+                threadId,
+                entityTypes: Object.keys(entities),
+                totalEntities: Object.values(entities).reduce(
+                    (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 1),
+                    0,
+                ),
+            });
+        } catch (error) {
+            this.logger.error(
+                '❌ Failed to add session entities',
+                error instanceof Error ? error : undefined,
+                {
+                    threadId,
+                    entityTypes: Object.keys(entities),
+                },
+            );
+            // Don't throw - session updates shouldn't break execution flow
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -2175,17 +1752,6 @@ export abstract class AgentCore<
         return patterns;
     }
 
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 🧠 NEW: Think→Act→Observe Implementation
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Generate correlation ID for request-response tracking
-     */
-    // private generateCorrelationId(): string {
-    //     return IdGenerator.correlationId();
-    // }
-
     protected async executeThinkActObserve<TInput, TOutput>(
         input: TInput,
         context: AgentContext,
@@ -2202,6 +1768,54 @@ export abstract class AgentCore<
             context,
         );
         const result = await this.strategy.execute(strategyContext);
+
+        // 🔥 SYNTHESIS: Call createFinalResponse if strategy supports it
+        if (
+            'createFinalResponse' in this.strategy &&
+            typeof this.strategy.createFinalResponse === 'function'
+        ) {
+            try {
+                this.logger.info(
+                    '🌉 Strategy supports createFinalResponse, using ContextBridge',
+                );
+
+                const finalResponse =
+                    await this.strategy.createFinalResponse(strategyContext);
+
+                this.logger.info(
+                    '✅ Final response created via ContextBridge',
+                    {
+                        responseLength:
+                            typeof finalResponse === 'string'
+                                ? finalResponse.length
+                                : 0,
+                        hasContextBridge: true,
+                    },
+                );
+
+                return finalResponse as TOutput;
+            } catch (error) {
+                this.logger.error(
+                    '❌ createFinalResponse failed, using original result',
+                    error instanceof Error ? error : undefined,
+                    {
+                        strategyType: this.strategy.constructor.name,
+                        fallbackToOriginal: true,
+                    },
+                );
+                // Fallback to original result
+                return result as TOutput;
+            }
+        } else {
+            this.logger.debug(
+                'Strategy does not support createFinalResponse, using original result',
+                {
+                    strategyType: this.strategy.constructor.name,
+                    hasCreateFinalResponse:
+                        'createFinalResponse' in this.strategy,
+                },
+            );
+        }
 
         return result as TOutput;
     }
@@ -2237,88 +1851,20 @@ export abstract class AgentCore<
         };
     }
 
-    // protected async executeThinkActObserve<TInput, TOutput>(
-    //     input: TInput,
-    //     context: AgentContext,
-    // ): Promise<TOutput> {
-    //     if (!this.planner || !this.llmAdapter) {
-    //         throw new EngineError(
-    //             'AGENT_ERROR',
-    //             'Think→Act→Observe requires planner and LLM adapter. Provide llmAdapter in config.',
-    //         );
-    //     }
-
-    //     const maxIterations = this.config.maxThinkingIterations || 15;
-    //     const inputString = String(input);
-    //     const obs = getObservability();
-
-    //     const executionHistory: Array<{
-    //         thought: AgentThought;
-    //         action: AgentAction;
-    //         result: ActionResult;
-    //         observation: ResultAnalysis;
-    //     }> = [];
-
-    //     let finalExecutionContext: PlannerExecutionContext | undefined;
-
-    //     for (let iterations = 0; iterations < maxIterations; iterations++) {
-    //         const plannerInput = this.createPlannerContext(
-    //             inputString,
-    //             executionHistory,
-    //             iterations,
-    //             maxIterations,
-    //             context,
-    //         );
-
-    //         finalExecutionContext = plannerInput;
-
-    //         if (plannerInput.isComplete) {
-    //             break;
-    //         }
-
-    //         try {
-    //             const iterationResult = await this.executeSingleIteration(
-    //                 plannerInput,
-    //                 iterations,
-    //                 obs,
-    //                 context,
-    //             );
-
-    //             executionHistory.push(iterationResult);
-
-    //             if (
-    //                 this.shouldStopExecution(
-    //                     iterationResult,
-    //                     iterations,
-    //                     plannerInput,
-    //                 )
-    //             ) {
-    //                 break;
-    //             }
-    //         } catch (error) {
-    //             if (iterations >= maxIterations - 1) {
-    //                 throw error;
-    //             }
-    //         }
-    //     }
-
-    //     const finalResult = await this.extractFinalResult(
-    //         finalExecutionContext,
-    //     );
-
-    //     // ✅ SMART EXECUTION LOGGING - Log complex executions automatically
-    //     await this.logExecutionWithCriteria(context);
-
-    //     return finalResult as TOutput;
-    // }
-
     private initializeStrategyComponents(): void {
         if (this.config.llmAdapter) {
             this.llmAdapter = this.config.llmAdapter;
 
             try {
+                // Convert PlannerType to StrategyType
+                const strategyType =
+                    this.config.plannerOptions.type.toLowerCase() as
+                        | 'react'
+                        | 'rewoo'
+                        | 'plan-execute';
+
                 this.strategy = StrategyFactory.create(
-                    this.config.plannerOptions.type,
+                    strategyType,
                     this.llmAdapter,
                     {},
                 );

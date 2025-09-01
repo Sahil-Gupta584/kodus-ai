@@ -5,7 +5,7 @@
 import { AgentContext } from '@/core/types/allTypes.js';
 
 // Strategy Pattern Types (baseados em padrões estabelecidos)
-export type ExecutionStrategy = 'react' | 'rewoo';
+export type ExecutionStrategy = 'react' | 'rewoo' | 'plan-execute';
 
 // ============================================================================
 // AGENT TYPES (específicos para estratégias)
@@ -127,7 +127,7 @@ export type UnifiedStatusStrategy =
 export interface ExecutionStep {
     id: string;
     type: ExecutionStepType;
-    type2: 'sketch' | 'work' | 'organize' | 'verify';
+    type2: 'sketch' | 'work' | 'organize' | 'verify' | 'plan' | 'execute';
     thought?: AgentThought;
     action?: AgentAction;
     result?: ActionResult;
@@ -137,7 +137,8 @@ export interface ExecutionStep {
     metadata?: Record<string, unknown>;
     result2?: unknown;
     thought2?: string;
-    status: UnifiedStatusStrategy;
+    status?: string | UnifiedStatusStrategy;
+    error?: string;
 }
 
 // Execution Result (reutiliza padrões existentes)

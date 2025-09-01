@@ -28,6 +28,7 @@ import {
     WorkflowContext,
 } from '../core/types/allTypes.js';
 import { createPersistorFromConfig } from '../persistor/factory.js';
+import { ContextService } from '../core/contextNew/index.js';
 
 class LRUCache<T> {
     private readonly maxSize: number;
@@ -326,7 +327,7 @@ export class ExecutionKernel {
                     this.setupQuotaMonitoring();
 
                     // 6. Setup performance optimizations
-                    this.setupPerformanceOptimizations();
+                    await this.setupPerformanceOptimizations();
 
                     // 7. SÓ AGORA mudar status para 'running' (ATÔMICO)
                     this.state.status = 'running';
@@ -926,18 +927,90 @@ export class ExecutionKernel {
     /**
      * Initialize context store
      */
-    private initializeContextStore(): void {
+    private async initializeContextStore(): Promise<void> {
         // Performance: Pre-allocate context data
         if (!this.config.performance?.enableLazyLoading) {
-            // TODO: Use ContextBuilder for base context creation
-            // For now, initialize empty context data
-            this.state.contextData = {
-                eventHistory: [],
-                metrics: {},
-                user: {},
-                system: {},
-            };
+            try {
+                // Try to get existing context or create basic structure
+                if (this.config.tenantId) {
+                    try {
+                        // 🎯 CLEAN API: Single method call via ContextService
+                        const runtimeContext = await ContextService.getContext(
+                            this.config.tenantId,
+                        );
+
+                        this.state.contextData = {
+                            eventHistory: runtimeContext.messages || [],
+                            metrics: runtimeContext.execution || {},
+                            user: runtimeContext.entities || {},
+                            system: {
+                                sessionId: runtimeContext.sessionId,
+                                threadId: runtimeContext.threadId,
+                                executionId: runtimeContext.executionId,
+                                phase: runtimeContext.state.phase,
+                                lastUserIntent:
+                                    runtimeContext.state.lastUserIntent,
+                            },
+                        };
+
+                        this.logger.info(
+                            '✅ Kernel context initialized via ContextService',
+                            {
+                                sessionId: runtimeContext.sessionId,
+                                threadId: runtimeContext.threadId,
+                                messagesCount: runtimeContext.messages.length,
+                                entitiesCount: Object.keys(
+                                    runtimeContext.entities,
+                                ).length,
+                            },
+                        );
+                    } catch (contextError) {
+                        // Fallback to basic structure if ContextService fails
+                        this.logger.warn(
+                            '⚠️ ContextService unavailable, using basic structure',
+                            {
+                                tenantId: this.config.tenantId,
+                                error:
+                                    contextError instanceof Error
+                                        ? contextError.message
+                                        : String(contextError),
+                            },
+                        );
+                        this.initializeBasicContextData();
+                    }
+                } else {
+                    // No tenantId available, use basic structure
+                    this.logger.info(
+                        'ℹ️ No tenantId provided, using basic context structure',
+                    );
+                    this.initializeBasicContextData();
+                }
+            } catch (importError) {
+                // ContextService not available, fallback to basic structure
+                this.logger.warn(
+                    '⚠️ ContextService import failed, using basic structure',
+                    {
+                        error:
+                            importError instanceof Error
+                                ? importError.message
+                                : String(importError),
+                    },
+                );
+                this.initializeBasicContextData();
+            }
         }
+    }
+
+    /**
+     * Fallback basic context initialization
+     */
+    private initializeBasicContextData(): void {
+        this.state.contextData = {
+            eventHistory: [],
+            metrics: {},
+            user: {},
+            system: {},
+        };
     }
 
     /**
@@ -1055,10 +1128,10 @@ export class ExecutionKernel {
     /**
      * Setup performance optimizations
      */
-    private setupPerformanceOptimizations(): void {
+    private async setupPerformanceOptimizations(): Promise<void> {
         // Initialize context store if not lazy loading
         if (!this.config.performance?.enableLazyLoading) {
-            this.initializeContextStore();
+            await this.initializeContextStore();
         }
 
         this.logger.info('Performance optimizations enabled', {

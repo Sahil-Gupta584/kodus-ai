@@ -1,0 +1,699 @@
+import { LLMAdapter } from '../../core/types/allTypes.js';
+import { createLogger } from '../../observability/index.js';
+import { BaseExecutionStrategy } from './strategy-interface.js';
+import { SharedStrategyMethods } from './shared-methods.js';
+import type {
+    StrategyExecutionContext,
+    ExecutionResult,
+    ExecutionStep,
+} from './types.js';
+import { StrategyPromptFactory } from './prompts/index.js';
+import { ContextService } from '../../core/contextNew/index.js';
+
+/**
+ * Plan-Execute Strategy - Planejamento + Execução Sequencial
+ *
+ * ✅ ESTRATÉGIA MAIS SIMPLES E DIRETA
+ *
+ * Implementação focada em:
+ * - ✅ Planejamento inteligente de tarefas
+ * - ✅ Execução sequencial e confiável
+ * - ✅ Menos chamadas LLM (performance)
+ * - ✅ Arquitetura mais simples de manter
+ */
+export class PlanExecuteStrategy extends BaseExecutionStrategy {
+    private readonly logger = createLogger('plan-execute-strategy');
+    private readonly promptFactory: StrategyPromptFactory;
+
+    private readonly config: {
+        maxPlanningSteps: number;
+        maxExecutionSteps: number;
+        maxToolCalls: number;
+        maxExecutionTime: number;
+        enablePlanningValidation: boolean;
+    };
+
+    constructor(
+        private llmAdapter: LLMAdapter,
+        options: Partial<{
+            llmAdapter: LLMAdapter;
+            maxPlanningSteps: number;
+            maxExecutionSteps: number;
+            maxToolCalls: number;
+            maxExecutionTime: number;
+            enablePlanningValidation: boolean;
+        }> = {},
+    ) {
+        super();
+
+        // Inicializar prompt factory
+        this.promptFactory = new StrategyPromptFactory();
+
+        // Configurações padrão
+        const defaultConfig = {
+            maxPlanningSteps: 10,
+            maxExecutionSteps: 15,
+            maxToolCalls: 25,
+            maxExecutionTime: 300000, // 5 minutos
+            enablePlanningValidation: true,
+        };
+
+        this.config = { ...defaultConfig, ...options };
+
+        this.logger.info('🗓️ Plan-Execute Strategy initialized', {
+            config: this.config,
+        });
+    }
+
+    /**
+     * Método principal - executa o padrão Plan-Execute completo
+     */
+    async execute(context: StrategyExecutionContext): Promise<ExecutionResult> {
+        const startTime = Date.now();
+        const steps: ExecutionStep[] = [];
+        let toolCallsCount = 0;
+
+        try {
+            this.validateContext(context);
+
+            // Fase 1: PLAN - Criar plano de execução
+            const planStepStart = Date.now();
+            const plan = await this.createPlan(context);
+            steps.push({
+                id: `plan-${planStepStart}`,
+                type: 'plan' as any,
+                type2: 'plan',
+                timestamp: planStepStart,
+                duration: Date.now() - planStepStart,
+                status: 'completed',
+                thought2: `Created plan with ${plan.steps?.length || 0} steps`,
+                result2: plan,
+            });
+
+            // Fase 2: EXECUTE - Executar plano step by step
+            const executionResults = await this.executePlan(
+                plan,
+                context,
+                startTime,
+            );
+            steps.push(...executionResults.steps);
+            toolCallsCount = executionResults.toolCallsCount;
+
+            // Fase 3: FINALIZE - Criar resultado final
+            const finalResult = this.buildFinalResult(
+                plan,
+                executionResults.steps,
+                startTime,
+                toolCallsCount,
+            );
+
+            const execTime = Date.now() - startTime;
+            return {
+                ...finalResult,
+                executionTime: execTime,
+                steps,
+            };
+        } catch (error) {
+            return this.buildErrorResult(
+                error,
+                steps,
+                startTime,
+                toolCallsCount,
+            );
+        }
+    }
+
+    /**
+     * Validação do contexto de entrada
+     */
+    private validateContext(context: StrategyExecutionContext): void {
+        if (!context.input?.trim()) {
+            throw new Error('Input cannot be empty');
+        }
+
+        if (!Array.isArray(context.tools)) {
+            throw new Error('Tools must be an array');
+        }
+
+        if (!context.agentContext) {
+            throw new Error('Agent context is required');
+        }
+
+        this.logger.debug('Context validation passed', {
+            inputLength: context.input.length,
+            toolsCount: context.tools?.length || 0,
+            hasAgentContext: !!context.agentContext,
+        });
+    }
+
+    /**
+     * Cria plano de execução baseado no input e ferramentas disponíveis
+     */
+    private async createPlan(context: StrategyExecutionContext): Promise<any> {
+        if (!this.llmAdapter.createPlan) {
+            throw new Error('LLM adapter must support createPlan method');
+        }
+
+        // Usar nova arquitetura de prompts
+        const prompts = this.promptFactory.createPlanExecutePrompt({
+            goal: context.input,
+            tools: context.tools as any,
+            agentContext: context.agentContext,
+            additionalContext: {
+                userContext:
+                    context.agentContext?.agentExecutionOptions?.userContext,
+                agentIdentity: context.agentContext?.agentIdentity,
+                agentExecutionOptions:
+                    context.agentContext?.agentExecutionOptions,
+                runtimeContext: (context.agentContext as any)
+                    ?.enhancedRuntimeContext,
+            },
+            mode: 'planner',
+        });
+
+        const response = await this.llmAdapter.createPlan(
+            context.input,
+            'plan-execute',
+            {
+                systemPrompt: prompts.systemPrompt,
+                userPrompt: prompts.userPrompt,
+                tools: this.getAvailableToolsFormatted(context),
+            },
+        );
+
+        const parsed = this.parsePlanResponse((response as any)?.content);
+        return parsed;
+    }
+
+    /**
+     * Executa plano step by step
+     */
+    private async executePlan(
+        plan: any,
+        context: StrategyExecutionContext,
+        startTime: number,
+    ): Promise<{ steps: ExecutionStep[]; toolCallsCount: number }> {
+        const executedSteps: ExecutionStep[] = [];
+        let toolCallsCount = 0;
+
+        if (!plan.steps || plan.steps.length === 0) {
+            this.logger.warn('Plan has no steps to execute');
+            return { steps: executedSteps, toolCallsCount };
+        }
+
+        for (let i = 0; i < plan.steps.length; i++) {
+            const step = plan.steps[i];
+
+            // Verificar timeout
+            if (Date.now() - startTime > this.config.maxExecutionTime) {
+                this.logger.warn('Plan execution timeout reached');
+                break;
+            }
+
+            // Verificar limite de tool calls
+            if (toolCallsCount >= this.config.maxToolCalls) {
+                this.logger.warn('Max tool calls reached');
+                break;
+            }
+
+            const stepResult = await this.executePlanStep(step, context, i);
+            executedSteps.push(stepResult);
+
+            if (
+                stepResult.metadata?.toolCalls &&
+                Array.isArray(stepResult.metadata.toolCalls)
+            ) {
+                toolCallsCount += stepResult.metadata.toolCalls.length;
+            }
+        }
+
+        return { steps: executedSteps, toolCallsCount };
+    }
+
+    /**
+     * Executa um step individual do plano
+     */
+    private async executePlanStep(
+        planStep: any,
+        context: StrategyExecutionContext,
+        stepIndex: number,
+    ): Promise<ExecutionStep> {
+        const stepStartTime = Date.now();
+
+        const step: ExecutionStep = {
+            id: `plan-execute-step-${stepIndex}-${Date.now()}`,
+            type: 'execute',
+            type2: 'execute',
+            timestamp: stepStartTime,
+            duration: 0,
+            metadata: {
+                planStep,
+                stepIndex,
+                strategy: 'plan-execute',
+            },
+        };
+
+        try {
+            const result = await this.executeStepAction(planStep, context);
+            step.result = result;
+            step.status = 'completed';
+
+            if (step.metadata) {
+                step.metadata.success = true;
+            }
+        } catch (error) {
+            step.status = 'failed';
+            step.error = error instanceof Error ? error.message : String(error);
+
+            if (step.metadata) {
+                step.metadata.success = false;
+                step.metadata.error = step.error;
+            }
+        }
+
+        step.duration = Date.now() - stepStartTime;
+        return step;
+    }
+
+    /**
+     * Executa ação baseada no tipo do step
+     */
+    private async executeStepAction(
+        planStep: any,
+        context: StrategyExecutionContext,
+    ): Promise<any> {
+        if (planStep.type === 'tool_call') {
+            return await this.executeToolStep(planStep, context);
+        } else if (planStep.type === 'final_answer') {
+            return {
+                type: 'final_answer',
+                content: planStep.content || 'Task completed',
+                metadata: {
+                    timestamp: Date.now(),
+                    source: 'plan-execute-strategy',
+                },
+            };
+        } else {
+            throw new Error(`Unknown step type: ${planStep.type}`);
+        }
+    }
+
+    /**
+     * Executa step de tool call
+     */
+    private async executeToolStep(
+        planStep: any,
+        context: StrategyExecutionContext,
+    ): Promise<any> {
+        if (!planStep.toolName) {
+            throw new Error('Tool step missing toolName');
+        }
+
+        const tool = context.tools.find((t) => t.name === planStep.toolName);
+        if (!tool) {
+            throw new Error(`Tool not found: ${planStep.toolName}`);
+        }
+
+        const action = {
+            type: 'tool_call' as const,
+            toolName: planStep.toolName,
+            input: planStep.input || {},
+        };
+
+        // Usar SharedStrategyMethods para execução consistente
+        const result = await SharedStrategyMethods.executeTool(action, context);
+
+        return {
+            type: 'tool_result',
+            content: result,
+            metadata: {
+                toolName: planStep.toolName,
+                arguments: action.input,
+                executionTime: Date.now(),
+            },
+        };
+    }
+
+    /**
+     * Faz parse da resposta do LLM para extrair o plano
+     */
+    private parsePlanResponse(content: string): any {
+        if (!content) {
+            throw new Error('Empty plan response from LLM');
+        }
+
+        try {
+            // Tentar parse como JSON primeiro
+            const parsed = JSON.parse(content);
+            if (parsed.steps && Array.isArray(parsed.steps)) {
+                return {
+                    goal: parsed.goal || 'Execute plan',
+                    steps: parsed.steps,
+                    reasoning: parsed.reasoning || 'Plan created',
+                };
+            }
+        } catch (jsonError) {
+            this.logger.debug('JSON parse failed, trying text parse', {
+                error:
+                    jsonError instanceof Error
+                        ? jsonError.message
+                        : String(jsonError),
+            });
+        }
+
+        // Parse de texto simples
+        const lines = content
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0);
+        const steps: any[] = [];
+
+        for (const line of lines) {
+            // Procurar por padrões de steps
+            const stepMatch = line.match(/^(\d+)\.\s*(.+)$/);
+            if (stepMatch && stepMatch[2]) {
+                const stepText = stepMatch[2];
+
+                // Identificar se é tool call
+                const toolMatch =
+                    stepText.match(/use\s+(\w+)/i) ||
+                    stepText.match(/call\s+(\w+)/i);
+                if (toolMatch) {
+                    steps.push({
+                        id: `step-${steps.length + 1}`,
+                        type: 'tool_call',
+                        toolName: toolMatch[1],
+                        description: stepText,
+                        input: {},
+                    });
+                } else {
+                    steps.push({
+                        id: `step-${steps.length + 1}`,
+                        type: 'final_answer',
+                        content: stepText,
+                    });
+                }
+            }
+        }
+
+        if (steps.length === 0) {
+            // Fallback: criar step simples
+            steps.push({
+                id: 'step-1',
+                type: 'final_answer',
+                content: content,
+            });
+        }
+
+        return {
+            goal: 'Execute plan',
+            steps,
+            reasoning: 'Plan parsed from text response',
+        };
+    }
+
+    /**
+     * Formata ferramentas disponíveis para o LLM
+     */
+    private getAvailableToolsFormatted(
+        context: StrategyExecutionContext,
+    ): any[] {
+        if (!context.agentContext?.allTools) {
+            return [];
+        }
+
+        return context.agentContext.allTools.map((tool) => ({
+            name: tool.name,
+            description: tool.description || `Tool: ${tool.name}`,
+            parameters: tool.inputJsonSchema?.parameters || {
+                type: 'object',
+                properties: {},
+                required: [],
+            },
+        }));
+    }
+
+    /**
+     * Constrói resultado de sucesso
+     */
+    private buildFinalResult(
+        plan: any,
+        steps: ExecutionStep[],
+        startTime: number,
+        toolCallsCount: number,
+    ): ExecutionResult {
+        const executionTime = Date.now() - startTime;
+
+        // Extrair resultado final
+        const finalResult = this.extractFinalResult(steps);
+
+        this.logger.info('🎯 Plan-Execute execution completed successfully', {
+            planSteps: plan.steps?.length || 0,
+            executedSteps: steps.length,
+            executionTime,
+            toolCalls: toolCallsCount,
+        });
+
+        return {
+            output: finalResult,
+            strategy: 'plan-execute',
+            complexity: steps.length,
+            executionTime,
+            steps,
+            success: true,
+            metadata: {
+                planSteps: plan.steps?.length || 0,
+                executedSteps: steps.length,
+                toolCallsCount,
+                planReasoning: plan.reasoning,
+            },
+        };
+    }
+
+    /**
+     * Constrói resultado de erro
+     */
+    private buildErrorResult(
+        error: unknown,
+        steps: ExecutionStep[],
+        startTime: number,
+        toolCallsCount: number,
+    ): ExecutionResult {
+        const errorMessage =
+            error instanceof Error ? error.message : 'Unknown error';
+        const executionTime = Date.now() - startTime;
+
+        this.logger.error(
+            '❌ Plan-Execute execution failed',
+            error instanceof Error ? error : undefined,
+            {
+                stepsCompleted: steps.length,
+                toolCalls: toolCallsCount,
+                executionTime,
+            },
+        );
+
+        return {
+            output: null,
+            strategy: 'plan-execute',
+            complexity: steps.length,
+            executionTime,
+            steps,
+            success: false,
+            error: errorMessage,
+            metadata: {
+                toolCallsCount,
+                failureReason: errorMessage,
+            },
+        };
+    }
+
+    /**
+     * Extrai resultado final da execução
+     */
+    private extractFinalResult(steps: ExecutionStep[]): unknown {
+        // Procurar pela última resposta final
+        for (let i = steps.length - 1; i >= 0; i--) {
+            const step = steps[i];
+            if (step?.result?.type === 'final_answer' && step.result.content) {
+                return step.result.content;
+            }
+            if (step?.result?.type === 'tool_result' && step.result.content) {
+                return step.result.content;
+            }
+        }
+
+        return 'Plan execution completed without explicit final result';
+    }
+
+    /**
+     * 🔥 CREATE FINAL RESPONSE - Uses ContextBridge for complete context
+     */
+    async createFinalResponse(
+        context: StrategyExecutionContext,
+    ): Promise<string> {
+        this.logger.info(
+            '🗓️ Plan-Execute: Creating final response with ContextBridge',
+        );
+
+        try {
+            // Build PlannerExecutionContext for ContextBridge compatibility
+            const plannerContext = {
+                input: context.input,
+                history: context.history.map((step, index) => ({
+                    ...step,
+                    stepId: step.id,
+                    executionId: `exec-${Date.now()}-${index}`,
+                })) as any[],
+                iterations: 1,
+                maxIterations: this.config.maxExecutionSteps,
+                plannerMetadata: {
+                    agentName: context.agentContext.agentName,
+                    correlationId:
+                        context.agentContext.correlationId ||
+                        'plan-execute-final-response',
+                    tenantId: context.agentContext.tenantId || 'default',
+                    thread: context.agentContext.thread || {
+                        id: context.agentContext.sessionId || 'unknown',
+                    },
+                    startTime: context.metadata.startTime,
+                    enhancedContext: (context.agentContext as any)
+                        ?.enhancedRuntimeContext,
+                },
+                agentContext: context.agentContext,
+                isComplete: true,
+                update: () => {},
+                getCurrentSituation: () =>
+                    `Plan-Execute strategy completed for: ${context.input}`,
+                getFinalResult: () => ({
+                    success: true,
+                    result: { content: 'Plan-Execute execution completed' },
+                    iterations: 1,
+                    totalTime: Date.now() - context.metadata.startTime,
+                    thoughts: [],
+                    metadata: {
+                        ...context.metadata,
+                        agentName: context.agentContext.agentName,
+                        iterations: 1,
+                        toolsUsed: context.metadata.complexity || 0,
+                        thinkingTime: Date.now() - context.metadata.startTime,
+                    } as any,
+                }),
+                getCurrentPlan: () => null,
+            };
+
+            // 🔥 THE CORE: Use ContextBridge to build complete context
+            const finalContext =
+                await ContextService.buildFinalResponseContext(plannerContext);
+
+            this.logger.info(
+                '✅ ContextBridge: Complete context retrieved for Plan-Execute',
+                {
+                    sessionId: finalContext.runtime.sessionId,
+                    messagesCount: finalContext.runtime.messages.length,
+                    entitiesCount: Object.keys(finalContext.runtime.entities)
+                        .length,
+                    executionSummary: {
+                        totalExecutions:
+                            finalContext.executionSummary.totalExecutions,
+                        successRate: finalContext.executionSummary.successRate,
+                        replanCount: finalContext.executionSummary.replanCount,
+                    },
+                    wasRecovered: finalContext.recovery?.wasRecovered,
+                    inferencesCount: Object.keys(finalContext.inferences || {})
+                        .length,
+                },
+            );
+
+            // Build context-aware response using complete context
+            const response = this.buildContextualResponse(
+                finalContext,
+                context.input,
+            );
+
+            this.logger.info(
+                '🎯 Plan-Execute: Final response created with full context',
+                {
+                    responseLength: response.length,
+                    contextSource: 'ContextBridge',
+                },
+            );
+
+            return response;
+        } catch (error) {
+            this.logger.error(
+                '❌ Plan-Execute: ContextBridge failed, using fallback response',
+                error instanceof Error ? error : undefined,
+                {
+                    input: context.input,
+                    agentName: context.agentContext.agentName,
+                },
+            );
+
+            // Fallback: Simple response without ContextBridge
+            return this.buildFallbackResponse(context);
+        }
+    }
+
+    /**
+     * Build contextual response using complete FinalResponseContext from ContextBridge
+     */
+    private buildContextualResponse(
+        finalContext: any,
+        originalInput: string,
+    ): string {
+        const { runtime, executionSummary, recovery } = finalContext;
+
+        let response = `Through systematic planning and execution`;
+
+        // Add context about what was accomplished
+        if (executionSummary.totalExecutions > 0) {
+            response += `, I've completed ${executionSummary.totalExecutions} planned executions`;
+
+            if (executionSummary.successRate < 100) {
+                response += ` with ${executionSummary.successRate}% success rate`;
+            }
+        }
+
+        // Reference entities if available
+        const entityTypes = Object.keys(runtime.entities).filter(
+            (key: string) => {
+                const entities = runtime.entities[key];
+                return Array.isArray(entities) && entities.length > 0;
+            },
+        );
+
+        if (entityTypes.length > 0) {
+            response += `, working with ${entityTypes.join(', ')}`;
+        }
+
+        // Mention recovery if it happened
+        if (recovery?.wasRecovered) {
+            const gapMinutes = Math.round(recovery.gapDuration / 60000);
+            response += ` (session recovered after ${gapMinutes}min gap)`;
+        }
+
+        // Add conversation context
+        if (runtime.messages.length > 2) {
+            response += ` based on our ${runtime.messages.length} message conversation`;
+        }
+
+        // Add specific response to the original input
+        response += `. For your request: "${originalInput}"`;
+
+        // Add completion message
+        response += ` - I've applied the Plan-Execute approach of systematic planning followed by reliable step-by-step execution to provide you with a comprehensive response.`;
+
+        return response;
+    }
+
+    /**
+     * Fallback response when ContextBridge is not available
+     */
+    private buildFallbackResponse(context: StrategyExecutionContext): string {
+        return (
+            `I've processed your request: "${context.input}" using the Plan-Execute strategy. ` +
+            `Through systematic planning and step-by-step execution, I've completed the task.`
+        );
+    }
+}

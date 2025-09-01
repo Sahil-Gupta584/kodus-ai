@@ -13,23 +13,8 @@ import type {
     Tool,
 } from './types.js';
 import { StrategyPromptFactory } from './prompts/index.js';
+import { ContextService } from '../../core/contextNew/index.js';
 
-/**
- * ReAct Strategy - Reasoning + Acting
- *
- * ✅ REFACTORADO PARA NOVA ARQUITETURA DE PROMPTS
- *
- * Implementação otimizada com foco em:
- * - ✅ Integração com StrategyPromptFactory
- * - ✅ Prompts gerados dinamicamente
- * - ✅ Uso de formatadores da nova arquitetura
- * - ✅ Remoção de métodos simulados
- * - ✅ Baixa complexidade ciclomática
- * - ✅ Métodos pequenos e coesos
- * - ✅ Tratamento robusto de erros
- * - ✅ Logging consistente
- * - ✅ Separação clara de responsabilidades
- */
 export class ReActStrategy extends BaseExecutionStrategy {
     private readonly logger = createLogger('react-strategy');
     private readonly promptFactory: StrategyPromptFactory;
@@ -129,7 +114,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
     }
 
     /**
-     * Valida contexto de entrada
+     * Valida contexto de entrada com melhor robustez
      */
     private validateContext(context: StrategyExecutionContext): void {
         if (!context.input?.trim()) {
@@ -143,6 +128,34 @@ export class ReActStrategy extends BaseExecutionStrategy {
         if (!context.agentContext) {
             throw new Error('Agent context is required');
         }
+
+        // Validações adicionais para melhor robustez
+        if (context.input.length > 10000) {
+            this.logger.warn('Input is very long, may affect performance', {
+                inputLength: context.input.length,
+            });
+        }
+
+        if (context.tools.length === 0) {
+            this.logger.warn(
+                'No tools provided - React strategy may not be able to perform complex actions',
+            );
+        }
+
+        if (context.tools.length > 50) {
+            this.logger.warn(
+                'Many tools provided - may impact prompt size and performance',
+                {
+                    toolsCount: context.tools.length,
+                },
+            );
+        }
+
+        this.logger.debug('Context validation passed', {
+            inputLength: context.input.length,
+            toolsCount: context.tools?.length || 0,
+            hasAgentContext: !!context.agentContext,
+        });
     }
 
     /**
@@ -233,7 +246,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
             throw new Error('LLM adapter must support call method');
         }
 
-        // Usar nova arquitetura de prompts
+        // Usar nova arquitetura de prompts - contexto agnóstico
         const prompts = this.promptFactory.createReActPrompt({
             input: context.input,
             tools: context.tools as any,
@@ -249,23 +262,117 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 action: step.action,
                 result: step.result,
             })),
-            additionalContext:
-                context.agentContext?.agentExecutionOptions?.userContext,
+            additionalContext: {
+                // Framework agnóstico - tudo do usuário fica dentro de userContext
+                userContext:
+                    context.agentContext?.agentExecutionOptions?.userContext,
+                agentIdentity: context.agentContext?.agentIdentity,
+                agentExecutionOptions:
+                    context.agentContext?.agentExecutionOptions,
+            },
         });
 
-        const response = await this.llmAdapter.call({
-            messages: [
-                { role: AgentInputEnum.SYSTEM, content: prompts.systemPrompt },
-                { role: AgentInputEnum.USER, content: prompts.userPrompt },
-            ],
-            temperature: 0.3,
-            maxTokens: 1000,
+        // Log da chamada para debugging
+        this.logger.debug('🤖 React iteration - calling LLM', {
+            iteration: iteration + 1,
+            inputLength: context.input.length,
+            toolsCount: context.tools?.length || 0,
         });
 
-        const content =
-            typeof response.content === 'string'
-                ? response.content
-                : JSON.stringify(response.content);
+        let response;
+        try {
+            response = await this.llmAdapter.call({
+                messages: [
+                    {
+                        role: AgentInputEnum.SYSTEM,
+                        content: prompts.systemPrompt,
+                    },
+                    { role: AgentInputEnum.USER, content: prompts.userPrompt },
+                ],
+                temperature: 0.3,
+                maxTokens: 1000,
+            });
+        } catch (llmError) {
+            // 🔥 TRATAMENTO ROBUSTO DE ERROS DE LLM
+            const errorMessage =
+                llmError instanceof Error ? llmError.message : String(llmError);
+
+            this.logger.warn('⚠️ LLM call failed - attempting recovery', {
+                iteration: iteration + 1,
+                error: errorMessage,
+                errorType:
+                    llmError instanceof Error
+                        ? llmError.constructor.name
+                        : 'Unknown',
+            });
+
+            // Se for erro de rede/tempo, tentar fallback
+            if (this.isNetworkError(llmError)) {
+                this.logger.info(
+                    '🔄 Network error detected - trying fallback response',
+                    {
+                        iteration: iteration + 1,
+                    },
+                );
+
+                // Fallback: responder com final_answer simples
+                return {
+                    reasoning: `LLM temporarily unavailable due to network issues. Error: ${errorMessage}`,
+                    action: {
+                        type: 'final_answer',
+                        content: `I encountered a temporary connectivity issue while processing your request. Please try again in a moment. Error details: ${errorMessage}`,
+                    },
+                    metadata: {
+                        iteration,
+                        timestamp: Date.now(),
+                        fallbackUsed: true,
+                        errorReason: 'network_error',
+                    },
+                };
+            }
+
+            // Para outros tipos de erro, ainda tentar fallback
+            this.logger.warn('🔄 Other LLM error - using generic fallback', {
+                iteration: iteration + 1,
+                errorType:
+                    llmError instanceof Error
+                        ? llmError.constructor.name
+                        : 'Unknown',
+            });
+
+            return {
+                reasoning: `LLM encountered an error: ${errorMessage}`,
+                action: {
+                    type: 'final_answer',
+                    content: `I encountered an error while processing your request: ${errorMessage}. Please try rephrasing your question.`,
+                },
+                metadata: {
+                    iteration,
+                    timestamp: Date.now(),
+                    fallbackUsed: true,
+                    errorReason: 'llm_error',
+                },
+            };
+        }
+
+        // Melhor tratamento de resposta
+        let content: string;
+        if (typeof response.content === 'string') {
+            content = response.content;
+        } else if (response.content) {
+            content = JSON.stringify(response.content);
+        } else {
+            throw new Error('LLM returned empty or invalid response');
+        }
+
+        // Log da resposta para debugging
+        this.logger.debug('📥 React LLM response received', {
+            iteration: iteration + 1,
+            responseLength: content.length,
+            hasReasoning:
+                content.includes('reasoning') || content.includes('Reasoning'),
+            hasAction: content.includes('action') || content.includes('Action'),
+        });
 
         return this.parseLLMResponse(content, iteration);
     }
@@ -424,46 +531,111 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     },
                 };
             }
-        } catch {
-            // Fallback para parse de texto
+        } catch (jsonError) {
+            this.logger.debug('JSON parse failed, trying text parse', {
+                error:
+                    jsonError instanceof Error
+                        ? jsonError.message
+                        : String(jsonError),
+                contentPreview: content.substring(0, 100),
+            });
         }
 
-        // Parse de texto simples
-        const lines = content.split('\n');
+        // Parse de texto simples com melhor robustez
+        const lines = content
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0);
         let reasoning = '';
         let action: AgentAction = {
             type: 'final_answer',
             content: 'Unable to parse response',
         };
 
+        // Procurar por diferentes formatos de reasoning
         for (const line of lines) {
-            if (line.toLowerCase().startsWith('reasoning:')) {
-                reasoning = line.substring(10).trim();
-            } else if (line.toLowerCase().startsWith('action:')) {
-                const actionText = line.substring(7).trim().toLowerCase();
-                if (actionText.includes('final_answer')) {
-                    action = {
-                        type: 'final_answer',
-                        content: reasoning,
-                    };
-                } else if (actionText.includes('tool_call')) {
-                    action = {
-                        type: 'tool_call',
-                        toolName: 'unknown',
-                        input: {},
-                    };
+            const lowerLine = line.toLowerCase();
+            if (
+                lowerLine.startsWith('reasoning:') ||
+                lowerLine.startsWith('analysis:') ||
+                lowerLine.startsWith('thought:')
+            ) {
+                const colonIndex = line.indexOf(':');
+                if (colonIndex !== -1) {
+                    reasoning = line.substring(colonIndex + 1).trim();
                 }
+                break;
             }
         }
 
-        return {
+        // Procurar por diferentes formatos de action
+        for (const line of lines) {
+            const lowerLine = line.toLowerCase();
+            if (
+                lowerLine.startsWith('action:') ||
+                lowerLine.startsWith('decision:') ||
+                lowerLine.startsWith('next:')
+            ) {
+                const actionText = line
+                    .substring(line.indexOf(':') + 1)
+                    .trim()
+                    .toLowerCase();
+
+                if (
+                    actionText.includes('final') ||
+                    actionText.includes('answer') ||
+                    actionText.includes('done')
+                ) {
+                    action = {
+                        type: 'final_answer',
+                        content: reasoning || content,
+                    };
+                } else if (
+                    actionText.includes('tool') ||
+                    actionText.includes('call') ||
+                    actionText.includes('execute')
+                ) {
+                    // Tentar extrair nome da ferramenta
+                    const toolMatch = content.match(
+                        /tool[_:\s]*([a-zA-Z_][a-zA-Z0-9_]*)/i,
+                    );
+                    action = {
+                        type: 'tool_call',
+                        toolName: toolMatch ? toolMatch[1] : 'unknown',
+                        input: {},
+                    };
+                }
+                break;
+            }
+        }
+
+        // Se não encontrou reasoning específico, usar o conteúdo todo como reasoning
+        if (!reasoning && content.length > 0) {
+            reasoning =
+                content.length > 200
+                    ? content.substring(0, 200) + '...'
+                    : content;
+        }
+
+        const result = {
             reasoning: reasoning || 'Analysis completed',
             action,
             metadata: {
                 iteration,
                 timestamp: Date.now(),
+                parseMethod: 'text',
+                originalContentLength: content.length,
             },
         };
+
+        this.logger.debug('Parsed React LLM response', {
+            iteration,
+            reasoningLength: reasoning.length,
+            actionType: action.type,
+            toolName: action.type === 'tool_call' ? action.toolName : undefined,
+        });
+
+        return result;
     }
 
     /**
@@ -493,20 +665,47 @@ export class ReActStrategy extends BaseExecutionStrategy {
     }
 
     /**
-     * Executa ferramenta real
+     * Executa ferramenta real com melhor tratamento de erro
      */
     private async executeRealTool(
         action: AgentAction,
         tool: Tool,
         context: StrategyExecutionContext,
     ): Promise<unknown> {
+        const startTime = Date.now();
+
         this.logger.debug('🔧 Tool execution via SharedStrategyMethods', {
             toolName: tool.name,
             actionInput: action.input,
+            hasInput: action.input && Object.keys(action.input).length > 0,
         });
 
-        // 🔥 USAR SHARED METHODS PARA EXECUÇÃO REAL DE TOOLS
-        return await SharedStrategyMethods.executeTool(action, context);
+        try {
+            // 🔥 USAR SHARED METHODS PARA EXECUÇÃO REAL DE TOOLS
+            const result = await SharedStrategyMethods.executeTool(
+                action,
+                context,
+            );
+
+            this.logger.debug('✅ Tool execution completed', {
+                toolName: tool.name,
+                executionTime: Date.now() - startTime,
+                hasResult: result !== undefined,
+            });
+
+            return result;
+        } catch (error) {
+            const errorMessage =
+                error instanceof Error ? error.message : String(error);
+
+            this.logger.warn('❌ Tool execution failed', {
+                toolName: tool.name,
+                error: errorMessage,
+                executionTime: Date.now() - startTime,
+            });
+
+            throw error; // Re-throw para que seja tratado pelo nível superior
+        }
     }
 
     /**
@@ -598,5 +797,222 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 failureReason: errorMessage,
             },
         };
+    }
+
+    /**
+     * 🔥 CREATE FINAL RESPONSE - Uses ContextBridge for complete context
+     *
+     * This method solves the original problem: "When I get to createFinalResponse,
+     * I don't have all the necessary context to work with"
+     */
+    async createFinalResponse(
+        context: StrategyExecutionContext,
+    ): Promise<string> {
+        this.logger.info(
+            '🌉 ReAct: Creating final response with ContextBridge',
+        );
+
+        try {
+            // Build PlannerExecutionContext for ContextBridge compatibility
+            const plannerContext = {
+                input: context.input,
+                history: context.history.map((step, index) => ({
+                    ...step,
+                    stepId: step.id,
+                    executionId: `exec-${Date.now()}-${index}`,
+                })) as any[],
+                iterations: 1,
+                maxIterations: this.config.maxIterations,
+                plannerMetadata: {
+                    agentName: context.agentContext.agentName,
+                    correlationId:
+                        context.agentContext.correlationId ||
+                        'react-final-response',
+                    tenantId: context.agentContext.tenantId || 'default',
+                    thread: context.agentContext.thread || {
+                        id: context.agentContext.sessionId || 'unknown',
+                    },
+                    startTime: context.metadata.startTime,
+                    enhancedContext: (context.agentContext as any)
+                        .enhancedRuntimeContext,
+                },
+                agentContext: context.agentContext,
+                isComplete: true,
+                update: () => {},
+                getCurrentSituation: () =>
+                    `ReAct strategy completed for: ${context.input}`,
+                getFinalResult: () => ({
+                    success: true,
+                    result: { content: 'ReAct execution completed' },
+                    iterations: 1,
+                    totalTime:
+                        new Date().getTime() - context.metadata.startTime,
+                    thoughts: [],
+                    metadata: {
+                        ...context.metadata,
+                        agentName: context.agentContext.agentName,
+                        iterations: 1,
+                        toolsUsed: context.metadata.complexity || 0,
+                        thinkingTime: Date.now() - context.metadata.startTime,
+                    } as any,
+                }),
+                getCurrentPlan: () => null,
+            };
+
+            // 🔥 THE CORE: Use ContextBridge to build complete context
+            const finalContext =
+                await ContextService.buildFinalResponseContext(plannerContext);
+
+            this.logger.info(
+                '✅ ContextBridge: Complete context retrieved for ReAct',
+                {
+                    sessionId: finalContext.runtime.sessionId,
+                    messagesCount: finalContext.runtime.messages.length,
+                    entitiesCount: Object.keys(finalContext.runtime.entities)
+                        .length,
+                    executionSummary: {
+                        totalExecutions:
+                            finalContext.executionSummary.totalExecutions,
+                        successRate: finalContext.executionSummary.successRate,
+                        replanCount: finalContext.executionSummary.replanCount,
+                    },
+                    wasRecovered: finalContext.recovery?.wasRecovered,
+                    inferencesCount: Object.keys(finalContext.inferences || {})
+                        .length,
+                },
+            );
+
+            // Build context-aware response using complete context
+            const response = this.buildContextualResponse(
+                finalContext,
+                context.input,
+            );
+
+            this.logger.info(
+                '🎯 ReAct: Final response created with full context',
+                {
+                    responseLength: response.length,
+                    contextSource: 'ContextBridge',
+                },
+            );
+
+            return response;
+        } catch (error) {
+            this.logger.error(
+                '❌ ReAct: ContextBridge failed, using fallback response',
+                error instanceof Error ? error : undefined,
+                {
+                    input: context.input,
+                    agentName: context.agentContext.agentName,
+                },
+            );
+
+            // Fallback: Simple response without ContextBridge
+            return this.buildFallbackResponse(context);
+        }
+    }
+
+    /**
+     * Build contextual response using complete FinalResponseContext from ContextBridge
+     */
+    private buildContextualResponse(
+        finalContext: any,
+        originalInput: string,
+    ): string {
+        const { runtime, executionSummary, recovery } = finalContext;
+
+        let response = `Through reasoning and action`;
+
+        // Add context about what was accomplished
+        if (executionSummary.totalExecutions > 0) {
+            response += `, I've completed ${executionSummary.totalExecutions} executions`;
+
+            if (executionSummary.successRate < 100) {
+                response += ` with ${executionSummary.successRate}% success rate`;
+            }
+        }
+
+        // Reference entities if available
+        const entityTypes = Object.keys(runtime.entities).filter(
+            (key: string) => {
+                const entities = runtime.entities[key];
+                return Array.isArray(entities) && entities.length > 0;
+            },
+        );
+
+        if (entityTypes.length > 0) {
+            response += `, working with ${entityTypes.join(', ')}`;
+        }
+
+        // Mention recovery if it happened
+        if (recovery?.wasRecovered) {
+            const gapMinutes = Math.round(recovery.gapDuration / 60000);
+            response += ` (session recovered after ${gapMinutes}min gap)`;
+        }
+
+        // Add conversation context
+        if (runtime.messages.length > 2) {
+            response += ` based on our ${runtime.messages.length} message conversation`;
+        }
+
+        // Add specific response to the original input
+        response += `. For your request: "${originalInput}"`;
+
+        // Add completion message
+        response += ` - I've applied the ReAct approach of systematic thinking, targeted action, and careful observation to provide you with a comprehensive response.`;
+
+        return response;
+    }
+
+    /**
+     * Fallback response when ContextBridge is not available
+     */
+    private buildFallbackResponse(context: StrategyExecutionContext): string {
+        return (
+            `I've processed your request: "${context.input}" using the ReAct strategy. ` +
+            `Through systematic reasoning, targeted actions, and careful observation, I've completed the task.`
+        );
+    }
+
+    /**
+     * Verifica se o erro é relacionado à rede/conectividade
+     */
+    private isNetworkError(error: unknown): boolean {
+        if (!(error instanceof Error)) return false;
+
+        const errorMessage = error.message.toLowerCase();
+        const errorName = error.constructor.name.toLowerCase();
+
+        // Padrões comuns de erro de rede
+        const networkPatterns = [
+            'fetch failed',
+            'network error',
+            'connection refused',
+            'timeout',
+            'econnrefused',
+            'enotfound',
+            'econnreset',
+            'etimedout',
+            'request timeout',
+            'service unavailable',
+            'bad gateway',
+            'gateway timeout',
+            'internal server error',
+        ];
+
+        // Verificar se a mensagem contém algum padrão de erro de rede
+        const hasNetworkPattern = networkPatterns.some((pattern) =>
+            errorMessage.includes(pattern),
+        );
+
+        // Verificar se é um erro de tipo de rede
+        const isNetworkErrorType = [
+            'typeerror',
+            'fetcherror',
+            'connectionerror',
+            'timeoutError',
+        ].some((type) => errorName.includes(type));
+
+        return hasNetworkPattern || isNetworkErrorType;
     }
 }

@@ -29,10 +29,7 @@ export class ReWooPrompts {
     /**
      * Prompt do sistema para o PLANNER (ReWoo)
      */
-    getPlannerSystemPrompt(tools?: Tool[]): string {
-        const toolNames = this.getToolNames(tools);
-        const dynamicExamples = this.generateDynamicExamples(tools);
-
+    getPlannerSystemPrompt(): string {
         return `You are an expert AI PLANNER in a ReWoo (Reasoning with Working Memory) pipeline. Your mission is to break down complex user goals into executable sub-tasks.
 
 ## 🎯 PLANNING METHODOLOGY
@@ -73,8 +70,6 @@ Return STRICT JSON with this exact schema:
 }
 \`\`\`
 
-## 🛠️ AVAILABLE TOOLS: [${toolNames}]
-
 ## 📊 PLANNING PRINCIPLES (only apply when tools ARE needed)
 1. **Evidence-First**: Each sketch should gather specific evidence needed for the final answer
 2. **Independence**: Sketches should be independent and executable in parallel when possible
@@ -84,7 +79,7 @@ Return STRICT JSON with this exact schema:
 ## ⚠️ CRITICAL CONSTRAINTS
 - Return empty sketches array [] for simple requests that don't need tools
 - MAX 2-6 sketches per plan when tools ARE needed
-- ONLY use tools from the allowlist above
+- ONLY use tools from the allowlist <AVAILABLE TOOLS>
 - NO guessing of IDs or unknown parameters
 - NO prose outside JSON structure
 - Each sketch must be verifiable and evidence-generating
@@ -92,9 +87,7 @@ Return STRICT JSON with this exact schema:
 ## 🔄 CHAIN-OF-THOUGHT PROCESS
 1. **First**: Determine if tools are actually needed
 2. **If NO tools needed**: Return {"sketches": []}
-3. **If YES tools needed**: Analyze goal, identify evidence, map to tools, create sketches
-
-${dynamicExamples}`;
+3. **If YES tools needed**: Analyze goal, identify evidence, map to tools, create sketches`;
     }
 
     /**
@@ -331,288 +324,25 @@ ${contextStr}
 Execute this step using the tool and parameters above. Return only the execution result in the specified JSON format.`;
     }
 
-    // === HELPERS ===
-
-    /**
-     * Obtém lista de nomes de ferramentas para o prompt
-     */
-    private getToolNames(tools?: Tool[]): string {
-        if (!tools || tools.length === 0) {
-            return 'No tools available';
-        }
-
-        // Extrair nomes reais das tools
-        const names = tools.map((tool) => tool.name).join(', ');
-        return names;
-    }
-
-    /**
-     * Gera exemplos dinâmicos baseados nas ferramentas disponíveis
-     */
-    private generateDynamicExamples(tools?: Tool[]): string {
-        if (!tools || tools.length === 0) {
-            return this.getGenericExamples();
-        }
-
-        // Categorizar ferramentas por tipo
-        const categories = this.categorizeTools(tools);
-        const examples: string[] = [];
-
-        // Exemplo 1: Data retrieval
-        if (categories.search.length > 0 || categories.get.length > 0) {
-            examples.push(this.generateDataRetrievalExample(categories));
-        }
-
-        // Exemplo 2: Multi-step workflow
-        if (tools.length >= 3) {
-            examples.push(this.generateWorkflowExample(tools));
-        }
-
-        // Exemplo 3: Input request when needed
-        examples.push(this.generateInputRequestExample(categories));
-
-        return `## 📝 DYNAMIC EXAMPLES\n\n${examples.join('\n\n')}`;
-    }
-
-    /**
-     * Categoriza ferramentas por tipo baseado na descrição e nome
-     */
-    private categorizeTools(tools: Tool[]): {
-        search: Tool[];
-        get: Tool[];
-        create: Tool[];
-        update: Tool[];
-        delete: Tool[];
-        list: Tool[];
-        other: Tool[];
-    } {
-        const categories = {
-            search: [] as Tool[],
-            get: [] as Tool[],
-            create: [] as Tool[],
-            update: [] as Tool[],
-            delete: [] as Tool[],
-            list: [] as Tool[],
-            other: [] as Tool[],
-        };
-
-        // Ultra-agnostic approach: don't categorize tools by semantics
-        // Like LangGraph, Mastra, Voltz, Agno - just put all tools in 'other'
-        // Frameworks agnósticos não fazem suposições sobre capacidades das ferramentas
-        for (const tool of tools) {
-            categories.other.push(tool);
-        }
-
-        return categories;
-    }
-
-    /**
-     * Gera exemplo de recuperação de dados
-     */
-    private generateDataRetrievalExample(
-        categories: ReturnType<typeof this.categorizeTools>,
-    ): string {
-        // Agnostic: use any available tools from 'other' category
-        const availableTools = categories.other.slice(0, 2);
-
-        if (availableTools.length === 0) {
-            return `**Goal:** "Retrieve information"\n**Analysis:** Need to get specific data or information\n**Sketches:**\n\`\`\`json\n{
-  "sketches": [
-    {
-      "id": "S1",
-      "query": "Retrieve target information",
-      "tool": "retrieval_tool",
-      "arguments": {"query": "target"}
-    }
-  ]
-}\n\`\`\``;
-        }
-
-        // Use actual tools without semantic assumptions
-        const example = `**Goal:** "Retrieve information"\n**Analysis:** Need to get specific data or information\n**Sketches:**\n\`\`\`json\n{\n  "sketches": [\n`;
-
-        const sketches = availableTools.map((tool, index) => {
-            const stepId = `S${index + 1}`;
-
-            return `    {\n      "id": "${stepId}",\n      "query": "Execute ${tool.name} to get information",\n      "tool": "${tool.name}",\n      "arguments": ${JSON.stringify(this.generateSampleArguments(tool), null, 6)}\n    }`;
-        });
-
-        return example + sketches.join(',\n') + `\n  ]\n}\n\`\`\``;
-    }
-
-    /**
-     * Gera exemplo de workflow multi-etapa
-     */
-    private generateWorkflowExample(tools: Tool[]): string {
-        // Truly agnostic approach: use tools as-is without assumptions
-        // Like LangGraph, Mastra, Voltz, Agno - framework doesn't know what tools do
-
-        if (tools.length === 0) {
-            return `**Goal:** "Execute multi-step task"\n**Analysis:** Task requires sequential tool execution\n**Sketches:**\n\`\`\`json\n{
-  "sketches": [
-    {
-      "id": "S1",
-      "query": "Execute first operation",
-      "tool": "tool_1",
-      "arguments": {"input": "data"}
-    },
-    {
-      "id": "S2",
-      "query": "Execute second operation",
-      "tool": "tool_2",
-      "arguments": {"input": "{S1.result}"}
-    },
-    {
-      "id": "S3",
-      "query": "Execute final operation",
-      "tool": "tool_3",
-      "arguments": {"input": "{S2.result}"}
-    }
-  ]
-}\n\`\`\``;
-        }
-
-        // Use actual tools but without semantic assumptions
-        const example = `**Goal:** "Execute multi-step task"\n**Analysis:** Task requires sequential tool execution\n**Sketches:**\n\`\`\`json\n{\n  "sketches": [\n`;
-
-        const steps = tools.slice(0, 3).map((tool, index) => {
-            const stepId = `S${index + 1}`;
-
-            return `    {\n      "id": "${stepId}",\n      "query": "Execute ${tool.name}",\n      "tool": "${tool.name}",\n      "arguments": ${JSON.stringify(this.generateSampleArguments(tool), null, 6)}\n    }`;
-        });
-
-        return example + steps.join(',\n') + `\n  ]\n}\n\`\`\``;
-    }
-
-    /**
-     * Gera exemplo de requisição de input
-     */
-    private generateInputRequestExample(
-        categories: ReturnType<typeof this.categorizeTools>,
-    ): string {
-        const hasSearchOrGet =
-            categories.search.length > 0 || categories.get.length > 0;
-
-        let toolName = 'REQUEST_INPUT';
-        if (hasSearchOrGet) {
-            toolName =
-                categories.search[0]?.name ||
-                categories.get[0]?.name ||
-                'REQUEST_INPUT';
-        }
-
-        return `**Goal:** "Process user-specific data"\n**Analysis:** Need user input to identify specific data to process\n**Sketches:**\n\`\`\`json\n{
-  "sketches": [
-    {
-      "id": "S1",
-      "query": "Request necessary user input to proceed",
-      "tool": "${toolName}",
-      "arguments": {
-        "fields": [
-          {"name": "identifier", "description": "Unique identifier for the item"},
-          {"name": "action", "description": "Action to perform"}
-        ],
-        "message": "Please provide the required information to complete this task"
-      }
-    },
-    {
-      "id": "S2",
-      "query": "Execute the requested action with provided input",
-      "tool": "${categories.get[0]?.name || 'process_data'}",
-      "arguments": {
-        "id": "{S1.result.identifier}",
-        "action": "{S1.result.action}"
-      }
-    }
-  ]
-}\n\`\`\``;
-    }
-
-    /**
-     * Gera argumentos de exemplo baseados na estrutura da ferramenta
-     */
-    private generateSampleArguments(tool: Tool): Record<string, any> {
-        const params = tool.parameters?.properties || {};
-        const required = tool.parameters?.required || [];
-        const args: Record<string, any> = {};
-
-        // Para campos obrigatórios, gera valores de exemplo
-        for (const param of required.slice(0, 2)) {
-            // Limita a 2 parâmetros para o exemplo
-            const paramSchema = params[param] as any;
-            if (paramSchema?.type === 'string') {
-                args[param] = `example_${param}`;
-            } else if (paramSchema?.type === 'number') {
-                args[param] = 123;
-            } else if (paramSchema?.type === 'boolean') {
-                args[param] = true;
-            }
-        }
-
-        return args;
-    }
-
-    /**
-     * Exemplos genéricos quando não há ferramentas específicas
-     */
-    private getGenericExamples(): string {
-        return `## 📝 GENERIC EXAMPLES
-
-**Goal:** "Retrieve and analyze data"
-**Analysis:** Need to gather information and perform analysis
-**Sketches:**
-\`\`\`json
-{
-  "sketches": [
-    {
-      "id": "S1",
-      "query": "Gather the required data",
-      "tool": "data_retrieval_tool",
-      "arguments": {"query": "target_data"}
-    },
-    {
-      "id": "S2",
-      "query": "Analyze the retrieved data",
-      "tool": "analysis_tool",
-      "arguments": {"data": "{S1.result}"}
-    }
-  ]
-}
-\`\`\`
-
-**Goal:** "Process user request requiring input"
-**Analysis:** Need user input before processing
-**Sketches:**
-\`\`\`json
-{
-  "sketches": [
-    {
-      "id": "S1",
-      "query": "Request necessary input from user",
-      "tool": "REQUEST_INPUT",
-      "arguments": {
-        "fields": [{"name": "input", "description": "Required input"}],
-        "message": "Please provide the required information"
-      }
-    }
-  ]
-}
-\`\`\``;
-    }
-
     /**
      * Formata context para o planner
      */
     private formatContextForPlanner(context: Record<string, unknown>): string {
         const parts: string[] = [];
 
+        // 1. Basic Agent Info (mantido para compatibilidade)
         if (context.agentContext) {
             const agentContext = context.agentContext as AgentContext;
             parts.push(
-                `## 🤖 AGENT INFO\n**Name:** ${agentContext.agentName}\n**Session:** ${agentContext.sessionId}`,
+                `## 🤖 AGENT INFO\n**Name:** ${agentContext.agentName}\n**Session:** ${agentContext.sessionId || 'N/A'}`,
             );
         }
 
+        // 2. 🎯 NOVO: RuntimeContext - REMOVIDO pois não existe neste contexto
+        // O runtimeContext só está disponível no contexto de execução das estratégias,
+        // não no contexto de formatação de prompts do planner
+
+        // 3. Additional context (mantido)
         if (context.additionalContext) {
             const additional = this.formatters.formatAdditionalContext(
                 context.additionalContext as Record<string, unknown>,
@@ -929,9 +659,7 @@ export class StrategyPromptFactory {
         switch (mode) {
             case 'planner':
                 return {
-                    systemPrompt: this.rewooPrompts.getPlannerSystemPrompt(
-                        context.tools,
-                    ),
+                    systemPrompt: this.rewooPrompts.getPlannerSystemPrompt(),
                     userPrompt: this.rewooPrompts.getPlannerUserPrompt(
                         context.goal,
                         context.tools,
@@ -1032,6 +760,171 @@ export class StrategyPromptFactory {
     get formatter(): StrategyFormatters {
         return this.formatters;
     }
+
+    /**
+     * Cria prompts para estratégia Plan-Execute
+     */
+    createPlanExecutePrompt(params: PlanExecutePromptParams): {
+        systemPrompt: string;
+        userPrompt: string;
+    } {
+        return createPlanExecutePrompt(params);
+    }
+}
+
+// =============================================================================
+// 🗓️ PLAN-EXECUTE PROMPTS - ESTRATÉGIA MAIS SIMPLES
+// =============================================================================
+
+/**
+ * Gera prompts para estratégia Plan-Execute
+ * Foco em planejamento inteligente + execução sequencial
+ */
+export interface PlanExecutePromptParams {
+    goal: string;
+    tools: Tool[];
+    agentContext: AgentContext;
+    additionalContext?: Record<string, unknown>;
+    mode: 'planner';
+}
+
+/**
+ * Prompt do sistema para PLAN-EXECUTE Planner
+ */
+function getPlanExecutePlannerSystemPrompt(): string {
+    return `# Plan-Execute Strategy - Smart Planning & Sequential Execution
+
+You are an expert planner that creates clear, executable plans for complex tasks.
+
+## 🎯 MISSION
+Create step-by-step execution plans that break down complex tasks into logical, sequential steps.
+
+## 📋 PLANNING FRAMEWORK
+1. **Analyze**: Understand the task and available tools
+2. **Break Down**: Decompose into manageable steps
+3. **Sequence**: Order steps logically with dependencies
+4. **Validate**: Ensure each step is executable
+5. **Optimize**: Keep plan concise and efficient
+
+## 🛠️ TOOL USAGE RULES
+- Only use tools from the provided list
+- Each tool call must have correct parameters
+- Consider tool capabilities and limitations
+
+## 📊 OUTPUT FORMAT
+Return only this JSON structure:
+\`\`\`json
+{
+    "goal": "Brief task description",
+    "reasoning": "Why this plan works",
+    "steps": [
+        {
+            "id": "step-1",
+            "type": "tool_call",
+            "toolName": "TOOL_NAME",
+            "description": "What this step does",
+            "input": {"param": "value"}
+        },
+        {
+            "id": "step-2",
+            "type": "final_answer",
+            "content": "Final user response"
+        }
+    ]
+}
+\`\`\`
+
+## ⚠️ CONSTRAINTS
+- End with final_answer step
+- Keep plan minimal but complete
+- Each step must be independently executable
+- Use exact tool names from list
+
+## 📝 EXAMPLE PLAN
+For task "Analyze GitHub repository structure":
+\`\`\`json
+{
+    "goal": "Analyze repository structure and provide summary",
+    "reasoning": "Need to gather repository info then analyze structure",
+    "steps": [
+        {
+            "id": "step-1",
+            "type": "tool_call",
+            "toolName": "LIST_FILES",
+            "description": "Get repository file structure",
+            "input": {"path": "."}
+        },
+        {
+            "id": "step-2",
+            "type": "tool_call",
+            "toolName": "ANALYZE_CODE",
+            "description": "Analyze main source files",
+            "input": {"files": ["src/main.ts", "package.json"]}
+        },
+        {
+            "id": "step-3",
+            "type": "final_answer",
+            "content": "Repository analysis complete. Found TypeScript project with clear structure."
+        }
+    ]
+}
+\`\`\``;
+}
+
+/**
+ * Prompt do usuário para PLAN-EXECUTE Planner
+ */
+function getPlanExecutePlannerUserPrompt(
+    goal: string,
+    toolsList: string,
+): string {
+    return `## 🎯 TASK
+${goal}
+
+## 🛠️ AVAILABLE TOOLS
+${toolsList}
+
+## 📋 PLANNING TASK
+Create a step-by-step execution plan. For each step:
+- Choose one tool from the available list
+- Provide exact parameters required by that tool
+- Write a clear description of what the step accomplishes
+- Ensure steps can be executed in sequence
+
+## 📝 REQUIREMENTS
+- Start with data gathering/analysis steps
+- End with a final_answer step containing the user response
+- Keep plan focused and minimal
+- Use exact tool names as listed above
+
+## 📊 OUTPUT
+Return only JSON with the plan structure. No explanations or additional text.`;
+}
+
+/**
+ * Cria prompts completos para Plan-Execute
+ */
+function createPlanExecutePrompt(params: PlanExecutePromptParams): {
+    systemPrompt: string;
+    userPrompt: string;
+} {
+    const { goal, tools, mode } = params;
+
+    if (mode === 'planner') {
+        const toolsList =
+            tools.length > 0
+                ? tools
+                      .map((tool) => `- **${tool.name}**: ${tool.description}`)
+                      .join('\n')
+                : 'No tools available - focus on direct response';
+
+        return {
+            systemPrompt: getPlanExecutePlannerSystemPrompt(),
+            userPrompt: getPlanExecutePlannerUserPrompt(goal, toolsList),
+        };
+    }
+
+    throw new Error(`Unknown Plan-Execute mode: ${mode}`);
 }
 
 // =============================================================================

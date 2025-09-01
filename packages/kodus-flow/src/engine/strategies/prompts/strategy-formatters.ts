@@ -14,6 +14,7 @@
 
 //import { createLogger } from '../../../observability/index.js';
 import { AgentContext } from '../../../core/types/allTypes.js';
+import type { AgentRuntimeContext } from '../../../core/contextNew/types/context-types.js';
 
 interface Tool {
     name: string;
@@ -319,13 +320,17 @@ export class ContextFormatter {
 
         // Formatar valor de forma segura
         const formatValue = (value: unknown): string => {
-            if (value === null) return 'null';
-            if (value === undefined) return 'undefined';
+            if (value === null) {
+                return 'null';
+            }
+            if (value === undefined) {
+                return 'undefined';
+            }
 
             if (typeof value === 'object') {
                 try {
                     const jsonStr = JSON.stringify(value, null, 2);
-                    // Limitar tamanho para não sobrecarregar o prompt
+
                     if (jsonStr.length > 1000) {
                         const truncated = jsonStr.substring(0, 1000);
                         return `${truncated}... [TRUNCATED - ${jsonStr.length - 1000} chars]`;
@@ -359,16 +364,6 @@ export class ContextFormatter {
             this.formatContextFields(identity, sections, formatValue);
         }
 
-        // Handle agent execution options
-        if (additionalContext.agentExecutionOptions) {
-            const execOpts = additionalContext.agentExecutionOptions as Record<
-                string,
-                unknown
-            >;
-            sections.push('### ⚙️ EXECUTION OPTIONS');
-            this.formatContextFields(execOpts, sections, formatValue);
-        }
-
         // Handle session context
         if (additionalContext.sessionContext) {
             const session = additionalContext.sessionContext as Record<
@@ -400,28 +395,15 @@ export class ContextFormatter {
         sections: string[],
         formatValue: (value: unknown) => string,
     ): void {
-        const importantFields = [
-            'organizationId',
-            'teamId',
-            'sessionId',
-            'agentName',
-            'userQuestion',
-            'pullRequestNumber',
-            'repository',
-            'gitUserName',
-            'platformType',
-        ];
-
         Object.entries(context).forEach(([key, value]) => {
             if (value !== undefined && value !== null) {
-                // Priorizar campos importantes e evitar campos muito complexos
-                const isImportant = importantFields.includes(key);
+                // Evitar campos muito complexos
                 const isComplexObject =
                     typeof value === 'object' &&
                     value !== null &&
                     Object.keys(value as object).length > 5;
 
-                if (isImportant || !isComplexObject) {
+                if (!isComplexObject) {
                     const formattedValue = formatValue(value);
                     if (formattedValue.length < 2000) {
                         // Evitar campos muito longos
@@ -487,6 +469,148 @@ export class ContextFormatter {
         }
 
         return contextParts.join('\n');
+    }
+
+    /**
+     * 🎯 Formata RuntimeContext do ContextNew com informações relevantes para o LLM
+     */
+    formatRuntimeContext(runtimeContext: AgentRuntimeContext): string {
+        const sections: string[] = [];
+
+        // 1. Session Info - Identificação básica
+        sections.push(`## 🎯 SESSION CONTEXT
+**Session ID:** ${runtimeContext.sessionId}
+**Thread ID:** ${runtimeContext.threadId}
+**Execution ID:** ${runtimeContext.executionId}`);
+
+        // 2. Current State - MUITO IMPORTANTE para o LLM entender onde está
+        const stateInfo: string[] = [
+            `**Phase:** ${runtimeContext.state.phase}`,
+            `**Last User Intent:** ${runtimeContext.state.lastUserIntent}`,
+        ];
+
+        if (runtimeContext.state.currentIteration !== undefined) {
+            const total = runtimeContext.state.totalIterations || '?';
+            stateInfo.push(
+                `**Current Iteration:** ${runtimeContext.state.currentIteration}/${total}`,
+            );
+        }
+
+        if (runtimeContext.state.currentStep) {
+            stateInfo.push(
+                `**Current Step:** ${runtimeContext.state.currentStep}`,
+            );
+        }
+
+        if (
+            runtimeContext.state.pendingActions &&
+            runtimeContext.state.pendingActions.length > 0
+        ) {
+            stateInfo.push(
+                `**Pending Actions:**\n  - ${runtimeContext.state.pendingActions.join('\n  - ')}`,
+            );
+        }
+
+        sections.push(`## 📊 CURRENT STATE\n${stateInfo.join('\n')}`);
+
+        // 3. Execution Progress - Ajuda o LLM a não repetir trabalho
+        const execution = runtimeContext.execution;
+        if (
+            execution &&
+            (execution.completedSteps.length > 0 ||
+                execution.failedSteps.length > 0)
+        ) {
+            const progressInfo: string[] = [];
+
+            // Mostrar últimos 5 steps completados
+            if (execution.completedSteps.length > 0) {
+                progressInfo.push(
+                    `**Completed Steps (${execution.completedSteps.length} total):**`,
+                );
+                const recentCompleted = execution.completedSteps.slice(-5);
+                progressInfo.push(...recentCompleted.map((s) => `  ✓ ${s}`));
+            }
+
+            // Mostrar últimos 3 steps com falha
+            if (execution.failedSteps.length > 0) {
+                progressInfo.push(
+                    `**Failed Steps (${execution.failedSteps.length} total):**`,
+                );
+                const recentFailed = execution.failedSteps.slice(-3);
+                progressInfo.push(...recentFailed.map((s) => `  ✗ ${s}`));
+            }
+
+            if (execution.currentTool) {
+                progressInfo.push(`**Current Tool:** ${execution.currentTool}`);
+            }
+
+            if (execution.toolCallCount) {
+                progressInfo.push(
+                    `**Total Tool Calls:** ${execution.toolCallCount}`,
+                );
+            }
+
+            if (execution.lastError) {
+                progressInfo.push(
+                    `**Last Error:** ${execution.lastError.substring(0, 100)}...`,
+                );
+            }
+
+            sections.push(
+                `## ✅ EXECUTION PROGRESS\n${progressInfo.join('\n')}`,
+            );
+        }
+
+        // 4. Key Entities - Apenas as mais importantes, não todas
+        const importantEntities = this.extractImportantEntities(
+            runtimeContext.entities,
+        );
+        if (importantEntities.length > 0) {
+            sections.push(`## 🏷️ KEY CONTEXT\n${importantEntities.join('\n')}`);
+        }
+
+        return sections.join('\n\n');
+    }
+
+    /**
+     * Extrai apenas entities importantes para o contexto do LLM
+     */
+    private extractImportantEntities(entities: Record<string, any>): string[] {
+        const important: string[] = [];
+
+        // Priorizar entities que ajudam o LLM a entender o contexto
+        const priorityKeys = [
+            'target_file',
+            'current_file',
+            'analysis_result',
+            'error_context',
+            'user_preference',
+            'workspace_info',
+        ];
+
+        for (const key of priorityKeys) {
+            if (entities[key]) {
+                const value =
+                    typeof entities[key] === 'string'
+                        ? entities[key]
+                        : JSON.stringify(entities[key]).substring(0, 100) +
+                          '...';
+                important.push(
+                    `**${key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}:** ${value}`,
+                );
+            }
+        }
+
+        // Adicionar contagem de outras entities se houver muitas
+        const totalKeys = Object.keys(entities).length;
+        const shownKeys = important.length;
+        if (totalKeys > shownKeys) {
+            important.push(
+                `*(...and ${totalKeys - shownKeys} more context items)*`,
+            );
+        }
+
+        return important.slice(0, 5); // Limitar a 5 entities mais importantes
     }
 
     /**
@@ -1138,7 +1262,7 @@ export class StrategyFormatters {
               }>
             | string,
     ): string {
-        const sections: string[] = ['## 🛠️ AVAILABLE TOOLS'];
+        const sections: string[] = ['## 🛠️ <AVAILABLE TOOLS>'];
 
         let toolsArray: Array<{
             name: string;
@@ -1153,7 +1277,7 @@ export class StrategyFormatters {
                 toolsArray = JSON.parse(tools);
             } catch {
                 // Return error message without logging
-                return '## 🛠️ AVAILABLE TOOLS\n[Error parsing tools]';
+                return '## <AVAILABLE TOOLS>\n[Error parsing tools]';
             }
         } else {
             toolsArray = tools;
@@ -1210,6 +1334,13 @@ export class StrategyFormatters {
      */
     formatAgentContext(agentContext: AgentContext): string {
         return this.contextFormatter.formatAgentContext(agentContext);
+    }
+
+    /**
+     * 🎯 Formata RuntimeContext do ContextNew para prompts
+     */
+    formatRuntimeContext(runtimeContext: AgentRuntimeContext): string {
+        return this.contextFormatter.formatRuntimeContext(runtimeContext);
     }
 
     /**

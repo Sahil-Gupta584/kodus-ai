@@ -272,102 +272,22 @@ export class PlanAndExecutePlanner {
                 );
                 blocks.push('</performance_metrics>');
             } else {
-                // 🔄 FALLBACK: Legacy approach
-                this.logger.info('Using legacy context approach');
-
-                // 1) Observations from memory (relevant knowledge)
-                const memoryManager = getGlobalMemoryManager();
-                const searchResults = await memoryManager.search(
-                    context.input,
+                // 🚫 FIX: Don't use legacy fallback - throw error for proper handling
+                const contextError = new Error(
+                    'ContextNew bridge unavailable - cannot create final response context',
+                );
+                this.logger.error(
+                    '❌ Final response context creation failed',
+                    contextError,
                     {
-                        topK: 3,
-                        filter: {
-                            tenantId: agentContext.tenantId,
-                            sessionId: agentContext.sessionId,
+                        plannerContext: {
+                            hasAgentContext: !!context.agentContext,
+                            threadId: context.agentContext?.thread?.id,
+                            tenantId: context.agentContext?.tenantId,
                         },
                     },
                 );
-                if (searchResults && searchResults.length > 0) {
-                    for (const result of searchResults) {
-                        const content =
-                            result.metadata?.content ||
-                            result.text ||
-                            'No content';
-                        blocks.push(
-                            `<observation>\n${content}\n</observation>`,
-                        );
-                    }
-                }
-
-                // 2) Execution steps with tool calls and results - Filter only completed steps
-                // const allSteps =
-                //     agentContext.stepExecution?.getAllSteps() || [];
-                // const completedSteps = allSteps.filter(
-                //     (step) =>
-                //         step.observation?.isSuccessful &&
-                //         step.toolCalls &&
-                //         step.toolCalls.length > 0,
-                // );
-
-                // for (const step of completedSteps) {
-                //     // Tool calls from this step
-                //     for (const toolCall of step.toolCalls) {
-                //         blocks.push(
-                //             `<action name="${toolCall.toolName}">\n${JSON.stringify(
-                //                 toolCall.input,
-                //                 null,
-                //                 2,
-                //             )}\n</action>`,
-                //         );
-
-                //         blocks.push(
-                //             `<result name="${toolCall.toolName}">\n${JSON.stringify(
-                //                 toolCall.result,
-                //                 null,
-                //                 2,
-                //             )}\n</result>`,
-                //         );
-                //     }
-                // }
-
-                // // Add step errors separately (only real errors, not initialization)
-                // const failedSteps = allSteps.filter(
-                //     (step) =>
-                //         step.observation?.isSuccessful === false &&
-                //         step.observation?.feedback !== 'Step initialized',
-                // );
-
-                // for (const step of failedSteps) {
-                //     const errorMessage =
-                //         step.observation?.feedback || 'Step failed';
-                //     blocks.push(
-                //         `<error>\n${JSON.stringify(
-                //             { message: errorMessage, step: step.stepId },
-                //             null,
-                //             2,
-                //         )}\n</error>`,
-                //     );
-                // }
-
-                // 3) Recent conversation history for context
-                // const sessionHistory =
-                //     await agentContext.conversation.getHistory();
-                // if (sessionHistory && sessionHistory.length > 0) {
-                //     const recentMessages = sessionHistory.slice(-3);
-                //     for (const entry of recentMessages) {
-                //         if (entry.role && entry.content) {
-                //             const content =
-                //                 typeof entry.content === 'string'
-                //                     ? entry.content
-                //                     : JSON.stringify(entry.content, null, 2);
-                //             blocks.push(
-                //                 entry.role === 'user'
-                //                     ? `<human>\n${content}\n</human>`
-                //                     : `<assistant>\n${content}\n</assistant>`,
-                //             );
-                //         }
-                //     }
-                // }
+                throw contextError;
             }
 
             // ✅ CORREÇÃO: Usar execution results E plan signals para resposta inteligente

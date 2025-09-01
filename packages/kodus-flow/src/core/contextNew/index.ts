@@ -29,6 +29,9 @@ export type {
     ContextHealth,
 } from './types/context-types.js';
 
+// 🎯 SENIOR SOLUTION: Context Service as Facade/Service Layer
+export { ContextService, Context } from './context-service.js';
+
 // ===============================================
 // 🏗️ ENHANCED CONTEXT BUILDER (SINGLETON PATTERN)
 // ===============================================
@@ -231,9 +234,6 @@ export class EnhancedContextBuilder {
     async initializeAgentSession(
         threadId: Thread['id'],
         tenantId: string,
-        runtimeData?: {
-            availableTools?: string[];
-        },
     ): Promise<void> {
         await this.ensureInitialized();
 
@@ -243,46 +243,11 @@ export class EnhancedContextBuilder {
         });
 
         // Create or recover session based on threadId
-        const runtimeContext = await this.sessionManager.getOrCreateSession(
+        await this.sessionManager.getOrCreateSession(threadId, tenantId);
+
+        logger.debug('Enhanced agent session initialized', {
             threadId,
             tenantId,
-        );
-
-        // 🔧 REBUILD RUNTIME DATA (não salvo, precisa ser reconstruído)
-        if (runtimeData?.availableTools) {
-            runtimeContext.availableTools = runtimeData.availableTools;
-        }
-    }
-
-    /**
-     * 🔧 Update runtime-only data (tools, connections)
-     */
-    async updateRuntimeData(
-        threadId: string,
-        runtimeData: {
-            availableTools?: string[];
-            activeConnections?: Record<string, any>;
-        },
-    ): Promise<void> {
-        await this.ensureInitialized();
-
-        const contextBridge = this.getContextBridge();
-        const currentContext = await contextBridge.getRuntimeContext(threadId);
-
-        // Update runtime-only fields
-        if (runtimeData.availableTools) {
-            currentContext.availableTools = runtimeData.availableTools;
-        }
-
-        if (runtimeData.activeConnections) {
-            currentContext.activeConnections = runtimeData.activeConnections;
-        }
-
-        logger.debug('Updated runtime data', {
-            threadId,
-            toolCount: runtimeData.availableTools?.length,
-            connectionCount: Object.keys(runtimeData.activeConnections || {})
-                .length,
         });
     }
 

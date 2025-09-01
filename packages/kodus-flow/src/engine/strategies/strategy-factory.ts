@@ -1,12 +1,13 @@
 import { ReActStrategy } from './react-strategy.js';
 import { ReWooStrategy } from './rewoo-strategy.js';
+import { PlanExecuteStrategy } from './plan-execute-strategy.js';
 import { createLogger } from '../../observability/index.js';
 import { LLMAdapter } from '@/core/types/allTypes.js';
 
 /**
  * Tipos de estratégia disponíveis
  */
-export type StrategyType = 'react' | 'rewoo';
+export type StrategyType = 'react' | 'rewoo' | 'plan-execute';
 
 /**
  * Configuração base para todas as estratégias
@@ -27,7 +28,7 @@ export class StrategyFactory {
     private static logger = createLogger('strategy-factory');
     private static strategies = new Map<
         string,
-        ReActStrategy | ReWooStrategy
+        ReActStrategy | ReWooStrategy | PlanExecuteStrategy
     >();
 
     /**
@@ -38,7 +39,7 @@ export class StrategyFactory {
         strategyType: StrategyType,
         llmAdapter: LLMAdapter,
         config?: Record<string, unknown>,
-    ): ReActStrategy | ReWooStrategy {
+    ): ReActStrategy | ReWooStrategy | PlanExecuteStrategy {
         const strategyKey = config
             ? `${strategyType}-${JSON.stringify(config)}`
             : strategyType;
@@ -48,7 +49,7 @@ export class StrategyFactory {
             return this.strategies.get(strategyKey)!;
         }
 
-        let strategy: ReActStrategy | ReWooStrategy;
+        let strategy: ReActStrategy | ReWooStrategy | PlanExecuteStrategy;
 
         switch (strategyType) {
             case 'react':
@@ -56,6 +57,9 @@ export class StrategyFactory {
                 break;
             case 'rewoo':
                 strategy = new ReWooStrategy(llmAdapter, config);
+                break;
+            case 'plan-execute':
+                strategy = new PlanExecuteStrategy(llmAdapter, config);
                 break;
             default:
                 throw new Error(`Unknown strategy type: ${strategyType}`);
@@ -76,7 +80,7 @@ export class StrategyFactory {
      */
     static register(
         name: string,
-        strategy: ReActStrategy | ReWooStrategy,
+        strategy: ReActStrategy | ReWooStrategy | PlanExecuteStrategy,
     ): void {
         this.strategies.set(name, strategy);
         this.logger.info('Custom strategy registered', { name });
@@ -86,7 +90,7 @@ export class StrategyFactory {
      * Get available strategies
      */
     static getAvailableStrategies(): StrategyType[] {
-        return ['react', 'rewoo'];
+        return ['react', 'rewoo', 'plan-execute'];
     }
 
     /**

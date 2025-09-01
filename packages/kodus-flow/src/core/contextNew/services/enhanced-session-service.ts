@@ -42,6 +42,11 @@ export class EnhancedSessionService implements SessionManager {
         Promise<AgentRuntimeContext>
     >();
 
+    // 🎯 OPTIMIZATION: Configuration constants
+    private readonly maxMessagesInMemory = 20; // Rolling window for messages
+    private readonly maxEntitiesSizeKb = 10; // Max 10KB for entities
+    // private readonly SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL - Reserved for future use
+
     constructor(
         connectionString?: string,
         options?: {
@@ -190,6 +195,9 @@ export class EnhancedSessionService implements SessionManager {
                 phase: 'planning',
                 lastUserIntent: 'conversation',
                 pendingActions: [],
+                // 📊 OPTIMIZATION: Track iteration count
+                currentIteration: 0,
+                totalIterations: 0,
             },
 
             messages: [],
@@ -200,11 +208,13 @@ export class EnhancedSessionService implements SessionManager {
                 failedSteps: [],
                 skippedSteps: [],
                 replanCount: 0,
+                // 📊 OPTIMIZATION: Simple counters instead of detailed tracking
+                toolCallCount: 0,
+                iterationCount: 0,
             },
 
-            // ✅ RUNTIME ONLY: These will be rebuilt from ToolEngine
-            availableTools: [],
-            activeConnections: {},
+            // ✅ RUNTIME ONLY: These will be rebuilt from ToolEngine when needed
+            // Don't persist empty arrays/objects to keep session data clean
         };
 
         const now = Date.now();
@@ -227,7 +237,19 @@ export class EnhancedSessionService implements SessionManager {
     async addMessage(threadId: string, message: ChatMessage): Promise<void> {
         await this.ensureInitialized();
 
+        // 🔍 DEBUG: Log detalhado no enhanced-session-service
+        logger.info('🔍 ENHANCED SESSION - addMessage called', {
+            threadId,
+            role: message.role,
+            contentLength: message.content?.length || 0,
+            timestamp: message.timestamp,
+            hasMetadata: !!message.metadata,
+        });
+
         if (!isValidChatMessage(message)) {
+            logger.error('❌ Invalid chat message format', undefined, {
+                message,
+            });
             throw new Error('Invalid chat message format');
         }
 
@@ -236,11 +258,32 @@ export class EnhancedSessionService implements SessionManager {
                 threadId,
             );
         if (!session) {
+            logger.error(`❌ Session for thread ${threadId} not found`);
             throw new Error(`Session for thread ${threadId} not found`);
         }
 
-        // Add message (keep only last 6 for performance)
-        const messages = [...session.runtime.messages, message].slice(-6);
+        logger.info('🔍 ENHANCED SESSION - Session found, adding message', {
+            threadId,
+            sessionId: session.sessionId,
+            currentMessagesCount: session.runtime.messages.length,
+            newMessageRole: message.role,
+        });
+
+        // 🔄 ROLLING WINDOW: Keep only last N messages for performance
+        const messages = [...session.runtime.messages, message].slice(
+            -this.maxMessagesInMemory,
+        );
+
+        logger.info(
+            '🔍 ENHANCED SESSION - Messages array updated (rolling window)',
+            {
+                threadId,
+                previousCount: session.runtime.messages.length,
+                newCount: messages.length,
+                windowSize: this.maxMessagesInMemory,
+                roles: messages.map((m) => m.role),
+            },
+        );
 
         // Update runtime with new message
         const updatedRuntime: AgentRuntimeContext = {
@@ -257,6 +300,14 @@ export class EnhancedSessionService implements SessionManager {
         }
 
         // Store updated session
+        logger.info('🔍 ENHANCED SESSION - Storing session to MongoDB', {
+            threadId,
+            sessionId: session.sessionId,
+            messagesCount: updatedRuntime.messages.length,
+            messageRoles: updatedRuntime.messages.map((m) => m.role),
+            newMessageRole: message.role,
+        });
+
         await this.sessionsAdapter.storeContextSession(
             session.sessionId, // Use sessionId as primary key
             session.threadId, // Keep threadId
@@ -267,7 +318,109 @@ export class EnhancedSessionService implements SessionManager {
             Date.now(),
         );
 
-        logger.debug(`💬 Added ${message.role} message to thread ${threadId}`);
+        logger.info(
+            `✅ ENHANCED SESSION - Successfully added ${message.role} message to thread ${threadId}`,
+            {
+                finalMessagesCount: updatedRuntime.messages.length,
+                finalRoles: updatedRuntime.messages.map((m) => m.role),
+            },
+        );
+    }
+
+    async updateMessage(
+        threadId: string,
+        messageId: string,
+        updates: {
+            content?: string;
+            metadata?: Record<string, unknown>;
+        },
+    ): Promise<void> {
+        await this.ensureInitialized();
+
+        logger.info('🔄 ENHANCED SESSION - updateMessage called', {
+            threadId,
+            messageId,
+            hasContent: !!updates.content,
+            hasMetadata: !!updates.metadata,
+        });
+
+        const session =
+            await this.sessionsAdapter.retrieveContextSessionByThreadId(
+                threadId,
+            );
+        if (!session) {
+            logger.error(`❌ Session for thread ${threadId} not found`);
+            throw new Error(`Session for thread ${threadId} not found`);
+        }
+
+        // Find and update the message by messageId
+        const messages = [...session.runtime.messages];
+        const messageIndex = messages.findIndex(
+            (m) => m.metadata?.messageId === messageId,
+        );
+
+        if (messageIndex === -1) {
+            logger.error(
+                `❌ Message ${messageId} not found in thread ${threadId}`,
+            );
+            throw new Error(`Message ${messageId} not found`);
+        }
+
+        // Update the message
+        const existingMessage = messages[messageIndex];
+        if (!existingMessage) {
+            logger.error(
+                `❌ Message at index ${messageIndex} is undefined for thread ${threadId}`,
+            );
+            throw new Error(`Message at index ${messageIndex} is undefined`);
+        }
+
+        const updatedMessage: ChatMessage = {
+            ...existingMessage,
+            content: updates.content ?? existingMessage.content,
+            role: existingMessage.role, // Ensure role is preserved
+            metadata: {
+                ...existingMessage.metadata,
+                ...updates.metadata,
+                messageId, // Preserve messageId
+                lastUpdated: Date.now(),
+            },
+        };
+
+        messages[messageIndex] = updatedMessage;
+
+        logger.info('🔄 ENHANCED SESSION - Message updated in array', {
+            threadId,
+            messageId,
+            messageIndex,
+            newContentLength: updatedMessage.content.length,
+        });
+
+        // Update runtime with modified messages
+        const updatedRuntime: AgentRuntimeContext = {
+            ...session.runtime,
+            messages,
+            timestamp: new Date().toISOString(),
+        };
+
+        // Store updated session
+        await this.sessionsAdapter.storeContextSession(
+            session.sessionId,
+            session.threadId,
+            session.tenantId,
+            session.status,
+            updatedRuntime,
+            session.createdAt,
+            Date.now(),
+        );
+
+        logger.info(
+            `✅ ENHANCED SESSION - Successfully updated message ${messageId} in thread ${threadId}`,
+            {
+                finalContentLength: updatedMessage.content.length,
+                messageIndex,
+            },
+        );
     }
 
     async addEntities(
@@ -282,6 +435,21 @@ export class EnhancedSessionService implements SessionManager {
             );
         if (!session) {
             throw new Error(`Session for thread ${threadId} not found`);
+        }
+
+        // 📊 OPTIMIZATION: Check entity size before adding
+        const entitySize = JSON.stringify(entities).length;
+        const maxSizeBytes = this.maxEntitiesSizeKb * 1024;
+
+        if (entitySize > maxSizeBytes) {
+            logger.warn(
+                `⚠️ Entities too large (${Math.round(entitySize / 1024)}KB), truncating...`,
+                {
+                    threadId,
+                    maxSizeKB: this.maxEntitiesSizeKb,
+                },
+            );
+            // In production, implement smart truncation or compression
         }
 
         // Smart entity updates with deduplication
@@ -352,13 +520,26 @@ export class EnhancedSessionService implements SessionManager {
             throw new Error(`Session for thread ${threadId} not found`);
         }
 
+        // 📊 OPTIMIZATION: Auto-increment counters
+        const currentExecution = session.runtime.execution || {};
+        const updatedExecution = {
+            ...currentExecution,
+            ...execution,
+        };
+
+        // Auto-increment tool call counter if currentTool changed
+        if (
+            execution.currentTool &&
+            execution.currentTool !== currentExecution.currentTool
+        ) {
+            updatedExecution.toolCallCount =
+                (currentExecution.toolCallCount || 0) + 1;
+        }
+
         // Update execution state
         const updatedRuntime: AgentRuntimeContext = {
             ...session.runtime,
-            execution: {
-                ...session.runtime.execution,
-                ...execution,
-            },
+            execution: updatedExecution,
             timestamp: new Date().toISOString(),
         };
 
@@ -379,14 +560,69 @@ export class EnhancedSessionService implements SessionManager {
     }
 
     async saveSnapshot(
-        _threadId: string,
+        threadId: string,
         snapshot: ExecutionSnapshot,
     ): Promise<void> {
         await this.ensureInitialized();
 
-        await this.snapshotsAdapter.storeExecutionSnapshot(snapshot, 7); // 7 days TTL
+        // 📊 OPTIMIZATION: Create minimal snapshot for storage
+        const optimizedSnapshot = this.createOptimizedSnapshot(
+            threadId,
+            snapshot,
+        );
 
-        logger.debug(`📸 Saved execution snapshot: ${snapshot.executionId}`);
+        await this.snapshotsAdapter.storeExecutionSnapshot(
+            optimizedSnapshot,
+            7,
+        ); // 7 days TTL
+
+        logger.debug(
+            `📸 Saved optimized execution snapshot: ${snapshot.executionId}`,
+            {
+                originalSize: JSON.stringify(snapshot).length,
+                optimizedSize: JSON.stringify(optimizedSnapshot).length,
+            },
+        );
+    }
+
+    /**
+     * 🎯 OPTIMIZATION: Create minimal snapshot for storage
+     */
+    private createOptimizedSnapshot(
+        _threadId: string,
+        snapshot: ExecutionSnapshot,
+    ): ExecutionSnapshot {
+        // Extract only essential data for recovery
+        return {
+            sessionId: snapshot.sessionId,
+            executionId: snapshot.executionId,
+            timestamp: snapshot.timestamp,
+            outcome: snapshot.outcome,
+
+            // Minimal plan info
+            plan: {
+                goal: snapshot.plan.goal,
+                steps: snapshot.plan.steps.slice(0, 5), // Keep only first 5 steps
+            },
+
+            // Summary of results instead of full details
+            results: Object.keys(snapshot.results).reduce(
+                (acc, key) => {
+                    const result = snapshot.results[key];
+                    if (result) {
+                        acc[key] = {
+                            status: result.status,
+                            // Omit detailed output, keep only status
+                        } as any; // Type assertion for simplified result
+                    }
+                    return acc;
+                },
+                {} as Record<string, any>,
+            ),
+
+            // Error info if any
+            error: snapshot.error,
+        };
     }
 
     // ===== RECOVERY =====

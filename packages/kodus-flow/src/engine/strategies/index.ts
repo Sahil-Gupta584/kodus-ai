@@ -8,6 +8,7 @@ export { BaseExecutionStrategy } from './strategy-interface.js';
 // Strategy Implementations (Clean Architecture)
 export { ReActStrategy } from './react-strategy.js';
 export { ReWooStrategy } from './rewoo-strategy.js';
+export { PlanExecuteStrategy } from './plan-execute-strategy.js';
 
 // Shared Components
 export { SharedStrategyMethods } from './shared-methods.js';
