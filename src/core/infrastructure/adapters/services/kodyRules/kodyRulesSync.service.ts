@@ -31,7 +31,7 @@ import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
-import path from 'path';
+import * as path from 'path';
 
 type SyncTarget = {
     organizationAndTeamData: OrganizationAndTeamData;
