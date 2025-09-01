@@ -32,6 +32,10 @@ export class ToolParameterFormatter {
     //private readonly logger: Logger = createLogger('tool-parameter-formatter');
 
     /**
+     * Formatação avançada de parâmetros baseada no planner-prompt-composer
+     */
+
+    /**
      * Formata parâmetros de ferramenta com tipos avançados
      */
     formatToolParameters(tool: Tool): string {
@@ -89,6 +93,10 @@ export class ToolParameterFormatter {
             ? `Parameters:\n    ${paramStrings.join('\n    ')}`
             : '';
     }
+
+    /**
+     * Formatação avançada de parâmetros baseada no planner-prompt-composer
+     */
 
     /**
      * Determina como exibir o tipo
@@ -313,12 +321,25 @@ export class ContextFormatter {
         const formatValue = (value: unknown): string => {
             if (value === null) return 'null';
             if (value === undefined) return 'undefined';
-            if (typeof value === 'object')
-                return JSON.stringify(value, null, 2);
+
+            if (typeof value === 'object') {
+                try {
+                    const jsonStr = JSON.stringify(value, null, 2);
+                    // Limitar tamanho para não sobrecarregar o prompt
+                    if (jsonStr.length > 1000) {
+                        const truncated = jsonStr.substring(0, 1000);
+                        return `${truncated}... [TRUNCATED - ${jsonStr.length - 1000} chars]`;
+                    }
+                    return jsonStr;
+                } catch (error) {
+                    return `[OBJECT - CANNOT SERIALIZE: ${String(error)}]`;
+                }
+            }
+
             return String(value);
         };
 
-        // Handle user context
+        // Handle user context (contém tudo relacionado ao usuário - framework agnóstico)
         if (additionalContext.userContext) {
             const userCtx = additionalContext.userContext as Record<
                 string,
@@ -336,6 +357,16 @@ export class ContextFormatter {
             >;
             sections.push('### 🤖 AGENT IDENTITY');
             this.formatContextFields(identity, sections, formatValue);
+        }
+
+        // Handle agent execution options
+        if (additionalContext.agentExecutionOptions) {
+            const execOpts = additionalContext.agentExecutionOptions as Record<
+                string,
+                unknown
+            >;
+            sections.push('### ⚙️ EXECUTION OPTIONS');
+            this.formatContextFields(execOpts, sections, formatValue);
         }
 
         // Handle session context
@@ -369,11 +400,36 @@ export class ContextFormatter {
         sections: string[],
         formatValue: (value: unknown) => string,
     ): void {
+        const importantFields = [
+            'organizationId',
+            'teamId',
+            'sessionId',
+            'agentName',
+            'userQuestion',
+            'pullRequestNumber',
+            'repository',
+            'gitUserName',
+            'platformType',
+        ];
+
         Object.entries(context).forEach(([key, value]) => {
             if (value !== undefined && value !== null) {
-                sections.push(
-                    `**${this.formatFieldName(key)}:** ${formatValue(value)}`,
-                );
+                // Priorizar campos importantes e evitar campos muito complexos
+                const isImportant = importantFields.includes(key);
+                const isComplexObject =
+                    typeof value === 'object' &&
+                    value !== null &&
+                    Object.keys(value as object).length > 5;
+
+                if (isImportant || !isComplexObject) {
+                    const formattedValue = formatValue(value);
+                    if (formattedValue.length < 2000) {
+                        // Evitar campos muito longos
+                        sections.push(
+                            `**${this.formatFieldName(key)}:** ${formattedValue}`,
+                        );
+                    }
+                }
             }
         });
     }
@@ -1065,33 +1121,76 @@ export class StrategyFormatters {
     }
 
     /**
+     * Formatação avançada de parâmetros baseada no planner-prompt-composer
+     */
+
+    /**
      * Formata lista completa de ferramentas
      */
-    formatToolsList(tools: Tool[]): string {
+    formatToolsList(
+        tools:
+            | Tool[]
+            | Array<{
+                  name: string;
+                  description?: string;
+                  parameters?: Record<string, unknown>;
+                  outputSchema?: Record<string, unknown>;
+              }>
+            | string,
+    ): string {
         const sections: string[] = ['## 🛠️ AVAILABLE TOOLS'];
 
-        tools.forEach((tool, index) => {
+        let toolsArray: Array<{
+            name: string;
+            description?: string;
+            parameters?: Record<string, unknown>;
+            outputSchema?: Record<string, unknown>;
+        }>;
+
+        // Handle string input (JSON)
+        if (typeof tools === 'string') {
+            try {
+                toolsArray = JSON.parse(tools);
+            } catch {
+                // Return error message without logging
+                return '## 🛠️ AVAILABLE TOOLS\n[Error parsing tools]';
+            }
+        } else {
+            toolsArray = tools;
+        }
+
+        toolsArray.forEach((tool, index) => {
             sections.push(
-                `### ${index + 1}. ${tool.name}\n${tool.description || tool.name}`,
+                `### ${index + 1}. ${tool.name}\n${tool.description}`,
             );
 
-            const params = this.formatToolParameters(tool);
-            if (params) {
-                sections.push(params);
-            }
-
-            // Formatar output schema se disponível
-            if (tool.outputSchema) {
-                const schemaFormat = this.schemaFormatter.formatOutputSchema(
-                    tool.outputSchema,
-                    tool.name,
-                );
-                if (schemaFormat) {
-                    sections.push(schemaFormat);
+            // Handle parameters from inputJsonSchema (como no sistema antigo)
+            if ((tool as any).inputJsonSchema?.parameters?.properties) {
+                const params = this.toolFormatter.formatToolParameters({
+                    name: tool.name,
+                    description: tool.description || tool.name,
+                    parameters: (tool as any).inputJsonSchema.parameters,
+                    inputSchema: {},
+                    outputSchema:
+                        (tool as any).outputJsonSchema?.parameters || {},
+                } as Tool);
+                if (params) {
+                    sections.push(params);
                 }
             }
 
-            sections.push(''); // Espaçamento
+            // Handle output schema from outputJsonSchema (como no sistema antigo)
+            if ((tool as any).outputJsonSchema?.parameters?.properties) {
+                const outputFormat = this.schemaFormatter.formatOutputSchema(
+                    (tool as any).outputJsonSchema.parameters,
+                    tool.name,
+                );
+                if (outputFormat) {
+                    sections.push(outputFormat);
+                }
+            }
+
+            sections.push(''); // Add spacing between tools
         });
 
         return sections.join('\n');

@@ -289,13 +289,19 @@ export class ReWooStrategy extends BaseExecutionStrategy {
             throw new Error('LLM adapter must support createPlan method');
         }
 
-        // Usar nova arquitetura de prompts
+        // Usar nova arquitetura de prompts - passar contexto completo
         const prompts = this.promptFactory.createReWooPrompt({
             goal: context.input,
             tools: context.tools as any,
             agentContext: context.agentContext,
-            additionalContext:
-                context.agentContext?.agentExecutionOptions?.userContext,
+            additionalContext: {
+                // Framework agnóstico - tudo do usuário fica dentro de userContext
+                userContext:
+                    context.agentContext?.agentExecutionOptions?.userContext,
+                agentIdentity: context.agentContext?.agentIdentity,
+                agentExecutionOptions:
+                    context.agentContext?.agentExecutionOptions,
+            },
             mode: 'planner',
         });
 
@@ -328,7 +334,14 @@ export class ReWooStrategy extends BaseExecutionStrategy {
                 arguments: s.arguments || undefined,
             });
         }
-        if (!unique.length) throw new Error('no sketches produced by model');
+        // Empty sketches array is valid for simple requests (greetings, etc.)
+        // Only log when we get empty sketches to understand the model's decision
+        if (!unique.length) {
+            this.logger?.debug(
+                "Model returned no sketches - likely simple request that doesn't need tools",
+            );
+            return []; // Return empty array instead of throwing error
+        }
         return unique;
     }
 
@@ -337,6 +350,14 @@ export class ReWooStrategy extends BaseExecutionStrategy {
         ctx: StrategyExecutionContext,
         cfg: any,
     ): Promise<RewooEvidenceItem[]> {
+        // If no sketches, return empty array (no work to do)
+        if (!sketches || sketches.length === 0) {
+            this.logger?.debug(
+                'No sketches to execute - returning empty evidence array',
+            );
+            return [];
+        }
+
         const evidences: RewooEvidenceItem[] = [];
         const toolMap = new Map(ctx.tools.map((t) => [t.name, t] as const));
 
@@ -407,11 +428,19 @@ export class ReWooStrategy extends BaseExecutionStrategy {
         if (!this.llmAdapter.createPlan) {
             throw new Error('LLM adapter must support createPlan method');
         }
-        // Usar nova arquitetura de prompts
+        // Usar nova arquitetura de prompts - passar contexto completo
         const prompts = this.promptFactory.createReWooPrompt({
             goal: context.input,
             tools: [], // Organizer não precisa de tools
             agentContext: context.agentContext,
+            additionalContext: {
+                // Framework agnóstico - tudo do usuário fica dentro de userContext
+                userContext:
+                    context.agentContext?.agentExecutionOptions?.userContext,
+                agentIdentity: context.agentContext?.agentIdentity,
+                agentExecutionOptions:
+                    context.agentContext?.agentExecutionOptions,
+            },
             evidences,
             mode: 'organizer',
         });

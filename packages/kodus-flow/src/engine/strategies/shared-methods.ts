@@ -10,235 +10,25 @@ import type {
 import type { ToolDefinition } from '../../core/types/allTypes.js';
 
 // 🔧 IMPORTS PARA EXECUÇÃO DE TOOLS
-import { CircuitBreaker } from '../../runtime/core/circuit-breaker.js';
-import {
-    createLogger,
-    getObservability,
-    startToolSpan,
-    applyErrorToSpan,
-    markSpanOk,
-} from '../../observability/index.js';
-import { IdGenerator } from '../../utils/id-generator.js';
-import { createToolError } from '../../core/error-unified.js';
-import { validateWithZod } from '../../core/utils/zod-to-json-schema.js';
+import { createLogger } from '../../observability/index.js';
+import { ToolEngine } from '../tools/tool-engine.js';
 
 // Métodos compartilhados entre estratégias
 export class SharedStrategyMethods {
     // 🔧 STATIC PROPERTIES PARA EXECUÇÃO DE TOOLS
     private static readonly logger = createLogger('shared-strategy-methods');
-    private static circuitBreaker?: CircuitBreaker;
-    private static readonly defaultTimeout = 120000; // 120s para APIs externas
+    private static toolEngine?: ToolEngine;
 
-    // 🔧 STATIC METHODS AUXILIARES
-    private static initializeCircuitBreaker(): void {
-        if (!this.circuitBreaker) {
-            const observabilitySystem = {
-                logger: this.logger,
-                monitoring: {
-                    recordMetric: () => {},
-                    recordHistogram: () => {},
-                    incrementCounter: () => {},
-                },
-                telemetry: {
-                    startSpan: () => ({
-                        end: () => {},
-                        setAttribute: () => ({ end: () => {} }),
-                        setAttributes: () => ({ end: () => {} }),
-                        setStatus: () => ({ end: () => {} }),
-                        recordException: () => ({ end: () => {} }),
-                        addEvent: () => ({ end: () => {} }),
-                        updateName: () => ({ end: () => {} }),
-                    }),
-                    recordException: () => {},
-                },
-                config: {},
-                monitor: {},
-                debug: {},
-                createContext: () => ({}),
-            } as any;
-
-            this.circuitBreaker = new CircuitBreaker(observabilitySystem, {
-                name: 'strategy-tool-execution',
-                failureThreshold: 3,
-                recoveryTimeout: 150000, // 2.5 minutos
-                successThreshold: 2,
-                operationTimeout: this.defaultTimeout,
-                onStateChange: (newState, prevState) => {
-                    this.logger.info('Tool circuit breaker state changed', {
-                        from: prevState,
-                        to: newState,
-                    });
-                },
-                onFailure: (error, context) => {
-                    this.logger.warn(
-                        'Tool execution failed in circuit breaker',
-                        {
-                            error: error.message,
-                            context,
-                        },
-                    );
-                },
-            });
-        }
-    }
-
-    private static async withTimeout<T>(
-        promise: Promise<T>,
-        ms: number,
-        tag: string,
-    ): Promise<T> {
-        let timeoutId: any;
-        const timeout = new Promise<never>((_, rej) => {
-            timeoutId = setTimeout(
-                () => rej(new Error(`timeout after ${ms}ms (${tag})`)),
-                ms,
-            );
+    // 🔧 DEPENDENCY INJECTION
+    /**
+     * Configure ToolEngine for SharedStrategyMethods
+     * This removes duplication and establishes single source of truth
+     */
+    static setToolEngine(toolEngine: ToolEngine): void {
+        this.toolEngine = toolEngine;
+        this.logger.info('🔧 ToolEngine configured for SharedStrategyMethods', {
+            hasToolEngine: !!toolEngine,
         });
-
-        try {
-            return await Promise.race([promise, timeout]);
-        } finally {
-            clearTimeout(timeoutId);
-        }
-    }
-
-    private static createToolContext(
-        toolName: string,
-        callId: string,
-        executionId: string,
-        tenantId: string,
-        input: Record<string, unknown>,
-        options?: { correlationId?: string },
-    ) {
-        return {
-            toolName,
-            callId,
-            executionId,
-            tenantId,
-            input,
-            correlationId: options?.correlationId,
-            timestamp: Date.now(),
-            source: 'strategy-layer',
-        };
-    }
-
-    private static validateToolInput<T>(tool: ToolDefinition, input: T): void {
-        if (!tool.inputSchema) {
-            return; // Skip validation if no schema
-        }
-
-        this.logger.debug('🔍 Validating tool input', {
-            toolName: tool.name,
-            inputType: typeof input,
-            hasInputSchema: !!tool.inputSchema,
-        });
-
-        try {
-            const validation = validateWithZod(tool.inputSchema, input);
-            if (!validation.success) {
-                this.logger.error(
-                    `Tool input validation failed: ${validation.error}`,
-                    new Error(
-                        `Tool input validation failed: ${validation.error}`,
-                    ),
-                    {
-                        toolName: tool.name,
-                        validationError: validation.error,
-                        inputType: typeof input,
-                    },
-                );
-
-                const missingParams = this.extractMissingParameters(
-                    validation.error,
-                );
-                throw createToolError(validation.error, {
-                    severity: 'low',
-                    domain: 'business',
-                    userImpact: 'degraded',
-                    retryable: false,
-                    recoverable: true,
-                    context: { toolName: tool.name, input, validation },
-                    userMessage: `Tool '${tool.name}' requires specific parameters. ${
-                        missingParams.length > 0
-                            ? `Missing: ${missingParams.join(', ')}`
-                            : 'Invalid parameters provided.'
-                    }`,
-                    recoveryHints: [
-                        'Check the tool documentation for correct input format',
-                        'Ensure all required parameters are provided',
-                    ],
-                });
-            }
-
-            this.logger.debug('✅ Tool input validation passed', {
-                toolName: tool.name,
-            });
-        } catch (validationError) {
-            throw createToolError(
-                validationError instanceof Error
-                    ? validationError.message
-                    : String(validationError),
-                {
-                    severity: 'medium',
-                    domain: 'business',
-                    userImpact: 'degraded',
-                    retryable: false,
-                    recoverable: true,
-                    context: {
-                        toolName: tool.name,
-                        input,
-                        validationError,
-                    },
-                    userMessage:
-                        'An unexpected error occurred during input validation.',
-                    recoveryHints: [
-                        'Check if the tool schema is properly defined',
-                        'Verify the input format matches the expected schema',
-                    ],
-                },
-            );
-        }
-    }
-
-    private static extractMissingParameters(validationError: string): string[] {
-        try {
-            const errorObj = JSON.parse(validationError);
-            if (Array.isArray(errorObj)) {
-                return errorObj
-                    .filter(
-                        (error: unknown) =>
-                            typeof error === 'object' &&
-                            error !== null &&
-                            'code' in error &&
-                            'message' in error &&
-                            error.code === 'invalid_type' &&
-                            typeof error.message === 'string' &&
-                            error.message.includes('received undefined'),
-                    )
-                    .map((error: unknown) => {
-                        if (
-                            typeof error === 'object' &&
-                            error !== null &&
-                            'path' in error
-                        ) {
-                            const path = (error as { path?: unknown }).path;
-                            if (
-                                Array.isArray(path) &&
-                                path.length > 0 &&
-                                typeof path[0] === 'string'
-                            ) {
-                                return path[0];
-                            }
-                        }
-                        return null;
-                    })
-                    .filter((param): param is string => param !== null);
-            }
-        } catch {
-            const match = validationError.match(/path":\s*\["([^"]+)"\]/);
-            return match && match[1] ? [match[1]] : [];
-        }
-        return [];
     }
 
     // === LLM METHODS (compartilhados) ===
@@ -308,18 +98,25 @@ export class SharedStrategyMethods {
     // === TOOL EXECUTION METHODS (compartilhados) ===
 
     /**
-     * 🔥 EXECUTA TOOL COM FUNCIONALIDADES ENTERPRISE
-     * Implementação completa com validação, circuit breaker, observabilidade e timeout
+     * 🔥 EXECUTA TOOL - PURE DELEGATION
+     * Simplified: ToolEngine handles all enterprise features (circuit breaker, observability, timeout)
      */
     static async executeTool(
         action: AgentAction,
         context: StrategyExecutionContext,
     ): Promise<unknown> {
+        // Basic validation
         if (action.type !== 'tool_call' || !action.toolName) {
             throw new Error('Invalid tool call action');
         }
 
-        // 🔍 Busca a tool no contexto (precisa ser ToolDefinition)
+        if (!this.toolEngine) {
+            throw new Error(
+                'ToolEngine not configured. Call SharedStrategyMethods.setToolEngine() first.',
+            );
+        }
+
+        // Validate tool exists in context
         const tool = context.tools.find(
             (t) => t.name === action.toolName,
         ) as ToolDefinition;
@@ -327,164 +124,42 @@ export class SharedStrategyMethods {
             throw new Error(`Tool not found: ${action.toolName}`);
         }
 
-        const callId = IdGenerator.callId();
-        const executionId = `exec-${Date.now()}`;
-        const startTime = Date.now();
-
-        // 🔧 Inicializa circuit breaker se necessário
-        this.initializeCircuitBreaker();
+        this.logger.debug('🔧 Delegating tool execution to ToolEngine', {
+            toolName: action.toolName,
+            threadId: context.agentContext.thread?.id,
+        });
 
         try {
-            // 📊 Cria span de observabilidade
-            const obs = getObservability();
-            const span = startToolSpan(obs.telemetry, {
-                toolName: tool.name,
-                callId,
-                correlationId: context.metadata?.correlationId,
-            });
+            // Pure delegation - ToolEngine handles all enterprise features
+            const result = await this.toolEngine.executeCall(
+                action.toolName as any,
+                action.input,
+                {
+                    threadId: context.agentContext.thread?.id,
+                    correlationId: context.metadata?.correlationId,
+                    tenantId: context.agentContext?.tenantId,
+                },
+            );
 
-            const result = await obs.telemetry.withSpan(span, async () => {
-                try {
-                    // 🔍 Valida input da tool
-                    this.validateToolInput(tool, action.input);
-
-                    // 🛡️ Circuit breaker protection
-                    if (this.circuitBreaker) {
-                        const circuitResult = await this.circuitBreaker.execute(
-                            () =>
-                                this.executeToolInternal(
-                                    tool,
-                                    action.input as Record<string, unknown>,
-                                    callId,
-                                    executionId,
-                                    context,
-                                ),
-                            {
-                                toolName: tool.name,
-                                agentName:
-                                    context.agentContext?.agentName ||
-                                    'strategy',
-                            },
-                        );
-
-                        if (circuitResult.error) {
-                            throw circuitResult.error;
-                        }
-
-                        return circuitResult.result;
-                    } else {
-                        // Fallback sem circuit breaker
-                        return await this.withTimeout(
-                            this.executeToolInternal(
-                                tool,
-                                action.input as Record<string, unknown>,
-                                callId,
-                                executionId,
-                                context,
-                            ),
-                            this.defaultTimeout,
-                            `tool:${tool.name}`,
-                        );
-                    }
-                } catch (innerError) {
-                    applyErrorToSpan(span, innerError);
-                    throw innerError;
-                }
-            });
-
-            markSpanOk(span);
-
-            const executionTime = Date.now() - startTime;
-            this.logger.debug('✅ Tool executed successfully', {
-                toolName: tool.name,
-                callId,
-                executionTime,
-                correlationId: context.metadata?.correlationId,
+            this.logger.debug('✅ Tool executed successfully via ToolEngine', {
+                toolName: action.toolName,
+                threadId: context.agentContext.thread?.id,
+                resultType: typeof result,
             });
 
             return result;
         } catch (error) {
-            const executionTime = Date.now() - startTime;
-            const lastError = error as Error;
-
             this.logger.error(
-                '❌ TOOL EXECUTION FAILED (Strategy Layer)',
-                lastError,
+                '❌ Tool execution failed (delegated to ToolEngine)',
+                error instanceof Error ? error : undefined,
                 {
-                    toolName: tool.name,
-                    callId,
-                    correlationId: context.metadata?.correlationId,
-                    error: lastError.message,
-                    errorType: lastError.constructor.name,
-                    executionTime,
-                    isTimeout: lastError.message.includes('timeout'),
-                    trace: {
-                        source: 'shared-strategy-methods',
-                        step: 'executeTool-error',
-                        timestamp: Date.now(),
-                    },
+                    toolName: action.toolName,
+                    threadId: context.agentContext.thread?.id,
+                    source: 'shared-strategy-methods',
                 },
             );
 
-            throw lastError;
-        }
-    }
-
-    /**
-     * 🔥 EXECUÇÃO INTERNA DA TOOL (com contexto completo)
-     */
-    private static async executeToolInternal(
-        tool: ToolDefinition,
-        input: Record<string, unknown>,
-        callId: string,
-        executionId: string,
-        context: StrategyExecutionContext,
-    ): Promise<unknown> {
-        // 🏗️ Cria contexto da tool
-        const toolContext = this.createToolContext(
-            tool.name,
-            callId,
-            executionId,
-            context.agentContext?.tenantId || 'default',
-            input,
-            {
-                correlationId: context.metadata?.correlationId,
-            },
-        );
-
-        // 🔥 EXECUTA A TOOL REAL
-        try {
-            this.logger.debug('🔧 Executing tool with context', {
-                toolName: tool.name,
-                callId,
-                executionId,
-                correlationId: context.metadata?.correlationId,
-                inputKeys: Object.keys(input),
-            });
-
-            // Chama o método execute da tool com contexto
-            const result = await tool.execute(input as any, toolContext as any);
-
-            this.logger.debug('🔧 Tool execution completed', {
-                toolName: tool.name,
-                callId,
-                resultType: typeof result,
-                hasResult: result !== undefined,
-            });
-
-            return result;
-        } catch (executionError) {
-            this.logger.error(
-                '🔧 Tool execution internal error',
-                executionError as Error,
-                {
-                    toolName: tool.name,
-                    callId,
-                    executionId,
-                    error: (executionError as Error).message,
-                },
-            );
-            throw executionError;
+            throw error;
         }
     }
 

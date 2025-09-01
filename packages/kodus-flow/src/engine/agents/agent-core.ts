@@ -53,6 +53,7 @@ import {
     TrackedMessage,
 } from '../../core/types/allTypes.js';
 import { ToolEngine } from '../tools/tool-engine.js';
+import { SharedStrategyMethods } from '../strategies/shared-methods.js';
 import {
     AgentAction,
     //AgentThought,
@@ -1080,6 +1081,11 @@ export abstract class AgentCore<
                     : await this.toolEngine!.executeCall(
                           tool.toolName as ToolId,
                           tool.arguments,
+                          {
+                              correlationId,
+                              tenantId: context.tenantId,
+                              threadId: context.thread?.id,
+                          },
                       );
                 const duration = Date.now() - toolStartTime;
 
@@ -1325,6 +1331,15 @@ export abstract class AgentCore<
         if (this.kernelHandler) {
             toolEngine.setKernelHandler(this.kernelHandler);
         }
+
+        // 🔥 CONFIGURE SHARED STRATEGY METHODS (Remove duplication)
+        SharedStrategyMethods.setToolEngine(toolEngine);
+        this.logger.info(
+            '🔧 SharedStrategyMethods configured with ToolEngine',
+            {
+                toolCount: toolEngine.listTools().length,
+            },
+        );
 
         this.logger.info('ToolEngine set for AgentCore', {
             toolCount: toolEngine.listTools().length,

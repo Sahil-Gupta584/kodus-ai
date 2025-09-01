@@ -6,6 +6,7 @@ import {
     markSpanOk,
 } from '../../observability/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
+import { EnhancedContextBuilder } from '../../core/contextNew/index.js';
 
 import {
     validateWithZod,
@@ -71,6 +72,7 @@ export class ToolEngine {
         options?: {
             correlationId?: string;
             tenantId?: string;
+            threadId?: string; // ✅ ADICIONAR threadId
         },
     ): Promise<TOutput> {
         const callId = IdGenerator.callId();
@@ -79,6 +81,35 @@ export class ToolEngine {
         const obs = getObservability();
         const correlationId =
             options?.correlationId || obs.getContext()?.correlationId;
+
+        // 🔥 REGISTRAR INÍCIO DA TOOL CALL no contextNew
+        if (options?.threadId) {
+            try {
+                const contextBuilder = EnhancedContextBuilder.getInstance();
+                const sessionManager = contextBuilder.getSessionManager();
+
+                await sessionManager.updateExecution(options.threadId, {
+                    currentTool: String(toolName),
+                    currentStep: {
+                        id: callId,
+                        status: 'executing',
+                        toolCall: {
+                            name: String(toolName),
+                            arguments: JSON.stringify(input),
+                        },
+                    },
+                });
+            } catch (contextError) {
+                this.logger.warn(
+                    'Failed to register tool execution start in contextNew',
+                    {
+                        error: contextError,
+                        toolName,
+                        threadId: options.threadId,
+                    },
+                );
+            }
+        }
 
         try {
             const span = startToolSpan(obs.telemetry, {
@@ -114,6 +145,60 @@ export class ToolEngine {
                         timeoutPromise,
                     ]);
                     markSpanOk(span);
+
+                    // 🔥 REGISTRAR SUCESSO DA TOOL CALL no contextNew
+                    if (options?.threadId) {
+                        try {
+                            const contextBuilder =
+                                EnhancedContextBuilder.getInstance();
+                            const sessionManager =
+                                contextBuilder.getSessionManager();
+
+                            // Atualizar execution
+                            await sessionManager.updateExecution(
+                                options.threadId,
+                                {
+                                    currentTool: undefined, // Limpar tool atual
+                                    completedSteps: [callId],
+                                    currentStep: {
+                                        id: callId,
+                                        status: 'completed',
+                                        toolCall: {
+                                            name: String(toolName),
+                                            arguments: JSON.stringify(input),
+                                            result: res as Record<
+                                                string,
+                                                object
+                                            >,
+                                        },
+                                    },
+                                },
+                            );
+
+                            // Salvar resultado como entity
+                            await sessionManager.addEntities(options.threadId, {
+                                toolResults: {
+                                    [String(toolName)]: {
+                                        id: callId,
+                                        title: `${toolName} result`,
+                                        type: 'tool_result',
+                                        lastUsed: Date.now(),
+                                        data: res,
+                                    },
+                                },
+                            });
+                        } catch (contextError) {
+                            this.logger.warn(
+                                'Failed to register tool execution success in contextNew',
+                                {
+                                    error: contextError,
+                                    toolName,
+                                    threadId: options.threadId,
+                                },
+                            );
+                        }
+                    }
+
                     return res;
                 } catch (innerError) {
                     applyErrorToSpan(span, innerError);
@@ -144,6 +229,38 @@ export class ToolEngine {
                     },
                 },
             );
+
+            // 🔥 REGISTRAR ERRO DA TOOL CALL no contextNew
+            if (options?.threadId) {
+                try {
+                    const contextBuilder = EnhancedContextBuilder.getInstance();
+                    const sessionManager = contextBuilder.getSessionManager();
+
+                    await sessionManager.updateExecution(options.threadId, {
+                        currentTool: undefined, // Limpar tool atual
+                        failedSteps: [callId],
+                        lastError: lastError.message,
+                        currentStep: {
+                            id: callId,
+                            status: 'failed',
+                            toolCall: {
+                                name: String(toolName),
+                                arguments: JSON.stringify(input),
+                            },
+                            error: lastError.message,
+                        },
+                    });
+                } catch (contextError) {
+                    this.logger.warn(
+                        'Failed to register tool execution failure in contextNew',
+                        {
+                            error: contextError,
+                            toolName,
+                            threadId: options.threadId,
+                        },
+                    );
+                }
+            }
 
             throw lastError;
         }

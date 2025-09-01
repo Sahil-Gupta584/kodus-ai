@@ -55,6 +55,7 @@ export interface AgentRuntimeContext {
                 arguments: string; // JSON string
                 result?: Record<string, object>;
             };
+            error?: string; // Para casos de falha
         };
     };
 
