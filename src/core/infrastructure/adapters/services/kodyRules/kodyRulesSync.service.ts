@@ -748,7 +748,12 @@ export class KodyRulesSyncService {
                 return [];
             }
 
-            return repoConfig.directories.map((d) => d.path);
+            return repoConfig.directories
+                .filter(
+                    (d): d is { path: string } =>
+                        d && typeof d.path === 'string',
+                )
+                .map((d) => d.path);
         } catch {
             return [];
         }
