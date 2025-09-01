@@ -31,6 +31,7 @@ import {
     IParametersService,
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
+import path from 'path';
 
 type SyncTarget = {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -195,7 +196,12 @@ export class KodyRulesSyncService {
                 base: base ? { ref: base } : undefined,
             };
 
-            const patterns = [...RULE_FILE_PATTERNS];
+            const directoryPatterns = await this.getDirectoryPatterns(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            const patterns = [...RULE_FILE_PATTERNS, ...directoryPatterns];
             const isRuleFile = (fp?: string) =>
                 !!fp && isFileMatchingGlob(fp, patterns);
 
@@ -409,6 +415,13 @@ export class KodyRulesSyncService {
                 repository,
             });
 
+            const directoryPatterns = await this.getDirectoryPatterns(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            const patterns = [...RULE_FILE_PATTERNS, ...directoryPatterns];
+
             // List only rule files
             const files =
                 await this.codeManagementService.getRepositoryAllFiles({
@@ -416,7 +429,7 @@ export class KodyRulesSyncService {
                     repository: { id: repository.id, name: repository.name },
                     filters: {
                         branch,
-                        filePatterns: [...RULE_FILE_PATTERNS],
+                        filePatterns: patterns,
                     },
                 });
 
@@ -529,16 +542,18 @@ export class KodyRulesSyncService {
                 ParametersKey.CODE_REVIEW_CONFIG,
                 organizationAndTeamData,
             );
-            
+
             // Must have repository context and repository-specific config
             if (!repositoryId || !cfg?.configValue?.repositories) {
                 return false;
             }
-            
+
             const repoConfig = cfg.configValue.repositories.find(
-                (repo: any) => repo.id === repositoryId || repo.id === repositoryId.toString(),
+                (repo: any) =>
+                    repo.id === repositoryId ||
+                    repo.id === repositoryId.toString(),
             );
-            
+
             return repoConfig?.ideRulesSyncEnabled === true;
         } catch {
             return false;
@@ -701,6 +716,61 @@ export class KodyRulesSyncService {
             return Array.isArray(parsed) ? parsed : null;
         } catch {
             return null;
+        }
+    }
+
+    private async getConfiguredDirectories(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repositoryId?: string,
+    ): Promise<string[]> {
+        try {
+            const cfg = await this.parametersService.findByKey(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                organizationAndTeamData,
+            );
+
+            // Must have repository context and repository-specific config
+            if (!repositoryId || !cfg?.configValue?.repositories) {
+                return [];
+            }
+
+            const repoConfig = cfg.configValue.repositories.find(
+                (repo: any) =>
+                    repo.id === repositoryId ||
+                    repo.id === repositoryId.toString(),
+            );
+
+            if (
+                !repoConfig ||
+                !repoConfig.directories ||
+                repoConfig.directories.length === 0
+            ) {
+                return [];
+            }
+
+            return repoConfig.directories.map((d) => d.path);
+        } catch {
+            return [];
+        }
+    }
+
+    private async getDirectoryPatterns(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repositoryId: string,
+    ): Promise<string[]> {
+        try {
+            const dirs = await this.getConfiguredDirectories(
+                organizationAndTeamData,
+                repositoryId,
+            );
+
+            return dirs.flatMap((d) =>
+                RULE_FILE_PATTERNS.map((p) =>
+                    path.posix.join(d.startsWith('/') ? d.slice(1) : d, p),
+                ),
+            );
+        } catch {
+            return [];
         }
     }
 }
