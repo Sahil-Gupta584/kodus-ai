@@ -3,7 +3,7 @@ import { CreateKodyRuleDto } from '@/core/infrastructure/http/dtos/create-kody-r
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { IKodyRule, KodyRulesStatus } from '../interfaces/kodyRules.interface';
 import { KodyRulesEntity } from '../entities/kodyRules.entity';
-import { KodyRuleFilters } from '@/config/types/kodyRules.type';
+import { KodyRuleFilters, LibraryKodyRule, BucketInfo } from '@/config/types/kodyRules.type';
 import { UserInfo } from '@/config/types/general/codeReviewSettingsLog.type';
 
 export const KODY_RULES_SERVICE_TOKEN = 'KODY_RULES_SERVICE_TOKEN';
@@ -15,7 +15,10 @@ export interface IKodyRulesService extends IKodyRulesRepository {
         userInfo?: UserInfo,
     ): Promise<Partial<IKodyRule> | IKodyRule | null>;
 
-    getLibraryKodyRules(filters?: KodyRuleFilters): Promise<any | null>;
+    getLibraryKodyRules(filters?: KodyRuleFilters, userId?: string): Promise<LibraryKodyRule[]>;
+    getLibraryKodyRulesWithFeedback(filters?: KodyRuleFilters, userId?: string): Promise<LibraryKodyRule[]>;
+
+    getLibraryKodyRulesBuckets(): Promise<BucketInfo[]>;
 
     findRulesByDirectory(
         organizationId: string,

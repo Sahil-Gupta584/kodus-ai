@@ -8,7 +8,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
 @Injectable()
-export class FindLibraryKodyRulesUseCase {
+export class FindLibraryKodyRulesWithFeedbackUseCase {
     constructor(
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
@@ -23,19 +23,26 @@ export class FindLibraryKodyRulesUseCase {
 
     async execute(kodyRuleFilters?: KodyRuleFilters) {
         try {
-            // Para rota pública, usa getLibraryKodyRulesWithFeedback mas sem userId
-            // Isso traz as contagens gerais mas não o userFeedback
+            // Passa userId se o usuário estiver logado
+            const userId = this.request.user?.uuid;
+            console.log('🔍 FindLibraryKodyRulesWithFeedbackUseCase - userId:', userId);
+            console.log('🔍 FindLibraryKodyRulesWithFeedbackUseCase - filters:', kodyRuleFilters);
+            
             const libraryKodyRules =
-                await this.kodyRulesService.getLibraryKodyRulesWithFeedback(kodyRuleFilters);
+                await this.kodyRulesService.getLibraryKodyRulesWithFeedback(kodyRuleFilters, userId);
+
+            console.log('🔍 FindLibraryKodyRulesWithFeedbackUseCase - result count:', libraryKodyRules.length);
+            console.log('🔍 FindLibraryKodyRulesWithFeedbackUseCase - first rule sample:', libraryKodyRules[0]);
 
             return libraryKodyRules;
         } catch (error) {
             this.logger.error({
-                message: 'Error finding library Kody Rules',
-                context: FindLibraryKodyRulesUseCase.name,
+                message: 'Error finding library Kody Rules with feedback',
+                context: FindLibraryKodyRulesWithFeedbackUseCase.name,
                 error: error,
             });
             throw error;
         }
     }
 }
+

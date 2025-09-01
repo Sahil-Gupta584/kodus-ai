@@ -3,21 +3,24 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
 @Schema({
-  collection: 'ruleLikes',
-  timestamps: true,
-  autoIndex: true,
+    collection: 'ruleLikes',
+    timestamps: true,
+    autoIndex: true,
 })
-
 export class RuleLikeModel extends CoreDocument {
+    @Prop({ type: String, required: true, index: true })
+    public ruleId: string;
 
-  @Prop({ type: String, required: true, index: true })
-  public language: string;
+    @Prop({ type: String, required: false, index: true })
+    public userId?: string;
 
-  @Prop({ type: String, required: true, index: true })
-  public ruleId: string;
-
-  @Prop({ type: String, required: false, index: true })
-  public userId?: string;
+    @Prop({
+        type: String,
+        required: true,
+        enum: ['positive', 'negative'],
+        index: true,
+    })
+    public feedback: 'positive' | 'negative';
 }
 
 export type RuleLikeDocument = RuleLikeModel & Document;

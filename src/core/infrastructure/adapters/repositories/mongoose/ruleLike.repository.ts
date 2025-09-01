@@ -8,7 +8,11 @@ import {
 } from '@/shared/infrastructure/repositories/mappers';
 import { IRuleLikeRepository } from '@/core/domain/kodyRules/contracts/ruleLike.repository.contract';
 import { RuleLikeModel } from './schema/rulesLikes.model';
-import { RuleLikeEntity } from '@/core/domain/kodyRules/entities/ruleLike.entity';
+import {
+    RuleLikeEntity,
+    RuleFeedbackType,
+} from '@/core/domain/kodyRules/entities/ruleLike.entity';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class RuleLikesRepository implements IRuleLikeRepository {
@@ -46,18 +50,32 @@ export class RuleLikesRepository implements IRuleLikeRepository {
         return deletedCount > 0;
     }
 
-    async setLike(
+    async setFeedback(
         ruleId: string,
-        language: string,
-        liked: boolean,
+        feedback: RuleFeedbackType,
         userId?: string,
-    ): Promise<number> {
-        if (liked) {
-            await this.like(ruleId, language, userId);
-        } else {
-            await this.unlike(ruleId, userId);
-        }
-        return this.countByRule(ruleId);
+    ): Promise<RuleLikeEntity | null> {
+        const filter = userId
+            ? { ruleId, userId }
+            : { ruleId, userId: { $exists: false } };
+
+        const res = await this.likeModel
+            .findOneAndUpdate(
+                filter,
+                {
+                    ruleId,
+                    feedback,
+                    userId,
+                },
+                {
+                    upsert: true,
+                    new: true,
+                    setDefaultsOnInsert: true,
+                },
+            )
+            .exec();
+
+        return mapSimpleModelToEntity(res, RuleLikeEntity);
     }
 
     async findOne(
@@ -103,31 +121,48 @@ export class RuleLikesRepository implements IRuleLikeRepository {
         return mapSimpleModelsToEntities(docs, RuleLikeEntity);
     }
 
-    async getAllRulesWithLikes(userId?: string): Promise<{ ruleId: string; likeCount: number; userLiked: boolean }[]> {
+    async getAllRulesWithFeedback(userId?: string): Promise<
+        {
+            ruleId: string;
+            positiveCount: number;
+            negativeCount: number;
+            userFeedback: RuleFeedbackType | null;
+        }[]
+    > {
         const pipeline = [
             {
                 $group: {
                     _id: '$ruleId',
-                    likeCount: { $sum: 1 },
-                    userLiked: {
+                    positiveCount: {
                         $sum: {
+                            $cond: [{ $eq: ['$feedback', 'positive'] }, 1, 0],
+                        },
+                    },
+                    negativeCount: {
+                        $sum: {
+                            $cond: [{ $eq: ['$feedback', 'negative'] }, 1, 0],
+                        },
+                    },
+                    userFeedback: {
+                        $first: {
                             $cond: [
                                 { $eq: ['$userId', userId] },
-                                1,
-                                0
-                            ]
-                        }
-                    }
-                }
+                                '$feedback',
+                                null,
+                            ],
+                        },
+                    },
+                },
             },
             {
                 $project: {
                     _id: 0,
                     ruleId: '$_id',
-                    likeCount: 1,
-                    userLiked: { $gt: ['$userLiked', 0] }
-                }
-            }
+                    positiveCount: 1,
+                    negativeCount: 1,
+                    userFeedback: 1,
+                },
+            },
         ];
 
         return this.likeModel.aggregate(pipeline).exec();
