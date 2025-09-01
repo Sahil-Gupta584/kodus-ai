@@ -5,7 +5,7 @@ import {
     MiddlewareFactoryType,
     RetryOptions,
     TEvent,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import { KernelError } from '../../core/errors.js';
 import { getActiveSpan } from '../../observability/index.js';
 

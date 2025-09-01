@@ -7,6 +7,8 @@ import {
     MCPServerConfig,
     createOtelTracerAdapter,
     DirectLLMAdapter,
+    PlannerType,
+    StorageEnum,
 } from '@kodus/flow';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
@@ -15,12 +17,13 @@ import { DatabaseConnection } from '@/config/types';
 import { ConnectionString } from 'connection-string';
 import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 import { startKodusOtel } from '@/config/log/otel-kodus-flow';
+import { SDKOrchestrator } from '@kodus/flow/dist/orchestration';
 
 @Injectable()
 export class ConversationAgentProvider {
     protected config: DatabaseConnection;
 
-    private orchestration: ReturnType<typeof createOrchestration>;
+    private orchestration: SDKOrchestrator;
     private mcpAdapter: ReturnType<typeof createMCPAdapter>;
 
     private llmAdapter: DirectLLMAdapter;
@@ -216,23 +219,13 @@ export class ConversationAgentProvider {
                 },
             },
             storage: {
-                memory: {
-                    type: 'mongodb',
-                    connectionString: uri,
-                    database: this.config.database,
-                    collection: 'memories',
-                },
-                session: {
-                    type: 'mongodb',
-                    connectionString: uri,
-                    database: this.config.database,
-                    collection: 'sessions',
-                },
-                snapshot: {
-                    type: 'mongodb',
-                    connectionString: uri,
-                    database: this.config.database,
-                    collection: 'snapshots',
+                type: StorageEnum.MONGODB,
+                connectionString: uri,
+                database: this.config.database,
+                collections: {
+                    memory: 'kodus-agent-memory',
+                    sessions: 'kodus-agent-sessions',
+                    snapshots: 'kodus-execution-snapshots',
                 },
             },
         });
@@ -258,7 +251,7 @@ export class ConversationAgentProvider {
                     'Agente de conversação para interações com usuários.',
             },
             plannerOptions: {
-                planner: 'plan-execute',
+                type: PlannerType.REWOO,
                 replanPolicy: {
                     toolUnavailable: 'replan',
                     maxReplans: 3,
@@ -300,25 +293,6 @@ export class ConversationAgentProvider {
                 },
             },
         );
-
-        // Optional timeline (dev only). Guarded to avoid test failures
-        const correlationId = result?.context?.correlationId as
-            | string
-            | undefined;
-        if (
-            correlationId &&
-            typeof (this.orchestration as any)?.getExecutionTimeline ===
-                'function'
-        ) {
-            try {
-                const timeline = (
-                    this.orchestration as any
-                ).getExecutionTimeline(correlationId);
-                if (process.env.NODE_ENV !== 'test') {
-                    console.log(timeline);
-                }
-            } catch {}
-        }
 
         return typeof result.result === 'string'
             ? result.result

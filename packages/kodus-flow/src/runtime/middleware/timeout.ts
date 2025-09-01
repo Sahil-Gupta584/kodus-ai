@@ -6,7 +6,7 @@ import {
     MiddlewareFactoryType,
     TEvent,
     TimeoutOptions,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import { KernelError } from '../../core/errors.js';
 
 /**

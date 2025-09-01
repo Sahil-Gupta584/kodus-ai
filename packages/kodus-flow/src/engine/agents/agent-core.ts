@@ -24,6 +24,7 @@ import {
     AgentDefinition,
     AgentExecutionOptions,
     AgentExecutionResult,
+    AgentInputEnum,
     //AgentThought,
     AnyEvent,
     ConditionalToolsAction,
@@ -50,7 +51,7 @@ import {
     ToolCall,
     ToolId,
     TrackedMessage,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import { ToolEngine } from '../tools/tool-engine.js';
 import {
     AgentAction,
@@ -311,26 +312,18 @@ export abstract class AgentCore<
             | AgentDefinition<TInput, TOutput, TContent>
             | AgentDefinition<unknown, unknown, unknown>,
         input: unknown,
-        agentExecutionOptions?: AgentExecutionOptions,
+        agentExecutionOptions: AgentExecutionOptions,
     ): Promise<AgentExecutionResult> {
         const startTime = Date.now();
         const executionId = IdGenerator.executionId();
-        const { correlationId } = agentExecutionOptions || {};
+        const { correlationId } = agentExecutionOptions;
 
         const context = await this.createAgentContext(
-            agent.name,
             executionId,
             agentExecutionOptions,
         );
 
-        await this.trackExecutionStart(
-            context,
-            executionId,
-            startTime,
-            correlationId,
-        );
-
-        await this.addConversationEntry(context, input, agent.name);
+        await this.addConversationEntry(context, input);
 
         try {
             const result = await this.processAgentThinking(
@@ -368,51 +361,41 @@ export abstract class AgentCore<
         }
     }
 
-    // ✅ NOVOS MÉTODOS PRIVADOS SIMPLES
-    private async trackExecutionStart(
-        context: AgentContext,
-        executionId: string,
-        startTime: number,
-        correlationId?: string,
-    ): Promise<void> {
-        this.logger.debug('Execution started', {
-            executionId,
-            agentName: context.agentName,
-            sessionId: context.sessionId,
-            correlationId,
-            startTime,
-        });
-
-        // ✅ Telemetria será implementada futuramente
-        // TODO: Implement proper telemetry event structure
-    }
-
     private async addConversationEntry(
         context: AgentContext,
         input: unknown,
-        agentName: string,
     ): Promise<void> {
-        if (!context.sessionId) {
-            return;
-        }
+        try {
+            const builder = EnhancedContextBuilder.getInstance();
+            const sessionManager = builder.getSessionManager();
 
-        // ✅ CLEAN ARCHITECTURE: Use conversation interface for agent communication
-        await context.conversation.addMessage(
-            'user',
-            typeof input === 'string' ? input : JSON.stringify(input),
-            {
-                agentName,
+            await sessionManager.addMessage(context.thread.id, {
+                role: AgentInputEnum.USER,
+                content:
+                    typeof input === 'string' ? input : JSON.stringify(input),
                 timestamp: Date.now(),
-                source: 'agent-input',
-            },
-        );
+                metadata: {
+                    agentName: context.agentName,
+                    source: 'agent-input',
+                },
+            });
+            this.logger.debug('Message saved to ContextNew', {
+                sessionId: context.sessionId,
+                role: AgentInputEnum.USER,
+            });
+        } catch (error) {
+            this.logger.warn('Failed to save message to ContextNew', {
+                error: error instanceof Error ? error.message : String(error),
+                sessionId: context.sessionId,
+            });
+        }
 
         // Use state directly instead of removed addContextValue
         if (context.state) {
             await context.state.set('runtime', 'conversationEntry', {
                 sessionId: context.sessionId,
                 input,
-                agentName,
+                agentName: context.agentName,
                 timestamp: Date.now(),
                 source: 'agent-core',
                 action: 'conversation-start',
@@ -464,19 +447,42 @@ export abstract class AgentCore<
             return;
         }
 
-        // ✅ CLEAN ARCHITECTURE: Use conversation interface for agent communication
-        await context.conversation.addMessage(
-            'assistant',
-            typeof output === 'string' ? output : JSON.stringify(output),
-            {
-                agentName,
-                executionId: metadata.executionId,
-                correlationId: metadata.correlationId,
-                success: metadata.success,
+        // ✅ Use ContextNew for saving assistant response
+        try {
+            const builder = EnhancedContextBuilder.getInstance();
+            const sessionManager = builder.getSessionManager();
+            // Use thread.id as session identifier
+            const sessionKey = context.thread?.id || context.sessionId;
+            await sessionManager.addMessage(sessionKey, {
+                role: AgentInputEnum.ASSISTANT,
+                content:
+                    typeof output === 'string'
+                        ? output
+                        : JSON.stringify(output),
                 timestamp: Date.now(),
-                source: 'agent-output',
-            },
-        );
+                metadata: {
+                    agentName,
+                    executionId: metadata.executionId,
+                    correlationId: metadata.correlationId,
+                    success: metadata.success,
+                    source: 'agent-output',
+                },
+            });
+            this.logger.debug('Assistant response saved to ContextNew', {
+                sessionId: context.sessionId,
+                role: AgentInputEnum.ASSISTANT,
+                success: metadata.success,
+            });
+        } catch (error) {
+            this.logger.warn(
+                'Failed to save assistant response to ContextNew',
+                {
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                    sessionId: context.sessionId,
+                },
+            );
+        }
     }
 
     private buildExecutionResult(
@@ -525,7 +531,7 @@ export abstract class AgentCore<
         toolsUsed: number;
         events: AnyEvent[];
     }> {
-        if (!this.planner || !this.llmAdapter) {
+        if (!this.strategy || !this.llmAdapter) {
             throw createAgentError(
                 `Agent '${agent.name}' requires both planner and LLM adapter`,
                 {
@@ -536,7 +542,7 @@ export abstract class AgentCore<
                     recoverable: true,
                     context: {
                         agentName: agent.name,
-                        hasPlanner: !!this.planner,
+                        hasStrategy: !!this.strategy,
                         hasLLMAdapter: !!this.llmAdapter,
                     },
                     userMessage:
@@ -554,6 +560,7 @@ export abstract class AgentCore<
 
         return {
             output: result,
+            //TODO: Revisar
             reasoning: 'Think→Act→Observe completed',
             iterations: 1,
             toolsUsed: 0,
@@ -640,29 +647,21 @@ export abstract class AgentCore<
     }
 
     protected async createAgentContext(
-        agentName: string,
         executionId: string,
-        agentExecutionOptions?: AgentExecutionOptions,
+        agentExecutionOptions: AgentExecutionOptions,
     ): Promise<AgentContext> {
-        const config: AgentExecutionOptions = {
-            agentName,
-            thread: agentExecutionOptions?.thread || {
-                id: executionId,
-                metadata: { description: 'Default agent thread' },
-            },
-            ...agentExecutionOptions,
-            tenantId: agentExecutionOptions?.tenantId || this.config.tenantId,
-        };
+        const availableTools = this.toolEngine?.listTools() ?? [];
 
-        // 1. Create basic context structure (EnhancedContextBuilder handles the real context)
         const context = {
-            sessionId: config.sessionId || IdGenerator.sessionId(),
-            tenantId: config.tenantId || 'default',
-            correlationId: config.correlationId || IdGenerator.correlationId(),
-            thread: config.thread || { id: 'default-thread', metadata: {} },
-            agentName: config.agentName || 'agent',
+            sessionId: agentExecutionOptions.sessionId,
+            tenantId: agentExecutionOptions.tenantId,
+            correlationId: agentExecutionOptions.correlationId,
+            thread: agentExecutionOptions.thread,
+            agentName: agentExecutionOptions.agentName || 'agent',
             invocationId: IdGenerator.callId(),
-            executionId: undefined, // config.executionId doesn't exist
+            executionId: executionId,
+            allTools: availableTools,
+            agentExecutionOptions,
         } as any; // Temporary - EnhancedContextBuilder provides real context
 
         // 2. ✅ ELEGANT: Enrich context with AgentDefinition data
@@ -673,17 +672,15 @@ export abstract class AgentCore<
         // 3. 🔥 Initialize Enhanced session for ContextNew integration
         try {
             const enhancedContextBuilder = EnhancedContextBuilder.getInstance();
+
             await enhancedContextBuilder.initializeAgentSession(
-                context.sessionId,
-                config.tenantId || 'default',
-                config.tenantId || 'default',
+                context.thread.id,
+                context.tenantId,
                 {
-                    availableTools:
-                        this.toolEngine?.listTools().map((t) => t.name) || [],
-                    activeConnections: {}, // Will be populated by MCP adapters
+                    availableTools: availableTools.map((tool) => tool.name),
                 },
             );
-            this.logger.debug('✅ Enhanced session initialized', {
+            this.logger.info('✅ Enhanced session initialized', {
                 sessionId: context.sessionId,
                 toolCount: this.toolEngine?.listTools().length || 0,
             });
@@ -2178,49 +2175,33 @@ export abstract class AgentCore<
         input: TInput,
         context: AgentContext,
     ): Promise<TOutput> {
-        if (!this.llmAdapter) {
+        if (!this.llmAdapter || !this.strategy) {
             throw new EngineError(
                 'AGENT_ERROR',
-                'Think→Act→Observe requires LLM adapter. Provide llmAdapter in config.',
+                'Think→Act→Observe requires LLM adapter and strategy. Provide llmAdapter and strategy in config.',
             );
         }
 
-        // ✅ REFACTOR: Usar estratégia sempre
-        const strategy = this.strategy || this.createDefaultStrategy();
         const strategyContext = this.createStrategyContext(
             String(input),
             context,
         );
-        const result = await strategy.execute(strategyContext);
+        const result = await this.strategy.execute(strategyContext);
 
         return result as TOutput;
     }
 
     private createStrategyContext(input: string, agentContext: AgentContext) {
         return {
+            agentContext,
             input,
             tools: (agentContext.allTools || []).map((tool) => ({
                 ...tool,
                 description: tool.description || `Tool: ${tool.name}`,
             })),
-            agentContext: {
-                ...agentContext,
-                conversation: {
-                    ...agentContext.conversation,
-                    addMessage: agentContext.conversation.addMessage as (
-                        role: string,
-                        content: string,
-                        metadata?: Record<string, unknown>,
-                    ) => Promise<void>,
-                },
-            },
             config: {
                 executionStrategy: this.config.plannerOptions.type,
                 stopConditions: {
-                    react: {
-                        maxTurns: this.config.maxThinkingIterations || 15,
-                        maxToolCalls: 20,
-                    },
                     rewoo: {
                         maxPlanSteps: this.config.maxThinkingIterations || 15,
                         maxToolCalls: 30,
@@ -2317,29 +2298,39 @@ export abstract class AgentCore<
     // }
 
     private initializeStrategyComponents(): void {
-        if (!this.llmAdapter) {
-            return;
-        }
+        if (this.config.llmAdapter) {
+            this.llmAdapter = this.config.llmAdapter;
 
-        try {
-            this.strategy = this.createDefaultStrategy();
+            try {
+                this.strategy = StrategyFactory.create(
+                    this.config.plannerOptions.type,
+                    this.llmAdapter,
+                    {},
+                );
 
-            this.logger.info('Strategy components initialized (REFACTOR V1)', {
-                strategy: this.config.plannerOptions.type,
-                llmProvider:
-                    this.llmAdapter?.getProvider?.()?.name || 'unknown',
-                agentName: this.config.agentName,
-            });
-        } catch (error) {
-            this.logger.error(
-                'Failed to initialize strategy components (REFACTOR V1)',
-                error as Error,
+                this.logger.info(
+                    'Strategy components initialized (REFACTOR V1)',
+                    {
+                        strategy: this.strategy,
+                        llmProvider:
+                            this.llmAdapter?.getProvider?.()?.name || 'unknown',
+                        agentName: this.config.agentName,
+                    },
+                );
+            } catch (error) {
+                this.logger.error(
+                    'Failed to initialize planner',
+                    error as Error,
+                );
+            }
+        } else {
+            this.logger.warn(
+                'No LLM adapter provided - Think→Act→Observe will not be available',
+                {
+                    agentName: this.config.agentName,
+                },
             );
         }
-    }
-
-    private createDefaultStrategy() {
-        return StrategyFactory.create(this.config.plannerOptions.type);
     }
 
     // ✅ NOVOS MÉTODOS PRIVADOS SIMPLES

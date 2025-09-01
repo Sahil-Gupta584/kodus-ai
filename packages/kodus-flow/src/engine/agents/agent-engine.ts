@@ -1,7 +1,7 @@
 import { createLogger, getObservability } from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
 import { AgentCore } from './agent-core.js';
-import { MemoryManager } from '@/core/memory/index.js';
+import { MemoryManager } from '../../core/memory/index.js';
 import {
     AgentCoreConfig,
     AgentDefinition,
@@ -14,7 +14,7 @@ import {
     AgentStartPayload,
     AgentStopPayload,
     AgentThought,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import { ToolEngine } from '../tools/tool-engine.js';
 
 /**
@@ -60,9 +60,9 @@ export class AgentEngine<
 
     async execute(
         input: TInput,
-        agentExecutionOptions?: AgentExecutionOptions,
+        agentExecutionOptions: AgentExecutionOptions,
     ): Promise<AgentExecutionResult> {
-        const { correlationId, sessionId } = agentExecutionOptions || {};
+        const { correlationId, sessionId } = agentExecutionOptions;
         const obs = getObservability();
 
         try {
@@ -144,7 +144,7 @@ export class AgentEngine<
 
     async executeWithValidation(
         input: unknown,
-        options?: AgentExecutionOptions,
+        options: AgentExecutionOptions,
     ): Promise<AgentExecutionResult> {
         const definition = this.getDefinition();
         if (!definition) {

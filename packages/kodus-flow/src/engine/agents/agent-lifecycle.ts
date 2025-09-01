@@ -16,7 +16,7 @@ import {
     LifecycleStats,
     TenantId,
     UNIFIED_STATUS,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 
 export class AgentLifecycleHandler {
     private logger = createLogger('agent-lifecycle-handler');

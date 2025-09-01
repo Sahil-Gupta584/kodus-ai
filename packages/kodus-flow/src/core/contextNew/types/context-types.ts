@@ -1,4 +1,8 @@
-import { PlannerExecutionContext } from '../../types/allTypes.js';
+import {
+    AgentInputEnum,
+    PlannerExecutionContext,
+    Thread,
+} from '../../types/allTypes.js';
 
 // ===============================================
 // 🎯 RUNTIME CONTEXT (What agent needs NOW)
@@ -10,8 +14,8 @@ import { PlannerExecutionContext } from '../../types/allTypes.js';
 export interface AgentRuntimeContext {
     // Identity
     sessionId: string;
+    threadId: Thread['id'];
     executionId: string;
-    userId: string;
     timestamp: string; // ISO string for easy debugging
 
     // Current state for decisions
@@ -63,7 +67,7 @@ export interface AgentRuntimeContext {
  * OpenAI-compatible message format
  */
 export interface ChatMessage {
-    role: 'user' | 'assistant' | 'system' | 'tool';
+    role: AgentInputEnum;
     content: string;
     timestamp: number;
 
@@ -71,6 +75,9 @@ export interface ChatMessage {
     toolCalls?: ToolCall[];
     toolCallId?: string;
     name?: string; // For tool responses
+
+    // Additional metadata
+    metadata?: Record<string, unknown>;
 }
 
 /**
@@ -229,15 +236,15 @@ export interface ContextBridgeService {
     ): Promise<FinalResponseContext>;
 
     /**
-     * Gets current runtime context
+     * Gets current runtime context using threadId
      */
-    getRuntimeContext(sessionId: string): Promise<AgentRuntimeContext>;
+    getRuntimeContext(threadId: string): Promise<AgentRuntimeContext>;
 
     /**
      * Updates runtime context with new information
      */
     updateRuntimeContext(
-        sessionId: string,
+        threadId: string,
         updates: Partial<AgentRuntimeContext>,
     ): Promise<void>;
 }
@@ -280,23 +287,24 @@ export interface FinalResponseContext {
  */
 export interface SessionManager {
     /**
-     * Get or create session
+     * Get or create session using threadId
      */
     getOrCreateSession(
-        sessionId: string,
+        threadId: string,
         userId: string,
+        tenantId?: string,
     ): Promise<AgentRuntimeContext>;
 
     /**
      * Update conversation with new message
      */
-    addMessage(sessionId: string, message: ChatMessage): Promise<void>;
+    addMessage(threadId: string, message: ChatMessage): Promise<void>;
 
     /**
      * Add discovered entities to context
      */
     addEntities(
-        sessionId: string,
+        threadId: string,
         entities: Partial<AgentRuntimeContext['entities']>,
     ): Promise<void>;
 
@@ -304,19 +312,19 @@ export interface SessionManager {
      * Update execution state
      */
     updateExecution(
-        sessionId: string,
+        threadId: string,
         execution: Partial<AgentRuntimeContext['execution']>,
     ): Promise<void>;
 
     /**
      * Save execution snapshot (for recovery)
      */
-    saveSnapshot(sessionId: string, snapshot: ExecutionSnapshot): Promise<void>;
+    saveSnapshot(threadId: string, snapshot: ExecutionSnapshot): Promise<void>;
 
     /**
      * Recover session from snapshots (handles gaps)
      */
-    recoverSession(sessionId: string): Promise<{
+    recoverSession(threadId: string): Promise<{
         context: AgentRuntimeContext;
         wasRecovered: boolean;
         gapDuration: number;
@@ -396,7 +404,12 @@ export function isValidRuntimeContext(obj: any): obj is AgentRuntimeContext {
 export function isValidChatMessage(obj: any): obj is ChatMessage {
     return (
         obj &&
-        ['user', 'assistant', 'system', 'tool'].includes(obj.role) &&
+        [
+            AgentInputEnum.USER,
+            AgentInputEnum.ASSISTANT,
+            AgentInputEnum.SYSTEM,
+            AgentInputEnum.TOOL,
+        ].includes(obj.role) &&
         typeof obj.content === 'string' &&
         typeof obj.timestamp === 'number'
     );

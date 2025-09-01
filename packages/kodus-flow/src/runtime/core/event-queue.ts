@@ -6,7 +6,7 @@ import {
     Persistor,
     QueueItem,
     QueueItemSnapshot,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import { EventStore } from '../index.js';
 
 /**

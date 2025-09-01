@@ -10,7 +10,7 @@ import {
     Transaction,
     TransactionOperation,
     TransactionState,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 
 const logger = createLogger('transaction-persistor');
 

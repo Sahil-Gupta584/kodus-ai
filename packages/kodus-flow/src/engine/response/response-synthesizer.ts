@@ -1,4 +1,5 @@
 import {
+    AgentInputEnum,
     getResultContent,
     getResultError,
     LLMAdapter,
@@ -6,9 +7,9 @@ import {
     SynthesisStrategy,
     SynthesizedResponse,
     UNIFIED_STATUS,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import { createLogger } from '../../observability/index.js';
-import { isErrorResult } from '@/core/utils/tool-result-parser.js';
+import { isErrorResult } from '../../core/utils/tool-result-parser.js';
 
 export class ResponseSynthesizer {
     private logger = createLogger('response-synthesizer');
@@ -310,7 +311,7 @@ ${this.composeStructuredExecutionTrace(context, analysis)}
 
         try {
             const response = await this.llmAdapter.call({
-                messages: [{ role: 'user', content: prompt }],
+                messages: [{ role: AgentInputEnum.USER, content: prompt }],
             });
 
             return (
@@ -355,7 +356,7 @@ Response:`;
 
         try {
             const response = await this.llmAdapter.call({
-                messages: [{ role: 'user', content: prompt }],
+                messages: [{ role: AgentInputEnum.USER, content: prompt }],
             });
             return (
                 response.content || this.createBasicResponse(context, analysis)
@@ -399,7 +400,7 @@ Response:`;
 
         try {
             const response = await this.llmAdapter.call({
-                messages: [{ role: 'user', content: prompt }],
+                messages: [{ role: AgentInputEnum.USER, content: prompt }],
             });
             return (
                 response.content || this.createBasicResponse(context, analysis)
@@ -457,7 +458,7 @@ Response:`;
 
         try {
             const response = await this.llmAdapter.call({
-                messages: [{ role: 'user', content: prompt }],
+                messages: [{ role: AgentInputEnum.USER, content: prompt }],
             });
             return (
                 response.content || this.createBasicResponse(context, analysis)

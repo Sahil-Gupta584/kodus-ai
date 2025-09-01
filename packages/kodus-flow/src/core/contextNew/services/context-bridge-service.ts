@@ -12,7 +12,10 @@ import {
     SessionManager,
     EntityRef,
 } from '../types/context-types.js';
-import { PlannerExecutionContext } from '../../types/allTypes.js';
+import {
+    AgentInputEnum,
+    PlannerExecutionContext,
+} from '../../types/allTypes.js';
 import { EnhancedSessionService } from './enhanced-session-service.js';
 import { MemoryManager } from '../../memory/memory-manager.js';
 
@@ -39,12 +42,14 @@ export class ContextBridge implements ContextBridgeService {
         plannerContext: PlannerExecutionContext,
     ): Promise<FinalResponseContext> {
         // 1. Get or recover session with all context
-        const sessionId = plannerContext.agentContext?.sessionId;
-        if (!sessionId) {
-            throw new Error('Missing sessionId in plannerContext.agentContext');
+        const threadId =
+            plannerContext.agentContext?.thread?.id ||
+            plannerContext.agentContext?.sessionId;
+        if (!threadId) {
+            throw new Error('Missing threadId in plannerContext.agentContext');
         }
 
-        const recovery = await this.sessionManager.recoverSession(sessionId);
+        const recovery = await this.sessionManager.recoverSession(threadId);
         const runtime = recovery.context;
 
         // 2. Build execution summary from recent activity
@@ -86,29 +91,29 @@ export class ContextBridge implements ContextBridgeService {
         return finalContext;
     }
 
-    async getRuntimeContext(sessionId: string): Promise<AgentRuntimeContext> {
-        const recovery = await this.sessionManager.recoverSession(sessionId);
+    async getRuntimeContext(threadId: string): Promise<AgentRuntimeContext> {
+        const recovery = await this.sessionManager.recoverSession(threadId);
         return recovery.context;
     }
 
     async updateRuntimeContext(
-        sessionId: string,
+        threadId: string,
         updates: Partial<AgentRuntimeContext>,
     ): Promise<void> {
         // Update different parts based on what's provided
         if (updates.messages) {
             for (const message of updates.messages) {
-                await this.sessionManager.addMessage(sessionId, message);
+                await this.sessionManager.addMessage(threadId, message);
             }
         }
 
         if (updates.entities) {
-            await this.sessionManager.addEntities(sessionId, updates.entities);
+            await this.sessionManager.addEntities(threadId, updates.entities);
         }
 
         if (updates.execution) {
             await this.sessionManager.updateExecution(
-                sessionId,
+                threadId,
                 updates.execution,
             );
         }
@@ -118,7 +123,7 @@ export class ContextBridge implements ContextBridgeService {
             if (this.sessionManager instanceof EnhancedSessionService) {
                 // Get current session and update state
                 const currentSession =
-                    await this.sessionManager.recoverSession(sessionId);
+                    await this.sessionManager.recoverSession(threadId);
                 currentSession.context.state = {
                     ...currentSession.context.state,
                     ...updates.state,
@@ -126,7 +131,7 @@ export class ContextBridge implements ContextBridgeService {
 
                 // This would need a method to update just the state
                 // For now, we'll use updateExecution as a workaround
-                await this.sessionManager.updateExecution(sessionId, {});
+                await this.sessionManager.updateExecution(threadId, {});
             }
         }
     }
@@ -166,7 +171,7 @@ export class ContextBridge implements ContextBridgeService {
         // Count tool calls as executions
         return messages.filter(
             (msg) =>
-                msg.role === 'assistant' &&
+                msg.role === AgentInputEnum.ASSISTANT &&
                 msg.tool_calls &&
                 msg.tool_calls.length > 0,
         ).length;

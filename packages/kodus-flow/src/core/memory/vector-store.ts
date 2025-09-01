@@ -1,4 +1,4 @@
-import { createLogger } from '@/observability/index.js';
+import { createLogger } from '../../observability/index.js';
 import {
     DistanceMetric,
     MemoryVector,

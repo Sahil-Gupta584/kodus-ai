@@ -3,7 +3,7 @@ import {
     BaseStorageItem,
     BaseStorageStats,
     StorageAdapterConfig,
-} from '@/core/types/allTypes.js';
+} from '../../../core/types/allTypes.js';
 import { createLogger } from '../../../observability/logger.js';
 
 import type { MongoClient, Db, Collection } from 'mongodb';
@@ -24,7 +24,9 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
     }
 
     async initialize(): Promise<void> {
-        if (this.isInitialized) return;
+        if (this.isInitialized) {
+            return;
+        }
 
         try {
             const { MongoClient: mongoClient } = await import('mongodb');
@@ -46,7 +48,6 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
 
             const database = (options.database as string) ?? 'kodus';
 
-            // ✅ NOVO: Determinar collection baseado no tipo de dados
             const defaultCollection =
                 (options.collection as string) ?? 'storage';
             const dataType = this.determineDataType();
@@ -86,7 +87,6 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
                 [key: string]: number;
             });
 
-            // Create TTL index if TTL is configured
             if (options.ttl) {
                 await (
                     this.collection as {
@@ -119,23 +119,18 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
         }
     }
 
-    // ✅ NOVO: Determinar tipo de dados baseado no item
     private determineDataType(): string {
-        // Se não temos dados de exemplo, usar padrão
         return 'storage';
     }
 
-    // ✅ NOVO: Gerar nome da collection baseado no tipo
     private getCollectionName(
         defaultCollection: string,
         dataType: string,
     ): string {
-        // Se a collection já tem prefixo kodus-, usar como está
         if (defaultCollection.startsWith('kodus-')) {
             return defaultCollection;
         }
 
-        // Caso contrário, adicionar prefixo baseado no tipo
         switch (dataType) {
             case 'snapshots':
                 return 'kodus-snapshots';
@@ -158,7 +153,6 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
                 throw new Error('Collection not initialized');
             }
 
-            // ✅ CORRIGIDO: Estrutura limpa sem duplicação
             const document = {
                 ...item,
                 createdAt: new Date(),
@@ -192,7 +186,6 @@ export class MongoDBStorageAdapter<T extends BaseStorageItem>
                 return null;
             }
 
-            // ✅ CORRIGIDO: Retornar documento completo (sem campo data)
             return document as unknown as T;
         } catch (error) {
             logger.error(

@@ -28,17 +28,17 @@ const logger = createLogger('storage-context-adapter');
  * Context session storage item
  */
 export interface ContextSessionStorageItem {
-    id: string; // sessionId
+    id: string; // sessionId (unique document ID)
+    threadId: string; // threadId for query/recovery
     timestamp: number;
     sessionData: {
         sessionId: string;
-        userId: string;
+        threadId: string; // Also store threadId in sessionData
         tenantId: string;
         status: 'active' | 'paused' | 'completed' | 'expired';
         runtime: AgentRuntimeContext;
         createdAt: string; // ISO string
         lastActivityAt: string; // ISO string
-        // Timestamps for recovery
         createdAtTimestamp: number;
         lastActivityTimestamp: number;
     };
@@ -74,7 +74,7 @@ class ContextDateUtils {
 
     static transformContextSessionForStorage(
         sessionId: string,
-        userId: string,
+        threadId: string,
         tenantId: string,
         status: 'active' | 'paused' | 'completed' | 'expired',
         runtime: AgentRuntimeContext,
@@ -83,7 +83,7 @@ class ContextDateUtils {
     ): ContextSessionStorageItem['sessionData'] {
         return {
             sessionId,
-            userId,
+            threadId,
             tenantId,
             status,
             runtime,
@@ -113,7 +113,7 @@ class ContextDateUtils {
     ) {
         return {
             sessionId: sessionData.sessionId,
-            userId: sessionData.userId,
+            threadId: sessionData.threadId,
             tenantId: sessionData.tenantId,
             status: sessionData.status,
             runtime: sessionData.runtime,
@@ -196,6 +196,9 @@ export class StorageContextSessionAdapter
             BaseStorage<ContextSessionStorageItem>
         >(this.config);
 
+        // Create indexes for MongoDB optimization
+        await this.ensureIndexes();
+
         this.isInitialized = true;
         logger.info('StorageContextSessionAdapter initialized', {
             adapterType: this.config.type,
@@ -203,12 +206,48 @@ export class StorageContextSessionAdapter
         });
     }
 
+    private async ensureIndexes(): Promise<void> {
+        const storageAny = this.storage as any;
+
+        // Only create indexes for MongoDB
+        if (
+            storageAny?.collection &&
+            typeof storageAny.collection.createIndex === 'function'
+        ) {
+            try {
+                // Index for fast threadId queries
+                await storageAny.collection.createIndex({ threadId: 1 });
+
+                // Index for tenant queries
+                await storageAny.collection.createIndex({
+                    ['sessionData.tenantId']: 1,
+                });
+
+                // Index for TTL cleanup (if configured)
+                if (this.config.options?.sessionTTL) {
+                    await storageAny.collection.createIndex(
+                        { ['sessionData.lastActivityTimestamp']: 1 },
+                        {
+                            expireAfterSeconds: Math.floor(
+                                (this.config.options.sessionTTL as number) /
+                                    1000,
+                            ),
+                        },
+                    );
+                }
+
+                logger.info('MongoDB indexes created for sessions collection');
+            } catch (error) {
+                logger.warn('Failed to create MongoDB indexes', { error });
+            }
+        }
+    }
+
     async store(item: ContextSessionStorageItem): Promise<void> {
         await this.ensureInitialized();
         await this.storage!.store(item);
         logger.debug('Context session stored', {
             sessionId: item.sessionData.sessionId,
-            userId: item.sessionData.userId,
         });
     }
 
@@ -254,7 +293,7 @@ export class StorageContextSessionAdapter
 
     async storeContextSession(
         sessionId: string,
-        userId: string,
+        threadId: string,
         tenantId: string,
         status: 'active' | 'paused' | 'completed' | 'expired',
         runtime: AgentRuntimeContext,
@@ -263,7 +302,7 @@ export class StorageContextSessionAdapter
     ): Promise<void> {
         const sessionData = ContextDateUtils.transformContextSessionForStorage(
             sessionId,
-            userId,
+            threadId,
             tenantId,
             status,
             runtime,
@@ -272,7 +311,8 @@ export class StorageContextSessionAdapter
         );
 
         const storageItem: ContextSessionStorageItem = {
-            id: sessionId,
+            id: sessionId, // Use sessionId as unique document ID
+            threadId, // Keep threadId for queries
             timestamp: lastActivityAt,
             sessionData,
         };
@@ -282,11 +322,46 @@ export class StorageContextSessionAdapter
 
     async retrieveContextSession(sessionId: string) {
         const item = await this.retrieve(sessionId);
-        if (!item) return null;
+
+        if (!item) {
+            return null;
+        }
 
         return ContextDateUtils.restoreContextSessionFromStorage(
             item.sessionData,
         );
+    }
+
+    async retrieveContextSessionByThreadId(threadId: string) {
+        await this.ensureInitialized();
+
+        // Optimized direct query for MongoDB
+        const storageAny = this.storage as any;
+
+        // Check if it's MongoDB adapter with direct collection access
+        if (
+            storageAny?.collection &&
+            typeof storageAny.collection.findOne === 'function'
+        ) {
+            try {
+                // Direct MongoDB query with index optimization
+                const item = await storageAny.collection.findOne({ threadId });
+                if (!item) return null;
+
+                return ContextDateUtils.restoreContextSessionFromStorage(
+                    item.sessionData,
+                );
+            } catch (error) {
+                logger.warn(
+                    'Direct MongoDB query failed, falling back to generic query',
+                    { error },
+                );
+            }
+        }
+
+        // Fallback for InMemory or if direct access fails
+        const result = await this.findContextSessionByQuery({ threadId });
+        return result;
     }
 
     async deleteContextSession(sessionId: string): Promise<boolean> {

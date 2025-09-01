@@ -29,7 +29,8 @@ import {
     UNIFIED_STATUS,
     PlanningStrategy,
     Plan,
-} from '@/core/types/allTypes.js';
+    AgentInputEnum,
+} from '../../../core/types/allTypes.js';
 
 function createTelemetryEvent(
     type: string,
@@ -349,24 +350,24 @@ export class PlanAndExecutePlanner {
                 // }
 
                 // 3) Recent conversation history for context
-                const sessionHistory =
-                    await agentContext.conversation.getHistory();
-                if (sessionHistory && sessionHistory.length > 0) {
-                    const recentMessages = sessionHistory.slice(-3);
-                    for (const entry of recentMessages) {
-                        if (entry.role && entry.content) {
-                            const content =
-                                typeof entry.content === 'string'
-                                    ? entry.content
-                                    : JSON.stringify(entry.content, null, 2);
-                            blocks.push(
-                                entry.role === 'user'
-                                    ? `<human>\n${content}\n</human>`
-                                    : `<assistant>\n${content}\n</assistant>`,
-                            );
-                        }
-                    }
-                }
+                // const sessionHistory =
+                //     await agentContext.conversation.getHistory();
+                // if (sessionHistory && sessionHistory.length > 0) {
+                //     const recentMessages = sessionHistory.slice(-3);
+                //     for (const entry of recentMessages) {
+                //         if (entry.role && entry.content) {
+                //             const content =
+                //                 typeof entry.content === 'string'
+                //                     ? entry.content
+                //                     : JSON.stringify(entry.content, null, 2);
+                //             blocks.push(
+                //                 entry.role === 'user'
+                //                     ? `<human>\n${content}\n</human>`
+                //                     : `<assistant>\n${content}\n</assistant>`,
+                //             );
+                //         }
+                //     }
+                // }
             }
 
             // ✅ CORREÇÃO: Usar execution results E plan signals para resposta inteligente
@@ -721,33 +722,33 @@ export class PlanAndExecutePlanner {
                 });
             }
 
-            const sessionHistory =
-                await context.agentContext.conversation.getHistory();
-            if (sessionHistory && sessionHistory.length > 0) {
-                const relevantEntries = sessionHistory
-                    .filter((entry) => {
-                        const entryObj = entry as Record<string, unknown>;
-                        const input = entryObj.input as Record<string, unknown>;
+            // const sessionHistory =
+            //     await context.agentContext.conversation.getHistory();
+            // if (sessionHistory && sessionHistory.length > 0) {
+            //     const relevantEntries = sessionHistory
+            //         .filter((entry) => {
+            //             const entryObj = entry as Record<string, unknown>;
+            //             const input = entryObj.input as Record<string, unknown>;
 
-                        // Only include specific types that are relevant for planning
-                        return (
-                            input?.type === 'memory_context_request' ||
-                            input?.type === 'plan_completed' ||
-                            input?.type === 'plan_created'
-                        );
-                    })
-                    .slice(-3);
+            //             // Only include specific types that are relevant for planning
+            //             return (
+            //                 input?.type === 'memory_context_request' ||
+            //                 input?.type === 'plan_completed' ||
+            //                 input?.type === 'plan_created'
+            //             );
+            //         })
+            //         .slice(-3);
 
-                if (relevantEntries.length > 0) {
-                    contextParts.push('\n💬 Planning context:');
-                    relevantEntries.forEach((entry, i) => {
-                        const formattedEntry = this.formatSessionEntry(entry);
-                        if (formattedEntry) {
-                            contextParts.push(`${i + 1}. ${formattedEntry}`);
-                        }
-                    });
-                }
-            }
+            //     if (relevantEntries.length > 0) {
+            //         contextParts.push('\n💬 Planning context:');
+            //         relevantEntries.forEach((entry, i) => {
+            //             const formattedEntry = this.formatSessionEntry(entry);
+            //             if (formattedEntry) {
+            //                 contextParts.push(`${i + 1}. ${formattedEntry}`);
+            //             }
+            //         });
+            //     }
+            // }
 
             const plannerState =
                 await context.agentContext.state.getNamespace('planner');
@@ -785,45 +786,45 @@ export class PlanAndExecutePlanner {
         }
     }
 
-    private formatSessionEntry(entry: unknown): string | null {
-        if (!entry || typeof entry !== 'object') {
-            return null;
-        }
+    // private formatSessionEntry(entry: unknown): string | null {
+    //     if (!entry || typeof entry !== 'object') {
+    //         return null;
+    //     }
 
-        const entryObj = entry as Record<string, unknown>;
+    //     const entryObj = entry as Record<string, unknown>;
 
-        const input = entryObj.input;
-        const output = entryObj.output;
+    //     const input = entryObj.input;
+    //     const output = entryObj.output;
 
-        if (input && typeof input === 'object') {
-            const inputObj = input as Record<string, unknown>;
+    //     if (input && typeof input === 'object') {
+    //         const inputObj = input as Record<string, unknown>;
 
-            if (inputObj.type === 'memory_context_request') {
-                const userInput = inputObj.input as string;
-                return `User: "${userInput}"`;
-            }
+    //         if (inputObj.type === 'memory_context_request') {
+    //             const userInput = inputObj.input as string;
+    //             return `User: "${userInput}"`;
+    //         }
 
-            if (inputObj.type === 'plan_created') {
-                const goal = inputObj.goal as string;
-                return `Planning: "${goal}"`;
-            }
+    //         if (inputObj.type === 'plan_created') {
+    //             const goal = inputObj.goal as string;
+    //             return `Planning: "${goal}"`;
+    //         }
 
-            if (inputObj.type === 'plan_completed') {
-                const synthesized =
-                    output && typeof output === 'object'
-                        ? ((output as Record<string, unknown>)
-                              .synthesized as string)
-                        : 'Completed';
-                return `Response: "${synthesized}"`;
-            }
-        }
+    //         if (inputObj.type === 'plan_completed') {
+    //             const synthesized =
+    //                 output && typeof output === 'object'
+    //                     ? ((output as Record<string, unknown>)
+    //                           .synthesized as string)
+    //                     : 'Completed';
+    //             return `Response: "${synthesized}"`;
+    //         }
+    //     }
 
-        if (typeof input === 'string' && input.length > 0) {
-            return `User: "${input.substring(0, 50)}..."`;
-        }
+    //     if (typeof input === 'string' && input.length > 0) {
+    //         return `User: "${input.substring(0, 50)}..."`;
+    //     }
 
-        return null;
-    }
+    //     return null;
+    // }
 
     async think(context: PlannerExecutionContext): Promise<AgentThought> {
         try {
@@ -2733,7 +2734,7 @@ Return ONLY the extracted value as a plain string. No additional text, formattin
             const response = await this.llmAdapter.call({
                 messages: [
                     {
-                        role: 'user',
+                        role: AgentInputEnum.USER,
                         content: prompt,
                     },
                 ],

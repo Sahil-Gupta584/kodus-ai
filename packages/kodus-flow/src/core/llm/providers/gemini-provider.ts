@@ -1,6 +1,10 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createLogger } from '../../../observability/index.js';
-import { LLMMessage, LLMResponse } from '@/core/types/allTypes.js';
+import {
+    AgentInputEnum,
+    LLMMessage,
+    LLMResponse,
+} from '../../../core/types/allTypes.js';
 
 // Simple provider interface for legacy providers
 export interface LLMProvider {
@@ -168,11 +172,11 @@ export class GeminiProvider implements LLMProvider {
         return messages
             .map((msg) => {
                 switch (msg.role) {
-                    case 'system':
+                    case AgentInputEnum.SYSTEM:
                         return `SYSTEM: ${msg.content}`;
-                    case 'user':
+                    case AgentInputEnum.USER:
                         return `USER: ${msg.content}`;
-                    case 'assistant':
+                    case AgentInputEnum.ASSISTANT:
                         return `ASSISTANT: ${msg.content}`;
                     default:
                         return msg.content;
@@ -219,7 +223,7 @@ export class GeminiProvider implements LLMProvider {
             const response = await this.call(
                 [
                     {
-                        role: 'user',
+                        role: AgentInputEnum.USER,
                         content:
                             'Hello! This is a connection test. Please respond with just "OK".',
                     },

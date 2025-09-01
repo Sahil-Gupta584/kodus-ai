@@ -5,7 +5,7 @@ import {
     PersistorStats,
     Snapshot,
     SnapshotOptions,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 import {
     createPersistor as createPersistorFromFactory,
     getGlobalPersistor as getGlobalPersistorFromFactory,

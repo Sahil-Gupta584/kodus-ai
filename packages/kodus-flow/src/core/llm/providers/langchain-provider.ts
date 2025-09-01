@@ -27,7 +27,11 @@ export interface LLMOptions {
         | 'none'
         | { type: 'function'; function: { name: string } };
 }
-import { LLMMessage, LLMResponse } from '@/core/types/allTypes.js';
+import {
+    AgentInputEnum,
+    LLMMessage,
+    LLMResponse,
+} from '../../../core/types/allTypes.js';
 import { createLogger } from '../../../observability/index.js';
 import { EngineError } from '../../errors.js';
 
@@ -48,7 +52,7 @@ export interface LangChainLLM {
 }
 
 export interface LangChainMessage {
-    role: string;
+    role: AgentInputEnum;
     content: string;
     name?: string;
     toolCallId?: string;

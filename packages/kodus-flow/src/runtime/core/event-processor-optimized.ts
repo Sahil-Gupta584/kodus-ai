@@ -10,7 +10,7 @@ import {
     OptimizedHandlerMap,
     TrackedEventHandler,
     WorkflowContext,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
 
 export class EventChainTracker {

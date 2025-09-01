@@ -6,7 +6,7 @@ import {
     Middleware,
     SchemaLike,
     ValidateOptions,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 
 export function withValidateMiddleware(
     schema: SchemaLike,

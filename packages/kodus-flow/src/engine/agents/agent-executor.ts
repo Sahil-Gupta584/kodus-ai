@@ -17,7 +17,7 @@ import {
     AgentStartPayload,
     AgentStopPayload,
     AgentThought,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import { ToolEngine } from '../tools/tool-engine.js';
 
 export class AgentExecutor<
@@ -67,7 +67,7 @@ export class AgentExecutor<
      */
     async executeViaWorkflow(
         input: TInput,
-        options?: AgentExecutionOptions,
+        options: AgentExecutionOptions,
     ): Promise<AgentExecutionResult> {
         const correlationId =
             options?.correlationId || IdGenerator.correlationId();
@@ -139,7 +139,7 @@ export class AgentExecutor<
      */
     async executeWithValidation(
         input: unknown,
-        options?: AgentExecutionOptions,
+        options: AgentExecutionOptions,
     ): Promise<AgentExecutionResult> {
         const definition = this.getDefinition();
         if (!definition) {

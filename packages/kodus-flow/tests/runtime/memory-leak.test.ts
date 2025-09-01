@@ -205,7 +205,7 @@ describe('Runtime Layer - Memory Leak Detection', () => {
         // Monitor de garbage collection
         if (global.gc) {
             const originalGC = global.gc;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             (global as any).gc = function () {
                 gcCount++;
                 return originalGC();

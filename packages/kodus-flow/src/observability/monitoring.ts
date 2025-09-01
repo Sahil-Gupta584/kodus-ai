@@ -5,7 +5,7 @@ import {
     MetricValue,
     RuntimeMetrics,
     SystemMetrics,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 import { createLogger } from './logger.js';
 
 export class LayeredMetricsSystem {

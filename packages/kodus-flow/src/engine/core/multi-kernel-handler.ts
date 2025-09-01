@@ -19,7 +19,7 @@ import {
     MultiKernelExecutionResult,
     MultiKernelHandlerConfig,
     Workflow,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 
 class SimpleMutex {
     private locked = false;

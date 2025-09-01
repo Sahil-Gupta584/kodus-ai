@@ -1,4 +1,4 @@
-import { LLMAdapter, LLMConfig } from '@/core/types/allTypes.js';
+import { LLMAdapter, LLMConfig } from '../../core/types/allTypes.js';
 
 export function createLLMAdapter(_config: LLMConfig): LLMAdapter {
     throw new Error(

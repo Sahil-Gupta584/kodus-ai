@@ -2,7 +2,7 @@ import {
     DEFAULT_SCHEDULE_OPTIONS,
     ScheduleOptions,
     TEvent,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 
 export function schedule(options: ScheduleOptions) {

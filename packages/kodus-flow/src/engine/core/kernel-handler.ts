@@ -9,7 +9,7 @@ import {
     KernelHandlerInterface,
     Workflow,
     WorkflowContext,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import { createKernel, type ExecutionKernel } from '../../kernel/index.js';
 import { createLogger, getObservability } from '../../observability/index.js';
 

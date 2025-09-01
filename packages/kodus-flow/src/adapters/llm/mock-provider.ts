@@ -1,4 +1,8 @@
-import { LLMAdapter, LLMRequest, LLMResponse } from '@/core/types/allTypes.js';
+import {
+    LLMAdapter,
+    LLMRequest,
+    LLMResponse,
+} from '../../core/types/allTypes.js';
 
 export function createMockLLMProvider(): LLMAdapter {
     return {

@@ -26,8 +26,8 @@ import {
     Snapshot,
     Workflow,
     WorkflowContext,
-} from '@/core/types/allTypes.js';
-import { createPersistorFromConfig } from '@/persistor/factory.js';
+} from '../core/types/allTypes.js';
+import { createPersistorFromConfig } from '../persistor/factory.js';
 
 class LRUCache<T> {
     private readonly maxSize: number;

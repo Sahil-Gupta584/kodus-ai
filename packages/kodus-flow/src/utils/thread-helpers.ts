@@ -1,4 +1,4 @@
-import { Thread } from '@/core/types/allTypes.js';
+import { Thread } from '../core/types/allTypes.js';
 
 const simpleHash = (str: string): string => {
     let hash = 0;

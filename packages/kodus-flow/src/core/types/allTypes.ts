@@ -5,25 +5,32 @@ import {
     InitializeResult,
     ProgressNotification,
 } from '@modelcontextprotocol/sdk/types.js';
-import { IdGenerator } from '@/utils/index.js';
+import { IdGenerator } from '../../utils/index.js';
 import {
     createLogger,
     DebugSystem,
     LayeredMetricsSystem,
     ObservabilitySystem,
     TelemetrySystem,
-} from '@/observability/index.js';
+} from '../../observability/index.js';
 import { zodToJSONSchema } from '../utils/zod-to-json-schema.js';
 // ContextStateService removed - using contextNew architecture
-import { EventStore } from '@/runtime/index.js';
-import { EventChainTracker } from '@/runtime/core/event-processor-optimized.js';
-import { ExecutionKernel } from '@/kernel/kernel.js';
-import { AgentEngine, AgentExecutor } from '@/engine/index.js';
-import { EventQueue } from '@/runtime/core/index.js';
+import { EventStore } from '../../runtime/index.js';
+import { EventChainTracker } from '../../runtime/core/event-processor-optimized.js';
+import { EventQueue } from '../../runtime/core/index.js';
+import { ExecutionKernel } from '../../kernel/kernel.js';
+import { AgentEngine, AgentExecutor } from '../../engine/index.js';
 import { BaseSDKError } from '../errors.js';
 
+export enum AgentInputEnum {
+    USER = 'user',
+    ASSISTANT = 'assistant',
+    TOOL = 'tool',
+    SYSTEM = 'system',
+}
+
 export type AgentIdentity = {
-    role?: string;
+    role?: AgentInputEnum;
 
     goal?: string;
 
@@ -39,7 +46,7 @@ export type AgentIdentity = {
 };
 
 export const agentIdentitySchema = z.object({
-    role: z.string().optional(),
+    role: z.enum(AgentInputEnum).optional(),
     goal: z.string().optional(),
     description: z.string().optional(),
     expertise: z.array(z.string()).optional(),
@@ -265,23 +272,6 @@ export interface AgentContext {
         hasChanges?: () => boolean;
     };
 
-    conversation: {
-        addMessage: (
-            role: 'user' | 'assistant' | 'system',
-            content: string,
-            metadata?: Record<string, unknown>,
-        ) => Promise<void>;
-        getHistory: () => Promise<
-            Array<{
-                role: 'user' | 'assistant' | 'system' | 'tool';
-                content: string;
-                timestamp: number;
-                metadata?: Record<string, unknown>;
-            }>
-        >;
-        updateMetadata: (metadata: Record<string, unknown>) => Promise<void>;
-    };
-
     availableTools: ToolMetadataForPlanner[];
     signal: AbortSignal;
 
@@ -305,8 +295,6 @@ export interface AgentContext {
     agentIdentity?: AgentIdentity;
     agentExecutionOptions?: AgentExecutionOptions;
     allTools?: ToolDefinition<unknown, unknown>[];
-    //TODO: Remove this
-    stepExecution: any;
 }
 
 export type AgentExecutionOptions = {
@@ -2687,7 +2675,7 @@ export interface MCPAdapter {
 }
 
 export interface ConversationMessage {
-    role: 'user' | 'assistant' | 'tool' | 'system';
+    role: AgentInputEnum;
     content: string;
     timestamp: number;
     metadata?: {
@@ -2932,7 +2920,7 @@ export interface MCPRequestMethod {
 }
 
 export interface LLMMessage {
-    role: 'system' | 'user' | 'assistant';
+    role: AgentInputEnum;
     content: string;
     name?: string;
     toolCallId?: string;
@@ -5225,6 +5213,7 @@ export interface PlanStep {
 export enum PlanningStrategy {
     REACT = 'react',
     PLAN_EXECUTE = 'plan-execute',
+    REWOO = 'rewoo',
 }
 
 export interface Plan {
@@ -5487,7 +5476,7 @@ export const DEFAULT_LLM_SETTINGS = {
 } as const;
 
 export interface LangChainMessage {
-    role: string;
+    role: AgentInputEnum;
     content: string;
     name?: string;
     toolCallId?: string;
@@ -5801,9 +5790,7 @@ export interface OrchestrationConfig {
     defaultPlanner?: PlannerType;
     defaultMaxIterations?: number;
     storage?: {
-        // Se não especificado = InMemory
-        // Se tem connectionString = MongoDB
-        type?: 'mongodb' | 'inmemory';
+        type?: StorageEnum;
         connectionString?: string;
         database?: string;
 

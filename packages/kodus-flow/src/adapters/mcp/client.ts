@@ -36,7 +36,7 @@ import {
     MCPRequestMethod,
     SecurityPolicy,
     TenantContext,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 
 class SecurityManager {
     constructor(

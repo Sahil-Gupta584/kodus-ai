@@ -15,7 +15,7 @@ import {
     PerformanceMeasurement,
     StateSnapshot,
     TEvent,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 
 export class ConsoleDebugOutput implements DebugOutput {
     name = 'console';

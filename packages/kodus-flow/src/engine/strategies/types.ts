@@ -2,6 +2,8 @@
 // CORE STRATEGY TYPES
 // ============================================================================
 
+import { AgentContext } from '@/core/types/allTypes.js';
+
 // Strategy Pattern Types (baseados em padrões estabelecidos)
 export type ExecutionStrategy = 'react' | 'rewoo';
 
@@ -46,7 +48,9 @@ export type ActionResultType =
     | 'tool_result'
     | 'final_answer'
     | 'error'
-    | 'needs_replan';
+    | 'needs_replan'
+    | 'llm_result'
+    | 'conditional_result';
 
 export interface ActionResult {
     type: ActionResultType;
@@ -111,10 +115,19 @@ export type ExecutionStepType =
     | 'execute'
     | 'synthesize';
 
+export type UnifiedStatusStrategy =
+    | 'pending'
+    | 'executing'
+    | 'completed'
+    | 'failed'
+    | 'skipped'
+    | 'replanning'
+    | 'waiting_input';
 // Execution Step (baseado em padrões estabelecidos)
 export interface ExecutionStep {
     id: string;
     type: ExecutionStepType;
+    type2: 'sketch' | 'work' | 'organize' | 'verify';
     thought?: AgentThought;
     action?: AgentAction;
     result?: ActionResult;
@@ -122,6 +135,9 @@ export interface ExecutionStep {
     timestamp: number;
     duration?: number;
     metadata?: Record<string, unknown>;
+    result2?: unknown;
+    thought2?: string;
+    status: UnifiedStatusStrategy;
 }
 
 // Execution Result (reutiliza padrões existentes)
@@ -148,52 +164,52 @@ export interface ExecutionResult {
 // ============================================================================
 
 // Agent Context (simplificado)
-export interface AgentContext {
-    agentName: string;
-    sessionId?: string;
-    correlationId?: string;
-    tenantId?: string;
-    thread?: {
-        id: string;
-        metadata?: Record<string, unknown>;
-    };
-    state?: {
-        set: (namespace: string, key: string, value: unknown) => Promise<void>;
-        persist?: (namespace: string) => Promise<void>;
-    };
-    conversation?: {
-        addMessage: (
-            role: string,
-            content: string,
-            metadata?: Record<string, unknown>,
-        ) => Promise<void>;
-    };
-    stepExecution?: {
-        startStep: (iteration: number) => string;
-        updateStep: (stepId: string, data: Record<string, unknown>) => void;
-        addToolCall: (
-            stepId: string,
-            toolName: string,
-            input: unknown,
-            result: unknown,
-            duration: number,
-        ) => void;
-        markCompleted: (
-            stepId: string,
-            result: ActionResult,
-            analysis: ResultAnalysis,
-        ) => void;
-        markFailed: (
-            stepId: string,
-            result: ActionResult,
-            analysis: ResultAnalysis,
-        ) => void;
-        getAllSteps: () => ExecutionStep[];
-        getExecutionSummary: () => Record<string, unknown>;
-    };
-    availableTools?: Tool[];
-    invocationId?: string;
-}
+// export interface AgentContext {
+//     agentName: string;
+//     sessionId?: string;
+//     correlationId?: string;
+//     tenantId?: string;
+//     thread?: {
+//         id: string;
+//         metadata?: Record<string, unknown>;
+//     };
+//     state?: {
+//         set: (namespace: string, key: string, value: unknown) => Promise<void>;
+//         persist?: (namespace: string) => Promise<void>;
+//     };
+//     conversation?: {
+//         addMessage: (
+//             role: AgentInputEnum,
+//             content: string,
+//             metadata?: Record<string, unknown>,
+//         ) => Promise<void>;
+//     };
+//     stepExecution?: {
+//         startStep: (iteration: number) => string;
+//         updateStep: (stepId: string, data: Record<string, unknown>) => void;
+//         addToolCall: (
+//             stepId: string,
+//             toolName: string,
+//             input: unknown,
+//             result: unknown,
+//             duration: number,
+//         ) => void;
+//         markCompleted: (
+//             stepId: string,
+//             result: ActionResult,
+//             analysis: ResultAnalysis,
+//         ) => void;
+//         markFailed: (
+//             stepId: string,
+//             result: ActionResult,
+//             analysis: ResultAnalysis,
+//         ) => void;
+//         getAllSteps: () => ExecutionStep[];
+//         getExecutionSummary: () => Record<string, unknown>;
+//     };
+//     availableTools?: Tool[];
+//     invocationId?: string;
+// }
 
 // Strategy Execution Context
 export interface StrategyExecutionContext {

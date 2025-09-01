@@ -6,7 +6,7 @@ import {
     PlanningResult,
     planningResultSchema,
 } from '../types/allTypes.js';
-import { createLogger } from '@/observability/index.js';
+import { createLogger } from '../../observability/index.js';
 
 const ajvConstructor = Ajv as unknown as typeof Ajv.default;
 const ajv = new ajvConstructor({

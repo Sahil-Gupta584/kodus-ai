@@ -18,13 +18,14 @@ import {
 } from '../types/context-types.js';
 
 // ✅ USE: Existing storage adapter pattern
-import { StorageEnum } from '../../types/allTypes.js';
+import { StorageEnum, Thread } from '../../types/allTypes.js';
 
 import { createLogger } from '../../../observability/logger.js';
 import {
     StorageContextSessionAdapter,
     StorageSnapshotAdapter,
 } from './storage-context-adapter.js';
+import { IdGenerator } from '../../../utils/id-generator.js';
 
 const logger = createLogger('enhanced-session-service');
 
@@ -36,6 +37,10 @@ export class EnhancedSessionService implements SessionManager {
     private sessionsAdapter: StorageContextSessionAdapter;
     private snapshotsAdapter: StorageSnapshotAdapter;
     private isInitialized = false;
+    private sessionCreationLocks = new Map<
+        string,
+        Promise<AgentRuntimeContext>
+    >();
 
     constructor(
         connectionString?: string,
@@ -101,37 +106,84 @@ export class EnhancedSessionService implements SessionManager {
     // ===== SESSION MANAGEMENT =====
 
     async getOrCreateSession(
-        sessionId: string,
-        userId: string,
-        tenantId: string = 'default',
+        threadId: Thread['id'],
+        tenantId: string,
     ): Promise<AgentRuntimeContext> {
         await this.ensureInitialized();
 
-        // Try to retrieve existing session
-        const existingSession =
-            await this.sessionsAdapter.retrieveContextSession(sessionId);
+        // Check if there's already a creation in progress for this thread (race condition protection)
+        const existingLock = this.sessionCreationLocks.get(threadId);
+        if (existingLock) {
+            logger.info(
+                `🔒 Waiting for existing session creation for thread: ${threadId}`,
+            );
+            return existingLock;
+        }
 
-        if (existingSession) {
-            // Update last activity
-            await this.sessionsAdapter.storeContextSession(
-                sessionId,
-                existingSession.userId,
-                existingSession.tenantId,
-                existingSession.status,
-                existingSession.runtime,
-                existingSession.createdAt,
-                Date.now(), // Update last activity
+        // Create a promise for this session creation
+        const sessionPromise = this.doGetOrCreateSession(threadId, tenantId);
+        this.sessionCreationLocks.set(threadId, sessionPromise);
+
+        try {
+            const result = await sessionPromise;
+            return result;
+        } finally {
+            // Clean up the lock
+            this.sessionCreationLocks.delete(threadId);
+        }
+    }
+
+    private async doGetOrCreateSession(
+        threadId: Thread['id'],
+        tenantId: string,
+    ): Promise<AgentRuntimeContext> {
+        // Try to find existing session by threadId
+        const existingSession =
+            await this.sessionsAdapter.retrieveContextSessionByThreadId(
+                threadId,
             );
 
-            logger.info(`♻️ Recovered session: ${sessionId}`);
-            return existingSession.runtime;
+        if (existingSession) {
+            // Check if session is expired (older than TTL)
+            const sessionAge = Date.now() - existingSession.lastActivityAt;
+            const ttl = 24 * 60 * 60 * 1000; // 24 hours default
+
+            if (sessionAge > ttl) {
+                // Session expired, delete it and create new one
+                logger.info(
+                    `🗑️ Deleting expired session ${existingSession.sessionId} (age: ${Math.round(sessionAge / 1000 / 60)}min)`,
+                );
+                await this.sessionsAdapter.deleteContextSession(
+                    existingSession.sessionId,
+                );
+                // Continue to create new session below
+            } else {
+                // Session still valid, update last activity
+                await this.sessionsAdapter.storeContextSession(
+                    existingSession.sessionId, // Use sessionId as primary key
+                    existingSession.threadId, // Keep threadId for queries
+                    existingSession.tenantId,
+                    existingSession.status,
+                    existingSession.runtime,
+                    existingSession.createdAt,
+                    Date.now(), // Update last activity
+                );
+
+                logger.info(
+                    `♻️ Recovered session ${existingSession.sessionId} for thread: ${threadId}`,
+                );
+                return existingSession.runtime;
+            }
         }
+
+        // Generate unique sessionId using existing IdGenerator
+        const sessionId = IdGenerator.sessionId();
 
         // Create new session with ContextNew runtime
         const newRuntime: AgentRuntimeContext = {
             sessionId,
-            executionId: this.generateExecutionId(),
-            userId,
+            threadId,
+            executionId: IdGenerator.executionId(),
             timestamp: new Date().toISOString(),
 
             state: {
@@ -157,8 +209,8 @@ export class EnhancedSessionService implements SessionManager {
 
         const now = Date.now();
         await this.sessionsAdapter.storeContextSession(
-            sessionId,
-            userId,
+            sessionId, // Use sessionId as unique document ID
+            threadId, // Keep threadId for queries
             tenantId,
             'active',
             newRuntime,
@@ -167,12 +219,12 @@ export class EnhancedSessionService implements SessionManager {
         );
 
         logger.info(
-            `🆕 Created new session: ${sessionId} (tenant: ${tenantId})`,
+            `🆕 Created session ${sessionId} for thread ${threadId} (tenant: ${tenantId})`,
         );
         return newRuntime;
     }
 
-    async addMessage(sessionId: string, message: ChatMessage): Promise<void> {
+    async addMessage(threadId: string, message: ChatMessage): Promise<void> {
         await this.ensureInitialized();
 
         if (!isValidChatMessage(message)) {
@@ -180,9 +232,11 @@ export class EnhancedSessionService implements SessionManager {
         }
 
         const session =
-            await this.sessionsAdapter.retrieveContextSession(sessionId);
+            await this.sessionsAdapter.retrieveContextSessionByThreadId(
+                threadId,
+            );
         if (!session) {
-            throw new Error(`Session ${sessionId} not found`);
+            throw new Error(`Session for thread ${threadId} not found`);
         }
 
         // Add message (keep only last 6 for performance)
@@ -204,8 +258,8 @@ export class EnhancedSessionService implements SessionManager {
 
         // Store updated session
         await this.sessionsAdapter.storeContextSession(
-            sessionId,
-            session.userId,
+            session.sessionId, // Use sessionId as primary key
+            session.threadId, // Keep threadId
             session.tenantId,
             session.status,
             updatedRuntime,
@@ -213,19 +267,21 @@ export class EnhancedSessionService implements SessionManager {
             Date.now(),
         );
 
-        logger.debug(`💬 Added ${message.role} message to ${sessionId}`);
+        logger.debug(`💬 Added ${message.role} message to thread ${threadId}`);
     }
 
     async addEntities(
-        sessionId: string,
+        threadId: string,
         entities: Partial<AgentRuntimeContext['entities']>,
     ): Promise<void> {
         await this.ensureInitialized();
 
         const session =
-            await this.sessionsAdapter.retrieveContextSession(sessionId);
+            await this.sessionsAdapter.retrieveContextSessionByThreadId(
+                threadId,
+            );
         if (!session) {
-            throw new Error(`Session ${sessionId} not found`);
+            throw new Error(`Session for thread ${threadId} not found`);
         }
 
         // Smart entity updates with deduplication
@@ -268,8 +324,8 @@ export class EnhancedSessionService implements SessionManager {
 
         // Store updated session
         await this.sessionsAdapter.storeContextSession(
-            sessionId,
-            session.userId,
+            session.sessionId, // Use sessionId as primary key
+            session.threadId, // Keep threadId
             session.tenantId,
             session.status,
             updatedRuntime,
@@ -278,20 +334,22 @@ export class EnhancedSessionService implements SessionManager {
         );
 
         logger.debug(
-            `🏷️ Updated entities for ${sessionId}: ${Object.keys(entities).join(', ')}`,
+            `🏷️ Updated entities for thread ${threadId}: ${Object.keys(entities).join(', ')}`,
         );
     }
 
     async updateExecution(
-        sessionId: string,
+        threadId: string,
         execution: Partial<AgentRuntimeContext['execution']>,
     ): Promise<void> {
         await this.ensureInitialized();
 
         const session =
-            await this.sessionsAdapter.retrieveContextSession(sessionId);
+            await this.sessionsAdapter.retrieveContextSessionByThreadId(
+                threadId,
+            );
         if (!session) {
-            throw new Error(`Session ${sessionId} not found`);
+            throw new Error(`Session for thread ${threadId} not found`);
         }
 
         // Update execution state
@@ -306,8 +364,8 @@ export class EnhancedSessionService implements SessionManager {
 
         // Store updated session
         await this.sessionsAdapter.storeContextSession(
-            sessionId,
-            session.userId,
+            session.sessionId, // Use sessionId as primary key
+            session.threadId, // Keep threadId
             session.tenantId,
             session.status,
             updatedRuntime,
@@ -316,12 +374,12 @@ export class EnhancedSessionService implements SessionManager {
         );
 
         logger.debug(
-            `⚙️ Updated execution for ${sessionId}: ${Object.keys(execution).join(', ')}`,
+            `⚙️ Updated execution for thread ${threadId}: ${Object.keys(execution).join(', ')}`,
         );
     }
 
     async saveSnapshot(
-        _sessionId: string,
+        _threadId: string,
         snapshot: ExecutionSnapshot,
     ): Promise<void> {
         await this.ensureInitialized();
@@ -333,7 +391,7 @@ export class EnhancedSessionService implements SessionManager {
 
     // ===== RECOVERY =====
 
-    async recoverSession(sessionId: string): Promise<{
+    async recoverSession(threadId: string): Promise<{
         context: AgentRuntimeContext;
         wasRecovered: boolean;
         gapDuration: number;
@@ -342,9 +400,11 @@ export class EnhancedSessionService implements SessionManager {
         await this.ensureInitialized();
 
         const session =
-            await this.sessionsAdapter.retrieveContextSession(sessionId);
+            await this.sessionsAdapter.retrieveContextSessionByThreadId(
+                threadId,
+            );
         if (!session) {
-            throw new Error(`Session ${sessionId} not found`);
+            throw new Error(`Session for thread ${threadId} not found`);
         }
 
         const lastActivity = session.lastActivityAt;
@@ -357,7 +417,7 @@ export class EnhancedSessionService implements SessionManager {
             // Get latest snapshot for enhanced recovery context
             const latestSnapshot =
                 await this.snapshotsAdapter.retrieveLatestSnapshotForSession(
-                    sessionId,
+                    session.runtime.sessionId, // Use sessionId for snapshot retrieval
                 );
 
             if (latestSnapshot) {
@@ -374,7 +434,7 @@ export class EnhancedSessionService implements SessionManager {
 
         // Ensure runtime context is valid
         if (!isValidRuntimeContext(session.runtime)) {
-            throw new Error(`Invalid runtime context in session ${sessionId}`);
+            throw new Error(`Invalid runtime context for thread ${threadId}`);
         }
 
         return {
@@ -412,12 +472,6 @@ export class EnhancedSessionService implements SessionManager {
     }
 
     // ===== PRIVATE UTILITIES =====
-
-    private generateExecutionId(): string {
-        const timestamp = Date.now().toString(36);
-        const random = Math.random().toString(36).substr(2, 6);
-        return `exec_${timestamp}_${random}`;
-    }
 
     private inferIntent(message: string): string {
         const lower = message.toLowerCase();

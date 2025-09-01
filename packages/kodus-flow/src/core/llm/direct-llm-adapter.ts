@@ -7,6 +7,7 @@ import {
 } from '../../observability/index.js';
 import { EngineError } from '../errors.js';
 import {
+    AgentInputEnum,
     DEFAULT_LLM_SETTINGS,
     LangChainLLM,
     LangChainMessage,
@@ -15,10 +16,10 @@ import {
     PlanningResult,
     ToolMetadataForLLM,
 } from '../types/allTypes.js';
-import {
-    validatePlanningResponse,
-    validateLLMResponse,
-} from './response-validator.js';
+// import {
+//     validatePlanningResponse,
+//     validateLLMResponse,
+// } from './response-validator.js';
 
 export class DirectLLMAdapter implements LLMAdapter {
     private llm: LangChainLLM;
@@ -85,11 +86,11 @@ export class DirectLLMAdapter implements LLMAdapter {
 
         const messages: LangChainMessage[] = [
             {
-                role: 'system',
+                role: AgentInputEnum.SYSTEM,
                 content: systemPrompt,
             },
             {
-                role: 'user',
+                role: AgentInputEnum.USER,
                 content: userPrompt,
             },
         ];
@@ -138,11 +139,14 @@ export class DirectLLMAdapter implements LLMAdapter {
                 }
             });
 
-            return this.parseFlexiblePlanningResponse(
-                response,
-                goal,
-                technique,
-            );
+            return response as any;
+
+            //TODO: remove this
+            // return this.parseFlexiblePlanningResponse(
+            //     response,
+            //     goal,
+            //     technique,
+            // );
         } catch (error) {
             this.logger.error(
                 'Planning failed',
@@ -158,81 +162,81 @@ export class DirectLLMAdapter implements LLMAdapter {
     /**
      * ✅ AJV: Parse planning response with industry-standard validation
      */
-    private parseFlexiblePlanningResponse(
-        response: unknown,
-        goal: string,
-        technique: string,
-    ): PlanningResult {
-        const llmValidated = validateLLMResponse(response);
+    // private parseFlexiblePlanningResponse(
+    //     response: unknown,
+    //     goal: string,
+    //     technique: string,
+    // ): PlanningResult {
+    //     const llmValidated = validateLLMResponse(response);
 
-        let extractedSteps: Array<{
-            id: string;
-            description: string;
-            tool?: string;
-            arguments?: Record<string, unknown>;
-            dependencies?: string[];
-            type:
-                | 'analysis'
-                | 'action'
-                | 'decision'
-                | 'observation'
-                | 'verification';
-        }> = [];
-        let extractedReasoning = '';
-        let extractedSignals: Record<string, unknown> = {};
-        let extractedAudit: string[] = [];
+    //     let extractedSteps: Array<{
+    //         id: string;
+    //         description: string;
+    //         tool?: string;
+    //         arguments?: Record<string, unknown>;
+    //         dependencies?: string[];
+    //         type:
+    //             | 'analysis'
+    //             | 'action'
+    //             | 'decision'
+    //             | 'observation'
+    //             | 'verification';
+    //     }> = [];
+    //     let extractedReasoning = '';
+    //     let extractedSignals: Record<string, unknown> = {};
+    //     let extractedAudit: string[] = [];
 
-        if (llmValidated.toolCalls && llmValidated.toolCalls.length > 0) {
-            this.logger.debug('Extracting steps from function calls', {
-                toolCallsCount: llmValidated.toolCalls.length,
-            });
+    //     if (llmValidated.toolCalls && llmValidated.toolCalls.length > 0) {
+    //         this.logger.debug('Extracting steps from function calls', {
+    //             toolCallsCount: llmValidated.toolCalls.length,
+    //         });
 
-            extractedSteps = llmValidated?.toolCalls?.map((call, index) => {
-                let parsedArgs: Record<string, unknown> = {};
-                try {
-                    parsedArgs = JSON.parse(call.function.arguments);
-                } catch (error) {
-                    this.logger.warn('Failed to parse tool call arguments', {
-                        toolName: call.function.name,
-                        arguments: call.function.arguments,
-                        error,
-                    });
-                }
+    //         extractedSteps = llmValidated?.toolCalls?.map((call, index) => {
+    //             let parsedArgs: Record<string, unknown> = {};
+    //             try {
+    //                 parsedArgs = JSON.parse(call.function.arguments);
+    //             } catch (error) {
+    //                 this.logger.warn('Failed to parse tool call arguments', {
+    //                     toolName: call.function.name,
+    //                     arguments: call.function.arguments,
+    //                     error,
+    //                 });
+    //             }
 
-                return {
-                    id: call.id || `step-${index + 1}`,
-                    description: `Execute ${call.function.name}`,
-                    tool: call.function.name,
-                    arguments: parsedArgs,
-                    dependencies: index > 0 ? [`step-${index}`] : [],
-                    type: 'action' as const,
-                };
-            });
+    //             return {
+    //                 id: call.id || `step-${index + 1}`,
+    //                 description: `Execute ${call.function.name}`,
+    //                 tool: call.function.name,
+    //                 arguments: parsedArgs,
+    //                 dependencies: index > 0 ? [`step-${index}`] : [],
+    //                 type: 'action' as const,
+    //             };
+    //         });
 
-            extractedReasoning =
-                llmValidated.content || 'Generated from function calls';
-        } else {
-            // Traditional text parsing: use AJV validation
-            this.logger.debug('Extracting steps from text parsing', {
-                hasContent: !!llmValidated.content,
-            });
+    //         extractedReasoning =
+    //             llmValidated.content || 'Generated from function calls';
+    //     } else {
+    //         // Traditional text parsing: use AJV validation
+    //         this.logger.debug('Extracting steps from text parsing', {
+    //             hasContent: !!llmValidated.content,
+    //         });
 
-            const validated = validatePlanningResponse(response);
-            extractedSteps = validated.steps || [];
-            extractedReasoning = validated.reasoning || '';
-            extractedSignals = validated.signals || {};
-            extractedAudit = validated.audit || [];
-        }
+    //         const validated = validatePlanningResponse(response);
+    //         extractedSteps = validated.steps || [];
+    //         extractedReasoning = validated.reasoning || '';
+    //         extractedSignals = validated.signals || {};
+    //         extractedAudit = validated.audit || [];
+    //     }
 
-        return {
-            strategy: technique,
-            goal,
-            steps: extractedSteps,
-            reasoning: extractedReasoning,
-            signals: extractedSignals,
-            audit: extractedAudit,
-        };
-    }
+    //     return {
+    //         strategy: technique,
+    //         goal,
+    //         steps: extractedSteps,
+    //         reasoning: extractedReasoning,
+    //         signals: extractedSignals,
+    //         audit: extractedAudit,
+    //     };
+    // }
 
     supportsStreaming(): boolean {
         return typeof this.llm.stream === 'function';
@@ -244,7 +248,7 @@ export class DirectLLMAdapter implements LLMAdapter {
 
     // ✅ COMPATIBILITY: LLMAdapter interface compliance
     async call(request: {
-        messages: Array<{ role: string; content: string }>;
+        messages: Array<{ role: AgentInputEnum; content: string }>;
         temperature?: number;
         maxTokens?: number;
     }): Promise<{ content: string }> {

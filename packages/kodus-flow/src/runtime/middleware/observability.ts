@@ -4,7 +4,7 @@ import {
     MiddlewareFactoryType,
     ObservabilityOptions,
     TEvent,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import {
     getObservability,
     applyErrorToSpan,

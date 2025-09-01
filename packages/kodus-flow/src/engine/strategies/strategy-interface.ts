@@ -84,7 +84,9 @@ export abstract class BaseExecutionStrategy {
         return {
             id: `step-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             type,
+            type2: 'organize',
             timestamp: Date.now(),
+            status: 'pending',
             metadata: {
                 ...metadata,
                 strategy: this.constructor.name,

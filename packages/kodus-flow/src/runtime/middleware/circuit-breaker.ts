@@ -11,7 +11,7 @@ import {
     Middleware,
     MiddlewareFactoryType,
     TEvent,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 
 export class CircuitBreakerManager {
     private circuits = new Map<string, CircuitBreaker>();

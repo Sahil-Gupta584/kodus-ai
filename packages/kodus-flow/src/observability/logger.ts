@@ -6,7 +6,7 @@ import {
     Logger,
     LogLevel,
     LogProcessor,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 
 // Global state for logging
 export let globalLogContextProvider: LogContextProvider | undefined;

@@ -3,7 +3,7 @@ import {
     DEFAULT_OPTS,
     Middleware,
     TEvent,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 
 /* ───── ConcurrencyManager singleton ───── */
 class ConcurrencyManager {

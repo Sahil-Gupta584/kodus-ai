@@ -8,7 +8,7 @@ import {
     Snapshot,
     SnapshotOptions,
     StorageEnum,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 
 const logger = createLogger('persistor-storage-adapter');
 

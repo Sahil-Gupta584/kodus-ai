@@ -3,7 +3,7 @@ import {
     EventMetadata,
     EventStoreConfig,
     Persistor,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
 import { createPersistorFromConfig } from '../../persistor/factory.js';
 
@@ -44,7 +44,7 @@ export class EventStore {
                 cleanupInterval: 300000, // 5min
                 maxMemoryUsage: 100 * 1024 * 1024, // 100MB
                 ...config.persistorOptions,
-            } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+            } as any);
 
         if (this.config.enableObservability) {
             this.observability.logger.info('EventStore initialized', {

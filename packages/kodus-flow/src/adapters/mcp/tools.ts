@@ -1,5 +1,5 @@
 import { safeJsonSchemaToZod } from '../../core/utils/json-schema-to-zod.js';
-import { EngineTool, MCPToolRawWithServer } from '@/core/types/allTypes.js';
+import { EngineTool, MCPToolRawWithServer } from '../../core/types/allTypes.js';
 
 /**
  * Validate MCP tool schema

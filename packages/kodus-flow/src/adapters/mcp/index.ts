@@ -5,7 +5,7 @@ import {
     MCPPromptWithServer,
     MCPResourceWithServer,
     MCPTool,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import { MCPRegistry } from './registry.js';
 import { mcpToolsToEngineTools } from './tools.js';
 /**

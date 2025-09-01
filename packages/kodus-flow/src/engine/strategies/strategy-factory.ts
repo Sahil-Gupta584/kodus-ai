@@ -1,8 +1,28 @@
 import { ReActStrategy } from './react-strategy.js';
 import { ReWooStrategy } from './rewoo-strategy.js';
-import type { ExecutionStrategy } from './types.js';
 import { createLogger } from '../../observability/index.js';
+import { LLMAdapter } from '@/core/types/allTypes.js';
 
+/**
+ * Tipos de estratégia disponíveis
+ */
+export type StrategyType = 'react' | 'rewoo';
+
+/**
+ * Configuração base para todas as estratégias
+ */
+export interface BaseStrategyConfig {
+    maxIterations?: number;
+    maxToolCalls?: number;
+    maxExecutionTime?: number;
+    enableLogging?: boolean;
+    enableMetrics?: boolean;
+}
+
+/**
+ * Factory melhorada para criar instâncias de estratégias de execução
+ * Usa apenas as versões melhoradas com arquitetura limpa
+ */
 export class StrategyFactory {
     private static logger = createLogger('strategy-factory');
     private static strategies = new Map<
@@ -11,33 +31,43 @@ export class StrategyFactory {
     >();
 
     /**
-     * Creates execution strategy (simplificado)
+     * Cria estratégia baseada no tipo solicitado
+     * Todas as estratégias usam as versões "improved" com arquitetura limpa
      */
     static create(
-        strategyType: ExecutionStrategy,
+        strategyType: StrategyType,
+        llmAdapter: LLMAdapter,
+        config?: Record<string, unknown>,
     ): ReActStrategy | ReWooStrategy {
+        const strategyKey = config
+            ? `${strategyType}-${JSON.stringify(config)}`
+            : strategyType;
+
         // Check if already registered
-        if (this.strategies.has(strategyType)) {
-            return this.strategies.get(strategyType)!;
+        if (this.strategies.has(strategyKey)) {
+            return this.strategies.get(strategyKey)!;
         }
 
         let strategy: ReActStrategy | ReWooStrategy;
 
         switch (strategyType) {
             case 'react':
-                strategy = new ReActStrategy();
+                strategy = new ReActStrategy(llmAdapter, config);
                 break;
             case 'rewoo':
-                strategy = new ReWooStrategy();
+                strategy = new ReWooStrategy(llmAdapter, config);
                 break;
             default:
                 throw new Error(`Unknown strategy type: ${strategyType}`);
         }
 
         // Register for reuse
-        this.strategies.set(strategyType, strategy);
+        this.strategies.set(strategyKey, strategy);
 
-        this.logger.info('Strategy created', { strategyType });
+        this.logger.info('Strategy created', {
+            strategyType,
+            hasConfig: !!config,
+        });
         return strategy;
     }
 
@@ -55,7 +85,7 @@ export class StrategyFactory {
     /**
      * Get available strategies
      */
-    static getAvailableStrategies(): ExecutionStrategy[] {
+    static getAvailableStrategies(): StrategyType[] {
         return ['react', 'rewoo'];
     }
 
@@ -65,7 +95,7 @@ export class StrategyFactory {
     static hasStrategy(name: string): boolean {
         return (
             this.strategies.has(name) ||
-            this.getAvailableStrategies().includes(name as ExecutionStrategy)
+            this.getAvailableStrategies().includes(name as StrategyType)
         );
     }
 
@@ -78,5 +108,26 @@ export class StrategyFactory {
             this.logger.info('Strategy removed', { name });
         }
         return removed;
+    }
+
+    /**
+     * Get strategy statistics
+     */
+    static getStats(): {
+        totalStrategies: number;
+        availableTypes: StrategyType[];
+    } {
+        return {
+            totalStrategies: this.strategies.size,
+            availableTypes: this.getAvailableStrategies(),
+        };
+    }
+
+    /**
+     * Clear all registered strategies
+     */
+    static clear(): void {
+        this.strategies.clear();
+        this.logger.info('All strategies cleared');
     }
 }

@@ -8,7 +8,7 @@ import {
     SnapshotOptions,
     snapshotSchema,
     TEvent,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 import {
     getGlobalPersistor as getGlobalPersistorFromFactory,
     setGlobalPersistor as setGlobalPersistorFromFactory,

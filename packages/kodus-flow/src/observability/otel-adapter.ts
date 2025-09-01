@@ -6,7 +6,10 @@ import {
     LooseOtelSpan,
     LooseOtelAPI,
     UnknownRecord,
-} from '@/core/types/allTypes.js';
+    SpanKind,
+    SpanContext,
+} from '../core/types/allTypes.js';
+import { createLogger } from './logger.js';
 
 class OtelSpanWrapper implements KodusSpan {
     private readonly span: LooseOtelSpan;
@@ -64,35 +67,168 @@ class OtelSpanWrapper implements KodusSpan {
 
 export class OtelTracerAdapter implements KodusTracer {
     private otel: LooseOtelAPI;
+    private logger: ReturnType<typeof createLogger>;
 
     constructor(otelApi: LooseOtelAPI) {
         this.otel = otelApi;
+        this.logger = createLogger('otel-adapter');
+    }
+
+    // ✅ MELHORIA 1: Mapeamento de SpanKind
+    private mapSpanKind(kind: SpanKind): number {
+        const kindMap: Record<SpanKind, number> = {
+            internal: 0,
+            server: 1,
+            client: 2,
+            producer: 3,
+            consumer: 4,
+        };
+        return kindMap[kind] || 0;
+    }
+
+    // ✅ MELHORIA 2: Validação de entrada
+    private validateSpanOptions(name: string, options?: SpanOptions): void {
+        if (!name || typeof name !== 'string') {
+            throw new Error('Span name must be a non-empty string');
+        }
+
+        if (name.trim().length === 0) {
+            throw new Error('Span name cannot be empty or whitespace');
+        }
+
+        if (options?.startTime && typeof options.startTime !== 'number') {
+            throw new Error('Span startTime must be a number');
+        }
+
+        if (options?.attributes && typeof options.attributes !== 'object') {
+            throw new Error('Span attributes must be an object');
+        }
+
+        if (
+            options?.kind &&
+            !['internal', 'server', 'client', 'producer', 'consumer'].includes(
+                options.kind,
+            )
+        ) {
+            throw new Error(
+                `Invalid span kind: ${options.kind}. Must be one of: internal, server, client, producer, consumer`,
+            );
+        }
+    }
+
+    // ✅ MELHORIA 3: Criação de contexto com logging estruturado
+    private createOtelContext(spanContext: SpanContext): unknown {
+        try {
+            const otelSpanContext = {
+                traceId: spanContext.traceId,
+                spanId: spanContext.spanId,
+                traceFlags: spanContext.traceFlags,
+            };
+
+            const mockSpan = {
+                spanContext: () => otelSpanContext,
+                isRecording: () => true,
+            };
+
+            const ctx = this.otel.trace.setSpan(
+                this.otel.context.active(),
+                mockSpan as any,
+            );
+
+            this.logger.debug('OTEL context created successfully', {
+                traceId: spanContext.traceId,
+                spanId: spanContext.spanId,
+                traceFlags: spanContext.traceFlags,
+            });
+
+            return ctx;
+        } catch (error) {
+            this.logger.warn(
+                'Failed to create OTEL context, using active context',
+                {
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                    spanContext: {
+                        traceId: spanContext.traceId,
+                        spanId: spanContext.spanId,
+                        traceFlags: spanContext.traceFlags,
+                    },
+                },
+            );
+            return this.otel.context.active();
+        }
     }
 
     startSpan(name: string, options?: SpanOptions): KodusSpan {
+        // ✅ MELHORIA 1: Validação de entrada
+        this.validateSpanOptions(name, options);
+
         const tracer = this.otel.trace.getTracer('kodus-flow');
-        const ctx = options?.parent
-            ? this.otel.trace.setSpan(
-                  this.otel.context.active(),
-                  options.parent,
-              )
-            : undefined;
+
+        // ✅ MELHORIA 2: Criação de contexto com logging
+        let ctx: unknown = this.otel.context.active();
+
+        if (options?.parent) {
+            ctx = this.createOtelContext(options.parent);
+        }
+
+        // ✅ MELHORIA 3: Mapeamento de SpanKind
+        const spanKind = this.mapSpanKind(options?.kind || 'internal');
 
         const span = tracer.startSpan(
             name,
             {
-                kind: 0, // INTERNAL
+                kind: spanKind,
                 startTime: options?.startTime,
                 attributes: options?.attributes as UnknownRecord | undefined,
             },
             ctx,
         );
 
+        this.logger.debug('Span created successfully', {
+            name,
+            kind: options?.kind || 'internal',
+            spanKind,
+            hasParent: !!options?.parent,
+            hasAttributes: !!options?.attributes,
+        });
+
         return new OtelSpanWrapper(span);
     }
 
     createSpanContext(traceId: string, spanId: string) {
-        return { traceId, spanId, traceFlags: 1 };
+        // ✅ MELHORIA 1: Validação de entrada
+        if (!traceId || typeof traceId !== 'string') {
+            throw new Error('TraceId must be a non-empty string');
+        }
+
+        if (!spanId || typeof spanId !== 'string') {
+            throw new Error('SpanId must be a non-empty string');
+        }
+
+        if (traceId.length !== 32) {
+            this.logger.warn('TraceId length is not 32 characters', {
+                traceId,
+                length: traceId.length,
+            });
+        }
+
+        if (spanId.length !== 16) {
+            this.logger.warn('SpanId length is not 16 characters', {
+                spanId,
+                length: spanId.length,
+            });
+        }
+
+        const context = { traceId, spanId, traceFlags: 1 };
+
+        this.logger.debug('Span context created', {
+            traceId,
+            spanId,
+            traceFlags: context.traceFlags,
+        });
+
+        return context;
     }
 }
 

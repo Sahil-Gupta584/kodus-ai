@@ -27,7 +27,7 @@ import {
     UnifiedReport,
     type SystemMetrics as ResourceMetrics,
     ErrorCode,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 import { createLogger, setLogContextProvider } from './logger.js';
 
 export class ObservabilitySystem implements ObservabilityInterface {

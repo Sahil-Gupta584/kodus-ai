@@ -16,7 +16,7 @@ import {
     StepExecutionResult,
     UNIFIED_STATUS,
     WrappedToolResult,
-} from '@/core/types/allTypes.js';
+} from '../../../core/types/allTypes.js';
 
 export class PlanExecutor {
     private readonly maxExecutionRounds: number;

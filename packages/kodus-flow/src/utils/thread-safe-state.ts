@@ -1,4 +1,4 @@
-import { StateManager, StateManagerStats } from '@/core/types/allTypes.js';
+import { StateManager, StateManagerStats } from '../core/types/allTypes.js';
 import { createLogger } from '../observability/index.js';
 
 export class ConcurrentStateManager implements StateManager {

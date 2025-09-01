@@ -21,7 +21,7 @@ import {
     RuntimeConfig,
     TEvent,
     WorkflowContext,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 
 export { OptimizedEventProcessor } from './core/event-processor-optimized.js';
 

@@ -12,7 +12,7 @@ import {
     ManagedKernel,
     MultiKernelConfig,
     Workflow,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 
 export class MultiKernelManager {
     private readonly config: MultiKernelConfig;

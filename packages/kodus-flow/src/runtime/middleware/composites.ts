@@ -8,7 +8,7 @@ import {
     Middleware,
     StandardMiddlewareOptions,
     TEvent,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 
 export function createStandardMiddleware(
     options: StandardMiddlewareOptions = {},

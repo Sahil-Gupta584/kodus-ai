@@ -1,11 +1,11 @@
-// 🎯 HYBRID STRATEGIES - Main exports
-// Estratégias híbridas simplificadas (ReAct + ReWoo)
+// 🎯 STRATEGY LAYER - Main exports
+// Estratégias com arquitetura limpa e design patterns corretos
 
 // Core Strategy Components
 export { StrategyFactory } from './strategy-factory.js';
 export { BaseExecutionStrategy } from './strategy-interface.js';
 
-// Strategy Implementations
+// Strategy Implementations (Clean Architecture)
 export { ReActStrategy } from './react-strategy.js';
 export { ReWooStrategy } from './rewoo-strategy.js';
 
@@ -16,6 +16,15 @@ export {
     stopConditions,
     isStopConditionMet,
 } from './stop-conditions.js';
+
+// Advanced Prompt & Formatting Utils
+export {
+    StrategyFormatters,
+    ToolParameterFormatter,
+    ContextFormatter,
+    SchemaFormatter,
+    EstimationUtils,
+} from './prompts/index.js';
 
 // Types and Interfaces
 export type {
@@ -32,7 +41,9 @@ export type {
     ResultAnalysis,
     Tool,
     ToolCall,
-    AgentContext,
     PlanStep,
     ExecutionPlan,
 } from './types.js';
+
+// Factory Types
+export type { StrategyType, BaseStrategyConfig } from './strategy-factory.js';

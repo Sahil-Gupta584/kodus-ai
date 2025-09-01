@@ -13,7 +13,7 @@ import {
     ToolSpanAttributes,
     TraceItem,
     Tracer,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 import { IdGenerator } from '../utils/id-generator.js';
 
 class InMemoryTracer implements Tracer {

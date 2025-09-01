@@ -3,7 +3,7 @@ import {
     PlannerPromptConfig,
     PromptCompositionContext,
     ToolMetadataForLLM,
-} from '@/core/types/allTypes.js';
+} from '../../../../core/types/allTypes.js';
 import { createLogger } from '../../../../observability/index.js';
 
 type Logger = ReturnType<typeof createLogger>;

@@ -5,7 +5,7 @@ import {
     BaseStorageStats,
     StorageAdapterConfig,
     StorageEnum,
-} from '@/core/types/allTypes.js';
+} from '../../../core/types/allTypes.js';
 
 const logger = createLogger('in-memory-storage-adapter');
 

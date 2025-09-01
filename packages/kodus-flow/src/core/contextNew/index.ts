@@ -40,7 +40,7 @@ import {
     setGlobalMemoryManager,
 } from '../memory/memory-manager.js';
 import { createLogger } from '../../observability/logger.js';
-import { StorageEnum } from '../types/allTypes.js';
+import { StorageEnum, Thread } from '../types/allTypes.js';
 import {
     ContextBridge,
     createContextBridge,
@@ -57,16 +57,11 @@ export interface EnhancedContextBuilderConfig {
     // Collections config (customizáveis!)
     sessionsCollection?: string;
     snapshotsCollection?: string;
+    memoryCollection?: string;
 
     // TTL config
     sessionTTL?: number;
     snapshotTTL?: number;
-
-    // Memory config
-    memory?: {
-        adapterType?: StorageEnum;
-        adapterConfig?: any;
-    };
 }
 
 /**
@@ -86,13 +81,13 @@ export class EnhancedContextBuilder {
 
     private constructor(config: EnhancedContextBuilderConfig = {}) {
         this.config = {
-            // Defaults
             dbName: 'kodus-flow',
             adapterType: config.connectionString
                 ? StorageEnum.MONGODB
                 : StorageEnum.INMEMORY,
             sessionsCollection: 'kodus-agent-sessions', // Customizável!
             snapshotsCollection: 'kodus-execution-snapshots', // Customizável!
+            memoryCollection: 'kodus-agent-memory', // Customizável!
             sessionTTL: 24 * 60 * 60 * 1000, // 24h
             snapshotTTL: 7 * 24 * 60 * 60 * 1000, // 7 dias
             ...config,
@@ -103,6 +98,7 @@ export class EnhancedContextBuilder {
             dbName: this.config.dbName,
             sessionsCollection: this.config.sessionsCollection,
             snapshotsCollection: this.config.snapshotsCollection,
+            memoryCollection: this.config.memoryCollection,
         });
     }
 
@@ -132,18 +128,60 @@ export class EnhancedContextBuilder {
         return this.config;
     }
 
+    /**
+     * Initialize the context infrastructure (collections, adapters, etc)
+     * Should be called once during application startup
+     */
+    async initialize(): Promise<void> {
+        await this.ensureInitialized();
+    }
+
     private async ensureInitialized(): Promise<void> {
-        if (this.isInitialized) return;
+        if (this.isInitialized) {
+            return;
+        }
+
+        logger.info('🚀 Starting ContextNew initialization', {
+            adapterType: this.config.adapterType,
+            connectionString: this.config.connectionString
+                ? '[SET]'
+                : '[NOT SET]',
+            memoryCollection: this.config.memoryCollection,
+            sessionsCollection: this.config.sessionsCollection,
+            snapshotsCollection: this.config.snapshotsCollection,
+        });
 
         // 1. Initialize memory manager
-        if (this.config.memory) {
+        logger.info('🧠 Step 1: Initializing memory manager...');
+        if (this.config.adapterType === StorageEnum.MONGODB) {
+            logger.info('🔗 Creating MongoDB memory manager', {
+                database: this.config.dbName,
+                collection: this.config.memoryCollection,
+            });
+            // Create MongoDB memory manager with custom collection
             this.memoryManager = new MemoryManager({
-                adapterType:
-                    this.config.memory.adapterType || StorageEnum.INMEMORY,
-                adapterConfig: this.config.memory.adapterConfig,
+                adapterType: StorageEnum.MONGODB,
+                adapterConfig: {
+                    connectionString: this.config.connectionString,
+                    options: {
+                        database: this.config.dbName,
+                        collection: this.config.memoryCollection,
+                        maxItems: 10000,
+                        enableCompression: true,
+                        cleanupInterval: 300000,
+                    },
+                },
             });
             setGlobalMemoryManager(this.memoryManager);
+
+            // Initialize memory manager to create collection
+            logger.info(
+                '📦 Initializing memory manager to create collection...',
+            );
+            await this.memoryManager.initialize();
+            logger.info('✅ MongoDB memory manager created and initialized');
         } else {
+            // Use existing global memory manager (InMemory case)
             this.memoryManager = getGlobalMemoryManager();
         }
 
@@ -170,13 +208,19 @@ export class EnhancedContextBuilder {
             snapshotTTL: this.config.snapshotTTL,
         });
 
+        logger.info(
+            '📂 Step 3: Initializing session manager (creates sessions + snapshots collections)...',
+        );
         await this.sessionManager.initialize();
+        logger.info('✅ Session manager initialized');
+
         this.isInitialized = true;
 
         logger.info('EnhancedContextBuilder initialized', {
             memoryManager: 'ready',
             sessionManager: 'ready',
             contextBridge: 'ready',
+            collectionsEnsured: this.config.adapterType === StorageEnum.MONGODB,
         });
     }
 
@@ -185,26 +229,22 @@ export class EnhancedContextBuilder {
      * Similar ao ContextBuilder, mas focado na sessão enhanced
      */
     async initializeAgentSession(
-        sessionId: string,
-        userId: string = 'default',
-        tenantId: string = 'default',
+        threadId: Thread['id'],
+        tenantId: string,
         runtimeData?: {
             availableTools?: string[];
-            activeConnections?: Record<string, any>;
         },
     ): Promise<void> {
         await this.ensureInitialized();
 
         logger.info('Initializing enhanced agent session', {
-            sessionId,
-            userId,
+            threadId,
             tenantId,
         });
 
-        // Create or recover session
+        // Create or recover session based on threadId
         const runtimeContext = await this.sessionManager.getOrCreateSession(
-            sessionId,
-            userId,
+            threadId,
             tenantId,
         );
 
@@ -212,17 +252,13 @@ export class EnhancedContextBuilder {
         if (runtimeData?.availableTools) {
             runtimeContext.availableTools = runtimeData.availableTools;
         }
-
-        if (runtimeData?.activeConnections) {
-            runtimeContext.activeConnections = runtimeData.activeConnections;
-        }
     }
 
     /**
      * 🔧 Update runtime-only data (tools, connections)
      */
     async updateRuntimeData(
-        sessionId: string,
+        threadId: string,
         runtimeData: {
             availableTools?: string[];
             activeConnections?: Record<string, any>;
@@ -231,7 +267,7 @@ export class EnhancedContextBuilder {
         await this.ensureInitialized();
 
         const contextBridge = this.getContextBridge();
-        const currentContext = await contextBridge.getRuntimeContext(sessionId);
+        const currentContext = await contextBridge.getRuntimeContext(threadId);
 
         // Update runtime-only fields
         if (runtimeData.availableTools) {
@@ -243,7 +279,7 @@ export class EnhancedContextBuilder {
         }
 
         logger.debug('Updated runtime data', {
-            sessionId,
+            threadId,
             toolCount: runtimeData.availableTools?.length,
             connectionCount: Object.keys(runtimeData.activeConnections || {})
                 .length,

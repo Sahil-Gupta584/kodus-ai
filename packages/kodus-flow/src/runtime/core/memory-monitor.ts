@@ -3,7 +3,7 @@ import {
     MemoryMetrics,
     MemoryMonitorConfig,
     MemoryMonitorStats,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
 
 export class MemoryMonitor {

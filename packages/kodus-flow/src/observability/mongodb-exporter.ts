@@ -8,24 +8,23 @@ import {
     ObservabilityStorageConfig,
     SystemMetrics,
     TraceItem,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 import { createLogger } from './logger.js';
 
 export class MongoDBExporter {
     private config: MongoDBExporterConfig;
     private logger: ReturnType<typeof createLogger>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     private client: any = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     private db: any = null;
     private collections: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         logs: any;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         telemetry: any;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         metrics: any;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         errors: any;
     } | null = null;
 

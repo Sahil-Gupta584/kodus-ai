@@ -5,7 +5,7 @@ import {
     ExecutionId,
     SessionId,
     TenantId,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 import { randomBytes } from 'crypto';
 
 /**

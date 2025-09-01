@@ -1,4 +1,8 @@
-import { AnyEvent, EVENT_TYPES, EventStream } from '@/core/types/allTypes.js';
+import {
+    AnyEvent,
+    EVENT_TYPES,
+    EventStream,
+} from '../../core/types/allTypes.js';
 
 export class StreamManager {
     private generators = new Map<

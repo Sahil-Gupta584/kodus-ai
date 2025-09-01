@@ -27,16 +27,18 @@ export class StorageMemoryAdapter implements MemoryAdapter {
     ) {}
 
     async initialize(): Promise<void> {
-        if (this.isInitialized) return;
+        if (this.isInitialized) {
+            return;
+        }
 
         this.storage = await StorageAdapterFactory.create({
             type: this.config.adapterType,
             connectionString: this.config.connectionString,
             options: {
                 ...this.config.options,
-                // ✅ MEMORY: Use specific collection for Memory data
-                database: this.config.options?.database || 'kodus',
-                collection: this.config.options?.collection || 'memories',
+                database: this.config.options?.database || 'kodus-flow',
+                collection:
+                    this.config.options?.collection || 'kodus-agent-memory',
             },
             maxItems: 10000,
             enableCompression: true,

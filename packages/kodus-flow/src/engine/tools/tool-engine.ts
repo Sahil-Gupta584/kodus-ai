@@ -25,7 +25,7 @@ import {
     ToolId,
     ToolMetadataForLLM,
     ToolMetadataForPlanner,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 import { MultiKernelHandler } from '../core/multi-kernel-handler.js';
 
 export class ToolEngine {

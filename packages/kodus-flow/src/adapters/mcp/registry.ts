@@ -6,7 +6,7 @@ import {
     MCPServerConfig,
     MCPToolRawWithServer,
     TransportType,
-} from '@/core/types/allTypes.js';
+} from '../../core/types/allTypes.js';
 
 export class MCPRegistry {
     private clients = new Map<string, SpecCompliantMCPClient>();

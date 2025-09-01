@@ -30,7 +30,7 @@ import {
     ToolDefinition,
     ToolId,
     UserContext,
-} from '@/core/types/allTypes.js';
+} from '../core/types/allTypes.js';
 
 export class SDKOrchestrator {
     private agents = new Map<string, AgentData>();
@@ -90,7 +90,9 @@ const orchestrator = new SDKOrchestrator({
                 storageKeys: Object.keys(this.config.storage || {}),
             },
         );
-        this.initializeEnhancedContext();
+
+        // Configure ContextNew (sync) - initialization happens in initialize() method
+        this.configureEnhancedContext();
 
         if (this.config.kernel?.performance?.autoSnapshot) {
             this.kernelHandler = createMultiKernelHandler({
@@ -800,9 +802,9 @@ const orchestrator = new SDKOrchestrator({
     // ──────────────────────────────────────────────────────────────────────────────
 
     /**
-     * 🔥 Initialize EnhancedContextBuilder with new storage config
+     * 🔧 Configure EnhancedContextBuilder (sync - called in constructor)
      */
-    private initializeEnhancedContext(): void {
+    private configureEnhancedContext(): void {
         try {
             const enhancedConfig = this.getEnhancedContextConfig();
             EnhancedContextBuilder.configure(enhancedConfig);
@@ -810,19 +812,55 @@ const orchestrator = new SDKOrchestrator({
             this.logger.info('✅ EnhancedContextBuilder configured', {
                 mode:
                     enhancedConfig.adapterType === StorageEnum.MONGODB
-                        ? 'MongoDB'
-                        : 'InMemory',
+                        ? StorageEnum.MONGODB
+                        : StorageEnum.INMEMORY,
                 database: enhancedConfig.dbName,
                 collections: {
                     sessions: enhancedConfig.sessionsCollection,
                     snapshots: enhancedConfig.snapshotsCollection,
-                    memory: enhancedConfig.memory?.adapterConfig?.options
-                        ?.collection,
+                    memory: enhancedConfig.memoryCollection,
                 },
             });
+
+            // ℹ️ Collections will be created automatically when first used
         } catch (error) {
             this.logger.error(
                 'Failed to configure EnhancedContextBuilder',
+                error instanceof Error ? error : new Error('Unknown error'),
+            );
+            throw error;
+        }
+    }
+
+    /**
+     * 🚀 Initialize EnhancedContextBuilder (async - creates collections)
+     * Call this method after creating the orchestrator to ensure MongoDB collections exist
+     */
+    async initializeContextCollections(): Promise<void> {
+        try {
+            const enhancedConfig = this.getEnhancedContextConfig();
+
+            if (enhancedConfig.adapterType === StorageEnum.MONGODB) {
+                this.logger.info(
+                    '🚀 Initializing ContextNew for MongoDB - creating collections...',
+                    enhancedConfig,
+                );
+
+                const builder = EnhancedContextBuilder.getInstance();
+                // Initialize infrastructure properly
+                await builder.initialize();
+
+                this.logger.info(
+                    '✅ ContextNew initialization complete - MongoDB collections created',
+                );
+            } else {
+                this.logger.info(
+                    'ℹ️ Using InMemory storage - no MongoDB collections to create',
+                );
+            }
+        } catch (error) {
+            this.logger.error(
+                'Failed to initialize ContextNew collections',
                 error instanceof Error ? error : new Error('Unknown error'),
             );
             throw error;
@@ -835,28 +873,15 @@ const orchestrator = new SDKOrchestrator({
     getEnhancedContextConfig() {
         const storage = this.config.storage;
 
-        // 🎯 REGRA: Se não tem storage config = InMemory
         if (!storage) {
             return {
                 adapterType: StorageEnum.INMEMORY,
                 dbName: 'kodus-flow-memory',
                 sessionsCollection: 'sessions',
                 snapshotsCollection: 'snapshots',
+                memoryCollection: 'memories',
                 sessionTTL: 24 * 60 * 60 * 1000, // 24h
                 snapshotTTL: 7 * 24 * 60 * 60 * 1000, // 7 days
-                memory: {
-                    adapterType: StorageEnum.INMEMORY,
-                    adapterConfig: {
-                        connectionString: undefined,
-                        options: {
-                            database: 'kodus-flow-memory',
-                            collection: 'memories',
-                            maxItems: 10000,
-                            enableCompression: true,
-                            cleanupInterval: 300000,
-                        },
-                    },
-                },
             };
         }
 
@@ -882,21 +907,9 @@ const orchestrator = new SDKOrchestrator({
             dbName: storage.database || 'kodus-flow',
             sessionsCollection,
             snapshotsCollection,
+            memoryCollection,
             sessionTTL,
             snapshotTTL,
-            memory: {
-                adapterType,
-                adapterConfig: {
-                    connectionString: storage.connectionString,
-                    options: {
-                        database: storage.database || 'kodus-flow',
-                        collection: memoryCollection,
-                        maxItems: options.maxItems || 10000,
-                        enableCompression: options.enableCompression ?? true,
-                        cleanupInterval: options.cleanupInterval || 300000,
-                    },
-                },
-            },
         };
 
         this.logger.debug('🔥 Enhanced context config (NEW)', {
@@ -986,8 +999,15 @@ const orchestrator = new SDKOrchestrator({
 // 🏭 FACTORY FUNCTION
 // ──────────────────────────────────────────────────────────────────────────────
 
-export function createOrchestration(
+export async function createOrchestration(
     config: OrchestrationConfig,
-): SDKOrchestrator {
-    return new SDKOrchestrator(config);
+): Promise<SDKOrchestrator> {
+    const orchestrator = new SDKOrchestrator(config);
+
+    console.log('🔍 DEBUGG: About to call initializeContextCollections...');
+    // 🚀 Initialize ContextNew collections (infraestrutura)
+    await orchestrator.initializeContextCollections();
+    console.log('🔍 DEBUGG: initializeContextCollections completed');
+
+    return orchestrator;
 }
