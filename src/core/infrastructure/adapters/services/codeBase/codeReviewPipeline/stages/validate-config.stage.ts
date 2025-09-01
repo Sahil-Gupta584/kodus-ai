@@ -11,7 +11,10 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { PinoLoggerService } from '../../../logger/pino.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
-import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
+import {
+    AutomationMessage,
+    AutomationStatus,
+} from '@/core/domain/automation/enums/automation-status';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 
 @Injectable()
@@ -44,7 +47,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 return this.updateContext(context, (draft) => {
                     draft.statusInfo = {
                         status: AutomationStatus.SKIPPED,
-                        message: 'No code review config found in context',
+                        message: AutomationMessage.NO_CONFIG_IN_CONTEXT,
                     };
                 });
             }
@@ -95,7 +98,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             return this.updateContext(context, (draft) => {
                 draft.statusInfo = {
                     status: AutomationStatus.SKIPPED,
-                    message: 'Error during config validation',
+                    message: AutomationMessage.CONFIG_VALIDATION_ERROR,
                 };
             });
         }
@@ -123,7 +126,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         if (!basicValidation) {
             return {
                 shouldProcess: false,
-                reason: `PR #${context.pullRequest.number} skipped due to basic config rules.`,
+                reason: AutomationMessage.SKIPPED_BY_BASIC_RULES,
                 shouldSaveSkipped: false,
             };
         }
@@ -152,7 +155,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
 
             return {
                 shouldProcess: true,
-                reason: 'Processing due to manual command',
+                reason: AutomationMessage.PROCESSING_MANUAL,
                 shouldSaveSkipped: false,
                 automaticReviewStatus,
             };
@@ -184,7 +187,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
     }> {
         return {
             shouldProcess: true,
-            reason: 'Processing in automatic mode',
+            reason: AutomationMessage.PROCESSING_AUTOMATIC,
             shouldSaveSkipped: false,
             automaticReviewStatus: {
                 previousStatus: ReviewCadenceState.AUTOMATIC,
@@ -207,7 +210,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         if (!hasExistingReview) {
             return {
                 shouldProcess: true,
-                reason: 'Processing first review in manual mode',
+                reason: AutomationMessage.FIRST_REVIEW_MANUAL,
                 shouldSaveSkipped: false,
                 automaticReviewStatus: {
                     previousStatus: ReviewCadenceState.AUTOMATIC,
@@ -220,7 +223,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
 
         return {
             shouldProcess: false,
-            reason: `PR #${context.pullRequest.number} skipped - manual mode requires @kody start-review command`,
+            reason: AutomationMessage.MANUAL_REQUIRED_TO_START,
             shouldSaveSkipped: true,
             automaticReviewStatus: {
                 previousStatus: currentStatus,
@@ -244,7 +247,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         if (!hasExistingReview) {
             return {
                 shouldProcess: true,
-                reason: 'Processing first review in auto-pause mode',
+                reason: AutomationMessage.FIRST_REVIEW_AUTO_PAUSE,
                 shouldSaveSkipped: false,
                 automaticReviewStatus: {
                     previousStatus: ReviewCadenceState.AUTOMATIC,
@@ -257,7 +260,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         if (currentStatus === ReviewCadenceState.PAUSED) {
             return {
                 shouldProcess: false,
-                reason: `PR #${context.pullRequest.number} is paused - use @kody start-review to resume`,
+                reason: AutomationMessage.PR_PAUSED_NEED_RESUME,
                 shouldSaveSkipped: true,
                 automaticReviewStatus: {
                     previousStatus: ReviewCadenceState.PAUSED,
@@ -273,7 +276,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
 
             return {
                 shouldProcess: false,
-                reason: `PR #${context.pullRequest.number} paused due to multiple pushes in short time window`,
+                reason: AutomationMessage.PR_PAUSED_BURST_PUSHES,
                 shouldSaveSkipped: true,
                 automaticReviewStatus: {
                     previousStatus: ReviewCadenceState.AUTOMATIC,
@@ -287,7 +290,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
 
         return {
             shouldProcess: true,
-            reason: 'Processing in auto-pause mode',
+            reason: AutomationMessage.PROCESSING_AUTO_PAUSE,
             shouldSaveSkipped: false,
             automaticReviewStatus: {
                 previousStatus: ReviewCadenceState.AUTOMATIC,

@@ -11,7 +11,10 @@ import {
     convertToHunksWithLinesNumbers,
 } from '@/shared/utils/patch';
 import { FileChange } from '@/config/types/general/codeReview.type';
-import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
+import {
+    AutomationMessage,
+    AutomationStatus,
+} from '@/core/domain/automation/enums/automation-status';
 
 @Injectable()
 export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -43,7 +46,7 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
             return this.updateContext(context, (draft) => {
                 draft.statusInfo = {
                     status: AutomationStatus.SKIPPED,
-                    message: 'No code review config found in context',
+                    message: AutomationMessage.NO_CONFIG_IN_CONTEXT,
                 };
             });
         }
@@ -58,8 +61,8 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
 
         if (!files?.length || files.length > this.maxFilesToAnalyze) {
             const msg = !files?.length
-                ? 'No files found after applying ignore paths'
-                : `Too many files to analyze (>${this.maxFilesToAnalyze})`;
+                ? AutomationMessage.NO_FILES_AFTER_IGNORE
+                : AutomationMessage.TOO_MANY_FILES;
 
             this.logger.warn({
                 message: `Skipping code review for PR#${context.pullRequest.number} - ${msg}`,
