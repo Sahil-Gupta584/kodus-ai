@@ -87,21 +87,20 @@ export class AutomationCodeReviewService
     }
 
     async run?(payload?: any): Promise<any> {
+        const {
+            organizationAndTeamData,
+            repository,
+            branch,
+            pullRequest,
+            platformType,
+            teamAutomationId,
+            origin,
+            action,
+        } = payload;
+
         let execution: IAutomationExecution | null = null;
 
         try {
-            const {
-                organizationAndTeamData,
-                codeManagementEvent,
-                branch,
-                pullRequest,
-                repository,
-                teamAutomationId,
-                platformType,
-                origin,
-                action,
-            } = payload;
-
             this.logger.log({
                 message: `Started Handling pull request for ${repository?.name} - ${branch} - PR#${pullRequest?.number}`,
                 context: AutomationCodeReviewService.name,
@@ -115,17 +114,23 @@ export class AutomationCodeReviewService
                 status: true,
             });
 
+            if (!organization) {
+                this.logger.warn({
+                    message: `No organization found with ID ${organizationAndTeamData.organizationId}`,
+                    context: AutomationCodeReviewService.name,
+                    metadata: {
+                        organizationAndTeamData,
+                        repository,
+                        pullRequestNumber: pullRequest?.number,
+                    },
+                });
+                return 'No organization found for the provided ID';
+            }
+
             execution = await this.createAutomationExecution(
+                payload,
                 AutomationStatus.IN_PROGRESS, // in the future maybe pending?
                 'Automation started',
-                {
-                    platformType,
-                    organizationAndTeamData: organizationAndTeamData,
-                    pullRequestNumber: pullRequest?.number,
-                    repositoryId: repository?.id,
-                },
-                teamAutomationId,
-                'System',
             );
             if (!execution) {
                 this.logger.warn({
@@ -137,6 +142,7 @@ export class AutomationCodeReviewService
                         pullRequestNumber: pullRequest?.number,
                     },
                 });
+                return 'Could not create code review execution';
             }
 
             const result =
@@ -154,151 +160,51 @@ export class AutomationCodeReviewService
                     action,
                 );
 
-            if (result) {
-                if (execution) {
-                    const newData = {
-                        codeManagementEvent,
-                        platformType,
-                        organizationAndTeamData: organizationAndTeamData,
-                        pullRequestNumber: pullRequest?.number,
-                        repositoryId: repository?.id,
-                    };
-
-                    const validLastAnalyzedCommit =
-                        result.lastAnalyzedCommit &&
-                        typeof result.lastAnalyzedCommit === 'object' &&
-                        Object.keys(result.lastAnalyzedCommit).length > 0;
-
-                    if (
-                        validLastAnalyzedCommit &&
-                        (result.commentId ||
-                            result.noteId ||
-                            result.threadId) &&
-                        result.overallComments
-                    ) {
-                        Object.assign(newData, {
-                            lastAnalyzedCommit: result.lastAnalyzedCommit,
-                            commentId: result.commentId,
-                            noteId: result.noteId,
-                            threadId: result.threadId,
-                            automaticReviewStatus:
-                                result?.automaticReviewStatus,
-                        });
-                    }
-
-                    const { status, message } = result?.statusInfo || {};
-
-                    const finalStatus = status || AutomationStatus.SUCCESS;
-
-                    const finalMessage =
-                        message || 'Automation completed successfully';
-
-                    this.updateAutomationExecution(
-                        execution,
-                        finalMessage,
-                        finalStatus,
-                        newData,
-                    );
-                }
-
-                this.logger.log({
-                    message: `Finish Success Handling pull request for ${repository?.name} - ${branch} - PR#${pullRequest?.number}`,
-                    context: AutomationCodeReviewService.name,
-                    metadata: {
-                        organizationAndTeamData,
-                        ...result,
-                    },
-                });
-
-                return 'Automation executed successfully';
-            } else {
-                if (execution) {
-                    this.updateAutomationExecution(
-                        execution,
-                        'Error processing the pull request for code review',
-                        AutomationStatus.ERROR,
-                        {
-                            codeManagementEvent,
-                            platformType,
-                            organizationAndTeamData: organizationAndTeamData,
-                            pullRequestNumber: pullRequest?.number,
-                            repositoryId: repository?.id,
-                        },
-                    );
-                }
-
-                this.logger.log({
-                    message: `Finish Error Handling pull request for ${repository?.name} - ${branch} - PR#${pullRequest?.number}`,
-                    context: AutomationCodeReviewService.name,
-                    metadata: { organizationAndTeamData },
-                });
-
-                return 'Error while trying to execute the automation';
-            }
+            await this._handleExecutionCompletion(execution, result, payload);
+            return 'Automation executed successfully';
         } catch (error) {
-            if (execution) {
-                this.updateAutomationExecution(
-                    execution,
-                    'Error executing the code review automation for the team.',
-                    AutomationStatus.ERROR,
-                    {},
-                );
-            }
-
-            this.logger.error({
-                message: 'Error executing code review automation for the team.',
-                context: AutomationCodeReviewService.name,
-                error: error,
-                metadata: payload,
-            });
+            await this._handleExecutionError(execution, error, payload);
+            return 'Error executing automation';
         }
     }
 
     private async createAutomationExecution(
+        payload: any,
         status: AutomationStatus,
         message: string,
-        data: any,
-        teamAutomationId: string,
-        origin: string,
     ) {
+        const {
+            organizationAndTeamData,
+            pullRequest,
+            repository,
+            teamAutomationId,
+            platformType,
+            origin,
+        } = payload;
+
         try {
-            const automationExecution = {
-                status,
-                dataExecution: data,
-                teamAutomation: { uuid: teamAutomationId },
-                origin,
-                pullRequestNumber: data?.pullRequestNumber,
-                repositoryId: data?.repositoryId,
-            };
-
-            const automation =
-                await this.automationExecutionService.createCodeReview(
-                    automationExecution,
-                    message,
-                );
-
-            if (!automation) {
-                this.logger.warn({
-                    message: 'Failed to create automation execution',
-                    context: AutomationCodeReviewService.name,
-                    metadata: { status, teamAutomationId, origin },
-                });
-                return null;
-            }
-
-            return automation;
+            return await this.automationExecutionService.createCodeReview(
+                {
+                    status,
+                    dataExecution: {
+                        platformType,
+                        organizationAndTeamData,
+                        pullRequestNumber: pullRequest?.number,
+                        repositoryId: repository?.id,
+                    },
+                    teamAutomation: { uuid: teamAutomationId },
+                    origin: origin || 'System',
+                    pullRequestNumber: pullRequest?.number,
+                    repositoryId: repository?.id,
+                },
+                message,
+            );
         } catch (error) {
             this.logger.error({
                 message: 'Error creating automation execution',
                 context: AutomationCodeReviewService.name,
                 error,
-                metadata: {
-                    status,
-                    message,
-                    data,
-                    teamAutomationId,
-                    origin,
-                },
+                metadata: { teamAutomationId, status },
             });
             return null;
         }
@@ -306,9 +212,9 @@ export class AutomationCodeReviewService
 
     private async updateAutomationExecution(
         entity: IAutomationExecution,
-        message: string,
         status: AutomationStatus,
-        data?: any,
+        message: string,
+        data: any,
     ) {
         try {
             const errorMessage = [
@@ -316,20 +222,15 @@ export class AutomationCodeReviewService
                 AutomationStatus.SKIPPED,
             ].includes(status)
                 ? message
-                : null;
+                : undefined;
 
-            const updatedAutomationExecution: Partial<IAutomationExecution> = {
-                status,
-                dataExecution: {
-                    ...entity.dataExecution,
-                    ...data,
-                },
-                errorMessage,
-            };
-
-            return await this.automationExecutionService.updateCodeReview(
+            await this.automationExecutionService.updateCodeReview(
                 { uuid: entity.uuid },
-                updatedAutomationExecution,
+                {
+                    status,
+                    dataExecution: { ...entity.dataExecution, ...data },
+                    errorMessage,
+                },
                 message,
             );
         } catch (error) {
@@ -337,14 +238,109 @@ export class AutomationCodeReviewService
                 message: 'Error updating automation execution',
                 context: AutomationCodeReviewService.name,
                 error,
-                metadata: {
-                    entity,
-                    status,
-                    data,
-                    message,
-                },
+                metadata: { executionUuid: entity.uuid, status },
             });
-            return null;
         }
+    }
+
+    private async _handleExecutionCompletion(
+        execution: IAutomationExecution,
+        result: any,
+        payload: any,
+    ) {
+        if (!result) {
+            await this.updateAutomationExecution(
+                execution,
+                AutomationStatus.ERROR,
+                'Error processing the pull request: handler returned no result.',
+                this._buildExecutionData(payload),
+            );
+            return;
+        }
+
+        const finalStatus =
+            result.statusInfo?.status || AutomationStatus.SUCCESS;
+        const finalMessage =
+            result.statusInfo?.message || 'Automation completed successfully.';
+        const newData = this._buildExecutionData(payload, result);
+
+        await this.updateAutomationExecution(
+            execution,
+            finalStatus,
+            finalMessage,
+            newData,
+        );
+
+        this.logger.log({
+            message: `Successfully handled pull request for PR#${payload.pullRequest?.number}`,
+            context: AutomationCodeReviewService.name,
+            metadata: {
+                organizationAndTeamData: payload.organizationAndTeamData,
+                ...result,
+            },
+        });
+    }
+
+    private async _handleExecutionError(
+        execution: IAutomationExecution,
+        error: any,
+        payload: any,
+    ) {
+        const errorMessage =
+            error.message ||
+            'An unexpected error occurred during code review automation.';
+
+        this.logger.error({
+            message: errorMessage,
+            context: AutomationCodeReviewService.name,
+            error,
+            metadata: payload,
+        });
+
+        await this.updateAutomationExecution(
+            execution,
+            AutomationStatus.ERROR,
+            errorMessage,
+            this._buildExecutionData(payload),
+        );
+    }
+
+    private _buildExecutionData(payload: any, result?: any): any {
+        const {
+            codeManagementEvent,
+            platformType,
+            organizationAndTeamData,
+            pullRequest,
+            repository,
+        } = payload;
+
+        const baseData = {
+            codeManagementEvent,
+            platformType,
+            organizationAndTeamData,
+            pullRequestNumber: pullRequest?.number,
+            repositoryId: repository?.id,
+        };
+
+        if (!result) {
+            return baseData;
+        }
+
+        const validLastAnalyzedCommit =
+            result.lastAnalyzedCommit &&
+            typeof result.lastAnalyzedCommit === 'object' &&
+            Object.keys(result.lastAnalyzedCommit).length > 0;
+
+        if (validLastAnalyzedCommit) {
+            Object.assign(baseData, {
+                lastAnalyzedCommit: result.lastAnalyzedCommit,
+                commentId: result.commentId,
+                noteId: result.noteId,
+                threadId: result.threadId,
+                automaticReviewStatus: result.automaticReviewStatus,
+            });
+        }
+
+        return baseData;
     }
 }
