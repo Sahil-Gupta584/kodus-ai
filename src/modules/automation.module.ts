@@ -48,6 +48,7 @@ import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { PullRequestsModule } from './pullRequests.module';
 import { TeamArtifactsModule } from './teamArtifacts.module';
 import { LicenseModule } from '@/ee/license/license.module';
+import { CodeReviewExecutionModule } from './codeReviewExecution.module';
 
 @Module({
     imports: [
@@ -78,7 +79,8 @@ import { LicenseModule } from '@/ee/license/license.module';
         AuthIntegrationModule,
         CheckinModule,
         TeamArtifactsModule,
-        LicenseModule
+        LicenseModule,
+        forwardRef(() => CodeReviewExecutionModule),
     ],
     providers: [
         ...UseCases,
@@ -132,4 +134,4 @@ import { LicenseModule } from '@/ee/license/license.module';
         RunCodeReviewAutomationUseCase,
     ],
 })
-export class AutomationModule { }
+export class AutomationModule {}

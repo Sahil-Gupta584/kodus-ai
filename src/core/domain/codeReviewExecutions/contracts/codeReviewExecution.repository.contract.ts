@@ -1,3 +1,5 @@
+import { FindOperator } from 'typeorm';
+import { IAutomationExecution } from '../../automation/interfaces/automation-execution.interface';
 import { CodeReviewExecutionEntity } from '../entities/codeReviewExecution.entity';
 import { CodeReviewExecution } from '../interfaces/codeReviewExecution.interface';
 
@@ -14,7 +16,7 @@ export interface ICodeReviewExecutionRepository {
     ): Promise<CodeReviewExecutionEntity | null>;
 
     update(
-        uuid: string,
+        filter: Partial<CodeReviewExecution>,
         codeReviewExecution: Partial<
             Omit<CodeReviewExecution, 'uuid' | 'createdAt' | 'updatedAt'>
         >,
@@ -27,4 +29,6 @@ export interface ICodeReviewExecutionRepository {
     findOne(
         filter?: Partial<CodeReviewExecution>,
     ): Promise<CodeReviewExecutionEntity | null>;
+
+    delete(uuid: string): Promise<boolean>;
 }

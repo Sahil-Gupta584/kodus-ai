@@ -1,3 +1,4 @@
+import { CodeReviewExecution } from '../../codeReviewExecutions/interfaces/codeReviewExecution.interface';
 import { AutomationStatus } from '../enums/automation-status';
 import { IAutomationExecution } from '../interfaces/automation-execution.interface';
 import { IAutomation } from '../interfaces/automation.interface';
@@ -13,6 +14,7 @@ export class AutomationExecutionEntity implements IAutomationExecution {
     private _pullRequestNumber?: number;
     private _repositoryId?: string;
     private _teamAutomation?: Partial<ITeamAutomation>;
+    private _codeReviewExecutions?: Array<Partial<CodeReviewExecution>>;
     private _origin?: string;
 
     constructor(
@@ -29,6 +31,7 @@ export class AutomationExecutionEntity implements IAutomationExecution {
         this._pullRequestNumber = automationExecution?.pullRequestNumber;
         this._repositoryId = automationExecution?.repositoryId;
         this._teamAutomation = automationExecution.teamAutomation;
+        this._codeReviewExecutions = automationExecution.codeReviewExecutions;
         this._origin = automationExecution.origin;
     }
 
@@ -38,6 +41,24 @@ export class AutomationExecutionEntity implements IAutomationExecution {
             | Partial<IAutomationExecution>,
     ): AutomationExecutionEntity {
         return new AutomationExecutionEntity(automationExecution);
+    }
+
+    public toObject(
+        automationExecution: AutomationExecutionEntity,
+    ): IAutomationExecution {
+        return {
+            uuid: automationExecution.uuid,
+            createdAt: automationExecution.createdAt,
+            updatedAt: automationExecution.updatedAt,
+            status: automationExecution.status,
+            errorMessage: automationExecution.errorMessage,
+            dataExecution: automationExecution.dataExecution,
+            pullRequestNumber: automationExecution.pullRequestNumber,
+            repositoryId: automationExecution.repositoryId,
+            teamAutomation: automationExecution.teamAutomation,
+            codeReviewExecutions: automationExecution.codeReviewExecutions,
+            origin: automationExecution.origin,
+        };
     }
 
     public get uuid(): string {
@@ -74,6 +95,10 @@ export class AutomationExecutionEntity implements IAutomationExecution {
 
     public get teamAutomation(): Partial<IAutomation> {
         return this._teamAutomation;
+    }
+
+    public get codeReviewExecutions(): Array<Partial<CodeReviewExecution>> {
+        return [...this._codeReviewExecutions];
     }
 
     public get origin(): string {

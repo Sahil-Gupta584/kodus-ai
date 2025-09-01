@@ -1,11 +1,10 @@
-export enum PipelineStatus {
-    RUN,
-    SKIP,
-    FAIL,
-}
+import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
 
 export interface PipelineContext {
-    status: PipelineStatus;
+    statusInfo: {
+        status: AutomationStatus;
+        message?: string;
+    };
     pipelineVersion: string;
     errors: PipelineError[];
     pipelineMetadata?: {

@@ -312,6 +312,6 @@ export class AutomationIssuesDetailsService implements IAutomationFactory {
             origin,
         };
 
-        this.automationExecutionService.register(automationExecution);
+        this.automationExecutionService.create(automationExecution);
     }
 }

@@ -1,24 +1,16 @@
 import { UseCases } from '@/core/application/use-cases/codeReviewExecution';
 import { CODE_REVIEW_EXECUTION_REPOSITORY } from '@/core/domain/codeReviewExecutions/contracts/codeReviewExecution.repository.contract';
 import { CODE_REVIEW_EXECUTION_SERVICE } from '@/core/domain/codeReviewExecutions/contracts/codeReviewExecution.service.contract';
-import { CodeReviewExecutionRepository } from '@/core/infrastructure/adapters/repositories/mongoose/codeReviewExecution.repository';
-import {
-    CodeReviewExecutionModel,
-    CodeReviewExecutionSchema,
-} from '@/core/infrastructure/adapters/repositories/mongoose/schema/codeReviewExecution.model';
 import { CodeReviewExecutionService } from '@/core/infrastructure/adapters/services/codeReviewExecution/codeReviewExecution.service';
 import { forwardRef, Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
 import { PullRequestsModule } from './pullRequests.module';
+import { CodeReviewExecutionRepository } from '@/core/infrastructure/adapters/repositories/typeorm/codeReviewExecution.repository';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { CodeReviewExecutionModel } from '@/core/infrastructure/adapters/repositories/typeorm/schema/codeReviewExecution.model';
 
 @Module({
     imports: [
-        MongooseModule.forFeature([
-            {
-                name: CodeReviewExecutionModel.name,
-                schema: CodeReviewExecutionSchema,
-            },
-        ]),
+        TypeOrmModule.forFeature([CodeReviewExecutionModel]),
         forwardRef(() => PullRequestsModule),
     ],
     providers: [

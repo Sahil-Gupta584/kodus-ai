@@ -11,7 +11,6 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { PinoLoggerService } from '../../../logger/pino.service';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
-import { PipelineStatus } from '../../../pipeline/interfaces/pipeline-context.interface';
 import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 
@@ -43,7 +42,10 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 });
 
                 return this.updateContext(context, (draft) => {
-                    draft.status = PipelineStatus.SKIP;
+                    draft.statusInfo = {
+                        status: AutomationStatus.SKIPPED,
+                        message: 'No code review config found in context',
+                    };
                 });
             }
 
@@ -66,15 +68,11 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                     },
                 });
 
-                if (cadenceResult.shouldSaveSkipped) {
-                    await this.saveSkippedExecution(
-                        context,
-                        cadenceResult.automaticReviewStatus,
-                    );
-                }
-
                 return this.updateContext(context, (draft) => {
-                    draft.status = PipelineStatus.SKIP;
+                    draft.statusInfo = {
+                        status: AutomationStatus.SKIPPED,
+                        message: cadenceResult.reason,
+                    };
                 });
             }
 
@@ -95,7 +93,10 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             });
 
             return this.updateContext(context, (draft) => {
-                draft.status = PipelineStatus.SKIP;
+                draft.statusInfo = {
+                    status: AutomationStatus.SKIPPED,
+                    message: 'Error during config validation',
+                };
             });
         }
     }
@@ -410,33 +411,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 error,
             });
             return null;
-        }
-    }
-
-    private async saveSkippedExecution(
-        context: CodeReviewPipelineContext,
-        automaticReviewStatus?: AutomaticReviewStatus,
-    ): Promise<void> {
-        try {
-            await this.automationExecutionService.register({
-                status: AutomationStatus.SKIPPED,
-                dataExecution: {
-                    automaticReviewStatus,
-                    platformType: context.platformType || '',
-                    pullRequestNumber: context.pullRequest.number,
-                    repositoryId: context?.repository?.id,
-                },
-                teamAutomation: { uuid: context.teamAutomationId },
-                origin: 'System',
-                pullRequestNumber: context.pullRequest.number,
-                repositoryId: context?.repository?.id,
-            });
-        } catch (error) {
-            this.logger.error({
-                message: `Failed to save skipped execution for PR #${context.pullRequest.number}`,
-                context: ValidateConfigStage.name,
-                error,
-            });
         }
     }
 

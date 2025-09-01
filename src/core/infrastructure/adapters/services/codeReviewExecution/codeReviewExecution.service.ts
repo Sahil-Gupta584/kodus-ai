@@ -28,13 +28,13 @@ export class CodeReviewExecutionService implements ICodeReviewExecutionService {
     }
 
     update(
-        uuid: string,
+        filter: Partial<CodeReviewExecution>,
         codeReviewExecution: Partial<
             Omit<CodeReviewExecution, 'uuid' | 'createdAt' | 'updatedAt'>
         >,
     ): Promise<CodeReviewExecutionEntity | null> {
         return this.codeReviewExecutionRepository.update(
-            uuid,
+            filter,
             codeReviewExecution,
         );
     }
@@ -49,5 +49,9 @@ export class CodeReviewExecutionService implements ICodeReviewExecutionService {
         filter?: Partial<CodeReviewExecution>,
     ): Promise<CodeReviewExecutionEntity | null> {
         return this.codeReviewExecutionRepository.findOne(filter);
+    }
+
+    delete(uuid: string): Promise<boolean> {
+        return this.codeReviewExecutionRepository.delete(uuid);
     }
 }

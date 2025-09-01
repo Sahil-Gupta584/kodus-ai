@@ -23,17 +23,11 @@ import {
     IOrganizationService,
     ORGANIZATION_SERVICE_TOKEN,
 } from '@/core/domain/organization/contracts/organization.service.contract';
-import { CreateCodeReviewExecutionForPRUseCase } from '@/core/application/use-cases/codeReviewExecution/create-for-pr.use-case';
-import {
-    CodeReviewExecutionStatus,
-    CodeReviewExecutionTrigger,
-} from '@/core/domain/codeReviewExecutions/enum/codeReviewExecution.enum';
 import {
     CODE_REVIEW_EXECUTION_SERVICE,
     ICodeReviewExecutionService,
 } from '@/core/domain/codeReviewExecutions/contracts/codeReviewExecution.service.contract';
-import { PipelineStatus } from '../../../pipeline/interfaces/pipeline-context.interface';
-import { CodeReviewExecution } from '@/core/domain/codeReviewExecutions/interfaces/codeReviewExecution.interface';
+import { stat } from 'fs';
 
 @Injectable()
 export class AutomationCodeReviewService
@@ -55,8 +49,6 @@ export class AutomationCodeReviewService
         private readonly organizationService: IOrganizationService,
 
         private readonly codeReviewHandlerService: CodeReviewHandlerService,
-
-        private readonly createCodeReviewExecutionForPRUseCase: CreateCodeReviewExecutionForPRUseCase,
 
         @Inject(CODE_REVIEW_EXECUTION_SERVICE)
         private readonly codeReviewExecutionService: ICodeReviewExecutionService,
@@ -95,6 +87,8 @@ export class AutomationCodeReviewService
     }
 
     async run?(payload?: any): Promise<any> {
+        let execution: IAutomationExecution | null = null;
+
         try {
             const {
                 organizationAndTeamData,
@@ -121,18 +115,18 @@ export class AutomationCodeReviewService
                 status: true,
             });
 
-            let execution =
-                await this.createCodeReviewExecutionForPRUseCase.execute(
-                    pullRequest?.number,
-                    organizationAndTeamData,
-                    repository,
-                    {
-                        status: CodeReviewExecutionStatus.IN_PROGRESS,
-                        startedAt: new Date(),
-                        trigger: this.getTrigger(action, origin),
-                    },
-                );
-
+            execution = await this.createAutomationExecution(
+                AutomationStatus.IN_PROGRESS, // in the future maybe pending?
+                'Automation started',
+                {
+                    platformType,
+                    organizationAndTeamData: organizationAndTeamData,
+                    pullRequestNumber: pullRequest?.number,
+                    repositoryId: repository?.id,
+                },
+                teamAutomationId,
+                'System',
+            );
             if (!execution) {
                 this.logger.warn({
                     message: `Could not create code review execution for PR #${pullRequest?.number}`,
@@ -161,58 +155,51 @@ export class AutomationCodeReviewService
                 );
 
             if (result) {
-                const validLastAnalyzedCommit =
-                    result.lastAnalyzedCommit &&
-                    typeof result.lastAnalyzedCommit === 'object' &&
-                    Object.keys(result.lastAnalyzedCommit).length > 0;
+                if (execution) {
+                    const newData = {
+                        codeManagementEvent,
+                        platformType,
+                        organizationAndTeamData: organizationAndTeamData,
+                        pullRequestNumber: pullRequest?.number,
+                        repositoryId: repository?.id,
+                    };
 
-                if (
-                    validLastAnalyzedCommit &&
-                    (result.commentId ||
-                        result.noteId ||
-                        result.threadId ||
-                        result.overallComments)
-                ) {
-                    this.createAutomationExecution(
-                        {
-                            codeManagementEvent,
-                            platformType,
-                            organizationAndTeamData: organizationAndTeamData,
-                            pullRequestNumber: pullRequest?.number,
-                            overallComments: result.overallComments,
+                    const validLastAnalyzedCommit =
+                        result.lastAnalyzedCommit &&
+                        typeof result.lastAnalyzedCommit === 'object' &&
+                        Object.keys(result.lastAnalyzedCommit).length > 0;
+
+                    if (
+                        validLastAnalyzedCommit &&
+                        (result.commentId ||
+                            result.noteId ||
+                            result.threadId) &&
+                        result.overallComments
+                    ) {
+                        Object.assign(newData, {
                             lastAnalyzedCommit: result.lastAnalyzedCommit,
                             commentId: result.commentId,
                             noteId: result.noteId,
                             threadId: result.threadId,
-                            repositoryId: repository?.id,
                             automaticReviewStatus:
                                 result?.automaticReviewStatus,
-                        },
-                        teamAutomationId,
-                        'System',
+                        });
+                    }
+
+                    const { status, message } = result?.statusInfo || {};
+
+                    const finalStatus = status || AutomationStatus.SUCCESS;
+
+                    const finalMessage =
+                        message || 'Automation completed successfully';
+
+                    this.updateAutomationExecution(
+                        execution,
+                        finalMessage,
+                        finalStatus,
+                        newData,
                     );
                 }
-
-                if (execution) {
-                    execution = await this.codeReviewExecutionService.update(
-                        execution.uuid,
-                        {
-                            status: this.pipelineStatusToCodeReviewStatus(
-                                result?.status,
-                            ),
-                            finishedAt: new Date(),
-                            lastCommitSha: validLastAnalyzedCommit
-                                ? result.lastAnalyzedCommit.sha
-                                : undefined,
-                        },
-                    );
-                }
-
-                await this.updateStartedCodeReviewAutomationExecutionStatus({
-                    pullRequestNumber: pullRequest?.number,
-                    origin,
-                    teamAutomationId,
-                });
 
                 this.logger.log({
                     message: `Finish Success Handling pull request for ${repository?.name} - ${branch} - PR#${pullRequest?.number}`,
@@ -225,11 +212,20 @@ export class AutomationCodeReviewService
 
                 return 'Automation executed successfully';
             } else {
-                await this.updateStartedCodeReviewAutomationExecutionStatus({
-                    pullRequestNumber: pullRequest?.number,
-                    origin,
-                    teamAutomationId,
-                });
+                if (execution) {
+                    this.updateAutomationExecution(
+                        execution,
+                        'Error processing the pull request for code review',
+                        AutomationStatus.ERROR,
+                        {
+                            codeManagementEvent,
+                            platformType,
+                            organizationAndTeamData: organizationAndTeamData,
+                            pullRequestNumber: pullRequest?.number,
+                            repositoryId: repository?.id,
+                        },
+                    );
+                }
 
                 this.logger.log({
                     message: `Finish Error Handling pull request for ${repository?.name} - ${branch} - PR#${pullRequest?.number}`,
@@ -240,6 +236,15 @@ export class AutomationCodeReviewService
                 return 'Error while trying to execute the automation';
             }
         } catch (error) {
+            if (execution) {
+                this.updateAutomationExecution(
+                    execution,
+                    'Error executing the code review automation for the team.',
+                    AutomationStatus.ERROR,
+                    {},
+                );
+            }
+
             this.logger.error({
                 message: 'Error executing code review automation for the team.',
                 context: AutomationCodeReviewService.name,
@@ -249,107 +254,97 @@ export class AutomationCodeReviewService
         }
     }
 
-    private createAutomationExecution(
+    private async createAutomationExecution(
+        status: AutomationStatus,
+        message: string,
         data: any,
         teamAutomationId: string,
         origin: string,
     ) {
-        const automationExecution = {
-            status: AutomationStatus.SUCCESS,
-            dataExecution: data,
-            teamAutomation: { uuid: teamAutomationId },
-            origin,
-            pullRequestNumber: data?.pullRequestNumber,
-            repositoryId: data?.repositoryId,
-        };
-
-        this.automationExecutionService.register(automationExecution);
-    }
-
-    private async updateStartedCodeReviewAutomationExecutionStatus(payload: {
-        pullRequestNumber: number;
-        teamAutomationId: string;
-        origin: string;
-    }) {
-        const { teamAutomationId, pullRequestNumber } = payload;
-
-        const automationExecutions = await this.automationExecutionService.find(
-            {
-                teamAutomation: {
-                    uuid: teamAutomationId,
-                },
-            },
-        );
-
-        let filteredAutomationExecution = automationExecutions?.find(
-            (automation) =>
-                automation?.dataExecution &&
-                automation?.dataExecution.pull_number === pullRequestNumber &&
-                automation?.dataExecution.hasOwnProperty(
-                    'onboardingFinishReview',
-                ),
-        );
-
-        if (!filteredAutomationExecution) {
-            return false;
-        }
-
-        filteredAutomationExecution.dataExecution.onboardingFinishReview = true;
-
-        const updatedFilteredAutomationExecution: Partial<IAutomationExecution> =
-            {
-                uuid: filteredAutomationExecution.uuid,
-                dataExecution: filteredAutomationExecution?.dataExecution,
-                errorMessage: filteredAutomationExecution?.errorMessage,
-                origin: filteredAutomationExecution?.origin,
-                status: filteredAutomationExecution?.status,
-                createdAt: filteredAutomationExecution?.createdAt,
-                teamAutomation: filteredAutomationExecution?.teamAutomation,
-                updatedAt: filteredAutomationExecution?.updatedAt,
+        try {
+            const automationExecution = {
+                status,
+                dataExecution: data,
+                teamAutomation: { uuid: teamAutomationId },
+                origin,
+                pullRequestNumber: data?.pullRequestNumber,
+                repositoryId: data?.repositoryId,
             };
 
-        await this.automationExecutionService.update(
-            {
-                uuid: updatedFilteredAutomationExecution.uuid,
-            },
-            updatedFilteredAutomationExecution,
-        );
+            const automation =
+                await this.automationExecutionService.createCodeReview(
+                    automationExecution,
+                    message,
+                );
 
-        return true;
-    }
+            if (!automation) {
+                this.logger.warn({
+                    message: 'Failed to create automation execution',
+                    context: AutomationCodeReviewService.name,
+                    metadata: { status, teamAutomationId, origin },
+                });
+                return null;
+            }
 
-    private pipelineStatusToCodeReviewStatus(
-        status: PipelineStatus,
-    ): CodeReviewExecution['status'] {
-        switch (status) {
-            case PipelineStatus.FAIL:
-                return CodeReviewExecutionStatus.FAILED;
-            case PipelineStatus.SKIP:
-                return CodeReviewExecutionStatus.SKIPPED;
-            default:
-                return CodeReviewExecutionStatus.COMPLETED;
+            return automation;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error creating automation execution',
+                context: AutomationCodeReviewService.name,
+                error,
+                metadata: {
+                    status,
+                    message,
+                    data,
+                    teamAutomationId,
+                    origin,
+                },
+            });
+            return null;
         }
     }
 
-    private getTrigger(
-        action: string,
-        origin: string,
-    ): CodeReviewExecution['trigger'] {
-        if (origin === 'command') {
-            return CodeReviewExecutionTrigger.COMMAND;
+    private async updateAutomationExecution(
+        entity: IAutomationExecution,
+        message: string,
+        status: AutomationStatus,
+        data?: any,
+    ) {
+        try {
+            const errorMessage = [
+                AutomationStatus.ERROR,
+                AutomationStatus.SKIPPED,
+            ].includes(status)
+                ? message
+                : null;
+
+            const updatedAutomationExecution: Partial<IAutomationExecution> = {
+                status,
+                dataExecution: {
+                    ...entity.dataExecution,
+                    ...data,
+                },
+                errorMessage,
+            };
+
+            return await this.automationExecutionService.updateCodeReview(
+                { uuid: entity.uuid },
+                updatedAutomationExecution,
+                message,
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Error updating automation execution',
+                context: AutomationCodeReviewService.name,
+                error,
+                metadata: {
+                    entity,
+                    status,
+                    data,
+                    message,
+                },
+            });
+            return null;
         }
-
-        const updateActions = [
-            'synchronize',
-            'update',
-            'updated',
-            'git.pullrequest.updated',
-        ];
-
-        if (updateActions.includes(action)) {
-            return CodeReviewExecutionTrigger.COMMIT_PUSH;
-        }
-
-        return CodeReviewExecutionTrigger.AUTOMATIC;
     }
 }

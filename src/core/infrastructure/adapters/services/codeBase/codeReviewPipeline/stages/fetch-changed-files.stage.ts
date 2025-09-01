@@ -5,13 +5,13 @@ import {
     PULL_REQUEST_MANAGER_SERVICE_TOKEN,
 } from '@/core/domain/codeBase/contracts/PullRequestManagerService.contract';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
-import { PipelineStatus } from '../../../pipeline/interfaces/pipeline-context.interface';
 import { PinoLoggerService } from '../../../logger/pino.service';
 import {
     handlePatchDeletions,
     convertToHunksWithLinesNumbers,
 } from '@/shared/utils/patch';
 import { FileChange } from '@/config/types/general/codeReview.type';
+import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
 
 @Injectable()
 export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -41,7 +41,10 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
             });
 
             return this.updateContext(context, (draft) => {
-                draft.status = PipelineStatus.SKIP;
+                draft.statusInfo = {
+                    status: AutomationStatus.SKIPPED,
+                    message: 'No code review config found in context',
+                };
             });
         }
 
@@ -54,8 +57,12 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
         );
 
         if (!files?.length || files.length > this.maxFilesToAnalyze) {
+            const msg = !files?.length
+                ? 'No files found after applying ignore paths'
+                : `Too many files to analyze (>${this.maxFilesToAnalyze})`;
+
             this.logger.warn({
-                message: `Skipping code review for PR#${context.pullRequest.number} - ${files?.length ? 'Too many files to analyze (>' + this.maxFilesToAnalyze + ')' : 'No files found after applying ignore paths'}`,
+                message: `Skipping code review for PR#${context.pullRequest.number} - ${msg}`,
                 context: FetchChangedFilesStage.name,
                 metadata: {
                     organizationAndTeamData: context?.organizationAndTeamData,
@@ -64,7 +71,10 @@ export class FetchChangedFilesStage extends BasePipelineStage<CodeReviewPipeline
                 },
             });
             return this.updateContext(context, (draft) => {
-                draft.status = PipelineStatus.SKIP;
+                draft.statusInfo = {
+                    status: AutomationStatus.SKIPPED,
+                    message: msg,
+                };
             });
         }
 

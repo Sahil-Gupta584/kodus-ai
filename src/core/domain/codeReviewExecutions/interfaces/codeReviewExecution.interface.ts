@@ -1,24 +1,12 @@
-import {
-    CodeReviewExecutionStatus,
-    CodeReviewExecutionTrigger,
-} from '../enum/codeReviewExecution.enum';
+import { AutomationStatus } from '../../automation/enums/automation-status';
+import { IAutomationExecution } from '../../automation/interfaces/automation-execution.interface';
 
 export type CodeReviewExecution = {
-    uuid: string; // MongoDB id
+    uuid: string;
+    createdAt: Date;
+    updatedAt: Date;
 
-    organizationId: string;
-    teamId: string;
-    pullRequestId: string; // MongoDB id
-
-    trigger: CodeReviewExecutionTrigger;
-    status: CodeReviewExecutionStatus;
+    automationExecution: Partial<IAutomationExecution>;
+    status: AutomationStatus;
     message?: string | undefined;
-    lastCommitSha?: string | undefined;
-    dependsOn?: CodeReviewExecution['uuid'] | undefined;
-
-    startedAt: Date;
-    finishedAt?: Date | undefined;
-
-    createdAt: Date; // MongoDB createdAt
-    updatedAt: Date; // MongoDB updatedAt
 };

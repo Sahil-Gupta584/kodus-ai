@@ -1,7 +1,8 @@
 import { CoreModel } from '@/shared/infrastructure/repositories/model/typeOrm';
-import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
 import { TeamAutomationModel } from './teamAutomation.model';
+import { CodeReviewExecutionModel } from './codeReviewExecution.model';
 
 @Entity('automation_execution')
 export class AutomationExecutionModel extends CoreModel {
@@ -30,6 +31,15 @@ export class AutomationExecutionModel extends CoreModel {
     )
     @JoinColumn({ name: 'team_automation_id', referencedColumnName: 'uuid' })
     teamAutomation: TeamAutomationModel;
+
+    @OneToMany(
+        () => CodeReviewExecutionModel,
+        (codeReviewExecution) => codeReviewExecution.automationExecution,
+        {
+            nullable: true,
+        },
+    )
+    codeReviewExecutions: CodeReviewExecutionModel[];
 
     @Column({ nullable: true })
     origin: string;
