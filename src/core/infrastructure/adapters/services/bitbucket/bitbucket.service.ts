@@ -417,7 +417,12 @@ export class BitbucketService
         };
         limitPerRepo?: number;
     }): Promise<PullRequest[]> {
-        const { organizationAndTeamData, repository, filters = {}, limitPerRepo = 100 } = params;
+        const {
+            organizationAndTeamData,
+            repository,
+            filters = {},
+            limitPerRepo = 100,
+        } = params;
 
         try {
             if (!organizationAndTeamData.organizationId) {
@@ -494,7 +499,8 @@ export class BitbucketService
             );
         } catch (error) {
             this.logger.error({
-                message: 'Error fetching pull requests for authors from Bitbucket',
+                message:
+                    'Error fetching pull requests for authors from Bitbucket',
                 context: BitbucketService.name,
                 error,
                 metadata: params,
@@ -3254,6 +3260,81 @@ export class BitbucketService
         }
     }
 
+    async getReviewStatusByPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<PullRequestReviewState | null> {
+        const { organizationAndTeamData, repository, prNumber } = params;
+        try {
+            const bitbucketAuthDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!bitbucketAuthDetails) {
+                this.logger.warn({
+                    message: 'Bitbucket auth details not found',
+                    context: this.getReviewStatusByPullRequest.name,
+                    metadata: { organizationAndTeamData },
+                });
+                return null;
+            }
+
+            const workspace = await this.getWorkspaceFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            if (!workspace) {
+                return null;
+            }
+
+            const bitbucketAPI =
+                this.instanceBitbucketApi(bitbucketAuthDetails);
+
+            const [currentUserRes, activitiesRes] = await Promise.all([
+                bitbucketAPI.users.getAuthedUser({}),
+                bitbucketAPI.pullrequests.listActivities({
+                    repo_slug: `{${repository.id}}`,
+                    workspace: `{${workspace}}`,
+                    pull_request_id: prNumber,
+                }),
+            ]);
+
+            const currentUser = currentUserRes.data;
+            const activities = await this.getPaginatedResults(
+                bitbucketAPI,
+                activitiesRes,
+            );
+
+            let state: PullRequestReviewState | null = null;
+            for (const activity of activities as any[]) {
+                const userUuid = currentUser?.uuid;
+
+                if (activity.approval?.user?.uuid === userUuid) {
+                    state = PullRequestReviewState.APPROVED;
+                    break;
+                }
+
+                if (activity.changes_requested?.user?.uuid === userUuid) {
+                    state = PullRequestReviewState.CHANGES_REQUESTED;
+                    break;
+                }
+            }
+
+            return state;
+        } catch (error) {
+            this.logger.error({
+                message: `Error fetching review status for PR #${prNumber}`,
+                context: BitbucketService.name,
+                serviceName: 'BitbucketService getReviewStatusByPullRequest',
+                error: error,
+                metadata: { params },
+            });
+            return null;
+        }
+    }
+
     async checkIfPullRequestShouldBeApproved(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         prNumber: number;
@@ -3874,7 +3955,10 @@ export class BitbucketService
             return allResults.slice(0, limit);
         }
 
-        while (bitbucketAPI.hasNextPage(currentResults) && allResults.length < limit) {
+        while (
+            bitbucketAPI.hasNextPage(currentResults) &&
+            allResults.length < limit
+        ) {
             currentResults = (await bitbucketAPI.getNextPage(currentResults))
                 .data;
 

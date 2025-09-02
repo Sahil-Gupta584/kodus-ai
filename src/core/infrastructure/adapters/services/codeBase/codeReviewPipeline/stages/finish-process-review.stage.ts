@@ -6,6 +6,7 @@ import { PinoLoggerService } from '../../../logger/pino.service';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { CommentResult } from '@/config/types/general/codeReview.type';
 import { CodeReviewPipelineContext } from '../context/code-review-pipeline.context';
+import { PullRequestReviewState } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 
 @Injectable()
 export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -126,8 +127,34 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
         try {
             if (!pullRequestApprovalActive || lineCommentsLength > 0) return;
 
+            const status =
+                await this.codeManagementService.getReviewStatusByPullRequest({
+                    organizationAndTeamData,
+                    prNumber,
+                    repository,
+                });
+
+            if (status === PullRequestReviewState.APPROVED) {
+                this.logger.log({
+                    message: `PR#${prNumber} is already approved, skipping approval`,
+                    metadata: { currentStatus: status },
+                    context: this.stageName,
+                });
+                return;
+            }
+
+            if (status === PullRequestReviewState.CHANGES_REQUESTED) {
+                this.logger.log({
+                    message: `PR#${prNumber} has changes requested, cannot approve`,
+                    metadata: { currentStatus: status },
+                    context: this.stageName,
+                });
+                return;
+            }
+
             this.logger.log({
-                message: `Approving PR#${prNumber} as no issues were found`,
+                message: `Approving PR#${prNumber} as no new issues were found and status is clear.`,
+                metadata: { currentStatus: status },
                 context: this.stageName,
             });
 
