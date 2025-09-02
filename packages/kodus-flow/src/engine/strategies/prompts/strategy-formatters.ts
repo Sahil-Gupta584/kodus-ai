@@ -285,9 +285,7 @@ export class ToolParameterFormatter {
 }
 
 export class ContextFormatter {
-    formatAdditionalContext(
-        additionalContext: Record<string, unknown>,
-    ): string {
+    formatAdditionalContext(agentContext: AgentContext): string {
         const sections: string[] = ['## 🔍 ADDITIONAL INFO'];
 
         // Formatar valor de forma segura
@@ -310,44 +308,39 @@ export class ContextFormatter {
             return String(value);
         };
 
-        if (additionalContext.userContext) {
-            const userCtx = additionalContext.userContext as Record<
-                string,
-                unknown
-            >;
+        if (agentContext.agentExecutionOptions?.userContext) {
+            const userCtx = agentContext.agentExecutionOptions
+                .userContext as Record<string, unknown>;
             sections.push('### 👤 USER CONTEXT');
             this.formatContextFields(userCtx, sections, formatValue);
         }
 
         // Handle agent identity
-        if (additionalContext.agentIdentity) {
-            const identity = additionalContext.agentIdentity as Record<
-                string,
-                unknown
-            >;
+        if (agentContext.agentIdentity) {
+            const identity = agentContext.agentIdentity;
             sections.push('### 🤖 AGENT IDENTITY');
             this.formatContextFields(identity, sections, formatValue);
         }
 
         // Handle session context
-        if (additionalContext.sessionContext) {
-            const session = additionalContext.sessionContext as Record<
-                string,
-                unknown
-            >;
-            sections.push('### 📊 SESSION CONTEXT');
-            this.formatContextFields(session, sections, formatValue);
-        }
+        // if (agentContext.sessionContext) {
+        //     const session = additionalContext.sessionContext as Record<
+        //         string,
+        //         unknown
+        //     >;
+        //     sections.push('### 📊 SESSION CONTEXT');
+        //     this.formatContextFields(session, sections, formatValue);
+        // }
 
-        // Handle runtime context
-        if (additionalContext.runtimeContext) {
-            const runtime = additionalContext.runtimeContext as Record<
-                string,
-                unknown
-            >;
-            sections.push('### ⚙️ RUNTIME CONTEXT');
-            this.formatContextFields(runtime, sections, formatValue);
-        }
+        // // Handle runtime context
+        // if (additionalContext.runtimeContext) {
+        //     const runtime = additionalContext.runtimeContext as Record<
+        //         string,
+        //         unknown
+        //     >;
+        //     sections.push('### ⚙️ RUNTIME CONTEXT');
+        //     this.formatContextFields(runtime, sections, formatValue);
+        // }
 
         return sections.join('\n');
     }

@@ -381,7 +381,6 @@ export abstract class AgentCore<
         // 5. Get tools from ToolEngine
         const availableTools = this.toolEngine?.listTools() || [];
 
-        // 6. Create agentContext with all needed info
         const agentContext: AgentContext = {
             agentName: agent.name,
             sessionId: sessionId || executionId,
@@ -394,11 +393,10 @@ export abstract class AgentCore<
             agentExecutionOptions,
         };
 
-        // 7. Save agentContext to runtime
-        // Context is already available via runtimeContext
-        // No need to explicitly save as it's managed by ContextService
+        if (this.singleAgentDefinition?.identity) {
+            agentContext.agentIdentity = this.singleAgentDefinition.identity;
+        }
 
-        // 8. Return unified context
         return {
             input: typeof input === 'string' ? input : JSON.stringify(input),
             executionId,
@@ -686,71 +684,6 @@ export abstract class AgentCore<
             return 'delegate_to_agent';
         }
         return 'final_answer';
-    }
-
-    protected async createAgentContext(
-        executionId: string,
-        agentExecutionOptions: AgentExecutionOptions,
-    ): Promise<AgentContext> {
-        let availableTools = this.toolEngine?.listTools() ?? [];
-
-        this.logger.info('🔧 TOOL AVAILABILITY DEBUG', {
-            hasToolEngine: !!this.toolEngine,
-            toolEngineClass: this.toolEngine?.constructor?.name,
-            availableToolsCount: availableTools.length,
-            toolNames: availableTools.map((t) => t.name),
-            executionId,
-        });
-
-        if (availableTools.length === 0 && this.toolEngine) {
-            try {
-                const alternativeTools = this.toolEngine.getAvailableTools();
-                this.logger.info('🔄 Using alternative tools method', {
-                    alternativeToolsCount: alternativeTools.length,
-                    alternativeToolNames: alternativeTools.map((t) => t.name),
-                });
-
-                availableTools = alternativeTools.map(
-                    (tool) =>
-                        ({
-                            name: tool.name,
-                            description: tool.description,
-                            inputJsonSchema: tool.inputSchema,
-                            outputJsonSchema: {
-                                type: 'object',
-                                properties: {},
-                            },
-                            handler: async () => ({}), // Placeholder
-                        }) as any,
-                );
-            } catch (altError) {
-                this.logger.warn('Failed to get alternative tools', {
-                    altError,
-                });
-            }
-        }
-
-        const sessionId =
-            agentExecutionOptions.sessionId || IdGenerator.sessionId();
-        const threadId = agentExecutionOptions.thread.id;
-
-        const context = {
-            sessionId,
-            tenantId: agentExecutionOptions.tenantId,
-            correlationId: agentExecutionOptions.correlationId,
-            thread: { ...agentExecutionOptions.thread, id: threadId },
-            agentName: agentExecutionOptions.agentName || 'agent',
-            invocationId: IdGenerator.callId(),
-            executionId: executionId,
-            allTools: availableTools,
-            agentExecutionOptions,
-        } as any;
-
-        if (this.singleAgentDefinition?.identity) {
-            context.agentIdentity = this.singleAgentDefinition.identity;
-        }
-
-        return context;
     }
 
     /**

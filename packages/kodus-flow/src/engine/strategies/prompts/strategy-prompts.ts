@@ -196,7 +196,6 @@ Execute this step using the tool and parameters above. Return only the execution
     private formatContextForPlanner(context: StrategyExecutionContext): string {
         const parts: string[] = [];
 
-        // 🛠️ AVAILABLE TOOLS (sempre primeiro)
         if (context.agentContext?.availableTools?.length > 0) {
             parts.push(
                 this.formatters.formatToolsList(
@@ -205,12 +204,10 @@ Execute this step using the tool and parameters above. Return only the execution
             );
         }
 
-        // 🔍 ADDITIONAL INFO (sempre segundo)
-        if (context.agentContext?.agentExecutionOptions?.userContext) {
+        if (context.agentContext?.agentExecutionOptions) {
             parts.push(
                 this.formatters.context.formatAdditionalContext(
-                    context.agentContext.agentExecutionOptions
-                        .userContext as Record<string, unknown>,
+                    context.agentContext,
                 ),
             );
         }
@@ -251,10 +248,9 @@ Execute this step using the tool and parameters above. Return only the execution
 **Session:** ${agentContext.sessionId}`);
         }
 
-        if (context.agentContext?.agentExecutionOptions.userContext) {
+        if (context.agentContext?.agentExecutionOptions) {
             const additional = this.formatters.context.formatAdditionalContext(
-                context.agentContext.agentExecutionOptions
-                    .userContext as Record<string, unknown>,
+                context.agentContext,
             );
             parts.push(additional);
         }
@@ -360,15 +356,9 @@ Return STRICT JSON with this exact schema:
             );
         }
 
-        // 4. 🔍 ADDITIONAL INFO (sempre presente)
-        if (agentContext.agentExecutionOptions.userContext) {
+        if (agentContext.agentExecutionOptions) {
             sections.push(
-                this.formatters.context.formatAdditionalContext(
-                    agentContext.agentExecutionOptions.userContext as Record<
-                        string,
-                        unknown
-                    >,
-                ),
+                this.formatters.context.formatAdditionalContext(agentContext),
             );
         }
 
@@ -522,25 +512,18 @@ For task "Analyze project structure":
             );
         }
 
-        if (agentContext.agentExecutionOptions?.userContext) {
+        if (agentContext.agentExecutionOptions) {
             sections.push(
-                this.formatters.context.formatAdditionalContext(
-                    agentContext.agentExecutionOptions.userContext as Record<
-                        string,
-                        unknown
-                    >,
-                ),
+                this.formatters.context.formatAdditionalContext(agentContext),
             );
         }
 
-        // 4. 📋 EXECUTION HISTORY
         if (history && history.length > 0) {
             sections.push(
                 `## 📋 EXECUTION HISTORY\n${history.length} steps executed`,
             );
         }
 
-        // 🎯 Plan-Execute SPECIFIC: Instruções finais (única diferença)
         sections.push(this.getPlanningInstructions());
 
         return sections.join('\n\n');

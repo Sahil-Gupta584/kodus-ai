@@ -251,7 +251,7 @@ export class ConversationAgentProvider {
                     'Agente de conversação para interações com usuários.',
             },
             plannerOptions: {
-                type: PlannerType.PLAN_EXECUTE,
+                type: PlannerType.REACT,
                 replanPolicy: {
                     toolUnavailable: 'replan',
                     maxReplans: 3,
