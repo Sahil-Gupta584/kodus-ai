@@ -4367,6 +4367,26 @@ export class GithubService
     }): Promise<PullRequestReviewState | null> {
         const { organizationAndTeamData, repository, prNumber } = params;
 
+        if (
+            !organizationAndTeamData ||
+            !repository ||
+            !repository.id ||
+            !repository.name ||
+            !prNumber
+        ) {
+            this.logger.warn({
+                message:
+                    'Missing required parameters to get review status by pull request',
+                context: GithubService.name,
+                serviceName: 'GithubService getReviewStatusByPullRequest',
+                metadata: {
+                    repository: params.repository,
+                    prNumber: params.prNumber,
+                },
+            });
+            return null;
+        }
+
         const githubAuth = await this.getGithubAuthDetails(
             organizationAndTeamData,
         );

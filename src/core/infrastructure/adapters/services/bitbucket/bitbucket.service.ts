@@ -3267,6 +3267,24 @@ export class BitbucketService
     }): Promise<PullRequestReviewState | null> {
         const { organizationAndTeamData, repository, prNumber } = params;
         try {
+            if (
+                !organizationAndTeamData ||
+                !repository ||
+                !repository.id ||
+                !repository.name ||
+                !prNumber
+            ) {
+                this.logger.warn({
+                    message:
+                        'Missing parameters to get review status by pull request',
+                    context: BitbucketService.name,
+                    serviceName:
+                        'BitbucketService getReviewStatusByPullRequest',
+                    metadata: { params },
+                });
+                return null;
+            }
+
             const bitbucketAuthDetails = await this.getAuthDetails(
                 organizationAndTeamData,
             );
@@ -3301,16 +3319,20 @@ export class BitbucketService
                 }),
             ]);
 
-            const currentUser = currentUserRes.data;
-            const activities = await this.getPaginatedResults(
-                bitbucketAPI,
-                activitiesRes,
-            );
+            type BitbucketActivity = {
+                approval?: { user?: { uuid?: string } };
+                changes_requested?: { user?: { uuid?: string } };
+            };
+
+            const userUuid = currentUserRes?.data?.uuid;
+            const activities =
+                await this.getPaginatedResults<BitbucketActivity>(
+                    bitbucketAPI,
+                    activitiesRes,
+                );
 
             let state: PullRequestReviewState | null = null;
-            for (const activity of activities as any[]) {
-                const userUuid = currentUser?.uuid;
-
+            for (const activity of activities) {
                 if (activity.approval?.user?.uuid === userUuid) {
                     state = PullRequestReviewState.APPROVED;
                     break;

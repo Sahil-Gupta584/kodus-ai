@@ -137,7 +137,7 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
             if (status === PullRequestReviewState.APPROVED) {
                 this.logger.log({
                     message: `PR#${prNumber} is already approved, skipping approval`,
-                    metadata: { currentStatus: status },
+                    metadata: { currentStatus: status, prNumber, repository },
                     context: this.stageName,
                 });
                 return;
@@ -146,7 +146,7 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
             if (status === PullRequestReviewState.CHANGES_REQUESTED) {
                 this.logger.log({
                     message: `PR#${prNumber} has changes requested, cannot approve`,
-                    metadata: { currentStatus: status },
+                    metadata: { currentStatus: status, prNumber, repository },
                     context: this.stageName,
                 });
                 return;
@@ -154,7 +154,7 @@ export class RequestChangesOrApproveStage extends BasePipelineStage<CodeReviewPi
 
             this.logger.log({
                 message: `Approving PR#${prNumber} as no new issues were found and status is clear.`,
-                metadata: { currentStatus: status },
+                metadata: { currentStatus: status, prNumber, repository },
                 context: this.stageName,
             });
 

@@ -342,6 +342,27 @@ export class AzureReposService
     }): Promise<PullRequestReviewState | null> {
         const { organizationAndTeamData, repository, prNumber } = params;
         try {
+            if (
+                !organizationAndTeamData ||
+                !repository ||
+                !repository.id ||
+                !repository.name ||
+                !prNumber
+            ) {
+                this.logger.warn({
+                    message:
+                        'Missing required parameters to get review status by pull request',
+                    context: AzureReposService.name,
+                    serviceName:
+                        'AzureReposService getReviewStatusByPullRequest',
+                    metadata: {
+                        repository: params.repository,
+                        prNumber: params.prNumber,
+                    },
+                });
+                return null;
+            }
+
             const { orgName, token } = await this.getAuthDetails(
                 organizationAndTeamData,
             );
@@ -371,6 +392,7 @@ export class AzureReposService
                     context: AzureReposService.name,
                     serviceName:
                         'AzureReposService getReviewStatusByPullRequest',
+                    metadata: { params },
                 });
                 return null;
             }

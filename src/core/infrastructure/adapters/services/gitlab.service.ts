@@ -2491,6 +2491,26 @@ export class GitlabService
     }): Promise<PullRequestReviewState | null> {
         const { organizationAndTeamData, repository, prNumber } = params;
         try {
+            if (
+                !organizationAndTeamData ||
+                !repository ||
+                !repository.id ||
+                !repository.name ||
+                !prNumber
+            ) {
+                this.logger.warn({
+                    message:
+                        'Missing required parameters to get review status by pull request',
+                    context: GitlabService.name,
+                    serviceName: 'GitlabService getReviewStatusByPullRequest',
+                    metadata: {
+                        repository: params.repository,
+                        prNumber: params.prNumber,
+                    },
+                });
+                return null;
+            }
+
             const gitlabAuthDetail = await this.getAuthDetails(
                 organizationAndTeamData,
             );
