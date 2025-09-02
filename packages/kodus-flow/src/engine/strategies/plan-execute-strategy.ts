@@ -9,6 +9,7 @@ import type {
 } from './types.js';
 import { StrategyPromptFactory } from './prompts/index.js';
 import { ContextService } from '../../core/contextNew/index.js';
+import { EnhancedJSONParser } from '../../utils/json-parser.js';
 
 /**
  * Plan-Execute Strategy - Planejamento + Execução Sequencial
@@ -154,16 +155,11 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
             throw new Error('LLM adapter must support createPlan method');
         }
 
-        // 🔥 PADRONIZADO: Usar método consistente para additionalContext
-        const additionalContext = this.buildStandardAdditionalContext(context);
+        // // 🔥 PADRONIZADO: Usar método consistente para additionalContext
+        // const additionalContext = this.buildStandardAdditionalContext(context);
 
-        // Usar nova arquitetura de prompts
-        const prompts = this.promptFactory.createPlanExecutePrompt({
-            goal: context.input,
-            agentContext: context.agentContext,
-            additionalContext,
-            mode: 'planner',
-        });
+        // // Usar nova arquitetura de prompts
+        const prompts = this.promptFactory.createPlanExecutePrompt(context);
 
         const response = await this.llmAdapter.createPlan(
             context.input,
@@ -338,74 +334,46 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
             throw new Error('Empty plan response from LLM');
         }
 
-        try {
-            // Try parsing as JSON first
-            const parsed = JSON.parse(content);
-            if (parsed.steps && Array.isArray(parsed.steps)) {
-                return {
-                    goal: parsed.goal || 'Execute plan',
-                    steps: parsed.steps,
-                    reasoning: parsed.reasoning || 'Plan created',
-                };
-            }
-        } catch (jsonError) {
-            this.logger.debug('JSON parse failed, trying text parse', {
-                error:
-                    jsonError instanceof Error
-                        ? jsonError.message
-                        : String(jsonError),
-            });
+        // Try parsing with enhanced parser
+        const parseResult = EnhancedJSONParser.parseWithValidation(
+            content,
+            (
+                data: unknown,
+            ): data is {
+                goal: string;
+                reasoning: string;
+                steps: unknown[];
+            } => {
+                return (
+                    typeof data === 'object' &&
+                    data !== null &&
+                    'goal' in data &&
+                    'reasoning' in data &&
+                    'steps' in data &&
+                    typeof (data as any).goal === 'string' &&
+                    typeof (data as any).reasoning === 'string' &&
+                    Array.isArray((data as any).steps)
+                );
+            },
+        );
+
+        if (parseResult.success) {
+            const parsed = parseResult.data;
+
+            return {
+                goal: parsed.goal,
+                steps: parsed.steps,
+                reasoning: parsed.reasoning,
+            };
+        } else {
+            this.logger.error(
+                `Enhanced JSON parse failed - invalid plan format: ${parseResult.error}`,
+            );
+
+            throw new Error(
+                `Invalid JSON response from LLM: ${parseResult.error}. Expected format: {"goal": "...", "reasoning": "...", "steps": [...]} `,
+            );
         }
-
-        // Parse de texto simples
-        const lines = content
-            .split('\n')
-            .map((line) => line.trim())
-            .filter((line) => line.length > 0);
-        const steps: any[] = [];
-
-        for (const line of lines) {
-            // Procurar por padrões de steps
-            const stepMatch = line.match(/^(\d+)\.\s*(.+)$/);
-            if (stepMatch && stepMatch[2]) {
-                const stepText = stepMatch[2];
-
-                // Identificar se é tool call
-                const toolMatch =
-                    stepText.match(/use\s+(\w+)/i) ||
-                    stepText.match(/call\s+(\w+)/i);
-                if (toolMatch) {
-                    steps.push({
-                        id: `step-${steps.length + 1}`,
-                        type: 'tool_call',
-                        toolName: toolMatch[1],
-                        description: stepText,
-                        input: {},
-                    });
-                } else {
-                    steps.push({
-                        id: `step-${steps.length + 1}`,
-                        type: 'final_answer',
-                        content: stepText,
-                    });
-                }
-            }
-        }
-
-        if (steps.length === 0) {
-            // Fallback: criar step simples
-            steps.push({
-                id: 'step-1',
-                type: 'final_answer',
-                content: content,
-            });
-        }
-
-        return {
-            goal: 'Execute plan',
-            steps,
-            reasoning: 'Plan parsed from text response',
-        };
     }
 
     /**
@@ -635,37 +603,37 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
         }
     }
 
-    /**
-     * 🔥 PADRONIZADO: Método consistente para formatar additionalContext
-     * Ensures all prompts use consistent context data
-     */
-    private buildStandardAdditionalContext(
-        context: StrategyExecutionContext,
-    ): Record<string, unknown> {
-        // Try to parse userContext as JSON if it's a string
-        let userContext =
-            context.agentContext?.agentExecutionOptions?.userContext;
+    // /**
+    //  * 🔥 PADRONIZADO: Método consistente para formatar additionalContext
+    //  * Ensures all prompts use consistent context data
+    //  */
+    // private buildStandardAdditionalContext(
+    //     context: StrategyExecutionContext,
+    // ): Record<string, unknown> {
+    //     // Try to parse userContext as JSON if it's a string
+    //     let userContext =
+    //         context.agentContext?.agentExecutionOptions?.userContext;
 
-        if (typeof userContext === 'string') {
-            try {
-                userContext = JSON.parse(userContext);
-            } catch (error) {
-                this.logger.warn('Failed to parse userContext as JSON', {
-                    error,
-                });
-            }
-        }
+    //     if (typeof userContext === 'string') {
+    //         try {
+    //             userContext = JSON.parse(userContext);
+    //         } catch (error) {
+    //             this.logger.warn('Failed to parse userContext as JSON', {
+    //                 error,
+    //             });
+    //         }
+    //     }
 
-        return {
-            // Framework agnóstico - tudo do usuário fica dentro de userContext
-            userContext,
-            agentIdentity: context.agentContext?.agentIdentity,
-            agentExecutionOptions: context.agentContext?.agentExecutionOptions,
-            // Runtime context para compatibilidade futura
-            runtimeContext: (context.agentContext as any)
-                ?.enhancedRuntimeContext,
-        };
-    }
+    //     return {
+    //         // Framework agnóstico - tudo do usuário fica dentro de userContext
+    //         userContext,
+    //         agentIdentity: context.agentContext?.agentIdentity,
+    //         agentExecutionOptions: context.agentContext?.agentExecutionOptions,
+    //         // Runtime context para compatibilidade futura
+    //         runtimeContext: (context.agentContext as any)
+    //             ?.enhancedRuntimeContext,
+    //     };
+    // }
 
     /**
      * Build contextual response using complete FinalResponseContext from ContextBridge

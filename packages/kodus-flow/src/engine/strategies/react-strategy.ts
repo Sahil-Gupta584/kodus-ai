@@ -10,10 +10,10 @@ import type {
     ActionResult,
     AgentThought,
     ResultAnalysis,
-    Tool,
 } from './types.js';
 import { StrategyPromptFactory } from './prompts/index.js';
 import { ContextService } from '../../core/contextNew/index.js';
+import { EnhancedJSONParser } from '../../utils/json-parser.js';
 
 export class ReActStrategy extends BaseExecutionStrategy {
     private readonly logger = createLogger('react-strategy');
@@ -36,9 +36,8 @@ export class ReActStrategy extends BaseExecutionStrategy {
             stepTimeout: number;
         }> = {},
     ) {
-        super(); // Call parent constructor
+        super();
 
-        // Initialize config with defaults and options
         const defaultConfig = {
             maxIterations: 10,
             maxToolCalls: 20,
@@ -46,11 +45,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
             stepTimeout: 60000, // 1 minuto por step
         };
 
-        // Inicializar prompt factory
         this.promptFactory = new StrategyPromptFactory();
-
-        // console.log('options', this.llmAdapter); // Commented out for production
-
         this.config = { ...defaultConfig, ...options };
 
         this.logger.info('🎯 ReAct Strategy initialized', {
@@ -58,9 +53,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
         });
     }
 
-    /**
-     * Método principal - executa o padrão ReAct completo
-     */
     async execute(context: StrategyExecutionContext): Promise<ExecutionResult> {
         const startTime = Date.now();
         const steps: ExecutionStep[] = [];
@@ -74,13 +66,9 @@ export class ReActStrategy extends BaseExecutionStrategy {
 
         try {
             this.validateContext(context);
-            // 🔥 UPDATE EXECUTION PHASE
-            this.logger.debug('🔄 Starting ReAct execution phase', {
-                threadId,
-                maxIterations: this.config.maxIterations,
-            });
 
-            // Loop principal ReAct: Think → Act → Observe
+            this.logger.debug('🚀 ReAct strategy started', { threadId });
+
             while (iteration < this.config.maxIterations) {
                 if (
                     this.shouldStop(iteration, toolCallsCount, startTime, steps)
@@ -94,6 +82,12 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     steps,
                 );
                 steps.push(step);
+
+                this.logger.debug('✅ Iteration completed', {
+                    threadId,
+                    iteration,
+                    actionType: step.action?.type,
+                });
 
                 if (step.action?.type === 'final_answer') {
                     this.logger.debug(
@@ -118,20 +112,35 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 iteration++;
             }
 
-            return this.buildSuccessResult(
+            const result = this.buildSuccessResult(
                 steps,
                 startTime,
                 iteration,
                 toolCallsCount,
             );
+
+            this.logger.info('✅ ReAct strategy completed successfully', {
+                threadId,
+                success: result.success,
+                steps: result.steps.length,
+                executionTime: result.executionTime,
+            });
+
+            return result;
         } catch (error) {
-            return this.buildErrorResult(
+            const result = this.buildErrorResult(
                 error,
                 steps,
                 startTime,
                 iteration,
                 toolCallsCount,
             );
+
+            this.logger.error(
+                `❌ ReAct strategy completed with error: ${result.error}`,
+            );
+
+            return result;
         }
     }
 
@@ -180,9 +189,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
         });
     }
 
-    /**
-     * Executa uma iteração completa do ReAct (Think → Act → Observe)
-     */
     private async executeIteration(
         context: StrategyExecutionContext,
         iteration: number,
@@ -191,23 +197,43 @@ export class ReActStrategy extends BaseExecutionStrategy {
         const stepStartTime = Date.now();
 
         try {
-            // 1. THINK: Gera pensamento baseado no contexto
+            const threadId = context.agentContext.thread?.id;
+
             const thought = await this.generateThought(
                 context,
                 iteration,
                 previousSteps,
             );
 
-            // 2. ACT: Executa ação baseada no pensamento
             const actionResult = await this.executeAction(
                 thought.action,
                 context,
             );
 
-            // 3. OBSERVE: Analisa resultado da ação
             const observation = await this.analyzeResult(actionResult);
 
-            // Cria step consolidado
+            if (threadId) {
+                try {
+                    await this.updateSessionMinimal(threadId, {
+                        iteration: iteration + 1,
+                        actionType: thought.action.type,
+                        isCompleted: observation.isComplete,
+                        stepId: `react-step-${iteration}`,
+                    });
+                } catch (error) {
+                    this.logger.debug('Session update failed (non-critical)', {
+                        error,
+                    });
+                }
+            }
+
+            this.logger.debug('🔍 Observe step completed', {
+                threadId,
+                iteration,
+                isComplete: observation.isComplete,
+                shouldContinue: observation.shouldContinue,
+            });
+
             const step: ExecutionStep = {
                 id: `react-step-${iteration}-${Date.now()}`,
                 type: 'think',
@@ -225,12 +251,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     stepSequence: 'think-act-observe',
                 },
             };
-
-            this.logger.debug(`✅ Iteration ${iteration + 1} completed`, {
-                actionType: thought.action.type,
-                hasFinalAnswer: thought.action.type === 'final_answer',
-                duration: step.duration,
-            });
 
             return step;
         } catch (error) {
@@ -256,9 +276,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
         }
     }
 
-    /**
-     * Gera pensamento para a iteração atual
-     */
     private async generateThought(
         context: StrategyExecutionContext,
         iteration: number,
@@ -267,9 +284,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
         if (!this.llmAdapter.call) {
             throw new Error('LLM adapter must support call method');
         }
-
-        // 🔥 PADRONIZADO: Usar método consistente para additionalContext
-        // const additionalContext = this.buildStandardAdditionalContext(context);
 
         context.mode = 'executor';
         context.step = previousSteps[previousSteps.length - 1];
@@ -284,15 +298,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
             action: step.action,
             result: step.result,
         })) as ExecutionStep[];
-        // Usar nova arquitetura de prompts - contexto agnóstico
         const prompts = this.promptFactory.createReActPrompt(context);
-
-        // Log da chamada para debugging
-        this.logger.debug('🤖 React iteration - calling LLM', {
-            iteration: iteration + 1,
-            inputLength: context.input.length,
-            toolsCount: context.agentContext?.availableTools?.length || 0,
-        });
 
         let response;
         try {
@@ -304,56 +310,10 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     },
                     { role: AgentInputEnum.USER, content: prompts.userPrompt },
                 ],
-                temperature: 0.3,
-                maxTokens: 1000,
             });
         } catch (llmError) {
-            // 🔥 TRATAMENTO ROBUSTO DE ERROS DE LLM
             const errorMessage =
                 llmError instanceof Error ? llmError.message : String(llmError);
-
-            this.logger.warn('⚠️ LLM call failed - attempting recovery', {
-                iteration: iteration + 1,
-                error: errorMessage,
-                errorType:
-                    llmError instanceof Error
-                        ? llmError.constructor.name
-                        : 'Unknown',
-            });
-
-            // Se for erro de rede/tempo, tentar fallback
-            if (this.isNetworkError(llmError)) {
-                this.logger.info(
-                    '🔄 Network error detected - trying fallback response',
-                    {
-                        iteration: iteration + 1,
-                    },
-                );
-
-                // Fallback: responder com final_answer simples
-                return {
-                    reasoning: `LLM temporarily unavailable due to network issues. Error: ${errorMessage}`,
-                    action: {
-                        type: 'final_answer',
-                        content: `I encountered a temporary connectivity issue while processing your request. Please try again in a moment. Error details: ${errorMessage}`,
-                    },
-                    metadata: {
-                        iteration,
-                        timestamp: Date.now(),
-                        fallbackUsed: true,
-                        errorReason: 'network_error',
-                    },
-                };
-            }
-
-            // Para outros tipos de erro, ainda tentar fallback
-            this.logger.warn('🔄 Other LLM error - using generic fallback', {
-                iteration: iteration + 1,
-                errorType:
-                    llmError instanceof Error
-                        ? llmError.constructor.name
-                        : 'Unknown',
-            });
 
             return {
                 reasoning: `LLM encountered an error: ${errorMessage}`,
@@ -370,7 +330,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
             };
         }
 
-        // Melhor tratamento de resposta
         let content: string;
         if (typeof response.content === 'string') {
             content = response.content;
@@ -380,28 +339,29 @@ export class ReActStrategy extends BaseExecutionStrategy {
             throw new Error('LLM returned empty or invalid response');
         }
 
-        // Log da resposta para debugging
-        this.logger.debug('📥 React LLM response received', {
-            iteration: iteration + 1,
-            responseLength: content.length,
-            hasReasoning:
-                content.includes('reasoning') || content.includes('Reasoning'),
-            hasAction: content.includes('action') || content.includes('Action'),
-        });
-
         return this.parseLLMResponse(content, iteration);
     }
 
-    /**
-     * Executa ação baseada no tipo
-     */
     private async executeAction(
         action: AgentAction,
         context: StrategyExecutionContext,
     ): Promise<ActionResult> {
         switch (action.type) {
             case 'tool_call':
-                return await this.executeToolCall(action, context);
+                const result = await SharedStrategyMethods.executeTool(
+                    action,
+                    context,
+                );
+                return {
+                    type: 'tool_result',
+                    content: result,
+                    metadata: {
+                        toolName: action.toolName,
+                        arguments: action.input,
+                        timestamp: Date.now(),
+                        source: 'react-strategy',
+                    },
+                };
 
             case 'final_answer':
                 return {
@@ -418,41 +378,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
         }
     }
 
-    /**
-     * Executa chamada de ferramenta
-     */
-    private async executeToolCall(
-        action: AgentAction,
-        context: StrategyExecutionContext,
-    ): Promise<ActionResult> {
-        if (action.type !== 'tool_call' || !action.toolName) {
-            throw new Error('Invalid tool call action');
-        }
-
-        const tool = this.findTool(
-            context.agentContext?.availableTools,
-            action.toolName,
-        );
-        if (!tool) {
-            throw new Error(`Tool not found: ${action.toolName}`);
-        }
-
-        const result = await this.executeRealTool(action, tool, context);
-
-        return {
-            type: 'tool_result',
-            content: result,
-            metadata: {
-                toolName: action.toolName,
-                arguments: action.input,
-                executionTime: Date.now(),
-            },
-        };
-    }
-
-    /**
-     * Analisa resultado da ação
-     */
     private async analyzeResult(result: ActionResult): Promise<ResultAnalysis> {
         return {
             isComplete: result.type === 'final_answer',
@@ -466,9 +391,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
         };
     }
 
-    /**
-     * Verifica se deve parar execução
-     */
     private shouldStop(
         _iteration: number,
         toolCallsCount: number,
@@ -497,20 +419,10 @@ export class ReActStrategy extends BaseExecutionStrategy {
         return false;
     }
 
-    /**
-     * Encontra ferramenta por nome
-     */
-    private findTool(tools: Tool[], toolName: string): Tool | undefined {
-        return tools.find((tool) => tool.name === toolName);
-    }
-
-    /**
-     * Extrai resultado final da execução
-     */
     private extractFinalResult(steps: ExecutionStep[]): unknown {
-        // Procura pela última resposta final
         for (let i = steps.length - 1; i >= 0; i--) {
             const step = steps[i];
+
             if (step?.action?.type === 'final_answer' && step.action.content) {
                 return step.action.content;
             }
@@ -519,7 +431,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
             }
         }
 
-        // Fallback: último resultado de ferramenta
         for (let i = steps.length - 1; i >= 0; i--) {
             const step = steps[i];
             if (step?.result?.type === 'tool_result' && step.result.content) {
@@ -530,135 +441,45 @@ export class ReActStrategy extends BaseExecutionStrategy {
         return 'No final result found';
     }
 
-    // REMOVED: buildThinkPrompt - now using StrategyPromptFactory
-
-    /**
-     * Parse resposta do LLM com melhor tratamento de erro
-     */
     private parseLLMResponse(content: string, iteration: number): AgentThought {
-        try {
-            // Try parsing as JSON first
-            const parsed = JSON.parse(content);
-            if (parsed.action && parsed.reasoning) {
-                return {
-                    reasoning: parsed.reasoning,
-                    action: this.parseActionFromJSON(parsed.action),
-                    metadata: {
-                        iteration,
-                        timestamp: Date.now(),
-                    },
-                };
-            }
-        } catch (jsonError) {
-            this.logger.debug('JSON parse failed, trying text parse', {
-                error:
-                    jsonError instanceof Error
-                        ? jsonError.message
-                        : String(jsonError),
-                contentPreview: content.substring(0, 100),
-            });
-        }
-
-        // Parse de texto simples com melhor robustez
-        const lines = content
-            .split('\n')
-            .map((line) => line.trim())
-            .filter((line) => line.length > 0);
-        let reasoning = '';
-        let action: AgentAction = {
-            type: 'final_answer',
-            content: 'Unable to parse response',
-        };
-
-        // Procurar por diferentes formatos de reasoning
-        for (const line of lines) {
-            const lowerLine = line.toLowerCase();
-            if (
-                lowerLine.startsWith('reasoning:') ||
-                lowerLine.startsWith('analysis:') ||
-                lowerLine.startsWith('thought:')
-            ) {
-                const colonIndex = line.indexOf(':');
-                if (colonIndex !== -1) {
-                    reasoning = line.substring(colonIndex + 1).trim();
-                }
-                break;
-            }
-        }
-
-        // Procurar por diferentes formatos de action
-        for (const line of lines) {
-            const lowerLine = line.toLowerCase();
-            if (
-                lowerLine.startsWith('action:') ||
-                lowerLine.startsWith('decision:') ||
-                lowerLine.startsWith('next:')
-            ) {
-                const actionText = line
-                    .substring(line.indexOf(':') + 1)
-                    .trim()
-                    .toLowerCase();
-
-                if (
-                    actionText.includes('final') ||
-                    actionText.includes('answer') ||
-                    actionText.includes('done')
-                ) {
-                    action = {
-                        type: 'final_answer',
-                        content: reasoning || content,
-                    };
-                } else if (
-                    actionText.includes('tool') ||
-                    actionText.includes('call') ||
-                    actionText.includes('execute')
-                ) {
-                    // Tentar extrair nome da ferramenta
-                    const toolMatch = content.match(
-                        /tool[_:\s]*([a-zA-Z_][a-zA-Z0-9_]*)/i,
-                    );
-                    action = {
-                        type: 'tool_call',
-                        toolName: toolMatch ? toolMatch[1] : 'unknown',
-                        input: {},
-                    };
-                }
-                break;
-            }
-        }
-
-        // If no specific reasoning found, use entire content as reasoning
-        if (!reasoning && content.length > 0) {
-            reasoning =
-                content.length > 200
-                    ? content.substring(0, 200) + '...'
-                    : content;
-        }
-
-        const result = {
-            reasoning: reasoning || 'Analysis completed',
-            action,
-            metadata: {
-                iteration,
-                timestamp: Date.now(),
-                parseMethod: 'text',
-                originalContentLength: content.length,
+        const parseResult = EnhancedJSONParser.parseWithValidation(
+            content,
+            (data: unknown): data is { reasoning: string; action: unknown } => {
+                return (
+                    typeof data === 'object' &&
+                    data !== null &&
+                    'reasoning' in data &&
+                    'action' in data &&
+                    typeof (data as any).reasoning === 'string' &&
+                    typeof (data as any).action === 'object' &&
+                    (data as any).action !== null
+                );
             },
-        };
+        );
 
-        this.logger.debug('Parsed React LLM response', {
-            iteration,
-            reasoningLength: reasoning.length,
-            actionType: action.type,
-            toolName: action.type === 'tool_call' ? action.toolName : undefined,
-        });
+        if (parseResult.success) {
+            const parsed = parseResult.data;
 
-        return result;
+            return {
+                reasoning: parsed.reasoning,
+                action: this.parseActionFromJSON(parsed.action),
+                metadata: {
+                    iteration,
+                    timestamp: Date.now(),
+                    parseMethod: 'enhanced-json',
+                },
+            };
+        } else {
+            this.logger.error(
+                `Enhanced JSON parse failed - invalid response format: ${parseResult.error}`,
+            );
+
+            throw new Error(
+                `Invalid JSON response from LLM: ${parseResult.error}. Expected format: {"reasoning": "...", "action": {...}}`,
+            );
+        }
     }
 
-    /**
-     * Parse ação do JSON da resposta do LLM
-     */
     private parseActionFromJSON(actionData: any): AgentAction {
         if (actionData.type === 'final_answer') {
             return {
@@ -675,60 +496,71 @@ export class ReActStrategy extends BaseExecutionStrategy {
             };
         }
 
-        // Fallback
         return {
             type: 'final_answer',
             content: 'Unable to determine action type',
         };
     }
 
-    /**
-     * Executa ferramenta real com melhor tratamento de erro
-     */
-    private async executeRealTool(
-        action: AgentAction,
-        tool: Tool,
-        context: StrategyExecutionContext,
-    ): Promise<unknown> {
-        const startTime = Date.now();
-
-        this.logger.debug('🔧 Tool execution via SharedStrategyMethods', {
-            toolName: tool.name,
-            actionInput: action.input,
-            hasInput: action.input && Object.keys(action.input).length > 0,
-        });
-
+    private async updateSessionMinimal(
+        threadId: string,
+        update: {
+            iteration: number;
+            actionType: string;
+            isCompleted: boolean;
+            stepId: string;
+        },
+    ): Promise<void> {
         try {
-            // 🔥 USAR SHARED METHODS PARA EXECUÇÃO REAL DE TOOLS
-            const result = await SharedStrategyMethods.executeTool(
-                action,
-                context,
-            );
+            const executionUpdate: {
+                currentStep?: {
+                    id: string;
+                    status:
+                        | 'pending'
+                        | 'executing'
+                        | 'completed'
+                        | 'failed'
+                        | 'skipped';
+                };
+                status?: 'in_progress' | 'success' | 'error' | 'partial';
+                currentTool?: string;
+                completedSteps?: string[];
+            } = {
+                currentStep: {
+                    id: update.stepId,
+                    status: update.isCompleted ? 'completed' : 'executing',
+                },
+            };
 
-            this.logger.debug('✅ Tool execution completed', {
-                toolName: tool.name,
-                executionTime: Date.now() - startTime,
-                hasResult: result !== undefined,
+            if (update.actionType === 'tool_call') {
+                executionUpdate.currentTool = 'tool_executing';
+            }
+
+            if (update.isCompleted) {
+                executionUpdate.status = 'success';
+                executionUpdate.completedSteps = [update.stepId];
+            } else {
+                executionUpdate.status = 'in_progress';
+            }
+
+            await ContextService.updateExecution(threadId, executionUpdate);
+
+            this.logger.debug('✅ Session updated (minimal)', {
+                threadId,
+                iteration: update.iteration,
+                stepId: update.stepId,
+                actionType: update.actionType,
+                isCompleted: update.isCompleted,
             });
-
-            return result;
         } catch (error) {
-            const errorMessage =
-                error instanceof Error ? error.message : String(error);
-
-            this.logger.warn('❌ Tool execution failed', {
-                toolName: tool.name,
-                error: errorMessage,
-                executionTime: Date.now() - startTime,
+            // Silent failure - session updates are non-critical
+            this.logger.debug('Session update failed', {
+                threadId,
+                error: error instanceof Error ? error.message : String(error),
             });
-
-            throw error; // Re-throw para que seja tratado pelo nível superior
         }
     }
 
-    /**
-     * Gera feedback baseado no resultado
-     */
     private generateFeedback(result: ActionResult): string {
         switch (result.type) {
             case 'final_answer':
@@ -742,9 +574,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
         }
     }
 
-    /**
-     * Constrói resultado de sucesso
-     */
     private buildSuccessResult(
         steps: ExecutionStep[],
         startTime: number,
@@ -776,9 +605,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
         };
     }
 
-    /**
-     * Constrói resultado de erro
-     */
     private buildErrorResult(
         error: unknown,
         steps: ExecutionStep[],
@@ -817,12 +643,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
         };
     }
 
-    /**
-     * 🔥 CREATE FINAL RESPONSE - Uses ContextBridge for complete context
-     *
-     * This method solves the original problem: "When I get to createFinalResponse,
-     * I don't have all the necessary context to work with"
-     */
     async createFinalResponse(
         context: StrategyExecutionContext,
     ): Promise<string> {
@@ -831,7 +651,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
         );
 
         try {
-            // Build PlannerExecutionContext for ContextBridge compatibility
             const plannerContext = {
                 input: context.input,
                 history: context.history.map((step, index) => ({
@@ -859,65 +678,44 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 update: () => {},
                 getCurrentSituation: () =>
                     `ReAct strategy completed for: ${context.input}`,
-                getFinalResult: () => ({
-                    success: true,
-                    result: { content: 'ReAct execution completed' },
-                    iterations: 1,
-                    totalTime:
-                        new Date().getTime() -
-                        (context.metadata?.startTime || Date.now()),
-                    thoughts: [],
-                    metadata: {
-                        ...context.metadata,
-                        agentName: context.agentContext.agentName,
+                getFinalResult: () => {
+                    const executionResult = (context as any).originalResult;
+                    let content = 'ReAct execution completed';
+
+                    if (executionResult?.output) {
+                        content = executionResult.output;
+                    }
+
+                    return {
+                        success: true,
+                        result: { content },
                         iterations: 1,
-                        toolsUsed: context.metadata?.complexity || 0,
-                        thinkingTime:
-                            Date.now() -
+                        totalTime:
+                            new Date().getTime() -
                             (context.metadata?.startTime || Date.now()),
-                    } as any,
-                }),
+                        thoughts: [],
+                        metadata: {
+                            ...context.metadata,
+                            agentName: context.agentContext.agentName,
+                            iterations: 1,
+                            toolsUsed: context.metadata?.complexity || 0,
+                            thinkingTime:
+                                Date.now() -
+                                (context.metadata?.startTime || Date.now()),
+                        } as any,
+                    };
+                },
                 getCurrentPlan: () => null,
             };
 
-            // 🔥 THE CORE: Use ContextBridge to build complete context
             const finalContext =
                 await ContextService.buildFinalResponseContext(plannerContext);
 
-            this.logger.info(
-                '✅ ContextBridge: Complete context retrieved for ReAct',
-                {
-                    sessionId: finalContext.runtime.sessionId,
-                    messagesCount: finalContext.runtime.messages.length,
-                    entitiesCount: Object.keys(finalContext.runtime.entities)
-                        .length,
-                    executionSummary: {
-                        totalExecutions:
-                            finalContext.executionSummary.totalExecutions,
-                        successRate: finalContext.executionSummary.successRate,
-                        replanCount: finalContext.executionSummary.replanCount,
-                    },
-                    wasRecovered: finalContext.recovery?.wasRecovered,
-                    inferencesCount: Object.keys(finalContext.inferences || {})
-                        .length,
-                },
-            );
+            console.log('finalContext', finalContext);
 
-            // Build context-aware response using complete context
-            const response = this.buildContextualResponse(
-                finalContext,
-                context.input,
+            return (
+                (await plannerContext.getFinalResult().result.content) ?? 'Kody'
             );
-
-            this.logger.info(
-                '🎯 ReAct: Final response created with full context',
-                {
-                    responseLength: response.length,
-                    contextSource: 'ContextBridge',
-                },
-            );
-
-            return response;
         } catch (error) {
             this.logger.error(
                 '❌ ReAct: ContextBridge failed, using fallback response',
@@ -927,113 +725,32 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     agentName: context.agentContext.agentName,
                 },
             );
-
-            // Fallback: Simple response without ContextBridge
-            return this.buildFallbackResponse(context);
+            return 'Kody'; // Fallback response
         }
     }
 
-    /**
-     * Build contextual response using complete FinalResponseContext from ContextBridge
-     */
-    private buildContextualResponse(
-        finalContext: any,
-        originalInput: string,
-    ): string {
-        const { runtime, executionSummary, recovery } = finalContext;
+    // private buildStandardAdditionalContext(
+    //     context: StrategyExecutionContext,
+    // ): Record<string, unknown> {
+    //     let userContext =
+    //         context.agentContext?.agentExecutionOptions?.userContext;
 
-        let response = `Through reasoning and action`;
+    //     if (typeof userContext === 'string') {
+    //         try {
+    //             userContext = JSON.parse(userContext);
+    //         } catch (error) {
+    //             this.logger.warn('Failed to parse userContext as JSON', {
+    //                 error,
+    //             });
+    //         }
+    //     }
 
-        // Add context about what was accomplished
-        if (executionSummary.totalExecutions > 0) {
-            response += `, I've completed ${executionSummary.totalExecutions} executions`;
-
-            if (executionSummary.successRate < 100) {
-                response += ` with ${executionSummary.successRate}% success rate`;
-            }
-        }
-
-        // Reference entities if available
-        const entityTypes = Object.keys(runtime.entities).filter(
-            (key: string) => {
-                const entities = runtime.entities[key];
-                return Array.isArray(entities) && entities.length > 0;
-            },
-        );
-
-        if (entityTypes.length > 0) {
-            response += `, working with ${entityTypes.join(', ')}`;
-        }
-
-        // Mention recovery if it happened
-        if (recovery?.wasRecovered) {
-            const gapMinutes = Math.round(recovery.gapDuration / 60000);
-            response += ` (session recovered after ${gapMinutes}min gap)`;
-        }
-
-        // Add conversation context
-        if (runtime.messages.length > 2) {
-            response += ` based on our ${runtime.messages.length} message conversation`;
-        }
-
-        // Add specific response to the original input
-        response += `. For your request: "${originalInput}"`;
-
-        // Add completion message
-        response += ` - I've applied the ReAct approach of systematic thinking, targeted action, and careful observation to provide you with a comprehensive response.`;
-
-        return response;
-    }
-
-    /**
-     * Fallback response when ContextBridge is not available
-     */
-    private buildFallbackResponse(context: StrategyExecutionContext): string {
-        return (
-            `I've processed your request: "${context.input}" using the ReAct strategy. ` +
-            `Through systematic reasoning, targeted actions, and careful observation, I've completed the task.`
-        );
-    }
-
-    /**
-     * Verifica se o erro é relacionado à rede/conectividade
-     */
-    private isNetworkError(error: unknown): boolean {
-        if (!(error instanceof Error)) return false;
-
-        const errorMessage = error.message.toLowerCase();
-        const errorName = error.constructor.name.toLowerCase();
-
-        // Padrões comuns de erro de rede
-        const networkPatterns = [
-            'fetch failed',
-            'network error',
-            'connection refused',
-            'timeout',
-            'econnrefused',
-            'enotfound',
-            'econnreset',
-            'etimedout',
-            'request timeout',
-            'service unavailable',
-            'bad gateway',
-            'gateway timeout',
-            'internal server error',
-        ];
-
-        // Verificar se a mensagem contém algum padrão de erro de rede
-        const hasNetworkPattern = networkPatterns.some((pattern) =>
-            errorMessage.includes(pattern),
-        );
-
-        // Verificar se é um erro de tipo de rede
-        const isNetworkErrorType = [
-            'typeerror',
-            'fetcherror',
-            'connectionerror',
-            'timeoutError',
-        ].some((type) => errorName.includes(type));
-
-        return hasNetworkPattern || isNetworkErrorType;
-    }
+    //     return {
+    //         userContext,
+    //         agentIdentity: context.agentContext?.agentIdentity,
+    //         agentExecutionOptions: context.agentContext?.agentExecutionOptions,
+    //         runtimeContext: (context.agentContext as any)
+    //             ?.enhancedRuntimeContext,
+    //     };
+    // }
 }

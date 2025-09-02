@@ -237,6 +237,59 @@ export class ContextService {
     }
 
     /**
+     * Update state (phase, intent, iterations, pending actions)
+     */
+    static async updateState(
+        threadId: string,
+        stateUpdate: {
+            phase?: 'planning' | 'execution' | 'completed' | 'error';
+            lastUserIntent?: string;
+            pendingActions?: string[];
+            currentStep?: string;
+            currentIteration?: number;
+            totalIterations?: number;
+        },
+    ): Promise<void> {
+        logger.debug('🔄 Updating context state', {
+            threadId,
+            phase: stateUpdate.phase,
+            currentIteration: stateUpdate.currentIteration,
+            pendingActionsCount: stateUpdate.pendingActions?.length,
+        });
+
+        try {
+            const builder = EnhancedContextBuilder.getInstance();
+            const contextBridge = builder.getContextBridge();
+
+            // Get current context to merge with update
+            const currentContext =
+                await contextBridge.getRuntimeContext(threadId);
+
+            await contextBridge.updateRuntimeContext(threadId, {
+                state: {
+                    ...currentContext.state,
+                    ...stateUpdate,
+                },
+            });
+
+            logger.debug('✅ Context state updated successfully', {
+                threadId,
+                phase: stateUpdate.phase,
+            });
+        } catch (error) {
+            logger.error(
+                '❌ Failed to update context state',
+                error instanceof Error ? error : undefined,
+                {
+                    threadId,
+                    stateUpdate,
+                },
+            );
+            // Don't throw - state updates shouldn't break main flow
+        }
+    }
+
+    /**
      * Update existing message (for Progressive Persistence pattern)
      */
     static async updateMessage(

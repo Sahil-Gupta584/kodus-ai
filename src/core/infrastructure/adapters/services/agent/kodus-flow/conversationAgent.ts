@@ -86,26 +86,26 @@ export class ConversationAgentProvider {
                 }));
 
                 let model = base;
-                if (options.tools?.length) {
-                    const toolDefs = options.tools.map((t: any) => ({
-                        type: 'function',
-                        function: {
-                            name: sanitizeName(t.name),
-                            description: t.description ?? '',
-                            parameters: {
-                                ...t.parameters,
-                                additionalProperties: false,
-                            },
-                        },
-                    }));
+                // if (options.tools?.length) {
+                //     const toolDefs = options.tools.map((t: any) => ({
+                //         type: 'function',
+                //         function: {
+                //             name: sanitizeName(t.name),
+                //             description: t.description ?? '',
+                //             parameters: {
+                //                 ...t.parameters,
+                //                 additionalProperties: false,
+                //             },
+                //         },
+                //     }));
 
-                    const bindOpts: any = {};
-                    if (options.toolChoice) {
-                        bindOpts.tool_choice = options.toolChoice;
-                    }
+                //     const bindOpts: any = {};
+                //     if (options.toolChoice) {
+                //         bindOpts.tool_choice = options.toolChoice;
+                //     }
 
-                    model = (base as any).bindTools(toolDefs, bindOpts);
-                }
+                //     model = (base as any).bindTools(toolDefs, bindOpts);
+                // }
 
                 const resp = await model.invoke(lcMessages, {
                     stop: options.stop,
@@ -251,7 +251,7 @@ export class ConversationAgentProvider {
                     'Agente de conversação para interações com usuários.',
             },
             plannerOptions: {
-                type: PlannerType.REACT,
+                type: PlannerType.PLAN_EXECUTE,
                 replanPolicy: {
                     toolUnavailable: 'replan',
                     maxReplans: 3,

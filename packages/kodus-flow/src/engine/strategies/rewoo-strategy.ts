@@ -10,15 +10,12 @@ import type {
 } from './types.js';
 import { StrategyPromptFactory } from './prompts/index.js';
 import { ContextService } from '../../core/contextNew/index.js';
+import { EnhancedJSONParser } from '../../utils/json-parser.js';
 
 function safeJsonParse<T = any>(text: string): T | null {
     try {
-        // strip possible markdown fences
-        const cleaned = text
-            .trim()
-            .replace(/^```(json)?/i, '')
-            .replace(/```$/i, '');
-        return JSON.parse(cleaned) as T;
+        const result = EnhancedJSONParser.parse(text);
+        return result as T;
     } catch {
         return null;
     }

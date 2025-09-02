@@ -7,6 +7,7 @@ import {
     planningResultSchema,
 } from '../types/allTypes.js';
 import { createLogger } from '../../observability/index.js';
+import { EnhancedJSONParser } from '../../utils/json-parser.js';
 
 const ajvConstructor = Ajv as unknown as typeof Ajv.default;
 const ajv = new ajvConstructor({
@@ -105,41 +106,16 @@ function extractContent(response: unknown): string {
 }
 
 /**
- * Parse JSON from various formats (handles code blocks, etc)
+ * Parse JSON from various formats (handles code blocks, etc) - Enhanced Version
  */
 function parseJSON(content: string): unknown {
-    // Remove markdown code blocks
-    const cleanContent = content
-        .replace(/```json\n?/g, '')
-        .replace(/```\n?/g, '')
-        .trim();
+    const result = EnhancedJSONParser.parse(content);
 
-    // Try direct parse
-    try {
-        return JSON.parse(cleanContent);
-    } catch {
-        // Try to extract JSON from mixed content
-        const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            try {
-                return JSON.parse(jsonMatch[0]);
-            } catch {
-                // Continue to next attempt
-            }
-        }
-
-        // Try to extract array
-        const arrayMatch = cleanContent.match(/\[[\s\S]*\]/);
-        if (arrayMatch) {
-            try {
-                return JSON.parse(arrayMatch[0]);
-            } catch {
-                // Continue to next attempt
-            }
-        }
+    if (result === null) {
+        throw new Error('Failed to parse JSON from response');
     }
 
-    throw new Error('Failed to parse JSON from response');
+    return result;
 }
 
 /**

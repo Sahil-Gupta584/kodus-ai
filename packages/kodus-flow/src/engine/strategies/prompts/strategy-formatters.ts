@@ -1,22 +1,7 @@
-/**
- * 🎯 STRATEGY FORMATTERS
- *
- * Utilitários avançados para formatação de prompts e context
- * na nova arquitetura de strategies.
- *
- * Funcionalidades:
- * - Formatação inteligente de parâmetros de ferramentas
- * - Formatação de context adicional
- * - Formatação de schemas JSON
- * - Estimativa de tokens
- * - Utilitários de formatação
- */
-
-//import { createLogger } from '../../../observability/index.js';
 import { AgentContext } from '../../../core/types/allTypes.js';
 import type { AgentRuntimeContext } from '../../../core/contextNew/types/context-types.js';
 
-interface Tool {
+export interface Tool {
     name: string;
     description?: string;
     parameters?: {
@@ -27,18 +12,17 @@ interface Tool {
     outputSchema?: Record<string, unknown>;
 }
 
-// type Logger = ReturnType<typeof createLogger>;
+export interface RewooEvidenceItem {
+    id: string;
+    sketchId: string;
+    toolName: string;
+    input?: any;
+    output?: any;
+    error?: string;
+    latencyMs?: number;
+}
 
 export class ToolParameterFormatter {
-    //private readonly logger: Logger = createLogger('tool-parameter-formatter');
-
-    /**
-     * Formatação avançada de parâmetros baseada no planner-prompt-composer
-     */
-
-    /**
-     * Formata parâmetros de ferramenta com tipos avançados
-     */
     formatToolParameters(tool: Tool): string {
         if (!tool.parameters?.properties) {
             return '';
@@ -300,19 +284,7 @@ export class ToolParameterFormatter {
     }
 }
 
-// =============================================================================
-// 📋 FORMATADORES DE CONTEXT
-// =============================================================================
-
-/**
- * Formatador de context adicional e metadados
- */
 export class ContextFormatter {
-    //private readonly logger: Logger = createLogger('context-formatter');
-
-    /**
-     * Formata context adicional (user context, agent identity, etc.)
-     */
     formatAdditionalContext(
         additionalContext: Record<string, unknown>,
     ): string {
@@ -329,13 +301,7 @@ export class ContextFormatter {
 
             if (typeof value === 'object') {
                 try {
-                    const jsonStr = JSON.stringify(value, null, 2);
-
-                    if (jsonStr.length > 1000) {
-                        const truncated = jsonStr.substring(0, 1000);
-                        return `${truncated}... [TRUNCATED - ${jsonStr.length - 1000} chars]`;
-                    }
-                    return jsonStr;
+                    return JSON.stringify(value, null, 2);
                 } catch (error) {
                     return `[OBJECT - CANNOT SERIALIZE: ${String(error)}]`;
                 }
@@ -344,7 +310,6 @@ export class ContextFormatter {
             return String(value);
         };
 
-        // Handle user context (contém tudo relacionado ao usuário - framework agnóstico)
         if (additionalContext.userContext) {
             const userCtx = additionalContext.userContext as Record<
                 string,
@@ -398,34 +363,24 @@ export class ContextFormatter {
         Object.entries(context).forEach(([key, value]) => {
             if (value !== undefined && value !== null) {
                 try {
-                    // For complex objects, try intelligent formatting
                     if (typeof value === 'object' && value !== null) {
                         const obj = value as Record<string, unknown>;
 
-                        // Agnostic framework - handle all objects generically
                         if (!this.isObjectTooComplex(obj)) {
-                            // Simple objects can be formatted normally
                             const formattedValue = formatValue(value);
-                            if (formattedValue.length < 2000) {
-                                sections.push(
-                                    `**${this.formatFieldName(key)}:** ${formattedValue}`,
-                                );
-                            }
-                        } else {
-                            // For complex objects, use generic intelligent formatting
-                            this.formatGenericObject(key, obj, sections);
-                        }
-                    } else {
-                        // Primitive values
-                        const formattedValue = formatValue(value);
-                        if (formattedValue.length < 2000) {
                             sections.push(
                                 `**${this.formatFieldName(key)}:** ${formattedValue}`,
                             );
+                        } else {
+                            this.formatGenericObject(key, obj, sections);
                         }
+                    } else {
+                        const formattedValue = formatValue(value);
+                        sections.push(
+                            `**${this.formatFieldName(key)}:** ${formattedValue}`,
+                        );
                     }
                 } catch (error) {
-                    // Fallback em caso de erro
                     sections.push(
                         `**${this.formatFieldName(key)}:** [Error formatting: ${String(error)}]`,
                     );
@@ -444,7 +399,6 @@ export class ContextFormatter {
     ): void {
         const keys = Object.keys(obj);
 
-        // Para objetos simples, mostra como JSON formatado
         if (keys.length <= 3) {
             try {
                 const jsonStr = JSON.stringify(obj, null, 2);
@@ -456,7 +410,6 @@ export class ContextFormatter {
             } catch {}
         }
 
-        // Para objetos maiores, formata como lista estruturada
         sections.push(`**${this.formatFieldName(key)}:**`);
 
         keys.forEach((subKey) => {
@@ -488,7 +441,10 @@ export class ContextFormatter {
                         });
                     } else {
                         // Valores simples
-                        const formatted = this.formatSimpleValue(subValue);
+                        const formatted = this.formatSimpleValue(
+                            subValue,
+                            false,
+                        );
                         sections.push(`  - ${formattedKey}: ${formatted}`);
                     }
                 } catch {
@@ -524,43 +480,29 @@ export class ContextFormatter {
                                 return JSON.stringify(parsed);
                             }
 
-                            // Para objetos maiores mas importantes, mostra mais detalhes
-                            if (keys.length <= 5) {
-                                const preview = keys
-                                    .slice(0, 3)
-                                    .map((k) => `${k}: ...`)
-                                    .join(', ');
-                                return `[Object: ${preview}${keys.length > 3 ? ', ...' : ''}]`;
-                            }
-
-                            // Para objetos muito grandes, mostra contagem
-                            return `[Object with ${keys.length} fields]`;
+                            // 🔥 MODIFICADO: Mostrar dados completos para objetos importantes
+                            // Remove limite de 5 campos - mostra tudo
+                            const preview = keys
+                                .slice(0, 5) // Mostra até 5 campos como preview
+                                .map((k) => {
+                                    const val = parsed[k];
+                                    return `${k}: ${JSON.stringify(val)}`;
+                                })
+                                .join(', ');
+                            return `[Object: ${preview}${keys.length > 5 ? ', ...' : ''}]`;
                         }
                     } catch {}
                 }
 
-                // Special handling for very long text content (like PR comments)
-                if (value.length > 500 && truncate) {
-                    // Try to extract meaningful parts
-                    const lines = value.split('\n');
-                    if (lines.length > 3 && lines[0]) {
-                        const firstLine = lines[0].substring(0, 100);
-                        const codeBlocks =
-                            (value.match(/```/g) || []).length / 2;
-                        return `${firstLine}... (${lines.length} lines${codeBlocks > 0 ? `, ${codeBlocks} code blocks` : ''})`;
-                    }
-                    return `${value.substring(0, 200)}... (${value.length} chars total)`;
-                }
+                // REMOVIDO: Sem truncagem para texto longo
 
                 // Show full content when truncate is false
                 if (!truncate) {
                     return value;
                 }
 
-                // Regular string handling
-                return value.length > 100
-                    ? `${value.substring(0, 100)}...`
-                    : value;
+                // REMOVIDO: Sem truncagem para strings
+                return value;
 
             case 'number':
             case 'boolean':
@@ -568,10 +510,30 @@ export class ContextFormatter {
 
             case 'object':
                 try {
-                    const str = JSON.stringify(value);
-                    return str.length > 100
-                        ? `[Object: ${Object.keys(value as object).length} keys]`
-                        : str;
+                    const obj = value as Record<string, unknown>;
+                    const keys = Object.keys(obj);
+
+                    // Agnostic approach: expand based only on object size
+                    // For small objects, show complete content
+                    if (keys.length <= 3) {
+                        const str = JSON.stringify(value, null, 2);
+                        return str;
+                    }
+
+                    // For larger objects, show summary but with more details
+                    if (keys.length <= 8) {
+                        const preview = keys
+                            .slice(0, 5)
+                            .map((k) => {
+                                const val = obj[k];
+                                return `${k}: ${JSON.stringify(val)}`;
+                            })
+                            .join(', ');
+                        return `[Object: ${preview}${keys.length > 5 ? ', ...' : ''}]`;
+                    }
+
+                    // For very large objects, show count
+                    return `[Object with ${keys.length} fields]`;
                 } catch {
                     return '[Complex Object]';
                 }
@@ -630,10 +592,7 @@ export class ContextFormatter {
                 return true;
             }
 
-            // Strings muito longas ainda são um problema
-            if (typeof value === 'string' && value.length > 1000) {
-                return true;
-            }
+            // REMOVIDO: Sem limite para strings na detecção de complexidade
 
             // Verificar recursivamente objetos aninhados
             if (typeof value === 'object' && value !== null) {
@@ -753,9 +712,7 @@ export class ContextFormatter {
             }
 
             if (execution.lastError) {
-                progressInfo.push(
-                    `**Last Error:** ${execution.lastError.substring(0, 100)}...`,
-                );
+                progressInfo.push(`**Last Error:** ${execution.lastError}`);
             }
 
             sections.push(
@@ -763,61 +720,9 @@ export class ContextFormatter {
             );
         }
 
-        // 4. Key Entities - Apenas as mais importantes, não todas
-        const importantEntities = this.extractImportantEntities(
-            runtimeContext.entities,
-        );
-        if (importantEntities.length > 0) {
-            sections.push(`## 🏷️ KEY CONTEXT\n${importantEntities.join('\n')}`);
-        }
-
         return sections.join('\n\n');
     }
 
-    /**
-     * Extrai apenas entities importantes para o contexto do LLM
-     */
-    private extractImportantEntities(entities: Record<string, any>): string[] {
-        const important: string[] = [];
-
-        // Priorizar entities que ajudam o LLM a entender o contexto
-        const priorityKeys = [
-            'target_file',
-            'current_file',
-            'analysis_result',
-            'error_context',
-            'user_preference',
-            'workspace_info',
-        ];
-
-        for (const key of priorityKeys) {
-            if (entities[key]) {
-                const value =
-                    typeof entities[key] === 'string'
-                        ? entities[key]
-                        : JSON.stringify(entities[key]).substring(0, 100) +
-                          '...';
-                important.push(
-                    `**${key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}:** ${value}`,
-                );
-            }
-        }
-
-        // Adicionar contagem de outras entities se houver muitas
-        const totalKeys = Object.keys(entities).length;
-        const shownKeys = important.length;
-        if (totalKeys > shownKeys) {
-            important.push(
-                `*(...and ${totalKeys - shownKeys} more context items)*`,
-            );
-        }
-
-        return important.slice(0, 5); // Limitar a 5 entities mais importantes
-    }
-
-    /**
-     * Formata contexto de replan para histórico
-     */
     formatReplanContext(replanContext: Record<string, unknown>): string {
         const sections: string[] = ['## 🔄 REPLAN CONTEXT'];
 
@@ -855,7 +760,7 @@ export class ContextFormatter {
 
                         sections.push(`  - ✅ ${toolName}: ${description}`);
                         sections.push(
-                            `    Result: ${this.truncateResult(result)}`,
+                            `    Result: ${typeof result === 'string' ? result : JSON.stringify(result)}`,
                         );
                     });
                 }
@@ -895,10 +800,7 @@ export class ContextFormatter {
                     sections.push(
                         `\n**Attempt ${index + 1}:** ${plan.id || 'Unknown Plan'}`,
                     );
-                    if (plan.goal)
-                        sections.push(
-                            `  Goal: "${this.truncateText(plan.goal as string, 100)}"`,
-                        );
+                    if (plan.goal) sections.push(`  Goal: "${plan.goal}"`);
                 });
             }
         }
@@ -909,63 +811,41 @@ export class ContextFormatter {
         return sections.join('\n');
     }
 
-    /**
-     * Trunca resultado para exibição
-     */
-    private truncateResult(result: unknown): string {
-        const text =
-            typeof result === 'string' ? result : JSON.stringify(result);
-        return this.truncateText(text, 200);
-    }
-
-    /**
-     * Trunca texto com ellipsis
-     */
-    private truncateText(text: string, maxLength: number): string {
-        if (text.length <= maxLength) return text;
-        return text.substring(0, maxLength) + '...';
-    }
+    // 🔥 REMOVIDO: truncateResult foi inlineado acima
 }
 
-// =============================================================================
-// 📊 FORMATADORES DE SCHEMA
-// =============================================================================
-
-/**
- * Formatador avançado de schemas JSON
- */
 export class SchemaFormatter {
-    // private readonly logger: Logger = createLogger('schema-formatter');
-
-    /**
-     * Formata schema de saída para display amigável
-     */
     formatOutputSchema(
         outputSchema: Record<string, unknown>,
         toolName?: string,
     ): string {
-        if (!outputSchema) return '';
+        if (!outputSchema) {
+            return '';
+        }
 
         // Unwrap schema se necessário
         const unwrapped = this.unwrapOutputSchema(outputSchema);
 
         // Verifica se é vazio
-        if (this.isEmptyOutputSchema(unwrapped)) return '';
+        if (this.isEmptyOutputSchema(unwrapped)) {
+            return '';
+        }
 
         // Formata o tipo
         const formatted = this.formatSchemaType(unwrapped, 0, false);
-        if (!formatted) return '';
+        if (!formatted) {
+            return '';
+        }
 
         // Verifica se é apenas tipo genérico
-        if (this.isGenericTypeOnly(formatted)) return '';
+        if (this.isGenericTypeOnly(formatted)) {
+            return '';
+        }
 
         const toolSuffix = toolName ? ` (from ${toolName})` : '';
         return `\n  Returns: ${formatted}${toolSuffix}`;
     }
 
-    /**
-     * Desembrulha schema (remove wrappers comuns)
-     */
     private unwrapOutputSchema(
         schema: Record<string, unknown>,
     ): Record<string, unknown> {
@@ -976,7 +856,6 @@ export class SchemaFormatter {
         const properties = schema.properties as Record<string, unknown>;
         const propNames = Object.keys(properties);
 
-        // Remove wrapper { data: ... }
         if (
             propNames.includes('data') &&
             (propNames.includes('success') || propNames.includes('count'))
@@ -985,13 +864,11 @@ export class SchemaFormatter {
             if (dataField) return dataField;
         }
 
-        // Remove single { data: ... } wrapper
         if (propNames.length === 1 && propNames[0] === 'data') {
             const dataField = properties.data as Record<string, unknown>;
             if (dataField) return dataField;
         }
 
-        // Remove wrapper { results: ... }
         if (propNames.includes('results') && propNames.length <= 3) {
             const resultsField = properties.results as Record<string, unknown>;
             if (resultsField) return resultsField;
@@ -1000,9 +877,6 @@ export class SchemaFormatter {
         return schema;
     }
 
-    /**
-     * Verifica se schema é vazio
-     */
     private isEmptyOutputSchema(schema: Record<string, unknown>): boolean {
         if (!schema || Object.keys(schema).length === 0) return true;
 
@@ -1015,9 +889,6 @@ export class SchemaFormatter {
         return false;
     }
 
-    /**
-     * Verifica se é apenas tipo genérico
-     */
     private isGenericTypeOnly(formatted: string): boolean {
         const trimmed = formatted.trim();
         const genericTypes = [
@@ -1032,9 +903,6 @@ export class SchemaFormatter {
         return genericTypes.includes(trimmed);
     }
 
-    /**
-     * Formata tipo de schema recursivamente
-     */
     private formatSchemaType(
         schema: Record<string, unknown>,
         depth: number = 0,
@@ -1355,104 +1223,21 @@ export class SchemaFormatter {
     }
 }
 
-// =============================================================================
-// 📏 UTILITÁRIOS DE ESTIMATIVA
-// =============================================================================
-
-/**
- * Utilitários para estimativa de tokens e recursos
- */
-export class EstimationUtils {
-    /**
-     * Estima contagem de tokens (aproximação simples)
-     */
-    static estimateTokenCount(text: string, tools?: Tool[]): number {
-        // Estimativa básica: ~4 caracteres por token
-        let tokenCount = Math.ceil(text.length / 4);
-
-        // Adiciona overhead por tool
-        if (tools) {
-            tools.forEach((tool) => {
-                // Nome da tool
-                tokenCount += Math.ceil(tool.name.length / 4);
-                // Descrição
-                tokenCount += Math.ceil((tool.description || '').length / 4);
-                // Parâmetros (estimativa)
-                if (tool.parameters?.properties) {
-                    const paramCount = Object.keys(
-                        tool.parameters.properties,
-                    ).length;
-                    tokenCount += paramCount * 10; // ~10 tokens por parâmetro
-                }
-            });
-        }
-
-        return tokenCount;
-    }
-
-    /**
-     * Estima complexidade da tarefa
-     */
-    static estimateComplexity(input: string, tools: Tool[]): number {
-        let complexity = 0;
-
-        // Base complexity
-        complexity += tools.length;
-
-        // Input complexity
-        if (input.length > 100) complexity += 1;
-        if (input.length > 500) complexity += 2;
-
-        // Keyword complexity
-        const complexKeywords =
-            /analyze|create|generate|build|integrate|workflow|plan/i;
-        if (complexKeywords.test(input)) complexity += 2;
-
-        // Multiple actions
-        const actionKeywords = /and|then|after|before|while|until/i;
-        if (actionKeywords.test(input)) complexity += 1;
-
-        return complexity;
-    }
-
-    /**
-     * Estima recursos necessários
-     */
-    static estimateResources(complexity: number) {
-        return {
-            estimatedMemory: Math.max(complexity * 10, 50), // MB
-            estimatedTime: Math.max(complexity * 5, 10), // seconds
-            priority: complexity > 5 ? 'high' : ('normal' as const),
-        };
-    }
-}
-
-// =============================================================================
-// 🎯 FACADE PRINCIPAL
-// =============================================================================
-
-/**
- * Facade principal para todos os formatadores
- */
 export class StrategyFormatters {
     private readonly toolFormatter = new ToolParameterFormatter();
     private readonly contextFormatter = new ContextFormatter();
     private readonly schemaFormatter = new SchemaFormatter();
 
-    /**
-     * Formata parâmetros de ferramenta
-     */
-    formatToolParameters(tool: Tool): string {
-        return this.toolFormatter.formatToolParameters(tool);
+    get tool(): ToolParameterFormatter {
+        return this.toolFormatter;
+    }
+    get context(): ContextFormatter {
+        return this.contextFormatter;
+    }
+    get schema(): SchemaFormatter {
+        return this.schemaFormatter;
     }
 
-    /**
-     * Formatação avançada de parâmetros baseada no planner-prompt-composer
-     */
-
-    /**
-     * Format complete tool list with validation
-     */
     formatToolsList(
         tools:
             | Tool[]
@@ -1480,13 +1265,11 @@ export class StrategyFormatters {
         return sections.join('\n');
     }
 
-    /**
-     * Faz parse e validação das tools
-     */
     private parseAndValidateTools(tools: any): Tool[] {
-        if (!tools) return [];
+        if (!tools) {
+            return [];
+        }
 
-        // Handle string input (JSON)
         if (typeof tools === 'string') {
             try {
                 const parsed = JSON.parse(tools);
@@ -1496,13 +1279,9 @@ export class StrategyFormatters {
             }
         }
 
-        // Ensure it's an array
         return Array.isArray(tools) ? tools : [];
     }
 
-    /**
-     * Formata uma única ferramenta
-     */
     private formatSingleTool(tool: Tool, index: number): string {
         const parts: string[] = [];
 
@@ -1572,66 +1351,6 @@ export class StrategyFormatters {
 
         return '';
     }
-
-    /**
-     * Formata context adicional
-     */
-    formatAdditionalContext(
-        additionalContext: Record<string, unknown>,
-    ): string {
-        return this.contextFormatter.formatAdditionalContext(additionalContext);
-    }
-
-    /**
-     * Formata agent context
-     */
-    formatAgentContext(agentContext: AgentContext): string {
-        return this.contextFormatter.formatAgentContext(agentContext);
-    }
-
-    /**
-     * 🎯 Formata RuntimeContext do ContextNew para prompts
-     */
-    formatRuntimeContext(runtimeContext: AgentRuntimeContext): string {
-        return this.contextFormatter.formatRuntimeContext(runtimeContext);
-    }
-
-    /**
-     * Formata replan context
-     */
-    formatReplanContext(replanContext: Record<string, unknown>): string {
-        return this.contextFormatter.formatReplanContext(replanContext);
-    }
-
-    /**
-     * Formata schema de saída
-     */
-    formatOutputSchema(
-        outputSchema: Record<string, unknown>,
-        toolName?: string,
-    ): string {
-        return this.schemaFormatter.formatOutputSchema(outputSchema, toolName);
-    }
-
-    /**
-     * Estimativas úteis
-     */
-    estimateComplexity(input: string, tools: Tool[]): number {
-        return EstimationUtils.estimateComplexity(input, tools);
-    }
-
-    estimateTokenCount(text: string, tools?: Tool[]): number {
-        return EstimationUtils.estimateTokenCount(text, tools);
-    }
-
-    estimateResources(complexity: number) {
-        return EstimationUtils.estimateResources(complexity);
-    }
 }
 
-// =============================================================================
-// 🎯 EXPORTS PRINCIPAIS
-// =============================================================================
-
-// Export default para conveniência
 export default StrategyFormatters;

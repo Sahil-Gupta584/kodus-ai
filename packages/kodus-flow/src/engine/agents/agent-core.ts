@@ -351,7 +351,6 @@ export abstract class AgentCore<
             content: typeof input === 'string' ? input : JSON.stringify(input),
             metadata: {
                 agentName: agent.name,
-                executionId,
                 correlationId,
                 source: 'user-input',
             },
@@ -363,7 +362,6 @@ export abstract class AgentCore<
             content: '⏳ Processing your request...',
             metadata: {
                 agentName: agent.name,
-                executionId,
                 correlationId,
                 status: 'processing',
                 source: 'agent-placeholder',
@@ -475,15 +473,13 @@ export abstract class AgentCore<
                     content:
                         typeof result.output === 'string'
                             ? result.output
-                            : JSON.stringify(result.output),
+                            : String(result.output || 'Processing completed'),
                     metadata: {
                         agentName: agent.name,
-                        executionId: completeContext.executionId,
                         correlationId,
                         status: 'completed',
                         success: true,
                         source: 'agent-output',
-                        processingDuration: duration,
                     },
                 },
             );
@@ -516,7 +512,6 @@ export abstract class AgentCore<
                     content: `❌ Error processing your request: ${error instanceof Error ? error.message : String(error)}`,
                     metadata: {
                         agentName: agent.name,
-                        executionId: completeContext.executionId,
                         correlationId,
                         status: 'error',
                         success: false,
@@ -758,64 +753,37 @@ export abstract class AgentCore<
         return context;
     }
 
-    protected async updateSessionExecution(
-        threadId: string,
-        executionData: {
-            planId?: string;
-            status?: 'in_progress' | 'success' | 'error' | 'partial';
-            completedSteps?: string[];
-            failedSteps?: string[];
-            currentTool?: string;
-            lastError?: string;
-            replanCount?: number;
-        },
-    ): Promise<void> {
-        try {
-            // 🎯 CLEAN API: Direct method call via ContextService
-            await ContextService.updateExecution(threadId, executionData);
-
-            this.logger.debug('✅ Session execution updated', {
-                threadId,
-                status: executionData.status,
-                completedSteps: executionData.completedSteps?.length,
-                failedSteps: executionData.failedSteps?.length,
-            });
-        } catch (error) {
-            this.logger.error(
-                '❌ Failed to update session execution',
-                error instanceof Error ? error : undefined,
-                {
-                    threadId,
-                    executionData,
-                },
-            );
-            // Don't throw - session updates shouldn't break execution flow
-        }
-    }
-
     /**
-     * 🎯 Centralized session message addition (eliminates duplications)
+     * 🎯 Centralized session message addition (MINIMAL - no toolCalls dump)
      */
     protected async addSessionMessage(
         threadId: string,
         message: {
             role: 'user' | 'assistant' | 'system' | 'tool';
             content: string;
-            toolCalls?: any[];
-            toolCallId?: string;
-            name?: string;
-            metadata?: Record<string, unknown>;
+            // 🔥 REMOVED: toolCalls dump - goes to Observability instead
+            toolCallId?: string; // Only for tool response messages
+            name?: string; // Only for tool response messages
+            // 🔥 REMOVED: metadata dump - goes to Observability instead
         },
     ): Promise<void> {
         try {
-            // 🎯 CLEAN API: Direct method call via ContextService
-            await ContextService.addMessage(threadId, message);
+            // 🎯 CLEAN API: Only essential message data to session
+            const sessionMessage = {
+                role: message.role,
+                content: message.content,
+                timestamp: Date.now(),
+                ...(message.toolCallId && { toolCallId: message.toolCallId }),
+                ...(message.name && { name: message.name }),
+            };
 
-            this.logger.debug('✅ Session message added', {
+            await ContextService.addMessage(threadId, sessionMessage);
+
+            this.logger.debug('✅ Session message added (minimal)', {
                 threadId,
                 role: message.role,
                 contentLength: message.content.length,
-                hasToolCalls: !!message.toolCalls?.length,
+                isToolResponse: !!message.toolCallId,
             });
         } catch (error) {
             this.logger.error(
@@ -825,6 +793,84 @@ export abstract class AgentCore<
                     threadId,
                     messageRole: message.role,
                 },
+            );
+            // Don't throw - session updates shouldn't break execution flow
+        }
+    }
+
+    /**
+     * 🎯 NEW: Update context state (phase, intent, iterations)
+     */
+    protected async updateContextState(
+        threadId: string,
+        stateUpdate: {
+            phase?: 'planning' | 'execution' | 'completed' | 'error';
+            lastUserIntent?: string;
+            pendingActions?: string[];
+            currentStep?: string;
+            currentIteration?: number;
+            totalIterations?: number;
+        },
+    ): Promise<void> {
+        try {
+            await ContextService.updateState(threadId, stateUpdate);
+
+            this.logger.debug('✅ Context state updated', {
+                threadId,
+                phase: stateUpdate.phase,
+                currentIteration: stateUpdate.currentIteration,
+                pendingActionsCount: stateUpdate.pendingActions?.length,
+            });
+        } catch (error) {
+            this.logger.error(
+                '❌ Failed to update context state',
+                error instanceof Error ? error : undefined,
+                { threadId },
+            );
+            // Don't throw - state updates shouldn't break execution flow
+        }
+    }
+
+    /**
+     * 🎯 NEW: Update session execution with MINIMAL state only
+     */
+    protected async updateSessionExecution(
+        threadId: string,
+        executionUpdate: {
+            status?: 'in_progress' | 'success' | 'error' | 'partial';
+            completedSteps?: string[]; // Only step names/IDs
+            failedSteps?: string[]; // Only step names/IDs
+            currentTool?: string; // Current tool name only
+            currentStep?: {
+                // Current step state only
+                id: string;
+                status:
+                    | 'pending'
+                    | 'executing'
+                    | 'completed'
+                    | 'failed'
+                    | 'skipped';
+            };
+            toolCallCount?: number; // Simple counter
+            iterationCount?: number; // Simple counter
+            replanCount?: number; // Simple counter
+        },
+    ): Promise<void> {
+        try {
+            await ContextService.updateExecution(threadId, executionUpdate);
+
+            this.logger.debug('✅ Session execution updated (minimal)', {
+                threadId,
+                status: executionUpdate.status,
+                completedSteps: executionUpdate.completedSteps?.length || 0,
+                toolCallCount: executionUpdate.toolCallCount,
+                iterationCount: executionUpdate.iterationCount,
+            });
+        } catch (error) {
+            this.logger.error(
+                '❌ Failed to update session execution',
+                error instanceof Error ? error : undefined,
+                { threadId },
             );
             // Don't throw - session updates shouldn't break execution flow
         }
@@ -1775,17 +1821,26 @@ export abstract class AgentCore<
                 synthesisUsed: true,
             });
 
+            this.logger.debug('🚀 Final response created', {
+                finalResponse:
+                    typeof finalResponse === 'string'
+                        ? finalResponse.substring(0, 100)
+                        : finalResponse,
+            });
+
             return finalResponse as TOutput;
         } catch (error) {
             this.logger.error(
-                '❌ createFinalResponse failed, using original result',
+                '❌ createFinalResponse failed, using original result output',
                 error instanceof Error ? error : undefined,
                 {
                     strategyType: this.strategy.constructor.name,
                     fallbackToOriginal: true,
                 },
             );
-            return result as TOutput;
+
+            // Return clean output from ExecutionResult, not the full result
+            return (result.output || 'Processing completed') as TOutput;
         }
     }
 

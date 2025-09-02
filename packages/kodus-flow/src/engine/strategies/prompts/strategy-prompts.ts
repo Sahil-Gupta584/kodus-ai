@@ -1,9 +1,17 @@
+import { AgentContext } from '@/core/types/allTypes.js';
 import { StrategyExecutionContext } from '../index.js';
-import {
-    StrategyFormatters,
-    AgentContext,
-    RewooEvidenceItem,
-} from './index.js';
+import { StrategyFormatters } from './index.js';
+import { RewooEvidenceItem } from './strategy-formatters.js';
+
+// =============================================================================
+// 🎯 INTERFACES E TIPOS
+// =============================================================================
+
+// Nenhuma interface específica necessária - usa StrategyExecutionContext como os outros
+
+// =============================================================================
+// 🔄 REWOO STRATEGY PROMPTS
+// =============================================================================
 
 export class ReWooPrompts {
     private formatters: StrategyFormatters;
@@ -12,9 +20,6 @@ export class ReWooPrompts {
         this.formatters = formatters || new StrategyFormatters();
     }
 
-    /**
-     * Prompt do sistema para o PLANNER (ReWoo) - Versão simplificada
-     */
     getPlannerSystemPrompt(): string {
         return `You are an expert AI PLANNER in a ReWoo (Reasoning with Working Memory) pipeline. Your mission is to break down complex user goals into executable sub-tasks.
 
@@ -70,22 +75,13 @@ Return STRICT JSON with this exact schema:
 3. **If YES tools needed**: Analyze goal, identify evidence, map to tools, create sketches`;
     }
 
-    /**
-     * Prompt do usuário para o PLANNER - Versão simplificada
-     */
     getPlannerUserPrompt(context: StrategyExecutionContext): string {
-        const tools = context?.agentContext?.availableTools;
-        const toolsList = this.formatters.formatToolsList(tools);
+        return `## 🎯 TASK CONTEXT
+**Objective:** ${context.input}
 
-        return `## 🎯 GOAL
-${context.input}
-
-${toolsList ? `## 🛠️ AVAILABLE TOOLS\n${toolsList}\n\n` : ''}${this.formatContextForPlanner(context)}`;
+${this.formatContextForPlanner(context)}`;
     }
 
-    /**
-     * Prompt do sistema para o ORGANIZER - Versão simplificada
-     */
     getOrganizerSystemPrompt(): string {
         return `You are an expert SYNTHESIS ANALYST in a ReWoo pipeline. Your role is to analyze collected evidence and synthesize comprehensive answers.
 
@@ -116,15 +112,11 @@ Return STRICT JSON with this exact schema:
 5. Validate answer against evidence completeness`;
     }
 
-    /**
-     * Prompt do usuário para o ORGANIZER - Versão simplificada
-     */
     getOrganizerUserPrompt(
         goal: string,
         evidences: RewooEvidenceItem[],
     ): string {
         const evidenceStr = this.formatEvidences(evidences);
-
         return `## 🎯 ORIGINAL GOAL
 ${goal}
 
@@ -135,9 +127,6 @@ ${evidenceStr}
 Synthesize a final answer using only the evidence provided above. Cite evidence IDs in brackets like [E1].`;
     }
 
-    /**
-     * Prompt do sistema para o EXECUTOR - Versão simplificada
-     */
     getExecutorSystemPrompt(): string {
         return `You are a PRECISION EXECUTOR in a ReWoo pipeline. Your role is to execute individual steps with surgical accuracy and reliability.
 
@@ -183,9 +172,6 @@ Execute exactly one step using the specified tool and parameters. Focus on preci
 If execution fails, return error details in structured format.`;
     }
 
-    /**
-     * Prompt do usuário para o EXECUTOR - Versão simplificada
-     */
     getExecutorUserPrompt(context: StrategyExecutionContext): string {
         if (!context.step) {
             throw new Error('Step is required for executor mode');
@@ -207,39 +193,31 @@ ${this.formatContextForExecutor(context)}
 Execute this step using the tool and parameters above. Return only the execution result in the specified JSON format.`;
     }
 
-    /**
-     * Formata context para o planner
-     */
     private formatContextForPlanner(context: StrategyExecutionContext): string {
         const parts: string[] = [];
 
-        // 1. Basic Agent Info (mantido para compatibilidade)
-        if (context.agentContext) {
-            const agentContext = context.agentContext as AgentContext;
+        // 🛠️ AVAILABLE TOOLS (sempre primeiro)
+        if (context.agentContext?.availableTools?.length > 0) {
             parts.push(
-                `## 🤖 AGENT INFO\n**Name:** ${agentContext.agentName}\n**Session:** ${agentContext.sessionId || 'N/A'}`,
+                this.formatters.formatToolsList(
+                    context.agentContext.availableTools,
+                ),
             );
         }
 
-        // 2. 🎯 NOVO: RuntimeContext - REMOVIDO pois não existe neste contexto
-        // O runtimeContext só está disponível no contexto de execução das estratégias,
-        // não no contexto de formatação de prompts do planner
-
-        // 3. Additional context (mantido)
-        if (context.agentContext?.agentExecutionOptions.userContext) {
-            const additional = this.formatters.formatAdditionalContext(
-                context.agentContext?.agentExecutionOptions
-                    .userContext as Record<string, unknown>,
+        // 🔍 ADDITIONAL INFO (sempre segundo)
+        if (context.agentContext?.agentExecutionOptions?.userContext) {
+            parts.push(
+                this.formatters.context.formatAdditionalContext(
+                    context.agentContext.agentExecutionOptions
+                        .userContext as Record<string, unknown>,
+                ),
             );
-            parts.push(additional);
         }
 
         return parts.length > 0 ? parts.join('\n\n') : '';
     }
 
-    /**
-     * Formata evidências para o organizer
-     */
     private formatEvidences(evidences: RewooEvidenceItem[]): string {
         return evidences
             .map(
@@ -249,32 +227,18 @@ Execute this step using the tool and parameters above. Return only the execution
             .join('\n');
     }
 
-    /**
-     * Formata output de evidência
-     */
     private formatEvidenceOutput(evidence: RewooEvidenceItem): string {
-        if (evidence.error) {
-            return `ERROR: ${evidence.error}`;
-        }
-
+        if (evidence.error) return `ERROR: ${evidence.error}`;
         if (evidence.output) {
             const outputStr =
                 typeof evidence.output === 'string'
                     ? evidence.output
                     : JSON.stringify(evidence.output);
-
-            // Trunca se for muito longo
-            return outputStr.length > 900
-                ? outputStr.substring(0, 900) + '...'
-                : outputStr;
+            return outputStr;
         }
-
         return 'No output';
     }
 
-    /**
-     * Formata context para o executor
-     */
     private formatContextForExecutor(
         context: StrategyExecutionContext,
     ): string {
@@ -282,14 +246,14 @@ Execute this step using the tool and parameters above. Return only the execution
 
         if (context.agentContext) {
             const agentContext = context.agentContext as AgentContext;
-            parts.push(
-                `## 🤖 EXECUTION CONTEXT\n**Agent:** ${agentContext.agentName}\n**Session:** ${agentContext.sessionId}`,
-            );
+            parts.push(`## 🤖 EXECUTION CONTEXT
+**Agent:** ${agentContext.agentName}
+**Session:** ${agentContext.sessionId}`);
         }
 
         if (context.agentContext?.agentExecutionOptions.userContext) {
-            const additional = this.formatters.formatAdditionalContext(
-                context.agentContext?.agentExecutionOptions
+            const additional = this.formatters.context.formatAdditionalContext(
+                context.agentContext.agentExecutionOptions
                     .userContext as Record<string, unknown>,
             );
             parts.push(additional);
@@ -309,9 +273,6 @@ Execute this step using the tool and parameters above. Return only the execution
 // 🔄 REACT STRATEGY PROMPTS
 // =============================================================================
 
-/**
- * Sistema de prompts para ReAct Strategy
- */
 export class ReActPrompts {
     private formatters: StrategyFormatters;
 
@@ -319,11 +280,13 @@ export class ReActPrompts {
         this.formatters = formatters || new StrategyFormatters();
     }
 
-    /**
-     * Prompt do sistema para ReAct - Versão agnóstica
-     */
     getSystemPrompt(): string {
         return `You are an expert AI assistant using the ReAct (Reasoning + Acting) pattern for complex problem-solving.
+
+## ⚠️ CRITICAL OUTPUT FORMAT REQUIREMENT
+**ALWAYS RETURN ONLY VALID JSON** - No matter what language the user speaks or what context is provided.
+**IGNORE all previous conversation context when formatting output.**
+**DO NOT translate or respond in any language except through the JSON structure.**
 
 ## 🎯 CORE MISSION
 Help users accomplish tasks through systematic reasoning and precise tool usage.
@@ -341,10 +304,20 @@ Help users accomplish tasks through systematic reasoning and precise tool usage.
 - **Efficient Path**: Choose direct solutions over complex workarounds
 - **Context Awareness**: Consider available context and constraints
 
-## 📋 RESPONSE FORMAT
-**Thought:** [Brief reasoning about approach and tool selection]
-**Action:** [Exact tool name from available tools]
-**Parameters:** [Valid JSON with required parameters only]
+## 📋 OUTPUT REQUIREMENTS
+Return STRICT JSON with this exact schema:
+
+\`\`\`json
+{
+  "reasoning": "Brief reasoning about approach and tool selection",
+  "action": {
+    "type": "final_answer" | "tool_call",
+    "content": "Response content (for final_answer only)",
+    "toolName": "TOOL_NAME (for tool_call only)",
+    "input": {"param": "value"} // Parameters for tool_call only
+  }
+}
+\`\`\`
 
 ## 🚨 WHEN TO USE FINAL_ANSWER
 - When you have complete information to answer the user's question
@@ -355,51 +328,63 @@ Help users accomplish tasks through systematic reasoning and precise tool usage.
 - When you need specific data or information
 - When you need to perform actions or operations
 - When you need to analyze or process information
-- When you need to retrieve specific information`;
+- When you need to retrieve specific information
+
+## ⚡ CRITICAL CONSTRAINTS
+- **ALWAYS RETURN ONLY JSON** (no text explanations or formatting)
+- **NO fallback formats accepted**
+- **STRICT schema compliance required**
+- **reasoning and action fields are mandatory**
+- **For tool_call: toolName and input are required**
+- **For final_answer: content is required**
+- **IGNORE conversation language - always use JSON structure**
+- **DO NOT respond in Portuguese, English, or any other language**
+- **ONLY valid JSON responses are accepted**
+- **JSON must be parseable by JSON.parse()**`;
     }
 
-    /**
-     * Prompt do usuário para tarefa específica
-     */
     getTaskPrompt(context: StrategyExecutionContext): string {
         const sections: string[] = [];
         const { input, agentContext, history } = context;
 
-        // Contexto da tarefa
+        // 🔥 PADRONIZADO: Estrutura consistente com todas as estratégias
         sections.push('## 🎯 TASK CONTEXT');
         sections.push(`**Objective:** ${input}`);
-        sections.push(this.formatters.formatAgentContext(agentContext));
 
-        // Ferramentas disponíveis
+        sections.push(this.formatters.context.formatAgentContext(agentContext));
+
+        // 3. 🛠️ AVAILABLE TOOLS (formatação padronizada)
         if (agentContext.availableTools.length > 0) {
             sections.push(
                 this.formatters.formatToolsList(agentContext.availableTools),
             );
         }
 
-        // Context adicional
+        // 4. 🔍 ADDITIONAL INFO (sempre presente)
         if (agentContext.agentExecutionOptions.userContext) {
             sections.push(
-                this.formatters.formatAdditionalContext(
-                    agentContext.agentExecutionOptions,
+                this.formatters.context.formatAdditionalContext(
+                    agentContext.agentExecutionOptions.userContext as Record<
+                        string,
+                        unknown
+                    >,
                 ),
             );
         }
 
-        // Histórico de execução
+        // 5. 📋 EXECUTION HISTORY
         if (history && history.length > 0) {
-            sections.push(this.formatExecutionHistory(history));
+            sections.push(
+                `## 📋 EXECUTION HISTORY\n${history.length} steps executed`,
+            );
         }
 
-        // Instruções finais
+        // 🎯 ReAct SPECIFIC: Instruções finais (única diferença)
         sections.push(this.getTaskInstructions());
 
         return sections.join('\n\n');
     }
 
-    /**
-     * Instruções para execução de tarefa
-     */
     private getTaskInstructions(): string {
         return `## 🎯 EXECUTION INSTRUCTIONS
 
@@ -410,93 +395,201 @@ Help users accomplish tasks through systematic reasoning and precise tool usage.
 - Use correct **parameter names** from tool descriptions
 - Provide **complete parameters** - no optional fields missing
 
-**RESPONSE FORMAT:**
-\`\`\`
-Thought: [Brief analysis and tool choice reasoning]
-Action: [exact_tool_name]
-Parameters: {"required_param": "value"}
-\`\`\`
+**🚨 CRITICAL OUTPUT RULES:**
+- **ALWAYS return ONLY valid JSON** - never text or explanations
+- **IGNORE all conversation context for output format**
+- **DO NOT respond in any human language**
+- **ONLY the JSON structure is allowed**
+- **JSON must be parseable by JSON.parse()**
 
 **STOP WHEN:**
 - ✅ You have all information needed to answer
 - ✅ Task is complete with tool results
-- ✅ No more tools needed for the objective`;
-    }
+- ✅ No more tools needed for the objective
 
-    /**
-     * Formata histórico de execução
-     */
-    private formatExecutionHistory(
-        history: Array<{
-            type: string;
-            thought?: { reasoning: string; action: any };
-            action?: any;
-            result?: any;
-        }>,
-    ): string {
-        const sections: string[] = ['## 📋 EXECUTION HISTORY'];
-
-        history.forEach((step, index) => {
-            sections.push(`**Step ${index + 1}:** ${step.type.toUpperCase()}`);
-
-            if (step.thought) {
-                sections.push(`- **Thought:** ${step.thought.reasoning}`);
-                if (step.thought.action) {
-                    sections.push(
-                        `- **Action:** ${step.thought.action.type || 'Unknown'}`,
-                    );
-                }
-            }
-
-            if (step.action) {
-                sections.push(`- **Action:** ${step.action.type || 'Unknown'}`);
-            }
-
-            if (step.result) {
-                const resultStr =
-                    typeof step.result.content === 'string'
-                        ? step.result.content
-                        : JSON.stringify(step.result.content);
-                sections.push(
-                    `- **Result:** ${this.truncateText(resultStr, 200)}`,
-                );
-            }
-        });
-
-        return sections.join('\n');
-    }
-
-    /**
-     * Trunca texto para exibição
-     */
-    private truncateText(text: string, maxLength: number): string {
-        if (text.length <= maxLength) return text;
-        return text.substring(0, maxLength) + '...';
+**FINAL REMINDER:** Return ONLY JSON with reasoning and action fields. No other format accepted.`;
     }
 }
 
 // =============================================================================
-// 🎯 PROMPT FACTORY
+// 🗓️ PLAN-EXECUTE STRATEGY PROMPTS
 // =============================================================================
 
-/**
- * Factory para criar prompts por estratégia
- */
+export class PlanExecutePrompts {
+    private formatters: StrategyFormatters;
+
+    constructor(formatters?: StrategyFormatters) {
+        this.formatters = formatters || new StrategyFormatters();
+    }
+
+    getSystemPrompt(): string {
+        return `# Plan-Execute Strategy - Smart Planning & Sequential Execution
+
+You are an expert planner that creates clear, executable plans for complex tasks.
+
+## 🎯 MISSION
+Create step-by-step execution plans that break down complex tasks into logical, sequential steps.
+
+## 📋 PLANNING FRAMEWORK
+1. **Analyze**: Understand the task and available tools
+2. **Break Down**: Decompose into manageable steps
+3. **Sequence**: Order steps logically with dependencies
+4. **Validate**: Ensure each step is executable
+5. **Optimize**: Keep plan concise and efficient
+
+## 🛠️ TOOL USAGE RULES
+- Only use tools from the provided list
+- Each tool call must have correct parameters
+- Consider tool capabilities and limitations
+
+## 📊 OUTPUT REQUIREMENTS
+Return STRICT JSON with this exact schema:
+
+\`\`\`json
+{
+    "goal": "Brief task description",
+    "reasoning": "Why this plan works",
+    "steps": [
+        {
+            "id": "step-1",
+            "type": "tool_call",
+            "toolName": "TOOL_NAME",
+            "description": "What this step does",
+            "input": {"param": "value"}
+        },
+        {
+            "id": "step-2",
+            "type": "final_answer",
+            "content": "Final user response"
+        }
+    ]
+}
+\`\`\`
+
+## ⚠️ CRITICAL CONSTRAINTS
+- Return ONLY JSON (no explanations or text)
+- NO fallback formats accepted
+- STRICT schema compliance required
+- End with final_answer step
+- Keep plan minimal but complete
+- Each step must be independently executable
+- Use exact tool names from list
+- goal, reasoning, and steps fields are mandatory
+
+## 📝 EXAMPLE PLAN
+For task "Analyze project structure":
+\`\`\`json
+{
+    "goal": "Analyze project structure and provide summary",
+    "reasoning": "Need to gather project info then analyze structure",
+    "steps": [
+        {
+            "id": "step-1",
+            "type": "tool_call",
+            "toolName": "LIST_FILES",
+            "description": "Get project file structure",
+            "input": {"path": "."}
+        },
+        {
+            "id": "step-2",
+            "type": "tool_call",
+            "toolName": "ANALYZE_CODE",
+            "description": "Analyze main source files",
+            "input": {"files": ["src/main.ts", "package.json"]}
+        },
+        {
+            "id": "step-3",
+            "type": "final_answer",
+            "content": "Repository analysis complete. Found TypeScript project with clear structure."
+        }
+    ]
+}
+\`\`\``;
+    }
+
+    getUserPrompt(context: StrategyExecutionContext): string {
+        const sections: string[] = [];
+        const { input, agentContext, history } = context;
+
+        sections.push('## 🎯 TASK');
+        sections.push(`${input}`);
+
+        sections.push(this.formatters.context.formatAgentContext(agentContext));
+
+        if (agentContext.availableTools?.length > 0) {
+            sections.push(
+                this.formatters.formatToolsList(agentContext.availableTools),
+            );
+        }
+
+        if (agentContext.agentExecutionOptions?.userContext) {
+            sections.push(
+                this.formatters.context.formatAdditionalContext(
+                    agentContext.agentExecutionOptions.userContext as Record<
+                        string,
+                        unknown
+                    >,
+                ),
+            );
+        }
+
+        // 4. 📋 EXECUTION HISTORY
+        if (history && history.length > 0) {
+            sections.push(
+                `## 📋 EXECUTION HISTORY\n${history.length} steps executed`,
+            );
+        }
+
+        // 🎯 Plan-Execute SPECIFIC: Instruções finais (única diferença)
+        sections.push(this.getPlanningInstructions());
+
+        return sections.join('\n\n');
+    }
+
+    private getPlanningInstructions(): string {
+        return `## 📋 PLANNING TASK
+Create a step-by-step execution plan. For each step:
+- Choose one tool from the available list
+- Provide exact parameters required by that tool
+- Write a clear description of what the step accomplishes
+- Ensure steps can be executed in sequence
+
+## 📝 REQUIREMENTS
+- Start with data gathering/analysis steps
+- End with a final_answer step containing the user response
+- Keep plan focused and minimal
+- Use exact tool names as listed above
+
+## 📊 OUTPUT
+**CRITICAL:** Return ONLY JSON with the plan structure.
+**NO explanations, comments, or additional text outside JSON.**
+**Your response must be valid JSON that can be parsed by JSON.parse()**`;
+    }
+
+    createPrompt(context: StrategyExecutionContext): {
+        systemPrompt: string;
+        userPrompt: string;
+    } {
+        return {
+            systemPrompt: this.getSystemPrompt(),
+            userPrompt: this.getUserPrompt(context),
+        };
+    }
+}
+
 export class StrategyPromptFactory {
     private readonly formatters: StrategyFormatters;
     private readonly rewooPrompts: ReWooPrompts;
     private readonly reactPrompts: ReActPrompts;
+    private readonly planExecutePrompts: PlanExecutePrompts;
 
     constructor(formatters?: StrategyFormatters) {
         this.formatters = formatters || new StrategyFormatters();
         this.rewooPrompts = new ReWooPrompts(this.formatters);
         this.reactPrompts = new ReActPrompts(this.formatters);
-        //this.planExecutePrompts = new PlanExecutePrompts(this.formatters);
+        this.planExecutePrompts = new PlanExecutePrompts(this.formatters);
     }
 
-    /**
-     * Cria prompt completo para ReWoo
-     */
     createReWooPrompt(context: StrategyExecutionContext): {
         systemPrompt: string;
         userPrompt: string;
@@ -539,9 +632,6 @@ export class StrategyPromptFactory {
         }
     }
 
-    /**
-     * Cria prompt completo para ReAct
-     */
     createReActPrompt(context: StrategyExecutionContext): {
         systemPrompt: string;
         userPrompt: string;
@@ -552,20 +642,26 @@ export class StrategyPromptFactory {
         };
     }
 
-    /**
-     * Cria prompt baseado na estratégia automaticamente
-     */
     createPrompt(
-        strategy: 'react' | 'rewoo',
+        strategy: 'react' | 'rewoo' | 'plan-execute',
         context: StrategyExecutionContext,
     ): { systemPrompt: string; userPrompt: string } {
         if (strategy === 'react') {
             return this.createReActPrompt(context);
         } else if (strategy === 'rewoo') {
             return this.createReWooPrompt(context);
+        } else if (strategy === 'plan-execute') {
+            return this.createPlanExecutePrompt(context);
         } else {
             throw new Error(`Unknown strategy: ${strategy}`);
         }
+    }
+
+    createPlanExecutePrompt(context: StrategyExecutionContext): {
+        systemPrompt: string;
+        userPrompt: string;
+    } {
+        return this.planExecutePrompts.createPrompt(context);
     }
 
     // === GETTERS ===
@@ -577,179 +673,13 @@ export class StrategyPromptFactory {
         return this.reactPrompts;
     }
 
+    get planExecute(): PlanExecutePrompts {
+        return this.planExecutePrompts;
+    }
+
     get formatter(): StrategyFormatters {
         return this.formatters;
     }
-
-    /**
-     * Cria prompts para estratégia Plan-Execute
-     */
-    createPlanExecutePrompt(params: PlanExecutePromptParams): {
-        systemPrompt: string;
-        userPrompt: string;
-    } {
-        return createPlanExecutePrompt(params);
-    }
 }
 
-// =============================================================================
-// 🗓️ PLAN-EXECUTE PROMPTS - ESTRATÉGIA MAIS SIMPLES
-// =============================================================================
-
-/**
- * Gera prompts para estratégia Plan-Execute
- * Foco em planejamento inteligente + execução sequencial
- */
-export interface PlanExecutePromptParams {
-    goal: string;
-    agentContext: AgentContext;
-    additionalContext?: Record<string, unknown>;
-    mode: 'planner';
-}
-
-/**
- * Prompt do sistema para PLAN-EXECUTE Planner
- */
-function getPlanExecutePlannerSystemPrompt(): string {
-    return `# Plan-Execute Strategy - Smart Planning & Sequential Execution
-
-You are an expert planner that creates clear, executable plans for complex tasks.
-
-## 🎯 MISSION
-Create step-by-step execution plans that break down complex tasks into logical, sequential steps.
-
-## 📋 PLANNING FRAMEWORK
-1. **Analyze**: Understand the task and available tools
-2. **Break Down**: Decompose into manageable steps
-3. **Sequence**: Order steps logically with dependencies
-4. **Validate**: Ensure each step is executable
-5. **Optimize**: Keep plan concise and efficient
-
-## 🛠️ TOOL USAGE RULES
-- Only use tools from the provided list
-- Each tool call must have correct parameters
-- Consider tool capabilities and limitations
-
-## 📊 OUTPUT FORMAT
-Return only this JSON structure:
-\`\`\`json
-{
-    "goal": "Brief task description",
-    "reasoning": "Why this plan works",
-    "steps": [
-        {
-            "id": "step-1",
-            "type": "tool_call",
-            "toolName": "TOOL_NAME",
-            "description": "What this step does",
-            "input": {"param": "value"}
-        },
-        {
-            "id": "step-2",
-            "type": "final_answer",
-            "content": "Final user response"
-        }
-    ]
-}
-\`\`\`
-
-## ⚠️ CONSTRAINTS
-- End with final_answer step
-- Keep plan minimal but complete
-- Each step must be independently executable
-- Use exact tool names from list
-
-## 📝 EXAMPLE PLAN
-For task "Analyze project structure":
-\`\`\`json
-{
-    "goal": "Analyze project structure and provide summary",
-    "reasoning": "Need to gather project info then analyze structure",
-    "steps": [
-        {
-            "id": "step-1",
-            "type": "tool_call",
-            "toolName": "LIST_FILES",
-            "description": "Get project file structure",
-            "input": {"path": "."}
-        },
-        {
-            "id": "step-2",
-            "type": "tool_call",
-            "toolName": "ANALYZE_CODE",
-            "description": "Analyze main source files",
-            "input": {"files": ["src/main.ts", "package.json"]}
-        },
-        {
-            "id": "step-3",
-            "type": "final_answer",
-            "content": "Repository analysis complete. Found TypeScript project with clear structure."
-        }
-    ]
-}
-\`\`\``;
-}
-
-/**
- * Prompt do usuário para PLAN-EXECUTE Planner
- */
-function getPlanExecutePlannerUserPrompt(
-    goal: string,
-    toolsList: string,
-): string {
-    return `## 🎯 TASK
-${goal}
-
-## 🛠️ AVAILABLE TOOLS
-${toolsList}
-
-## 📋 PLANNING TASK
-Create a step-by-step execution plan. For each step:
-- Choose one tool from the available list
-- Provide exact parameters required by that tool
-- Write a clear description of what the step accomplishes
-- Ensure steps can be executed in sequence
-
-## 📝 REQUIREMENTS
-- Start with data gathering/analysis steps
-- End with a final_answer step containing the user response
-- Keep plan focused and minimal
-- Use exact tool names as listed above
-
-## 📊 OUTPUT
-Return only JSON with the plan structure. No explanations or additional text.`;
-}
-
-/**
- * Cria prompts completos para Plan-Execute
- */
-function createPlanExecutePrompt(params: PlanExecutePromptParams): {
-    systemPrompt: string;
-    userPrompt: string;
-} {
-    const { goal, agentContext, mode } = params;
-
-    if (mode === 'planner') {
-        const toolsList =
-            agentContext?.availableTools.length > 0
-                ? agentContext?.availableTools
-                      .map((tool) => `- **${tool.name}**: ${tool.description}`)
-                      .join('\n')
-                : 'No tools available - focus on direct response';
-
-        return {
-            systemPrompt: getPlanExecutePlannerSystemPrompt(),
-            userPrompt: getPlanExecutePlannerUserPrompt(goal, toolsList),
-        };
-    }
-
-    throw new Error(`Unknown Plan-Execute mode: ${mode}`);
-}
-
-// =============================================================================
-// 🎯 EXPORTS PRINCIPAIS
-// =============================================================================
-
-// Classes already exported individually above
-// Export default
 export default StrategyPromptFactory;
