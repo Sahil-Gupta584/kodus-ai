@@ -5151,7 +5151,15 @@ export class GithubService
         repo: string;
         octokit: Octokit;
         rootTreeSha: string;
-    }): Promise<any[]> {
+    }): Promise<
+        {
+            path: string;
+            type: 'file' | 'directory';
+            sha: string;
+            size?: number;
+            url: string;
+        }[]
+    > {
         const { owner, repo, octokit, rootTreeSha } = params;
         const allFiles = [];
 
@@ -5179,21 +5187,22 @@ export class GithubService
                         ? `${currentDir.path}/${item.path}`
                         : item.path;
 
+                    const file = {
+                        path: fullPath,
+                        sha: item.sha,
+                        size: item.size,
+                        url: item.url,
+                    };
+
                     if (item.type === 'blob') {
                         allFiles.push({
-                            path: fullPath,
+                            ...file,
                             type: 'file',
-                            sha: item.sha,
-                            size: item.size,
-                            url: item.url,
                         });
                     } else if (item.type === 'tree' && item.sha) {
                         allFiles.push({
-                            path: fullPath,
+                            ...file,
                             type: 'directory',
-                            sha: item.sha,
-                            size: item.size,
-                            url: item.url,
                         });
 
                         nextLevelDirectories.push({
