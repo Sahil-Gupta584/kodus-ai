@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { AgentContext } from '@/core/types/allTypes.js';
+import { RewooEvidenceItem } from './prompts/index.js';
 
 // Strategy Pattern Types (baseados em padrões estabelecidos)
 export type ExecutionStrategy = 'react' | 'rewoo' | 'plan-execute';
@@ -215,11 +216,49 @@ export interface ExecutionResult {
 // Strategy Execution Context
 export interface StrategyExecutionContext {
     input: string;
-    tools: Tool[];
     agentContext: AgentContext;
     config: StrategyConfig;
     history: ExecutionStep[];
-    metadata: ExecutionMetadata;
+    replanContext?: Record<string, unknown>;
+    evidences?: RewooEvidenceItem[];
+    mode?: 'planner' | 'executor' | 'organizer';
+    step?: any;
+    metadata?: {
+        startTime: number;
+        correlationId?: string;
+        complexity?: number;
+        [key: string]: unknown;
+    };
+}
+
+// Unified Execution Context - Single source of truth from ContextService
+export interface UnifiedExecutionContext {
+    input: string;
+    executionId: string;
+    threadId: string;
+
+    runtimeContext: any;
+    history: ExecutionStep[];
+
+    // Agent configuration
+    agentConfig: {
+        agentName: string;
+        tenantId: string;
+        correlationId?: string;
+        strategy: ExecutionStrategy;
+        maxIterations?: number;
+    };
+
+    // Execution metadata
+    metadata: {
+        startTime: number;
+        correlationId?: string;
+        complexity?: number;
+        assistantMessageId?: string;
+        [key: string]: unknown;
+    };
+
+    agentContext?: any;
 }
 
 // ============================================================================
@@ -294,10 +333,8 @@ export type StopCondition<TContext = any> = (context: {
 
 // Strategy Configuration
 export interface StrategyConfig {
-    // Estratégia de execução
     executionStrategy?: ExecutionStrategy;
 
-    // Stop conditions por estratégia
     stopConditions?: {
         react?: {
             maxTurns?: number; // Default: 10

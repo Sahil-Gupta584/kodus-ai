@@ -249,52 +249,11 @@ export interface AgentContext {
     thread: Thread;
     agentName: string;
     invocationId: string;
-    executionId?: string;
-
-    state: {
-        get: <T>(
-            namespace: string,
-            key: string,
-            threadId?: string,
-        ) => Promise<T | undefined>;
-        set: (
-            namespace: string,
-            key: string,
-            value: unknown,
-            threadId?: string,
-        ) => Promise<void>;
-        clear: (namespace: string) => Promise<void>;
-        getNamespace: (
-            namespace: string,
-        ) => Promise<Map<string, unknown> | undefined>;
-
-        persist?: (namespace?: string) => Promise<void>;
-        hasChanges?: () => boolean;
-    };
-
+    agentExecutionOptions: AgentExecutionOptions;
     availableTools: ToolMetadataForPlanner[];
     signal: AbortSignal;
-
-    cleanup(): Promise<void>;
-
-    executionRuntime: {
-        storeToolUsagePattern: (
-            toolName: string,
-            input: unknown,
-            output: unknown,
-            success: boolean,
-            duration: number,
-        ) => Promise<void>;
-        storeExecutionPattern: (
-            patternType: 'success' | 'failure' | string,
-            action: string | unknown,
-            result: unknown,
-            context?: string | unknown,
-        ) => Promise<void>;
-    };
+    executionId?: string;
     agentIdentity?: AgentIdentity;
-    agentExecutionOptions?: AgentExecutionOptions;
-    allTools?: ToolDefinition<unknown, unknown>[];
 }
 
 export type AgentExecutionOptions = {
@@ -3051,6 +3010,7 @@ export type StateNamespace =
 export enum PlannerType {
     REACT = 'react',
     REWOO = 'rewoo',
+    PLAN_EXECUTE = 'plan-execute',
 }
 
 export interface Planner<

@@ -6,7 +6,7 @@ import type {
 
 // Stop Conditions (baseado em AI SDK Vercel/VoltAgent)
 export const stopConditions = {
-    // Máximo de steps (como stepCountIs)
+    // Maximum steps (like stepCountIs)
     maxSteps:
         (maxSteps: number): StopCondition =>
         ({ steps }) =>

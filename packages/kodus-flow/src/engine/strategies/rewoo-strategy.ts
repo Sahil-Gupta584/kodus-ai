@@ -209,24 +209,8 @@ export class ReWooStrategy extends BaseExecutionStrategy {
             throw new Error('LLM adapter must support createPlan method');
         }
 
-        // Usar nova arquitetura de prompts - passar contexto completo
-        const prompts = this.promptFactory.createReWooPrompt({
-            goal: context.input,
-            tools: context.tools as any,
-            agentContext: context.agentContext,
-            additionalContext: {
-                // Framework agnóstico - tudo do usuário fica dentro de userContext
-                userContext:
-                    context.agentContext?.agentExecutionOptions?.userContext,
-                agentIdentity: context.agentContext?.agentIdentity,
-                agentExecutionOptions:
-                    context.agentContext?.agentExecutionOptions,
-                // 🎯 NOVO: RuntimeContext do ContextNew
-                runtimeContext: (context.agentContext as any)
-                    ?.enhancedRuntimeContext,
-            },
-            mode: 'planner',
-        });
+        context.mode = 'planner';
+        const prompts = this.promptFactory.createReWooPrompt(context);
 
         const res = await this.llmAdapter.createPlan(
             context.input,
@@ -282,14 +266,18 @@ export class ReWooStrategy extends BaseExecutionStrategy {
         }
 
         const evidences: RewooEvidenceItem[] = [];
-        const toolMap = new Map(ctx.tools.map((t) => [t.name, t] as const));
+        const toolMap = new Map(
+            ctx.agentContext?.availableTools.map((t) => [t.name, t] as const),
+        );
 
         // Simple concurrency gate
         const queue = [...sketches];
         const workers: Promise<void>[] = [];
 
         const runOne = async (sk: any, index: number) => {
-            const tool = (sk.tool && toolMap.get(sk.tool)) || ctx.tools[0]; // fallback to first tool if not provided
+            const tool =
+                (sk.tool && toolMap.get(sk.tool)) ||
+                ctx.agentContext?.availableTools[0]; // fallback to first tool if not provided
             const evId = `E${index + 1}`;
             const began = Date.now();
             const input = (sk.arguments ?? { query: sk.query }) as Record<
@@ -351,25 +339,12 @@ export class ReWooStrategy extends BaseExecutionStrategy {
         if (!this.llmAdapter.createPlan) {
             throw new Error('LLM adapter must support createPlan method');
         }
-        // Usar nova arquitetura de prompts - passar contexto completo
-        const prompts = this.promptFactory.createReWooPrompt({
-            goal: context.input,
-            tools: [], // Organizer não precisa de tools
-            agentContext: context.agentContext,
-            additionalContext: {
-                // Framework agnóstico - tudo do usuário fica dentro de userContext
-                userContext:
-                    context.agentContext?.agentExecutionOptions?.userContext,
-                agentIdentity: context.agentContext?.agentIdentity,
-                agentExecutionOptions:
-                    context.agentContext?.agentExecutionOptions,
-                // 🎯 NOVO: RuntimeContext do ContextNew
-                runtimeContext: (context.agentContext as any)
-                    ?.enhancedRuntimeContext,
-            },
-            evidences,
-            mode: 'organizer',
-        });
+        // TODO: Revisar isso
+        // runtimeContext: ((context.agentContext as any)?.enhancedRuntimeContext,
+        // (context.mode = 'organizer'));
+        context.mode = 'organizer';
+
+        const prompts = this.promptFactory.createReWooPrompt(context);
 
         const res = await this.llmAdapter.createPlan(
             context.input,
@@ -401,6 +376,10 @@ export class ReWooStrategy extends BaseExecutionStrategy {
         };
     }
 
+    /**
+     * 🔥 STANDARDIZED: Use StrategyFormatters like ReAct
+     * Ensures consistency in tool formatting between strategies
+     */
     private getAvailableToolsFormatted(
         context: StrategyExecutionContext,
     ): Array<{
@@ -409,19 +388,20 @@ export class ReWooStrategy extends BaseExecutionStrategy {
         parameters: Record<string, unknown>;
         outputSchema?: Record<string, unknown>;
     }> {
-        if (!context.agentContext?.allTools) {
+        if (!context.agentContext?.availableTools) {
             return [];
         }
 
-        return context.agentContext.allTools.map((tool) => ({
+        // 🔥 PADRONIZADO: Usar mesma lógica de formatação do ReAct
+        return context.agentContext.availableTools.map((tool) => ({
             name: tool.name,
             description: tool.description || `Tool: ${tool.name}`,
-            parameters: tool.inputJsonSchema?.parameters || {
+            parameters: tool.inputSchema || {
                 type: 'object',
                 properties: {},
                 required: [],
             },
-            outputSchema: tool.outputJsonSchema?.parameters || {
+            outputSchema: tool.outputSchema || {
                 type: 'object',
                 properties: {},
                 required: [],
@@ -456,7 +436,7 @@ export class ReWooStrategy extends BaseExecutionStrategy {
                     thread: context.agentContext.thread || {
                         id: context.agentContext.sessionId || 'unknown',
                     },
-                    startTime: context.metadata.startTime,
+                    startTime: context.metadata?.startTime || Date.now(),
                     enhancedContext: (context.agentContext as any)
                         .enhancedRuntimeContext,
                 },
@@ -469,14 +449,18 @@ export class ReWooStrategy extends BaseExecutionStrategy {
                     success: true,
                     result: { content: 'ReWoo execution completed' },
                     iterations: 1,
-                    totalTime: Date.now() - context.metadata.startTime,
+                    totalTime:
+                        Date.now() -
+                        (context.metadata?.startTime || Date.now()),
                     thoughts: [],
                     metadata: {
                         ...context.metadata,
                         agentName: context.agentContext.agentName,
                         iterations: 1,
-                        toolsUsed: context.metadata.complexity || 0,
-                        thinkingTime: Date.now() - context.metadata.startTime,
+                        toolsUsed: context.metadata?.complexity || 0,
+                        thinkingTime:
+                            Date.now() -
+                            (context.metadata?.startTime || Date.now()),
                     } as any,
                 }),
                 getCurrentPlan: () => null,

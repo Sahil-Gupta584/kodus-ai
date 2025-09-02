@@ -67,8 +67,18 @@ export class ReActStrategy extends BaseExecutionStrategy {
         let iteration = 0;
         let toolCallsCount = 0;
 
+        const threadId = context.agentContext.thread?.id;
+        if (!threadId) {
+            throw new Error('ThreadId required for ContextService operations');
+        }
+
         try {
             this.validateContext(context);
+            // 🔥 UPDATE EXECUTION PHASE
+            this.logger.debug('🔄 Starting ReAct execution phase', {
+                threadId,
+                maxIterations: this.config.maxIterations,
+            });
 
             // Loop principal ReAct: Think → Act → Observe
             while (iteration < this.config.maxIterations) {
@@ -86,11 +96,23 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 steps.push(step);
 
                 if (step.action?.type === 'final_answer') {
+                    this.logger.debug(
+                        '🎯 Final answer reached, stopping execution',
+                        {
+                            iteration: iteration + 1,
+                            totalSteps: steps.length,
+                        },
+                    );
                     break;
                 }
 
                 if (step.action?.type === 'tool_call') {
                     toolCallsCount++;
+                    this.logger.debug('🔧 Tool call executed', {
+                        iteration: iteration + 1,
+                        toolCalls: toolCallsCount,
+                        actionType: step.action.type,
+                    });
                 }
 
                 iteration++;
@@ -121,7 +143,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
             throw new Error('Input cannot be empty');
         }
 
-        if (!Array.isArray(context.tools)) {
+        if (!Array.isArray(context.agentContext?.availableTools)) {
             throw new Error('Tools must be an array');
         }
 
@@ -136,24 +158,24 @@ export class ReActStrategy extends BaseExecutionStrategy {
             });
         }
 
-        if (context.tools.length === 0) {
+        if (context.agentContext?.availableTools.length === 0) {
             this.logger.warn(
                 'No tools provided - React strategy may not be able to perform complex actions',
             );
         }
 
-        if (context.tools.length > 50) {
+        if (context.agentContext?.availableTools.length > 50) {
             this.logger.warn(
                 'Many tools provided - may impact prompt size and performance',
                 {
-                    toolsCount: context.tools.length,
+                    toolsCount: context.agentContext?.availableTools.length,
                 },
             );
         }
 
         this.logger.debug('Context validation passed', {
             inputLength: context.input.length,
-            toolsCount: context.tools?.length || 0,
+            toolsCount: context.agentContext?.availableTools?.length || 0,
             hasAgentContext: !!context.agentContext,
         });
     }
@@ -246,37 +268,30 @@ export class ReActStrategy extends BaseExecutionStrategy {
             throw new Error('LLM adapter must support call method');
         }
 
+        // 🔥 PADRONIZADO: Usar método consistente para additionalContext
+        // const additionalContext = this.buildStandardAdditionalContext(context);
+
+        context.mode = 'executor';
+        context.step = previousSteps[previousSteps.length - 1];
+        context.history = previousSteps.map((step) => ({
+            type: step.type || 'unknown',
+            thought: step.thought
+                ? {
+                      reasoning: step.thought.reasoning,
+                      action: step.action,
+                  }
+                : undefined,
+            action: step.action,
+            result: step.result,
+        })) as ExecutionStep[];
         // Usar nova arquitetura de prompts - contexto agnóstico
-        const prompts = this.promptFactory.createReActPrompt({
-            input: context.input,
-            tools: context.tools as any,
-            agentContext: context.agentContext,
-            history: previousSteps.map((step) => ({
-                type: step.type || 'unknown',
-                thought: step.thought
-                    ? {
-                          reasoning: step.thought.reasoning,
-                          action: step.action,
-                      }
-                    : undefined,
-                action: step.action,
-                result: step.result,
-            })),
-            additionalContext: {
-                // Framework agnóstico - tudo do usuário fica dentro de userContext
-                userContext:
-                    context.agentContext?.agentExecutionOptions?.userContext,
-                agentIdentity: context.agentContext?.agentIdentity,
-                agentExecutionOptions:
-                    context.agentContext?.agentExecutionOptions,
-            },
-        });
+        const prompts = this.promptFactory.createReActPrompt(context);
 
         // Log da chamada para debugging
         this.logger.debug('🤖 React iteration - calling LLM', {
             iteration: iteration + 1,
             inputLength: context.input.length,
-            toolsCount: context.tools?.length || 0,
+            toolsCount: context.agentContext?.availableTools?.length || 0,
         });
 
         let response;
@@ -414,7 +429,10 @@ export class ReActStrategy extends BaseExecutionStrategy {
             throw new Error('Invalid tool call action');
         }
 
-        const tool = this.findTool(context.tools, action.toolName);
+        const tool = this.findTool(
+            context.agentContext?.availableTools,
+            action.toolName,
+        );
         if (!tool) {
             throw new Error(`Tool not found: ${action.toolName}`);
         }
@@ -519,7 +537,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
      */
     private parseLLMResponse(content: string, iteration: number): AgentThought {
         try {
-            // Tentar parse como JSON primeiro
+            // Try parsing as JSON first
             const parsed = JSON.parse(content);
             if (parsed.action && parsed.reasoning) {
                 return {
@@ -609,7 +627,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
             }
         }
 
-        // Se não encontrou reasoning específico, usar o conteúdo todo como reasoning
+        // If no specific reasoning found, use entire content as reasoning
         if (!reasoning && content.length > 0) {
             reasoning =
                 content.length > 200
@@ -832,7 +850,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     thread: context.agentContext.thread || {
                         id: context.agentContext.sessionId || 'unknown',
                     },
-                    startTime: context.metadata.startTime,
+                    startTime: context.metadata?.startTime || Date.now(),
                     enhancedContext: (context.agentContext as any)
                         .enhancedRuntimeContext,
                 },
@@ -846,14 +864,17 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     result: { content: 'ReAct execution completed' },
                     iterations: 1,
                     totalTime:
-                        new Date().getTime() - context.metadata.startTime,
+                        new Date().getTime() -
+                        (context.metadata?.startTime || Date.now()),
                     thoughts: [],
                     metadata: {
                         ...context.metadata,
                         agentName: context.agentContext.agentName,
                         iterations: 1,
-                        toolsUsed: context.metadata.complexity || 0,
-                        thinkingTime: Date.now() - context.metadata.startTime,
+                        toolsUsed: context.metadata?.complexity || 0,
+                        thinkingTime:
+                            Date.now() -
+                            (context.metadata?.startTime || Date.now()),
                     } as any,
                 }),
                 getCurrentPlan: () => null,

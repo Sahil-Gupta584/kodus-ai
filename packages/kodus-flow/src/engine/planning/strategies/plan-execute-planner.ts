@@ -558,14 +558,14 @@ export class PlanAndExecutePlanner {
     private getAvailableToolsForContext(
         context: PlannerExecutionContext,
     ): ToolMetadataForLLM[] {
-        if (!context.agentContext?.allTools) {
+        if (!context.agentContext?.availableTools) {
             return [];
         }
 
-        return context.agentContext.allTools.map((tool) => ({
+        return context.agentContext.availableTools.map((tool) => ({
             name: tool.name,
             description: tool.description || `Tool: ${tool.name}`,
-            parameters: tool.inputJsonSchema?.parameters || {
+            parameters: tool.inputSchema || {
                 type: 'object',
                 properties: {},
                 required: [],
@@ -581,19 +581,19 @@ export class PlanAndExecutePlanner {
         parameters: Record<string, unknown>;
         outputSchema?: Record<string, unknown>;
     }> {
-        if (!context.agentContext?.allTools) {
+        if (!context.agentContext?.availableTools) {
             return [];
         }
 
-        return context.agentContext.allTools.map((tool) => ({
+        return context.agentContext.availableTools.map((tool) => ({
             name: tool.name,
             description: tool.description || `Tool: ${tool.name}`,
-            parameters: tool.inputJsonSchema?.parameters || {
+            parameters: tool.inputSchema || {
                 type: 'object',
                 properties: {},
                 required: [],
             },
-            outputSchema: tool.outputJsonSchema?.parameters || {
+            outputSchema: tool.outputSchema || {
                 type: 'object',
                 properties: {},
                 required: [],
@@ -670,32 +670,32 @@ export class PlanAndExecutePlanner {
             //     }
             // }
 
-            const plannerState =
-                await context.agentContext.state.getNamespace('planner');
-            if (plannerState && plannerState.size > 0) {
-                contextParts.push('\n⚡ Current context:');
-                let count = 0;
-                for (const [key, value] of plannerState) {
-                    if (count >= 3) {
-                        break;
-                    }
+            // const plannerState =
+            //     await context.agentContext.state.getNamespace('planner');
+            // if (plannerState && plannerState.size > 0) {
+            //     contextParts.push('\n⚡ Current context:');
+            //     let count = 0;
+            //     for (const [key, value] of plannerState) {
+            //         if (count >= 3) {
+            //             break;
+            //         }
 
-                    const valueStr =
-                        typeof value === 'string'
-                            ? value
-                            : JSON.stringify(value);
-                    contextParts.push(`- ${key}: ${valueStr}`);
-                    count++;
-                }
-            }
+            //         const valueStr =
+            //             typeof value === 'string'
+            //                 ? value
+            //                 : JSON.stringify(value);
+            //         contextParts.push(`- ${key}: ${valueStr}`);
+            //         count++;
+            //     }
+            // }
 
-            if (context.agentContext) {
-                await context.agentContext.state.set(
-                    'planner',
-                    'lastInput',
-                    currentInput,
-                );
-            }
+            // if (context.agentContext) {
+            //     await context.agentContext.state.set(
+            //         'planner',
+            //         'lastInput',
+            //         currentInput,
+            //     );
+            // }
 
             return contextParts.join('\n');
         } catch (error) {

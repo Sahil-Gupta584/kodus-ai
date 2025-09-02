@@ -16,7 +16,6 @@ import {
     AgentDefinition,
     AgentExecutionOptions,
     AgentExecutionResult,
-    AgentInputEnum,
     AnyEvent,
     DelegationContext,
     LLMAdapter,
@@ -27,6 +26,10 @@ import {
 } from '../../core/types/allTypes.js';
 import { ToolEngine } from '../tools/tool-engine.js';
 import { SharedStrategyMethods } from '../strategies/shared-methods.js';
+import {
+    UnifiedExecutionContext,
+    ExecutionStrategy,
+} from '../strategies/types.js';
 import {
     AgentAction,
     PlanExecuteStrategy,
@@ -270,35 +273,93 @@ export abstract class AgentCore<
     // 🔧 CORE EXECUTION LOGIC (COMPARTILHADA)
     // ──────────────────────────────────────────────────────────────────────────
 
-    protected async executeAgent(
-        agent:
-            | AgentDefinition<TInput, TOutput, TContent>
-            | AgentDefinition<unknown, unknown, unknown>,
-        input: unknown,
+    /**
+     * Ensure session consistency between enhanced context and options
+     */
+    private ensureSessionConsistency(
+        enhancedRuntimeContext: any,
         agentExecutionOptions: AgentExecutionOptions,
-    ): Promise<AgentExecutionResult> {
-        const startTime = Date.now();
-        const executionId = IdGenerator.executionId();
-        const { correlationId } = agentExecutionOptions;
+    ): { sessionId: string; threadId: string } {
+        const enhancedSessionId = enhancedRuntimeContext?.sessionId;
+        const enhancedThreadId = enhancedRuntimeContext?.threadId;
+        const optionsSessionId = agentExecutionOptions.sessionId;
+        const optionsThreadId = agentExecutionOptions.thread?.id;
 
-        // 🔥 FIX: Initialize enhanced session FIRST (contextNew architecture)
-        await this.initializeEnhancedSession(agentExecutionOptions);
+        this.logger.debug('🔍 Session consistency check', {
+            enhancedSessionId,
+            enhancedThreadId,
+            optionsSessionId,
+            optionsThreadId,
+        });
 
-        const context = await this.createAgentContext(
-            executionId,
-            agentExecutionOptions,
-        );
-
-        await this.addConversationEntry(context, input);
-
-        // 🚀 PROGRESSIVE PERSISTENCE: Create placeholder assistant message immediately
-        const threadId = context.thread?.id || context.sessionId;
-        if (!threadId) {
-            throw new Error('Missing threadId for Progressive Persistence');
+        if (enhancedSessionId && enhancedThreadId) {
+            if (optionsThreadId && optionsThreadId !== enhancedThreadId) {
+                this.logger.warn(
+                    '⚠️ ThreadId mismatch - using enhanced context',
+                    {
+                        optionsThreadId,
+                        enhancedThreadId,
+                    },
+                );
+            }
+            return {
+                sessionId: enhancedSessionId,
+                threadId: enhancedThreadId,
+            };
         }
 
+        if (optionsThreadId) {
+            this.logger.warn('⚠️ Using fallback sessionId from options', {
+                optionsSessionId,
+                optionsThreadId,
+                reason: 'enhanced_context_incomplete',
+            });
+            return {
+                sessionId: optionsSessionId || optionsThreadId,
+                threadId: optionsThreadId,
+            };
+        }
+
+        const error = new Error(
+            'Cannot determine sessionId/threadId - both enhanced context and options are invalid',
+        );
+        this.logger.error('❌ Session consistency failure', error, {
+            enhancedRuntimeContext: !!enhancedRuntimeContext,
+            agentExecutionOptions: !!agentExecutionOptions,
+        });
+        throw error;
+    }
+
+    /**
+     * Create execution context locally and save to ContextService
+     */
+    private async createExecutionContext(
+        agent: AgentDefinition<any, any, any>,
+        input: unknown,
+        agentExecutionOptions: AgentExecutionOptions,
+    ): Promise<UnifiedExecutionContext> {
+        const executionId = IdGenerator.executionId();
+        const threadId = agentExecutionOptions.thread.id;
+        const { correlationId, tenantId = 'default' } = agentExecutionOptions;
+
+        // 1. Initialize session if needed
+        await ContextService.initializeSession(threadId, tenantId);
+
+        // 2. Add user message
+        await ContextService.addMessage(threadId, {
+            role: 'user' as any,
+            content: typeof input === 'string' ? input : JSON.stringify(input),
+            metadata: {
+                agentName: agent.name,
+                executionId,
+                correlationId,
+                source: 'user-input',
+            },
+        });
+
+        // 3. Add placeholder assistant message
         const assistantMessageId = await ContextService.addMessage(threadId, {
-            role: AgentInputEnum.ASSISTANT,
+            role: 'assistant' as any,
             content: '⏳ Processing your request...',
             metadata: {
                 agentName: agent.name,
@@ -309,164 +370,166 @@ export abstract class AgentCore<
             },
         });
 
+        // 4. Get runtime context from ContextService
+        const runtimeContext = await ContextService.getContext(threadId);
+
+        // 4.5 Ensure session consistency
+        const { sessionId, threadId: consistentThreadId } =
+            this.ensureSessionConsistency(
+                runtimeContext,
+                agentExecutionOptions,
+            );
+
+        // 5. Get tools from ToolEngine
+        const availableTools = this.toolEngine?.listTools() || [];
+
+        // 6. Create agentContext with all needed info
+        const agentContext: AgentContext = {
+            agentName: agent.name,
+            sessionId: sessionId || executionId,
+            correlationId: correlationId || '',
+            tenantId,
+            thread: { id: consistentThreadId || threadId, metadata: {} },
+            invocationId: IdGenerator.callId(),
+            availableTools: availableTools as any,
+            signal: new AbortController().signal,
+            agentExecutionOptions,
+        };
+
+        // 7. Save agentContext to runtime
+        // Context is already available via runtimeContext
+        // No need to explicitly save as it's managed by ContextService
+
+        // 8. Return unified context
+        return {
+            input: typeof input === 'string' ? input : JSON.stringify(input),
+            executionId,
+            threadId: consistentThreadId || threadId,
+            runtimeContext,
+            history: [],
+            agentConfig: {
+                agentName: agent.name,
+                tenantId,
+                correlationId,
+                strategy: this.config.plannerOptions.type as ExecutionStrategy,
+                maxIterations: this.config.maxThinkingIterations,
+            },
+            metadata: {
+                startTime: Date.now(),
+                correlationId: correlationId || undefined,
+                assistantMessageId,
+            },
+            agentContext,
+        };
+    }
+
+    protected async executeAgent(
+        agent:
+            | AgentDefinition<TInput, TOutput, TContent>
+            | AgentDefinition<unknown, unknown, unknown>,
+        input: unknown,
+        agentExecutionOptions: AgentExecutionOptions,
+    ): Promise<AgentExecutionResult> {
+        const startTime = Date.now();
+        const { correlationId } = agentExecutionOptions;
+
+        // Create context locally and save to ContextService
+        const completeContext = await this.createExecutionContext(
+            agent,
+            input,
+            agentExecutionOptions,
+        );
+
         this.logger.info(
             '🚀 Progressive Persistence: Placeholder message created',
             {
-                threadId,
-                assistantMessageId,
+                threadId: completeContext.threadId,
+                assistantMessageId: completeContext.metadata.assistantMessageId,
                 agentName: agent.name,
-                executionId,
+                executionId: completeContext.executionId,
             },
         );
 
         try {
             const result = await this.processAgentThinking(
                 agent,
-                input,
-                context,
+                completeContext,
             );
             const duration = Date.now() - startTime;
 
-            await this.markExecutionCompleted(
-                executionId,
-                context,
-                duration,
-                result,
-                correlationId,
-            );
-
-            // 🔄 PROGRESSIVE PERSISTENCE: Update placeholder with final response
             this.logger.info(
                 '🔄 Progressive Persistence: Updating with final response',
                 {
-                    threadId,
-                    assistantMessageId,
+                    threadId: completeContext.threadId,
+                    assistantMessageId:
+                        completeContext.metadata.assistantMessageId,
                     hasOutput: !!result.output,
                     outputType: typeof result.output,
                 },
             );
 
-            await ContextService.updateMessage(threadId, assistantMessageId, {
-                content:
-                    typeof result.output === 'string'
-                        ? result.output
-                        : JSON.stringify(result.output),
-                metadata: {
-                    agentName: agent.name,
-                    executionId,
-                    correlationId,
-                    status: 'completed',
-                    success: true,
-                    source: 'agent-output',
-                    processingDuration: duration,
+            await ContextService.updateMessage(
+                completeContext.threadId,
+                completeContext.metadata.assistantMessageId!,
+                {
+                    content:
+                        typeof result.output === 'string'
+                            ? result.output
+                            : JSON.stringify(result.output),
+                    metadata: {
+                        agentName: agent.name,
+                        executionId: completeContext.executionId,
+                        correlationId,
+                        status: 'completed',
+                        success: true,
+                        source: 'agent-output',
+                        processingDuration: duration,
+                    },
                 },
-            });
+            );
 
             return this.buildExecutionResult(
                 result,
                 correlationId,
-                context.sessionId,
-                executionId,
+                completeContext.agentContext.sessionId,
+                completeContext.executionId,
                 duration,
                 agent.name,
             );
         } catch (error) {
-            // 🚨 PROGRESSIVE PERSISTENCE: Update placeholder with error
             this.logger.error(
                 '🚨 Progressive Persistence: Updating with error',
                 error instanceof Error ? error : undefined,
                 {
-                    threadId,
-                    assistantMessageId,
+                    threadId: completeContext.threadId,
+                    assistantMessageId:
+                        completeContext.metadata.assistantMessageId,
                     errorMessage:
                         error instanceof Error ? error.message : String(error),
                 },
             );
 
-            await ContextService.updateMessage(threadId, assistantMessageId, {
-                content: `❌ Error processing your request: ${error instanceof Error ? error.message : String(error)}`,
-                metadata: {
-                    agentName: agent.name,
-                    executionId,
-                    correlationId,
-                    status: 'error',
-                    success: false,
-                    source: 'agent-error',
-                    error:
-                        error instanceof Error ? error.message : String(error),
+            await ContextService.updateMessage(
+                completeContext.threadId,
+                completeContext.metadata.assistantMessageId!,
+                {
+                    content: `❌ Error processing your request: ${error instanceof Error ? error.message : String(error)}`,
+                    metadata: {
+                        agentName: agent.name,
+                        executionId: completeContext.executionId,
+                        correlationId,
+                        status: 'error',
+                        success: false,
+                        source: 'agent-error',
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
                 },
-            });
+            );
 
             throw error;
-        }
-    }
-
-    private async addConversationEntry(
-        context: AgentContext,
-        input: unknown,
-    ): Promise<void> {
-        try {
-            // 🎯 CLEAN API: Direct method call via ContextService
-            await ContextService.addMessage(context.thread.id, {
-                role: AgentInputEnum.USER,
-                content:
-                    typeof input === 'string' ? input : JSON.stringify(input),
-                metadata: {
-                    agentName: context.agentName,
-                    source: 'agent-input',
-                },
-            });
-            this.logger.debug('Message saved to ContextNew', {
-                sessionId: context.sessionId,
-                role: AgentInputEnum.USER,
-            });
-        } catch (error) {
-            this.logger.warn('Failed to save message to ContextNew', {
-                error: error instanceof Error ? error.message : String(error),
-                sessionId: context.sessionId,
-            });
-        }
-
-        // Use state directly instead of removed addContextValue
-        if (context.state) {
-            await context.state.set('runtime', 'conversationEntry', {
-                sessionId: context.sessionId,
-                input,
-                agentName: context.agentName,
-                timestamp: Date.now(),
-                source: 'agent-core',
-                action: 'conversation-start',
-            });
-        }
-    }
-
-    private async markExecutionCompleted(
-        executionId: string,
-        context: AgentContext,
-        duration: number,
-        result: {
-            output: unknown;
-            reasoning: string;
-            iterations: number;
-            toolsUsed: number;
-            events: AnyEvent[];
-        },
-        correlationId?: string,
-    ): Promise<void> {
-        if (context.executionRuntime) {
-            await context.state.set('runtime', 'executionCompletion', {
-                executionId,
-                duration,
-                iterations: result.iterations,
-                toolsUsed: result.toolsUsed,
-                success: true,
-                status: 'completed',
-                timestamp: Date.now(),
-                source: 'agent-core',
-                action: 'execution_completed',
-                correlationId,
-                agentName: context.agentName,
-            });
         }
     }
 
@@ -507,8 +570,7 @@ export abstract class AgentCore<
         agent:
             | AgentDefinition<TInput, TOutput, TContent>
             | AgentDefinition<unknown, unknown, unknown>,
-        input: unknown,
-        context: AgentContext,
+        completeContext: any,
     ): Promise<{
         output: unknown;
         reasoning: string;
@@ -541,7 +603,7 @@ export abstract class AgentCore<
             );
         }
 
-        const result = await this.executeThinkActObserve(input, context);
+        const result = await this.executeThinkActObserve(completeContext);
 
         return {
             output: result,
@@ -631,30 +693,6 @@ export abstract class AgentCore<
         return 'final_answer';
     }
 
-    /**
-     * 🔥 Initialize Enhanced Session FIRST (contextNew architecture)
-     */
-    private async initializeEnhancedSession(
-        agentExecutionOptions: AgentExecutionOptions,
-    ): Promise<void> {
-        const availableTools = this.toolEngine?.listTools() ?? [];
-
-        // 🎯 CLEAN API: Single method call, all complexity encapsulated
-        await ContextService.initializeSession(
-            agentExecutionOptions.thread.id,
-            agentExecutionOptions.tenantId || 'default',
-        );
-
-        this.logger.info(
-            '✅ Enhanced session initialized FIRST via ContextService',
-            {
-                threadId: agentExecutionOptions.thread.id,
-                tenantId: agentExecutionOptions.tenantId,
-                toolCount: availableTools.length,
-            },
-        );
-    }
-
     protected async createAgentContext(
         executionId: string,
         agentExecutionOptions: AgentExecutionOptions,
@@ -697,14 +735,9 @@ export abstract class AgentCore<
             }
         }
 
-        const enhancedRuntimeContext = await ContextService.getContext(
-            agentExecutionOptions.thread.id,
-        );
-
-        const { sessionId, threadId } = this.ensureSessionConsistency(
-            enhancedRuntimeContext,
-            agentExecutionOptions,
-        );
+        const sessionId =
+            agentExecutionOptions.sessionId || IdGenerator.sessionId();
+        const threadId = agentExecutionOptions.thread.id;
 
         const context = {
             sessionId,
@@ -716,7 +749,6 @@ export abstract class AgentCore<
             executionId: executionId,
             allTools: availableTools,
             agentExecutionOptions,
-            enhancedRuntimeContext,
         } as any;
 
         if (this.singleAgentDefinition?.identity) {
@@ -726,67 +758,6 @@ export abstract class AgentCore<
         return context;
     }
 
-    private ensureSessionConsistency(
-        enhancedRuntimeContext: any,
-        agentExecutionOptions: AgentExecutionOptions,
-    ): { sessionId: string; threadId: string } {
-        const enhancedSessionId = enhancedRuntimeContext?.sessionId;
-        const enhancedThreadId = enhancedRuntimeContext?.threadId;
-        const optionsSessionId = agentExecutionOptions.sessionId;
-        const optionsThreadId = agentExecutionOptions.thread?.id;
-
-        this.logger.debug('🔍 Session consistency check', {
-            enhancedSessionId,
-            enhancedThreadId,
-            optionsSessionId,
-            optionsThreadId,
-        });
-
-        if (enhancedSessionId && enhancedThreadId) {
-            if (optionsThreadId && optionsThreadId !== enhancedThreadId) {
-                this.logger.warn(
-                    '⚠️ ThreadId mismatch - using enhanced context',
-                    {
-                        optionsThreadId,
-                        enhancedThreadId,
-                    },
-                );
-            }
-            return {
-                sessionId: enhancedSessionId,
-                threadId: enhancedThreadId,
-            };
-        }
-
-        if (optionsThreadId) {
-            this.logger.warn('⚠️ Using fallback sessionId from options', {
-                optionsSessionId,
-                optionsThreadId,
-                reason: 'enhanced_context_incomplete',
-            });
-            return {
-                sessionId: optionsSessionId || optionsThreadId,
-                threadId: optionsThreadId,
-            };
-        }
-
-        const error = new Error(
-            'Cannot determine sessionId/threadId - both enhanced context and options are invalid',
-        );
-        this.logger.error('❌ Session consistency failure', error, {
-            enhancedRuntimeContext: !!enhancedRuntimeContext,
-            agentExecutionOptions: !!agentExecutionOptions,
-        });
-        throw error;
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // 🔥 CENTRALIZED SESSION MANAGER METHODS (Eliminate 6+ duplications)
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /**
-     * 🎯 Centralized session execution update (eliminates duplications)
-     */
     protected async updateSessionExecution(
         threadId: string,
         executionData: {
@@ -1752,9 +1723,8 @@ export abstract class AgentCore<
         return patterns;
     }
 
-    protected async executeThinkActObserve<TInput, TOutput>(
-        input: TInput,
-        context: AgentContext,
+    protected async executeThinkActObserve<TOutput>(
+        completeContext: any, // UnifiedExecutionContext
     ): Promise<TOutput> {
         if (!this.llmAdapter || !this.strategy) {
             throw new EngineError(
@@ -1763,76 +1733,16 @@ export abstract class AgentCore<
             );
         }
 
-        const strategyContext = this.createStrategyContext(
-            String(input),
-            context,
-        );
-        const result = await this.strategy.execute(strategyContext);
-
-        // 🔥 SYNTHESIS: Call createFinalResponse if strategy supports it
-        if (
-            'createFinalResponse' in this.strategy &&
-            typeof this.strategy.createFinalResponse === 'function'
-        ) {
-            try {
-                this.logger.info(
-                    '🌉 Strategy supports createFinalResponse, using ContextBridge',
-                );
-
-                const finalResponse =
-                    await this.strategy.createFinalResponse(strategyContext);
-
-                this.logger.info(
-                    '✅ Final response created via ContextBridge',
-                    {
-                        responseLength:
-                            typeof finalResponse === 'string'
-                                ? finalResponse.length
-                                : 0,
-                        hasContextBridge: true,
-                    },
-                );
-
-                return finalResponse as TOutput;
-            } catch (error) {
-                this.logger.error(
-                    '❌ createFinalResponse failed, using original result',
-                    error instanceof Error ? error : undefined,
-                    {
-                        strategyType: this.strategy.constructor.name,
-                        fallbackToOriginal: true,
-                    },
-                );
-                // Fallback to original result
-                return result as TOutput;
-            }
-        } else {
-            this.logger.debug(
-                'Strategy does not support createFinalResponse, using original result',
-                {
-                    strategyType: this.strategy.constructor.name,
-                    hasCreateFinalResponse:
-                        'createFinalResponse' in this.strategy,
-                },
-            );
-        }
-
-        return result as TOutput;
-    }
-
-    private createStrategyContext(input: string, agentContext: AgentContext) {
-        return {
-            agentContext,
-            input,
-            tools: (agentContext.allTools || []).map((tool) => ({
-                ...tool,
-                description: tool.description || `Tool: ${tool.name}`,
-            })),
+        const strategyContext: any = {
+            input: completeContext.input,
+            tools: completeContext.agentContext?.allTools || [],
+            agentContext: completeContext.agentContext,
             config: {
-                executionStrategy: this.config.plannerOptions.type,
+                executionStrategy: completeContext.agentConfig.strategy,
                 stopConditions: {
                     rewoo: {
-                        maxPlanSteps: this.config.maxThinkingIterations || 15,
+                        maxPlanSteps:
+                            completeContext.agentConfig.maxIterations || 15,
                         maxToolCalls: 30,
                     },
                 },
@@ -1840,53 +1750,93 @@ export abstract class AgentCore<
                 enableReasoning: true,
                 enableStreaming: false,
             },
-            history: [],
-            metadata: {
-                strategy: this.config.plannerOptions.type,
-                complexity: 0,
-                startTime: Date.now(),
-                correlationId: agentContext.correlationId,
-                sessionId: agentContext.sessionId,
-            },
+            history: completeContext.history,
+            metadata: completeContext.metadata,
         };
+
+        const result = await this.strategy.execute(strategyContext);
+
+        try {
+            this.logger.info('🌉 Calling createFinalResponse for synthesis');
+
+            const enhancedContext = {
+                ...strategyContext,
+                originalResult: result,
+            };
+
+            const finalResponse =
+                await this.strategy.createFinalResponse(enhancedContext);
+
+            this.logger.info('✅ Final response created via synthesis', {
+                responseLength:
+                    typeof finalResponse === 'string'
+                        ? finalResponse.length
+                        : 0,
+                synthesisUsed: true,
+            });
+
+            return finalResponse as TOutput;
+        } catch (error) {
+            this.logger.error(
+                '❌ createFinalResponse failed, using original result',
+                error instanceof Error ? error : undefined,
+                {
+                    strategyType: this.strategy.constructor.name,
+                    fallbackToOriginal: true,
+                },
+            );
+            return result as TOutput;
+        }
     }
 
     private initializeStrategyComponents(): void {
         if (this.config.llmAdapter) {
+            // Configure LLM adapter
             this.llmAdapter = this.config.llmAdapter;
 
-            try {
-                // Convert PlannerType to StrategyType
-                const strategyType =
-                    this.config.plannerOptions.type.toLowerCase() as
-                        | 'react'
-                        | 'rewoo'
-                        | 'plan-execute';
+            // Create strategy based on planner type
+            const strategyType =
+                this.config.plannerOptions.type.toLowerCase() as
+                    | 'react'
+                    | 'rewoo'
+                    | 'plan-execute';
 
+            try {
                 this.strategy = StrategyFactory.create(
                     strategyType,
                     this.llmAdapter,
-                    {},
-                );
-
-                this.logger.info(
-                    'Strategy components initialized (REFACTOR V1)',
                     {
-                        strategy: this.strategy,
-                        llmProvider:
-                            this.llmAdapter?.getProvider?.()?.name || 'unknown',
-                        agentName: this.config.agentName,
+                        maxIterations: this.config.maxThinkingIterations,
+                        maxToolCalls: 30,
+                        maxExecutionTime: this.config.thinkingTimeout,
+                        enableLogging: true,
+                        enableMetrics: true,
                     },
                 );
+
+                this.logger.info('Strategy components initialized', {
+                    strategyType,
+                    hasLLMAdapter: !!this.llmAdapter,
+                    hasStrategy: !!this.strategy,
+                    agentName: this.config.agentName,
+                });
             } catch (error) {
                 this.logger.error(
-                    'Failed to initialize planner',
+                    'Failed to initialize strategy',
                     error as Error,
+                    {
+                        strategyType,
+                        errorMessage:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
                 );
+                throw error;
             }
         } else {
             this.logger.warn(
-                'No LLM adapter provided - Think→Act→Observe will not be available',
+                'No LLM adapter provided - strategy components not initialized',
                 {
                     agentName: this.config.agentName,
                 },

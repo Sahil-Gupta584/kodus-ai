@@ -131,7 +131,7 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
             throw new Error('Input cannot be empty');
         }
 
-        if (!Array.isArray(context.tools)) {
+        if (!Array.isArray(context.agentContext?.availableTools)) {
             throw new Error('Tools must be an array');
         }
 
@@ -141,7 +141,7 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
 
         this.logger.debug('Context validation passed', {
             inputLength: context.input.length,
-            toolsCount: context.tools?.length || 0,
+            toolsCount: context.agentContext?.availableTools?.length || 0,
             hasAgentContext: !!context.agentContext,
         });
     }
@@ -154,20 +154,14 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
             throw new Error('LLM adapter must support createPlan method');
         }
 
+        // 🔥 PADRONIZADO: Usar método consistente para additionalContext
+        const additionalContext = this.buildStandardAdditionalContext(context);
+
         // Usar nova arquitetura de prompts
         const prompts = this.promptFactory.createPlanExecutePrompt({
             goal: context.input,
-            tools: context.tools as any,
             agentContext: context.agentContext,
-            additionalContext: {
-                userContext:
-                    context.agentContext?.agentExecutionOptions?.userContext,
-                agentIdentity: context.agentContext?.agentIdentity,
-                agentExecutionOptions:
-                    context.agentContext?.agentExecutionOptions,
-                runtimeContext: (context.agentContext as any)
-                    ?.enhancedRuntimeContext,
-            },
+            additionalContext,
             mode: 'planner',
         });
 
@@ -309,7 +303,9 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
             throw new Error('Tool step missing toolName');
         }
 
-        const tool = context.tools.find((t) => t.name === planStep.toolName);
+        const tool = context.agentContext?.availableTools.find(
+            (t) => t.name === planStep.toolName,
+        );
         if (!tool) {
             throw new Error(`Tool not found: ${planStep.toolName}`);
         }
@@ -343,7 +339,7 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
         }
 
         try {
-            // Tentar parse como JSON primeiro
+            // Try parsing as JSON first
             const parsed = JSON.parse(content);
             if (parsed.steps && Array.isArray(parsed.steps)) {
                 return {
@@ -418,14 +414,14 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
     private getAvailableToolsFormatted(
         context: StrategyExecutionContext,
     ): any[] {
-        if (!context.agentContext?.allTools) {
+        if (!context.agentContext?.availableTools) {
             return [];
         }
 
-        return context.agentContext.allTools.map((tool) => ({
+        return context.agentContext.availableTools.map((tool) => ({
             name: tool.name,
             description: tool.description || `Tool: ${tool.name}`,
-            parameters: tool.inputJsonSchema?.parameters || {
+            parameters: tool.inputSchema || {
                 type: 'object',
                 properties: {},
                 required: [],
@@ -556,7 +552,7 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
                     thread: context.agentContext.thread || {
                         id: context.agentContext.sessionId || 'unknown',
                     },
-                    startTime: context.metadata.startTime,
+                    startTime: context.metadata?.startTime || Date.now(),
                     enhancedContext: (context.agentContext as any)
                         ?.enhancedRuntimeContext,
                 },
@@ -569,14 +565,18 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
                     success: true,
                     result: { content: 'Plan-Execute execution completed' },
                     iterations: 1,
-                    totalTime: Date.now() - context.metadata.startTime,
+                    totalTime:
+                        Date.now() -
+                        (context.metadata?.startTime || Date.now()),
                     thoughts: [],
                     metadata: {
                         ...context.metadata,
                         agentName: context.agentContext.agentName,
                         iterations: 1,
-                        toolsUsed: context.metadata.complexity || 0,
-                        thinkingTime: Date.now() - context.metadata.startTime,
+                        toolsUsed: context.metadata?.complexity || 0,
+                        thinkingTime:
+                            Date.now() -
+                            (context.metadata?.startTime || Date.now()),
                     } as any,
                 }),
                 getCurrentPlan: () => null,
@@ -633,6 +633,38 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
             // Fallback: Simple response without ContextBridge
             return this.buildFallbackResponse(context);
         }
+    }
+
+    /**
+     * 🔥 PADRONIZADO: Método consistente para formatar additionalContext
+     * Ensures all prompts use consistent context data
+     */
+    private buildStandardAdditionalContext(
+        context: StrategyExecutionContext,
+    ): Record<string, unknown> {
+        // Try to parse userContext as JSON if it's a string
+        let userContext =
+            context.agentContext?.agentExecutionOptions?.userContext;
+
+        if (typeof userContext === 'string') {
+            try {
+                userContext = JSON.parse(userContext);
+            } catch (error) {
+                this.logger.warn('Failed to parse userContext as JSON', {
+                    error,
+                });
+            }
+        }
+
+        return {
+            // Framework agnóstico - tudo do usuário fica dentro de userContext
+            userContext,
+            agentIdentity: context.agentContext?.agentIdentity,
+            agentExecutionOptions: context.agentContext?.agentExecutionOptions,
+            // Runtime context para compatibilidade futura
+            runtimeContext: (context.agentContext as any)
+                ?.enhancedRuntimeContext,
+        };
     }
 
     /**

@@ -100,7 +100,7 @@ export class ToolParameterFormatter {
      */
 
     /**
-     * Determina como exibir o tipo
+     * Determines how to display the type
      */
     private determineTypeDisplay(propObj: any): string {
         // Handle enums first
@@ -397,34 +397,253 @@ export class ContextFormatter {
     ): void {
         Object.entries(context).forEach(([key, value]) => {
             if (value !== undefined && value !== null) {
-                // Evitar campos muito complexos
-                const isComplexObject =
-                    typeof value === 'object' &&
-                    value !== null &&
-                    Object.keys(value as object).length > 5;
+                try {
+                    // For complex objects, try intelligent formatting
+                    if (typeof value === 'object' && value !== null) {
+                        const obj = value as Record<string, unknown>;
 
-                if (!isComplexObject) {
-                    const formattedValue = formatValue(value);
-                    if (formattedValue.length < 2000) {
-                        // Evitar campos muito longos
-                        sections.push(
-                            `**${this.formatFieldName(key)}:** ${formattedValue}`,
-                        );
+                        // Agnostic framework - handle all objects generically
+                        if (!this.isObjectTooComplex(obj)) {
+                            // Simple objects can be formatted normally
+                            const formattedValue = formatValue(value);
+                            if (formattedValue.length < 2000) {
+                                sections.push(
+                                    `**${this.formatFieldName(key)}:** ${formattedValue}`,
+                                );
+                            }
+                        } else {
+                            // For complex objects, use generic intelligent formatting
+                            this.formatGenericObject(key, obj, sections);
+                        }
+                    } else {
+                        // Primitive values
+                        const formattedValue = formatValue(value);
+                        if (formattedValue.length < 2000) {
+                            sections.push(
+                                `**${this.formatFieldName(key)}:** ${formattedValue}`,
+                            );
+                        }
                     }
+                } catch (error) {
+                    // Fallback em caso de erro
+                    sections.push(
+                        `**${this.formatFieldName(key)}:** [Error formatting: ${String(error)}]`,
+                    );
                 }
             }
         });
     }
 
     /**
-     * Formata nome do campo para exibição
+     * Formatar objetos complexos de forma inteligente e legível
+     */
+    private formatGenericObject(
+        key: string,
+        obj: Record<string, unknown>,
+        sections: string[],
+    ): void {
+        const keys = Object.keys(obj);
+
+        // Para objetos simples, mostra como JSON formatado
+        if (keys.length <= 3) {
+            try {
+                const jsonStr = JSON.stringify(obj, null, 2);
+                if (jsonStr.length < 500) {
+                    sections.push(`**${this.formatFieldName(key)}:**`);
+                    sections.push(`\`\`\`json\n${jsonStr}\n\`\`\``);
+                    return;
+                }
+            } catch {}
+        }
+
+        // Para objetos maiores, formata como lista estruturada
+        sections.push(`**${this.formatFieldName(key)}:**`);
+
+        keys.forEach((subKey) => {
+            const subValue = obj[subKey];
+            if (subValue !== undefined && subValue !== null) {
+                try {
+                    const formattedKey = this.formatFieldName(subKey);
+
+                    if (typeof subValue === 'object' && subValue !== null) {
+                        const nestedObj = subValue as Record<string, unknown>;
+                        const nestedKeys = Object.keys(nestedObj);
+
+                        // Show ALL nested fields - no truncation, no limits
+                        sections.push(`  - ${formattedKey}:`);
+                        nestedKeys.forEach((nestedKey) => {
+                            const nestedValue = nestedObj[nestedKey];
+                            if (
+                                nestedValue !== undefined &&
+                                nestedValue !== null
+                            ) {
+                                const formatted = this.formatSimpleValue(
+                                    nestedValue,
+                                    false,
+                                ); // Don't truncate
+                                sections.push(
+                                    `    • ${this.formatFieldName(nestedKey)}: ${formatted}`,
+                                );
+                            }
+                        });
+                    } else {
+                        // Valores simples
+                        const formatted = this.formatSimpleValue(subValue);
+                        sections.push(`  - ${formattedKey}: ${formatted}`);
+                    }
+                } catch {
+                    sections.push(
+                        `  - ${this.formatFieldName(subKey)}: [Error formatting]`,
+                    );
+                }
+            }
+        });
+    }
+
+    /**
+     * Format simple values safely and intelligently
+     * @param truncate - Whether to truncate long values (default: true)
+     */
+    private formatSimpleValue(value: unknown, truncate = true): string {
+        if (value === null || value === undefined) return 'null';
+
+        switch (typeof value) {
+            case 'string':
+                // Try to parse as JSON first - especially important for nested objects
+                if (
+                    value.length > 0 &&
+                    (value.startsWith('{') || value.startsWith('['))
+                ) {
+                    try {
+                        const parsed = JSON.parse(value);
+                        if (typeof parsed === 'object' && parsed !== null) {
+                            const keys = Object.keys(parsed);
+
+                            // Para objetos pequenos, mostra completo
+                            if (keys.length <= 2) {
+                                return JSON.stringify(parsed);
+                            }
+
+                            // Para objetos maiores mas importantes, mostra mais detalhes
+                            if (keys.length <= 5) {
+                                const preview = keys
+                                    .slice(0, 3)
+                                    .map((k) => `${k}: ...`)
+                                    .join(', ');
+                                return `[Object: ${preview}${keys.length > 3 ? ', ...' : ''}]`;
+                            }
+
+                            // Para objetos muito grandes, mostra contagem
+                            return `[Object with ${keys.length} fields]`;
+                        }
+                    } catch {}
+                }
+
+                // Special handling for very long text content (like PR comments)
+                if (value.length > 500 && truncate) {
+                    // Try to extract meaningful parts
+                    const lines = value.split('\n');
+                    if (lines.length > 3 && lines[0]) {
+                        const firstLine = lines[0].substring(0, 100);
+                        const codeBlocks =
+                            (value.match(/```/g) || []).length / 2;
+                        return `${firstLine}... (${lines.length} lines${codeBlocks > 0 ? `, ${codeBlocks} code blocks` : ''})`;
+                    }
+                    return `${value.substring(0, 200)}... (${value.length} chars total)`;
+                }
+
+                // Show full content when truncate is false
+                if (!truncate) {
+                    return value;
+                }
+
+                // Regular string handling
+                return value.length > 100
+                    ? `${value.substring(0, 100)}...`
+                    : value;
+
+            case 'number':
+            case 'boolean':
+                return String(value);
+
+            case 'object':
+                try {
+                    const str = JSON.stringify(value);
+                    return str.length > 100
+                        ? `[Object: ${Object.keys(value as object).length} keys]`
+                        : str;
+                } catch {
+                    return '[Complex Object]';
+                }
+
+            default:
+                return String(value);
+        }
+    }
+
+    /**
+     * Format field name for display - handles multiple naming conventions
      */
     private formatFieldName(key: string): string {
-        // Converte camelCase para Title Case
+        // Handle snake_case first (most common in APIs)
+        if (key.includes('_')) {
+            return key
+                .split('_')
+                .map(
+                    (word) =>
+                        word.charAt(0).toUpperCase() +
+                        word.slice(1).toLowerCase(),
+                )
+                .join(' ');
+        }
+
+        // Handle camelCase
         return key
             .replace(/([A-Z])/g, ' $1')
             .replace(/^./, (str) => str.toUpperCase())
             .trim();
+    }
+
+    /**
+     * Verifica se um objeto é muito complexo para formatação direta
+     * Considera: número de chaves, profundidade, arrays grandes e strings longas
+     * Ajustado para permitir mais complexidade no contexto do usuário
+     */
+    private isObjectTooComplex(obj: object, depth = 0, maxDepth = 4): boolean {
+        // Limite de profundidade aumentado para permitir mais aninhamento
+        if (depth >= maxDepth) {
+            return true;
+        }
+
+        const keys = Object.keys(obj);
+
+        // Limite de chaves aumentado para permitir mais campos
+        if (keys.length > 12) {
+            return true;
+        }
+
+        // Arrays menores são permitidos
+        for (const key of keys) {
+            const value = (obj as any)[key];
+
+            if (Array.isArray(value) && value.length > 5) {
+                return true;
+            }
+
+            // Strings muito longas ainda são um problema
+            if (typeof value === 'string' && value.length > 1000) {
+                return true;
+            }
+
+            // Verificar recursivamente objetos aninhados
+            if (typeof value === 'object' && value !== null) {
+                if (this.isObjectTooComplex(value, depth + 1, maxDepth)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -433,23 +652,6 @@ export class ContextFormatter {
     formatAgentContext(agentContext: AgentContext): string {
         const contextParts: string[] = [];
 
-        if (agentContext.agentName) {
-            contextParts.push(`**Agent:** ${agentContext.agentName}`);
-        }
-
-        if (agentContext.sessionId) {
-            contextParts.push(`**Session:** ${agentContext.sessionId}`);
-        }
-
-        if (agentContext.correlationId) {
-            contextParts.push(`**Correlation:** ${agentContext.correlationId}`);
-        }
-
-        if (agentContext.tenantId) {
-            contextParts.push(`**Tenant:** ${agentContext.tenantId}`);
-        }
-
-        // Adicionar dados runtime se disponíveis
         if ((agentContext as any).kernel?.state) {
             contextParts.push(
                 `**Kernel State:** ${(agentContext as any).kernel.state}`,
@@ -783,7 +985,7 @@ export class SchemaFormatter {
             if (dataField) return dataField;
         }
 
-        // Remove wrapper { data: ... } único
+        // Remove single { data: ... } wrapper
         if (propNames.length === 1 && propNames[0] === 'data') {
             const dataField = properties.data as Record<string, unknown>;
             if (dataField) return dataField;
@@ -1249,7 +1451,7 @@ export class StrategyFormatters {
      */
 
     /**
-     * Formata lista completa de ferramentas
+     * Format complete tool list with validation
      */
     formatToolsList(
         tools:
@@ -1264,60 +1466,111 @@ export class StrategyFormatters {
     ): string {
         const sections: string[] = ['## 🛠️ <AVAILABLE TOOLS>'];
 
-        let toolsArray: Array<{
-            name: string;
-            description?: string;
-            parameters?: Record<string, unknown>;
-            outputSchema?: Record<string, unknown>;
-        }>;
-
-        // Handle string input (JSON)
-        if (typeof tools === 'string') {
-            try {
-                toolsArray = JSON.parse(tools);
-            } catch {
-                // Return error message without logging
-                return '## <AVAILABLE TOOLS>\n[Error parsing tools]';
-            }
-        } else {
-            toolsArray = tools;
+        // Validate and parse tools
+        const toolsArray = this.parseAndValidateTools(tools);
+        if (toolsArray.length === 0) {
+            return '## 🛠️ <AVAILABLE TOOLS>\nNo tools available.';
         }
 
         toolsArray.forEach((tool, index) => {
-            sections.push(
-                `### ${index + 1}. ${tool.name}\n${tool.description}`,
-            );
-
-            // Handle parameters from inputJsonSchema (como no sistema antigo)
-            if ((tool as any).inputJsonSchema?.parameters?.properties) {
-                const params = this.toolFormatter.formatToolParameters({
-                    name: tool.name,
-                    description: tool.description || tool.name,
-                    parameters: (tool as any).inputJsonSchema.parameters,
-                    inputSchema: {},
-                    outputSchema:
-                        (tool as any).outputJsonSchema?.parameters || {},
-                } as Tool);
-                if (params) {
-                    sections.push(params);
-                }
-            }
-
-            // Handle output schema from outputJsonSchema (como no sistema antigo)
-            if ((tool as any).outputJsonSchema?.parameters?.properties) {
-                const outputFormat = this.schemaFormatter.formatOutputSchema(
-                    (tool as any).outputJsonSchema.parameters,
-                    tool.name,
-                );
-                if (outputFormat) {
-                    sections.push(outputFormat);
-                }
-            }
-
+            sections.push(this.formatSingleTool(tool, index + 1));
             sections.push(''); // Add spacing between tools
         });
 
         return sections.join('\n');
+    }
+
+    /**
+     * Faz parse e validação das tools
+     */
+    private parseAndValidateTools(tools: any): Tool[] {
+        if (!tools) return [];
+
+        // Handle string input (JSON)
+        if (typeof tools === 'string') {
+            try {
+                const parsed = JSON.parse(tools);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch {
+                return [];
+            }
+        }
+
+        // Ensure it's an array
+        return Array.isArray(tools) ? tools : [];
+    }
+
+    /**
+     * Formata uma única ferramenta
+     */
+    private formatSingleTool(tool: Tool, index: number): string {
+        const parts: string[] = [];
+
+        // Tool header
+        parts.push(`### ${index}. ${tool.name}`);
+        if (tool.description) {
+            parts.push(tool.description);
+        }
+
+        // Parameters
+        const paramsSection = this.formatToolParametersSection(tool);
+        if (paramsSection) {
+            parts.push(paramsSection);
+        }
+
+        // Output schema
+        const outputSection = this.formatToolOutputSection(tool);
+        if (outputSection) {
+            parts.push(outputSection);
+        }
+
+        return parts.join('\n');
+    }
+
+    /**
+     * Formata seção de parâmetros da ferramenta
+     */
+    private formatToolParametersSection(tool: Tool): string {
+        // Try inputJsonSchema first (new format)
+        if ((tool as any).inputJsonSchema?.parameters?.properties) {
+            return this.toolFormatter.formatToolParameters({
+                name: tool.name,
+                description: tool.description || tool.name,
+                parameters: (tool as any).inputJsonSchema.parameters,
+                inputSchema: {},
+                outputSchema: (tool as any).outputJsonSchema?.parameters || {},
+            } as Tool);
+        }
+
+        // Fallback to direct parameters
+        if (tool.parameters?.properties) {
+            return this.toolFormatter.formatToolParameters(tool);
+        }
+
+        return '';
+    }
+
+    /**
+     * Formata seção de output da ferramenta
+     */
+    private formatToolOutputSection(tool: Tool): string {
+        // Try outputJsonSchema first (new format)
+        if ((tool as any).outputJsonSchema?.parameters?.properties) {
+            return this.schemaFormatter.formatOutputSchema(
+                (tool as any).outputJsonSchema.parameters,
+                tool.name,
+            );
+        }
+
+        // Fallback to outputSchema
+        if (tool.outputSchema?.properties) {
+            return this.schemaFormatter.formatOutputSchema(
+                tool.outputSchema,
+                tool.name,
+            );
+        }
+
+        return '';
     }
 
     /**

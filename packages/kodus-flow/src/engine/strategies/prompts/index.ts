@@ -21,6 +21,9 @@ export {
     ReActPrompts,
 } from './strategy-prompts.js';
 
+// Default export
+export { default as StrategyPrompts } from './strategy-prompts.js';
+
 // Re-export de tipos
 export type { AgentContext } from '../../../core/types/allTypes.js';
 

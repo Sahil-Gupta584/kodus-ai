@@ -78,7 +78,7 @@ export class SharedStrategyMethods {
         const prompt = `
             Contexto atual:
             - Input: ${context.input}
-            - Tools disponíveis: ${context.tools.map((t) => t.name).join(', ')}
+            - Tools disponíveis: ${context.agentContext.availableTools.map((t) => t.name).join(', ')}
             - Step: ${stepIndex + 1}
 
             Baseado neste contexto, qual é a próxima ação?
@@ -116,14 +116,6 @@ export class SharedStrategyMethods {
             );
         }
 
-        // Validate tool exists in context
-        const tool = context.tools.find(
-            (t) => t.name === action.toolName,
-        ) as ToolDefinition;
-        if (!tool) {
-            throw new Error(`Tool not found: ${action.toolName}`);
-        }
-
         this.logger.debug('🔧 Delegating tool execution to ToolEngine', {
             toolName: action.toolName,
             threadId: context.agentContext.thread?.id,
@@ -135,7 +127,7 @@ export class SharedStrategyMethods {
                 action.toolName as any,
                 action.input,
                 {
-                    threadId: context.agentContext.thread?.id,
+                    //threadId: context.agentContext?.thread?.id,
                     correlationId: context.metadata?.correlationId,
                     tenantId: context.agentContext?.tenantId,
                 },
@@ -320,7 +312,7 @@ export class SharedStrategyMethods {
         // TODO: Integrar com PlannerHandler do planning/
         const prompt = `
             Input: ${context.input}
-            Tools: ${context.tools.map((t) => `${t.name}: ${t.description}`).join('\n')}
+            Tools: ${context.agentContext.availableTools.map((t) => `${t.name}: ${t.description}`).join('\n')}
 
             Crie um plano estratégico para resolver esta tarefa.
         `;
@@ -348,7 +340,7 @@ export class SharedStrategyMethods {
         context: StrategyExecutionContext,
     ): any[] {
         // TODO: Implementar parsing inteligente da resposta do LLM
-        // Por enquanto, cria steps básicos
+        // For now, create basic steps
         return [
             {
                 id: 'step-1',
@@ -360,7 +352,9 @@ export class SharedStrategyMethods {
                 id: 'step-2',
                 name: 'Execute tools',
                 type: 'tool_call',
-                toolName: context.tools[0]?.name || 'default_tool',
+                toolName:
+                    context.agentContext.availableTools[0]?.name ||
+                    'default_tool',
                 input: { query: context.input },
             },
             {
