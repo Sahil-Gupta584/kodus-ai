@@ -4360,12 +4360,12 @@ export class GithubService
         }
     }
 
-    async getReviewStatusByPullRequest(params: {
+    async checkIfPullRequestShouldBeApproved(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        repository: Partial<Repository>;
         prNumber: number;
-    }): Promise<PullRequestReviewState | null> {
-        const { organizationAndTeamData, repository, prNumber } = params;
+        repository: { id: string; name: string };
+    }): Promise<any | null> {
+        const { organizationAndTeamData, prNumber, repository } = params;
 
         const githubAuth = await this.getGithubAuthDetails(
             organizationAndTeamData,
@@ -4390,9 +4390,10 @@ export class GithubService
         }
       `;
 
+        const variables = {};
         const userAuth: {
-            viewer: { login: string; id: string };
-        } = await graphQLWithAuth(query);
+            viewer: { login: string; id: string; __typename: string };
+        } = await graphQLWithAuth(query, variables);
 
         const { data: allReviews } = await octokit.rest.pulls.listReviews({
             owner: githubAuth.org,
@@ -4402,57 +4403,28 @@ export class GithubService
         });
 
         if (!allReviews?.length) {
-            return null;
+            return;
         }
 
         const myReviews = allReviews
             ?.filter(
-                (review) =>
-                    review?.user?.login === userAuth?.viewer?.login &&
-                    review?.user?.node_id === userAuth?.viewer?.id,
+                (reviewer) =>
+                    reviewer?.user?.login === userAuth?.viewer?.login &&
+                    reviewer?.user?.node_id === userAuth?.viewer?.id,
             )
             ?.sort(
                 (a, b) =>
-                    new Date(a.submitted_at).getTime() -
-                    new Date(b.submitted_at).getTime(),
+                    new Date(a.submitted_at!).getTime() -
+                    new Date(b.submitted_at!).getTime(),
             );
 
         if (!myReviews?.length) {
-            return null;
+            return;
         }
 
-        const lastReview = myReviews.pop();
+        const lastMy = myReviews.pop();
 
-        switch (lastReview?.state) {
-            case 'APPROVED':
-                return PullRequestReviewState.APPROVED;
-            case 'CHANGES_REQUESTED':
-                return PullRequestReviewState.CHANGES_REQUESTED;
-            case 'COMMENTED':
-                return PullRequestReviewState.COMMENTED;
-            case 'DISMISSED':
-                return PullRequestReviewState.DISMISSED;
-            case 'PENDING':
-                return PullRequestReviewState.PENDING;
-            default:
-                return null;
-        }
-    }
-
-    async checkIfPullRequestShouldBeApproved(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        prNumber: number;
-        repository: { id: string; name: string };
-    }): Promise<any | null> {
-        const { organizationAndTeamData, prNumber, repository } = params;
-
-        const reviewStatus = await this.getReviewStatusByPullRequest({
-            organizationAndTeamData,
-            repository,
-            prNumber,
-        });
-
-        if (reviewStatus === PullRequestReviewState.APPROVED) {
+        if (lastMy?.state === 'APPROVED') {
             this.logger.log({
                 message: `PR#${prNumber} already approved`,
                 context: GithubService.name,
@@ -4467,29 +4439,28 @@ export class GithubService
                     },
                 },
             });
-
             return;
-        }
+        } else {
+            this.logger.log({
+                message: `Approving PR#${prNumber}`,
+                context: GithubService.name,
+                serviceName: 'GithubService - approvePullRequest',
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    repository: {
+                        name: repository.name,
+                        id: repository.id,
+                    },
+                },
+            });
 
-        this.logger.log({
-            message: `Approving PR#${prNumber}`,
-            context: GithubService.name,
-            serviceName: 'GithubService - approvePullRequest',
-            metadata: {
+            await this.approvePullRequest({
                 organizationAndTeamData,
                 prNumber,
-                repository: {
-                    name: repository.name,
-                    id: repository.id,
-                },
-            },
-        });
-
-        await this.approvePullRequest({
-            organizationAndTeamData,
-            prNumber,
-            repository,
-        });
+                repository,
+            });
+        }
     }
 
     async approvePullRequest(params: {

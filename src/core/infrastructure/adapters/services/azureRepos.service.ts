@@ -21,7 +21,6 @@ import {
     ReactionsInComments,
     PullRequestAuthor,
     PullRequest,
-    PullRequestReviewState,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { v4 as uuidv4, v4 } from 'uuid';
@@ -335,13 +334,14 @@ export class AzureReposService
         }
     }
 
-    async getReviewStatusByPullRequest(params: {
+    async checkIfPullRequestShouldBeApproved(params: {
         organizationAndTeamData: OrganizationAndTeamData;
-        repository: Partial<Repository>;
         prNumber: number;
-    }): Promise<PullRequestReviewState | null> {
-        const { organizationAndTeamData, repository, prNumber } = params;
+        repository: { id: string; name: string };
+    }): Promise<any | null> {
         try {
+            const { organizationAndTeamData, prNumber, repository } = params;
+
             const { orgName, token } = await this.getAuthDetails(
                 organizationAndTeamData,
             );
@@ -351,80 +351,32 @@ export class AzureReposService
                 repository.id,
             );
 
-            const [currentUserId, reviewers] = await Promise.all([
-                this.azureReposRequestHelper.getAuthenticatedUserId({
+            const currentUserId =
+                await this.azureReposRequestHelper.getAuthenticatedUserId({
                     orgName,
                     token,
-                }),
-                this.azureReposRequestHelper.getListOfPullRequestReviewers({
-                    orgName,
-                    projectId,
-                    repositoryId: repository.id,
-                    prId: prNumber,
-                    token,
-                }),
-            ]);
+                });
 
             if (!currentUserId) {
-                this.logger.warn({
-                    message: 'Could not identify current user from token.',
-                    context: AzureReposService.name,
-                    serviceName:
-                        'AzureReposService getReviewStatusByPullRequest',
-                });
-                return null;
+                throw new Error('Unable to identify reviewer from PAT.');
             }
 
-            let state: PullRequestReviewState | null = null;
-            for (const reviewer of reviewers || []) {
-                if (
-                    reviewer.id === currentUserId &&
-                    reviewer.vote > AzurePullRequestVote.NoVote
-                ) {
-                    state = PullRequestReviewState.APPROVED;
-                    break;
-                }
+            const reviewers =
+                await this.azureReposRequestHelper.getListOfPullRequestReviewers(
+                    {
+                        orgName,
+                        projectId,
+                        repositoryId: repository.id,
+                        prId: prNumber,
+                        token,
+                    },
+                );
 
-                if (
-                    reviewer.id === currentUserId &&
-                    reviewer.vote === AzurePullRequestVote.Rejected
-                ) {
-                    state = PullRequestReviewState.CHANGES_REQUESTED;
-                    break;
-                }
-            }
+            const isApprovedByCurrentUser = reviewers
+                ? reviewers?.some((reviewer) => reviewer.id === currentUserId)
+                : false;
 
-            return state;
-        } catch (error) {
-            this.logger.error({
-                message: `Error fetching review status for PR #${prNumber}`,
-                context: AzureReposService.name,
-                serviceName: 'AzureReposService getReviewStatusByPullRequest',
-                error,
-                metadata: { params },
-            });
-            return null;
-        }
-    }
-
-    async checkIfPullRequestShouldBeApproved(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        prNumber: number;
-        repository: { id: string; name: string };
-    }): Promise<any | null> {
-        const { organizationAndTeamData, prNumber, repository } = params;
-        try {
-            const reviewStatus =
-                await this.getReviewStatusByPullRequest(params);
-
-            if (reviewStatus === PullRequestReviewState.APPROVED) {
-                this.logger.log({
-                    message: `Pull request #${params.prNumber} already approved by this user.`,
-                    context: AzureReposService.name,
-                    serviceName:
-                        'AzureReposService checkIfPullRequestShouldBeApproved',
-                    metadata: { params },
-                });
+            if (isApprovedByCurrentUser) {
                 return null;
             }
 

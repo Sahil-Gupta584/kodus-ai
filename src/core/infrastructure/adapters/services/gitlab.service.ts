@@ -5,7 +5,6 @@ import {
     PullRequest,
     PullRequestReviewComment,
     PullRequestWithFiles,
-    PullRequestReviewState,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
@@ -2047,13 +2046,8 @@ export class GitlabService
             this.logger.log({
                 message: `Processing ${commits.length} commits for PR #${prNumber}`,
                 context: GitlabService.name,
-                serviceName:
-                    'GitlabService getCommitsForPullRequestForCodeReview',
-                metadata: {
-                    prNumber,
-                    repositoryId: repository.id,
-                    commitsCount: commits.length,
-                },
+                serviceName: 'GitlabService getCommitsForPullRequestForCodeReview',
+                metadata: { prNumber, repositoryId: repository.id, commitsCount: commits.length },
             });
 
             const commitDetails = await Promise.all(
@@ -2095,8 +2089,7 @@ export class GitlabService
             this.logger.error({
                 message: `Error fetching commits for PR #${prNumber}`,
                 context: GitlabService.name,
-                serviceName:
-                    'GitlabService getCommitsForPullRequestForCodeReview',
+                serviceName: 'GitlabService getCommitsForPullRequestForCodeReview',
                 error: error,
                 metadata: params,
             });
@@ -2484,50 +2477,6 @@ export class GitlabService
         }
     }
 
-    async getReviewStatusByPullRequest(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        repository: Partial<Repository>;
-        prNumber: number;
-    }): Promise<PullRequestReviewState | null> {
-        const { organizationAndTeamData, repository, prNumber } = params;
-        try {
-            const gitlabAuthDetail = await this.getAuthDetails(
-                organizationAndTeamData,
-            );
-            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
-
-            const [approvalSettings, currentUser] = await Promise.all([
-                gitlabAPI.MergeRequestApprovals.showConfiguration(
-                    repository.id,
-                    { mergerequestIId: prNumber },
-                ),
-                gitlabAPI.Users.showCurrentUser(),
-            ]);
-
-            const approvedByUsers = approvalSettings?.approved_by ?? [];
-
-            const isApprovedByCurrentUser = approvedByUsers.some(
-                (approval) => approval?.user?.id === currentUser.id,
-            );
-
-            return isApprovedByCurrentUser
-                ? PullRequestReviewState.APPROVED
-                : null;
-        } catch (error) {
-            this.logger.error({
-                message: `Error fetching review status for MR #${params.prNumber}`,
-                context: GitlabService.name,
-                serviceName: 'GitlabService getReviewStatusByPullRequest',
-                error: error,
-                metadata: {
-                    repository: params.repository,
-                    prNumber: params.prNumber,
-                },
-            });
-            return null;
-        }
-    }
-
     async checkIfPullRequestShouldBeApproved(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         prNumber: number;
@@ -2536,13 +2485,29 @@ export class GitlabService
         try {
             const { organizationAndTeamData, repository, prNumber } = params;
 
-            const reviewStatus = await this.getReviewStatusByPullRequest({
+            const gitlabAuthDetail = await this.getAuthDetails(
                 organizationAndTeamData,
-                repository,
-                prNumber,
-            });
+            );
 
-            if (reviewStatus === PullRequestReviewState.APPROVED) {
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const approvalSettings =
+                await gitlabAPI.MergeRequestApprovals.showConfiguration(
+                    repository.id,
+                    { mergerequestIId: prNumber },
+                );
+
+            const currentUser = await gitlabAPI.Users.showCurrentUser();
+
+            const approvedBy = approvalSettings?.approved_by;
+
+            const isApprovedByCurrentUser = approvedBy
+                ? approvedBy.some(
+                      (approval) => approval?.user?.id === currentUser.id,
+                  )
+                : false;
+
+            if (isApprovedByCurrentUser) {
                 return null;
             }
 
@@ -2640,20 +2605,16 @@ export class GitlabService
         }
     }
 
-    private async getUserByEmailOrNameWithRetry(
-        params: {
-            organizationAndTeamData: OrganizationAndTeamData;
-            email?: string;
-            userName: string;
-        },
-        maxRetries: number = 3,
-        timeout: number = 5000,
-    ): Promise<any | null> {
+    private async getUserByEmailOrNameWithRetry(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        email?: string;
+        userName: string;
+    }, maxRetries: number = 3, timeout: number = 5000): Promise<any | null> {
         const { userName, email } = params;
-
+        
         // Chave de cache única para este usuário
         const cacheKey = `gitlab-user-${email || 'no-email'}-${userName}`;
-
+        
         try {
             const cachedUser = await this.cacheService.getFromCache(cacheKey);
             if (cachedUser) {
@@ -2671,10 +2632,7 @@ export class GitlabService
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 const timeoutPromise = new Promise((_, reject) => {
-                    setTimeout(
-                        () => reject(new Error('Request timeout')),
-                        timeout,
-                    );
+                    setTimeout(() => reject(new Error('Request timeout')), timeout);
                 });
 
                 const userPromise = this.getUserByEmailOrName({
@@ -2682,27 +2640,22 @@ export class GitlabService
                     email: params.email || '',
                     userName: params.userName,
                 });
-
+                
                 const user = await Promise.race([userPromise, timeoutPromise]);
-
+                
                 if (user) {
                     try {
-                        await this.cacheService.addToCache(
-                            cacheKey,
-                            user,
-                            1800000,
-                        ); // 30 minutos
+                        await this.cacheService.addToCache(cacheKey, user, 1800000); // 30 minutos
                     } catch (cacheError) {
                         this.logger.warn({
                             message: 'Error saving to cache',
                             context: GitlabService.name,
-                            serviceName:
-                                'GitlabService getUserByEmailOrNameWithRetry',
+                            serviceName: 'GitlabService getUserByEmailOrNameWithRetry',
                             error: cacheError,
                         });
                     }
                 }
-
+                
                 return user;
             } catch (error) {
                 this.logger.warn({
@@ -2717,17 +2670,14 @@ export class GitlabService
                     this.logger.error({
                         message: `All ${maxRetries} attempts failed for user: ${email || userName}, returning null to continue flow`,
                         context: GitlabService.name,
-                        serviceName:
-                            'GitlabService getUserByEmailOrNameWithRetry',
+                        serviceName: 'GitlabService getUserByEmailOrNameWithRetry',
                         error: error,
                         metadata: params,
                     });
                     return null;
                 }
 
-                await new Promise((resolve) =>
-                    setTimeout(resolve, Math.pow(2, attempt) * 1000),
-                );
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
             }
         }
 

@@ -9,7 +9,6 @@ import {
     PullRequest,
     PullRequestReviewComment,
     PullRequestsWithChangesRequested,
-    PullRequestReviewState,
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
@@ -1164,24 +1163,5 @@ export class CodeManagementService implements ICodeManagementService {
             this.platformIntegrationFactory.getCodeManagementService(type);
 
         return codeManagementService.isDraftPullRequest(params);
-    }
-
-    async getReviewStatusByPullRequest(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        repository: Partial<Repository>;
-        prNumber: number;
-    }): Promise<PullRequestReviewState | null> {
-        const type = await this.getTypeIntegration(
-            params.organizationAndTeamData,
-        );
-
-        if (!type) {
-            return null;
-        }
-
-        const codeManagementService =
-            this.platformIntegrationFactory.getCodeManagementService(type);
-
-        return codeManagementService.getReviewStatusByPullRequest(params);
     }
 }
