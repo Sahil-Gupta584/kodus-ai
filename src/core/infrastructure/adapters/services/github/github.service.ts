@@ -5089,19 +5089,39 @@ export class GithubService
                 return [];
             }
 
+            const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
+
             // Get repository info to find the default branch
             const repoResponse = await octokit.rest.repos.get({
-                owner: await this.getCorrectOwner(githubAuthDetail, octokit),
+                owner,
                 repo: repository.name,
             });
 
             // Get the tree using the default branch
             const treeResponse = await octokit.rest.git.getTree({
-                owner: await this.getCorrectOwner(githubAuthDetail, octokit),
+                owner,
                 repo: repository.name,
                 tree_sha: repoResponse.data.default_branch,
                 recursive: 'true',
             });
+
+            if (treeResponse.data.truncated) {
+                this.logger.warn({
+                    message: `Repository tree is truncated for repository ${repository.name}, retrying with manual recursion`,
+                    context: GithubService.name,
+                    metadata: {
+                        organizationAndTeamData: params.organizationAndTeamData,
+                        repositoryId: params.repositoryId,
+                    },
+                });
+
+                return await this.getRepositoryTreeByLevel({
+                    owner,
+                    repo: repository.name,
+                    octokit,
+                    rootTreeSha: repoResponse.data.default_branch, // Start recursion with the root tree SHA
+                });
+            }
 
             let tree = treeResponse.data.tree;
 
@@ -5124,6 +5144,79 @@ export class GithubService
             });
             return [];
         }
+    }
+
+    private async getRepositoryTreeByLevel(params: {
+        owner: string;
+        repo: string;
+        octokit: Octokit;
+        rootTreeSha: string;
+    }): Promise<
+        {
+            path: string;
+            type: 'file' | 'directory';
+            sha: string;
+            size?: number;
+            url: string;
+        }[]
+    > {
+        const { owner, repo, octokit, rootTreeSha } = params;
+        const allFiles = [];
+
+        let directoriesToProcess = [{ sha: rootTreeSha, path: '' }];
+
+        while (directoriesToProcess.length > 0) {
+            const promises = directoriesToProcess.map((dir) =>
+                octokit.rest.git.getTree({
+                    owner,
+                    repo,
+                    tree_sha: dir.sha,
+                }),
+            );
+
+            const treeResponses = await Promise.all(promises);
+
+            const nextLevelDirectories = [];
+
+            for (let i = 0; i < treeResponses.length; i++) {
+                const currentDir = directoriesToProcess[i];
+                const treeContents = treeResponses[i].data.tree;
+
+                for (const item of treeContents) {
+                    const fullPath = currentDir.path
+                        ? `${currentDir.path}/${item.path}`
+                        : item.path;
+
+                    const file = {
+                        path: fullPath,
+                        sha: item.sha,
+                        size: item.size,
+                        url: item.url,
+                    };
+
+                    if (item.type === 'blob') {
+                        allFiles.push({
+                            ...file,
+                            type: 'file',
+                        });
+                    } else if (item.type === 'tree' && item.sha) {
+                        allFiles.push({
+                            ...file,
+                            type: 'directory',
+                        });
+
+                        nextLevelDirectories.push({
+                            sha: item.sha,
+                            path: fullPath,
+                        });
+                    }
+                }
+            }
+
+            directoriesToProcess = nextLevelDirectories;
+        }
+
+        return allFiles;
     }
 
     formatReviewCommentBody(params: {
