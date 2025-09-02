@@ -98,7 +98,7 @@ export class JoinOrganizationUseCase implements IUseCase {
                     organization,
                     name: profile.name,
                     teamRole: TeamMemberRole.MEMBER,
-                    status: false,
+                    status: true,
                 });
             } else {
                 await this.teamMembersService.update(
@@ -109,7 +109,7 @@ export class JoinOrganizationUseCase implements IUseCase {
                         team,
                         organization,
                         teamRole: TeamMemberRole.MEMBER,
-                        status: false,
+                        status: true,
                     },
                 );
             }

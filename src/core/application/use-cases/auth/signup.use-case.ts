@@ -162,7 +162,7 @@ export class SignUpUseCase implements IUseCase {
             posthogClient.userIdentify(createdUser);
             posthogClient.teamIdentify(team);
 
-            await this.sendWebhook(user, payload, user.organization.name);
+            this.sendWebhook(user, payload, user.organization.name);
 
             return createdUser.toObject();
         } catch (error) {
