@@ -3,6 +3,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import {
     AIAnalysisResult,
     AnalysisContext,
+    CodeReviewVersion,
     FileChangeContext,
     ReviewModeResponse,
 } from '@/config/types/general/codeReview.type';
@@ -40,14 +41,31 @@ export class CodeAnalysisOrchestrator {
         context: AnalysisContext,
     ): Promise<AIAnalysisResult | null> {
         try {
-            const result =
-                await this.standardLLMAnalysisService.analyzeCodeWithAI(
-                    organizationAndTeamData,
-                    prNumber,
-                    fileContext,
-                    reviewModeResponse,
-                    context,
-                );
+            let result = null;
+
+            if (
+                context?.codeReviewConfig?.codeReviewVersion ===
+                CodeReviewVersion.v2
+            ) {
+                result =
+                    await this.standardLLMAnalysisService.analyzeCodeWithAI_v2(
+                        organizationAndTeamData,
+                        prNumber,
+                        fileContext,
+                        reviewModeResponse,
+                        context,
+
+                    );
+            } else {
+                result =
+                    await this.standardLLMAnalysisService.analyzeCodeWithAI(
+                        organizationAndTeamData,
+                        prNumber,
+                        fileContext,
+                        reviewModeResponse,
+                        context,
+                    );
+            }
 
             if (!result) {
                 this.logger.log({

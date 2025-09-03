@@ -8,6 +8,7 @@ import {
     AIAnalysisResult,
     AnalysisContext,
     CodeReviewConfig,
+    CodeReviewVersion,
     CodeSuggestion,
     FileChange,
     IFinalAnalysisResult,
@@ -644,7 +645,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             safeguardLLMProvider = safeGuardResult.safeguardLLMProvider;
 
             discardedSuggestionsBySafeGuard.push(
-                ...safeGuardResult.discardedSuggestionsBySafeGuard,
+                ...safeGuardResult.allDiscardedSuggestions,
                 ...discardedSuggestionsByCodeDiff,
                 ...discardedSuggestionsByKodyFineTuning,
             );
@@ -655,6 +656,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context?.pullRequest?.number,
                     safeGuardResult.safeguardSuggestions,
                     context?.codeReviewConfig?.reviewOptions,
+                    context?.codeReviewConfig?.codeReviewVersion,
                 );
 
             const crossFileSuggestionsWithSeverity =
@@ -886,9 +888,33 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         reviewModeResponse: any,
     ): Promise<{
         safeguardSuggestions: Partial<CodeSuggestion>[];
-        discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
+        allDiscardedSuggestions: Partial<CodeSuggestion>[];
         safeguardLLMProvider: string;
     }> {
+        let filteredSuggestions = suggestions;
+        let discardedSuggestionsBySeverity = [];
+
+        if (
+            context?.codeReviewConfig?.codeReviewVersion ===
+            CodeReviewVersion.v2
+        ) {
+            const prioritizedSuggestions =
+                await this.prioritizeSuggestionsBySeverityBeforeSafeGuard(
+                    suggestions,
+                    context,
+                );
+
+            filteredSuggestions = prioritizedSuggestions.filter(
+                (suggestion) =>
+                    suggestion.priorityStatus === PriorityStatus.PRIORITIZED,
+            );
+
+            discardedSuggestionsBySeverity = prioritizedSuggestions.filter(
+                (suggestion) =>
+                    suggestion.priorityStatus === PriorityStatus.DISCARDED_BY_SEVERITY,
+            );
+        }
+
         const safeGuardResponse =
             await this.suggestionService.filterSuggestionsSafeGuard(
                 context?.organizationAndTeamData,
@@ -896,7 +922,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 file,
                 relevantContent,
                 patchWithLinesStr,
-                suggestions,
+                filteredSuggestions,
                 context?.codeReviewConfig?.languageResultPrompt,
                 reviewModeResponse,
             );
@@ -906,16 +932,37 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
         const discardedSuggestionsBySafeGuard =
             this.suggestionService.getDiscardedSuggestions(
-                suggestions,
+                filteredSuggestions,
                 safeGuardResponse?.suggestions || [],
                 PriorityStatus.DISCARDED_BY_SAFEGUARD,
             );
 
+        const allDiscardedSuggestions = [
+            ...discardedSuggestionsBySeverity,
+            ...discardedSuggestionsBySafeGuard,
+        ];
+
         return {
             safeguardSuggestions: safeGuardResponse?.suggestions || [],
-            discardedSuggestionsBySafeGuard,
+            allDiscardedSuggestions,
             safeguardLLMProvider,
         };
+    }
+
+    private async prioritizeSuggestionsBySeverityBeforeSafeGuard(
+        suggestions: Partial<CodeSuggestion>[],
+        context: AnalysisContext,
+    ): Promise<Partial<CodeSuggestion>[]> {
+        const prioritizedSuggestions =
+            await this.suggestionService.filterSuggestionsBySeverityLevel(
+                suggestions,
+                context?.codeReviewConfig?.suggestionControl
+                    ?.severityLevelFilter,
+                context?.organizationAndTeamData,
+                context?.pullRequest?.number,
+            );
+
+        return prioritizedSuggestions;
     }
 
     private createAnalysisContextFromPipelineContext(

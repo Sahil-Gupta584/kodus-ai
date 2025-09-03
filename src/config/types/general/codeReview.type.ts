@@ -217,19 +217,23 @@ export const reviewOptionsSchema = z.object({
     performance_and_optimization: z.boolean(),
     kody_rules: z.boolean(),
     breaking_changes: z.boolean(),
+    bug: z.boolean(),
+    performance: z.boolean(),
 });
 
 export interface ReviewOptions {
-    security: boolean;
-    code_style: boolean;
-    refactoring: boolean;
-    error_handling: boolean;
-    maintainability: boolean;
-    potential_issues: boolean;
-    documentation_and_comments: boolean;
-    performance_and_optimization: boolean;
-    kody_rules: boolean;
-    breaking_changes: boolean;
+    security?: boolean;
+    code_style?: boolean;
+    refactoring?: boolean;
+    error_handling?: boolean;
+    maintainability?: boolean;
+    potential_issues?: boolean;
+    documentation_and_comments?: boolean;
+    performance_and_optimization?: boolean;
+    kody_rules?: boolean;
+    breaking_changes?: boolean;
+    bug?: boolean;
+    performance?: boolean;
 }
 
 export enum BehaviourForExistingDescription {
@@ -308,7 +312,13 @@ export type CodeReviewConfig = {
     directoryId?: string;
     directoryPath?: string;
     runOnDraft?: boolean;
+    codeReviewVersion?: CodeReviewVersion;
 };
+
+export enum CodeReviewVersion {
+    LEGACY = 'legacy',
+    v2 = 'v2',
+}
 
 export type CodeReviewConfigWithoutLLMProvider = Omit<
     CodeReviewConfig,

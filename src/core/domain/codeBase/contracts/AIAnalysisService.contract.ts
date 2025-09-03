@@ -18,6 +18,13 @@ export interface IAIAnalysisService {
         context: AnalysisContext,
         suggestions?: AIAnalysisResult,
     ): Promise<AIAnalysisResult>;
+    analyzeCodeWithAI_v2(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        fileContext: FileChangeContext,
+        reviewModeResponse: ReviewModeResponse,
+        context: AnalysisContext,
+    ): Promise<AIAnalysisResult>;
     generateCodeSuggestions(
         organizationAndTeamData: OrganizationAndTeamData,
         sessionId: string,
