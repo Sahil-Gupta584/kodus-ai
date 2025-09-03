@@ -643,7 +643,7 @@ Return only valid JSON, nothing more:
             "relevantLinesStart": "starting_line",
             "relevantLinesEnd": "ending_line",
             "label": "bug|performance|security",
-            "severity": "LOW|MEDIUM|HIGH|CRITICAL"
+            "severity": "low|medium|high|critical"
         }
     ]
 }
