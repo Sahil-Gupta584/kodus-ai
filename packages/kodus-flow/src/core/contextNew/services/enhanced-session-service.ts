@@ -534,6 +534,19 @@ export class EnhancedSessionService implements SessionManager {
         ) {
             updatedExecution.toolCallCount =
                 (currentExecution.toolCallCount || 0) + 1;
+
+            // 🆕 Track which tools were actually used
+            if (execution.currentTool !== 'tool_executing') {
+                const lastTools = currentExecution.lastToolsUsed || [];
+                if (!lastTools.includes(execution.currentTool)) {
+                    updatedExecution.lastToolsUsed = [
+                        ...lastTools,
+                        execution.currentTool,
+                    ];
+                } else {
+                    updatedExecution.lastToolsUsed = lastTools;
+                }
+            }
         }
 
         // Update execution state
@@ -553,6 +566,18 @@ export class EnhancedSessionService implements SessionManager {
             session.createdAt,
             Date.now(),
         );
+
+        // 🆕 Log tools being tracked
+        if (
+            updatedExecution.lastToolsUsed &&
+            updatedExecution.lastToolsUsed.length > 0
+        ) {
+            logger.info('🔧 Tools tracked in session', {
+                threadId,
+                toolsUsed: updatedExecution.lastToolsUsed,
+                toolCallCount: updatedExecution.toolCallCount,
+            });
+        }
 
         logger.debug(
             `⚙️ Updated execution for thread ${threadId}: ${Object.keys(execution).join(', ')}`,

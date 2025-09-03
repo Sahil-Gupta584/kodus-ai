@@ -63,6 +63,7 @@ export interface AgentRuntimeContext {
         // 📊 OPTIMIZATION: Simple counters instead of detailed tracking
         toolCallCount?: number;
         iterationCount?: number;
+        lastToolsUsed?: string[]; // 🆕 Track which tools were actually used
     };
 
     // Tools and connections are handled by ToolEngine, not stored in context

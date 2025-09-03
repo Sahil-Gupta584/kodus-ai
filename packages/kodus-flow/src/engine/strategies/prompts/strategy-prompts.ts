@@ -350,7 +350,7 @@ Return STRICT JSON with this exact schema:
         sections.push(this.formatters.context.formatAgentContext(agentContext));
 
         // 3. 🛠️ AVAILABLE TOOLS (formatação padronizada)
-        if (agentContext.availableTools.length > 0) {
+        if (agentContext?.availableTools?.length > 0) {
             sections.push(
                 this.formatters.formatToolsList(agentContext.availableTools),
             );
@@ -364,12 +364,55 @@ Return STRICT JSON with this exact schema:
 
         // 5. 📋 EXECUTION HISTORY
         if (history && history.length > 0) {
-            sections.push(
-                `## 📋 EXECUTION HISTORY\n${history.length} steps executed`,
-            );
+            const historyDetails = history
+                .map((step, index) => {
+                    const stepInfo: string[] = [];
+
+                    if (step.thought?.reasoning) {
+                        stepInfo.push(`Thought: ${step.thought.reasoning}`);
+                    }
+
+                    if (step.action?.type) {
+                        if (step.action.type === 'tool_call') {
+                            const params = step.action.input
+                                ? typeof step.action.input === 'object'
+                                    ? JSON.stringify(
+                                          step.action.input,
+                                      ).substring(0, 100)
+                                    : String(step.action.input).substring(
+                                          0,
+                                          100,
+                                      )
+                                : '';
+                            stepInfo.push(
+                                `Action: Called ${step.action.toolName}${params ? ` with ${params}` : ''}`,
+                            );
+                        } else if (step.action.type === 'final_answer') {
+                            stepInfo.push(`Action: Provided final answer`);
+                        }
+                    }
+
+                    if (step.result?.content) {
+                        let resultStr: string;
+                        if (typeof step.result.content === 'string') {
+                            resultStr = step.result.content;
+                        } else {
+                            try {
+                                resultStr = JSON.stringify(step.result.content);
+                            } catch {
+                                resultStr = String(step.result.content);
+                            }
+                        }
+                        stepInfo.push(`Result: ${resultStr}`);
+                    }
+
+                    return `**Step ${index + 1}:**\n${stepInfo.join('\n')}`;
+                })
+                .join('\n\n');
+
+            sections.push(`## 📋 EXECUTION HISTORY\n\n${historyDetails}`);
         }
 
-        // 🎯 ReAct SPECIFIC: Instruções finais (única diferença)
         sections.push(this.getTaskInstructions());
 
         return sections.join('\n\n');
@@ -378,7 +421,18 @@ Return STRICT JSON with this exact schema:
     private getTaskInstructions(): string {
         return `## 🎯 EXECUTION INSTRUCTIONS
 
-**ANALYZE** the request and choose the most appropriate tool.
+**ANALYZE** the execution history above to understand what has been done.
+
+**WHEN TO USE final_answer:**
+- ✅ If you see successful tool results in the history that answer the user's question
+- ✅ If you have enough information from previous tool executions
+- ✅ If the task objective has been accomplished
+- ✅ If no additional tools are needed
+
+**WHEN TO USE tool_call:**
+- 🔧 Only if you need NEW information not available in the execution history
+- 🔧 Only if you need to perform an action not yet done
+- 🔧 Only if the previous tool calls were insufficient or failed
 
 **TOOL SELECTION:**
 - Choose the **most specific** tool for the task
@@ -393,9 +447,9 @@ Return STRICT JSON with this exact schema:
 - **JSON must be parseable by JSON.parse()**
 
 **STOP WHEN:**
-- ✅ You have all information needed to answer
-- ✅ Task is complete with tool results
-- ✅ No more tools needed for the objective
+- ✅ You have all information needed to answer (use final_answer)
+- ✅ Task is complete with tool results (use final_answer)
+- ✅ No more tools needed for the objective (use final_answer)
 
 **FINAL REMINDER:** Return ONLY JSON with reasoning and action fields. No other format accepted.`;
     }

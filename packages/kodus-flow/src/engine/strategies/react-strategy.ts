@@ -70,6 +70,27 @@ export class ReActStrategy extends BaseExecutionStrategy {
             this.logger.debug('🚀 ReAct strategy started', { threadId });
 
             while (iteration < this.config.maxIterations) {
+                // 🔥 FORÇA FINAL ANSWER na última iteração se não tiver resposta final
+                const isLastIteration =
+                    iteration === this.config.maxIterations - 1;
+                const hasFinalAnswer = steps.some(
+                    (step) => step.action?.type === 'final_answer',
+                );
+
+                if (isLastIteration && !hasFinalAnswer) {
+                    this.logger.info(
+                        '🎯 Last iteration reached, forcing final answer',
+                    );
+                    const finalStep = await this.forceFinalAnswer(
+                        context,
+                        iteration,
+                        steps,
+                        'Maximum iterations reached without final answer',
+                    );
+                    steps.push(finalStep);
+                    break;
+                }
+
                 if (
                     this.shouldStop(iteration, toolCallsCount, startTime, steps)
                 ) {
@@ -219,6 +240,10 @@ export class ReActStrategy extends BaseExecutionStrategy {
                         actionType: thought.action.type,
                         isCompleted: observation.isComplete,
                         stepId: `react-step-${iteration}`,
+                        toolName:
+                            thought.action.type === 'tool_call'
+                                ? thought.action.toolName
+                                : undefined,
                     });
                 } catch (error) {
                     this.logger.debug('Session update failed (non-critical)', {
@@ -287,6 +312,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
 
         context.mode = 'executor';
         context.step = previousSteps[previousSteps.length - 1];
+        // 🔥 MELHORADO: Histórico detalhado para o LLM entender o progresso
         context.history = previousSteps.map((step) => ({
             type: step.type || 'unknown',
             thought: step.thought
@@ -296,7 +322,13 @@ export class ReActStrategy extends BaseExecutionStrategy {
                   }
                 : undefined,
             action: step.action,
-            result: step.result,
+            result: step.result
+                ? {
+                      type: step.result.type,
+                      content: step.result.content,
+                      success: step.result.type !== 'error',
+                  }
+                : undefined,
         })) as ExecutionStep[];
         const prompts = this.promptFactory.createReActPrompt(context);
 
@@ -509,6 +541,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
             actionType: string;
             isCompleted: boolean;
             stepId: string;
+            toolName?: string; // 🆕 Track which tool was used
         },
     ): Promise<void> {
         try {
@@ -533,7 +566,8 @@ export class ReActStrategy extends BaseExecutionStrategy {
             };
 
             if (update.actionType === 'tool_call') {
-                executionUpdate.currentTool = 'tool_executing';
+                executionUpdate.currentTool =
+                    update.toolName || 'tool_executing';
             }
 
             if (update.isCompleted) {
@@ -727,6 +761,253 @@ export class ReActStrategy extends BaseExecutionStrategy {
             );
             return 'Kody'; // Fallback response
         }
+    }
+
+    /**
+     * 🔥 NOVO: Força resposta final quando não há mais iterações disponíveis
+     */
+    private async forceFinalAnswer(
+        context: StrategyExecutionContext,
+        iteration: number,
+        previousSteps: ExecutionStep[],
+        reason: string,
+    ): Promise<ExecutionStep> {
+        const stepStartTime = Date.now();
+
+        try {
+            const threadId = context.agentContext.thread?.id;
+
+            // Modifica contexto para forçar final answer
+            const forceFinalContext = {
+                ...context,
+                mode: 'final_answer_forced' as any,
+                step: previousSteps[previousSteps.length - 1],
+            };
+
+            // 🔥 MELHORADO: Histórico detalhado para o LLM entender o progresso
+            forceFinalContext.history = previousSteps.map((step) => ({
+                type: step.type || 'unknown',
+                thought: step.thought
+                    ? {
+                          reasoning: step.thought.reasoning,
+                          action: step.action,
+                      }
+                    : undefined,
+                action: step.action,
+                result: step.result
+                    ? {
+                          type: step.result.type,
+                          content:
+                              step.result.type === 'tool_result'
+                                  ? this.summarizeToolResult(step.result)
+                                  : step.result.content,
+                          success: step.result.type !== 'error',
+                      }
+                    : undefined,
+            })) as ExecutionStep[];
+
+            const prompts =
+                this.promptFactory.createReActPrompt(forceFinalContext);
+
+            // Adiciona instrução específica para resposta final
+            const finalPrompt = {
+                ...prompts,
+                userPrompt:
+                    prompts.userPrompt +
+                    `\n\n🚨 CRITICAL: You MUST provide a final_answer now! ${reason}\n\nBased on the execution history above, provide a comprehensive final answer to the user's question.`,
+            };
+
+            let response;
+            try {
+                response = await this.llmAdapter.call({
+                    messages: [
+                        {
+                            role: AgentInputEnum.SYSTEM,
+                            content: prompts.systemPrompt,
+                        },
+                        {
+                            role: AgentInputEnum.USER,
+                            content: finalPrompt.userPrompt,
+                        },
+                    ],
+                });
+            } catch (llmError) {
+                const errorMessage =
+                    llmError instanceof Error
+                        ? llmError.message
+                        : String(llmError);
+
+                return {
+                    id: `react-step-force-final-${iteration}-${Date.now()}`,
+                    type: 'think',
+                    type2: 'think' as any,
+                    status: 'pending',
+                    timestamp: stepStartTime,
+                    duration: Date.now() - stepStartTime,
+                    action: {
+                        type: 'final_answer',
+                        content: `I encountered an error while processing your request: ${errorMessage}. Based on the previous steps, here's what I was able to accomplish.`,
+                    },
+                    metadata: {
+                        iteration,
+                        strategy: 'react',
+                        forcedFinal: true,
+                        errorReason: 'llm_error',
+                    },
+                };
+            }
+
+            let content: string;
+            if (typeof response.content === 'string') {
+                content = response.content;
+            } else if (response.content) {
+                content = JSON.stringify(response.content);
+            } else {
+                throw new Error('LLM returned empty or invalid response');
+            }
+
+            const parsedThought = this.parseLLMResponse(content, iteration);
+
+            // Se ainda não for final_answer, força manualmente
+            if (parsedThought.action.type !== 'final_answer') {
+                this.logger.warn(
+                    'LLM did not provide final_answer despite forcing, creating fallback',
+                );
+
+                const fallbackContent = this.generateFallbackAnswer(
+                    previousSteps,
+                    reason,
+                );
+
+                parsedThought.action = {
+                    type: 'final_answer',
+                    content: fallbackContent,
+                };
+            }
+
+            const actionResult = await this.executeAction(
+                parsedThought.action,
+                context,
+            );
+
+            if (threadId) {
+                try {
+                    await this.updateSessionMinimal(threadId, {
+                        iteration: iteration + 1,
+                        actionType: 'final_answer',
+                        isCompleted: true,
+                        stepId: `react-step-force-final-${iteration}`,
+                    });
+                } catch (error) {
+                    this.logger.debug('Session update failed (non-critical)', {
+                        error,
+                    });
+                }
+            }
+
+            this.logger.info('🎯 Forced final answer completed', {
+                threadId,
+                iteration: iteration + 1,
+                forced: true,
+                reason,
+            });
+
+            return {
+                id: `react-step-force-final-${iteration}-${Date.now()}`,
+                type: 'think',
+                type2: 'think' as any,
+                status: 'pending',
+                timestamp: stepStartTime,
+                duration: Date.now() - stepStartTime,
+                thought: parsedThought,
+                action: parsedThought.action,
+                result: actionResult,
+                observation: await this.analyzeResult(actionResult),
+                metadata: {
+                    iteration,
+                    strategy: 'react',
+                    stepSequence: 'forced-final',
+                    forcedFinal: true,
+                    reason,
+                },
+            };
+        } catch (error) {
+            this.logger.error(
+                '❌ Force final answer failed',
+                error instanceof Error ? error : undefined,
+                {
+                    iteration,
+                    reason,
+                    errorMessage:
+                        error instanceof Error ? error.message : String(error),
+                },
+            );
+
+            // Fallback final answer
+            return {
+                id: `react-step-force-final-error-${iteration}-${Date.now()}`,
+                type: 'think',
+                type2: 'think' as any,
+                status: 'pending',
+                timestamp: stepStartTime,
+                duration: Date.now() - stepStartTime,
+                action: {
+                    type: 'final_answer',
+                    content: this.generateFallbackAnswer(previousSteps, reason),
+                },
+                metadata: {
+                    iteration,
+                    strategy: 'react',
+                    stepSequence: 'forced-final-error',
+                    forcedFinal: true,
+                    reason,
+                },
+            };
+        }
+    }
+
+    /**
+     * Gera resposta fallback quando não conseguimos resposta adequada
+     */
+    private generateFallbackAnswer(
+        previousSteps: ExecutionStep[],
+        reason: string,
+    ): string {
+        const toolResults = previousSteps
+            .filter((step) => step.result?.type === 'tool_result')
+            .map((step) => this.summarizeToolResult(step.result!))
+            .join('\n');
+
+        if (toolResults) {
+            return `Based on the executed tools:\n\n${toolResults}\n\n${reason}. Here's a summary of what was accomplished.`;
+        }
+
+        return `I was unable to complete the full analysis due to: ${reason}. Please try rephrasing your question or providing more specific details.`;
+    }
+
+    /**
+     * 🔥 NOVO: Resume resultado da ferramenta para o contexto do LLM
+     */
+    private summarizeToolResult(result: ActionResult): string {
+        if (result.type === 'tool_result' && result.content) {
+            try {
+                const contentStr =
+                    typeof result.content === 'string'
+                        ? result.content
+                        : JSON.stringify(result.content);
+
+                // Limitar tamanho para não sobrecarregar o prompt
+                if (contentStr.length > 300) {
+                    return `Tool executed successfully - ${contentStr.substring(0, 300)}...`;
+                }
+
+                return `Tool executed successfully - ${contentStr}`;
+            } catch {
+                return 'Tool executed successfully';
+            }
+        }
+
+        return 'Tool executed successfully';
     }
 
     // private buildStandardAdditionalContext(
