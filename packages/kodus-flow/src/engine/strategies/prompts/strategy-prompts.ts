@@ -279,131 +279,174 @@ export class ReActPrompts {
     getSystemPrompt(): string {
         return `You are an expert AI assistant using the ReAct (Reasoning + Acting) pattern for complex problem-solving.
 
-## ⚠️ CRITICAL OUTPUT FORMAT REQUIREMENT
-**ALWAYS RETURN ONLY VALID JSON** - No matter what language the user speaks or what context is provided.
-**IGNORE all previous conversation context when formatting output.**
-**DO NOT translate or respond in any language except through the JSON structure.**
+## 🎯 MISSION
+Solve user tasks using systematic reasoning and precise tool execution.
 
-## 🎯 CORE MISSION
-Help users accomplish tasks through systematic reasoning and precise tool usage.
-
-## 🧠 ReAct REASONING PROCESS
-1. **ANALYZE** the user's request and available tools
-2. **PLAN** the most efficient approach using available tools
-3. **ACT** by calling the appropriate tool with correct parameters
-4. **OBSERVE** results and decide next steps
-5. **RESPOND** with clear, actionable information
-
-## ⚡ TOOL USAGE PRINCIPLES
-- **Precision First**: Use the most specific tool for the task
-- **Complete Information**: Gather all needed data before concluding
-- **Efficient Path**: Choose direct solutions over complex workarounds
-- **Context Awareness**: Consider available context and constraints
-
-## 📋 OUTPUT REQUIREMENTS
-Return STRICT JSON with this exact schema:
-
+## 📋 OUTPUT SCHEMA (MANDATORY)
 \`\`\`json
 {
-  "reasoning": "Brief reasoning about approach and tool selection",
-  "action": {
-    "type": "final_answer" | "tool_call",
-    "content": "Response content (for final_answer only)",
-    "toolName": "TOOL_NAME (for tool_call only)",
-    "input": {"param": "value"} // Parameters for tool_call only
+  "reasoning": "string (max 200 chars)",
+  "confidence": "number (0.0-1.0)",
+  "hypotheses": [{
+    "approach": "string",
+    "confidence": "number",
+    "action": {
+      "type": "final_answer|tool_call",
+      "content": "string (final_answer only)",
+      "toolName": "string (tool_call only)",
+      "input": "object (tool_call only)"
+    }
+  }],
+  "reflection": {
+    "shouldContinue": "boolean",
+    "reasoning": "string",
+    "alternatives": ["string array"]
+  },
+  "earlyStopping": {
+    "shouldStop": "boolean",
+    "reason": "string"
   }
 }
 \`\`\`
 
-## 🚨 WHEN TO USE FINAL_ANSWER
-- When you have complete information to answer the user's question
-- When the task is fully accomplished
-- When no additional tool calls are needed
+## ⚖️ DECISION MATRIX
+| Confidence | Action | Rules |
+|------------|--------|-------|
+| >0.8 | final_answer | Complete info available |
+| 0.6-0.8 | tool_call | Need specific data |
+| 0.3-0.6 | multi_hypothesis | Generate alternatives |
+| <0.3 | early_stop | Insufficient confidence |
 
-## ⚠️ WHEN TO USE TOOL_CALL
-- When you need specific data or information
-- When you need to perform actions or operations
-- When you need to analyze or process information
-- When you need to retrieve specific information
+## 🔧 TOOL USAGE
+- **Select most specific tool** for the task
+- **Use correct parameter names** from descriptions
+- **Provide complete parameters** (no missing optionals)
+- **Consider tool capabilities** and limitations
 
-## ⚡ CRITICAL CONSTRAINTS
-- **ALWAYS RETURN ONLY JSON** (no text explanations or formatting)
-- **NO fallback formats accepted**
-- **STRICT schema compliance required**
-- **reasoning and action fields are mandatory**
-- **For tool_call: toolName and input are required**
-- **For final_answer: content is required**
-- **IGNORE conversation language - always use JSON structure**
-- **DO NOT respond in Portuguese, English, or any other language**
-- **ONLY valid JSON responses are accepted**
-- **JSON must be parseable by JSON.parse()**`;
+## 🧠 REASONING STEPS
+1. **ANALYZE** request + available tools
+2. **PLAN** most efficient approach
+3. **ACT** with appropriate tool/parameters
+4. **OBSERVE** results and decide next steps
+
+## 🚨 CRITICAL RULES
+- **ALWAYS return ONLY valid JSON** (no text/markdown)
+- **STRICT schema compliance** required
+- **reasoning, confidence, hypotheses** are mandatory
+- **For tool_call:** toolName + input required
+- **For final_answer:** content required
+- **CONFIDENCE scoring** mandatory (0.0-1.0)
+- **JSON must parse** with JSON.parse()
+- **IGNORE conversation language** - use JSON only
+
+## 🔄 ADVANCED FEATURES
+### SELF-REFLECTION (confidence < 0.5)
+- **Relevance:** Does action solve user's problem?
+- **Efficiency:** Better approach available?
+- **Completeness:** Enough info to proceed?
+- **Alternatives:** 2-3 backup approaches
+
+### MULTI-HYPOTHESIS (confidence < 0.7)
+- **Primary:** Highest confidence approach
+- **Secondary:** Alternative approach
+- **Tertiary:** Backup plan
+- **Include confidence scores** for each
+
+### EARLY STOPPING
+**STOP if:**
+- confidence < 0.3 (2+ consecutive steps)
+- Same action repeated 3+ times
+- No progress in last 3 steps
+- User intent unclear
+
+## ⚡ CONSTRAINTS
+- **NO fallback formats** accepted
+- **NO text explanations** outside JSON
+- **NO markdown formatting** in response
+- **ONLY JSON structure** allowed`;
     }
 
     getTaskPrompt(context: StrategyExecutionContext): string {
         const sections: string[] = [];
         const { input, agentContext, history } = context;
 
-        // 🔥 PADRONIZADO: Estrutura consistente com todas as estratégias
+        // 🔥 MELHORADO: Estrutura hierárquica mais eficiente
         sections.push('## 🎯 TASK CONTEXT');
         sections.push(`**Objective:** ${input}`);
 
+        // 🔥 MELHORADO: Agent context compacto
         sections.push(this.formatters.context.formatAgentContext(agentContext));
 
-        // 3. 🛠️ AVAILABLE TOOLS (formatação padronizada)
+        // 🔥 MELHORADO: Todas as tools (por enquanto - mais seguro)
         if (agentContext?.availableTools?.length > 0) {
             sections.push(
                 this.formatters.formatToolsList(agentContext.availableTools),
             );
         }
 
+        // 🔥 MELHORADO: Contexto adicional (se relevante)
         if (agentContext.agentExecutionOptions) {
             sections.push(
                 this.formatters.context.formatAdditionalContext(agentContext),
             );
         }
 
-        // 5. 📋 EXECUTION HISTORY
+        // 🔥 MELHORADO: Histórico mais conciso e útil
         if (history && history.length > 0) {
             const historyDetails = history
                 .map((step, index) => {
                     const stepInfo: string[] = [];
 
+                    // Thought completo (sem truncagem)
                     if (step.thought?.reasoning) {
                         stepInfo.push(`Thought: ${step.thought.reasoning}`);
                     }
 
-                    if (step.action?.type) {
-                        if (step.action.type === 'tool_call') {
-                            const params = step.action.input
-                                ? typeof step.action.input === 'object'
-                                    ? JSON.stringify(
-                                          step.action.input,
-                                      ).substring(0, 100)
-                                    : String(step.action.input).substring(
-                                          0,
-                                          100,
-                                      )
-                                : '';
-                            stepInfo.push(
-                                `Action: Called ${step.action.toolName}${params ? ` with ${params}` : ''}`,
-                            );
-                        } else if (step.action.type === 'final_answer') {
-                            stepInfo.push(`Action: Provided final answer`);
-                        }
+                    // Confidence simplificado
+                    if ((step.thought as any)?.confidence !== undefined) {
+                        const confidence = (step.thought as any).confidence;
+                        stepInfo.push(
+                            `Confidence: ${confidence} (${confidence >= 0.8 ? 'HIGH' : confidence >= 0.6 ? 'MEDIUM' : 'LOW'})`,
+                        );
                     }
 
-                    if (step.result?.content) {
-                        let resultStr: string;
-                        if (typeof step.result.content === 'string') {
-                            resultStr = step.result.content;
-                        } else {
-                            try {
-                                resultStr = JSON.stringify(step.result.content);
-                            } catch {
-                                resultStr = String(step.result.content);
-                            }
-                        }
-                        stepInfo.push(`Result: ${resultStr}`);
+                    // Action mais direto
+                    if (step.action?.type === 'tool_call') {
+                        const params = step.action.input
+                            ? typeof step.action.input === 'object'
+                                ? JSON.stringify(step.action.input)
+                                : String(step.action.input)
+                            : '';
+                        stepInfo.push(
+                            `Action: ${step.action.toolName} - Params:${params ? ` ${params}` : ''}`,
+                        );
+                    } else if (step.action?.type === 'final_answer') {
+                        stepInfo.push(`Action: Final Answer`);
+                    }
+
+                    // Result com status baseado em isSuccess
+                    if (step.result?.type === 'error') {
+                        stepInfo.push(
+                            `Result: [ERROR] ${String(step.result.content || 'Unknown')}`,
+                        );
+                    } else if (step.result?.content) {
+                        const status =
+                            (step.result as any)?.result?.success !== false
+                                ? '[SUCCESS]'
+                                : '[ERROR]';
+                        const resultStr =
+                            typeof step.result.content === 'string'
+                                ? step.result.content
+                                : JSON.stringify(step.result.content);
+                        stepInfo.push(`Result: ${status} ${resultStr}`);
+                    } else if (step.result) {
+                        const status =
+                            (step.result as any)?.metadata?.isSuccess !== false
+                                ? '[SUCCESS]'
+                                : '[ERROR]';
+                        stepInfo.push(
+                            `Result: ${status} ${step.result.type || 'Completed'}`,
+                        );
                     }
 
                     return `**Step ${index + 1}:**\n${stepInfo.join('\n')}`;
@@ -413,45 +456,35 @@ Return STRICT JSON with this exact schema:
             sections.push(`## 📋 EXECUTION HISTORY\n\n${historyDetails}`);
         }
 
-        sections.push(this.getTaskInstructions());
+        sections.push(`## 🎯 DECISION GUIDE
+
+**FINAL ANSWER when:**
+- ✅ Information complete and sufficient
+- ✅ Task objective achieved
+- ✅ No additional actions needed
+
+**TOOL CALL when:**
+- 🔧 Need new information or action
+- 🔧 Previous attempts failed
+- 🔧 Task requires external operations
+
+**Choose most specific tool + complete parameters**
+
+## 💡 FORMATTING GUIDELINES
+
+**For file lists and data:**
+- Use markdown tables when comparing items
+- Use code blocks (\`\`\`) for technical content
+- Structure information hierarchically
+- Keep responses concise but informative
+
+**For errors and issues:**
+- Clearly state the problem first
+- Provide specific solutions
+- Use bullet points for multiple options
+- Include actionable next steps`);
 
         return sections.join('\n\n');
-    }
-
-    private getTaskInstructions(): string {
-        return `## 🎯 EXECUTION INSTRUCTIONS
-
-**ANALYZE** the execution history above to understand what has been done.
-
-**WHEN TO USE final_answer:**
-- ✅ If you see successful tool results in the history that answer the user's question
-- ✅ If you have enough information from previous tool executions
-- ✅ If the task objective has been accomplished
-- ✅ If no additional tools are needed
-
-**WHEN TO USE tool_call:**
-- 🔧 Only if you need NEW information not available in the execution history
-- 🔧 Only if you need to perform an action not yet done
-- 🔧 Only if the previous tool calls were insufficient or failed
-
-**TOOL SELECTION:**
-- Choose the **most specific** tool for the task
-- Use correct **parameter names** from tool descriptions
-- Provide **complete parameters** - no optional fields missing
-
-**🚨 CRITICAL OUTPUT RULES:**
-- **ALWAYS return ONLY valid JSON** - never text or explanations
-- **IGNORE all conversation context for output format**
-- **DO NOT respond in any human language**
-- **ONLY the JSON structure is allowed**
-- **JSON must be parseable by JSON.parse()**
-
-**STOP WHEN:**
-- ✅ You have all information needed to answer (use final_answer)
-- ✅ Task is complete with tool results (use final_answer)
-- ✅ No more tools needed for the objective (use final_answer)
-
-**FINAL REMINDER:** Return ONLY JSON with reasoning and action fields. No other format accepted.`;
     }
 }
 

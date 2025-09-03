@@ -32,14 +32,42 @@ export interface AgentAction {
     reasoning?: string;
 }
 
-// Agent Thought (simplificado e específico)
+// Hypothesis for multi-hypothesis reasoning
+export interface Hypothesis {
+    approach: string;
+    confidence: number;
+    action: AgentAction;
+}
+
+// Reflection for self-reflection protocol
+export interface Reflection {
+    shouldContinue: boolean;
+    reasoning: string;
+    alternatives: string[];
+}
+
+// Early stopping decision
+export interface EarlyStopping {
+    shouldStop: boolean;
+    reason: string;
+}
+
+// Agent Thought (atualizado para ReAct 2025)
 export interface AgentThought {
     reasoning: string;
+    confidence: number;
+    hypotheses?: Hypothesis[];
+    reflection?: Reflection;
+    earlyStopping?: EarlyStopping;
     action: AgentAction;
     metadata?: {
         startTime?: number;
         endTime?: number;
         stepId?: string;
+        iteration?: number;
+        parseMethod?: string;
+        fallbackUsed?: boolean;
+        thoughtGenerationTime?: number;
         [key: string]: unknown;
     };
 }
@@ -55,6 +83,7 @@ export type ActionResultType =
 
 export interface ActionResult {
     type: ActionResultType;
+    success: boolean;
     content?: unknown;
     error?: string;
     metadata?: {
@@ -223,6 +252,9 @@ export interface StrategyExecutionContext {
     evidences?: RewooEvidenceItem[];
     mode?: 'planner' | 'executor' | 'organizer';
     step?: any;
+    collectedInfo?: string;
+    currentIteration?: number;
+    maxIterations?: number;
     metadata?: {
         startTime: number;
         correlationId?: string;

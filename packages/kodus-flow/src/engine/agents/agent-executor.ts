@@ -1,4 +1,11 @@
-import { createLogger } from '../../observability/index.js';
+import {
+    createLogger,
+    startExecutionTracking,
+    completeExecutionTracking,
+    failExecutionTracking,
+    addExecutionStep,
+    createAgentExecutionSpan,
+} from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 
@@ -30,6 +37,7 @@ export class AgentExecutor<
     private isPaused = false;
     private pauseReason?: string;
     private snapshotId?: string;
+    private executionTrackingId?: string;
 
     // Usar o AgentLifecycleHandler existente
     private lifecycleHandler: AgentLifecycleHandler;
@@ -74,11 +82,39 @@ export class AgentExecutor<
         const sessionId = options?.sessionId;
         this.workflowExecutionId = IdGenerator.executionId();
 
+        // Start execution tracking
+        const agentName = this.getDefinition()?.name || 'unknown-agent';
+        this.executionTrackingId = startExecutionTracking(
+            agentName,
+            correlationId,
+            {
+                sessionId,
+                tenantId: options?.tenantId,
+                threadId: options?.thread?.id,
+            },
+            input,
+        );
+
+        // Create optimized span for execution
+        const executionSpan = createAgentExecutionSpan(
+            agentName,
+            this.workflowExecutionId,
+            correlationId,
+        );
+
+        addExecutionStep(this.executionTrackingId, 'start', 'agent-executor', {
+            workflowExecutionId: this.workflowExecutionId,
+            inputType: typeof input,
+            hasOptions: !!options,
+            hasSpan: !!executionSpan,
+        });
+
         this.executorLogger.info('Agent workflow execution started', {
-            agentName: this.getDefinition()?.name,
+            agentName,
             correlationId,
             sessionId,
             workflowExecutionId: this.workflowExecutionId,
+            executionTrackingId: this.executionTrackingId,
             inputType: typeof input,
         });
 
@@ -119,14 +155,69 @@ export class AgentExecutor<
                 };
             }
 
+            // Complete execution tracking on success
+            if (this.executionTrackingId) {
+                addExecutionStep(
+                    this.executionTrackingId,
+                    'finish',
+                    'agent-executor',
+                    {
+                        workflowExecutionId: this.workflowExecutionId,
+                        hasOutput: !!result.output,
+                        outputType: typeof result.output,
+                    },
+                );
+                completeExecutionTracking(
+                    this.executionTrackingId,
+                    result.output,
+                );
+            }
+
+            // End optimized span on success
+            if (executionSpan) {
+                executionSpan.addAttributes({
+                    success: true,
+                    outputType: typeof result.output,
+                    hasOutput: !!result.output,
+                });
+                executionSpan.end();
+            }
+
             return result as AgentExecutionResult;
         } catch (error) {
+            // Fail execution tracking on error
+            if (this.executionTrackingId) {
+                addExecutionStep(
+                    this.executionTrackingId,
+                    'error',
+                    'agent-executor',
+                    {
+                        workflowExecutionId: this.workflowExecutionId,
+                        errorName: (error as Error).name,
+                        errorMessage: (error as Error).message,
+                    },
+                );
+                failExecutionTracking(this.executionTrackingId, error as Error);
+            }
+
+            // End optimized span on error
+            if (executionSpan) {
+                executionSpan.recordException(error as Error);
+                executionSpan.addAttributes({
+                    success: false,
+                    errorName: (error as Error).name,
+                    errorMessage: (error as Error).message,
+                });
+                executionSpan.end();
+            }
+
             this.logError(
                 'Agent workflow execution failed',
                 error as Error,
                 'workflow-execution',
                 {
                     workflowExecutionId: this.workflowExecutionId,
+                    executionTrackingId: this.executionTrackingId,
                 },
             );
 

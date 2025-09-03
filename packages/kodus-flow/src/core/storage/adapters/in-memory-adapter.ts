@@ -37,7 +37,7 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
     async store(item: T): Promise<void> {
         await this.ensureInitialized();
 
-        if (this.items.size >= this.config.maxItems) {
+        if (this.items.size >= (this.config.maxItems ?? 1000)) {
             await this.removeOldestItems();
         }
 
@@ -122,10 +122,11 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
     }
 
     private startCleanupInterval(): void {
-        if (this.config.cleanupInterval > 0) {
+        const cleanupInterval = this.config.cleanupInterval ?? 300000;
+        if (cleanupInterval > 0) {
             setInterval(async () => {
                 await this.cleanupExpiredItems();
-            }, this.config.cleanupInterval);
+            }, cleanupInterval);
         }
     }
 
@@ -134,7 +135,10 @@ export class InMemoryStorageAdapter<T extends BaseStorageItem>
 
         items.sort(([, a], [, b]) => a.timestamp - b.timestamp);
 
-        const toRemove = items.slice(0, Math.floor(this.config.maxItems * 0.1)); // Remove 10%
+        const toRemove = items.slice(
+            0,
+            Math.floor((this.config.maxItems ?? 1000) * 0.1),
+        ); // Remove 10%
 
         for (const [id] of toRemove) {
             this.items.delete(id);

@@ -191,7 +191,9 @@ export class ContextService {
             isAssistant: message.role === 'assistant',
             isTool: message.role === 'tool',
             isSystem: message.role === 'system',
-            contentPreview: message.content.substring(0, 150) + '...',
+            contentPreview:
+                message.content.substring(0, 300) +
+                (message.content.length > 300 ? '...' : ''),
             metadata: message.metadata,
         });
 

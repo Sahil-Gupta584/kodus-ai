@@ -10,6 +10,9 @@ import type {
     ActionResult,
     AgentThought,
     ResultAnalysis,
+    Hypothesis,
+    Reflection,
+    EarlyStopping,
 } from './types.js';
 import { StrategyPromptFactory } from './prompts/index.js';
 import { ContextService } from '../../core/contextNew/index.js';
@@ -69,6 +72,9 @@ export class ReActStrategy extends BaseExecutionStrategy {
 
             this.logger.debug('🚀 ReAct strategy started', { threadId });
 
+            // 🔥 NOVO: Track repeated actions to prevent loops
+            const actionHistory: string[] = [];
+
             while (iteration < this.config.maxIterations) {
                 // 🔥 FORÇA FINAL ANSWER na última iteração se não tiver resposta final
                 const isLastIteration =
@@ -97,12 +103,41 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     break;
                 }
 
+                // 🔥 NOVO: Check for potential loops
+                const potentialLoop = this.detectLoop(steps, actionHistory);
+                if (potentialLoop && iteration > 2) {
+                    this.logger.warn(
+                        '⚠️ Potential loop detected, forcing final answer',
+                        {
+                            repeatedAction: potentialLoop,
+                            iteration,
+                        },
+                    );
+                    const finalStep = await this.forceFinalAnswer(
+                        context,
+                        iteration,
+                        steps,
+                        `Detected repeated action: ${potentialLoop}. Preventing infinite loop.`,
+                    );
+                    steps.push(finalStep);
+                    break;
+                }
+
                 const step = await this.executeIteration(
                     context,
                     iteration,
                     steps,
                 );
                 steps.push(step);
+
+                // 🔥 NOVO: Track action for loop detection
+                if (step.action?.type === 'tool_call' && step.action.toolName) {
+                    actionHistory.push(
+                        `${step.action.type}:${step.action.toolName}`,
+                    );
+                } else if (step.action?.type) {
+                    actionHistory.push(step.action.type);
+                }
 
                 this.logger.debug('✅ Iteration completed', {
                     threadId,
@@ -220,18 +255,92 @@ export class ReActStrategy extends BaseExecutionStrategy {
         try {
             const threadId = context.agentContext.thread?.id;
 
-            const thought = await this.generateThought(
-                context,
+            this.logger.debug('🚀 Starting iteration execution', {
+                threadId,
                 iteration,
-                previousSteps,
-            );
+                previousStepsCount: previousSteps.length,
+                hasLLMAdapter: !!this.llmAdapter,
+            });
+
+            // 🔥 VALIDATION: Check if we have all required components
+            if (!this.llmAdapter) {
+                throw new Error(
+                    'LLM adapter not available for iteration execution',
+                );
+            }
+
+            let thought: AgentThought;
+            try {
+                thought = await this.generateThought(
+                    context,
+                    iteration,
+                    previousSteps,
+                );
+
+                this.logger.debug('💭 Thought generated', {
+                    threadId,
+                    iteration,
+                    actionType: thought.action.type,
+                    hasReasoning: !!thought.reasoning,
+                });
+            } catch (thoughtError) {
+                // 🔥 CORREÇÃO: Se thought generation falhar, ainda criar step com informações básicas
+                this.logger.error(
+                    '💥 Thought generation failed in iteration',
+                    thoughtError instanceof Error ? thoughtError : undefined,
+                    {
+                        iteration,
+                        threadId,
+                    },
+                );
+
+                thought = {
+                    reasoning: `Thought generation failed: ${thoughtError instanceof Error ? thoughtError.message : String(thoughtError)}`,
+                    confidence: 0.0,
+                    hypotheses: [],
+                    reflection: {
+                        shouldContinue: false,
+                        reasoning: 'Thought generation failed',
+                        alternatives: [],
+                    },
+                    earlyStopping: {
+                        shouldStop: true,
+                        reason: 'Thought generation error',
+                    },
+                    action: {
+                        type: 'final_answer',
+                        content: `I encountered an error while processing your request: ${thoughtError instanceof Error ? thoughtError.message : String(thoughtError)}`,
+                    },
+                    metadata: {
+                        iteration,
+                        timestamp: Date.now(),
+                        error: true,
+                    },
+                };
+            }
 
             const actionResult = await this.executeAction(
                 thought.action,
                 context,
             );
 
+            this.logger.debug('⚡ Action executed', {
+                threadId,
+                iteration,
+                actionType: thought.action.type,
+                resultType: actionResult.type,
+                hasContent: !!actionResult.content,
+            });
+
             const observation = await this.analyzeResult(actionResult);
+
+            this.logger.debug('👁️ Result analyzed', {
+                threadId,
+                iteration,
+                isComplete: observation.isComplete,
+                shouldContinue: observation.shouldContinue,
+                isSuccessful: observation.isSuccessful,
+            });
 
             if (threadId) {
                 try {
@@ -263,7 +372,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 id: `react-step-${iteration}-${Date.now()}`,
                 type: 'think',
                 type2: 'think' as any,
-                status: 'pending',
+                status: 'completed',
                 timestamp: stepStartTime,
                 duration: Date.now() - stepStartTime,
                 thought,
@@ -274,28 +383,93 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     iteration,
                     strategy: 'react',
                     stepSequence: 'think-act-observe',
+                    completedAt: Date.now(),
                 },
             };
 
-            return step;
-        } catch (error) {
-            this.logger.warn(`⚠️ Iteration ${iteration + 1} failed`, {
-                error: error instanceof Error ? error.message : String(error),
+            this.logger.debug('✅ Step completed successfully', {
+                threadId,
+                iteration,
+                stepId: step.id,
+                actionType: thought.action.type,
+                resultType: actionResult.type,
             });
 
-            // Retorna step de erro
+            return step;
+        } catch (error) {
+            this.logger.error(
+                `❌ Iteration ${iteration + 1} failed`,
+                error instanceof Error ? error : undefined,
+                {
+                    iteration,
+                },
+            );
+
+            // 🔥 CORREÇÃO: Criar step de erro com informações básicas
+            // Como thought pode não estar definida aqui, usar fallback
+            const errorThought: AgentThought = {
+                reasoning: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
+                confidence: 0.0,
+                hypotheses: [],
+                reflection: {
+                    shouldContinue: false,
+                    reasoning: 'Unexpected error occurred',
+                    alternatives: [],
+                },
+                earlyStopping: {
+                    shouldStop: true,
+                    reason: 'Unexpected error',
+                },
+                action: {
+                    type: 'final_answer',
+                    content: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`,
+                },
+                metadata: {
+                    iteration,
+                    timestamp: Date.now(),
+                    error: true,
+                },
+            };
+
+            const errorAction: AgentAction = {
+                type: 'final_answer',
+                content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            };
+
+            const errorResult: ActionResult = {
+                type: 'error',
+                success: false,
+                content: error instanceof Error ? error.message : String(error),
+                metadata: {
+                    timestamp: Date.now(),
+                    source: 'react-strategy',
+                    executionTime: Date.now() - stepStartTime,
+                    error: true,
+                },
+            };
+
+            // Retorna step de erro com informações completas
             return {
                 id: `react-step-error-${iteration}-${Date.now()}`,
                 type: 'think',
                 type2: 'think' as any,
-                status: 'pending',
+                status: 'failed',
                 timestamp: stepStartTime,
                 duration: Date.now() - stepStartTime,
+                thought: errorThought,
+                action: errorAction,
+                result: errorResult,
+                observation: await this.analyzeResult(errorResult),
                 metadata: {
                     iteration,
                     strategy: 'react',
                     error:
                         error instanceof Error ? error.message : String(error),
+                    errorStack:
+                        error instanceof Error ? error.stack : undefined,
+                    failedAt: Date.now(),
+                    originalThought: false,
+                    originalAction: false,
                 },
             };
         }
@@ -306,121 +480,413 @@ export class ReActStrategy extends BaseExecutionStrategy {
         iteration: number,
         previousSteps: ExecutionStep[],
     ): Promise<AgentThought> {
-        if (!this.llmAdapter.call) {
-            throw new Error('LLM adapter must support call method');
-        }
+        const thoughtStartTime = Date.now();
 
-        context.mode = 'executor';
-        context.step = previousSteps[previousSteps.length - 1];
-        // 🔥 MELHORADO: Histórico detalhado para o LLM entender o progresso
-        context.history = previousSteps.map((step) => ({
-            type: step.type || 'unknown',
-            thought: step.thought
-                ? {
-                      reasoning: step.thought.reasoning,
-                      action: step.action,
-                  }
-                : undefined,
-            action: step.action,
-            result: step.result
-                ? {
-                      type: step.result.type,
-                      content: step.result.content,
-                      success: step.result.type !== 'error',
-                  }
-                : undefined,
-        })) as ExecutionStep[];
-        const prompts = this.promptFactory.createReActPrompt(context);
-
-        let response;
         try {
-            response = await this.llmAdapter.call({
-                messages: [
-                    {
-                        role: AgentInputEnum.SYSTEM,
-                        content: prompts.systemPrompt,
-                    },
-                    { role: AgentInputEnum.USER, content: prompts.userPrompt },
-                ],
+            this.logger.debug('🧠 Starting thought generation', {
+                iteration,
+                previousStepsCount: previousSteps.length,
+                hasLLMAdapter: !!this.llmAdapter?.call,
             });
-        } catch (llmError) {
-            const errorMessage =
-                llmError instanceof Error ? llmError.message : String(llmError);
 
+            if (!this.llmAdapter?.call) {
+                throw new Error('LLM adapter must support call method');
+            }
+
+            context.mode = 'executor';
+            context.step = previousSteps[previousSteps.length - 1];
+
+            // 🔥 MELHORADO: Histórico detalhado para o LLM entender o progresso
+            context.history = previousSteps.map((step, index) => {
+                this.logger.debug('📋 Processing step for history', {
+                    stepIndex: index,
+                    stepId: step.id,
+                    stepType: step.type,
+                    hasThought: !!step.thought,
+                    hasAction: !!step.action,
+                    hasResult: !!step.result,
+                    thoughtReasoning: step.thought?.reasoning,
+                    actionType: step.action?.type,
+                    resultType: step.result?.type,
+                });
+
+                return {
+                    type: step.type || 'unknown',
+                    thought: step.thought
+                        ? {
+                              reasoning: step.thought.reasoning,
+                              action: step.action,
+                          }
+                        : undefined,
+                    action: step.action,
+                    result: step.result
+                        ? {
+                              type: step.result.type,
+                              content: step.result.content,
+                              success: step.result.type !== 'error',
+                          }
+                        : undefined,
+                };
+            }) as ExecutionStep[];
+
+            // 🔥 NOVO: Adicionar informações sobre iteração atual
+            context.currentIteration = iteration;
+            context.maxIterations = this.config.maxIterations;
+
+            this.logger.debug('📝 Context prepared for LLM', {
+                iteration,
+                historyLength: context.history.length,
+                hasCollectedInfo: !!context.collectedInfo,
+                currentIteration: context.currentIteration,
+                maxIterations: context.maxIterations,
+            });
+
+            const prompts = this.promptFactory.createReActPrompt(context);
+
+            this.logger.debug('🤖 Calling LLM', {
+                iteration,
+                systemPromptLength: prompts.systemPrompt.length,
+                userPromptLength: prompts.userPrompt.length,
+            });
+
+            let response;
+            try {
+                response = await this.llmAdapter.call({
+                    messages: [
+                        {
+                            role: AgentInputEnum.SYSTEM,
+                            content: prompts.systemPrompt,
+                        },
+                        {
+                            role: AgentInputEnum.USER,
+                            content: prompts.userPrompt,
+                        },
+                    ],
+                });
+
+                this.logger.debug('✅ LLM call successful', {
+                    iteration,
+                    hasResponse: !!response,
+                    responseType: typeof response,
+                    hasContent: !!response?.content,
+                });
+            } catch (llmError) {
+                const errorMessage =
+                    llmError instanceof Error
+                        ? llmError.message
+                        : String(llmError);
+
+                this.logger.error(
+                    '❌ LLM call failed',
+                    llmError instanceof Error ? llmError : undefined,
+                    {
+                        iteration,
+                    },
+                );
+
+                return {
+                    reasoning: `LLM encountered an error: ${errorMessage}`,
+                    confidence: 0.0, // Very low confidence due to error
+                    hypotheses: [
+                        {
+                            approach: 'Error fallback',
+                            confidence: 0.0,
+                            action: {
+                                type: 'final_answer',
+                                content: `I encountered an error while processing your request: ${errorMessage}. Please try rephrasing your question.`,
+                            },
+                        },
+                    ],
+                    reflection: {
+                        shouldContinue: false,
+                        reasoning: 'LLM error occurred, cannot proceed safely',
+                        alternatives: [],
+                    },
+                    earlyStopping: {
+                        shouldStop: true,
+                        reason: 'LLM error prevents safe execution',
+                    },
+                    action: {
+                        type: 'final_answer',
+                        content: `I encountered an error while processing your request: ${errorMessage}. Please try rephrasing your question.`,
+                    },
+                    metadata: {
+                        iteration,
+                        timestamp: Date.now(),
+                        fallbackUsed: true,
+                        errorReason: 'llm_error',
+                        thoughtGenerationTime: Date.now() - thoughtStartTime,
+                    },
+                };
+            }
+
+            let content: string;
+            if (typeof response.content === 'string') {
+                content = response.content;
+            } else if (response.content) {
+                content = JSON.stringify(response.content);
+            } else {
+                throw new Error('LLM returned empty or invalid response');
+            }
+
+            this.logger.debug('📄 LLM response content extracted', {
+                iteration,
+                contentLength: content.length,
+                contentPreview: content.substring(0, 200),
+            });
+
+            const thought = await this.parseLLMResponse(content, iteration);
+
+            this.logger.debug('💭 Thought successfully generated', {
+                iteration,
+                actionType: thought.action.type,
+                hasReasoning: !!thought.reasoning,
+                thoughtGenerationTime: Date.now() - thoughtStartTime,
+            });
+
+            return thought;
+        } catch (error) {
+            this.logger.error(
+                '💥 Thought generation failed',
+                error instanceof Error ? error : undefined,
+                {
+                    iteration,
+                    thoughtGenerationTime: Date.now() - thoughtStartTime,
+                },
+            );
+
+            // Fallback thought
             return {
-                reasoning: `LLM encountered an error: ${errorMessage}`,
+                reasoning: `Thought generation failed: ${error instanceof Error ? error.message : String(error)}`,
+                confidence: 0.0, // Very low confidence due to thought generation error
+                hypotheses: [
+                    {
+                        approach: 'Error fallback',
+                        confidence: 0.0,
+                        action: {
+                            type: 'final_answer',
+                            content: `I encountered an error while processing your request. Please try rephrasing your question.`,
+                        },
+                    },
+                ],
+                reflection: {
+                    shouldContinue: false,
+                    reasoning:
+                        'Thought generation failed, cannot proceed safely',
+                    alternatives: [],
+                },
+                earlyStopping: {
+                    shouldStop: true,
+                    reason: 'Thought generation error prevents safe execution',
+                },
                 action: {
                     type: 'final_answer',
-                    content: `I encountered an error while processing your request: ${errorMessage}. Please try rephrasing your question.`,
+                    content: `I encountered an error while processing your request. Please try rephrasing your question.`,
                 },
                 metadata: {
                     iteration,
                     timestamp: Date.now(),
                     fallbackUsed: true,
-                    errorReason: 'llm_error',
+                    errorReason: 'thought_generation_error',
+                    thoughtGenerationTime: Date.now() - thoughtStartTime,
                 },
             };
         }
-
-        let content: string;
-        if (typeof response.content === 'string') {
-            content = response.content;
-        } else if (response.content) {
-            content = JSON.stringify(response.content);
-        } else {
-            throw new Error('LLM returned empty or invalid response');
-        }
-
-        return this.parseLLMResponse(content, iteration);
     }
 
     private async executeAction(
         action: AgentAction,
         context: StrategyExecutionContext,
     ): Promise<ActionResult> {
-        switch (action.type) {
-            case 'tool_call':
-                const result = await SharedStrategyMethods.executeTool(
-                    action,
-                    context,
-                );
-                return {
-                    type: 'tool_result',
-                    content: result,
-                    metadata: {
+        const actionStartTime = Date.now();
+
+        try {
+            this.logger.debug('🔧 Starting action execution', {
+                actionType: action.type,
+                threadId: context.agentContext.thread?.id,
+            });
+
+            switch (action.type) {
+                case 'tool_call':
+                    this.logger.debug('🛠️ Executing tool call', {
                         toolName: action.toolName,
-                        arguments: action.input,
-                        timestamp: Date.now(),
-                        source: 'react-strategy',
-                    },
-                };
+                        hasInput: !!action.input,
+                        inputType: typeof action.input,
+                        threadId: context.agentContext.thread?.id,
+                    });
 
-            case 'final_answer':
-                return {
-                    type: 'final_answer',
-                    content: action.content,
-                    metadata: {
-                        timestamp: Date.now(),
-                        source: 'react-strategy',
-                    },
-                };
+                    try {
+                        const result = await SharedStrategyMethods.executeTool(
+                            action,
+                            context,
+                        );
 
-            default:
-                throw new Error(`Unknown action type: ${action.type}`);
+                        this.logger.debug('✅ Tool executed successfully', {
+                            toolName: action.toolName,
+                            hasResult: !!result,
+                            resultType: typeof result,
+                            executionTime: Date.now() - actionStartTime,
+                            threadId: context.agentContext.thread?.id,
+                        });
+
+                        return {
+                            type: 'tool_result',
+                            content: result,
+                            success: !!result,
+                            metadata: {
+                                toolName: action.toolName,
+                                arguments: action.input,
+                                timestamp: Date.now(),
+                                source: 'react-strategy',
+                                executionTime: Date.now() - actionStartTime,
+                            },
+                        };
+                    } catch (toolError) {
+                        this.logger.error(
+                            '❌ Tool execution failed',
+                            toolError instanceof Error ? toolError : undefined,
+                            {
+                                toolName: action.toolName,
+                                executionTime: Date.now() - actionStartTime,
+                                threadId: context.agentContext.thread?.id,
+                            },
+                        );
+
+                        return {
+                            type: 'error',
+                            success: false,
+                            content:
+                                toolError instanceof Error
+                                    ? toolError.message
+                                    : String(toolError),
+                            metadata: {
+                                toolName: action.toolName,
+                                arguments: action.input,
+                                timestamp: Date.now(),
+                                source: 'react-strategy',
+                                executionTime: Date.now() - actionStartTime,
+                                error: true,
+                                errorMessage:
+                                    toolError instanceof Error
+                                        ? toolError.message
+                                        : String(toolError),
+                            },
+                        };
+                    }
+
+                case 'final_answer':
+                    this.logger.debug('🎯 Providing final answer', {
+                        hasContent: !!action.content,
+                        contentLength: action.content
+                            ? action.content.length
+                            : 0,
+                        threadId: context.agentContext.thread?.id,
+                    });
+
+                    return {
+                        type: 'final_answer',
+                        content: action.content,
+                        success: true,
+                        metadata: {
+                            timestamp: Date.now(),
+                            source: 'react-strategy',
+                            executionTime: Date.now() - actionStartTime,
+                        },
+                    };
+
+                default:
+                    this.logger.error('❌ Unknown action type', undefined, {
+                        actionType: action.type,
+                        threadId: context.agentContext.thread?.id,
+                    });
+                    return {
+                        type: 'error',
+                        success: false,
+                        content: `Unknown action type: ${action.type}`,
+                        metadata: {
+                            timestamp: Date.now(),
+                            source: 'react-strategy',
+                            executionTime: Date.now() - actionStartTime,
+                            error: true,
+                            errorMessage: `Unknown action type: ${action.type}`,
+                        },
+                    };
+            }
+        } catch (error) {
+            this.logger.error(
+                '💥 Action execution failed',
+                error instanceof Error ? error : undefined,
+                {
+                    actionType: action.type,
+                    executionTime: Date.now() - actionStartTime,
+                },
+            );
+            throw error;
         }
     }
 
     private async analyzeResult(result: ActionResult): Promise<ResultAnalysis> {
-        return {
-            isComplete: result.type === 'final_answer',
-            isSuccessful: result.type !== 'error',
-            shouldContinue: result.type === 'tool_result',
-            feedback: this.generateFeedback(result),
-            metadata: {
+        const analysisStartTime = Date.now();
+
+        try {
+            this.logger.debug('🔍 Starting result analysis', {
                 resultType: result.type,
-                timestamp: Date.now(),
-            },
-        };
+                hasContent: !!result.content,
+                contentType: typeof result.content,
+            });
+
+            const isComplete = result.type === 'final_answer';
+            const isSuccessful = result.type !== 'error';
+            const shouldContinue = result.type === 'tool_result';
+            const feedback = this.generateFeedback(result);
+
+            const analysis = {
+                isComplete,
+                isSuccessful,
+                shouldContinue,
+                feedback,
+                metadata: {
+                    resultType: result.type,
+                    timestamp: Date.now(),
+                    analysisTime: Date.now() - analysisStartTime,
+                },
+            };
+
+            this.logger.debug('✅ Result analysis completed', {
+                resultType: result.type,
+                isComplete,
+                isSuccessful,
+                shouldContinue,
+                hasFeedback: !!feedback,
+                feedbackLength: feedback.length,
+                analysisTime: Date.now() - analysisStartTime,
+            });
+
+            return analysis;
+        } catch (error) {
+            this.logger.error(
+                '💥 Result analysis failed',
+                error instanceof Error ? error : undefined,
+                {
+                    resultType: result.type,
+                    analysisTime: Date.now() - analysisStartTime,
+                },
+            );
+
+            // Fallback analysis
+            return {
+                isComplete: result.type === 'final_answer',
+                isSuccessful: false,
+                shouldContinue: false,
+                feedback: `Analysis failed: ${error instanceof Error ? error.message : String(error)}`,
+                metadata: {
+                    resultType: result.type,
+                    timestamp: Date.now(),
+                    analysisTime: Date.now() - analysisStartTime,
+                    error: true,
+                },
+            };
+        }
     }
 
     private shouldStop(
@@ -451,6 +917,59 @@ export class ReActStrategy extends BaseExecutionStrategy {
         return false;
     }
 
+    /**
+     * 🔥 NOVO: Detecta loops baseados em ações repetidas
+     */
+    private detectLoop(
+        steps: ExecutionStep[],
+        actionHistory: string[],
+    ): string | null {
+        if (actionHistory.length < 3) {
+            return null;
+        }
+
+        // Check for repeated tool calls in last 3 actions
+        const lastThreeActions = actionHistory.slice(-3);
+        const uniqueActions = new Set(lastThreeActions);
+
+        // If all 3 actions are the same, it's likely a loop
+        if (uniqueActions.size === 1 && lastThreeActions.length === 3) {
+            return lastThreeActions[0] ?? null;
+        }
+
+        // Check for pattern: A, B, A (where A is the same action)
+        if (
+            lastThreeActions.length === 3 &&
+            lastThreeActions[0] === lastThreeActions[2] &&
+            lastThreeActions[1] !== lastThreeActions[0]
+        ) {
+            return lastThreeActions[0] ?? null;
+        }
+
+        // Check for tool calls with same parameters (more sophisticated)
+        const recentToolCalls = steps
+            .slice(-3)
+            .filter((step) => step.action?.type === 'tool_call')
+            .map((step) => ({
+                toolName: (step.action as any)?.toolName,
+                input: JSON.stringify((step.action as any)?.input),
+            }));
+
+        if (recentToolCalls.length >= 2) {
+            // Check if last 2 tool calls are identical
+            const lastTwo = recentToolCalls.slice(-2);
+            if (
+                lastTwo.length === 2 &&
+                lastTwo[0]?.toolName === lastTwo[1]?.toolName &&
+                lastTwo[0]?.input === lastTwo[1]?.input
+            ) {
+                return `${lastTwo[0]?.toolName} with same parameters`;
+            }
+        }
+
+        return null;
+    }
+
     private extractFinalResult(steps: ExecutionStep[]): unknown {
         for (let i = steps.length - 1; i >= 0; i--) {
             const step = steps[i];
@@ -474,41 +993,284 @@ export class ReActStrategy extends BaseExecutionStrategy {
     }
 
     private parseLLMResponse(content: string, iteration: number): AgentThought {
-        const parseResult = EnhancedJSONParser.parseWithValidation(
+        // 🔥 MELHORADO: Tentar parsing múltiplas vezes com diferentes abordagens
+        let parseResult = EnhancedJSONParser.parseWithValidation(
             content,
-            (data: unknown): data is { reasoning: string; action: unknown } => {
+            (
+                data: unknown,
+            ): data is {
+                reasoning: string;
+                confidence: number;
+                hypotheses: unknown[];
+                reflection: unknown;
+                earlyStopping: unknown;
+                action: unknown;
+            } => {
+                const d = data as any;
                 return (
                     typeof data === 'object' &&
                     data !== null &&
-                    'reasoning' in data &&
-                    'action' in data &&
-                    typeof (data as any).reasoning === 'string' &&
-                    typeof (data as any).action === 'object' &&
-                    (data as any).action !== null
+                    'reasoning' in d &&
+                    'confidence' in d &&
+                    'hypotheses' in d &&
+                    'reflection' in d &&
+                    'earlyStopping' in d &&
+                    'action' in d &&
+                    typeof d.reasoning === 'string' &&
+                    typeof d.confidence === 'number' &&
+                    Array.isArray(d.hypotheses) &&
+                    typeof d.reflection === 'object' &&
+                    typeof d.earlyStopping === 'object' &&
+                    typeof d.action === 'object' &&
+                    d.action !== null
                 );
             },
         );
 
-        if (parseResult.success) {
-            const parsed = parseResult.data;
+        // 🔥 NOVO: Se falhar, tentar extrair JSON de dentro de texto
+        if (!parseResult.success) {
+            this.logger.debug(
+                'Enhanced JSON parse failed, trying fallback extraction',
+                {
+                    originalContent: content.substring(0, 200),
+                },
+            );
 
+            // Try to extract JSON from markdown code blocks or text
+            const jsonMatch = content.match(
+                /```(?:json)?\s*(\{[\s\S]*?\})\s*```/,
+            );
+            if (jsonMatch?.[1]) {
+                try {
+                    const extractedJson = jsonMatch[1];
+                    parseResult = EnhancedJSONParser.parseWithValidation(
+                        extractedJson,
+                        (
+                            data: unknown,
+                        ): data is {
+                            reasoning: string;
+                            confidence: number;
+                            hypotheses: unknown[];
+                            reflection: unknown;
+                            earlyStopping: unknown;
+                            action: unknown;
+                        } => {
+                            const d = data as any;
+                            return (
+                                typeof data === 'object' &&
+                                data !== null &&
+                                'reasoning' in d &&
+                                'confidence' in d &&
+                                'hypotheses' in d &&
+                                'reflection' in d &&
+                                'earlyStopping' in d &&
+                                'action' in d &&
+                                typeof d.reasoning === 'string' &&
+                                typeof d.confidence === 'number' &&
+                                Array.isArray(d.hypotheses) &&
+                                typeof d.reflection === 'object' &&
+                                typeof d.earlyStopping === 'object' &&
+                                typeof d.action === 'object' &&
+                                d.action !== null
+                            );
+                        },
+                    );
+                } catch (extractError) {
+                    this.logger.debug('JSON extraction failed', {
+                        extractError,
+                    });
+                }
+            }
+        }
+
+        // 🔥 NOVO: Último fallback - tentar parsing manual se tudo falhar
+        if (!parseResult.success) {
+            this.logger.warn(
+                'All JSON parsing methods failed, using manual fallback',
+                {
+                    iteration,
+                    contentLength: content.length,
+                },
+            );
+
+            try {
+                const manualParsed = this.manualJSONFallback(content);
+                if (manualParsed) {
+                    return {
+                        reasoning: manualParsed.reasoning,
+                        confidence: 0.3, // Low confidence for manual fallback
+                        hypotheses: [
+                            {
+                                approach: 'Manual fallback parsing',
+                                confidence: 0.3,
+                                action: this.parseActionFromJSON(
+                                    manualParsed.action,
+                                ),
+                            },
+                        ],
+                        reflection: {
+                            shouldContinue: true,
+                            reasoning:
+                                'Manual parsing successful but with low confidence',
+                            alternatives: ['Retry with better JSON format'],
+                        },
+                        earlyStopping: {
+                            shouldStop: false,
+                            reason: 'Manual parsing successful, can continue',
+                        },
+                        action: this.parseActionFromJSON(manualParsed.action),
+                        metadata: {
+                            iteration,
+                            timestamp: Date.now(),
+                            parseMethod: 'manual-fallback',
+                        },
+                    };
+                }
+            } catch (manualError) {
+                this.logger.error(
+                    'Manual parsing fallback failed',
+                    manualError instanceof Error ? manualError : undefined,
+                );
+            }
+
+            // Final fallback - create a basic response
             return {
-                reasoning: parsed.reasoning,
-                action: this.parseActionFromJSON(parsed.action),
+                reasoning: `Unable to parse LLM response after multiple attempts. Original content length: ${content.length}`,
+                confidence: 0.0, // Zero confidence due to parsing failure
+                hypotheses: [
+                    {
+                        approach: 'Final fallback due to parsing failure',
+                        confidence: 0.0,
+                        action: {
+                            type: 'final_answer',
+                            content:
+                                'I encountered a parsing error while processing your request. Please try rephrasing your question.',
+                        },
+                    },
+                ],
+                reflection: {
+                    shouldContinue: false,
+                    reasoning:
+                        'All parsing methods failed, cannot proceed safely',
+                    alternatives: [],
+                },
+                earlyStopping: {
+                    shouldStop: true,
+                    reason: 'Parsing failure prevents safe execution',
+                },
+                action: {
+                    type: 'final_answer',
+                    content:
+                        'I encountered a parsing error while processing your request. Please try rephrasing your question.',
+                },
                 metadata: {
                     iteration,
                     timestamp: Date.now(),
-                    parseMethod: 'enhanced-json',
+                    parseMethod: 'final-fallback',
+                    error: parseResult.error,
                 },
             };
-        } else {
-            this.logger.error(
-                `Enhanced JSON parse failed - invalid response format: ${parseResult.error}`,
-            );
+        }
 
-            throw new Error(
-                `Invalid JSON response from LLM: ${parseResult.error}. Expected format: {"reasoning": "...", "action": {...}}`,
+        const parsed = parseResult.data;
+
+        // 🔥 NOVO: Validar e processar os novos campos
+        const confidence = this.validateConfidence(parsed.confidence);
+        const hypotheses = this.validateHypotheses(parsed.hypotheses);
+        const reflection = this.validateReflection(parsed.reflection);
+        const earlyStopping = this.validateEarlyStopping(parsed.earlyStopping);
+
+        // 🔥 NOVO: Selecionar a melhor ação baseada em confidence e early stopping
+        const selectedAction = this.selectBestAction(hypotheses, earlyStopping);
+
+        return {
+            reasoning: parsed.reasoning,
+            confidence,
+            hypotheses,
+            reflection,
+            earlyStopping,
+            action: selectedAction,
+            metadata: {
+                iteration,
+                timestamp: Date.now(),
+                parseMethod: 'enhanced-json',
+                confidenceValidated: true,
+                hypothesesCount: hypotheses.length,
+                earlyStoppingChecked: true,
+            },
+        };
+    }
+
+    /**
+     * 🔥 NOVO: Fallback manual para parsing JSON quando tudo falha
+     */
+    private manualJSONFallback(
+        content: string,
+    ): { reasoning: string; action: any } | null {
+        try {
+            // Try to find reasoning
+            const reasoningMatch = content.match(
+                /"reasoning"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
             );
+            const reasoning = reasoningMatch?.[1] ?? 'Fallback reasoning';
+
+            // Try to find action type
+            let actionType = 'final_answer';
+            if (content.includes('"tool_call"')) {
+                actionType = 'tool_call';
+            }
+
+            // For tool_call, try to extract tool name and input
+            if (actionType === 'tool_call') {
+                const toolNameMatch = content.match(
+                    /"toolName"\s*:\s*"([^"]+)"/,
+                );
+                const inputMatch = content.match(
+                    /"input"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/,
+                );
+
+                if (toolNameMatch?.[1]) {
+                    try {
+                        return {
+                            reasoning,
+                            action: {
+                                type: 'tool_call',
+                                toolName: toolNameMatch[1],
+                                input: inputMatch?.[1]
+                                    ? JSON.parse(inputMatch[1])
+                                    : {},
+                            },
+                        };
+                    } catch {
+                        return {
+                            reasoning,
+                            action: {
+                                type: 'tool_call',
+                                toolName: toolNameMatch[1],
+                                input: {},
+                            },
+                        };
+                    }
+                }
+            }
+
+            // For final_answer, try to extract content
+            const contentMatch = content.match(
+                /"content"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+            );
+            const finalContent =
+                contentMatch?.[1] ?? 'Unable to extract content from response';
+
+            return {
+                reasoning,
+                action: {
+                    type: 'final_answer',
+                    content: finalContent,
+                },
+            };
+        } catch (error) {
+            this.logger.debug('Manual JSON fallback failed', { error });
+            return null;
         }
     }
 
@@ -531,6 +1293,160 @@ export class ReActStrategy extends BaseExecutionStrategy {
         return {
             type: 'final_answer',
             content: 'Unable to determine action type',
+        };
+    }
+
+    /**
+     * 🔥 NOVO: Validar confidence score (0.0-1.0)
+     */
+    private validateConfidence(confidence: number): number {
+        if (typeof confidence !== 'number' || isNaN(confidence)) {
+            this.logger.warn('Invalid confidence value, using default 0.5', {
+                confidence,
+            });
+            return 0.5;
+        }
+
+        if (confidence < 0) {
+            this.logger.warn('Confidence below 0, clamping to 0', {
+                confidence,
+            });
+            return 0.0;
+        }
+
+        if (confidence > 1) {
+            this.logger.warn('Confidence above 1, clamping to 1', {
+                confidence,
+            });
+            return 1.0;
+        }
+
+        return confidence;
+    }
+
+    /**
+     * 🔥 NOVO: Validar hypotheses array
+     */
+    private validateHypotheses(hypothesesData: any[]): Hypothesis[] {
+        if (!Array.isArray(hypothesesData) || hypothesesData.length === 0) {
+            // Fallback: criar hypothesis básica
+            return [
+                {
+                    approach: 'Primary approach',
+                    confidence: 0.5,
+                    action: {
+                        type: 'final_answer',
+                        content: 'Fallback response',
+                    },
+                },
+            ];
+        }
+
+        return hypothesesData.map((hyp, index) => {
+            try {
+                const confidence = this.validateConfidence(
+                    hyp.confidence || 0.5,
+                );
+                const action = this.parseActionFromJSON(hyp.action);
+
+                return {
+                    approach: hyp.approach || `Hypothesis ${index + 1}`,
+                    confidence,
+                    action,
+                };
+            } catch (error) {
+                this.logger.warn('Invalid hypothesis, using fallback', {
+                    index,
+                    error,
+                });
+                return {
+                    approach: `Hypothesis ${index + 1} (fallback)`,
+                    confidence: 0.3,
+                    action: {
+                        type: 'final_answer',
+                        content: 'Fallback due to invalid hypothesis',
+                    },
+                };
+            }
+        });
+    }
+
+    /**
+     * 🔥 NOVO: Validar reflection object
+     */
+    private validateReflection(reflectionData: any): Reflection {
+        if (!reflectionData || typeof reflectionData !== 'object') {
+            return {
+                shouldContinue: true,
+                reasoning: 'No reflection provided, continuing',
+                alternatives: [],
+            };
+        }
+
+        return {
+            shouldContinue: reflectionData.shouldContinue !== false,
+            reasoning: reflectionData.reasoning || 'No reasoning provided',
+            alternatives: Array.isArray(reflectionData.alternatives)
+                ? reflectionData.alternatives
+                : [],
+        };
+    }
+
+    /**
+     * 🔥 NOVO: Validar early stopping decision
+     */
+    private validateEarlyStopping(earlyStoppingData: any): EarlyStopping {
+        if (!earlyStoppingData || typeof earlyStoppingData !== 'object') {
+            return {
+                shouldStop: false,
+                reason: 'No early stopping decision provided',
+            };
+        }
+
+        return {
+            shouldStop: earlyStoppingData.shouldStop === true,
+            reason: earlyStoppingData.reason || 'Early stopping triggered',
+        };
+    }
+
+    /**
+     * 🔥 NOVO: Selecionar melhor ação baseada em confidence e early stopping
+     */
+    private selectBestAction(
+        hypotheses: Hypothesis[],
+        earlyStopping: EarlyStopping,
+    ): AgentAction {
+        // 1. Early stopping tem prioridade máxima
+        if (earlyStopping.shouldStop) {
+            this.logger.info('🚨 Early stopping triggered', {
+                reason: earlyStopping.reason,
+            });
+            return {
+                type: 'final_answer',
+                content: `Early stopping: ${earlyStopping.reason}`,
+            };
+        }
+
+        // 2. Selecionar hypothesis com maior confidence
+        if (hypotheses.length > 0) {
+            const bestHypothesis = hypotheses.reduce((best, current) =>
+                current.confidence > best.confidence ? current : best,
+            );
+
+            this.logger.debug('Selected best hypothesis', {
+                confidence: bestHypothesis.confidence,
+                approach: bestHypothesis.approach,
+                actionType: bestHypothesis.action.type,
+            });
+
+            return bestHypothesis.action;
+        }
+
+        // 3. Fallback para resposta final
+        this.logger.warn('No valid hypotheses found, using fallback');
+        return {
+            type: 'final_answer',
+            content: 'Unable to determine best action from hypotheses',
         };
     }
 
@@ -742,10 +1658,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 getCurrentPlan: () => null,
             };
 
-            const finalContext =
-                await ContextService.buildFinalResponseContext(plannerContext);
-
-            console.log('finalContext', finalContext);
+            await ContextService.buildFinalResponseContext(plannerContext);
 
             return (
                 (await plannerContext.getFinalResult().result.content) ?? 'Kody'
@@ -996,11 +1909,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
                         ? result.content
                         : JSON.stringify(result.content);
 
-                // Limitar tamanho para não sobrecarregar o prompt
-                if (contentStr.length > 300) {
-                    return `Tool executed successfully - ${contentStr.substring(0, 300)}...`;
-                }
-
+                // Resultado completo sem truncamento
                 return `Tool executed successfully - ${contentStr}`;
             } catch {
                 return 'Tool executed successfully';

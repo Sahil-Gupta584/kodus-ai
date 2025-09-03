@@ -1,11 +1,3 @@
-/**
- * 🍃 ENHANCED SESSION SERVICE - Using Existing Storage Pattern
- *
- * Leverages existing StorageAdapterFactory pattern (InMemory + MongoDB)
- * Follows same pattern as storage-session-adapter.ts
- * Adds: AgentRuntimeContext support, entity management, smart recovery
- */
-
 import {
     AgentRuntimeContext,
     SessionManager,
@@ -15,9 +7,11 @@ import {
     isValidRuntimeContext,
     isValidChatMessage,
     isRecoveryNeeded,
+    SessionConfig,
+    SESSION_CONSTANTS,
+    DEFAULT_SESSION_CONFIG,
 } from '../types/context-types.js';
 
-// ✅ USE: Existing storage adapter pattern
 import { StorageEnum, Thread } from '../../types/allTypes.js';
 
 import { createLogger } from '../../../observability/logger.js';
@@ -29,10 +23,6 @@ import { IdGenerator } from '../../../utils/id-generator.js';
 
 const logger = createLogger('enhanced-session-service');
 
-// ===============================================
-// 🏗️ ENHANCED SESSION SERVICE - Using Storage Adapters
-// ===============================================
-
 export class EnhancedSessionService implements SessionManager {
     private sessionsAdapter: StorageContextSessionAdapter;
     private snapshotsAdapter: StorageSnapshotAdapter;
@@ -42,59 +32,62 @@ export class EnhancedSessionService implements SessionManager {
         Promise<AgentRuntimeContext>
     >();
 
-    // 🎯 OPTIMIZATION: Configuration constants
-    private readonly maxMessagesInMemory = 20; // Rolling window for messages
-    private readonly maxEntitiesSizeKb = 10; // Max 10KB for entities
-    // private readonly SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL - Reserved for future use
+    private readonly config: SessionConfig;
 
     constructor(
         connectionString?: string,
         options?: {
             adapterType?: StorageEnum;
             dbName?: string;
-            sessionsCollection?: string; // 🎯 Customizável!
-            snapshotsCollection?: string; // 🎯 Customizável!
+            database?: string; // Novo: suporte a database customizado
+            sessionsCollection?: string; // Ignorado
+            snapshotsCollection?: string; // Ignorado
             sessionTTL?: number; // Default 24h
-            snapshotTTL?: number; // Default 7 days
+            snapshotTTL?: number; // Ignorado
         },
     ) {
-        // ✅ FOLLOW PATTERN: Use existing storage adapters
-        this.sessionsAdapter = new StorageContextSessionAdapter({
-            adapterType:
-                options?.adapterType ||
-                (connectionString ? StorageEnum.MONGODB : StorageEnum.INMEMORY),
+        this.config = {
+            adapterType: connectionString
+                ? StorageEnum.MONGODB
+                : StorageEnum.INMEMORY,
             connectionString,
+            sessionTTL:
+                options?.sessionTTL || DEFAULT_SESSION_CONFIG.sessionTTL,
+        };
+
+        // Use database customizado se fornecido, senão use default
+        const databaseName = options?.database || options?.dbName;
+
+        this.sessionsAdapter = new StorageContextSessionAdapter({
+            adapterType: this.config.adapterType,
+            connectionString: this.config.connectionString,
             options: {
-                database: options?.dbName || 'kodus-flow',
-                collection:
-                    options?.sessionsCollection || 'kodus-agent-sessions', // 🎯 Customizável!
+                database: databaseName,
+                collection: SESSION_CONSTANTS.COLLECTIONS.SESSIONS,
             },
         });
 
         this.snapshotsAdapter = new StorageSnapshotAdapter({
-            adapterType:
-                options?.adapterType ||
-                (connectionString ? StorageEnum.MONGODB : StorageEnum.INMEMORY),
-            connectionString,
+            adapterType: this.config.adapterType,
+            connectionString: this.config.connectionString,
             options: {
-                database: options?.dbName || 'kodus-flow',
-                collection:
-                    options?.snapshotsCollection || 'kodus-execution-snapshots', // 🎯 Customizável!
+                database: databaseName,
+                collection: SESSION_CONSTANTS.COLLECTIONS.SNAPSHOTS,
             },
         });
 
         logger.info('Enhanced Session Service configured', {
-            adapterType:
-                options?.adapterType ||
-                (connectionString ? 'mongodb' : 'inmemory'),
-            database: options?.dbName || 'kodus-flow',
+            adapterType: this.config.adapterType,
+            database: databaseName,
+            sessionTTL: this.config.sessionTTL,
         });
     }
 
     async initialize(): Promise<void> {
-        if (this.isInitialized) return;
+        if (this.isInitialized) {
+            return;
+        }
 
-        // Initialize both adapters
         await this.sessionsAdapter.initialize();
         await this.snapshotsAdapter.initialize();
 
@@ -116,11 +109,10 @@ export class EnhancedSessionService implements SessionManager {
     ): Promise<AgentRuntimeContext> {
         await this.ensureInitialized();
 
-        // Check if there's already a creation in progress for this thread (race condition protection)
         const existingLock = this.sessionCreationLocks.get(threadId);
         if (existingLock) {
             logger.info(
-                `🔒 Waiting for existing session creation for thread: ${threadId}`,
+                `Waiting for existing session creation for thread: ${threadId}`,
             );
             return existingLock;
         }
@@ -142,28 +134,23 @@ export class EnhancedSessionService implements SessionManager {
         threadId: Thread['id'],
         tenantId: string,
     ): Promise<AgentRuntimeContext> {
-        // Try to find existing session by threadId
         const existingSession =
             await this.sessionsAdapter.retrieveContextSessionByThreadId(
                 threadId,
             );
 
         if (existingSession) {
-            // Check if session is expired (older than TTL)
             const sessionAge = Date.now() - existingSession.lastActivityAt;
-            const ttl = 24 * 60 * 60 * 1000; // 24 hours default
+            const ttl = this.config.sessionTTL!;
 
             if (sessionAge > ttl) {
-                // Session expired, delete it and create new one
                 logger.info(
-                    `🗑️ Deleting expired session ${existingSession.sessionId} (age: ${Math.round(sessionAge / 1000 / 60)}min)`,
+                    `Deleting expired session ${existingSession.sessionId} (age: ${Math.round(sessionAge / 1000 / 60)}min)`,
                 );
                 await this.sessionsAdapter.deleteContextSession(
                     existingSession.sessionId,
                 );
-                // Continue to create new session below
             } else {
-                // Session still valid, update last activity
                 await this.sessionsAdapter.storeContextSession(
                     existingSession.sessionId, // Use sessionId as primary key
                     existingSession.threadId, // Keep threadId for queries
@@ -175,16 +162,14 @@ export class EnhancedSessionService implements SessionManager {
                 );
 
                 logger.info(
-                    `♻️ Recovered session ${existingSession.sessionId} for thread: ${threadId}`,
+                    `Recovered session ${existingSession.sessionId} for thread: ${threadId}`,
                 );
                 return existingSession.runtime;
             }
         }
 
-        // Generate unique sessionId using existing IdGenerator
         const sessionId = IdGenerator.sessionId();
 
-        // Create new session with ContextNew runtime
         const newRuntime: AgentRuntimeContext = {
             sessionId,
             threadId,
@@ -269,21 +254,7 @@ export class EnhancedSessionService implements SessionManager {
             newMessageRole: message.role,
         });
 
-        // 🔄 ROLLING WINDOW: Keep only last N messages for performance
-        const messages = [...session.runtime.messages, message].slice(
-            -this.maxMessagesInMemory,
-        );
-
-        logger.info(
-            '🔍 ENHANCED SESSION - Messages array updated (rolling window)',
-            {
-                threadId,
-                previousCount: session.runtime.messages.length,
-                newCount: messages.length,
-                windowSize: this.maxMessagesInMemory,
-                roles: messages.map((m) => m.role),
-            },
-        );
+        const messages = [...session.runtime.messages, message];
 
         // Update runtime with new message
         const updatedRuntime: AgentRuntimeContext = {
@@ -292,7 +263,6 @@ export class EnhancedSessionService implements SessionManager {
             timestamp: new Date().toISOString(),
         };
 
-        // If user message, infer and update intent
         if (message.role === 'user') {
             updatedRuntime.state.lastUserIntent = this.inferIntent(
                 message.content,
@@ -437,51 +407,8 @@ export class EnhancedSessionService implements SessionManager {
             throw new Error(`Session for thread ${threadId} not found`);
         }
 
-        // 📊 OPTIMIZATION: Check entity size before adding
-        const entitySize = JSON.stringify(entities).length;
-        const maxSizeBytes = this.maxEntitiesSizeKb * 1024;
-
-        if (entitySize > maxSizeBytes) {
-            logger.warn(
-                `⚠️ Entities too large (${Math.round(entitySize / 1024)}KB), truncating...`,
-                {
-                    threadId,
-                    maxSizeKB: this.maxEntitiesSizeKb,
-                },
-            );
-            // In production, implement smart truncation or compression
-        }
-
         // Smart entity updates with deduplication
         const updatedEntities = { ...session.runtime.entities };
-
-        Object.entries(entities).forEach(([entityType, entityData]) => {
-            if (Array.isArray(entityData) && entityData.length > 0) {
-                const existing = updatedEntities[
-                    entityType as keyof typeof updatedEntities
-                ] as EntityRef[] | undefined;
-                const merged = [...(existing || []), ...entityData];
-
-                // Deduplicate by ID and keep max 10
-                const deduped = merged
-                    .filter(
-                        (entity, index, arr) =>
-                            arr.findIndex((e) => e.id === entity.id) === index,
-                    )
-                    .slice(-10);
-
-                (updatedEntities as any)[entityType] = deduped;
-            } else if (typeof entityData === 'object' && entityData !== null) {
-                // For toolResults object
-                const existing = updatedEntities[
-                    entityType as keyof typeof updatedEntities
-                ] as Record<string, unknown> | undefined;
-                (updatedEntities as any)[entityType] = {
-                    ...(existing || {}),
-                    ...entityData,
-                };
-            }
-        });
 
         // Update runtime with new entities
         const updatedRuntime: AgentRuntimeContext = {
@@ -598,8 +525,8 @@ export class EnhancedSessionService implements SessionManager {
 
         await this.snapshotsAdapter.storeExecutionSnapshot(
             optimizedSnapshot,
-            7,
-        ); // 7 days TTL
+            Math.ceil(SESSION_CONSTANTS.SNAPSHOT_TTL / (24 * 60 * 60 * 1000)), // Convert to days
+        );
 
         logger.debug(
             `📸 Saved optimized execution snapshot: ${snapshot.executionId}`,

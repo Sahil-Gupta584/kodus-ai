@@ -13,7 +13,6 @@ export {
     getObservability,
     createLogger,
     createOtelTracerAdapter,
-    shutdownObservability,
 } from './observability/index.js';
 
 export type { OtelTracerAdapter } from './observability/otel-adapter.js';
