@@ -37,37 +37,24 @@ export const DEFAULT_SESSION_CONFIG: SessionConfig = {
     sessionTTL: 24 * 60 * 60 * 1000, // 24h
 };
 
-/**
- * 🎯 INTERNAL CONSTANTS - Não precisam ser configuráveis
- *
- * Valores otimizados que ficam internos aos serviços
- */
 export const SESSION_CONSTANTS = {
-    // Database & Collections (sempre os mesmos)
-    DATABASE_NAME: 'kodus-flow',
     COLLECTIONS: {
         SESSIONS: 'kodus-agent-sessions',
         SNAPSHOTS: 'kodus-execution-snapshots',
         MEMORY: 'kodus-agent-memory',
     } as const,
 
-    // Performance (valores técnicos otimizados)
     PERFORMANCE: {
-        MAX_MESSAGES_IN_MEMORY: 20,
-        MAX_ENTITIES_SIZE_KB: 10,
         CLEANUP_INTERVAL: 300000, // 5min
     } as const,
 
-    // Recovery (sempre automático)
     RECOVERY: {
         THRESHOLD: 300000, // 5min
         MAX_ATTEMPTS: 5,
     } as const,
 
-    // TTL (snapshot sempre 7 dias)
     SNAPSHOT_TTL: 7 * 24 * 60 * 60 * 1000, // 7d
 
-    // Features (sempre habilitadas)
     FEATURES: {
         ENABLE_AUTO_CLEANUP: true,
         ENABLE_COMPRESSION: true,

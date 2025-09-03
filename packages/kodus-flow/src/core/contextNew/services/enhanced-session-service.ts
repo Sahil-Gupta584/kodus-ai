@@ -39,6 +39,7 @@ export class EnhancedSessionService implements SessionManager {
         options?: {
             adapterType?: StorageEnum;
             dbName?: string;
+            database?: string; // Novo: suporte a database customizado
             sessionsCollection?: string; // Ignorado
             snapshotsCollection?: string; // Ignorado
             sessionTTL?: number; // Default 24h
@@ -54,11 +55,17 @@ export class EnhancedSessionService implements SessionManager {
                 options?.sessionTTL || DEFAULT_SESSION_CONFIG.sessionTTL,
         };
 
+        // Use database customizado se fornecido, senão use default
+        const databaseName =
+            options?.database ||
+            options?.dbName ||
+            SESSION_CONSTANTS.DATABASE_NAME;
+
         this.sessionsAdapter = new StorageContextSessionAdapter({
             adapterType: this.config.adapterType,
             connectionString: this.config.connectionString,
             options: {
-                database: SESSION_CONSTANTS.DATABASE_NAME,
+                database: databaseName,
                 collection: SESSION_CONSTANTS.COLLECTIONS.SESSIONS,
             },
         });
@@ -67,14 +74,14 @@ export class EnhancedSessionService implements SessionManager {
             adapterType: this.config.adapterType,
             connectionString: this.config.connectionString,
             options: {
-                database: SESSION_CONSTANTS.DATABASE_NAME,
+                database: databaseName,
                 collection: SESSION_CONSTANTS.COLLECTIONS.SNAPSHOTS,
             },
         });
 
         logger.info('Enhanced Session Service configured', {
             adapterType: this.config.adapterType,
-            database: SESSION_CONSTANTS.DATABASE_NAME,
+            database: databaseName,
             sessionTTL: this.config.sessionTTL,
         });
     }

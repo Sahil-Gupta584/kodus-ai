@@ -65,11 +65,10 @@ import {
 const logger = createLogger('EnhancedContextBuilder');
 
 export interface EnhancedContextBuilderConfig {
-    // ✅ LEGACY SUPPORT - Para código existente
-    // Mantém compatibilidade com código antigo
     connectionString?: string;
     dbName?: string;
-    adapterType?: StorageEnum | 'mongodb' | 'memory';
+    database?: string;
+    adapterType: StorageEnum;
     sessionsCollection?: string;
     snapshotsCollection?: string;
     memoryCollection?: string;
@@ -77,12 +76,6 @@ export interface EnhancedContextBuilderConfig {
     snapshotTTL?: number;
 }
 
-/**
- * 🧠 ENHANCED CONTEXT BUILDER - Singleton Pattern
- *
- * Segue o mesmo padrão do ContextBuilder existente, mas com ContextNew architecture
- * Usado em toda cadeia de execução do agent, não só no planner
- */
 export class EnhancedContextBuilder {
     private static instance: EnhancedContextBuilder | undefined;
 
@@ -97,14 +90,17 @@ export class EnhancedContextBuilder {
     ) {
         // ✅ SIMPLE CONFIG - Apenas o essencial!
         this.config = {
-            adapterType: config.connectionString ? 'mongodb' : 'memory',
+            adapterType: config.connectionString
+                ? StorageEnum.MONGODB
+                : StorageEnum.INMEMORY,
             connectionString: config.connectionString,
+            database: config.database || config.dbName,
             sessionTTL: config.sessionTTL || DEFAULT_SESSION_CONFIG.sessionTTL,
         };
 
         logger.info('EnhancedContextBuilder created', {
             adapterType: this.config.adapterType,
-            database: SESSION_CONSTANTS.DATABASE_NAME,
+            database: this.config.database,
             sessionTTL: this.config.sessionTTL,
         });
     }
@@ -153,25 +149,24 @@ export class EnhancedContextBuilder {
             connectionString: this.config.connectionString
                 ? '[SET]'
                 : '[NOT SET]',
-            database: SESSION_CONSTANTS.DATABASE_NAME,
+            database: this.config.database,
         });
 
         // 1. Initialize memory manager
         logger.info('🧠 Step 1: Initializing memory manager...');
         if (this.config.adapterType === 'mongodb') {
             logger.info('🔗 Creating MongoDB memory manager', {
-                database: SESSION_CONSTANTS.DATABASE_NAME,
+                database: this.config.database,
                 collection: SESSION_CONSTANTS.COLLECTIONS.MEMORY,
             });
-            // Create MongoDB memory manager with custom collection
+
             this.memoryManager = new MemoryManager({
                 adapterType: StorageEnum.MONGODB,
                 adapterConfig: {
                     connectionString: this.config.connectionString,
                     options: {
-                        database: SESSION_CONSTANTS.DATABASE_NAME,
+                        database: this.config.database, // ✅ Agora usa database customizado
                         collection: SESSION_CONSTANTS.COLLECTIONS.MEMORY,
-                        maxItems: 10000,
                         enableCompression:
                             SESSION_CONSTANTS.FEATURES.ENABLE_COMPRESSION,
                         cleanupInterval:
@@ -196,13 +191,10 @@ export class EnhancedContextBuilder {
         this.sessionManager = new EnhancedSessionService(
             this.config.connectionString,
             {
-                adapterType:
-                    this.config.adapterType === 'mongodb'
-                        ? StorageEnum.MONGODB
-                        : StorageEnum.INMEMORY,
-                dbName: SESSION_CONSTANTS.DATABASE_NAME, // Will be ignored by service
-                sessionsCollection: SESSION_CONSTANTS.COLLECTIONS.SESSIONS, // Will be ignored by service
-                snapshotsCollection: SESSION_CONSTANTS.COLLECTIONS.SNAPSHOTS, // Will be ignored by service
+                adapterType: this.config.adapterType,
+                database: this.config.database, // ✅ Agora usa database customizado
+                sessionsCollection: SESSION_CONSTANTS.COLLECTIONS.SESSIONS,
+                snapshotsCollection: SESSION_CONSTANTS.COLLECTIONS.SNAPSHOTS,
                 sessionTTL: this.config.sessionTTL,
             },
         );
@@ -210,7 +202,7 @@ export class EnhancedContextBuilder {
         // 3. Initialize context bridge
         this.contextBridge = createContextBridge(this.config.connectionString, {
             memoryManager: this.memoryManager,
-            dbName: SESSION_CONSTANTS.DATABASE_NAME,
+            dbName: this.config.database, // ✅ Agora usa database customizado
             sessionsCollection: SESSION_CONSTANTS.COLLECTIONS.SESSIONS,
             snapshotsCollection: SESSION_CONSTANTS.COLLECTIONS.SNAPSHOTS,
             sessionTTL: this.config.sessionTTL,

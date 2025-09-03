@@ -1,3 +1,4 @@
+import pino from 'pino';
 import {
     LogContext,
     LogContextProvider,
@@ -67,80 +68,92 @@ function processLog(
     }
 }
 
-class SimpleLogger implements Logger {
+// Pino logger instance (singleton)
+let pinoLogger: pino.Logger | null = null;
+
+function getPinoLogger(): pino.Logger {
+    if (!pinoLogger) {
+        // Configure Pino with optimized settings for performance
+        pinoLogger = pino({
+            level: process.env.LOG_LEVEL || 'info',
+            formatters: {
+                level: (label) => ({ level: label }),
+            },
+            serializers: {
+                error: pino.stdSerializers.err,
+                err: pino.stdSerializers.err,
+            },
+            // Performance optimizations
+            redact: [
+                'password',
+                'token',
+                'secret',
+                '*.password',
+                '*.token',
+                '*.secret',
+            ],
+            timestamp: pino.stdTimeFunctions.isoTime,
+        });
+    }
+    return pinoLogger;
+}
+
+class PinoLogger implements Logger {
     private componentName: string;
-    private level: LogLevel;
+    private logger: pino.Logger;
 
-    constructor(name: string, level: LogLevel = 'info') {
+    constructor(name: string, _level?: LogLevel) {
         this.componentName = name;
-        this.level = level;
-    }
-
-    private shouldLog(level: LogLevel): boolean {
-        const levels: Record<LogLevel, number> = {
-            debug: 0,
-            info: 1,
-            warn: 2,
-            error: 3,
-        };
-        return levels[level] >= levels[this.level];
-    }
-
-    private formatMessage(level: LogLevel, message: string): string {
-        const timestamp = new Date().toISOString();
-        const levelUpper = level.toUpperCase();
-        return `[${timestamp}] [${levelUpper}] [${this.componentName}] ${message}`;
+        this.logger = getPinoLogger().child({ component: name });
     }
 
     debug(message: string, context?: LogContext): void {
-        if (!this.shouldLog('debug')) {
-            return;
-        }
-        const formattedMessage = this.formatMessage('debug', message);
-        console.debug(formattedMessage, mergeContext(context));
-        processLog('debug', message, this.componentName, context);
+        const mergedContext = mergeContext(context);
+        this.logger.debug(mergedContext || {}, message);
+        processLog('debug', message, this.componentName, mergedContext);
     }
 
     info(message: string, context?: LogContext): void {
-        if (!this.shouldLog('info')) {
-            return;
-        }
-        const formattedMessage = this.formatMessage('info', message);
-        console.log(formattedMessage, mergeContext(context));
-        processLog('info', message, this.componentName, context);
+        const mergedContext = mergeContext(context);
+        this.logger.info(mergedContext || {}, message);
+        processLog('info', message, this.componentName, mergedContext);
     }
 
     warn(message: string, context?: LogContext): void {
-        if (!this.shouldLog('warn')) {
-            return;
-        }
-        const formattedMessage = this.formatMessage('warn', message);
-        console.warn(formattedMessage, mergeContext(context));
-        processLog('warn', message, this.componentName, context);
+        const mergedContext = mergeContext(context);
+        this.logger.warn(mergedContext || {}, message);
+        processLog('warn', message, this.componentName, mergedContext);
     }
 
     error(message: string, error?: Error, context?: LogContext): void {
-        if (!this.shouldLog('error')) {
-            return;
+        const mergedContext = mergeContext(context);
+
+        if (error) {
+            const errorContext = {
+                ...mergedContext,
+                error: {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack,
+                },
+            };
+            this.logger.error(errorContext, message);
+            processLog(
+                'error',
+                message,
+                this.componentName,
+                errorContext,
+                error,
+            );
+        } else {
+            this.logger.error(mergedContext || {}, message);
+            processLog('error', message, this.componentName, mergedContext);
         }
-        const formattedMessage = this.formatMessage('error', message);
-
-        const errorContext = {
-            ...context,
-            ...(error && {
-                errorName: error.name,
-                errorMessage: error.message,
-                errorStack: error.stack,
-            }),
-        };
-
-        console.error(formattedMessage, mergeContext(errorContext));
-        processLog('error', message, this.componentName, errorContext, error);
     }
 }
 
 export function createLogger(name: string, level?: LogLevel): Logger {
-    return new SimpleLogger(name, level);
+    return new PinoLogger(name, level);
 }
 
 export const logger = createLogger('kodus-flow');

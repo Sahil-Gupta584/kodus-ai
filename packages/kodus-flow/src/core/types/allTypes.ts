@@ -2790,88 +2790,10 @@ export const STORAGE_DEFAULTS: Record<StorageEnum, StorageDefaultConfig> = {
     },
 };
 
-export interface DebugReport {
-    timestamp: number;
-    config: DebugConfig;
-    summary: {
-        tracedEvents: number;
-        completedMeasurements: number;
-        stateSnapshots: number;
-        activeMeasurements: number;
-        avgEventProcessingTime: number;
-        avgMeasurementTime: number;
-    };
-    eventTypeDistribution: Record<string, number>;
-    recentErrors: Array<{
-        eventType: string;
-        error: string;
-        timestamp: number;
-        traceId: string;
-    }>;
-    performanceInsights: PerformanceInsights;
-}
-
 export interface PerformanceInsights {
     slowOperations: Array<{ name: string; duration: number; category: string }>;
     fastOperations: Array<{ name: string; duration: number; category: string }>;
     recommendations: string[];
-}
-
-export interface DebugContext {
-    setCorrelationId(id: string): void;
-    clearCorrelationId(): void;
-
-    log(level: LogLevel, message: string, data?: Record<string, unknown>): void;
-    trace(event: TEvent, source?: string): string;
-
-    measure<T>(
-        name: string,
-        fn: () => T | Promise<T>,
-        metadata?: Record<string, unknown>,
-    ): Promise<{ result: T; measurement: PerformanceMeasurement }>;
-    startMeasurement(name: string, metadata?: Record<string, unknown>): string;
-    endMeasurement(id: string): PerformanceMeasurement | undefined;
-
-    captureSnapshot(
-        entityName: string,
-        entityType: 'agent' | 'workflow' | 'system',
-        state: Record<string, unknown>,
-    ): string;
-
-    generateReport(): DebugReport;
-}
-export interface DebugConfig {
-    enabled: boolean;
-    level: LogLevel;
-    features: {
-        eventTracing: boolean;
-        performanceProfiling: boolean;
-        stateInspection: boolean;
-        errorAnalysis: boolean;
-    };
-
-    outputs: DebugOutput[];
-
-    maxEventHistory: number;
-    maxMeasurementHistory: number;
-
-    autoFlush: boolean;
-    flushInterval: number;
-}
-
-export interface DebugOutput {
-    name: string;
-    write(entry: DebugEntry): void | Promise<void>;
-    flush?(): void | Promise<void>;
-}
-
-export interface DebugEntry {
-    timestamp: number;
-    level: LogLevel;
-    category: 'event' | 'performance' | 'state' | 'error';
-    message: string;
-    data?: Record<string, unknown>;
-    correlationId?: string;
 }
 
 export interface PerformanceMeasurement {
@@ -4710,7 +4632,6 @@ export interface ObservabilityConfig {
         filePath?: string;
     };
     telemetry?: Partial<TelemetryConfig>;
-    debugging?: Partial<DebugConfig>;
     mongodb?: {
         type: 'mongodb';
         connectionString?: string;
@@ -4718,18 +4639,12 @@ export interface ObservabilityConfig {
         collections?: {
             logs?: string;
             telemetry?: string;
-            metrics?: string;
             errors?: string;
         };
         batchSize?: number;
         flushIntervalMs?: number;
         ttlDays?: number;
         enableObservability?: boolean;
-    };
-    correlation?: {
-        enabled: boolean;
-        generateIds: boolean;
-        propagateContext: boolean;
     };
 }
 
@@ -4830,23 +4745,6 @@ export const DEFAULT_CONFIG: ObservabilityConfig = {
             tracePersistence: false,
             metricsEnabled: true,
         },
-    },
-
-    debugging: {
-        enabled: false,
-        level: 'debug',
-        features: {
-            eventTracing: true,
-            performanceProfiling: true,
-            stateInspection: true,
-            errorAnalysis: true,
-        },
-    },
-
-    correlation: {
-        enabled: true,
-        generateIds: true,
-        propagateContext: true,
     },
 };
 
@@ -5043,7 +4941,6 @@ export interface MongoDBExporterConfig {
     collections: {
         logs: string;
         telemetry: string;
-        metrics: string;
         errors: string;
     };
     batchSize: number;
@@ -5844,20 +5741,6 @@ export interface OrchestrationConfig {
         type?: StorageEnum;
         connectionString?: string;
         database?: string;
-
-        collections?: {
-            memory?: string; // default: 'memories'
-            sessions?: string; // default: 'sessions'
-            snapshots?: string; // default: 'snapshots'
-        };
-
-        options?: {
-            sessionTTL?: number; // default: 24h
-            snapshotTTL?: number; // default: 7 days
-            maxItems?: number;
-            enableCompression?: boolean;
-            cleanupInterval?: number;
-        };
     };
     observability?: Partial<ObservabilityConfig>;
 }

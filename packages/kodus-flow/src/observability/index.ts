@@ -11,6 +11,8 @@ export {
 } from './telemetry.js';
 
 export { createLogger } from './logger.js';
+export * from './execution-tracker.js';
+export * from './optimized-spans.js';
 
 import { getTelemetry, TelemetrySystem } from './telemetry.js';
 import {
@@ -128,7 +130,6 @@ export class ObservabilitySystem implements ObservabilityInterface {
             components: {
                 logging: this.config.logging?.enabled,
                 telemetry: this.config.telemetry?.enabled,
-                debugging: this.config.debugging?.enabled,
             },
         } as LogContext);
     }
@@ -265,56 +266,81 @@ export class ObservabilitySystem implements ObservabilityInterface {
      * ✅ Salva ciclo completo de execução do agente (do início ao fim)
      * Compatível com OpenTelemetry e MongoDB
      */
-    async saveAgentExecutionCycle(
-        agentName: string,
-        executionId: string,
-        cycle: {
-            startTime: number;
-            endTime?: number;
-            input: any;
-            output?: any;
-            actions: any[];
-            errors?: Error[];
-            metadata?: Record<string, any>;
-        },
-    ): Promise<void> {
+    async saveAgentExecutionCycle(cycle: any): Promise<void> {
+        // Handle both old and new format for backward compatibility
+        const agentName = cycle.agentName || cycle.agentName;
+        const executionId = cycle.executionId || cycle.executionId;
+        const duration =
+            cycle.totalDuration ||
+            (cycle.endTime ? cycle.endTime - cycle.startTime : 0);
+        const hasError =
+            cycle.status === 'error' ||
+            !!(cycle.errors && cycle.errors.length > 0);
+        const stepCount = cycle.steps
+            ? cycle.steps.length
+            : cycle.actions
+              ? cycle.actions.length
+              : 0;
+
         const span = this.telemetry.startSpan(`agent.${agentName}.execution`, {
             attributes: {
                 agentName,
                 executionId,
-                cycleDuration: cycle.endTime
-                    ? cycle.endTime - cycle.startTime
-                    : 0,
-                actionsCount: cycle.actions.length,
-                hasErrors: !!(cycle.errors && cycle.errors.length > 0),
+                cycleDuration: duration,
+                actionsCount: stepCount,
+                hasErrors: hasError,
+                status: cycle.status || (hasError ? 'error' : 'completed'),
+                correlationId: cycle.correlationId || 'unknown',
+                tenantId:
+                    cycle.metadata?.tenantId ||
+                    this.currentContext?.tenantId ||
+                    'unknown',
             },
         });
 
         try {
-            // Log estruturado do ciclo completo
+            // Structured logging of complete execution cycle
             this.logger.info('Agent execution cycle completed', {
                 agentName,
                 executionId,
-                duration: cycle.endTime ? cycle.endTime - cycle.startTime : 0,
-                actionsCount: cycle.actions.length,
-                hasErrors: !!(cycle.errors && cycle.errors.length > 0),
+                correlationId: cycle.correlationId,
+                duration,
+                stepCount,
+                status: cycle.status,
+                hasError,
                 metadata: cycle.metadata,
+                ...(cycle.error && {
+                    error: {
+                        name: cycle.error.name,
+                        message: cycle.error.message,
+                    },
+                }),
             });
 
-            // Export para MongoDB se disponível (compatibilidade mantida)
+            // Export to MongoDB if available (maintained compatibility)
             if (this.mongodbExporter) {
                 await this.mongodbExporter.exportTelemetry({
                     type: 'agent-execution-cycle',
                     agentName,
                     executionId,
-                    cycle,
+                    cycle: {
+                        ...cycle,
+                        steps: cycle.steps || [],
+                        duration,
+                        status:
+                            cycle.status || (hasError ? 'error' : 'completed'),
+                    },
                     timestamp: Date.now(),
-                    correlationId: this.currentContext?.correlationId,
-                    tenantId: this.currentContext?.tenantId,
+                    correlationId:
+                        cycle.correlationId ||
+                        this.currentContext?.correlationId,
+                    tenantId:
+                        cycle.metadata?.tenantId ||
+                        this.currentContext?.tenantId,
                 });
             }
 
-            span.setStatus({ code: 'ok' });
+            span.setStatus({ code: hasError ? 'error' : 'ok' });
         } catch (error) {
             span.recordException(error as Error);
             span.setStatus({
@@ -472,21 +498,6 @@ export class ObservabilitySystem implements ObservabilityInterface {
     private adjustConfigForEnvironment(): void {
         if (this.config.environment === 'production') {
             // Production optimizations
-            this.config.debugging = {
-                ...this.config.debugging,
-                enabled: false,
-                features: {
-                    eventTracing:
-                        this.config.debugging?.features?.eventTracing ?? true,
-                    performanceProfiling:
-                        this.config.debugging?.features?.performanceProfiling ??
-                        true,
-                    stateInspection:
-                        this.config.debugging?.features?.stateInspection ??
-                        true,
-                    errorAnalysis: true,
-                },
-            };
 
             this.config.telemetry = {
                 ...this.config.telemetry,
@@ -494,16 +505,6 @@ export class ObservabilitySystem implements ObservabilityInterface {
             };
         } else if (this.config.environment === 'development') {
             // Development optimizations
-            this.config.debugging = {
-                ...this.config.debugging,
-                enabled: true,
-                features: {
-                    eventTracing: true,
-                    performanceProfiling: true,
-                    stateInspection: true,
-                    errorAnalysis: true,
-                },
-            };
         } else if (this.config.environment === 'test') {
             this.config.telemetry = {
                 ...this.config.telemetry,
@@ -537,9 +538,7 @@ export class ObservabilitySystem implements ObservabilityInterface {
                           telemetry:
                               this.config.mongodb.collections?.telemetry ||
                               'observability_telemetry',
-                          metrics:
-                              this.config.mongodb.collections?.metrics ||
-                              'observability_metrics',
+
                           errors:
                               this.config.mongodb.collections?.errors ||
                               'observability_errors',

@@ -3,10 +3,8 @@ import {
     MongoDBErrorItem,
     MongoDBExporterConfig,
     MongoDBLogItem,
-    MongoDBMetricsItem,
     MongoDBTelemetryItem,
     ObservabilityStorageConfig,
-    SystemMetrics,
     TraceItem,
 } from '../core/types/allTypes.js';
 import { createLogger } from './logger.js';
@@ -23,21 +21,19 @@ export class MongoDBExporter {
 
         telemetry: any;
 
-        metrics: any;
-
         errors: any;
     } | null = null;
 
     // Buffers para batch processing
     private logBuffer: MongoDBLogItem[] = [];
     private telemetryBuffer: MongoDBTelemetryItem[] = [];
-    private metricsBuffer: MongoDBMetricsItem[] = [];
+
     private errorBuffer: MongoDBErrorItem[] = [];
 
     // Flush timers
     private logFlushTimer: NodeJS.Timeout | null = null;
     private telemetryFlushTimer: NodeJS.Timeout | null = null;
-    private metricsFlushTimer: NodeJS.Timeout | null = null;
+
     private errorFlushTimer: NodeJS.Timeout | null = null;
 
     private isInitialized = false;
@@ -49,7 +45,6 @@ export class MongoDBExporter {
             collections: {
                 logs: 'observability_logs',
                 telemetry: 'observability_telemetry',
-                metrics: 'observability_metrics',
                 errors: 'observability_errors',
             },
             batchSize: 100,
@@ -89,7 +84,6 @@ export class MongoDBExporter {
                 telemetry: this.db.collection(
                     this.config.collections.telemetry,
                 ),
-                metrics: this.db.collection(this.config.collections.metrics),
                 errors: this.db.collection(this.config.collections.errors),
             };
 
@@ -142,11 +136,6 @@ export class MongoDBExporter {
             await this.collections.telemetry.createIndex({ toolName: 1 });
             await this.collections.telemetry.createIndex({ phase: 1 });
 
-            // Metrics indexes
-            await this.collections.metrics.createIndex({ timestamp: 1 });
-            await this.collections.metrics.createIndex({ correlationId: 1 });
-            await this.collections.metrics.createIndex({ tenantId: 1 });
-
             // Errors indexes
             await this.collections.errors.createIndex({ timestamp: 1 });
             await this.collections.errors.createIndex({ correlationId: 1 });
@@ -193,12 +182,6 @@ export class MongoDBExporter {
                 { expireAfterSeconds: ttlSeconds },
             );
 
-            // TTL para metrics
-            await this.collections.metrics.createIndex(
-                { createdAt: 1 },
-                { expireAfterSeconds: ttlSeconds },
-            );
-
             // TTL para errors
             await this.collections.errors.createIndex(
                 { createdAt: 1 },
@@ -233,11 +216,6 @@ export class MongoDBExporter {
 
         this.telemetryFlushTimer = setInterval(
             () => this.flushTelemetry(),
-            this.config.flushIntervalMs,
-        );
-
-        this.metricsFlushTimer = setInterval(
-            () => this.flushMetrics(),
             this.config.flushIntervalMs,
         );
 
@@ -327,36 +305,6 @@ export class MongoDBExporter {
         // Flush se buffer cheio
         if (this.telemetryBuffer.length >= this.config.batchSize) {
             void this.flushTelemetry();
-        }
-    }
-
-    /**
-     * Exportar métricas
-     */
-    exportMetrics(
-        metrics: SystemMetrics,
-        context?: {
-            correlationId?: string;
-            tenantId?: string;
-            executionId?: string;
-        },
-    ): void {
-        if (!this.isInitialized) return;
-
-        const metricsItem: MongoDBMetricsItem = {
-            timestamp: new Date(),
-            correlationId: context?.correlationId,
-            tenantId: context?.tenantId,
-            executionId: context?.executionId,
-            metrics,
-            createdAt: new Date(),
-        };
-
-        this.metricsBuffer.push(metricsItem);
-
-        // Flush se buffer cheio
-        if (this.metricsBuffer.length >= this.config.batchSize) {
-            void this.flushMetrics();
         }
     }
 
@@ -452,34 +400,6 @@ export class MongoDBExporter {
     }
 
     /**
-     * Flush métricas para MongoDB
-     */
-    private async flushMetrics(): Promise<void> {
-        if (!this.collections || this.metricsBuffer.length === 0) return;
-
-        const metricsToFlush = [...this.metricsBuffer];
-        this.metricsBuffer = [];
-
-        try {
-            await this.collections.metrics.insertMany(metricsToFlush);
-
-            if (this.config.enableObservability) {
-                this.logger.debug('Metrics flushed to MongoDB', {
-                    count: metricsToFlush.length,
-                    collection: this.config.collections.metrics,
-                });
-            }
-        } catch (error) {
-            this.logger.error(
-                'Failed to flush metrics to MongoDB',
-                error as Error,
-            );
-            // Re-add to buffer for retry
-            this.metricsBuffer.unshift(...metricsToFlush);
-        }
-    }
-
-    /**
      * Flush erros para MongoDB
      */
     private async flushErrors(): Promise<void> {
@@ -514,7 +434,6 @@ export class MongoDBExporter {
         await Promise.allSettled([
             this.flushLogs(),
             this.flushTelemetry(),
-            this.flushMetrics(),
             this.flushErrors(),
         ]);
     }
@@ -526,7 +445,6 @@ export class MongoDBExporter {
         // Parar timers
         if (this.logFlushTimer) clearInterval(this.logFlushTimer);
         if (this.telemetryFlushTimer) clearInterval(this.telemetryFlushTimer);
-        if (this.metricsFlushTimer) clearInterval(this.metricsFlushTimer);
         if (this.errorFlushTimer) clearInterval(this.errorFlushTimer);
 
         // Flush final
@@ -556,8 +474,7 @@ export function createMongoDBExporterFromStorage(
             telemetry:
                 storageConfig.collections?.telemetry ||
                 'observability_telemetry',
-            metrics:
-                storageConfig.collections?.metrics || 'observability_metrics',
+
             errors: storageConfig.collections?.errors || 'observability_errors',
         },
         batchSize: storageConfig.batchSize || 100,

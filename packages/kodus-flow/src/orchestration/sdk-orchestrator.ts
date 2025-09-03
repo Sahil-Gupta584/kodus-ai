@@ -705,7 +705,6 @@ const orchestrator = new SDKOrchestrator({
             this.logger.info('✅ EnhancedContextBuilder configured', {
                 mode: enhancedConfig.adapterType,
                 hasConnectionString: !!enhancedConfig.connectionString,
-                sessionTTL: enhancedConfig.sessionTTL / (60 * 60 * 1000) + 'h',
             });
         } catch (error) {
             this.logger.error(
@@ -757,25 +756,22 @@ const orchestrator = new SDKOrchestrator({
             };
         }
 
-        const adapterType = storage.connectionString
-            ? StorageEnum.MONGODB
-            : StorageEnum.INMEMORY;
-
-        const options = storage.options || {};
-        const sessionTTL = options.sessionTTL || 24 * 60 * 60 * 1000;
+        const adapterType =
+            storage.type === StorageEnum.MONGODB
+                ? StorageEnum.MONGODB
+                : storage.connectionString
+                  ? StorageEnum.MONGODB
+                  : StorageEnum.INMEMORY;
 
         const enhancedConfig = {
-            adapterType:
-                adapterType === StorageEnum.MONGODB
-                    ? StorageEnum.MONGODB
-                    : StorageEnum.INMEMORY,
+            adapterType,
             connectionString: storage.connectionString,
-            sessionTTL,
+            database: storage.database,
         };
 
         this.logger.debug('Enhanced context config (SIMPLIFIED)', {
-            mode: StorageEnum.MONGODB,
-            sessionTTL: sessionTTL / (60 * 60 * 1000) + 'h',
+            adapterType,
+            hasConnectionString: !!storage.connectionString,
         });
 
         return enhancedConfig;

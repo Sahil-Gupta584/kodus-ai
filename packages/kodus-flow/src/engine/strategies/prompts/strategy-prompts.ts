@@ -305,34 +305,90 @@ Return STRICT JSON with this exact schema:
 
 \`\`\`json
 {
-  "reasoning": "Brief reasoning about approach and tool selection",
-  "action": {
-    "type": "final_answer" | "tool_call",
-    "content": "Response content (for final_answer only)",
-    "toolName": "TOOL_NAME (for tool_call only)",
-    "input": {"param": "value"} // Parameters for tool_call only
+  "reasoning": "Detailed reasoning with confidence assessment",
+  "confidence": 0.85,
+  "hypotheses": [
+    {
+      "approach": "Primary approach description",
+      "confidence": 0.85,
+      "action": {
+        "type": "final_answer" | "tool_call",
+        "content": "Response content (for final_answer only)",
+        "toolName": "TOOL_NAME (for tool_call only)",
+        "input": {"param": "value"}
+      }
+    }
+  ],
+  "reflection": {
+    "shouldContinue": true,
+    "reasoning": "Why continue or stop",
+    "alternatives": ["Alternative approaches if current fails"]
+  },
+  "earlyStopping": {
+    "shouldStop": false,
+    "reason": "Why stop now or continue"
   }
 }
 \`\`\`
 
+## 🎯 DECISION FRAMEWORK (CONFIDENCE-BASED)
+
+### CONFIDENCE SCORING SCALE:
+- **0.9-1.0**: Certain - Proceed immediately
+- **0.7-0.89**: Confident - Good to proceed
+- **0.5-0.69**: Uncertain - Generate alternatives
+- **0.3-0.49**: Low confidence - Reflect and reconsider
+- **0.0-0.29**: Very uncertain - Early stopping recommended
+
 ## 🚨 WHEN TO USE FINAL_ANSWER
-- When you have complete information to answer the user's question
-- When the task is fully accomplished
-- When no additional tool calls are needed
+- **CONFIDENCE > 0.8**: When you have complete information
+- **EARLY STOPPING**: When confidence drops below 0.3
+- **REFLECTION TRIGGER**: When confidence < 0.5 for 2+ steps
 
 ## ⚠️ WHEN TO USE TOOL_CALL
-- When you need specific data or information
-- When you need to perform actions or operations
-- When you need to analyze or process information
-- When you need to retrieve specific information
+- **CONFIDENCE 0.6-0.8**: When specific data needed
+- **MULTI-HYPOTHESIS**: When confidence < 0.7, provide alternatives
+- **SELF-REFLECTION**: Always reflect before tool calls with confidence < 0.5
+
+## 🧠 SELF-REFLECTION PROTOCOL
+**BEFORE each action, ask yourself:**
+1. **Relevance**: Does this action directly help solve the user's problem?
+2. **Efficiency**: Is there a better approach with higher confidence?
+3. **Completeness**: Do I have enough information to proceed confidently?
+4. **Alternatives**: What are 2-3 other approaches if this fails?
+
+## 🔄 MULTI-HYPOTHESIS GENERATION
+**When confidence < 0.7, ALWAYS provide:**
+- **Primary hypothesis** (highest confidence)
+- **Secondary hypothesis** (alternative approach)
+- **Tertiary hypothesis** (backup plan)
+- **Confidence scores** for each hypothesis
+
+## 🛑 EARLY STOPPING CRITERIA
+**STOP immediately if:**
+- **Confidence < 0.3** for 2 consecutive steps
+- **Same action repeated** 3+ times with same parameters
+- **No progress** detected in last 3 steps
+- **User intent unclear** after multiple attempts
+
+## 📚 FEW-SHOT EXAMPLES
+**TODO: Implementar seleção dinâmica baseada em contexto futuramente**
+- Task similarity (semantic matching)
+- Tool usage patterns (successful combinations)
+- Complexity level (simple vs complex tasks)
+- Historical success rate (proven effective examples)
 
 ## ⚡ CRITICAL CONSTRAINTS
 - **ALWAYS RETURN ONLY JSON** (no text explanations or formatting)
 - **NO fallback formats accepted**
 - **STRICT schema compliance required**
-- **reasoning and action fields are mandatory**
+- **reasoning, confidence, hypotheses fields are mandatory**
 - **For tool_call: toolName and input are required**
 - **For final_answer: content is required**
+- **CONFIDENCE scoring is mandatory (0.0-1.0 scale)**
+- **SELF-REFLECTION required when confidence < 0.5**
+- **MULTI-HYPOTHESIS required when confidence < 0.7**
+- **EARLY STOPPING evaluation required each step**
 - **IGNORE conversation language - always use JSON structure**
 - **DO NOT respond in Portuguese, English, or any other language**
 - **ONLY valid JSON responses are accepted**
@@ -362,7 +418,6 @@ Return STRICT JSON with this exact schema:
             );
         }
 
-        // 5. 📋 EXECUTION HISTORY
         if (history && history.length > 0) {
             const historyDetails = history
                 .map((step, index) => {
@@ -370,6 +425,51 @@ Return STRICT JSON with this exact schema:
 
                     if (step.thought?.reasoning) {
                         stepInfo.push(`Thought: ${step.thought.reasoning}`);
+                    }
+
+                    // 🔥 NOVO: Mostrar confiança se disponível
+                    if ((step.thought as any)?.confidence !== undefined) {
+                        const confidence = (step.thought as any).confidence;
+                        const confidenceLevel =
+                            confidence >= 0.8
+                                ? 'HIGH'
+                                : confidence >= 0.6
+                                  ? 'MEDIUM'
+                                  : confidence >= 0.4
+                                    ? 'LOW'
+                                    : 'VERY LOW';
+                        stepInfo.push(
+                            `🎯 Confidence: ${confidence} (${confidenceLevel})`,
+                        );
+                    }
+
+                    // 🔥 NOVO: Mostrar múltiplas hipóteses se disponíveis
+                    if ((step.thought as any)?.hypotheses?.length > 0) {
+                        const hypotheses = (step.thought as any).hypotheses;
+                        stepInfo.push(
+                            `🔄 Hypotheses: ${hypotheses.length} options`,
+                        );
+                        hypotheses
+                            .slice(0, 2)
+                            .forEach((hyp: any, idx: number) => {
+                                stepInfo.push(
+                                    `  ${idx + 1}. ${hyp.approach} (conf: ${hyp.confidence})`,
+                                );
+                            });
+                    }
+
+                    // 🔥 NOVO: Mostrar reflexão se disponível
+                    if ((step.thought as any)?.reflection) {
+                        const reflection = (step.thought as any).reflection;
+                        stepInfo.push(`🤔 Reflection: ${reflection.reasoning}`);
+                        stepInfo.push(
+                            `  Continue: ${reflection.shouldContinue ? 'YES' : 'NO'}`,
+                        );
+                        if (reflection.alternatives?.length > 0) {
+                            stepInfo.push(
+                                `  Alternatives: ${reflection.alternatives.length} options`,
+                            );
+                        }
                     }
 
                     if (step.action?.type) {
@@ -406,11 +506,48 @@ Return STRICT JSON with this exact schema:
                         stepInfo.push(`Result: ${resultStr}`);
                     }
 
+                    // 🔥 NOVO: Mostrar decisão de early stopping
+                    if ((step as any)?.earlyStopping) {
+                        const earlyStop = (step as any).earlyStopping;
+                        if (earlyStop.shouldStop) {
+                            stepInfo.push(
+                                `🚨 EARLY STOP TRIGGERED: ${earlyStop.reason}`,
+                            );
+                        } else {
+                            stepInfo.push(
+                                `✅ Continue Decision: ${earlyStop.reason}`,
+                            );
+                        }
+                    }
+
                     return `**Step ${index + 1}:**\n${stepInfo.join('\n')}`;
                 })
                 .join('\n\n');
 
-            sections.push(`## 📋 EXECUTION HISTORY\n\n${historyDetails}`);
+            sections.push(
+                `## 📋 EXECUTION HISTORY (with confidence, hypotheses & reflection)\n\n${historyDetails}`,
+            );
+        }
+
+        // 6. 🔥 CURRENT STATUS ASSESSMENT
+        sections.push(`## 📊 CURRENT ASSESSMENT
+- **Iteration:** ${context.currentIteration || 0}/${context.maxIterations || 10}
+- **Tools Available:** ${agentContext?.availableTools?.length || 0}
+- **Previous Steps:** ${history?.length || 0}`);
+
+        if ((context as any).collectedInfo) {
+            sections.push((context as any).collectedInfo);
+        }
+
+        if (
+            (context as any).currentIteration !== undefined &&
+            (context as any).maxIterations !== undefined
+        ) {
+            const currentIter = (context as any).currentIteration;
+            const maxIter = (context as any).maxIterations;
+            sections.push(
+                `## 🔄 EXECUTION PROGRESS\n- **Current Iteration:** ${currentIter + 1} / ${maxIter}\n- **Remaining Iterations:** ${maxIter - currentIter - 1}\n\n⚠️ **IMPORTANT:** If you have gathered sufficient information to answer the original question, please provide a final_answer instead of making more tool calls.`,
+            );
         }
 
         sections.push(this.getTaskInstructions());
