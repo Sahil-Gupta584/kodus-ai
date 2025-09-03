@@ -5210,33 +5210,46 @@ export class GithubService
         }[]
     > {
         const { owner, repo, octokit, rootTreeSha } = params;
-        const allFiles = [];
+        const allItems = [];
 
         let directoriesToProcess = [{ sha: rootTreeSha, path: '' }];
 
         while (directoriesToProcess.length > 0) {
-            const promises = directoriesToProcess.map((dir) =>
-                octokit.rest.git.getTree({
+            const promises = directoriesToProcess.map(async (dir) => {
+                const { data } = await octokit.rest.git.getTree({
                     owner,
                     repo,
                     tree_sha: dir.sha,
-                }),
-            );
+                    recursive: 'false',
+                });
 
-            const treeResponses = await Promise.all(promises);
+                return { parentPath: dir.path, tree: data.tree };
+            });
 
+            const settledResults = await Promise.allSettled(promises);
             const nextLevelDirectories = [];
 
-            for (let i = 0; i < treeResponses.length; i++) {
-                const currentDir = directoriesToProcess[i];
-                const treeContents = treeResponses[i].data.tree;
+            for (const result of settledResults) {
+                if (result.status === 'rejected') {
+                    this.logger.error({
+                        message: 'Error fetching tree level from GitHub',
+                        context: GithubService.name,
+                        error: result.reason,
+                        metadata: { owner, repo },
+                    });
+                    continue;
+                }
 
-                for (const item of treeContents) {
-                    const fullPath = currentDir.path
-                        ? `${currentDir.path}/${item.path}`
+                const { parentPath, tree } = result.value;
+
+                for (const item of tree) {
+                    const fullPath = parentPath
+                        ? `${parentPath}/${item.path}`
                         : item.path;
 
-                    const file = {
+                    if (!item.type || !item.sha || !item.path) continue;
+
+                    const baseItem = {
                         path: fullPath,
                         sha: item.sha,
                         size: item.size,
@@ -5244,16 +5257,9 @@ export class GithubService
                     };
 
                     if (item.type === 'blob') {
-                        allFiles.push({
-                            ...file,
-                            type: 'file',
-                        });
-                    } else if (item.type === 'tree' && item.sha) {
-                        allFiles.push({
-                            ...file,
-                            type: 'directory',
-                        });
-
+                        allItems.push({ ...baseItem, type: 'file' });
+                    } else if (item.type === 'tree') {
+                        allItems.push({ ...baseItem, type: 'directory' });
                         nextLevelDirectories.push({
                             sha: item.sha,
                             path: fullPath,
@@ -5265,7 +5271,7 @@ export class GithubService
             directoriesToProcess = nextLevelDirectories;
         }
 
-        return allFiles;
+        return allItems;
     }
 
     formatReviewCommentBody(params: {
