@@ -86,6 +86,7 @@ import {
     RepositoryFileWithContent,
 } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
+import pLimit from 'p-limit';
 
 interface GitHubAuthResponse {
     token: string;
@@ -5211,20 +5212,23 @@ export class GithubService
     > {
         const { owner, repo, octokit, rootTreeSha } = params;
         const allItems = [];
+        const limit = pLimit(10);
 
         let directoriesToProcess = [{ sha: rootTreeSha, path: '' }];
 
         while (directoriesToProcess.length > 0) {
-            const promises = directoriesToProcess.map(async (dir) => {
-                const { data } = await octokit.rest.git.getTree({
-                    owner,
-                    repo,
-                    tree_sha: dir.sha,
-                    recursive: 'false',
-                });
+            const promises = directoriesToProcess.map((dir) =>
+                limit(async () => {
+                    const { data } = await octokit.rest.git.getTree({
+                        owner,
+                        repo,
+                        tree_sha: dir.sha,
+                        recursive: 'false',
+                    });
 
-                return { parentPath: dir.path, tree: data.tree };
-            });
+                    return { parentPath: dir.path, tree: data.tree };
+                }),
+            );
 
             const settledResults = await Promise.allSettled(promises);
             const nextLevelDirectories = [];
