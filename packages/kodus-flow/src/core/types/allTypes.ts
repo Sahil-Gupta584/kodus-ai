@@ -8,8 +8,6 @@ import {
 import { IdGenerator } from '../../utils/index.js';
 import {
     createLogger,
-    DebugSystem,
-    LayeredMetricsSystem,
     ObservabilitySystem,
     TelemetrySystem,
 } from '../../observability/index.js';
@@ -4745,8 +4743,6 @@ export interface ResourceLeak {
 export interface ObservabilityInterface {
     logger: Logger;
     telemetry: TelemetrySystem;
-    monitor: LayeredMetricsSystem | null;
-    debug: DebugSystem;
     createContext(correlationId?: string): ObservabilityContext;
     setContext(context: ObservabilityContext): void;
     getContext(): ObservabilityContext | undefined;
@@ -4757,11 +4753,21 @@ export interface ObservabilityInterface {
         fn: () => T | Promise<T>,
         context?: Partial<ObservabilityContext>,
     ): Promise<T>;
-    measure<T>(
-        name: string,
-        fn: () => T | Promise<T>,
-        category?: string,
-    ): Promise<{ result: T; duration: number }>;
+
+    // ✅ Adicionado: salvar ciclo completo do agente
+    saveAgentExecutionCycle(
+        agentName: string,
+        executionId: string,
+        cycle: {
+            startTime: number;
+            endTime?: number;
+            input: any;
+            output?: any;
+            actions: any[];
+            errors?: Error[];
+            metadata?: Record<string, any>;
+        },
+    ): Promise<void>;
 
     logError(
         error: Error | BaseSDKError,
@@ -4774,11 +4780,6 @@ export interface ObservabilityInterface {
         message?: string,
         context?: Partial<ObservabilityContext>,
     ): BaseSDKError;
-
-    getHealthStatus(): HealthStatus;
-    generateReport(): UnifiedReport;
-
-    updateConfig(config: Partial<ObservabilityConfig>): void;
 
     flush(): Promise<void>;
     dispose(): Promise<void>;

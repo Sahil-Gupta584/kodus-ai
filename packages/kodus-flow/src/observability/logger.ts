@@ -1,5 +1,3 @@
-// Add module-level re-entrancy guard
-
 import {
     LogContext,
     LogContextProvider,
@@ -8,7 +6,6 @@ import {
     LogProcessor,
 } from '../core/types/allTypes.js';
 
-// Global state for logging
 export let globalLogContextProvider: LogContextProvider | undefined;
 export let globalLogProcessors: LogProcessor[] = [];
 export let isProcessingLog = false;
@@ -19,16 +16,10 @@ export function setLogContextProvider(
     globalLogContextProvider = provider;
 }
 
-/**
- * Add a global log processor
- */
 export function addLogProcessor(processor: LogProcessor): void {
     globalLogProcessors.push(processor);
 }
 
-/**
- * Remove a log processor
- */
 export function removeLogProcessor(processor: LogProcessor): void {
     const index = globalLogProcessors.indexOf(processor);
     if (index > -1) {
@@ -36,9 +27,6 @@ export function removeLogProcessor(processor: LogProcessor): void {
     }
 }
 
-/**
- * Clear all log processors
- */
 export function clearLogProcessors(): void {
     globalLogProcessors = [];
 }
@@ -46,16 +34,15 @@ export function clearLogProcessors(): void {
 function mergeContext(context?: LogContext): LogContext | undefined {
     try {
         const base = globalLogContextProvider?.();
-        if (!base) return context;
+        if (!base) {
+            return context;
+        }
         return { ...base, ...context };
     } catch {
         return context;
     }
 }
 
-/**
- * Process log through global processors
- */
 function processLog(
     level: LogLevel,
     message: string,
@@ -74,7 +61,6 @@ function processLog(
             processor(level, message, component, mergedContext, error);
         }
     } catch (processorError) {
-        // Fail silently to prevent infinite loops
         console.warn('Log processor failed:', processorError);
     } finally {
         isProcessingLog = false;
@@ -100,39 +86,43 @@ class SimpleLogger implements Logger {
         return levels[level] >= levels[this.level];
     }
 
-    private formatMessage(
-        level: LogLevel,
-        message: string,
-        _context?: LogContext,
-    ): string {
+    private formatMessage(level: LogLevel, message: string): string {
         const timestamp = new Date().toISOString();
         const levelUpper = level.toUpperCase();
         return `[${timestamp}] [${levelUpper}] [${this.componentName}] ${message}`;
     }
 
     debug(message: string, context?: LogContext): void {
-        if (!this.shouldLog('debug')) return;
+        if (!this.shouldLog('debug')) {
+            return;
+        }
         const formattedMessage = this.formatMessage('debug', message);
         console.debug(formattedMessage, mergeContext(context));
         processLog('debug', message, this.componentName, context);
     }
 
     info(message: string, context?: LogContext): void {
-        if (!this.shouldLog('info')) return;
+        if (!this.shouldLog('info')) {
+            return;
+        }
         const formattedMessage = this.formatMessage('info', message);
         console.log(formattedMessage, mergeContext(context));
         processLog('info', message, this.componentName, context);
     }
 
     warn(message: string, context?: LogContext): void {
-        if (!this.shouldLog('warn')) return;
+        if (!this.shouldLog('warn')) {
+            return;
+        }
         const formattedMessage = this.formatMessage('warn', message);
         console.warn(formattedMessage, mergeContext(context));
         processLog('warn', message, this.componentName, context);
     }
 
     error(message: string, error?: Error, context?: LogContext): void {
-        if (!this.shouldLog('error')) return;
+        if (!this.shouldLog('error')) {
+            return;
+        }
         const formattedMessage = this.formatMessage('error', message);
 
         const errorContext = {

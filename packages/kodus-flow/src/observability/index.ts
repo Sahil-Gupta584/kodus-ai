@@ -2,30 +2,24 @@ import { BaseSDKError } from '../core/errors.js';
 import { IdGenerator } from '../utils/id-generator.js';
 
 export * from './telemetry.js';
-export * from './monitoring.js';
-export * from './debugging.js';
 export { createOtelTracerAdapter, OtelTracerAdapter } from './otel-adapter.js';
-export { startAgentSpan, startToolSpan, startLLMSpan } from './telemetry.js';
+export {
+    startAgentSpan,
+    startToolSpan,
+    startLLMSpan,
+    getActiveSpan,
+} from './telemetry.js';
 
 export { createLogger } from './logger.js';
 
 import { getTelemetry, TelemetrySystem } from './telemetry.js';
-import { LayeredMetricsSystem as ResourceMonitor } from './monitoring.js';
-import { DebugSystem, getGlobalDebugSystem } from './debugging.js';
 import {
-    DebugReport,
     DEFAULT_CONFIG,
-    HealthStatus,
     LogContext,
     Logger,
     ObservabilityConfig,
     ObservabilityContext,
     ObservabilityInterface,
-    ResourceLeak,
-    Span,
-    TEvent,
-    UnifiedReport,
-    type SystemMetrics as ResourceMetrics,
     ErrorCode,
 } from '../core/types/allTypes.js';
 import { createLogger, setLogContextProvider } from './logger.js';
@@ -34,11 +28,9 @@ export class ObservabilitySystem implements ObservabilityInterface {
     private config: ObservabilityConfig;
     private currentContext?: ObservabilityContext;
 
-    // Component instances
+    // Component instances essenciais
     public readonly logger: Logger;
     public readonly telemetry: TelemetrySystem;
-    public readonly monitor: ResourceMonitor | null = null;
-    public readonly debug: DebugSystem;
     private mongodbExporter: {
         initialize(): Promise<void>;
         exportTelemetry(item: unknown): void;
@@ -87,8 +79,6 @@ export class ObservabilitySystem implements ObservabilityInterface {
                   }
                 : undefined;
         });
-
-        this.debug = getGlobalDebugSystem(this.config.debugging);
 
         // Initialize MongoDB Exporter if configured (legacy or via storage)
         this.logger.info('Checking MongoDB configuration...', {
@@ -169,8 +159,7 @@ export class ObservabilitySystem implements ObservabilityInterface {
     setContext(context: ObservabilityContext): void {
         this.currentContext = context;
 
-        // Propagate to debug system
-        this.debug.setCorrelationId(context.correlationId || 'unknown');
+        // Context set successfully
 
         this.logger.debug('Observability context set', {
             correlationId: context.correlationId,
@@ -197,7 +186,6 @@ export class ObservabilitySystem implements ObservabilityInterface {
         }
 
         this.currentContext = undefined;
-        this.debug.clearCorrelationId();
     }
 
     /**
@@ -239,49 +227,25 @@ export class ObservabilitySystem implements ObservabilityInterface {
             this.setContext(execContext as ObservabilityContext);
         }
 
-        // Start telemetry span
-        const rootAttributes: Record<string, string | number | boolean> = {};
-        if (execContext?.correlationId)
-            rootAttributes['correlation.id'] = execContext.correlationId;
-        if (execContext?.tenantId)
-            rootAttributes['tenant.id'] = execContext.tenantId;
-        if (execContext?.executionId)
-            rootAttributes['execution.id'] = execContext.executionId;
-        if (execContext?.sessionId)
-            rootAttributes['session.id'] = execContext.sessionId; // ✅ NEW: Add sessionId to span attributes
         const span = this.telemetry.startSpan(name, {
-            attributes: rootAttributes,
+            attributes: {
+                correlationId: execContext?.correlationId || 'unknown',
+                executionId: execContext?.executionId || 'unknown',
+            },
         });
-
-        // Start debug measurement
-        const measurementId = this.debug.startMeasurement(name, 'trace', {
-            correlationId: execContext?.correlationId,
-        });
-
-        const startTime = Date.now();
 
         try {
-            const result = await this.telemetry.withSpan(span, async () => {
-                const r = await fn();
-                span.setStatus({ code: 'ok' });
-                return r;
-            });
-
-            const duration = Date.now() - startTime;
-            this.debug.endMeasurement(measurementId);
+            const result = await this.telemetry.withSpan(span, fn);
+            span.setStatus({ code: 'ok' });
 
             this.logger.debug('Trace completed', {
                 name,
-                duration,
                 correlationId: execContext?.correlationId,
                 success: true,
             } as LogContext);
 
             return result;
         } catch (error) {
-            const duration = Date.now() - startTime;
-            this.debug.endMeasurement(measurementId);
-
             span.recordException(error as Error);
 
             this.logger.error(
@@ -289,45 +253,12 @@ export class ObservabilitySystem implements ObservabilityInterface {
                 error as Error,
                 {
                     name,
-                    duration,
                     correlationId: execContext?.correlationId,
                 } as LogContext,
             );
 
             throw error;
         }
-    }
-
-    /**
-     * Measure a function execution with unified metrics
-     */
-    async measure<T>(
-        name: string,
-        fn: () => T | Promise<T>,
-        category: string = 'general',
-    ): Promise<{ result: T; duration: number }> {
-        const { result, measurement } = await this.debug.measure(
-            name,
-            fn,
-            category,
-            {
-                correlationId: this.currentContext?.correlationId,
-            },
-        );
-
-        // Record in telemetry
-        if (measurement && typeof measurement.duration === 'number') {
-            this.telemetry.recordMetric(
-                'histogram',
-                `measurement.${category}`,
-                measurement.duration,
-                {
-                    name,
-                },
-            );
-        }
-
-        return { result, duration: (measurement && measurement.duration) ?? 0 };
     }
 
     /**
@@ -399,37 +330,6 @@ export class ObservabilitySystem implements ObservabilityInterface {
     /**
      * Get overall health status
      */
-    getHealthStatus(): HealthStatus {
-        const monitorMetrics = this.monitor?.getSystemMetrics();
-        const debugReport = this.debug.generateReport();
-
-        // Calculate component health
-        const components = {
-            logging: this.checkLoggingHealth(),
-            telemetry: this.checkTelemetryHealth(),
-            monitoring: this.checkMonitoringHealth(monitorMetrics),
-            debugging: this.checkDebuggingHealth(debugReport),
-        };
-
-        // Calculate overall health
-        const healthScores = Object.values(components).map((c) =>
-            c.status === 'ok' ? 100 : c.status === 'warning' ? 70 : 30,
-        );
-        const overallScore = Math.floor(
-            healthScores.reduce((a, b) => a + b, 0) / healthScores.length,
-        );
-
-        let overall: 'healthy' | 'degraded' | 'unhealthy';
-        if (overallScore >= 80) overall = 'healthy';
-        else if (overallScore >= 60) overall = 'degraded';
-        else overall = 'unhealthy';
-
-        return {
-            overall,
-            components,
-            lastCheck: Date.now(),
-        };
-    }
 
     /**
      * Run basic health checks
@@ -517,68 +417,12 @@ export class ObservabilitySystem implements ObservabilityInterface {
     /**
      * Generate unified observability report
      */
-    generateReport(): UnifiedReport {
-        const health = this.getHealthStatus();
-        const monitorMetrics = this.monitor?.getSystemMetrics();
-        const debugReport = this.debug.generateReport();
-        const leaks: ResourceLeak[] = []; // Mock leaks for now
-
-        // Generate insights
-        const insights = this.generateInsights(
-            health,
-            monitorMetrics,
-            debugReport,
-            leaks,
-        );
-
-        return {
-            timestamp: Date.now(),
-            environment: this.config.environment,
-            health,
-
-            insights,
-        };
-    }
-
-    /**
-     * Update configuration
-     */
-    updateConfig(config: Partial<ObservabilityConfig>): void {
-        this.config = { ...this.config, ...config };
-
-        // Update component configurations
-        if (config.telemetry) {
-            this.telemetry.updateConfig(config.telemetry);
-        }
-
-        if (config.debugging) {
-            this.debug.updateConfig(config.debugging);
-        }
-
-        // ✅ NOVO: Re-inicializar MongoDB Exporter se configuração mudou
-        if (config.mongodb && !this.mongodbExporter) {
-            this.logger.info(
-                'MongoDB config updated, initializing exporter...',
-                {
-                    hasConfig: !!this.config.mongodb,
-                    connectionString: this.config.mongodb?.connectionString,
-                    database: this.config.mongodb?.database,
-                },
-            );
-            void this.initializeMongoDBExporter();
-        }
-
-        this.logger.info('Observability configuration updated', {
-            environment: this.config.environment,
-        } as LogContext);
-    }
 
     /**
      * Flush all components
      */
     async flush(): Promise<void> {
         await Promise.allSettled([
-            this.debug.flush(),
             this.telemetry.forceFlush(),
             this.mongodbExporter?.flush(),
         ]);
@@ -607,12 +451,9 @@ export class ObservabilitySystem implements ObservabilityInterface {
         }
 
         await Promise.allSettled([
-            this.debug.dispose(),
             this.mongodbExporter?.dispose(),
             this.flush(),
         ]);
-
-        this.monitor?.stop?.();
         this.clearContext();
     }
 
@@ -813,9 +654,6 @@ export class ObservabilitySystem implements ObservabilityInterface {
                         promise: promise.toString(),
                     },
                 );
-
-                // Log the error but don't exit - let the application decide
-                // In production, you should handle this at the application level
             },
         );
 
@@ -830,148 +668,12 @@ export class ObservabilitySystem implements ObservabilityInterface {
     }
 
     /**
-     * Check logging health
-     */
-    private checkLoggingHealth(): {
-        status: 'ok' | 'warning' | 'error';
-        message?: string;
-    } {
-        // Simple health check - could be enhanced
-        return { status: 'ok' };
-    }
-
-    /**
      * Check telemetry health
      */
-    private checkTelemetryHealth(): {
-        status: 'ok' | 'warning' | 'error';
-        message?: string;
-    } {
-        const telemetryConfig = this.telemetry.getConfig();
-        if (!telemetryConfig.enabled) {
-            return { status: 'warning', message: 'Telemetry disabled' };
-        }
-        return { status: 'ok' };
-    }
-
-    /**
-     * Check monitoring health
-     */
-    private checkMonitoringHealth(metrics?: ResourceMetrics): {
-        status: 'ok' | 'warning' | 'error';
-        message?: string;
-    } {
-        if (!metrics) {
-            return { status: 'error', message: 'No metrics available' };
-        }
-
-        if (metrics.health.overallHealth === 'unhealthy') {
-            return {
-                status: 'error',
-                message: `Health score: ${metrics.health.overallHealth}`,
-            };
-        }
-
-        if (metrics.health.overallHealth === 'degraded') {
-            return {
-                status: 'warning',
-                message: `Health score: ${metrics.health.overallHealth}`,
-            };
-        }
-
-        return { status: 'ok' };
-    }
-
-    /**
-     * Check debugging health
-     */
-    private checkDebuggingHealth(report: DebugReport): {
-        status: 'ok' | 'warning' | 'error';
-        message?: string;
-    } {
-        if (!report.config.enabled) {
-            return { status: 'ok', message: 'Debugging disabled' };
-        }
-
-        if (report.recentErrors.length > 5) {
-            return {
-                status: 'warning',
-                message: `${report.recentErrors.length} recent errors`,
-            };
-        }
-
-        return { status: 'ok' };
-    }
 
     /**
      * Generate insights from all components
      */
-    private generateInsights(
-        health: HealthStatus,
-        metrics?: ResourceMetrics,
-        debugReport?: DebugReport,
-        leaks?: ResourceLeak[],
-    ): {
-        warnings: string[];
-        recommendations: string[];
-        criticalIssues: string[];
-    } {
-        const warnings: string[] = [];
-        const recommendations: string[] = [];
-        const criticalIssues: string[] = [];
-
-        // Health-based insights
-        if (health.overall === 'unhealthy') {
-            criticalIssues.push('System health is unhealthy');
-        } else if (health.overall === 'degraded') {
-            warnings.push('System health is degraded');
-        }
-
-        // Memory-based insights
-        if (metrics && metrics.health.memoryUsageBytes > 1024 * 1024 * 1024) {
-            // 1GB
-            warnings.push('High memory utilization detected');
-            recommendations.push(
-                'Consider reducing memory usage or increasing heap size',
-            );
-        }
-
-        // Leak detection insights
-        if (leaks && leaks.length > 0) {
-            criticalIssues.push(`${leaks.length} resource leak(s) detected`);
-            recommendations.push(
-                'Investigate resource cleanup in application code',
-            );
-        }
-
-        // Error rate insights
-        if (metrics && metrics.runtime.eventProcessing.failedEvents > 10) {
-            warnings.push('High error rate detected');
-            recommendations.push(
-                'Review error logs and implement proper error handling',
-            );
-        }
-
-        // Performance insights
-        if (
-            metrics &&
-            metrics.runtime.eventProcessing.averageProcessingTimeMs > 1000
-        ) {
-            warnings.push('Slow event processing detected (avg > 1s)');
-            recommendations.push(
-                'Profile slow operations and optimize performance',
-            );
-        }
-
-        // Debug insights
-        if (debugReport && debugReport.recentErrors.length > 0) {
-            warnings.push(
-                `${debugReport.recentErrors.length} recent errors in debug trace`,
-            );
-        }
-
-        return { warnings, recommendations, criticalIssues };
-    }
 
     /**
      * Log an error with full observability integration
@@ -1071,16 +773,11 @@ export class ObservabilitySystem implements ObservabilityInterface {
  */
 let globalObservability: ObservabilitySystem | undefined;
 
-/**
- * Get or create global observability system
- */
 export function getObservability(
     config?: Partial<ObservabilityConfig>,
 ): ObservabilitySystem {
     if (!globalObservability) {
         globalObservability = new ObservabilitySystem(config);
-    } else if (config) {
-        globalObservability.updateConfig(config);
     }
     return globalObservability;
 }
@@ -1088,89 +785,10 @@ export function getObservability(
 /**
  * Convenience function to trace a function with observability
  */
-export function withObservability<T>(
-    name: string,
-    fn: () => T | Promise<T>,
-    context?: Partial<ObservabilityContext>,
-): Promise<T> {
-    const obs = getObservability();
-    return obs.trace(name, fn, context);
-}
 
 /**
  * Middleware factory for automatic observability
  */
-export function createObservabilityMiddleware(
-    config?: Partial<ObservabilityConfig>,
-) {
-    const obs = getObservability(config);
-
-    return function observabilityMiddleware<
-        E extends TEvent,
-        R = TEvent | void,
-    >(handler: (ev: E) => Promise<R> | R, handlerName?: string) {
-        return async function observedHandler(ev: E): Promise<R | void> {
-            const context = obs.createContext();
-            context.metadata = { eventType: ev.type, handlerName };
-            obs.setContext(context);
-
-            try {
-                return await obs.trace(
-                    `handler.${handlerName || 'anonymous'}`,
-                    async () => {
-                        return await handler(ev);
-                    },
-                    context,
-                );
-            } finally {
-                obs.clearContext();
-            }
-        };
-    };
-}
-
-/**
- * Gracefully shutdown observability (flush + dispose)
- */
-export async function shutdownObservability(): Promise<void> {
-    const obs = getObservability();
-    try {
-        await obs.flush();
-    } finally {
-        await obs.dispose();
-    }
-}
-
-/**
- * Apply error details to a span with consistent attributes and status
- */
-export function applyErrorToSpan(
-    span: Span,
-    error: unknown,
-    attributes?: Record<string, string | number | boolean>,
-): void {
-    const err = error instanceof Error ? error : new Error(String(error));
-
-    const errorAttributes: Record<string, string | number | boolean> = {
-        ...(attributes || {}),
-    };
-    errorAttributes['error.name'] = err.name;
-    errorAttributes['error.message'] = err.message;
-    span.setAttributes(errorAttributes);
-    span.recordException(err);
-    span.setStatus({ code: 'error', message: err.message });
-}
-
-/**
- * Mark span as successful with optional attributes
- */
-export function markSpanOk(
-    span: Span,
-    attributes?: Record<string, string | number | boolean>,
-): void {
-    if (attributes) span.setAttributes(attributes);
-    span.setStatus({ code: 'ok' });
-}
 
 // ============================================================================
 // AGENT EXECUTION CYCLE HELPERS
@@ -1206,22 +824,6 @@ export function markSpanOk(
  * );
  * ```
  */
-export async function saveAgentExecutionCycle(
-    observability: ObservabilitySystem,
-    agentName: string,
-    executionId: string,
-    cycle: {
-        startTime: number;
-        endTime?: number;
-        input: any;
-        output?: any;
-        actions: any[];
-        errors?: Error[];
-        metadata?: Record<string, any>;
-    },
-): Promise<void> {
-    return observability.saveAgentExecutionCycle(agentName, executionId, cycle);
-}
 
 // ============================================================================
 // INTEGRATED SYSTEM HELPERS
@@ -1238,13 +840,6 @@ export async function saveAgentExecutionCycle(
  * obs.log('info', 'System initialized');
  * ```
  */
-export async function setupIntegratedObservability(
-    environment: 'development' | 'production' | 'test' = 'development',
-    overrides?: Partial<ObservabilityConfig>,
-) {
-    const obs = getObservability({ environment, ...overrides });
-    return obs;
-}
 
 /**
  * Production-ready setup with optimizations
@@ -1259,12 +854,6 @@ export async function setupIntegratedObservability(
  * });
  * ```
  */
-export async function setupProductionObservability(
-    overrides?: Partial<ObservabilityConfig>,
-) {
-    const obs = getObservability({ environment: 'production', ...overrides });
-    return obs;
-}
 
 /**
  * Development setup with full debugging
@@ -1279,9 +868,35 @@ export async function setupProductionObservability(
  * });
  * ```
  */
-export async function setupDebugObservability(
-    overrides?: Partial<ObservabilityConfig>,
-) {
-    const obs = getObservability({ environment: 'development', ...overrides });
-    return obs;
+
+// ============================================================================
+// HELPER FUNCTIONS (Simples e Essenciais)
+// ============================================================================
+
+/**
+ * ✅ Helper simples para marcar span como bem-sucedido
+ */
+export function markSpanOk(
+    span: any,
+    attributes?: Record<string, string | number | boolean>,
+): void {
+    if (attributes) {
+        span.setAttributes(attributes);
+    }
+    span.setStatus({ code: 'ok' });
+}
+
+/**
+ * ✅ Helper simples para aplicar erro ao span
+ */
+export function applyErrorToSpan(
+    span: any,
+    error: Error,
+    attributes?: Record<string, string | number | boolean>,
+): void {
+    if (attributes) {
+        span.setAttributes(attributes);
+    }
+    span.recordException(error);
+    span.setStatus({ code: 'error', message: error.message });
 }

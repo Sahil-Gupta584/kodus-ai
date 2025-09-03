@@ -1,11 +1,3 @@
-/**
- * 🍃 ENHANCED SESSION SERVICE - Using Existing Storage Pattern
- *
- * Leverages existing StorageAdapterFactory pattern (InMemory + MongoDB)
- * Follows same pattern as storage-session-adapter.ts
- * Adds: AgentRuntimeContext support, entity management, smart recovery
- */
-
 import {
     AgentRuntimeContext,
     SessionManager,
@@ -20,7 +12,6 @@ import {
     DEFAULT_SESSION_CONFIG,
 } from '../types/context-types.js';
 
-// ✅ USE: Existing storage adapter pattern
 import { StorageEnum, Thread } from '../../types/allTypes.js';
 
 import { createLogger } from '../../../observability/logger.js';
@@ -32,10 +23,6 @@ import { IdGenerator } from '../../../utils/id-generator.js';
 
 const logger = createLogger('enhanced-session-service');
 
-// ===============================================
-// 🏗️ ENHANCED SESSION SERVICE - Using Storage Adapters
-// ===============================================
-
 export class EnhancedSessionService implements SessionManager {
     private sessionsAdapter: StorageContextSessionAdapter;
     private snapshotsAdapter: StorageSnapshotAdapter;
@@ -45,7 +32,6 @@ export class EnhancedSessionService implements SessionManager {
         Promise<AgentRuntimeContext>
     >();
 
-    // 🎯 SIMPLIFIED CONFIGURATION - Apenas o essencial!
     private readonly config: SessionConfig;
 
     constructor(
@@ -59,20 +45,17 @@ export class EnhancedSessionService implements SessionManager {
             snapshotTTL?: number; // Ignorado
         },
     ) {
-        // 🎯 SIMPLE CONFIG - Apenas o essencial!
         this.config = {
-            adapterType: connectionString ? 'mongodb' : 'memory',
+            adapterType: connectionString
+                ? StorageEnum.MONGODB
+                : StorageEnum.INMEMORY,
             connectionString,
             sessionTTL:
                 options?.sessionTTL || DEFAULT_SESSION_CONFIG.sessionTTL,
         };
 
-        // ✅ USE INTERNAL CONSTANTS - Não mais configuráveis!
         this.sessionsAdapter = new StorageContextSessionAdapter({
-            adapterType:
-                this.config.adapterType === 'mongodb'
-                    ? StorageEnum.MONGODB
-                    : StorageEnum.INMEMORY,
+            adapterType: this.config.adapterType,
             connectionString: this.config.connectionString,
             options: {
                 database: SESSION_CONSTANTS.DATABASE_NAME,
@@ -81,10 +64,7 @@ export class EnhancedSessionService implements SessionManager {
         });
 
         this.snapshotsAdapter = new StorageSnapshotAdapter({
-            adapterType:
-                this.config.adapterType === 'mongodb'
-                    ? StorageEnum.MONGODB
-                    : StorageEnum.INMEMORY,
+            adapterType: this.config.adapterType,
             connectionString: this.config.connectionString,
             options: {
                 database: SESSION_CONSTANTS.DATABASE_NAME,
@@ -100,9 +80,10 @@ export class EnhancedSessionService implements SessionManager {
     }
 
     async initialize(): Promise<void> {
-        if (this.isInitialized) return;
+        if (this.isInitialized) {
+            return;
+        }
 
-        // Initialize both adapters
         await this.sessionsAdapter.initialize();
         await this.snapshotsAdapter.initialize();
 
@@ -124,11 +105,10 @@ export class EnhancedSessionService implements SessionManager {
     ): Promise<AgentRuntimeContext> {
         await this.ensureInitialized();
 
-        // Check if there's already a creation in progress for this thread (race condition protection)
         const existingLock = this.sessionCreationLocks.get(threadId);
         if (existingLock) {
             logger.info(
-                `🔒 Waiting for existing session creation for thread: ${threadId}`,
+                `Waiting for existing session creation for thread: ${threadId}`,
             );
             return existingLock;
         }
@@ -150,28 +130,23 @@ export class EnhancedSessionService implements SessionManager {
         threadId: Thread['id'],
         tenantId: string,
     ): Promise<AgentRuntimeContext> {
-        // Try to find existing session by threadId
         const existingSession =
             await this.sessionsAdapter.retrieveContextSessionByThreadId(
                 threadId,
             );
 
         if (existingSession) {
-            // Check if session is expired (older than TTL)
             const sessionAge = Date.now() - existingSession.lastActivityAt;
-            const ttl = this.config.sessionTTL!; // Use simplified config
+            const ttl = this.config.sessionTTL!;
 
             if (sessionAge > ttl) {
-                // Session expired, delete it and create new one
                 logger.info(
-                    `🗑️ Deleting expired session ${existingSession.sessionId} (age: ${Math.round(sessionAge / 1000 / 60)}min)`,
+                    `Deleting expired session ${existingSession.sessionId} (age: ${Math.round(sessionAge / 1000 / 60)}min)`,
                 );
                 await this.sessionsAdapter.deleteContextSession(
                     existingSession.sessionId,
                 );
-                // Continue to create new session below
             } else {
-                // Session still valid, update last activity
                 await this.sessionsAdapter.storeContextSession(
                     existingSession.sessionId, // Use sessionId as primary key
                     existingSession.threadId, // Keep threadId for queries
@@ -183,16 +158,14 @@ export class EnhancedSessionService implements SessionManager {
                 );
 
                 logger.info(
-                    `♻️ Recovered session ${existingSession.sessionId} for thread: ${threadId}`,
+                    `Recovered session ${existingSession.sessionId} for thread: ${threadId}`,
                 );
                 return existingSession.runtime;
             }
         }
 
-        // Generate unique sessionId using existing IdGenerator
         const sessionId = IdGenerator.sessionId();
 
-        // Create new session with ContextNew runtime
         const newRuntime: AgentRuntimeContext = {
             sessionId,
             threadId,

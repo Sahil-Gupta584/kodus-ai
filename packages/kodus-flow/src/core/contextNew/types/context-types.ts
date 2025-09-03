@@ -1,6 +1,7 @@
 import {
     AgentInputEnum,
     PlannerExecutionContext,
+    StorageEnum,
     Thread,
 } from '../../types/allTypes.js';
 
@@ -19,7 +20,7 @@ import {
  */
 export interface SessionConfig {
     // 🎯 STORAGE - Só o que realmente importa
-    adapterType: 'mongodb' | 'memory';
+    adapterType: StorageEnum;
     connectionString?: string; // Só se usar MongoDB
 
     // ⏰ SESSION TTL - Opcional com default inteligente
@@ -32,7 +33,7 @@ export interface SessionConfig {
  * Valores padrão para a configuração simplificada
  */
 export const DEFAULT_SESSION_CONFIG: SessionConfig = {
-    adapterType: 'memory',
+    adapterType: StorageEnum.INMEMORY,
     sessionTTL: 24 * 60 * 60 * 1000, // 24h
 };
 
@@ -119,19 +120,19 @@ export function createSessionConfig(
 export const SESSION_CONFIG_PRESETS = {
     // 🏭 PRODUÇÃO: MongoDB otimizado
     production: createSessionConfig({
-        adapterType: 'mongodb',
+        adapterType: StorageEnum.MONGODB,
         sessionTTL: 48 * 60 * 60 * 1000, // 48h para produção
     }),
 
     // 🧪 DESENVOLVIMENTO: InMemory rápido
     development: createSessionConfig({
-        adapterType: 'memory',
+        adapterType: StorageEnum.INMEMORY,
         sessionTTL: 60 * 60 * 1000, // 1h para dev
     }),
 
     // 🧪 TESTE: Configuração mínima
     test: createSessionConfig({
-        adapterType: 'memory',
+        adapterType: StorageEnum.INMEMORY,
         sessionTTL: 5 * 60 * 1000, // 5min para testes
     }),
 };
@@ -394,13 +395,11 @@ export interface FinalResponseContext {
     // Current runtime context
     runtime: AgentRuntimeContext;
 
-    // Recent execution summary
     executionSummary: {
         totalExecutions: number;
         successfulExecutions: number;
         failedExecutions: number;
         successRate: number; // 0-100
-        averageExecutionTime: number;
         replanCount: number;
     };
 

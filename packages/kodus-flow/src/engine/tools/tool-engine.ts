@@ -2,8 +2,8 @@ import {
     createLogger,
     getObservability,
     startToolSpan,
-    applyErrorToSpan,
     markSpanOk,
+    applyErrorToSpan,
 } from '../../observability/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import {
@@ -117,7 +117,12 @@ export class ToolEngine {
 
                     return res;
                 } catch (innerError) {
-                    applyErrorToSpan(span, innerError);
+                    applyErrorToSpan(
+                        span,
+                        innerError instanceof Error
+                            ? innerError
+                            : new Error(String(innerError)),
+                    );
                     throw innerError;
                 }
             });
@@ -662,7 +667,12 @@ export class ToolEngine {
                     markSpanOk(span);
                     return res;
                 } catch (innerError) {
-                    applyErrorToSpan(span, innerError);
+                    applyErrorToSpan(
+                        span,
+                        innerError instanceof Error
+                            ? innerError
+                            : new Error(String(innerError)),
+                    );
                     throw innerError;
                 }
             });

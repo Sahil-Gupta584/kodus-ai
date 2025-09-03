@@ -2,8 +2,8 @@ import {
     createLogger,
     getObservability,
     startLLMSpan,
-    applyErrorToSpan,
     markSpanOk,
+    applyErrorToSpan,
 } from '../../observability/index.js';
 import { EngineError } from '../errors.js';
 import {
@@ -132,9 +132,13 @@ export class DirectLLMAdapter implements LLMAdapter {
                     markSpanOk(span);
                     return res;
                 } catch (err) {
-                    applyErrorToSpan(span, err, {
-                        model: this.llm.name || 'unknown',
-                    });
+                    applyErrorToSpan(
+                        span,
+                        err instanceof Error ? err : new Error(String(err)),
+                        {
+                            model: this.llm.name || 'unknown',
+                        },
+                    );
                     throw err;
                 }
             });
