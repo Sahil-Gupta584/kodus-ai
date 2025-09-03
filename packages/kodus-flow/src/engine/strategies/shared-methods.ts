@@ -57,7 +57,6 @@ export class SharedStrategyMethods {
         action: AgentAction,
         context: StrategyExecutionContext,
     ): Promise<unknown> {
-        // Basic validation
         if (action.type !== 'tool_call' || !action.toolName) {
             throw new Error('Invalid tool call action');
         }
@@ -107,39 +106,6 @@ export class SharedStrategyMethods {
         }
     }
 
-    /**
-     * Executa ação (think/act/observe comum)
-     */
-    static async executeAction(
-        action: AgentAction,
-        context: StrategyExecutionContext,
-    ): Promise<ActionResult> {
-        if (action.type === 'tool_call') {
-            const toolResult = await this.executeTool(action, context);
-            return {
-                type: 'tool_result',
-                content: toolResult,
-                metadata: {
-                    toolName: action.toolName,
-                    arguments: action.input,
-                    executionTime: Date.now(),
-                },
-            };
-        } else if (action.type === 'final_answer') {
-            return {
-                type: 'final_answer',
-                content: action.content,
-            };
-        } else {
-            throw new Error(`Unknown action type: ${action.type}`);
-        }
-    }
-
-    // === OBSERVATION METHODS (compartilhados) ===
-
-    /**
-     * Analisa resultado (lógica comum de observe)
-     */
     static async analyzeResult(
         result: ActionResult,
         context: StrategyExecutionContext,

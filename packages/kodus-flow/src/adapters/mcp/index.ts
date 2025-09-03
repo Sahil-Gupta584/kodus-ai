@@ -123,8 +123,6 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
                 annotations: tool?.annotations,
                 title: tool?.title,
                 execute: async (args: unknown, _ctx: unknown) => {
-                    // Since we removed server prefix, execute tool without server name
-                    // The registry will find the tool in any available server
                     return registry.executeTool(
                         tool.name,
                         args as Record<string, unknown>,

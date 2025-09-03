@@ -48,10 +48,10 @@ export class MongoDBExporter {
                 errors: 'observability_errors',
             },
             batchSize: 100,
-            flushIntervalMs: 5000,
+            flushIntervalMs: 30000, // ⏰ REDUZIU DE 5s PARA 30s
             maxRetries: 3,
             ttlDays: 30,
-            enableObservability: true,
+            enableObservability: false, // 🔇 DESABILITA LOGS NO MONGODB
             ...config,
         };
 

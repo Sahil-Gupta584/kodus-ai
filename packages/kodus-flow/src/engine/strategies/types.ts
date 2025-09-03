@@ -83,6 +83,7 @@ export type ActionResultType =
 
 export interface ActionResult {
     type: ActionResultType;
+    success: boolean;
     content?: unknown;
     error?: string;
     metadata?: {

@@ -271,7 +271,7 @@ export function createGeminiProviderFromEnv(): GeminiProvider {
                 : 0.7,
             maxTokens: process.env.GEMINI_MAX_TOKENS
                 ? parseInt(process.env.GEMINI_MAX_TOKENS)
-                : 1000,
+                : 10000, // 🔥 AUMENTADO: De 1000 para 10000 tokens para respostas completas
             topP: process.env.GEMINI_TOP_P
                 ? parseFloat(process.env.GEMINI_TOP_P)
                 : 0.9,

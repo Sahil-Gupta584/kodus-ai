@@ -4723,6 +4723,33 @@ export interface UnifiedReport {
     };
 }
 
+// ⚡ CONFIGURAÇÃO SILENCIOSA PARA DESENVOLVIMENTO
+export const SILENT_CONFIG: ObservabilityConfig = {
+    enabled: false,
+    environment: 'development',
+    debug: false,
+
+    logging: {
+        enabled: false, // 🔇 NENHUM LOG
+        level: 'error',
+        outputs: [],
+    },
+
+    telemetry: {
+        enabled: false,
+        serviceName: 'kodus-flow',
+        sampling: { rate: 0.0, strategy: 'probabilistic' },
+        features: {
+            traceEvents: false,
+            traceKernel: false,
+            traceSnapshots: false,
+            tracePersistence: false,
+            metricsEnabled: false,
+        },
+    },
+};
+
+// 📊 CONFIGURAÇÃO PADRÃO ORIGINAL (para quando precisar)
 export const DEFAULT_CONFIG: ObservabilityConfig = {
     enabled: true,
     environment: 'development',
@@ -4730,14 +4757,14 @@ export const DEFAULT_CONFIG: ObservabilityConfig = {
 
     logging: {
         enabled: true,
-        level: 'warn',
+        level: 'error', // 🔇 SILENCIA LOGS DE DEBUG/INFO/WARN
         outputs: ['console'],
     },
 
     telemetry: {
-        enabled: true,
+        enabled: false, // 🔇 DESABILITA TELEMETRY COMPLETAMENTE
         serviceName: 'kodus-flow',
-        sampling: { rate: 1.0, strategy: 'probabilistic' },
+        sampling: { rate: 0.1, strategy: 'probabilistic' }, // Apenas 10% se habilitar
         features: {
             traceEvents: true,
             traceKernel: true,
@@ -5407,7 +5434,7 @@ export type DistanceMetric = 'cosine' | 'euclidean' | 'dot';
 export const DEFAULT_LLM_SETTINGS = {
     temperature: 0,
 
-    maxTokens: 2500,
+    maxTokens: 10000,
 
     stop: [
         'Observation:',

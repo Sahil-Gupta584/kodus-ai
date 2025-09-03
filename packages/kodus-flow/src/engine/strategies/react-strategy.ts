@@ -269,18 +269,55 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 );
             }
 
-            const thought = await this.generateThought(
-                context,
-                iteration,
-                previousSteps,
-            );
+            let thought: AgentThought;
+            try {
+                thought = await this.generateThought(
+                    context,
+                    iteration,
+                    previousSteps,
+                );
 
-            this.logger.debug('💭 Thought generated', {
-                threadId,
-                iteration,
-                actionType: thought.action.type,
-                hasReasoning: !!thought.reasoning,
-            });
+                this.logger.debug('💭 Thought generated', {
+                    threadId,
+                    iteration,
+                    actionType: thought.action.type,
+                    hasReasoning: !!thought.reasoning,
+                });
+            } catch (thoughtError) {
+                // 🔥 CORREÇÃO: Se thought generation falhar, ainda criar step com informações básicas
+                this.logger.error(
+                    '💥 Thought generation failed in iteration',
+                    thoughtError instanceof Error ? thoughtError : undefined,
+                    {
+                        iteration,
+                        threadId,
+                    },
+                );
+
+                thought = {
+                    reasoning: `Thought generation failed: ${thoughtError instanceof Error ? thoughtError.message : String(thoughtError)}`,
+                    confidence: 0.0,
+                    hypotheses: [],
+                    reflection: {
+                        shouldContinue: false,
+                        reasoning: 'Thought generation failed',
+                        alternatives: [],
+                    },
+                    earlyStopping: {
+                        shouldStop: true,
+                        reason: 'Thought generation error',
+                    },
+                    action: {
+                        type: 'final_answer',
+                        content: `I encountered an error while processing your request: ${thoughtError instanceof Error ? thoughtError.message : String(thoughtError)}`,
+                    },
+                    metadata: {
+                        iteration,
+                        timestamp: Date.now(),
+                        error: true,
+                    },
+                };
+            }
 
             const actionResult = await this.executeAction(
                 thought.action,
@@ -368,7 +405,50 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 },
             );
 
-            // Retorna step de erro
+            // 🔥 CORREÇÃO: Criar step de erro com informações básicas
+            // Como thought pode não estar definida aqui, usar fallback
+            const errorThought: AgentThought = {
+                reasoning: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
+                confidence: 0.0,
+                hypotheses: [],
+                reflection: {
+                    shouldContinue: false,
+                    reasoning: 'Unexpected error occurred',
+                    alternatives: [],
+                },
+                earlyStopping: {
+                    shouldStop: true,
+                    reason: 'Unexpected error',
+                },
+                action: {
+                    type: 'final_answer',
+                    content: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`,
+                },
+                metadata: {
+                    iteration,
+                    timestamp: Date.now(),
+                    error: true,
+                },
+            };
+
+            const errorAction: AgentAction = {
+                type: 'final_answer',
+                content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            };
+
+            const errorResult: ActionResult = {
+                type: 'error',
+                success: false,
+                content: error instanceof Error ? error.message : String(error),
+                metadata: {
+                    timestamp: Date.now(),
+                    source: 'react-strategy',
+                    executionTime: Date.now() - stepStartTime,
+                    error: true,
+                },
+            };
+
+            // Retorna step de erro com informações completas
             return {
                 id: `react-step-error-${iteration}-${Date.now()}`,
                 type: 'think',
@@ -376,6 +456,10 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 status: 'failed',
                 timestamp: stepStartTime,
                 duration: Date.now() - stepStartTime,
+                thought: errorThought,
+                action: errorAction,
+                result: errorResult,
+                observation: await this.analyzeResult(errorResult),
                 metadata: {
                     iteration,
                     strategy: 'react',
@@ -384,6 +468,8 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     errorStack:
                         error instanceof Error ? error.stack : undefined,
                     failedAt: Date.now(),
+                    originalThought: false,
+                    originalAction: false,
                 },
             };
         }
@@ -419,6 +505,9 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     hasThought: !!step.thought,
                     hasAction: !!step.action,
                     hasResult: !!step.result,
+                    thoughtReasoning: step.thought?.reasoning,
+                    actionType: step.action?.type,
+                    resultType: step.result?.type,
                 });
 
                 return {
@@ -439,11 +528,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
                         : undefined,
                 };
             }) as ExecutionStep[];
-
-            // 🔥 NOVO: Adicionar contexto sobre informações já coletadas
-            const collectedInfo =
-                this.summarizeCollectedInformation(previousSteps);
-            context.collectedInfo = collectedInfo;
 
             // 🔥 NOVO: Adicionar informações sobre iteração atual
             context.currentIteration = iteration;
@@ -631,30 +715,64 @@ export class ReActStrategy extends BaseExecutionStrategy {
                         threadId: context.agentContext.thread?.id,
                     });
 
-                    const result = await SharedStrategyMethods.executeTool(
-                        action,
-                        context,
-                    );
+                    try {
+                        const result = await SharedStrategyMethods.executeTool(
+                            action,
+                            context,
+                        );
 
-                    this.logger.debug('✅ Tool executed successfully', {
-                        toolName: action.toolName,
-                        hasResult: !!result,
-                        resultType: typeof result,
-                        executionTime: Date.now() - actionStartTime,
-                        threadId: context.agentContext.thread?.id,
-                    });
-
-                    return {
-                        type: 'tool_result',
-                        content: result,
-                        metadata: {
+                        this.logger.debug('✅ Tool executed successfully', {
                             toolName: action.toolName,
-                            arguments: action.input,
-                            timestamp: Date.now(),
-                            source: 'react-strategy',
+                            hasResult: !!result,
+                            resultType: typeof result,
                             executionTime: Date.now() - actionStartTime,
-                        },
-                    };
+                            threadId: context.agentContext.thread?.id,
+                        });
+
+                        return {
+                            type: 'tool_result',
+                            content: result,
+                            success: !!result,
+                            metadata: {
+                                toolName: action.toolName,
+                                arguments: action.input,
+                                timestamp: Date.now(),
+                                source: 'react-strategy',
+                                executionTime: Date.now() - actionStartTime,
+                            },
+                        };
+                    } catch (toolError) {
+                        this.logger.error(
+                            '❌ Tool execution failed',
+                            toolError instanceof Error ? toolError : undefined,
+                            {
+                                toolName: action.toolName,
+                                executionTime: Date.now() - actionStartTime,
+                                threadId: context.agentContext.thread?.id,
+                            },
+                        );
+
+                        return {
+                            type: 'error',
+                            success: false,
+                            content:
+                                toolError instanceof Error
+                                    ? toolError.message
+                                    : String(toolError),
+                            metadata: {
+                                toolName: action.toolName,
+                                arguments: action.input,
+                                timestamp: Date.now(),
+                                source: 'react-strategy',
+                                executionTime: Date.now() - actionStartTime,
+                                error: true,
+                                errorMessage:
+                                    toolError instanceof Error
+                                        ? toolError.message
+                                        : String(toolError),
+                            },
+                        };
+                    }
 
                 case 'final_answer':
                     this.logger.debug('🎯 Providing final answer', {
@@ -668,6 +786,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     return {
                         type: 'final_answer',
                         content: action.content,
+                        success: true,
                         metadata: {
                             timestamp: Date.now(),
                             source: 'react-strategy',
@@ -680,7 +799,18 @@ export class ReActStrategy extends BaseExecutionStrategy {
                         actionType: action.type,
                         threadId: context.agentContext.thread?.id,
                     });
-                    throw new Error(`Unknown action type: ${action.type}`);
+                    return {
+                        type: 'error',
+                        success: false,
+                        content: `Unknown action type: ${action.type}`,
+                        metadata: {
+                            timestamp: Date.now(),
+                            source: 'react-strategy',
+                            executionTime: Date.now() - actionStartTime,
+                            error: true,
+                            errorMessage: `Unknown action type: ${action.type}`,
+                        },
+                    };
             }
         } catch (error) {
             this.logger.error(
@@ -689,10 +819,8 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 {
                     actionType: action.type,
                     executionTime: Date.now() - actionStartTime,
-                    threadId: context.agentContext.thread?.id,
                 },
             );
-
             throw error;
         }
     }
@@ -787,65 +915,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
         }
 
         return false;
-    }
-
-    /**
-     * 🔥 NOVO: Resume informações já coletadas para ajudar o LLM a decidir quando parar
-     */
-    private summarizeCollectedInformation(steps: ExecutionStep[]): string {
-        const successfulToolCalls = steps.filter(
-            (step) =>
-                step.action?.type === 'tool_call' &&
-                step.result?.type === 'tool_result',
-        );
-
-        const failedToolCalls = steps.filter(
-            (step) =>
-                step.action?.type === 'tool_call' &&
-                step.result?.type === 'error',
-        );
-
-        const finalAnswers = steps.filter(
-            (step) => step.action?.type === 'final_answer',
-        );
-
-        let summary = `## 📊 EXECUTION SUMMARY\n`;
-        summary += `- **Total Steps:** ${steps.length}\n`;
-        summary += `- **Successful Tool Calls:** ${successfulToolCalls.length}\n`;
-        summary += `- **Failed Tool Calls:** ${failedToolCalls.length}\n`;
-        summary += `- **Final Answers:** ${finalAnswers.length}\n`;
-
-        if (successfulToolCalls.length > 0) {
-            summary += `\n## ✅ SUCCESSFUL TOOLS USED:\n`;
-            successfulToolCalls.forEach((step, index) => {
-                const toolName = (step.action as any)?.toolName;
-                summary += `${index + 1}. ${toolName}\n`;
-            });
-        }
-
-        if (failedToolCalls.length > 0) {
-            summary += `\n## ❌ FAILED TOOLS:\n`;
-            failedToolCalls.forEach((step, index) => {
-                const toolName = (step.action as any)?.toolName;
-                summary += `${index + 1}. ${toolName}\n`;
-            });
-        }
-
-        summary += `\n## 🤔 ANALYSIS:\n`;
-        if (successfulToolCalls.length > 0) {
-            summary += `- You have successfully gathered information from ${successfulToolCalls.length} tool(s)\n`;
-            summary += `- Consider if you have enough information to answer the original question\n`;
-        }
-
-        if (failedToolCalls.length > 0) {
-            summary += `- Some tools failed (${failedToolCalls.length}). You may want to try different approaches or conclude based on available information\n`;
-        }
-
-        if (steps.length > 5) {
-            summary += `- You've been working for ${steps.length} steps. Consider providing a final answer if you have sufficient information\n`;
-        }
-
-        return summary;
     }
 
     /**
@@ -1840,11 +1909,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
                         ? result.content
                         : JSON.stringify(result.content);
 
-                // Limitar tamanho para não sobrecarregar o prompt
-                if (contentStr.length > 300) {
-                    return `Tool executed successfully - ${contentStr.substring(0, 300)}...`;
-                }
-
+                // Resultado completo sem truncamento
                 return `Tool executed successfully - ${contentStr}`;
             } catch {
                 return 'Tool executed successfully';

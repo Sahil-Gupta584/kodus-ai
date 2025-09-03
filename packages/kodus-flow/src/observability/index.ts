@@ -17,6 +17,7 @@ export * from './optimized-spans.js';
 import { getTelemetry, TelemetrySystem } from './telemetry.js';
 import {
     DEFAULT_CONFIG,
+    SILENT_CONFIG,
     LogContext,
     Logger,
     ObservabilityConfig,
@@ -57,7 +58,11 @@ export class ObservabilitySystem implements ObservabilityInterface {
     } | null = null;
 
     constructor(config: Partial<ObservabilityConfig> = {}) {
-        this.config = { ...DEFAULT_CONFIG, ...config };
+        // 🔇 OPÇÃO PARA CONFIGURAÇÃO SILENCIOSA
+        const baseConfig = (config as any)?.silentMode
+            ? SILENT_CONFIG
+            : DEFAULT_CONFIG;
+        this.config = { ...baseConfig, ...config };
 
         // Auto-detect environment
         if (!config.environment) {
@@ -897,5 +902,5 @@ export function applyErrorToSpan(
         span.setAttributes(attributes);
     }
     span.recordException(error);
-    span.setStatus({ code: 'error', message: error.message });
+    span.setStatus({ code: 2, message: error.message });
 }

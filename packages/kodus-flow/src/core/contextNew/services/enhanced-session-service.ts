@@ -56,10 +56,7 @@ export class EnhancedSessionService implements SessionManager {
         };
 
         // Use database customizado se fornecido, senão use default
-        const databaseName =
-            options?.database ||
-            options?.dbName ||
-            SESSION_CONSTANTS.DATABASE_NAME;
+        const databaseName = options?.database || options?.dbName;
 
         this.sessionsAdapter = new StorageContextSessionAdapter({
             adapterType: this.config.adapterType,
@@ -257,22 +254,7 @@ export class EnhancedSessionService implements SessionManager {
             newMessageRole: message.role,
         });
 
-        // 🔄 ROLLING WINDOW: Keep only last N messages for performance
-        const messages = [...session.runtime.messages, message].slice(
-            -SESSION_CONSTANTS.PERFORMANCE.MAX_MESSAGES_IN_MEMORY,
-        );
-
-        logger.info(
-            '🔍 ENHANCED SESSION - Messages array updated (rolling window)',
-            {
-                threadId,
-                previousCount: session.runtime.messages.length,
-                newCount: messages.length,
-                windowSize:
-                    SESSION_CONSTANTS.PERFORMANCE.MAX_MESSAGES_IN_MEMORY,
-                roles: messages.map((m) => m.role),
-            },
-        );
+        const messages = [...session.runtime.messages, message];
 
         // Update runtime with new message
         const updatedRuntime: AgentRuntimeContext = {
@@ -281,7 +263,6 @@ export class EnhancedSessionService implements SessionManager {
             timestamp: new Date().toISOString(),
         };
 
-        // If user message, infer and update intent
         if (message.role === 'user') {
             updatedRuntime.state.lastUserIntent = this.inferIntent(
                 message.content,
@@ -426,55 +407,8 @@ export class EnhancedSessionService implements SessionManager {
             throw new Error(`Session for thread ${threadId} not found`);
         }
 
-        // 📊 OPTIMIZATION: Check entity size before adding
-        const entitySize = JSON.stringify(entities).length;
-        const maxSizeBytes =
-            SESSION_CONSTANTS.PERFORMANCE.MAX_ENTITIES_SIZE_KB * 1024;
-
-        if (entitySize > maxSizeBytes) {
-            logger.warn(
-                `⚠️ Entities too large (${Math.round(entitySize / 1024)}KB), truncating...`,
-                {
-                    threadId,
-                    maxSizeKB:
-                        SESSION_CONSTANTS.PERFORMANCE.MAX_ENTITIES_SIZE_KB,
-                },
-            );
-            // In production, implement smart truncation or compression
-        }
-
         // Smart entity updates with deduplication
         const updatedEntities = { ...session.runtime.entities };
-
-        Object.entries(entities).forEach(([entityType, entityData]) => {
-            if (Array.isArray(entityData) && entityData.length > 0) {
-                const existing = updatedEntities[
-                    entityType as keyof typeof updatedEntities
-                ] as EntityRef[] | undefined;
-                const merged = [...(existing || []), ...entityData];
-
-                // Deduplicate by ID and keep max configured
-                const maxEntities =
-                    SESSION_CONSTANTS.PERFORMANCE.MAX_ENTITIES_SIZE_KB; // Reuse for entity count limit
-                const deduped = merged
-                    .filter(
-                        (entity, index, arr) =>
-                            arr.findIndex((e) => e.id === entity.id) === index,
-                    )
-                    .slice(-maxEntities);
-
-                (updatedEntities as any)[entityType] = deduped;
-            } else if (typeof entityData === 'object' && entityData !== null) {
-                // For toolResults object
-                const existing = updatedEntities[
-                    entityType as keyof typeof updatedEntities
-                ] as Record<string, unknown> | undefined;
-                (updatedEntities as any)[entityType] = {
-                    ...(existing || {}),
-                    ...entityData,
-                };
-            }
-        });
 
         // Update runtime with new entities
         const updatedRuntime: AgentRuntimeContext = {

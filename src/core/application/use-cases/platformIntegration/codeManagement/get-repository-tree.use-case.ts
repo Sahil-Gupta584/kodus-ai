@@ -3,9 +3,7 @@ import { CodeManagementService } from '@/core/infrastructure/adapters/services/p
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { RepositoryTreeType } from '@/shared/utils/enums/repositoryTree.enum';
 import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
-import { Inject, Injectable } from '@nestjs/common';
-import { REQUEST } from '@nestjs/core';
-import { Request } from 'express';
+import { Injectable } from '@nestjs/common';
 
 export interface TreeItem {
     path: string;
@@ -33,9 +31,6 @@ type AllTreeItem = DirectoryStructure | FileItem;
 export class GetRepositoryTreeUseCase implements IUseCase {
     constructor(
         private readonly codeManagementService: CodeManagementService,
-
-        @Inject(REQUEST)
-        private readonly request: Request & { user },
         private readonly logger: PinoLoggerService,
         private readonly getAdditionalInfoHelper: GetAdditionalInfoHelper,
     ) {}
