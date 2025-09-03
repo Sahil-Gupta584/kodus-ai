@@ -158,15 +158,13 @@ export class StorageContextSessionAdapter
     private config: StorageAdapterConfig;
     private isInitialized = false;
 
-    constructor(
-        config: {
-            adapterType?: StorageEnum;
-            connectionString?: string;
-            options?: Record<string, unknown>;
-            timeout?: number;
-            retries?: number;
-        } = {},
-    ) {
+    constructor(config: {
+        adapterType: StorageEnum;
+        connectionString?: string;
+        options?: Record<string, unknown>;
+        timeout?: number;
+        retries?: number;
+    }) {
         this.config = {
             type: config.adapterType || StorageEnum.INMEMORY,
             connectionString: config.connectionString,

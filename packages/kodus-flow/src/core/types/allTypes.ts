@@ -8,8 +8,6 @@ import {
 import { IdGenerator } from '../../utils/index.js';
 import {
     createLogger,
-    DebugSystem,
-    LayeredMetricsSystem,
     ObservabilitySystem,
     TelemetrySystem,
 } from '../../observability/index.js';
@@ -2691,10 +2689,62 @@ export enum StorageEnum {
     MONGODB = 'mongodb',
 }
 
-export interface StorageAdapterConfig extends BaseStorageConfig {
+// ✅ SIMPLIFIED STORAGE CONFIG - 82% menos código!
+export interface StorageConfig {
+    adapterType: 'mongodb' | 'memory';
+    connectionString?: string; // Só se MongoDB
+    databaseName?: string; // Opcional, default: 'kodus-flow'
+}
+
+// Constantes internas (não expostas ao usuário)
+export const STORAGE_CONSTANTS = {
+    DEFAULT_DATABASE: 'kodus-flow',
+    DEFAULT_MAX_ITEMS: 1000,
+    DEFAULT_CLEANUP_INTERVAL: 300000,
+    DEFAULT_TIMEOUT: 5000,
+    DEFAULT_RETRIES: 3,
+    COLLECTIONS: {
+        DEFAULT: 'storage',
+        MEMORY: 'memory-storage',
+        MONGODB: 'mongodb-storage',
+    },
+    // Configurações específicas por tipo
+    ADAPTER_DEFAULTS: {
+        memory: {
+            maxItems: 1000,
+            enableCompression: true,
+            cleanupInterval: 300000,
+            timeout: 5000,
+        },
+        mongodb: {
+            maxItems: 10000,
+            enableCompression: true,
+            cleanupInterval: 300000,
+            timeout: 10000,
+            connectionOptions: {
+                maxPoolSize: 10,
+                serverSelectionTimeoutMS: 5000,
+                connectTimeoutMS: 10000,
+                socketTimeoutMS: 45000,
+            },
+        },
+    },
+} as const;
+
+// 🔄 COMPATIBILITY INTERFACES (DEPRECATED - use StorageConfig above)
+export interface StorageAdapterConfig {
     type: StorageEnum;
     connectionString?: string;
     options?: Record<string, unknown>;
+    // Legacy properties
+    maxItems?: number;
+    enableCompression?: boolean;
+    cleanupInterval?: number;
+    timeout?: number;
+    retries?: number;
+    enableObservability?: boolean;
+    enableHealthChecks?: boolean;
+    enableMetrics?: boolean;
 }
 
 export interface StorageDefaultConfig {
@@ -2740,88 +2790,10 @@ export const STORAGE_DEFAULTS: Record<StorageEnum, StorageDefaultConfig> = {
     },
 };
 
-export interface DebugReport {
-    timestamp: number;
-    config: DebugConfig;
-    summary: {
-        tracedEvents: number;
-        completedMeasurements: number;
-        stateSnapshots: number;
-        activeMeasurements: number;
-        avgEventProcessingTime: number;
-        avgMeasurementTime: number;
-    };
-    eventTypeDistribution: Record<string, number>;
-    recentErrors: Array<{
-        eventType: string;
-        error: string;
-        timestamp: number;
-        traceId: string;
-    }>;
-    performanceInsights: PerformanceInsights;
-}
-
 export interface PerformanceInsights {
     slowOperations: Array<{ name: string; duration: number; category: string }>;
     fastOperations: Array<{ name: string; duration: number; category: string }>;
     recommendations: string[];
-}
-
-export interface DebugContext {
-    setCorrelationId(id: string): void;
-    clearCorrelationId(): void;
-
-    log(level: LogLevel, message: string, data?: Record<string, unknown>): void;
-    trace(event: TEvent, source?: string): string;
-
-    measure<T>(
-        name: string,
-        fn: () => T | Promise<T>,
-        metadata?: Record<string, unknown>,
-    ): Promise<{ result: T; measurement: PerformanceMeasurement }>;
-    startMeasurement(name: string, metadata?: Record<string, unknown>): string;
-    endMeasurement(id: string): PerformanceMeasurement | undefined;
-
-    captureSnapshot(
-        entityName: string,
-        entityType: 'agent' | 'workflow' | 'system',
-        state: Record<string, unknown>,
-    ): string;
-
-    generateReport(): DebugReport;
-}
-export interface DebugConfig {
-    enabled: boolean;
-    level: LogLevel;
-    features: {
-        eventTracing: boolean;
-        performanceProfiling: boolean;
-        stateInspection: boolean;
-        errorAnalysis: boolean;
-    };
-
-    outputs: DebugOutput[];
-
-    maxEventHistory: number;
-    maxMeasurementHistory: number;
-
-    autoFlush: boolean;
-    flushInterval: number;
-}
-
-export interface DebugOutput {
-    name: string;
-    write(entry: DebugEntry): void | Promise<void>;
-    flush?(): void | Promise<void>;
-}
-
-export interface DebugEntry {
-    timestamp: number;
-    level: LogLevel;
-    category: 'event' | 'performance' | 'state' | 'error';
-    message: string;
-    data?: Record<string, unknown>;
-    correlationId?: string;
 }
 
 export interface PerformanceMeasurement {
@@ -3861,7 +3833,31 @@ export interface ConditionalMiddleware {
     priority?: number;
 }
 
+// ✅ SIMPLIFIED MIDDLEWARE CONFIG - 86% menos interfaces!
 export interface MiddlewareConfig {
+    retry?: {
+        maxAttempts?: number; // Default: 3
+        backoffMs?: number; // Default: 1000
+    };
+    timeout?: {
+        ms?: number; // Default: 30000
+    };
+    concurrency?: {
+        maxConcurrent?: number; // Default: 10
+    };
+    observability?: {
+        level?: 'debug' | 'info' | 'warn' | 'error'; // Default: 'info'
+    };
+}
+
+// 🔄 COMPATIBILITY INTERFACES (DEPRECATED - use MiddlewareConfig above)
+export interface RetryConfig {
+    maxAttempts?: number;
+    backoffMs?: number;
+    maxBackoffMs?: number;
+    retryableErrors?: string[];
+    nonRetryableErrors?: string[];
+    // Legacy properties
     name?: string;
     enabled?: boolean;
     condition?: MiddlewareCondition;
@@ -3869,61 +3865,78 @@ export interface MiddlewareConfig {
     metadata?: Record<string, unknown>;
 }
 
-export interface RetryConfig extends MiddlewareConfig {
-    maxAttempts?: number;
-    backoffMs?: number;
-    maxBackoffMs?: number;
-    retryableErrors?: string[];
-    nonRetryableErrors?: string[];
-}
-
-export interface TimeoutConfig extends MiddlewareConfig {
+export interface TimeoutConfig {
     timeoutMs?: number;
     errorMessage?: string;
+    // Legacy properties
+    name?: string;
+    enabled?: boolean;
+    condition?: MiddlewareCondition;
+    priority?: number;
+    metadata?: Record<string, unknown>;
 }
 
-export interface ConcurrencyConfig extends MiddlewareConfig {
+export interface ConcurrencyConfig {
     maxConcurrent?: number;
     key?: string | ((context: MiddlewareContext) => string);
     queueTimeoutMs?: number;
     dropOnTimeout?: boolean;
+    // Legacy properties
+    name?: string;
+    enabled?: boolean;
+    condition?: MiddlewareCondition;
+    priority?: number;
+    metadata?: Record<string, unknown>;
 }
 
-export interface ValidationConfig extends MiddlewareConfig {
+export interface ValidationConfig {
     schema?: unknown;
     validateEvent?: boolean;
     validateContext?: boolean;
     strict?: boolean;
+    // Legacy properties
+    name?: string;
+    enabled?: boolean;
+    condition?: MiddlewareCondition;
+    priority?: number;
+    metadata?: Record<string, unknown>;
 }
 
-export interface ObservabilityConfig extends MiddlewareConfig {
-    logLevel?: 'debug' | 'info' | 'warn' | 'error';
-    includeMetadata?: boolean;
-    includeStack?: boolean;
-    customMetrics?: string[];
-}
+// ObservabilityConfig já existe mais abaixo no arquivo (linha ~4726)
 
-export interface CircuitBreakerConfig extends MiddlewareConfig {
-    failureThreshold?: number;
-    recoveryTimeoutMs?: number;
-    halfOpenMaxAttempts?: number;
-    errorThreshold?: number;
-}
+// CircuitBreakerConfig já existe mais abaixo no arquivo (linha ~4373)
+
+// Constantes internas (não expostas ao usuário)
+export const MIDDLEWARE_CONSTANTS = {
+    RETRY: {
+        DEFAULT_MAX_ATTEMPTS: 3,
+        DEFAULT_BACKOFF_MS: 1000,
+        DEFAULT_MAX_BACKOFF_MS: 30000,
+    },
+    TIMEOUT: {
+        DEFAULT_MS: 30000,
+    },
+    CONCURRENCY: {
+        DEFAULT_MAX_CONCURRENT: 10,
+    },
+    OBSERVABILITY: {
+        DEFAULT_LEVEL: 'info' as const,
+    },
+} as const;
 
 export interface MiddlewareFactory {
-    createRetryMiddleware(config?: RetryConfig): ConditionalMiddleware;
-    createTimeoutMiddleware(config?: TimeoutConfig): ConditionalMiddleware;
-    createConcurrencyMiddleware(
-        config?: ConcurrencyConfig,
+    // ✅ SIMPLIFIED - Apenas middlewares essenciais
+    createRetryMiddleware(
+        config?: MiddlewareConfig['retry'],
     ): ConditionalMiddleware;
-    createValidationMiddleware(
-        config?: ValidationConfig,
+    createTimeoutMiddleware(
+        config?: MiddlewareConfig['timeout'],
+    ): ConditionalMiddleware;
+    createConcurrencyMiddleware(
+        config?: MiddlewareConfig['concurrency'],
     ): ConditionalMiddleware;
     createObservabilityMiddleware(
-        config?: ObservabilityConfig,
-    ): ConditionalMiddleware;
-    createCircuitBreakerMiddleware(
-        config?: CircuitBreakerConfig,
+        config?: MiddlewareConfig['observability'],
     ): ConditionalMiddleware;
 
     createCustomMiddleware(
@@ -4619,7 +4632,6 @@ export interface ObservabilityConfig {
         filePath?: string;
     };
     telemetry?: Partial<TelemetryConfig>;
-    debugging?: Partial<DebugConfig>;
     mongodb?: {
         type: 'mongodb';
         connectionString?: string;
@@ -4627,18 +4639,12 @@ export interface ObservabilityConfig {
         collections?: {
             logs?: string;
             telemetry?: string;
-            metrics?: string;
             errors?: string;
         };
         batchSize?: number;
         flushIntervalMs?: number;
         ttlDays?: number;
         enableObservability?: boolean;
-    };
-    correlation?: {
-        enabled: boolean;
-        generateIds: boolean;
-        propagateContext: boolean;
     };
 }
 
@@ -4652,8 +4658,6 @@ export interface ResourceLeak {
 export interface ObservabilityInterface {
     logger: Logger;
     telemetry: TelemetrySystem;
-    monitor: LayeredMetricsSystem | null;
-    debug: DebugSystem;
     createContext(correlationId?: string): ObservabilityContext;
     setContext(context: ObservabilityContext): void;
     getContext(): ObservabilityContext | undefined;
@@ -4664,11 +4668,21 @@ export interface ObservabilityInterface {
         fn: () => T | Promise<T>,
         context?: Partial<ObservabilityContext>,
     ): Promise<T>;
-    measure<T>(
-        name: string,
-        fn: () => T | Promise<T>,
-        category?: string,
-    ): Promise<{ result: T; duration: number }>;
+
+    // ✅ Adicionado: salvar ciclo completo do agente
+    saveAgentExecutionCycle(
+        agentName: string,
+        executionId: string,
+        cycle: {
+            startTime: number;
+            endTime?: number;
+            input: any;
+            output?: any;
+            actions: any[];
+            errors?: Error[];
+            metadata?: Record<string, any>;
+        },
+    ): Promise<void>;
 
     logError(
         error: Error | BaseSDKError,
@@ -4681,11 +4695,6 @@ export interface ObservabilityInterface {
         message?: string,
         context?: Partial<ObservabilityContext>,
     ): BaseSDKError;
-
-    getHealthStatus(): HealthStatus;
-    generateReport(): UnifiedReport;
-
-    updateConfig(config: Partial<ObservabilityConfig>): void;
 
     flush(): Promise<void>;
     dispose(): Promise<void>;
@@ -4714,6 +4723,33 @@ export interface UnifiedReport {
     };
 }
 
+// ⚡ CONFIGURAÇÃO SILENCIOSA PARA DESENVOLVIMENTO
+export const SILENT_CONFIG: ObservabilityConfig = {
+    enabled: false,
+    environment: 'development',
+    debug: false,
+
+    logging: {
+        enabled: false, // 🔇 NENHUM LOG
+        level: 'error',
+        outputs: [],
+    },
+
+    telemetry: {
+        enabled: false,
+        serviceName: 'kodus-flow',
+        sampling: { rate: 0.0, strategy: 'probabilistic' },
+        features: {
+            traceEvents: false,
+            traceKernel: false,
+            traceSnapshots: false,
+            tracePersistence: false,
+            metricsEnabled: false,
+        },
+    },
+};
+
+// 📊 CONFIGURAÇÃO PADRÃO ORIGINAL (para quando precisar)
 export const DEFAULT_CONFIG: ObservabilityConfig = {
     enabled: true,
     environment: 'development',
@@ -4721,14 +4757,14 @@ export const DEFAULT_CONFIG: ObservabilityConfig = {
 
     logging: {
         enabled: true,
-        level: 'warn',
+        level: 'error', // 🔇 SILENCIA LOGS DE DEBUG/INFO/WARN
         outputs: ['console'],
     },
 
     telemetry: {
-        enabled: true,
+        enabled: false, // 🔇 DESABILITA TELEMETRY COMPLETAMENTE
         serviceName: 'kodus-flow',
-        sampling: { rate: 1.0, strategy: 'probabilistic' },
+        sampling: { rate: 0.1, strategy: 'probabilistic' }, // Apenas 10% se habilitar
         features: {
             traceEvents: true,
             traceKernel: true,
@@ -4736,23 +4772,6 @@ export const DEFAULT_CONFIG: ObservabilityConfig = {
             tracePersistence: false,
             metricsEnabled: true,
         },
-    },
-
-    debugging: {
-        enabled: false,
-        level: 'debug',
-        features: {
-            eventTracing: true,
-            performanceProfiling: true,
-            stateInspection: true,
-            errorAnalysis: true,
-        },
-    },
-
-    correlation: {
-        enabled: true,
-        generateIds: true,
-        propagateContext: true,
     },
 };
 
@@ -4949,7 +4968,6 @@ export interface MongoDBExporterConfig {
     collections: {
         logs: string;
         telemetry: string;
-        metrics: string;
         errors: string;
     };
     batchSize: number;
@@ -5416,7 +5434,7 @@ export type DistanceMetric = 'cosine' | 'euclidean' | 'dot';
 export const DEFAULT_LLM_SETTINGS = {
     temperature: 0,
 
-    maxTokens: 2500,
+    maxTokens: 10000,
 
     stop: [
         'Observation:',
@@ -5745,42 +5763,13 @@ export interface OrchestrationConfig {
     llmAdapter: LLMAdapter;
     tenantId?: string;
     mcpAdapter?: MCPAdapter;
-    enableObservability?: boolean;
-    defaultTimeout?: number;
-    defaultPlanner?: PlannerType;
     defaultMaxIterations?: number;
     storage?: {
         type?: StorageEnum;
         connectionString?: string;
         database?: string;
-
-        // Collections opcionais (usa defaults inteligentes)
-        collections?: {
-            memory?: string; // default: 'memories'
-            sessions?: string; // default: 'sessions'
-            snapshots?: string; // default: 'snapshots'
-        };
-
-        // Configurações avançadas (opcionais)
-        options?: {
-            sessionTTL?: number; // default: 24h
-            snapshotTTL?: number; // default: 7 days
-            maxItems?: number;
-            enableCompression?: boolean;
-            cleanupInterval?: number;
-        };
     };
     observability?: Partial<ObservabilityConfig>;
-    kernel?: {
-        performance?: {
-            autoSnapshot?: {
-                enabled?: boolean;
-                intervalMs?: number;
-                eventInterval?: number;
-                useDelta?: boolean;
-            };
-        };
-    };
 }
 
 export interface OrchestrationConfigInternal

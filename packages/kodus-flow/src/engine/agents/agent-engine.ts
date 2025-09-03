@@ -1,4 +1,11 @@
-import { createLogger, getObservability } from '../../observability/index.js';
+import {
+    createLogger,
+    getObservability,
+    startExecutionTracking,
+    completeExecutionTracking,
+    failExecutionTracking,
+    addExecutionStep,
+} from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
 import { AgentCore } from './agent-core.js';
 import { MemoryManager } from '../../core/memory/index.js';
@@ -30,6 +37,7 @@ export class AgentEngine<
 
     // ✅ ADICIONAR: MemoryManager para Engine Layer
     private memoryManager?: MemoryManager;
+    private executionTrackingId?: string;
 
     constructor(
         definition: AgentDefinition<TInput, TOutput, TContent>,
@@ -64,6 +72,24 @@ export class AgentEngine<
     ): Promise<AgentExecutionResult> {
         const { correlationId, sessionId } = agentExecutionOptions;
         const obs = getObservability();
+
+        // Start execution tracking
+        const agentName = this.getDefinition()?.name || 'unknown-agent';
+        this.executionTrackingId = startExecutionTracking(
+            agentName,
+            correlationId || 'unknown',
+            {
+                sessionId,
+                tenantId: agentExecutionOptions?.tenantId,
+                threadId: agentExecutionOptions?.thread?.id,
+            },
+            input,
+        );
+
+        addExecutionStep(this.executionTrackingId, 'start', 'agent-engine', {
+            inputType: typeof input,
+            hasOptions: !!agentExecutionOptions,
+        });
 
         try {
             const definition = this.getDefinition();
@@ -123,6 +149,24 @@ export class AgentEngine<
                     },
                 } as AgentThought<TContent>);
 
+                // Complete execution tracking on success
+                if (this.executionTrackingId) {
+                    addExecutionStep(
+                        this.executionTrackingId,
+                        'finish',
+                        'agent-engine',
+                        {
+                            hasOutput: !!result.output,
+                            outputType: typeof result.output,
+                            formattedResponse: true,
+                        },
+                    );
+                    completeExecutionTracking(
+                        this.executionTrackingId,
+                        formattedOutput,
+                    );
+                }
+
                 return {
                     ...result,
                     output: formattedOutput,
@@ -130,12 +174,45 @@ export class AgentEngine<
                 };
             }
 
+            // Complete execution tracking on success (no formatting)
+            if (this.executionTrackingId) {
+                addExecutionStep(
+                    this.executionTrackingId,
+                    'finish',
+                    'agent-engine',
+                    {
+                        hasOutput: !!result.output,
+                        outputType: typeof result.output,
+                        formattedResponse: false,
+                    },
+                );
+                completeExecutionTracking(
+                    this.executionTrackingId,
+                    result.output,
+                );
+            }
+
             return result as AgentExecutionResult;
         } catch (error) {
+            // Fail execution tracking on error
+            if (this.executionTrackingId) {
+                addExecutionStep(
+                    this.executionTrackingId,
+                    'error',
+                    'agent-engine',
+                    {
+                        errorName: (error as Error).name,
+                        errorMessage: (error as Error).message,
+                    },
+                );
+                failExecutionTracking(this.executionTrackingId, error as Error);
+            }
+
             this.engineLogger.error('Agent execution failed', error as Error, {
                 agentName: this.getDefinition()?.name,
                 correlationId,
                 sessionId,
+                executionTrackingId: this.executionTrackingId,
             });
 
             throw error;

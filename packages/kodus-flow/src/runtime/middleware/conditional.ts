@@ -1,5 +1,4 @@
 import {
-    ConcurrencyConfig,
     ConditionalMiddleware,
     ConditionUtils,
     MiddlewareCondition,
@@ -7,10 +6,6 @@ import {
     MiddlewareContext,
     MiddlewareFactory,
     MiddlewareFunction,
-    ObservabilityConfig,
-    RetryConfig,
-    TimeoutConfig,
-    ValidationConfig,
 } from '../../core/types/allTypes.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
 
@@ -211,11 +206,12 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
     /**
      * Criar middleware de retry condicional
      */
-    createRetryMiddleware(config?: RetryConfig): ConditionalMiddleware {
+    createRetryMiddleware(
+        config?: MiddlewareConfig['retry'],
+    ): ConditionalMiddleware {
         const retryMiddleware: MiddlewareFunction = async (context, next) => {
             const maxAttempts = config?.maxAttempts || 3;
             const backoffMs = config?.backoffMs || 1000;
-            const maxBackoffMs = config?.maxBackoffMs || 180000;
 
             let lastError: Error;
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -229,16 +225,10 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
                         throw lastError;
                     }
 
-                    // Verificar se erro é retryable
-                    if (config?.nonRetryableErrors?.includes(lastError.name)) {
-                        throw lastError;
-                    }
+                    // Sempre retry (simplificado)
 
-                    // Backoff exponencial
-                    const delay = Math.min(
-                        backoffMs * Math.pow(2, attempt - 1),
-                        maxBackoffMs,
-                    );
+                    // Backoff exponencial simples
+                    const delay = backoffMs * Math.pow(2, attempt - 1);
                     await new Promise((resolve) => setTimeout(resolve, delay));
 
                     this.observability.logger.warn('Retry attempt', {
@@ -254,26 +244,24 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
 
         return {
             middleware: retryMiddleware,
-            condition: config?.condition || this.conditions.forCriticalEvents(),
-            name: config?.name || 'conditional-retry',
-            priority: config?.priority || 1,
+            condition: this.conditions.forCriticalEvents(),
+            name: 'conditional-retry',
+            priority: 1,
         };
     }
 
     /**
      * Criar middleware de timeout condicional
      */
-    createTimeoutMiddleware(config?: TimeoutConfig): ConditionalMiddleware {
+    createTimeoutMiddleware(
+        config?: MiddlewareConfig['timeout'],
+    ): ConditionalMiddleware {
         const timeoutMiddleware: MiddlewareFunction = async (context, next) => {
-            const timeoutMs = config?.timeoutMs || 180000;
+            const timeoutMs = config?.ms || 30000;
 
             const timeoutPromise = new Promise<never>((_, reject) => {
                 setTimeout(() => {
-                    reject(
-                        new Error(
-                            config?.errorMessage || 'Operation timed out',
-                        ),
-                    );
+                    reject(new Error('Operation timed out'));
                 }, timeoutMs);
             });
 
@@ -294,97 +282,51 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
 
         return {
             middleware: timeoutMiddleware,
-            condition:
-                config?.condition ||
-                this.conditions.forEventTypes(['api', 'external']),
-            name: config?.name || 'conditional-timeout',
-            priority: config?.priority || 2,
+            condition: this.conditions.forEventTypes(['api', 'external']),
+            name: 'conditional-timeout',
+            priority: 2,
         };
     }
 
     /**
      * Criar middleware de concorrência condicional
      */
+
+    /**
+     * Criar middleware de validação condicional
+     */
+
     createConcurrencyMiddleware(
-        config?: ConcurrencyConfig,
+        config?: MiddlewareConfig['concurrency'],
     ): ConditionalMiddleware {
         const concurrencyMap = new Map<string, number>();
         const maxConcurrent = config?.maxConcurrent || 10;
 
         const concurrencyMiddleware: MiddlewareFunction = async (
-            context,
+            _context,
             next,
         ) => {
-            const key =
-                typeof config?.key === 'function'
-                    ? config.key(context)
-                    : config?.key || 'default';
-
-            const current = concurrencyMap.get(key) || 0;
+            const current = concurrencyMap.get('default') || 0;
 
             if (current >= maxConcurrent) {
                 throw new Error('CONCURRENCY_LIMIT_EXCEEDED');
             }
 
-            concurrencyMap.set(key, current + 1);
+            concurrencyMap.set('default', current + 1);
 
             try {
                 await next();
             } finally {
-                concurrencyMap.set(key, Math.max(0, current));
+                const current = concurrencyMap.get('default') || 0;
+                concurrencyMap.set('default', Math.max(0, current - 1));
             }
         };
 
         return {
             middleware: concurrencyMiddleware,
-            condition:
-                config?.condition ||
-                this.conditions.forEventTypes(['database', 'external']),
-            name: config?.name || 'conditional-concurrency',
-            priority: config?.priority || 3,
-        };
-    }
-
-    /**
-     * Criar middleware de validação condicional
-     */
-    createValidationMiddleware(
-        config?: ValidationConfig,
-    ): ConditionalMiddleware {
-        const validationMiddleware: MiddlewareFunction = async (
-            context,
-            next,
-        ) => {
-            if (config?.schema && config.validateEvent) {
-                try {
-                    // Aqui você implementaria a validação com Zod
-                    // const result = config.schema.parse(context.event);
-                    this.observability.logger.debug('Event validated', {
-                        eventType: context.event.type,
-                        schema: config.schema,
-                    });
-                } catch (error) {
-                    this.observability.logger.error(
-                        'Validation failed',
-                        error as Error,
-                        {
-                            eventType: context.event.type,
-                        },
-                    );
-                    throw error;
-                }
-            }
-
-            await next();
-        };
-
-        return {
-            middleware: validationMiddleware,
-            condition:
-                config?.condition ||
-                this.conditions.forEventTypes(['user-input', 'api']),
-            name: config?.name || 'conditional-validation',
-            priority: config?.priority || 0,
+            condition: this.conditions.forEventTypes(['database', 'external']),
+            name: 'conditional-concurrency',
+            priority: 3,
         };
     }
 
@@ -392,14 +334,14 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
      * Criar middleware de observabilidade condicional
      */
     createObservabilityMiddleware(
-        config?: ObservabilityConfig,
+        config?: MiddlewareConfig['observability'],
     ): ConditionalMiddleware {
         const observabilityMiddleware: MiddlewareFunction = async (
             context,
             next,
         ) => {
             const startTime = Date.now();
-            const logLevel = config?.logLevel || 'info';
+            const logLevel = config?.level || 'info';
 
             try {
                 this.observability.logger[logLevel](
@@ -417,15 +359,9 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
                     'Middleware execution failed',
                     error as Error,
                     {
-                        middleware: config?.name || 'observability',
+                        middleware: 'observability',
                         eventType: context.event.type,
                         executionTime,
-                        stack: config?.includeStack
-                            ? (error as Error).stack
-                            : undefined,
-                        metadata: config?.includeMetadata
-                            ? context.metadata
-                            : undefined,
                     },
                 );
                 throw error;
@@ -434,10 +370,9 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
 
         return {
             middleware: observabilityMiddleware,
-            condition:
-                config?.condition || this.conditions.withProbability(0.1), // 10% dos eventos
-            name: config?.name || 'conditional-observability',
-            priority: config?.priority || 10,
+            condition: this.conditions.withProbability(0.1), // 10% dos eventos
+            name: 'conditional-observability',
+            priority: 10,
         };
     }
 
@@ -446,66 +381,16 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
      */
     createCustomMiddleware(
         middleware: MiddlewareFunction,
-        config?: MiddlewareConfig,
     ): ConditionalMiddleware {
         return {
             middleware,
-            condition: config?.condition || (() => true), // Sempre aplica se não especificado
-            name: config?.name || 'custom-conditional',
-            priority: config?.priority || 5,
+            condition: () => true, // Sempre aplica
+            name: 'custom-conditional',
+            priority: 5,
         };
     }
 
-    // Implementações stub para os outros métodos
-    createCacheMiddleware(): ConditionalMiddleware {
-        // TODO: Implementar cache middleware com TTL e chave customizável
-        throw new Error('Cache middleware not implemented yet');
-    }
-
-    createRateLimitMiddleware(): ConditionalMiddleware {
-        // TODO: Implementar rate limiting com token bucket ou sliding window
-        throw new Error('Rate limit middleware not implemented yet');
-    }
-
-    createCircuitBreakerMiddleware(): ConditionalMiddleware {
-        // TODO: Implementar circuit breaker com estados open/closed/half-open
-        throw new Error('Circuit breaker middleware not implemented yet');
-    }
-
-    createCompressionMiddleware(): ConditionalMiddleware {
-        // TODO: Implementar compressão de eventos grandes (gzip/brotli)
-        throw new Error('Compression middleware not implemented yet');
-    }
-
-    createEncryptionMiddleware(): ConditionalMiddleware {
-        // TODO: Implementar criptografia de eventos sensíveis (AES-256)
-        throw new Error('Encryption middleware not implemented yet');
-    }
-
-    createTransformMiddleware(): ConditionalMiddleware {
-        // TODO: Implementar transformação de eventos (formatação, validação)
-        throw new Error('Transform middleware not implemented yet');
-    }
-
-    createMonitoringMiddleware(): ConditionalMiddleware {
-        // TODO: Implementar monitoramento de métricas e alertas
-        throw new Error('Monitoring middleware not implemented yet');
-    }
-
-    createSecurityMiddleware(): ConditionalMiddleware {
-        // TODO: Implementar validação de segurança e sanitização
-        throw new Error('Security middleware not implemented yet');
-    }
-
-    createPerformanceMiddleware(): ConditionalMiddleware {
-        // TODO: Implementar profiling de performance e otimizações
-        throw new Error('Performance middleware not implemented yet');
-    }
-
-    createResilienceMiddleware(): ConditionalMiddleware {
-        // TODO: Implementar padrões de resiliência (bulkhead, timeout, fallback)
-        throw new Error('Resilience middleware not implemented yet');
-    }
+    // ✅ SIMPLIFIED - Removidos middlewares complexos não essenciais
 }
 
 /**
