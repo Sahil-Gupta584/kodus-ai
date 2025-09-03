@@ -21,6 +21,8 @@ import {
     prompt_codereview_system_gemini,
     prompt_codereview_user_deepseek,
     prompt_codereview_user_gemini,
+    prompt_codereview_system_gemini_v2,
+    prompt_codereview_user_gemini_v2,
 } from '@/shared/utils/langchainCommon/prompts/configuration/codeReview';
 import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
 import { prompt_codeReviewSafeguard_system } from '@/shared/utils/langchainCommon/prompts';
@@ -242,6 +244,114 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                     reviewMode: reviewModeResponse,
                 })
                 .setRunName('analyzeCodeWithAI')
+                .execute();
+
+            if (!analysis) {
+                const message = `No analysis result for PR#${prNumber}`;
+                this.logger.warn({
+                    message,
+                    context: LLMAnalysisService.name,
+                    metadata: {
+                        organizationAndTeamData:
+                            baseContext?.organizationAndTeamData,
+                        prNumber: baseContext?.pullRequest?.number,
+                    },
+                });
+                throw new Error(message);
+            }
+
+            // Process result and tokens
+            const analysisResult = this.llmResponseProcessor.processResponse(
+                organizationAndTeamData,
+                prNumber,
+                analysis,
+            );
+
+            if (!analysisResult) {
+                return null;
+            }
+
+            analysisResult.codeReviewModelUsed = {
+                generateSuggestions: provider,
+            };
+
+            const tokenUsages = this.tokenTracker.getTokenUsages();
+            await this.logTokenUsage({
+                tokenUsages,
+                organizationAndTeamData,
+                prNumber,
+                analysis,
+            });
+
+            return analysisResult;
+        } catch (error) {
+            this.logger.error({
+                message: `Error during LLM code analysis for PR#${prNumber}`,
+                context: LLMAnalysisService.name,
+                metadata: {
+                    organizationAndTeamData: context?.organizationAndTeamData,
+                    prNumber: context?.pullRequest?.number,
+                },
+                error,
+            });
+            throw error;
+        }
+    }
+
+    async analyzeCodeWithAI_v2(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        fileContext: FileChangeContext,
+        reviewModeResponse: ReviewModeResponse,
+        context: AnalysisContext,
+    ): Promise<AIAnalysisResult> {
+        const provider = LLMModelProvider.GEMINI_2_5_PRO;
+        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+
+        // Reset token tracking for new analysis
+        this.tokenTracker.reset();
+
+        // Prepare base context
+        const baseContext = this.prepareAnalysisContext(fileContext, context);
+
+        try {
+            const analysis = await this.promptRunnerService
+                .builder()
+                .setProviders({
+                    main: provider,
+                    fallback: fallbackProvider,
+                })
+                .setParser(ParserType.STRING)
+                .setLLMJsonMode(true)
+                .setPayload(baseContext)
+                .addPrompt({
+                    prompt: prompt_codereview_system_gemini_v2,
+                    role: PromptRole.SYSTEM,
+                    scope: PromptScope.MAIN,
+                })
+                .addPrompt({
+                    prompt: prompt_codereview_user_gemini_v2,
+                    role: PromptRole.USER,
+                    scope: PromptScope.MAIN,
+                })
+                .addPrompt({
+                    prompt: prompt_codereview_user_deepseek,
+                    role: PromptRole.USER,
+                    scope: PromptScope.FALLBACK,
+                })
+                .setTemperature(0)
+                .addCallbacks([this.tokenTracker])
+                .addMetadata({
+                    organizationId:
+                        baseContext?.organizationAndTeamData?.organizationId,
+                    teamId: baseContext?.organizationAndTeamData?.teamId,
+                    pullRequestId: baseContext?.pullRequest?.number,
+                    provider: provider,
+                    fallbackProvider: fallbackProvider,
+                    reviewMode: reviewModeResponse,
+                })
+                .setRunName('analyzeCodeWithAI_v2')
+                .setMaxReasoningTokens(128) //TODO corrigir para 5K
                 .execute();
 
             if (!analysis) {
