@@ -10,7 +10,9 @@ export enum LabelType {
     CODE_STYLE = 'code_style',
     DOCUMENTATION_AND_COMMENTS = 'documentation_and_comments',
     KODY_RULES = 'kody_rules',
-    BREAKING_CHANGES = 'breaking_changes'
+    BREAKING_CHANGES = 'breaking_changes',
+    BUG = 'bug',
+    PERFORMANCE = 'performance',
 }
 
 enum ShieldColor {
@@ -59,6 +61,10 @@ const getLabelShield = (label: string) => {
             return `${shield}${ShieldColor.INDIGO})`;
         case LabelType.BREAKING_CHANGES:
             return `${shield}${ShieldColor.YELLOW})`;
+        case LabelType.BUG:
+            return `${shield}${ShieldColor.DARK_RED})`;
+        case LabelType.PERFORMANCE:
+            return `${shield}${ShieldColor.ORANGE})`;
         default:
             return '';
     }
