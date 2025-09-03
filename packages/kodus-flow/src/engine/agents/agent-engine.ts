@@ -1,42 +1,21 @@
-/**
- * @module engine/agents/agent_new/agent-engine
- * @description Engine para execução direta de agentes - sem workflow
- *
- * CARACTERÍSTICAS:
- * ✅ Execução direta e rápida
- * ✅ Sem overhead de workflow
- * ✅ Sem pause/resume
- * ✅ Ideal para agentes simples e autônomos
- * ✅ Suporte completo a tools e multi-agent
- */
-
 import { createLogger, getObservability } from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
-import type { ToolEngine } from '../tools/tool-engine.js';
-
-// ✅ ADICIONAR: MemoryManager para Engine Layer
-import type { MemoryManager } from '../../core/memory/memory-manager.js';
-
-// Types do sistema
-import type {
+import { AgentCore } from './agent-core.js';
+import { MemoryManager } from '../../core/memory/index.js';
+import {
+    AgentCoreConfig,
     AgentDefinition,
     AgentExecutionOptions,
     AgentExecutionResult,
-    AgentStartPayload,
-    AgentStopPayload,
+    AgentLifecycleResult,
     AgentPausePayload,
     AgentResumePayload,
     AgentSchedulePayload,
-    AgentLifecycleResult,
+    AgentStartPayload,
+    AgentStopPayload,
     AgentThought,
-} from '../../core/types/agent-types.js';
-
-import type { AgentCoreConfig } from './agent-core.js';
-import { AgentCore } from './agent-core.js';
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🚀 AGENT ENGINE IMPLEMENTATION
-// ──────────────────────────────────────────────────────────────────────────────
+} from '../../core/types/allTypes.js';
+import { ToolEngine } from '../tools/tool-engine.js';
 
 /**
  * Engine para execução direta de agentes
@@ -79,18 +58,11 @@ export class AgentEngine<
         });
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // 🎯 PUBLIC EXECUTION INTERFACE
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Executar agente diretamente (sem workflow)
-     */
     async execute(
         input: TInput,
-        agentExecutionOptions?: AgentExecutionOptions,
-    ): Promise<AgentExecutionResult<TOutput>> {
-        const { correlationId, sessionId } = agentExecutionOptions || {};
+        agentExecutionOptions: AgentExecutionOptions,
+    ): Promise<AgentExecutionResult> {
+        const { correlationId, sessionId } = agentExecutionOptions;
         const obs = getObservability();
 
         try {
@@ -158,7 +130,7 @@ export class AgentEngine<
                 };
             }
 
-            return result as AgentExecutionResult<TOutput>;
+            return result as AgentExecutionResult;
         } catch (error) {
             this.engineLogger.error('Agent execution failed', error as Error, {
                 agentName: this.getDefinition()?.name,
@@ -170,19 +142,15 @@ export class AgentEngine<
         }
     }
 
-    /**
-     * Executar agente com input validado
-     */
     async executeWithValidation(
         input: unknown,
-        options?: AgentExecutionOptions,
-    ): Promise<AgentExecutionResult<TOutput>> {
+        options: AgentExecutionOptions,
+    ): Promise<AgentExecutionResult> {
         const definition = this.getDefinition();
         if (!definition) {
             throw new EngineError('AGENT_ERROR', 'Agent definition not found');
         }
 
-        // Validate input if validation function exists
         if (definition.validateInput) {
             if (!definition.validateInput(input)) {
                 throw new EngineError('AGENT_ERROR', 'Invalid input for agent');
@@ -192,13 +160,6 @@ export class AgentEngine<
         return this.execute(input as TInput, options);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // 🔄 LIFECYCLE INTERFACE (DELEGATED TO CORE)
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Start agent lifecycle (direct execution - no workflow)
-     */
     async start(payload: AgentStartPayload): Promise<AgentLifecycleResult> {
         this.engineLogger.info('Agent engine lifecycle started', { payload });
         return {
@@ -277,62 +238,8 @@ export class AgentEngine<
             metadata: { executionTime: 0, transitionValid: true },
         };
     }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // 📊 STATUS & MONITORING
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Get engine status
-     */
-    getEngineStatus(): {
-        engineType: 'direct';
-        agentName: string;
-        isReady: boolean;
-        lifecycleStatus: string;
-        activeExecutions: number;
-        totalExecutions: number;
-    } {
-        const status = this.getStatus();
-        const definition = this.getDefinition();
-
-        return {
-            engineType: 'direct',
-            agentName: definition?.name || 'unknown',
-            isReady: status.initialized,
-            lifecycleStatus: 'running', // Direct execution is always running
-            activeExecutions: status.activeExecutions,
-            totalExecutions: status.eventCount,
-        };
-    }
-
-    /**
-     * Get execution statistics
-     */
-    getExecutionStats(): {
-        totalExecutions: number;
-        successfulExecutions: number;
-        failedExecutions: number;
-        averageExecutionTime: number;
-        lastExecutionTime?: number;
-    } {
-        // TODO: Implement actual statistics tracking
-        return {
-            totalExecutions: 0,
-            successfulExecutions: 0,
-            failedExecutions: 0,
-            averageExecutionTime: 0,
-        };
-    }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// 🏭 FACTORY FUNCTIONS
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Create agent for direct execution
- */
 export function createAgent<
     TInput = unknown,
     TOutput = unknown,

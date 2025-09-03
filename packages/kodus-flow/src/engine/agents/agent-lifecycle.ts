@@ -1,79 +1,23 @@
-/**
- * @file agent-lifecycle.ts
- * @description Agent Lifecycle Handler - Gerencia ciclo de vida dos agentes
- *
- * Funcionalidades:
- * ✅ Registro e gerenciamento de agentes
- * ✅ Lifecycle events (start, stop, pause, resume)
- * ✅ Health checks e monitoring
- * ✅ Resource management
- * ✅ Integração com KernelHandler para snapshots
- * ✅ Metrics e observabilidade
- */
-
 import { createLogger } from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
-import type { Event } from '../../core/types/events.js';
-
 import {
-    type AgentStatus,
-    type AgentScheduleConfig,
-    type AgentStartPayload,
-    type AgentStopPayload,
-    type AgentPausePayload,
-    type AgentResumePayload,
-    type AgentSchedulePayload,
-    isValidStatusTransition,
-} from '../../core/types/agent-types.js';
-import type { TenantId, ExecutionId } from '../../core/types/base-types.js';
-import {
+    agentLifecycleEvents,
+    AgentPausePayload,
+    AgentRegistryEntry,
+    AgentResumePayload,
+    AgentSchedulePayload,
+    AgentStartPayload,
+    AgentStopPayload,
+    AnyEvent,
     createEvent,
     EVENT_TYPES,
-    agentLifecycleEvents,
-} from '../../core/types/events.js';
+    ExecutionId,
+    isValidStatusTransition,
+    LifecycleStats,
+    TenantId,
+    UNIFIED_STATUS,
+} from '../../core/types/allTypes.js';
 
-// ──────────────────────────────────────────────────────────────────────────────
-// 📊 AGENT REGISTRY TYPES
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Entrada no registry de agents
- */
-export interface AgentRegistryEntry {
-    agentName: string;
-    tenantId: TenantId;
-    status: AgentStatus;
-    executionId?: ExecutionId;
-    startedAt?: number;
-    pausedAt?: number;
-    stoppedAt?: number;
-    snapshotId?: string;
-    config?: Record<string, unknown>;
-    context?: Record<string, unknown>;
-    error?: Error;
-    scheduleConfig?: AgentScheduleConfig;
-    scheduleTimer?: NodeJS.Timeout;
-}
-
-/**
- * Estatísticas do lifecycle handler
- */
-export interface LifecycleStats {
-    totalAgents: number;
-    agentsByStatus: Record<AgentStatus, number>;
-    agentsByTenant: Record<string, number>;
-    totalTransitions: number;
-    totalErrors: number;
-    uptime: number;
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🔄 AGENT LIFECYCLE HANDLER
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Handler principal para lifecycle de agents
- */
 export class AgentLifecycleHandler {
     private logger = createLogger('agent-lifecycle-handler');
     private agents = new Map<string, AgentRegistryEntry>();
@@ -90,7 +34,7 @@ export class AgentLifecycleHandler {
     /**
      * Handle lifecycle events
      */
-    async handleLifecycleEvent(event: Event): Promise<Event> {
+    async handleLifecycleEvent(event: AnyEvent): Promise<AnyEvent> {
         try {
             switch (event.type) {
                 case 'agent.lifecycle.start':
@@ -146,7 +90,7 @@ export class AgentLifecycleHandler {
     /**
      * Start agent
      */
-    private async handleStartAgent(event: Event): Promise<Event> {
+    private async handleStartAgent(event: AnyEvent): Promise<AnyEvent> {
         const payload = event.data as AgentStartPayload;
         const { agentName, tenantId, config, context } = payload;
         const agentKey = `${tenantId}:${agentName}`;
@@ -213,7 +157,7 @@ export class AgentLifecycleHandler {
     /**
      * Stop agent
      */
-    private async handleStopAgent(event: Event): Promise<Event> {
+    private async handleStopAgent(event: AnyEvent): Promise<AnyEvent> {
         const payload = event.data as AgentStopPayload;
         const { agentName, tenantId, reason, force } = payload;
         const agentKey = `${tenantId}:${agentName}`;
@@ -292,7 +236,7 @@ export class AgentLifecycleHandler {
     /**
      * Pause agent
      */
-    private async handlePauseAgent(event: Event): Promise<Event> {
+    private async handlePauseAgent(event: AnyEvent): Promise<AnyEvent> {
         const payload = event.data as AgentPausePayload;
         const { agentName, tenantId, reason, saveSnapshot = true } = payload;
         const agentKey = `${tenantId}:${agentName}`;
@@ -364,7 +308,7 @@ export class AgentLifecycleHandler {
     /**
      * Resume agent
      */
-    private async handleResumeAgent(event: Event): Promise<Event> {
+    private async handleResumeAgent(event: AnyEvent): Promise<AnyEvent> {
         const payload = event.data as AgentResumePayload;
         const { agentName, tenantId, snapshotId, context } = payload;
         const agentKey = `${tenantId}:${agentName}`;
@@ -434,7 +378,7 @@ export class AgentLifecycleHandler {
     /**
      * Schedule agent
      */
-    private async handleScheduleAgent(event: Event): Promise<Event> {
+    private async handleScheduleAgent(event: AnyEvent): Promise<AnyEvent> {
         const payload = event.data as AgentSchedulePayload;
         const { agentName, tenantId, schedule, config } = payload;
         const agentKey = `${tenantId}:${agentName}`;
@@ -545,7 +489,7 @@ export class AgentLifecycleHandler {
      */
     private async transitionStatus(
         agentKey: string,
-        newStatus: AgentStatus,
+        newStatus: string,
         reason?: string,
     ): Promise<void> {
         const entry = this.agents.get(agentKey);
@@ -553,8 +497,36 @@ export class AgentLifecycleHandler {
 
         const previousStatus = entry.status;
 
-        // Validate transition
-        if (!isValidStatusTransition(previousStatus, newStatus)) {
+        // Validate transition - map lifecycle status to UnifiedStatus
+        const mapToUnifiedStatus = (status: string): string => {
+            switch (status) {
+                case 'starting':
+                    return UNIFIED_STATUS.PENDING;
+                case 'running':
+                    return UNIFIED_STATUS.EXECUTING;
+                case 'stopping':
+                    return UNIFIED_STATUS.CANCELLED;
+                case 'stopped':
+                    return UNIFIED_STATUS.CANCELLED;
+                case 'pausing':
+                    return UNIFIED_STATUS.PAUSED;
+                case 'paused':
+                    return UNIFIED_STATUS.PAUSED;
+                case 'resuming':
+                    return UNIFIED_STATUS.EXECUTING;
+                case 'scheduled':
+                    return UNIFIED_STATUS.PENDING;
+                case 'error':
+                    return UNIFIED_STATUS.FAILED;
+                default:
+                    return status;
+            }
+        };
+
+        const unifiedFrom = mapToUnifiedStatus(previousStatus) as any;
+        const unifiedTo = mapToUnifiedStatus(newStatus) as any;
+
+        if (!isValidStatusTransition(unifiedFrom, unifiedTo)) {
             throw new EngineError(
                 'AGENT_ERROR',
                 `Invalid status transition from ${previousStatus} to ${newStatus}`,
@@ -629,7 +601,7 @@ export class AgentLifecycleHandler {
      * Get lifecycle statistics
      */
     getStats(): LifecycleStats {
-        const agentsByStatus: Record<AgentStatus, number> = {
+        const agentsByStatus: Record<string, number> = {
             stopped: 0,
             starting: 0,
             running: 0,
@@ -644,7 +616,8 @@ export class AgentLifecycleHandler {
         const agentsByTenant: Record<string, number> = {};
 
         for (const entry of this.agents.values()) {
-            agentsByStatus[entry.status]++;
+            agentsByStatus[entry.status] =
+                (agentsByStatus[entry.status] || 0) + 1;
             agentsByTenant[entry.tenantId] =
                 (agentsByTenant[entry.tenantId] || 0) + 1;
         }

@@ -1,53 +1,20 @@
-/**
- * @module kernel/snapshot
- * @description Defines functions for creating, restoring, validating, and persisting workflow snapshots.
- * Supports future extensions for delta compression and different storage backends.
- */
-
-import { z } from 'zod';
-import type {
+import {
     BaseContext,
-    Snapshot,
     DeltaSnapshot,
-    Event,
+    deltaSnapshotSchema,
+    ExtendedContext,
     Persistor,
+    Snapshot,
     SnapshotOptions,
-} from '../core/types/common-types.js';
-
+    snapshotSchema,
+    TEvent,
+} from '../core/types/allTypes.js';
 import {
     getGlobalPersistor as getGlobalPersistorFromFactory,
     setGlobalPersistor as setGlobalPersistorFromFactory,
 } from '../persistor/factory.js';
 import { IdGenerator } from '../utils/id-generator.js';
 
-// Re-export Snapshot type for convenience
-export type { Snapshot, DeltaSnapshot } from '../core/types/common-types.js';
-
-// Internal schema for validating snapshot structure.
-const snapshotSchema = z.object({
-    xcId: z.string(),
-    ts: z.number(),
-    events: z.array(z.unknown()), // ✅ Zod v4: Mais type-safe que z.any()
-    state: z.unknown(),
-    hash: z.string(),
-});
-
-// Extended schema for delta snapshots
-const deltaSnapshotSchema = snapshotSchema.extend({
-    isDelta: z.literal(true),
-    baseHash: z.string(),
-    eventsDelta: z.unknown().optional(),
-    stateDelta: z.unknown().optional(),
-});
-
-type ExtendedContext = BaseContext & { jobId?: string };
-
-/**
- * Converts a JavaScript value to a deterministically serialized JSON string.
- * Ensures that the output is always the same for the same input.
- * @param obj The object to serialize.
- * @returns A deterministically serialized JSON string.
- */
 function stringifyDeterministic(obj: unknown): string {
     if (obj === null || obj === undefined) {
         return String(obj);
@@ -107,7 +74,7 @@ export function stableHash(value: string | number | object): string {
  */
 export function createSnapshot(
     context: BaseContext,
-    events: Event[] = [],
+    events: TEvent[] = [],
     state: unknown = {},
 ): Snapshot {
     const payload = { events, state };
@@ -137,7 +104,7 @@ export function createSnapshot(
 export async function createAndPersistSnapshot(
     context: BaseContext,
     persistor: Persistor,
-    events: Event[] = [],
+    events: TEvent[] = [],
     state: unknown = {},
     options: SnapshotOptions = {},
 ): Promise<Snapshot> {
@@ -157,7 +124,7 @@ export async function createAndPersistSnapshot(
  */
 export function restoreSnapshot(snap: Snapshot): {
     state: unknown;
-    events: Event[];
+    events: TEvent[];
 } {
     validateSnapshot(snap);
     return {

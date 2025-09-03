@@ -1,10 +1,5 @@
-/**
- * @file Zod to JSON Schema Converter
- * @description Utilitário para conversão automática de Zod schemas para JSON Schema
- */
-
 import { z } from 'zod';
-import type { ToolJSONSchema } from '../types/tool-types.js';
+import { ToolJSONSchema } from '../types/allTypes.js';
 
 // Tipo para acessar propriedades internas do Zod
 type ZodInternalDef = {

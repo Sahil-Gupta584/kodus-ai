@@ -1,30 +1,16 @@
-/**
- * @module runtime/middleware/composites
- * @description Composite middleware utilities
- */
-
-import type { Event } from '../../core/types/events.js';
-import type { EventHandler } from '../../core/types/common-types.js';
-import { composeMiddleware, type Middleware } from './types.js';
 import { withRetry } from './retry.js';
 import { withTimeout } from './timeout.js';
 import { withConcurrency } from './concurrency.js';
-import type { RetryOptions } from '../../core/types/retry-types.js';
+import {
+    AnyEvent,
+    composeMiddleware,
+    EventHandler,
+    Middleware,
+    StandardMiddlewareOptions,
+    TEvent,
+} from '../../core/types/allTypes.js';
 
-/**
- * Standard middleware configuration options
- */
-export interface StandardMiddlewareOptions {
-    retry?: Partial<RetryOptions> | boolean;
-    timeout?: number;
-    concurrency?: number;
-    monitoring?: boolean;
-}
-
-/**
- * Create a standard middleware stack with common patterns
- */
-export function createStandardMiddleware<TEvent extends Event = Event>(
+export function createStandardMiddleware(
     options: StandardMiddlewareOptions = {},
 ): Middleware<TEvent> {
     const middlewares: Array<Middleware<TEvent>> = [];
@@ -68,7 +54,7 @@ export function createStandardMiddleware<TEvent extends Event = Event>(
 /**
  * Create a resilient handler with error handling and retries
  */
-export function createResilientHandler<TEvent extends Event = Event>(
+export function createResilientHandler<TEvent extends AnyEvent = AnyEvent>(
     handler: EventHandler<TEvent>,
     options: {
         maxRetries?: number;
@@ -104,7 +90,7 @@ export function createResilientHandler<TEvent extends Event = Event>(
 /**
  * Create a rate-limited handler
  */
-export function createRateLimitedHandler<TEvent extends Event = Event>(
+export function createRateLimitedHandler<TEvent extends AnyEvent = AnyEvent>(
     handler: EventHandler<TEvent>,
     options: {
         maxPerSecond: number;
@@ -139,7 +125,7 @@ export function createRateLimitedHandler<TEvent extends Event = Event>(
 /**
  * Create a cached handler that memoizes results
  */
-export function createCachedHandler<TEvent extends Event = Event>(
+export function createCachedHandler<TEvent extends AnyEvent = AnyEvent>(
     handler: EventHandler<TEvent>,
     options: {
         ttl?: number;
@@ -182,7 +168,7 @@ export function createCachedHandler<TEvent extends Event = Event>(
 /**
  * Create a handler with circuit breaker pattern
  */
-export function createCircuitBreakerHandler<TEvent extends Event = Event>(
+export function createCircuitBreakerHandler<TEvent extends AnyEvent = AnyEvent>(
     handler: EventHandler<TEvent>,
     options: {
         failureThreshold?: number;

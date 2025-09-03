@@ -1,120 +1,13 @@
-/**
- * @module observability/monitoring
- * @description Sistema de métricas essenciais para agentes e workflows
- *
- * Métricas focadas no essencial:
- * - Lifecycle básico
- * - Performance de agentes e workflows
- * - Health do sistema
- */
-
+import {
+    EngineMetrics,
+    KernelMetrics,
+    MetricsConfig,
+    MetricValue,
+    RuntimeMetrics,
+    SystemMetrics,
+} from '../core/types/allTypes.js';
 import { createLogger } from './logger.js';
 
-// Tipos auxiliares para métricas
-type MetricValue = number | string | boolean;
-
-/**
- * Métricas essenciais do Kernel
- */
-export interface KernelMetrics {
-    // Lifecycle básico
-    lifecycle: {
-        startTime: number;
-        status: 'initialized' | 'running' | 'paused' | 'completed' | 'failed';
-        eventCount: number;
-        pauseCount: number;
-        resumeCount: number;
-    };
-}
-
-/**
- * Métricas essenciais do Runtime
- */
-export interface RuntimeMetrics {
-    // Event Processing básico
-    eventProcessing: {
-        totalEvents: number;
-        processedEvents: number;
-        failedEvents: number;
-        averageProcessingTimeMs: number;
-    };
-
-    // Performance básica
-    performance: {
-        memoryUsageBytes: number;
-        cpuUsagePercent: number;
-    };
-}
-
-/**
- * Métricas essenciais do Engine
- */
-export interface EngineMetrics {
-    // Agent Operations - ESSENCIAL
-    agentOperations: {
-        totalAgents: number;
-        activeAgents: number;
-        agentExecutions: number;
-        agentSuccesses: number;
-        agentFailures: number;
-        averageAgentExecutionTimeMs: number;
-    };
-
-    // Tool Operations - ESSENCIAL
-    toolOperations: {
-        totalTools: number;
-        activeTools: number;
-        toolCalls: number;
-        toolSuccesses: number;
-        toolFailures: number;
-        averageToolExecutionTimeMs: number;
-    };
-
-    // Workflow Operations - ESSENCIAL
-    workflowOperations: {
-        totalWorkflows: number;
-        activeWorkflows: number;
-        workflowExecutions: number;
-        workflowSuccesses: number;
-        workflowFailures: number;
-        averageWorkflowExecutionTimeMs: number;
-    };
-}
-
-/**
- * Métricas consolidadas do sistema
- */
-export interface SystemMetrics {
-    kernel: KernelMetrics;
-    runtime: RuntimeMetrics;
-    engine: EngineMetrics;
-
-    // System health
-    health: {
-        overallHealth: 'healthy' | 'degraded' | 'unhealthy';
-        lastHealthCheck: number;
-        uptimeMs: number;
-        memoryUsageBytes: number;
-        cpuUsagePercent: number;
-    };
-}
-
-/**
- * Configuração do sistema de métricas
- */
-export interface MetricsConfig {
-    enabled: boolean;
-    collectionIntervalMs: number;
-    retentionPeriodMs: number;
-    enableRealTime: boolean;
-    enableHistorical: boolean;
-    maxMetricsHistory: number;
-    exportFormats: ('json' | 'prometheus' | 'statsd')[];
-}
-
-/**
- * Sistema de métricas simplificado
- */
 export class LayeredMetricsSystem {
     private config: MetricsConfig;
     private logger: ReturnType<typeof createLogger>;
@@ -440,7 +333,7 @@ export class LayeredMetricsSystem {
                 memoryUsageBytes: process.memoryUsage().heapUsed,
                 cpuUsagePercent: this.calculateCpuUsage(),
             },
-        };
+        } as SystemMetrics;
     }
 
     /**

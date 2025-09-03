@@ -1,157 +1,30 @@
-/**
- * @module observability/mongodb-exporter
- * @description MongoDB Exporter para Observabilidade do Kodus Flow
- *
- * Salva logs, telemetry e métricas no MongoDB para análise posterior
- */
-
-import type { TraceItem } from './telemetry.js';
-import type { LogContext } from './logger.js';
-import type { SystemMetrics } from './monitoring.js';
+import {
+    LogContext,
+    MongoDBErrorItem,
+    MongoDBExporterConfig,
+    MongoDBLogItem,
+    MongoDBMetricsItem,
+    MongoDBTelemetryItem,
+    ObservabilityStorageConfig,
+    SystemMetrics,
+    TraceItem,
+} from '../core/types/allTypes.js';
 import { createLogger } from './logger.js';
 
-/**
- * Configuração do MongoDB Exporter
- */
-export interface MongoDBExporterConfig {
-    // MongoDB connection
-    connectionString: string;
-    database: string;
-
-    // Collections
-    collections: {
-        logs: string;
-        telemetry: string;
-        metrics: string;
-        errors: string;
-    };
-
-    // Performance
-    batchSize: number;
-    flushIntervalMs: number;
-    maxRetries: number;
-
-    // Data retention
-    ttlDays: number;
-
-    // Observability
-    enableObservability: boolean;
-}
-
-/**
- * Configuração de storage para observabilidade
- */
-export interface ObservabilityStorageConfig {
-    type: 'mongodb';
-    connectionString: string;
-    database: string;
-    collections?: {
-        logs?: string;
-        telemetry?: string;
-        metrics?: string;
-        errors?: string;
-    };
-    batchSize?: number;
-    flushIntervalMs?: number;
-    ttlDays?: number;
-    enableObservability?: boolean;
-}
-
-/**
- * Item de log para MongoDB
- */
-export interface MongoDBLogItem {
-    _id?: string;
-    timestamp: Date;
-    level: 'debug' | 'info' | 'warn' | 'error';
-    message: string;
-    component: string;
-    correlationId?: string;
-    tenantId?: string;
-    executionId?: string;
-    sessionId?: string; // ✅ NEW: Link to session for proper hierarchy
-    metadata?: Record<string, unknown>;
-    error?: {
-        name: string;
-        message: string;
-        stack?: string;
-    };
-    createdAt: Date;
-}
-
-/**
- * Item de telemetry para MongoDB
- */
-export interface MongoDBTelemetryItem {
-    _id?: string;
-    timestamp: Date;
-    name: string;
-    duration: number;
-    correlationId?: string;
-    tenantId?: string;
-    executionId?: string;
-    sessionId?: string; // ✅ NEW: Link to session for proper hierarchy
-    agentName?: string;
-    toolName?: string;
-    phase?: 'think' | 'act' | 'observe';
-    attributes: Record<string, string | number | boolean>;
-    status: 'ok' | 'error';
-    error?: {
-        name: string;
-        message: string;
-        stack?: string;
-    };
-    createdAt: Date;
-}
-
-/**
- * Item de métricas para MongoDB
- */
-export interface MongoDBMetricsItem {
-    _id?: string;
-    timestamp: Date;
-    correlationId?: string;
-    tenantId?: string;
-    executionId?: string;
-    metrics: SystemMetrics;
-    createdAt: Date;
-}
-
-/**
- * Item de erro para MongoDB
- */
-export interface MongoDBErrorItem {
-    _id?: string;
-    timestamp: Date;
-    correlationId?: string;
-    tenantId?: string;
-    executionId?: string;
-    sessionId?: string; // ✅ NEW: Link to session for proper hierarchy
-    errorName: string;
-    errorMessage: string;
-    errorStack?: string;
-    context: Record<string, unknown>;
-    createdAt: Date;
-}
-
-/**
- * MongoDB Exporter para Observabilidade
- */
 export class MongoDBExporter {
     private config: MongoDBExporterConfig;
     private logger: ReturnType<typeof createLogger>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     private client: any = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     private db: any = null;
     private collections: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         logs: any;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         telemetry: any;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         metrics: any;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         errors: any;
     } | null = null;
 

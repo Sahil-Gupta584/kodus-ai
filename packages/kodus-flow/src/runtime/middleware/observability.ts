@@ -1,31 +1,22 @@
-/**
- * @module runtime/middleware/observability
- * @description Middleware de observabilidade: cria spans por evento e propaga contexto
- */
-
-import type { Event } from '../../core/types/events.js';
-import type { EventHandler } from '../../core/types/common-types.js';
-import type { Middleware, MiddlewareFactoryType } from './types.js';
+import {
+    EventHandler,
+    Middleware,
+    MiddlewareFactoryType,
+    ObservabilityOptions,
+    TEvent,
+} from '../../core/types/allTypes.js';
 import {
     getObservability,
     applyErrorToSpan,
     markSpanOk,
 } from '../../observability/index.js';
 
-export interface ObservabilityOptions {
-    namePrefix?: string;
-    includeSensitiveData?: boolean;
-    // Filtro opcional por tipo de evento
-    includeEventTypes?: string[];
-    excludeEventTypes?: string[];
-}
-
 /**
  * Middleware que cria um span por processamento de evento e registra erros
  */
 export const withObservability: MiddlewareFactoryType<
     ObservabilityOptions | undefined,
-    Event
+    TEvent
 > = (options: ObservabilityOptions | undefined) => {
     const namePrefix = options?.namePrefix ?? 'event.process';
     const include = options?.includeEventTypes?.length
@@ -35,7 +26,7 @@ export const withObservability: MiddlewareFactoryType<
         ? new Set(options.excludeEventTypes)
         : undefined;
 
-    const middleware = (<T extends Event>(
+    const middleware = (<T extends TEvent>(
         handler: EventHandler<T>,
     ): EventHandler<T> => {
         return async (event: T) => {
@@ -88,7 +79,7 @@ export const withObservability: MiddlewareFactoryType<
                 throw error;
             }
         };
-    }) as Middleware<Event>;
+    }) as Middleware<TEvent>;
 
     middleware.kind = 'handler';
     // Avoid assigning to Function.name (read-only). Use displayName instead.

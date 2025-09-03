@@ -1,25 +1,16 @@
-/**
- * ✅ Unified Error Handling - Consistent error patterns across all components
- *
- * This module provides utilities to ensure all components use enhanced error handling
- * consistently, while maintaining backward compatibility.
- */
-
-import { EngineError } from './errors.js';
 import {
     EnhancedAgentError,
-    EnhancedToolError,
     EnhancedKernelError,
-    type EnhancedErrorOptions,
-    type ErrorSeverity,
-    type ErrorDomain,
+    EnhancedToolError,
 } from './enhanced-errors.js';
+import { EngineError } from './errors.js';
+import {
+    EnhancedErrorOptions,
+    ErrorDomain,
+    ErrorSeverity,
+} from './types/allTypes.js';
 
-// ✅ UNIFIED ERROR CREATOR
 export class UnifiedErrorFactory {
-    /**
-     * Create agent error with enhanced features
-     */
     static createAgentError(
         message: string,
         options: EnhancedErrorOptions & { cause?: Error } = {},

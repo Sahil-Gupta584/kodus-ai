@@ -1,50 +1,12 @@
-import { BaseSDKError, type ErrorCode } from './errors.js';
-
-// ✅ NOVAS INTERFACES
-export type ErrorSeverity = 'low' | 'medium' | 'high' | 'critical';
-export type ErrorDomain =
-    | 'infrastructure'
-    | 'business'
-    | 'security'
-    | 'performance';
-export type UserImpact = 'none' | 'degraded' | 'broken';
-
-export interface EnhancedErrorOptions {
-    context?: Record<string, unknown>;
-    severity?: ErrorSeverity;
-    domain?: ErrorDomain;
-    userImpact?: UserImpact;
-    userMessage?: string;
-    recoveryHints?: string[];
-    retryable?: boolean;
-    recoverable?: boolean;
-    tags?: string[];
-}
-
-export interface StructuredErrorResponse {
-    error: {
-        id: string;
-        code: ErrorCode;
-        message: string;
-        severity: ErrorSeverity;
-        domain: ErrorDomain;
-        userImpact: UserImpact;
-        correlationId: string;
-        timestamp: number;
-        userMessage?: string;
-        retryable: boolean;
-        recoverable: boolean;
-        recoveryHints: string[];
-        tags: string[];
-    };
-    metadata: {
-        component: string;
-        tenantId: string;
-        version: string;
-        requestId?: string;
-    };
-    context?: Record<string, unknown>;
-}
+import { BaseSDKError } from './errors.js';
+import {
+    EnhancedErrorOptions,
+    ErrorCode,
+    ErrorDomain,
+    ErrorSeverity,
+    StructuredErrorResponse,
+    UserImpact,
+} from './types/allTypes.js';
 
 // ✅ ENHANCED BASE ERROR
 export abstract class EnhancedSDKError<

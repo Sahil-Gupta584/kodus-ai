@@ -1,75 +1,12 @@
-/**
- * @module core/utils/tool-result-parser
- * @description Universal parser for tool results from different sources (MCP, REST APIs, etc.)
- *
- * Handles various result structures:
- * - MCP format: { content: [{ type: 'text', text: '...' }], structuredContent?: {} }
- * - Nested API responses: { result: { content: [...] } }
- * - Simple strings and objects
- * - JSON-encoded strings within results
- */
-
 import { createLogger } from '../../observability/index.js';
+import {
+    MCPToolResult,
+    ParsedToolResult,
+    TextContent,
+} from '../types/allTypes.js';
 
 const logger = createLogger('tool-result-parser');
 
-// ═══════════════════════════════════════════════════════════════════════════════════════
-// 📋 MCP TYPES (Based on official spec)
-// ═══════════════════════════════════════════════════════════════════════════════════════
-
-interface ContentBlock {
-    type: 'text' | 'image' | 'audio' | 'resource_link' | 'embedded_resource';
-    [key: string]: unknown;
-}
-
-interface TextContent extends ContentBlock {
-    type: 'text';
-    text: string;
-}
-
-interface MCPToolResult {
-    content: ContentBlock[];
-    structuredContent?: Record<string, unknown>;
-    isError?: boolean;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════════════
-// 🎯 PARSER RESULT INTERFACE
-// ═══════════════════════════════════════════════════════════════════════════════════════
-
-export interface ParsedToolResult {
-    /** Extracted text content */
-    text: string;
-
-    /** Structured data if available */
-    data?: Record<string, unknown>;
-
-    /** Whether this seems like a substantial/meaningful result */
-    isSubstantial: boolean;
-
-    /** Whether this indicates an error */
-    isError: boolean;
-
-    /** Original result for fallback */
-    original: unknown;
-
-    /** Metadata about parsing */
-    metadata: {
-        source: 'mcp' | 'nested' | 'simple' | 'json-string' | 'unknown';
-        contentType: 'text' | 'json' | 'mixed' | 'empty';
-        textLength: number;
-        hasStructuredData: boolean;
-        parsingSteps: string[];
-    };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════════════
-// 🔧 CORE PARSER FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════════════════
-
-/**
- * Universal tool result parser - handles multiple formats intelligently
- */
 export function parseToolResult(result: unknown): ParsedToolResult {
     logger.debug('Parsing tool result', {
         resultType: typeof result,
@@ -84,13 +21,11 @@ export function parseToolResult(result: unknown): ParsedToolResult {
     let isError = false;
 
     try {
-        // ▶️ Step 1: Handle null/undefined
         if (!result) {
             parsingSteps.push('null-check');
             return createEmptyResult(result, parsingSteps);
         }
 
-        // ▶️ Step 2: Handle string results
         if (typeof result === 'string') {
             parsingSteps.push('string-parse');
             const parsed = parseStringResult(result);
@@ -106,11 +41,9 @@ export function parseToolResult(result: unknown): ParsedToolResult {
             };
         }
 
-        // ▶️ Step 3: Handle object results
         if (typeof result === 'object') {
             parsingSteps.push('object-parse');
 
-            // Check for MCP format first
             if (isMCPToolResult(result)) {
                 parsingSteps.push('mcp-format');
                 const parsed = parseMCPResult(result as MCPToolResult);
@@ -119,9 +52,7 @@ export function parseToolResult(result: unknown): ParsedToolResult {
                 data = parsed.data;
                 isError = parsed.isError;
                 contentType = parsed.contentType;
-            }
-            // Check for nested result format (like your example)
-            else if (isNestedResult(result)) {
+            } else if (isNestedResult(result)) {
                 parsingSteps.push('nested-format');
                 const parsed = parseNestedResult(result);
                 source = 'nested';
@@ -129,9 +60,7 @@ export function parseToolResult(result: unknown): ParsedToolResult {
                 data = parsed.data;
                 isError = parsed.isError;
                 contentType = parsed.contentType;
-            }
-            // Handle simple object
-            else {
+            } else {
                 parsingSteps.push('simple-object');
                 const parsed = parseSimpleObject(
                     result as Record<string, unknown>,
@@ -142,9 +71,7 @@ export function parseToolResult(result: unknown): ParsedToolResult {
                 isError = parsed.isError;
                 contentType = parsed.contentType;
             }
-        }
-        // ▶️ Step 4: Handle other types
-        else {
+        } else {
             parsingSteps.push('other-type');
             text = String(result);
             contentType = 'text';
@@ -162,7 +89,6 @@ export function parseToolResult(result: unknown): ParsedToolResult {
         source = 'unknown';
     }
 
-    // ▶️ Final assessment
     const isSubstantial = assessSubstantiality(text, data);
 
     return {
@@ -180,10 +106,6 @@ export function parseToolResult(result: unknown): ParsedToolResult {
         },
     };
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════════════
-// 🔍 TYPE CHECKERS
-// ═══════════════════════════════════════════════════════════════════════════════════════
 
 function isMCPToolResult(obj: unknown): obj is MCPToolResult {
     return (
@@ -214,10 +136,6 @@ function isTextContent(obj: unknown): obj is TextContent {
         typeof (obj as Record<string, unknown>).text === 'string'
     );
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════════════
-// 🔧 SPECIFIC PARSERS
-// ═══════════════════════════════════════════════════════════════════════════════════════
 
 function parseStringResult(str: string): ParsedToolResult {
     const parsingSteps = ['string-input'];

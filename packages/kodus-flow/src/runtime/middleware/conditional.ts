@@ -1,28 +1,17 @@
-/**
- * @module runtime/middleware/conditional
- * @description Middleware condicional - aplica middlewares apenas quando necessário
- *
- * Responsabilidades:
- * - Aplicar middlewares baseado em condições
- * - Utilitários para criar condições
- * - Factory para middlewares condicionais
- * - Estatísticas de aplicação
- */
-
-import type {
-    MiddlewareContext,
-    MiddlewareFunction,
-    MiddlewareCondition,
+import {
+    ConcurrencyConfig,
     ConditionalMiddleware,
-    MiddlewareConfig,
     ConditionUtils,
+    MiddlewareCondition,
+    MiddlewareConfig,
+    MiddlewareContext,
     MiddlewareFactory,
+    MiddlewareFunction,
+    ObservabilityConfig,
     RetryConfig,
     TimeoutConfig,
-    ConcurrencyConfig,
     ValidationConfig,
-    ObservabilityConfig,
-} from './types.js';
+} from '../../core/types/allTypes.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
 
 /**
@@ -226,7 +215,7 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
         const retryMiddleware: MiddlewareFunction = async (context, next) => {
             const maxAttempts = config?.maxAttempts || 3;
             const backoffMs = config?.backoffMs || 1000;
-            const maxBackoffMs = config?.maxBackoffMs || 10000;
+            const maxBackoffMs = config?.maxBackoffMs || 180000;
 
             let lastError: Error;
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -276,7 +265,7 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
      */
     createTimeoutMiddleware(config?: TimeoutConfig): ConditionalMiddleware {
         const timeoutMiddleware: MiddlewareFunction = async (context, next) => {
-            const timeoutMs = config?.timeoutMs || 5000;
+            const timeoutMs = config?.timeoutMs || 180000;
 
             const timeoutPromise = new Promise<never>((_, reject) => {
                 setTimeout(() => {

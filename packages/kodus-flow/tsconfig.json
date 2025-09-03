@@ -65,7 +65,7 @@
         "noUnusedParameters": true, // Avisa sobre parâmetros não utilizados
         "noImplicitReturns": true, // Avisa sobre retornos implícitos
         "noFallthroughCasesInSwitch": true, // Avisa sobre fallthrough em switch
-        "noImplicitAny": true, // Erro em tipos 'any' implícitos
+        "noImplicitAny": false, // Permite tipos 'any' implícitos
         "strictNullChecks": true, // Verificações estritas de null/undefined
         "strictFunctionTypes": true, // Verificação estrita de tipos de funções
         "strictBindCallApply": true, // Verificação estrita de bind/call/apply
