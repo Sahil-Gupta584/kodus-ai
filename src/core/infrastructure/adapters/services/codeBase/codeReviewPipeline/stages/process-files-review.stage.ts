@@ -645,7 +645,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             safeguardLLMProvider = safeGuardResult.safeguardLLMProvider;
 
             discardedSuggestionsBySafeGuard.push(
-                ...safeGuardResult.discardedSuggestionsBySafeGuard,
+                ...safeGuardResult.allDiscardedSuggestions,
                 ...discardedSuggestionsByCodeDiff,
                 ...discardedSuggestionsByKodyFineTuning,
             );
@@ -888,20 +888,31 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         reviewModeResponse: any,
     ): Promise<{
         safeguardSuggestions: Partial<CodeSuggestion>[];
-        discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
+        allDiscardedSuggestions: Partial<CodeSuggestion>[];
         safeguardLLMProvider: string;
     }> {
         let filteredSuggestions = suggestions;
+        let discardedSuggestionsBySeverity = [];
 
         if (
             context?.codeReviewConfig?.codeReviewVersion ===
             CodeReviewVersion.v2
         ) {
-            filteredSuggestions =
-                await this.filterSuggestionsBySeverityBeforeSafeGuard(
+            const prioritizedSuggestions =
+                await this.prioritizeSuggestionsBySeverityBeforeSafeGuard(
                     suggestions,
                     context,
                 );
+
+            filteredSuggestions = prioritizedSuggestions.filter(
+                (suggestion) =>
+                    suggestion.priorityStatus === PriorityStatus.PRIORITIZED,
+            );
+
+            discardedSuggestionsBySeverity = prioritizedSuggestions.filter(
+                (suggestion) =>
+                    suggestion.priorityStatus === PriorityStatus.DISCARDED_BY_SEVERITY,
+            );
         }
 
         const safeGuardResponse =
@@ -926,18 +937,23 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 PriorityStatus.DISCARDED_BY_SAFEGUARD,
             );
 
+        const allDiscardedSuggestions = [
+            ...discardedSuggestionsBySeverity,
+            ...discardedSuggestionsBySafeGuard,
+        ];
+
         return {
             safeguardSuggestions: safeGuardResponse?.suggestions || [],
-            discardedSuggestionsBySafeGuard,
+            allDiscardedSuggestions,
             safeguardLLMProvider,
         };
     }
 
-    private async filterSuggestionsBySeverityBeforeSafeGuard(
+    private async prioritizeSuggestionsBySeverityBeforeSafeGuard(
         suggestions: Partial<CodeSuggestion>[],
         context: AnalysisContext,
     ): Promise<Partial<CodeSuggestion>[]> {
-        const filteredSuggestions =
+        const prioritizedSuggestions =
             await this.suggestionService.filterSuggestionsBySeverityLevel(
                 suggestions,
                 context?.codeReviewConfig?.suggestionControl
@@ -945,7 +961,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 context?.organizationAndTeamData,
                 context?.pullRequest?.number,
             );
-        return filteredSuggestions;
+
+        return prioritizedSuggestions;
     }
 
     private createAnalysisContextFromPipelineContext(
