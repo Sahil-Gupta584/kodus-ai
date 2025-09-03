@@ -662,7 +662,7 @@ ${payload?.prSummary || ''}
 
 Complete File Content:
 \`\`\`
-${payload?.relevantContent || payload?.fileContent || ''}
+${payload?.fileContent || ''}
 \`\`\`
 
 Code Diff (PR Changes):
