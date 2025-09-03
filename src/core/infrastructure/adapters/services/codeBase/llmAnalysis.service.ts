@@ -351,7 +351,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                     reviewMode: reviewModeResponse,
                 })
                 .setRunName('analyzeCodeWithAI_v2')
-                .setMaxReasoningTokens(128) //TODO corrigir para 5K
+                .setMaxReasoningTokens(3000)
                 .execute();
 
             if (!analysis) {
@@ -714,6 +714,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setTemperature(0)
                 .addCallbacks([this.tokenTracker])
                 .setRunName('filterSuggestionsSafeGuard')
+                .setMaxReasoningTokens(5000)
                 .execute();
 
             if (!filteredSuggestions) {
