@@ -315,6 +315,7 @@ Use this schema (no extra commentary after the JSON):
             "relevantLinesStart": number,
             "relevantLinesEnd": number,
             "label": string,
+            "severity": string, //return the severity only if that data already exists in the input object. If the property does not exist, return null
             "action": "no_changes, discard or update",
             "reason": string
         }, {...}

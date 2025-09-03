@@ -8,6 +8,7 @@ import {
     AIAnalysisResult,
     AnalysisContext,
     CodeReviewConfig,
+    CodeReviewVersion,
     CodeSuggestion,
     FileChange,
     IFinalAnalysisResult,
@@ -655,6 +656,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context?.pullRequest?.number,
                     safeGuardResult.safeguardSuggestions,
                     context?.codeReviewConfig?.reviewOptions,
+                    context?.codeReviewConfig?.codeReviewVersion,
                 );
 
             const crossFileSuggestionsWithSeverity =
@@ -889,6 +891,19 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
         safeguardLLMProvider: string;
     }> {
+        let filteredSuggestions = suggestions;
+
+        if (
+            context?.codeReviewConfig?.codeReviewVersion ===
+            CodeReviewVersion.v2
+        ) {
+            filteredSuggestions =
+                await this.filterSuggestionsBySeverityBeforeSafeGuard(
+                    suggestions,
+                    context,
+                );
+        }
+
         const safeGuardResponse =
             await this.suggestionService.filterSuggestionsSafeGuard(
                 context?.organizationAndTeamData,
@@ -896,7 +911,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 file,
                 relevantContent,
                 patchWithLinesStr,
-                suggestions,
+                filteredSuggestions,
                 context?.codeReviewConfig?.languageResultPrompt,
                 reviewModeResponse,
             );
@@ -906,7 +921,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
         const discardedSuggestionsBySafeGuard =
             this.suggestionService.getDiscardedSuggestions(
-                suggestions,
+                filteredSuggestions,
                 safeGuardResponse?.suggestions || [],
                 PriorityStatus.DISCARDED_BY_SAFEGUARD,
             );
@@ -916,6 +931,21 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             discardedSuggestionsBySafeGuard,
             safeguardLLMProvider,
         };
+    }
+
+    private async filterSuggestionsBySeverityBeforeSafeGuard(
+        suggestions: Partial<CodeSuggestion>[],
+        context: AnalysisContext,
+    ): Promise<Partial<CodeSuggestion>[]> {
+        const filteredSuggestions =
+            await this.suggestionService.filterSuggestionsBySeverityLevel(
+                suggestions,
+                context?.codeReviewConfig?.suggestionControl
+                    ?.severityLevelFilter,
+                context?.organizationAndTeamData,
+                context?.pullRequest?.number,
+            );
+        return filteredSuggestions;
     }
 
     private createAnalysisContextFromPipelineContext(

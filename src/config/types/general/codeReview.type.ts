@@ -308,7 +308,13 @@ export type CodeReviewConfig = {
     directoryId?: string;
     directoryPath?: string;
     runOnDraft?: boolean;
+    codeReviewVersion?: CodeReviewVersion;
 };
+
+export enum CodeReviewVersion {
+    LEGACY = 'legacy',
+    v2 = 'v2',
+}
 
 export type CodeReviewConfigWithoutLLMProvider = Omit<
     CodeReviewConfig,

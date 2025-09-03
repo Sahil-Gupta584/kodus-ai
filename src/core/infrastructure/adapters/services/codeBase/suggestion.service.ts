@@ -14,6 +14,7 @@ import {
     ClusteringType,
     CodeReviewConfig,
     CommentResult,
+    CodeReviewVersion,
 } from '@/config/types/general/codeReview.type';
 import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
 import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.enum';
@@ -1374,10 +1375,16 @@ export class SuggestionService implements ISuggestionService {
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         codeSuggestions: CodeSuggestion[],
+        selectedCategories: ReviewOptions,
+        codeReviewVersion: CodeReviewVersion,
     ) {
         try {
             if (!codeSuggestions?.length) {
                 return [];
+            }
+
+            if (codeReviewVersion === CodeReviewVersion.v2) {
+                return codeSuggestions;
             }
 
             const result =
