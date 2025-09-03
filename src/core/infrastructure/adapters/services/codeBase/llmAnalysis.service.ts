@@ -430,6 +430,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 context?.codeReviewConfig?.suggestionControl?.groupingMode,
             organizationAndTeamData: context?.organizationAndTeamData,
             relevantContent: fileContext?.relevantContent,
+            prSummary: context?.pullRequest?.body,
         };
 
         return baseContext;
