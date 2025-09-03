@@ -315,13 +315,37 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const baseContext = this.prepareAnalysisContext(fileContext, context);
 
         try {
+            const schema = z.object({
+                codeSuggestions: z.array(
+                    z.object({
+                        id: z.string().optional(),
+                        relevantFile: z.string(),
+                        language: z.string(),
+                        suggestionContent: z.string(),
+                        existingCode: z.string().optional(),
+                        improvedCode: z.string(),
+                        oneSentenceSummary: z.string().optional(),
+                        relevantLinesStart: z.number().min(1).optional(),
+                        relevantLinesEnd: z.number().min(1).optional(),
+                        label: z.string(),
+                        severity: z.string().optional(),
+                        rankScore: z.number().optional(),
+                        type: z.enum(['cross_file']).optional(),
+                    })
+                ),
+                overallSummary: z.string(),
+            });
+
             const analysis = await this.promptRunnerService
                 .builder()
                 .setProviders({
                     main: provider,
                     fallback: fallbackProvider,
                 })
-                .setParser(ParserType.STRING)
+                .setParser(ParserType.ZOD, schema, {
+                    provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
+                    fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
+                })
                 .setLLMJsonMode(true)
                 .setPayload(baseContext)
                 .addPrompt({
@@ -368,19 +392,13 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 throw new Error(message);
             }
 
-            // Process result and tokens
-            const analysisResult = this.llmResponseProcessor.processResponse(
-                organizationAndTeamData,
-                prNumber,
-                analysis,
-            );
-
-            if (!analysisResult) {
-                return null;
-            }
-
-            analysisResult.codeReviewModelUsed = {
-                generateSuggestions: provider,
+            // Com o parser zod, a resposta já vem estruturada
+            const analysisResult: AIAnalysisResult = {
+                codeSuggestions: analysis.codeSuggestions as Partial<CodeSuggestion>[],
+                overallSummary: analysis.overallSummary,
+                codeReviewModelUsed: {
+                    generateSuggestions: provider,
+                },
             };
 
             const tokenUsages = this.tokenTracker.getTokenUsages();
