@@ -171,12 +171,6 @@ export class ConversationAgentProvider {
             hosts: [{ name: this.config.host, port: this.config.port }],
         }).toString();
 
-        console.log(
-            'Creating orchestration with MongoDB URI:',
-            uri,
-            this.config,
-        );
-
         await startKodusOtel();
         const externalTracer = await createOtelTracerAdapter();
 

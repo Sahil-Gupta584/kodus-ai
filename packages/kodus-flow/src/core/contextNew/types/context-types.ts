@@ -5,6 +5,138 @@ import {
 } from '../../types/allTypes.js';
 
 // ===============================================
+// 🎯 SESSION CONFIGURATION - SINGLE SOURCE OF TRUTH
+// ===============================================
+
+/**
+ * 🎯 SIMPLIFIED SESSION CONFIGURATION
+ *
+ * Apenas o essencial que usuários realmente precisam configurar!
+ * 82% menos propriedades - muito mais simples de usar.
+ *
+ * ANTES: 17 propriedades complexas
+ * AGORA: 3 propriedades essenciais
+ */
+export interface SessionConfig {
+    // 🎯 STORAGE - Só o que realmente importa
+    adapterType: 'mongodb' | 'memory';
+    connectionString?: string; // Só se usar MongoDB
+
+    // ⏰ SESSION TTL - Opcional com default inteligente
+    sessionTTL?: number; // Default: 24h (24 * 60 * 60 * 1000)
+}
+
+/**
+ * 🎯 DEFAULT SESSION CONFIGURATION
+ *
+ * Valores padrão para a configuração simplificada
+ */
+export const DEFAULT_SESSION_CONFIG: SessionConfig = {
+    adapterType: 'memory',
+    sessionTTL: 24 * 60 * 60 * 1000, // 24h
+};
+
+/**
+ * 🎯 INTERNAL CONSTANTS - Não precisam ser configuráveis
+ *
+ * Valores otimizados que ficam internos aos serviços
+ */
+export const SESSION_CONSTANTS = {
+    // Database & Collections (sempre os mesmos)
+    DATABASE_NAME: 'kodus-flow',
+    COLLECTIONS: {
+        SESSIONS: 'kodus-agent-sessions',
+        SNAPSHOTS: 'kodus-execution-snapshots',
+        MEMORY: 'kodus-agent-memory',
+    } as const,
+
+    // Performance (valores técnicos otimizados)
+    PERFORMANCE: {
+        MAX_MESSAGES_IN_MEMORY: 20,
+        MAX_ENTITIES_SIZE_KB: 10,
+        CLEANUP_INTERVAL: 300000, // 5min
+    } as const,
+
+    // Recovery (sempre automático)
+    RECOVERY: {
+        THRESHOLD: 300000, // 5min
+        MAX_ATTEMPTS: 5,
+    } as const,
+
+    // TTL (snapshot sempre 7 dias)
+    SNAPSHOT_TTL: 7 * 24 * 60 * 60 * 1000, // 7d
+
+    // Features (sempre habilitadas)
+    FEATURES: {
+        ENABLE_AUTO_CLEANUP: true,
+        ENABLE_COMPRESSION: true,
+        ENABLE_METRICS: true,
+    } as const,
+} as const;
+
+/**
+ * 🏭 SESSION CONFIG BUILDER
+ *
+ * Helper para criar configurações de sessão com defaults
+ */
+export function createSessionConfig(
+    overrides: Partial<SessionConfig> = {},
+): SessionConfig {
+    return {
+        ...DEFAULT_SESSION_CONFIG,
+        ...overrides,
+    };
+}
+
+/**
+ * 🎯 SESSION CONFIG PRESETS
+ *
+ * Configurações pré-definidas para diferentes ambientes
+ *
+ * @example
+ * ```typescript
+ * import { SESSION_CONFIG_PRESETS, EnhancedContextBuilder } from '@kodus/flow';
+ *
+ * // Para produção
+ * const builder = EnhancedContextBuilder.getInstance({
+ *   ...SESSION_CONFIG_PRESETS.production,
+ *   storage: {
+ *     ...SESSION_CONFIG_PRESETS.production.storage,
+ *     connectionString: process.env.MONGODB_URI,
+ *   },
+ * });
+ *
+ * // Para desenvolvimento
+ * const devBuilder = EnhancedContextBuilder.getInstance(SESSION_CONFIG_PRESETS.development);
+ *
+ * // Customizado
+ * const customConfig = createSessionConfig({
+ *   ttl: { session: 2 * 60 * 60 * 1000 }, // 2h customizado
+ *   performance: { maxMessagesInMemory: 30 },
+ * });
+ * ```
+ */
+export const SESSION_CONFIG_PRESETS = {
+    // 🏭 PRODUÇÃO: MongoDB otimizado
+    production: createSessionConfig({
+        adapterType: 'mongodb',
+        sessionTTL: 48 * 60 * 60 * 1000, // 48h para produção
+    }),
+
+    // 🧪 DESENVOLVIMENTO: InMemory rápido
+    development: createSessionConfig({
+        adapterType: 'memory',
+        sessionTTL: 60 * 60 * 1000, // 1h para dev
+    }),
+
+    // 🧪 TESTE: Configuração mínima
+    test: createSessionConfig({
+        adapterType: 'memory',
+        sessionTTL: 5 * 60 * 1000, // 5min para testes
+    }),
+};
+
+// ===============================================
 // 🎯 RUNTIME CONTEXT (What agent needs NOW)
 // ===============================================
 

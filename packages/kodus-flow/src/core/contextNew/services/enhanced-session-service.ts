@@ -15,6 +15,9 @@ import {
     isValidRuntimeContext,
     isValidChatMessage,
     isRecoveryNeeded,
+    SessionConfig,
+    SESSION_CONSTANTS,
+    DEFAULT_SESSION_CONFIG,
 } from '../types/context-types.js';
 
 // ✅ USE: Existing storage adapter pattern
@@ -42,52 +45,57 @@ export class EnhancedSessionService implements SessionManager {
         Promise<AgentRuntimeContext>
     >();
 
-    // 🎯 OPTIMIZATION: Configuration constants
-    private readonly maxMessagesInMemory = 20; // Rolling window for messages
-    private readonly maxEntitiesSizeKb = 10; // Max 10KB for entities
-    // private readonly SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL - Reserved for future use
+    // 🎯 SIMPLIFIED CONFIGURATION - Apenas o essencial!
+    private readonly config: SessionConfig;
 
     constructor(
         connectionString?: string,
         options?: {
             adapterType?: StorageEnum;
             dbName?: string;
-            sessionsCollection?: string; // 🎯 Customizável!
-            snapshotsCollection?: string; // 🎯 Customizável!
+            sessionsCollection?: string; // Ignorado
+            snapshotsCollection?: string; // Ignorado
             sessionTTL?: number; // Default 24h
-            snapshotTTL?: number; // Default 7 days
+            snapshotTTL?: number; // Ignorado
         },
     ) {
-        // ✅ FOLLOW PATTERN: Use existing storage adapters
+        // 🎯 SIMPLE CONFIG - Apenas o essencial!
+        this.config = {
+            adapterType: connectionString ? 'mongodb' : 'memory',
+            connectionString,
+            sessionTTL:
+                options?.sessionTTL || DEFAULT_SESSION_CONFIG.sessionTTL,
+        };
+
+        // ✅ USE INTERNAL CONSTANTS - Não mais configuráveis!
         this.sessionsAdapter = new StorageContextSessionAdapter({
             adapterType:
-                options?.adapterType ||
-                (connectionString ? StorageEnum.MONGODB : StorageEnum.INMEMORY),
-            connectionString,
+                this.config.adapterType === 'mongodb'
+                    ? StorageEnum.MONGODB
+                    : StorageEnum.INMEMORY,
+            connectionString: this.config.connectionString,
             options: {
-                database: options?.dbName || 'kodus-flow',
-                collection:
-                    options?.sessionsCollection || 'kodus-agent-sessions', // 🎯 Customizável!
+                database: SESSION_CONSTANTS.DATABASE_NAME,
+                collection: SESSION_CONSTANTS.COLLECTIONS.SESSIONS,
             },
         });
 
         this.snapshotsAdapter = new StorageSnapshotAdapter({
             adapterType:
-                options?.adapterType ||
-                (connectionString ? StorageEnum.MONGODB : StorageEnum.INMEMORY),
-            connectionString,
+                this.config.adapterType === 'mongodb'
+                    ? StorageEnum.MONGODB
+                    : StorageEnum.INMEMORY,
+            connectionString: this.config.connectionString,
             options: {
-                database: options?.dbName || 'kodus-flow',
-                collection:
-                    options?.snapshotsCollection || 'kodus-execution-snapshots', // 🎯 Customizável!
+                database: SESSION_CONSTANTS.DATABASE_NAME,
+                collection: SESSION_CONSTANTS.COLLECTIONS.SNAPSHOTS,
             },
         });
 
         logger.info('Enhanced Session Service configured', {
-            adapterType:
-                options?.adapterType ||
-                (connectionString ? 'mongodb' : 'inmemory'),
-            database: options?.dbName || 'kodus-flow',
+            adapterType: this.config.adapterType,
+            database: SESSION_CONSTANTS.DATABASE_NAME,
+            sessionTTL: this.config.sessionTTL,
         });
     }
 
@@ -151,7 +159,7 @@ export class EnhancedSessionService implements SessionManager {
         if (existingSession) {
             // Check if session is expired (older than TTL)
             const sessionAge = Date.now() - existingSession.lastActivityAt;
-            const ttl = 24 * 60 * 60 * 1000; // 24 hours default
+            const ttl = this.config.sessionTTL!; // Use simplified config
 
             if (sessionAge > ttl) {
                 // Session expired, delete it and create new one
@@ -271,7 +279,7 @@ export class EnhancedSessionService implements SessionManager {
 
         // 🔄 ROLLING WINDOW: Keep only last N messages for performance
         const messages = [...session.runtime.messages, message].slice(
-            -this.maxMessagesInMemory,
+            -SESSION_CONSTANTS.PERFORMANCE.MAX_MESSAGES_IN_MEMORY,
         );
 
         logger.info(
@@ -280,7 +288,8 @@ export class EnhancedSessionService implements SessionManager {
                 threadId,
                 previousCount: session.runtime.messages.length,
                 newCount: messages.length,
-                windowSize: this.maxMessagesInMemory,
+                windowSize:
+                    SESSION_CONSTANTS.PERFORMANCE.MAX_MESSAGES_IN_MEMORY,
                 roles: messages.map((m) => m.role),
             },
         );
@@ -439,14 +448,16 @@ export class EnhancedSessionService implements SessionManager {
 
         // 📊 OPTIMIZATION: Check entity size before adding
         const entitySize = JSON.stringify(entities).length;
-        const maxSizeBytes = this.maxEntitiesSizeKb * 1024;
+        const maxSizeBytes =
+            SESSION_CONSTANTS.PERFORMANCE.MAX_ENTITIES_SIZE_KB * 1024;
 
         if (entitySize > maxSizeBytes) {
             logger.warn(
                 `⚠️ Entities too large (${Math.round(entitySize / 1024)}KB), truncating...`,
                 {
                     threadId,
-                    maxSizeKB: this.maxEntitiesSizeKb,
+                    maxSizeKB:
+                        SESSION_CONSTANTS.PERFORMANCE.MAX_ENTITIES_SIZE_KB,
                 },
             );
             // In production, implement smart truncation or compression
@@ -462,13 +473,15 @@ export class EnhancedSessionService implements SessionManager {
                 ] as EntityRef[] | undefined;
                 const merged = [...(existing || []), ...entityData];
 
-                // Deduplicate by ID and keep max 10
+                // Deduplicate by ID and keep max configured
+                const maxEntities =
+                    SESSION_CONSTANTS.PERFORMANCE.MAX_ENTITIES_SIZE_KB; // Reuse for entity count limit
                 const deduped = merged
                     .filter(
                         (entity, index, arr) =>
                             arr.findIndex((e) => e.id === entity.id) === index,
                     )
-                    .slice(-10);
+                    .slice(-maxEntities);
 
                 (updatedEntities as any)[entityType] = deduped;
             } else if (typeof entityData === 'object' && entityData !== null) {
@@ -598,8 +611,8 @@ export class EnhancedSessionService implements SessionManager {
 
         await this.snapshotsAdapter.storeExecutionSnapshot(
             optimizedSnapshot,
-            7,
-        ); // 7 days TTL
+            Math.ceil(SESSION_CONSTANTS.SNAPSHOT_TTL / (24 * 60 * 60 * 1000)), // Convert to days
+        );
 
         logger.debug(
             `📸 Saved optimized execution snapshot: ${snapshot.executionId}`,

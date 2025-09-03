@@ -331,6 +331,72 @@ export class ObservabilitySystem implements ObservabilityInterface {
     }
 
     /**
+     * ✅ Salva ciclo completo de execução do agente (do início ao fim)
+     * Compatível com OpenTelemetry e MongoDB
+     */
+    async saveAgentExecutionCycle(
+        agentName: string,
+        executionId: string,
+        cycle: {
+            startTime: number;
+            endTime?: number;
+            input: any;
+            output?: any;
+            actions: any[];
+            errors?: Error[];
+            metadata?: Record<string, any>;
+        },
+    ): Promise<void> {
+        const span = this.telemetry.startSpan(`agent.${agentName}.execution`, {
+            attributes: {
+                agentName,
+                executionId,
+                cycleDuration: cycle.endTime
+                    ? cycle.endTime - cycle.startTime
+                    : 0,
+                actionsCount: cycle.actions.length,
+                hasErrors: !!(cycle.errors && cycle.errors.length > 0),
+            },
+        });
+
+        try {
+            // Log estruturado do ciclo completo
+            this.logger.info('Agent execution cycle completed', {
+                agentName,
+                executionId,
+                duration: cycle.endTime ? cycle.endTime - cycle.startTime : 0,
+                actionsCount: cycle.actions.length,
+                hasErrors: !!(cycle.errors && cycle.errors.length > 0),
+                metadata: cycle.metadata,
+            });
+
+            // Export para MongoDB se disponível (compatibilidade mantida)
+            if (this.mongodbExporter) {
+                await this.mongodbExporter.exportTelemetry({
+                    type: 'agent-execution-cycle',
+                    agentName,
+                    executionId,
+                    cycle,
+                    timestamp: Date.now(),
+                    correlationId: this.currentContext?.correlationId,
+                    tenantId: this.currentContext?.tenantId,
+                });
+            }
+
+            span.setStatus({ code: 'ok' });
+        } catch (error) {
+            span.recordException(error as Error);
+            span.setStatus({
+                code: 'error',
+                message: 'Failed to save execution cycle',
+            });
+            throw error;
+        } finally {
+            span.end();
+        }
+    }
+
+    /**
      * Get overall health status
      */
     getHealthStatus(): HealthStatus {
@@ -1104,6 +1170,57 @@ export function markSpanOk(
 ): void {
     if (attributes) span.setAttributes(attributes);
     span.setStatus({ code: 'ok' });
+}
+
+// ============================================================================
+// AGENT EXECUTION CYCLE HELPERS
+// ============================================================================
+
+/**
+ * ✅ Helper para salvar ciclo completo de execução do agente
+ *
+ * @example
+ * ```typescript
+ * import { saveAgentExecutionCycle } from '@kodus/flow/observability';
+ *
+ * const cycle = {
+ *   startTime: Date.now(),
+ *   input: userMessage,
+ *   actions: [],
+ *   errors: [],
+ *   metadata: { version: '1.0' }
+ * };
+ *
+ * // Durante execução
+ * cycle.actions.push(agentAction);
+ *
+ * // Ao finalizar
+ * cycle.endTime = Date.now();
+ * cycle.output = result;
+ *
+ * await saveAgentExecutionCycle(
+ *   observability,
+ *   'my-agent',
+ *   'exec-123',
+ *   cycle
+ * );
+ * ```
+ */
+export async function saveAgentExecutionCycle(
+    observability: ObservabilitySystem,
+    agentName: string,
+    executionId: string,
+    cycle: {
+        startTime: number;
+        endTime?: number;
+        input: any;
+        output?: any;
+        actions: any[];
+        errors?: Error[];
+        metadata?: Record<string, any>;
+    },
+): Promise<void> {
+    return observability.saveAgentExecutionCycle(agentName, executionId, cycle);
 }
 
 // ============================================================================

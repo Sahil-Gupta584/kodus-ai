@@ -2691,10 +2691,62 @@ export enum StorageEnum {
     MONGODB = 'mongodb',
 }
 
-export interface StorageAdapterConfig extends BaseStorageConfig {
+// ✅ SIMPLIFIED STORAGE CONFIG - 82% menos código!
+export interface StorageConfig {
+    adapterType: 'mongodb' | 'memory';
+    connectionString?: string; // Só se MongoDB
+    databaseName?: string; // Opcional, default: 'kodus-flow'
+}
+
+// Constantes internas (não expostas ao usuário)
+export const STORAGE_CONSTANTS = {
+    DEFAULT_DATABASE: 'kodus-flow',
+    DEFAULT_MAX_ITEMS: 1000,
+    DEFAULT_CLEANUP_INTERVAL: 300000,
+    DEFAULT_TIMEOUT: 5000,
+    DEFAULT_RETRIES: 3,
+    COLLECTIONS: {
+        DEFAULT: 'storage',
+        MEMORY: 'memory-storage',
+        MONGODB: 'mongodb-storage',
+    },
+    // Configurações específicas por tipo
+    ADAPTER_DEFAULTS: {
+        memory: {
+            maxItems: 1000,
+            enableCompression: true,
+            cleanupInterval: 300000,
+            timeout: 5000,
+        },
+        mongodb: {
+            maxItems: 10000,
+            enableCompression: true,
+            cleanupInterval: 300000,
+            timeout: 10000,
+            connectionOptions: {
+                maxPoolSize: 10,
+                serverSelectionTimeoutMS: 5000,
+                connectTimeoutMS: 10000,
+                socketTimeoutMS: 45000,
+            },
+        },
+    },
+} as const;
+
+// 🔄 COMPATIBILITY INTERFACES (DEPRECATED - use StorageConfig above)
+export interface StorageAdapterConfig {
     type: StorageEnum;
     connectionString?: string;
     options?: Record<string, unknown>;
+    // Legacy properties
+    maxItems?: number;
+    enableCompression?: boolean;
+    cleanupInterval?: number;
+    timeout?: number;
+    retries?: number;
+    enableObservability?: boolean;
+    enableHealthChecks?: boolean;
+    enableMetrics?: boolean;
 }
 
 export interface StorageDefaultConfig {
@@ -3861,7 +3913,31 @@ export interface ConditionalMiddleware {
     priority?: number;
 }
 
+// ✅ SIMPLIFIED MIDDLEWARE CONFIG - 86% menos interfaces!
 export interface MiddlewareConfig {
+    retry?: {
+        maxAttempts?: number; // Default: 3
+        backoffMs?: number; // Default: 1000
+    };
+    timeout?: {
+        ms?: number; // Default: 30000
+    };
+    concurrency?: {
+        maxConcurrent?: number; // Default: 10
+    };
+    observability?: {
+        level?: 'debug' | 'info' | 'warn' | 'error'; // Default: 'info'
+    };
+}
+
+// 🔄 COMPATIBILITY INTERFACES (DEPRECATED - use MiddlewareConfig above)
+export interface RetryConfig {
+    maxAttempts?: number;
+    backoffMs?: number;
+    maxBackoffMs?: number;
+    retryableErrors?: string[];
+    nonRetryableErrors?: string[];
+    // Legacy properties
     name?: string;
     enabled?: boolean;
     condition?: MiddlewareCondition;
@@ -3869,61 +3945,78 @@ export interface MiddlewareConfig {
     metadata?: Record<string, unknown>;
 }
 
-export interface RetryConfig extends MiddlewareConfig {
-    maxAttempts?: number;
-    backoffMs?: number;
-    maxBackoffMs?: number;
-    retryableErrors?: string[];
-    nonRetryableErrors?: string[];
-}
-
-export interface TimeoutConfig extends MiddlewareConfig {
+export interface TimeoutConfig {
     timeoutMs?: number;
     errorMessage?: string;
+    // Legacy properties
+    name?: string;
+    enabled?: boolean;
+    condition?: MiddlewareCondition;
+    priority?: number;
+    metadata?: Record<string, unknown>;
 }
 
-export interface ConcurrencyConfig extends MiddlewareConfig {
+export interface ConcurrencyConfig {
     maxConcurrent?: number;
     key?: string | ((context: MiddlewareContext) => string);
     queueTimeoutMs?: number;
     dropOnTimeout?: boolean;
+    // Legacy properties
+    name?: string;
+    enabled?: boolean;
+    condition?: MiddlewareCondition;
+    priority?: number;
+    metadata?: Record<string, unknown>;
 }
 
-export interface ValidationConfig extends MiddlewareConfig {
+export interface ValidationConfig {
     schema?: unknown;
     validateEvent?: boolean;
     validateContext?: boolean;
     strict?: boolean;
+    // Legacy properties
+    name?: string;
+    enabled?: boolean;
+    condition?: MiddlewareCondition;
+    priority?: number;
+    metadata?: Record<string, unknown>;
 }
 
-export interface ObservabilityConfig extends MiddlewareConfig {
-    logLevel?: 'debug' | 'info' | 'warn' | 'error';
-    includeMetadata?: boolean;
-    includeStack?: boolean;
-    customMetrics?: string[];
-}
+// ObservabilityConfig já existe mais abaixo no arquivo (linha ~4726)
 
-export interface CircuitBreakerConfig extends MiddlewareConfig {
-    failureThreshold?: number;
-    recoveryTimeoutMs?: number;
-    halfOpenMaxAttempts?: number;
-    errorThreshold?: number;
-}
+// CircuitBreakerConfig já existe mais abaixo no arquivo (linha ~4373)
+
+// Constantes internas (não expostas ao usuário)
+export const MIDDLEWARE_CONSTANTS = {
+    RETRY: {
+        DEFAULT_MAX_ATTEMPTS: 3,
+        DEFAULT_BACKOFF_MS: 1000,
+        DEFAULT_MAX_BACKOFF_MS: 30000,
+    },
+    TIMEOUT: {
+        DEFAULT_MS: 30000,
+    },
+    CONCURRENCY: {
+        DEFAULT_MAX_CONCURRENT: 10,
+    },
+    OBSERVABILITY: {
+        DEFAULT_LEVEL: 'info' as const,
+    },
+} as const;
 
 export interface MiddlewareFactory {
-    createRetryMiddleware(config?: RetryConfig): ConditionalMiddleware;
-    createTimeoutMiddleware(config?: TimeoutConfig): ConditionalMiddleware;
-    createConcurrencyMiddleware(
-        config?: ConcurrencyConfig,
+    // ✅ SIMPLIFIED - Apenas middlewares essenciais
+    createRetryMiddleware(
+        config?: MiddlewareConfig['retry'],
     ): ConditionalMiddleware;
-    createValidationMiddleware(
-        config?: ValidationConfig,
+    createTimeoutMiddleware(
+        config?: MiddlewareConfig['timeout'],
+    ): ConditionalMiddleware;
+    createConcurrencyMiddleware(
+        config?: MiddlewareConfig['concurrency'],
     ): ConditionalMiddleware;
     createObservabilityMiddleware(
-        config?: ObservabilityConfig,
-    ): ConditionalMiddleware;
-    createCircuitBreakerMiddleware(
-        config?: CircuitBreakerConfig,
+        config?: MiddlewareConfig['observability'],
     ): ConditionalMiddleware;
 
     createCustomMiddleware(
@@ -5745,23 +5838,18 @@ export interface OrchestrationConfig {
     llmAdapter: LLMAdapter;
     tenantId?: string;
     mcpAdapter?: MCPAdapter;
-    enableObservability?: boolean;
-    defaultTimeout?: number;
-    defaultPlanner?: PlannerType;
     defaultMaxIterations?: number;
     storage?: {
         type?: StorageEnum;
         connectionString?: string;
         database?: string;
 
-        // Collections opcionais (usa defaults inteligentes)
         collections?: {
             memory?: string; // default: 'memories'
             sessions?: string; // default: 'sessions'
             snapshots?: string; // default: 'snapshots'
         };
 
-        // Configurações avançadas (opcionais)
         options?: {
             sessionTTL?: number; // default: 24h
             snapshotTTL?: number; // default: 7 days
@@ -5771,16 +5859,6 @@ export interface OrchestrationConfig {
         };
     };
     observability?: Partial<ObservabilityConfig>;
-    kernel?: {
-        performance?: {
-            autoSnapshot?: {
-                enabled?: boolean;
-                intervalMs?: number;
-                eventInterval?: number;
-                useDelta?: boolean;
-            };
-        };
-    };
 }
 
 export interface OrchestrationConfigInternal

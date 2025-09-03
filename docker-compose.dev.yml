@@ -1,6 +1,5 @@
 services:
     kodus-orchestrator:
-        platform: linux/amd64
         container_name: ${GLOBAL_API_CONTAINER_NAME}
         build:
             context: .

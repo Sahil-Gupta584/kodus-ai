@@ -32,6 +32,15 @@ export type {
 // 🎯 SENIOR SOLUTION: Context Service as Facade/Service Layer
 export { ContextService, Context } from './context-service.js';
 
+// 🎯 SIMPLIFIED SESSION CONFIGURATION
+export type {
+    SessionConfig,
+    DEFAULT_SESSION_CONFIG,
+    SESSION_CONSTANTS,
+    createSessionConfig,
+    SESSION_CONFIG_PRESETS,
+} from './types/context-types.js';
+
 // ===============================================
 // 🏗️ ENHANCED CONTEXT BUILDER (SINGLETON PATTERN)
 // ===============================================
@@ -48,21 +57,22 @@ import {
     ContextBridge,
     createContextBridge,
 } from './services/context-bridge-service.js';
+import {
+    SESSION_CONSTANTS,
+    DEFAULT_SESSION_CONFIG,
+} from './types/context-types.js';
 
 const logger = createLogger('EnhancedContextBuilder');
 
 export interface EnhancedContextBuilderConfig {
-    // Database config
+    // ✅ LEGACY SUPPORT - Para código existente
+    // Mantém compatibilidade com código antigo
     connectionString?: string;
     dbName?: string;
-    adapterType?: StorageEnum;
-
-    // Collections config (customizáveis!)
+    adapterType?: StorageEnum | 'mongodb' | 'memory';
     sessionsCollection?: string;
     snapshotsCollection?: string;
     memoryCollection?: string;
-
-    // TTL config
     sessionTTL?: number;
     snapshotTTL?: number;
 }
@@ -82,26 +92,20 @@ export class EnhancedContextBuilder {
     private contextBridge!: ContextBridge;
     private isInitialized = false;
 
-    private constructor(config: EnhancedContextBuilderConfig = {}) {
+    private constructor(
+        config: EnhancedContextBuilderConfig = DEFAULT_SESSION_CONFIG,
+    ) {
+        // ✅ SIMPLE CONFIG - Apenas o essencial!
         this.config = {
-            dbName: 'kodus-flow',
-            adapterType: config.connectionString
-                ? StorageEnum.MONGODB
-                : StorageEnum.INMEMORY,
-            sessionsCollection: 'kodus-agent-sessions', // Customizável!
-            snapshotsCollection: 'kodus-execution-snapshots', // Customizável!
-            memoryCollection: 'kodus-agent-memory', // Customizável!
-            sessionTTL: 24 * 60 * 60 * 1000, // 24h
-            snapshotTTL: 7 * 24 * 60 * 60 * 1000, // 7 dias
-            ...config,
+            adapterType: config.connectionString ? 'mongodb' : 'memory',
+            connectionString: config.connectionString,
+            sessionTTL: config.sessionTTL || DEFAULT_SESSION_CONFIG.sessionTTL,
         };
 
         logger.info('EnhancedContextBuilder created', {
             adapterType: this.config.adapterType,
-            dbName: this.config.dbName,
-            sessionsCollection: this.config.sessionsCollection,
-            snapshotsCollection: this.config.snapshotsCollection,
-            memoryCollection: this.config.memoryCollection,
+            database: SESSION_CONSTANTS.DATABASE_NAME,
+            sessionTTL: this.config.sessionTTL,
         });
     }
 
@@ -149,17 +153,15 @@ export class EnhancedContextBuilder {
             connectionString: this.config.connectionString
                 ? '[SET]'
                 : '[NOT SET]',
-            memoryCollection: this.config.memoryCollection,
-            sessionsCollection: this.config.sessionsCollection,
-            snapshotsCollection: this.config.snapshotsCollection,
+            database: SESSION_CONSTANTS.DATABASE_NAME,
         });
 
         // 1. Initialize memory manager
         logger.info('🧠 Step 1: Initializing memory manager...');
-        if (this.config.adapterType === StorageEnum.MONGODB) {
+        if (this.config.adapterType === 'mongodb') {
             logger.info('🔗 Creating MongoDB memory manager', {
-                database: this.config.dbName,
-                collection: this.config.memoryCollection,
+                database: SESSION_CONSTANTS.DATABASE_NAME,
+                collection: SESSION_CONSTANTS.COLLECTIONS.MEMORY,
             });
             // Create MongoDB memory manager with custom collection
             this.memoryManager = new MemoryManager({
@@ -167,11 +169,13 @@ export class EnhancedContextBuilder {
                 adapterConfig: {
                     connectionString: this.config.connectionString,
                     options: {
-                        database: this.config.dbName,
-                        collection: this.config.memoryCollection,
+                        database: SESSION_CONSTANTS.DATABASE_NAME,
+                        collection: SESSION_CONSTANTS.COLLECTIONS.MEMORY,
                         maxItems: 10000,
-                        enableCompression: true,
-                        cleanupInterval: 300000,
+                        enableCompression:
+                            SESSION_CONSTANTS.FEATURES.ENABLE_COMPRESSION,
+                        cleanupInterval:
+                            SESSION_CONSTANTS.PERFORMANCE.CLEANUP_INTERVAL,
                     },
                 },
             });
@@ -188,27 +192,29 @@ export class EnhancedContextBuilder {
             this.memoryManager = getGlobalMemoryManager();
         }
 
-        // 2. Initialize session manager with custom collections
+        // 2. Initialize session manager with simplified config
         this.sessionManager = new EnhancedSessionService(
             this.config.connectionString,
             {
-                adapterType: this.config.adapterType,
-                dbName: this.config.dbName,
-                sessionsCollection: this.config.sessionsCollection, // 🎯 Passa config customizada!
-                snapshotsCollection: this.config.snapshotsCollection, // 🎯 Passa config customizada!
+                adapterType:
+                    this.config.adapterType === 'mongodb'
+                        ? StorageEnum.MONGODB
+                        : StorageEnum.INMEMORY,
+                dbName: SESSION_CONSTANTS.DATABASE_NAME, // Will be ignored by service
+                sessionsCollection: SESSION_CONSTANTS.COLLECTIONS.SESSIONS, // Will be ignored by service
+                snapshotsCollection: SESSION_CONSTANTS.COLLECTIONS.SNAPSHOTS, // Will be ignored by service
                 sessionTTL: this.config.sessionTTL,
-                snapshotTTL: this.config.snapshotTTL,
             },
         );
 
         // 3. Initialize context bridge
         this.contextBridge = createContextBridge(this.config.connectionString, {
             memoryManager: this.memoryManager,
-            dbName: this.config.dbName,
-            sessionsCollection: this.config.sessionsCollection, // 🎯 Passa config customizada!
-            snapshotsCollection: this.config.snapshotsCollection, // 🎯 Passa config customizada!
+            dbName: SESSION_CONSTANTS.DATABASE_NAME,
+            sessionsCollection: SESSION_CONSTANTS.COLLECTIONS.SESSIONS,
+            snapshotsCollection: SESSION_CONSTANTS.COLLECTIONS.SNAPSHOTS,
             sessionTTL: this.config.sessionTTL,
-            snapshotTTL: this.config.snapshotTTL,
+            snapshotTTL: SESSION_CONSTANTS.SNAPSHOT_TTL,
         });
 
         logger.info(
@@ -223,7 +229,7 @@ export class EnhancedContextBuilder {
             memoryManager: 'ready',
             sessionManager: 'ready',
             contextBridge: 'ready',
-            collectionsEnsured: this.config.adapterType === StorageEnum.MONGODB,
+            collectionsEnsured: this.config.adapterType === 'mongodb',
         });
     }
 
