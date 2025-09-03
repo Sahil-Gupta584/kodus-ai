@@ -7,6 +7,7 @@ import {
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import {
     CodeReviewConfig,
+    CodeReviewVersion,
     KodusConfigFile,
     KodyFineTuningConfig,
     ReviewModeConfig,
@@ -159,6 +160,17 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 }
             }
 
+            const codeReviewVersion =
+            (isParameterValidInConfigFile(
+                'codeReviewVersion',
+                validationErrors,
+            )
+                ? kodusConfigFile?.codeReviewVersion
+                : undefined) ??
+            repoConfig.codeReviewVersion ??
+            globalConfig.codeReviewVersion ??
+            this.DEFAULT_CONFIG.codeReviewVersion;
+
             const config: CodeReviewConfig = {
                 ignorePaths: this.getIgnorePathsWithGlobal(
                     isParameterValidInConfigFile(
@@ -188,6 +200,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     },
                     repoConfig.reviewOptions,
                     globalConfig.reviewOptions,
+                    codeReviewVersion,
                 ),
                 summary: this.mergeSummaryConfig(
                     { kodusConfig: kodusConfigFile?.summary, validationErrors },
@@ -271,6 +284,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     repoConfig.runOnDraft ??
                     globalConfig.runOnDraft ??
                     this.DEFAULT_CONFIG.runOnDraft,
+                codeReviewVersion: codeReviewVersion,
             };
 
             return config;
@@ -300,6 +314,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     timeWindow: 0,
                     pushesToTrigger: 0,
                 },
+                codeReviewVersion: CodeReviewVersion.LEGACY,
             };
 
             return DEFAULT_CONFIG;
@@ -387,108 +402,150 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         },
         repo?: Partial<any>,
         global?: Partial<any>,
+        codeReviewVersion?: CodeReviewVersion,
     ): ReviewOptions {
         const defaultOptions = this.DEFAULT_CONFIG.reviewOptions;
         const { kodusConfig, validationErrors } = kodusOptions;
-        return {
-            security:
-                (isParameterValidInConfigFile('security', validationErrors)
-                    ? kodusConfig?.security
-                    : undefined) ??
-                repo?.security ??
-                global?.security ??
-                defaultOptions.security,
 
-            code_style:
-                (isParameterValidInConfigFile('code_style', validationErrors)
-                    ? kodusConfig?.code_style
-                    : undefined) ??
-                repo?.code_style ??
-                global?.code_style ??
-                defaultOptions.code_style,
+        if (
+            codeReviewVersion === CodeReviewVersion.LEGACY
+        ) {
+            return {
+                security:
+                    (isParameterValidInConfigFile('security', validationErrors)
+                        ? kodusConfig?.security
+                        : undefined) ??
+                    repo?.security ??
+                    global?.security ??
+                    defaultOptions.security,
 
-            kody_rules:
-                (isParameterValidInConfigFile('kody_rules', validationErrors)
-                    ? kodusConfig?.kody_rules
-                    : undefined) ??
-                repo?.kody_rules ??
-                global?.kody_rules ??
-                defaultOptions.kody_rules,
+                code_style:
+                    (isParameterValidInConfigFile(
+                        'code_style',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.code_style
+                        : undefined) ??
+                    repo?.code_style ??
+                    global?.code_style ??
+                    defaultOptions.code_style,
 
-            refactoring:
-                (isParameterValidInConfigFile('refactoring', validationErrors)
-                    ? kodusConfig?.refactoring
-                    : undefined) ??
-                repo?.refactoring ??
-                global?.refactoring ??
-                defaultOptions.refactoring,
+                kody_rules:
+                    (isParameterValidInConfigFile(
+                        'kody_rules',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.kody_rules
+                        : undefined) ??
+                    repo?.kody_rules ??
+                    global?.kody_rules ??
+                    defaultOptions.kody_rules,
 
-            error_handling:
-                (isParameterValidInConfigFile(
-                    'error_handling',
-                    validationErrors,
-                )
-                    ? kodusConfig?.error_handling
-                    : undefined) ??
-                repo?.error_handling ??
-                global?.error_handling ??
-                defaultOptions.error_handling,
+                refactoring:
+                    (isParameterValidInConfigFile(
+                        'refactoring',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.refactoring
+                        : undefined) ??
+                    repo?.refactoring ??
+                    global?.refactoring ??
+                    defaultOptions.refactoring,
 
-            maintainability:
-                (isParameterValidInConfigFile(
-                    'maintainability',
-                    validationErrors,
-                )
-                    ? kodusConfig?.maintainability
-                    : undefined) ??
-                repo?.maintainability ??
-                global?.maintainability ??
-                defaultOptions.maintainability,
+                error_handling:
+                    (isParameterValidInConfigFile(
+                        'error_handling',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.error_handling
+                        : undefined) ??
+                    repo?.error_handling ??
+                    global?.error_handling ??
+                    defaultOptions.error_handling,
 
-            potential_issues:
-                (isParameterValidInConfigFile(
-                    'potential_issues',
-                    validationErrors,
-                )
-                    ? kodusConfig?.potential_issues
-                    : undefined) ??
-                repo?.potential_issues ??
-                global?.potential_issues ??
-                defaultOptions.potential_issues,
+                maintainability:
+                    (isParameterValidInConfigFile(
+                        'maintainability',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.maintainability
+                        : undefined) ??
+                    repo?.maintainability ??
+                    global?.maintainability ??
+                    defaultOptions.maintainability,
 
-            documentation_and_comments:
-                (isParameterValidInConfigFile(
-                    'documentation_and_comments',
-                    validationErrors,
-                )
-                    ? kodusConfig?.documentation_and_comments
-                    : undefined) ??
-                repo?.documentation_and_comments ??
-                global?.documentation_and_comments ??
-                defaultOptions.documentation_and_comments,
+                potential_issues:
+                    (isParameterValidInConfigFile(
+                        'potential_issues',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.potential_issues
+                        : undefined) ??
+                    repo?.potential_issues ??
+                    global?.potential_issues ??
+                    defaultOptions.potential_issues,
 
-            performance_and_optimization:
-                (isParameterValidInConfigFile(
-                    'performance_and_optimization',
-                    validationErrors,
-                )
-                    ? kodusConfig?.performance_and_optimization
-                    : undefined) ??
-                repo?.performance_and_optimization ??
-                global?.performance_and_optimization ??
-                defaultOptions.performance_and_optimization,
+                documentation_and_comments:
+                    (isParameterValidInConfigFile(
+                        'documentation_and_comments',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.documentation_and_comments
+                        : undefined) ??
+                    repo?.documentation_and_comments ??
+                    global?.documentation_and_comments ??
+                    defaultOptions.documentation_and_comments,
 
-            breaking_changes:
-                (isParameterValidInConfigFile(
-                    'breaking_changes',
-                    validationErrors,
-                )
-                    ? kodusConfig?.breaking_changes
-                    : undefined) ??
-                repo?.breaking_changes ??
-                global?.breaking_changes ??
-                defaultOptions.breaking_changes,
-        };
+                performance_and_optimization:
+                    (isParameterValidInConfigFile(
+                        'performance_and_optimization',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.performance_and_optimization
+                        : undefined) ??
+                    repo?.performance_and_optimization ??
+                    global?.performance_and_optimization ??
+                    defaultOptions.performance_and_optimization,
+
+                breaking_changes:
+                    (isParameterValidInConfigFile(
+                        'breaking_changes',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.breaking_changes
+                        : undefined) ??
+                    repo?.breaking_changes ??
+                    global?.breaking_changes ??
+                    defaultOptions.breaking_changes,
+            };
+        } else {
+            return {
+                security:
+                    (isParameterValidInConfigFile('security', validationErrors)
+                        ? kodusConfig?.security
+                        : undefined) ??
+                    repo?.security ??
+                    global?.security ??
+                    defaultOptions.security,
+                bug:
+                    (isParameterValidInConfigFile('bug', validationErrors)
+                        ? kodusConfig?.bug
+                        : undefined) ??
+                    repo?.bug ??
+                    global?.bug ??
+                    defaultOptions.bug,
+                performance:
+                    (isParameterValidInConfigFile(
+                        'performance',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.performance
+                        : undefined) ??
+                    repo?.performance ??
+                    global?.performance ??
+                    defaultOptions.performance,
+            };
+        }
     }
 
     private mergeSummaryConfig(
