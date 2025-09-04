@@ -5212,7 +5212,7 @@ export class GithubService
     > {
         const { owner, repo, octokit, rootTreeSha } = params;
         const allItems = [];
-        const limit = pLimit(10);
+        const limit = pLimit(30);
 
         let directoriesToProcess = [{ sha: rootTreeSha, path: '' }];
 
@@ -5223,7 +5223,6 @@ export class GithubService
                         owner,
                         repo,
                         tree_sha: dir.sha,
-                        recursive: 'false',
                     });
 
                     return { parentPath: dir.path, tree: data.tree };
