@@ -1,9 +1,4 @@
-export {
-    ExecutionKernel,
-    createKernel,
-    type KernelConfig,
-    type KernelState,
-} from './kernel.js';
+export { ExecutionKernel, createKernel } from './kernel.js';
 
 export {
     createSnapshot,
@@ -12,8 +7,6 @@ export {
     validateDeltaSnapshot,
     diffSnapshot,
     stableHash,
-    type Snapshot,
-    type DeltaSnapshot,
 } from './snapshot.js';
 
 export {

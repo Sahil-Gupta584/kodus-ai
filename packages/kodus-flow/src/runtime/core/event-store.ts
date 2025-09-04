@@ -1,66 +1,12 @@
-/**
- * @module runtime/core/event-store
- * @description Event Store com Replay Capability
- *
- * Implementação simples que aproveita o sistema de persistência existente:
- * - Event replay temporal
- * - Recovery de eventos não processados
- * - Checkpoint-based replay
- * - Integration com EventQueue
- */
-
-import type { AnyEvent } from '../../core/types/events.js';
-import type { Persistor } from '../../persistor/index.js';
-import type { PersistorType } from '../../persistor/config.js';
+import {
+    AnyEvent,
+    EventMetadata,
+    EventStoreConfig,
+    Persistor,
+} from '../../core/types/allTypes.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
 import { createPersistorFromConfig } from '../../persistor/factory.js';
 
-/**
- * Configuração do Event Store
- */
-export interface EventStoreConfig {
-    executionId: string;
-    enableReplay?: boolean; // Default: true
-    replayBatchSize?: number; // Default: 100
-    maxStoredEvents?: number; // Default: 10000
-
-    // Persistor config (usa factory existente)
-    persistor?: Persistor;
-    persistorType?: PersistorType; // Default: memory
-    persistorOptions?: Record<string, unknown>;
-
-    // Observability
-    enableObservability?: boolean; // Default: true
-}
-
-/**
- * Metadata do evento para replay
- */
-interface EventMetadata {
-    eventId: string;
-    eventType: string;
-    timestamp: number;
-    processed: boolean;
-    processingAttempts: number;
-    lastProcessedAt?: number;
-}
-
-/**
- * Resultado do replay
- */
-export interface ReplayResult {
-    totalEvents: number;
-    replayedEvents: number;
-    skippedEvents: number;
-    startTime: number;
-    endTime: number;
-    fromTimestamp: number;
-    toTimestamp?: number;
-}
-
-/**
- * Event Store simples usando persistor existente
- */
 export class EventStore {
     private readonly config: Required<
         Omit<EventStoreConfig, 'persistor' | 'persistorOptions'>
@@ -98,7 +44,7 @@ export class EventStore {
                 cleanupInterval: 300000, // 5min
                 maxMemoryUsage: 100 * 1024 * 1024, // 100MB
                 ...config.persistorOptions,
-            } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+            } as any);
 
         if (this.config.enableObservability) {
             this.observability.logger.info('EventStore initialized', {

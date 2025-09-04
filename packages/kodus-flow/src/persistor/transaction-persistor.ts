@@ -1,51 +1,19 @@
 import { BasePersistor } from '../kernel/persistor.js';
 import { ConcurrentStateManager } from '../utils/thread-safe-state.js';
 import { createLogger } from '../observability/logger.js';
-import type {
-    Snapshot,
+import {
     DeltaSnapshot,
     Persistor,
-    SnapshotOptions,
     PersistorStats,
-} from '../core/types/common-types.js';
+    Snapshot,
+    SnapshotOptions,
+    Transaction,
+    TransactionOperation,
+    TransactionState,
+} from '../core/types/allTypes.js';
 
 const logger = createLogger('transaction-persistor');
 
-/**
- * Transaction interface for ACID operations
- */
-export interface Transaction {
-    id: string;
-    begin(): Promise<void>;
-    commit(): Promise<void>;
-    rollback(): Promise<void>;
-    addOperation(op: TransactionOperation): void;
-}
-
-/**
- * Transaction operation
- */
-interface TransactionOperation {
-    type: 'save' | 'delete' | 'update';
-    data: Snapshot | DeltaSnapshot;
-    options?: SnapshotOptions;
-}
-
-/**
- * Transaction state
- */
-interface TransactionState {
-    id: string;
-    operations: TransactionOperation[];
-    status: 'pending' | 'committed' | 'rolled_back';
-    startTime: number;
-    endTime?: number;
-}
-
-/**
- * Transaction-aware persistor with ACID guarantees
- * Wraps any persistor implementation with transaction support
- */
 export class TransactionPersistor extends BasePersistor {
     private readonly basePersistor: Persistor;
     private readonly stateManager: ConcurrentStateManager;

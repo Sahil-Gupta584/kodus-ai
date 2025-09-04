@@ -28,6 +28,7 @@ import { UsersModule } from './user.module';
 import { OrganizationModule } from './organization.module';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 import { GlobalCacheModule } from './cache.module';
+import { RuleLikeModule } from './ruleLike.module';
 
 @Module({
     imports: [
@@ -45,6 +46,7 @@ import { GlobalCacheModule } from './cache.module';
         forwardRef(() => UsersModule),
         forwardRef(() => OrganizationModule),
         forwardRef(() => CodeReviewSettingsLogModule),
+        forwardRef(() => RuleLikeModule),
         KodyRulesValidationModule,
         GlobalCacheModule,
     ],

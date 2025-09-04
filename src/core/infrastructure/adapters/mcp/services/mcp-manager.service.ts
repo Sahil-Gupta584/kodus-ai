@@ -1,6 +1,6 @@
 import { AxiosMCPManagerService } from '@/config/axios/microservices/mcpManager.axios';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { MCPServerConfig } from '@kodus/flow/dist/adapters/mcp';
+import { MCPServerConfig } from '@kodus/flow';
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 

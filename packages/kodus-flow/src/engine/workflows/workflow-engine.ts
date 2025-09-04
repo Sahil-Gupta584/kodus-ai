@@ -1,334 +1,311 @@
-/**
- * @module engine/workflow-engine
- * @description Enhanced workflow engine with step support and context management
- */
+// import {
+//     AnyEvent,
+//     EVENT_TYPES,
+//     Step,
+//     StepContext,
+//     TEvent,
+//     WorkflowDefinition,
+//     workflowEvent,
+// } from '@/core/types/allTypes.js';
+// import { createLogger } from '../../observability/index.js';
+// import { MultiKernelHandler } from '../core/multi-kernel-handler.js';
 
-import { workflowEvent } from '../../runtime/index.js';
-import { createLogger } from '../../observability/index.js';
-import type { Event } from '../../core/types/events.js';
-import { EVENT_TYPES } from '../../core/types/events.js';
-import type { MultiKernelHandler } from '../core/multi-kernel-handler.js';
+// // Workflow engine
+// export class WorkflowEngine {
+//     private readonly logger = createLogger('WorkflowEngine');
+//     private kernelHandler?: MultiKernelHandler;
 
-// Step definition
-export interface Step<TInput = unknown, TOutput = unknown> {
-    readonly name: string;
-    readonly handler: (input: TInput, ctx: StepContext) => Promise<TOutput>;
-}
+//     // Mock createWorkflow function
+//     private createWorkflow(config: { name: string }) {
+//         return {
+//             name: config.name,
+//             on: (_event: unknown, _handler: unknown) => {},
+//             createContext: () => ({
+//                 sendEvent: async (_event: unknown) => {},
+//             }),
+//         };
+//     }
 
-// Step context
-export interface StepContext {
-    readonly executionId: string;
-    readonly correlationId: string;
-    readonly state: Map<string, unknown>;
-    readonly logger: ReturnType<typeof createLogger>;
-    getState<T = unknown>(key: string): T | undefined;
-    setState<T = unknown>(key: string, value: T): void;
-}
+//     constructor(
+//         private readonly definition: WorkflowDefinition,
+//         kernelHandler?: MultiKernelHandler,
+//     ) {
+//         this.kernelHandler = kernelHandler;
+//         this.logger.info('WorkflowEngine created', {
+//             hasKernelHandler: !!kernelHandler,
+//         });
+//     }
 
-// Workflow definition
-export interface WorkflowDefinition {
-    readonly name: string;
-    readonly steps: ReadonlyArray<Step<unknown, unknown>>;
-    readonly metadata?: Readonly<Record<string, unknown>>;
-}
+//     /**
+//      * Creates a workflow that executes steps sequentially
+//      */
+//     createExecutableWorkflow() {
+//         const workflow = this.createWorkflow({ name: this.definition.name });
+//         const state = new Map<string, unknown>();
 
-// Workflow engine
-export class WorkflowEngine {
-    private readonly logger = createLogger('WorkflowEngine');
-    private kernelHandler?: MultiKernelHandler;
+//         // Create events for each step
+//         const stepEvents = new Map<string, ReturnType<typeof workflowEvent>>();
+//         this.definition.steps?.forEach((step) => {
+//             stepEvents.set(step.name, workflowEvent(`step.${step.name}`));
+//         });
 
-    // Mock createWorkflow function
-    private createWorkflow(config: { name: string }) {
-        return {
-            name: config.name,
-            on: (_event: unknown, _handler: unknown) => {},
-            createContext: () => ({
-                sendEvent: async (_event: unknown) => {},
-            }),
-        };
-    }
+//         // Create workflow events
+//         const startEvent = workflowEvent(EVENT_TYPES.WORKFLOW_START);
+//         const completeEvent = workflowEvent(EVENT_TYPES.WORKFLOW_COMPLETE);
+//         const errorEvent = workflowEvent(EVENT_TYPES.WORKFLOW_ERROR);
 
-    constructor(
-        private readonly definition: WorkflowDefinition,
-        kernelHandler?: MultiKernelHandler,
-    ) {
-        this.kernelHandler = kernelHandler;
-        this.logger.info('WorkflowEngine created', {
-            hasKernelHandler: !!kernelHandler,
-        });
-    }
+//         // Wire up step handlers
+//         this.definition.steps.forEach((step, index) => {
+//             const currentStepEvent = stepEvents.get(step.name);
+//             const nextStep = this.definition.steps[index + 1];
+//             const nextStepEvent = nextStep
+//                 ? stepEvents.get(nextStep.name)
+//                 : completeEvent;
 
-    /**
-     * Creates a workflow that executes steps sequentially
-     */
-    createExecutableWorkflow() {
-        const workflow = this.createWorkflow({ name: this.definition.name });
-        const state = new Map<string, unknown>();
+//             if (!currentStepEvent) {
+//                 this.logger.warn(`Step event not found for: ${step.name}`);
+//                 return;
+//             }
 
-        // Create events for each step
-        const stepEvents = new Map<string, ReturnType<typeof workflowEvent>>();
-        this.definition.steps.forEach((step) => {
-            stepEvents.set(step.name, workflowEvent(`step.${step.name}`));
-        });
+//             workflow.on(`step.${step.name}`, async (event: AnyEvent) => {
+//                 // Criar contexto do step inline
+//                 const stepContext = {
+//                     stepName: step.name,
+//                     workflowName: this.definition.name,
+//                     stepIndex: index,
+//                     totalSteps: this.definition.steps.length,
+//                     dependencies: [],
+//                     tenantId: 'default',
+//                     executionId: Date.now().toString(),
+//                     correlationId: Date.now().toString(),
+//                 };
 
-        // Create workflow events
-        const startEvent = workflowEvent(EVENT_TYPES.WORKFLOW_START);
-        const completeEvent = workflowEvent(EVENT_TYPES.WORKFLOW_COMPLETE);
-        const errorEvent = workflowEvent(EVENT_TYPES.WORKFLOW_ERROR);
+//                 const stepContextEnhanced: StepContext = {
+//                     executionId: stepContext.executionId,
+//                     correlationId:
+//                         stepContext.correlationId || Date.now().toString(),
+//                     state,
+//                     logger: this.logger,
+//                     getState<T = unknown>(key: string): T | undefined {
+//                         return state.get(key) as T | undefined;
+//                     },
+//                     setState<T = unknown>(key: string, value: T): void {
+//                         state.set(key, value);
+//                     },
+//                 };
 
-        // Wire up step handlers
-        this.definition.steps.forEach((step, index) => {
-            const currentStepEvent = stepEvents.get(step.name);
-            const nextStep = this.definition.steps[index + 1];
-            const nextStepEvent = nextStep
-                ? stepEvents.get(nextStep.name)
-                : completeEvent;
+//                 // Emit workflow step start event via KernelHandler
+//                 if (this.kernelHandler) {
+//                     await this.kernelHandler.emit('workflow.step.start', {
+//                         workflowName: this.definition.name,
+//                         stepName: step.name,
+//                         executionId: stepContext.executionId,
+//                         correlationId: stepContext.correlationId,
+//                     });
+//                 }
 
-            if (!currentStepEvent) {
-                this.logger.warn(`Step event not found for: ${step.name}`);
-                return;
-            }
+//                 try {
+//                     this.logger.info(`Executing step: ${step.name}`, {
+//                         step: step.name,
+//                         input: event.data,
+//                     });
 
-            workflow.on(`step.${step.name}`, async (event: Event) => {
-                // Criar contexto do step inline
-                const stepContext = {
-                    stepName: step.name,
-                    workflowName: this.definition.name,
-                    stepIndex: index,
-                    totalSteps: this.definition.steps.length,
-                    dependencies: [], // Step não tem dependencies na interface atual
-                    tenantId: 'default',
-                    executionId: Date.now().toString(),
-                    correlationId: Date.now().toString(),
-                };
+//                     const result = await step.handler(
+//                         event.data,
+//                         stepContextEnhanced,
+//                     );
 
-                // Criar StepContext compatível com a interface existente
-                const stepContextEnhanced: StepContext = {
-                    executionId: stepContext.executionId,
-                    correlationId:
-                        stepContext.correlationId || Date.now().toString(),
-                    state,
-                    logger: this.logger,
-                    getState<T = unknown>(key: string): T | undefined {
-                        return state.get(key) as T | undefined;
-                    },
-                    setState<T = unknown>(key: string, value: T): void {
-                        state.set(key, value);
-                    },
-                };
+//                     // Emit workflow step success event via KernelHandler
+//                     if (this.kernelHandler) {
+//                         await this.kernelHandler.emit('workflow.step.success', {
+//                             workflowName: this.definition.name,
+//                             stepName: step.name,
+//                             executionId: stepContext.executionId,
+//                             correlationId: stepContext.correlationId,
+//                             hasResult: result !== undefined,
+//                         });
+//                     }
 
-                // Emit workflow step start event via KernelHandler
-                if (this.kernelHandler) {
-                    await this.kernelHandler.emit('workflow.step.start', {
-                        workflowName: this.definition.name,
-                        stepName: step.name,
-                        executionId: stepContext.executionId,
-                        correlationId: stepContext.correlationId,
-                    });
-                }
+//                     this.logger.info(`Step completed: ${step.name}`, {
+//                         step: step.name,
+//                         hasResult: result !== undefined,
+//                     });
 
-                try {
-                    this.logger.info(`Executing step: ${step.name}`, {
-                        step: step.name,
-                        input: event.data,
-                    });
+//                     if (nextStepEvent === completeEvent) {
+//                         return {
+//                             type: 'workflow.complete',
+//                             data: { result },
+//                             ts: Date.now(),
+//                         };
+//                     } else {
+//                         return {
+//                             type: `step.${nextStep?.name || 'unknown'}`,
+//                             data: result,
+//                             ts: Date.now(),
+//                         };
+//                     }
+//                 } catch (error) {
+//                     // Emit workflow step error event via KernelHandler
+//                     if (this.kernelHandler) {
+//                         await this.kernelHandler.emit('workflow.step.error', {
+//                             workflowName: this.definition.name,
+//                             stepName: step.name,
+//                             executionId: stepContext.executionId,
+//                             correlationId: stepContext.correlationId,
+//                             error: (error as Error).message,
+//                         });
+//                     }
 
-                    const result = await step.handler(
-                        event.data,
-                        stepContextEnhanced,
-                    );
+//                     this.logger.error(
+//                         `Step failed: ${step.name}`,
+//                         error as Error,
+//                         {
+//                             step: step.name,
+//                         },
+//                     );
 
-                    // Emit workflow step success event via KernelHandler
-                    if (this.kernelHandler) {
-                        await this.kernelHandler.emit('workflow.step.success', {
-                            workflowName: this.definition.name,
-                            stepName: step.name,
-                            executionId: stepContext.executionId,
-                            correlationId: stepContext.correlationId,
-                            hasResult: result !== undefined,
-                        });
-                    }
+//                     return {
+//                         type: 'workflow.error',
+//                         data: {
+//                             error: error as Error,
+//                             step: step.name,
+//                         },
+//                         ts: Date.now(),
+//                     };
+//                 }
+//             });
+//         });
 
-                    this.logger.info(`Step completed: ${step.name}`, {
-                        step: step.name,
-                        hasResult: result !== undefined,
-                    });
+//         // Start handler
+//         workflow.on('workflow.start', async (event: AnyEvent) => {
+//             const firstStep = this.definition.steps[0];
+//             if (!firstStep) {
+//                 return {
+//                     type: 'workflow.complete',
+//                     data: {
+//                         result: (event.data as { input?: unknown })?.input,
+//                     },
+//                     ts: Date.now(),
+//                 };
+//             }
 
-                    if (nextStepEvent === completeEvent) {
-                        return {
-                            type: 'workflow.complete',
-                            data: { result },
-                            ts: Date.now(),
-                        };
-                    } else {
-                        return {
-                            type: `step.${nextStep?.name || 'unknown'}`,
-                            data: result,
-                            ts: Date.now(),
-                        };
-                    }
-                } catch (error) {
-                    // Emit workflow step error event via KernelHandler
-                    if (this.kernelHandler) {
-                        await this.kernelHandler.emit('workflow.step.error', {
-                            workflowName: this.definition.name,
-                            stepName: step.name,
-                            executionId: stepContext.executionId,
-                            correlationId: stepContext.correlationId,
-                            error: (error as Error).message,
-                        });
-                    }
+//             const firstStepEvent = stepEvents.get(firstStep.name);
+//             if (!firstStepEvent) {
+//                 return {
+//                     type: 'workflow.error',
+//                     data: {
+//                         error: new Error(
+//                             `Step event not found: ${firstStep.name}`,
+//                         ),
+//                         step: firstStep.name,
+//                     },
+//                     ts: Date.now(),
+//                 };
+//             }
+//             return {
+//                 type: `step.${firstStep.name}`,
+//                 data: (event.data as { input?: unknown })?.input,
+//                 ts: Date.now(),
+//             };
+//         });
 
-                    this.logger.error(
-                        `Step failed: ${step.name}`,
-                        error as Error,
-                        {
-                            step: step.name,
-                        },
-                    );
+//         return {
+//             workflow,
+//             startEvent,
+//             completeEvent,
+//             errorEvent,
+//             stepEvents,
+//         };
+//     }
 
-                    return {
-                        type: 'workflow.error',
-                        data: {
-                            error: error as Error,
-                            step: step.name,
-                        },
-                        ts: Date.now(),
-                    };
-                }
-            });
-        });
+//     /**
+//      * Execute the workflow with input
+//      */
+//     async execute<TInput = unknown, TOutput = unknown>(
+//         input: TInput,
+//     ): Promise<TOutput> {
+//         const { workflow } = this.createExecutableWorkflow();
+//         const ctx = workflow.createContext();
 
-        // Start handler
-        workflow.on('workflow.start', async (event: Event) => {
-            const firstStep = this.definition.steps[0];
-            if (!firstStep) {
-                return {
-                    type: 'workflow.complete',
-                    data: {
-                        result: (event.data as { input?: unknown })?.input,
-                    },
-                    ts: Date.now(),
-                };
-            }
+//         const resultPromise = new Promise<TOutput>((resolve, reject) => {
+//             workflow.on('workflow.complete', (event: AnyEvent) => {
+//                 resolve(
+//                     (event.data as { result?: TOutput })?.result as TOutput,
+//                 );
+//             });
 
-            const firstStepEvent = stepEvents.get(firstStep.name);
-            if (!firstStepEvent) {
-                return {
-                    type: 'workflow.error',
-                    data: {
-                        error: new Error(
-                            `Step event not found: ${firstStep.name}`,
-                        ),
-                        step: firstStep.name,
-                    },
-                    ts: Date.now(),
-                };
-            }
-            return {
-                type: `step.${firstStep.name}`,
-                data: (event.data as { input?: unknown })?.input,
-                ts: Date.now(),
-            };
-        });
+//             workflow.on('workflow.error', (event: TEvent) => {
+//                 reject((event.data as { error?: Error })?.error);
+//             });
+//         });
 
-        return {
-            workflow,
-            startEvent,
-            completeEvent,
-            errorEvent,
-            stepEvents,
-        };
-    }
+//         await ctx.sendEvent({
+//             type: 'workflow.start',
+//             data: { input },
+//             ts: Date.now(),
+//         });
+//         return resultPromise;
+//     }
 
-    /**
-     * Execute the workflow with input
-     */
-    async execute<TInput = unknown, TOutput = unknown>(
-        input: TInput,
-    ): Promise<TOutput> {
-        const { workflow } = this.createExecutableWorkflow();
-        const ctx = workflow.createContext();
+//     /**
+//      * Set KernelHandler (for dependency injection)
+//      */
+//     setKernelHandler(kernelHandler: MultiKernelHandler): void {
+//         this.kernelHandler = kernelHandler;
+//         this.logger.info('KernelHandler set for WorkflowEngine');
+//     }
 
-        const resultPromise = new Promise<TOutput>((resolve, reject) => {
-            workflow.on('workflow.complete', (event: Event) => {
-                resolve(
-                    (event.data as { result?: TOutput })?.result as TOutput,
-                );
-            });
+//     /**
+//      * Get KernelHandler status
+//      */
+//     hasKernelHandler(): boolean {
+//         return !!this.kernelHandler;
+//     }
+// }
 
-            workflow.on('workflow.error', (event: Event) => {
-                reject((event.data as { error?: Error })?.error);
-            });
-        });
+// // Builder API
+// export class WorkflowBuilder {
+//     private steps: Step<unknown, unknown>[] = [];
 
-        await ctx.sendEvent({
-            type: 'workflow.start',
-            data: { input },
-            ts: Date.now(),
-        });
-        return resultPromise;
-    }
+//     constructor(private name: string) {}
 
-    /**
-     * Set KernelHandler (for dependency injection)
-     */
-    setKernelHandler(kernelHandler: MultiKernelHandler): void {
-        this.kernelHandler = kernelHandler;
-        this.logger.info('KernelHandler set for WorkflowEngine');
-    }
+//     step<TStepInput = unknown, TStepOutput = unknown>(
+//         name: string,
+//         handler: (input: TStepInput, ctx: StepContext) => Promise<TStepOutput>,
+//     ): this {
+//         const typedStep: Step<unknown, unknown> = {
+//             name,
+//             handler: async (
+//                 input: unknown,
+//                 ctx: StepContext,
+//             ): Promise<unknown> => {
+//                 return await handler(input as TStepInput, ctx);
+//             },
+//         };
+//         this.steps.push(typedStep);
+//         return this;
+//     }
 
-    /**
-     * Get KernelHandler status
-     */
-    hasKernelHandler(): boolean {
-        return !!this.kernelHandler;
-    }
-}
+//     build(): WorkflowEngine {
+//         return new WorkflowEngine({
+//             name: this.name,
+//             steps: this.steps,
+//         });
+//     }
+// }
 
-// Builder API
-export class WorkflowBuilder {
-    private steps: Step<unknown, unknown>[] = [];
+// // Factory function
+// export function defineWorkflow(name: string): WorkflowBuilder {
+//     return new WorkflowBuilder(name);
+// }
 
-    constructor(private name: string) {}
-
-    step<TStepInput = unknown, TStepOutput = unknown>(
-        name: string,
-        handler: (input: TStepInput, ctx: StepContext) => Promise<TStepOutput>,
-    ): this {
-        const typedStep: Step<unknown, unknown> = {
-            name,
-            handler: async (
-                input: unknown,
-                ctx: StepContext,
-            ): Promise<unknown> => {
-                return await handler(input as TStepInput, ctx);
-            },
-        };
-        this.steps.push(typedStep);
-        return this;
-    }
-
-    build(): WorkflowEngine {
-        return new WorkflowEngine({
-            name: this.name,
-            steps: this.steps,
-        });
-    }
-}
-
-// Factory function
-export function defineWorkflow(name: string): WorkflowBuilder {
-    return new WorkflowBuilder(name);
-}
-
-// Helper function
-export function createStep<TInput = unknown, TOutput = unknown>(
-    name: string,
-    handler: (input: TInput, ctx: StepContext) => Promise<TOutput>,
-): Step<TInput, TOutput> {
-    return {
-        name,
-        handler,
-    };
-}
+// // Helper function
+// export function createStep<TInput = unknown, TOutput = unknown>(
+//     name: string,
+//     handler: (input: TInput, ctx: StepContext) => Promise<TOutput>,
+// ): Step<TInput, TOutput> {
+//     return {
+//         name,
+//         handler,
+//     };
+// }

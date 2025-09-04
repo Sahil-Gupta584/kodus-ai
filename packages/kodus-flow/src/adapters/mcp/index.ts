@@ -1,13 +1,13 @@
-import { MCPRegistry } from './registry.js';
-import { mcpToolsToEngineTools, type EngineTool } from './tools.js';
-import type {
-    MCPAdapterConfig,
+import {
+    EngineTool,
     MCPAdapter,
-    MCPTool,
-    MCPResourceWithServer,
+    MCPAdapterConfig,
     MCPPromptWithServer,
-} from './types.js';
-
+    MCPResourceWithServer,
+    MCPTool,
+} from '../../core/types/allTypes.js';
+import { MCPRegistry } from './registry.js';
+import { mcpToolsToEngineTools } from './tools.js';
 /**
  * Create an MCP adapter for Kodus Flow
  *
@@ -123,8 +123,6 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
                 annotations: tool?.annotations,
                 title: tool?.title,
                 execute: async (args: unknown, _ctx: unknown) => {
-                    // Since we removed server prefix, execute tool without server name
-                    // The registry will find the tool in any available server
                     return registry.executeTool(
                         tool.name,
                         args as Record<string, unknown>,
@@ -264,14 +262,6 @@ export function createMCPAdapter(config: MCPAdapterConfig): MCPAdapter {
 
     return adapter;
 }
-
-// Export apenas os tipos essenciais para uso externo
-export type {
-    MCPAdapterConfig,
-    MCPAdapter,
-    MCPTool,
-    MCPServerConfig,
-} from './types.js';
 
 export { MCPRegistry } from './registry.js';
 export { SpecCompliantMCPClient as MCPClient } from './client.js';

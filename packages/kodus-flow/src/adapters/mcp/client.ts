@@ -9,19 +9,6 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
-import type {
-    MCPClientConfig,
-    MCPClientEvents,
-    TenantContext,
-    SecurityPolicy,
-    MCPMetrics,
-    AuditEvent,
-    HumanApprovalHandler,
-    HumanApprovalRequest,
-    HumanApprovalResponse,
-    CreateElicitationRequest,
-    CreateElicitationResult,
-} from './types.js';
 import {
     CallToolResult,
     CreateMessageRequest,
@@ -36,18 +23,20 @@ import {
     Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
-
-// Interface para o método request do MCP Client
-interface MCPRequestMethod {
-    request(
-        request: { method: string; params?: Record<string, unknown> },
-        options?: { signal?: AbortSignal },
-    ): Promise<unknown>;
-}
-
-// =============================================================================
-// SECURITY MANAGER
-// =============================================================================
+import {
+    AuditEvent,
+    CreateElicitationRequest,
+    CreateElicitationResult,
+    HumanApprovalHandler,
+    HumanApprovalRequest,
+    HumanApprovalResponse,
+    MCPClientConfig,
+    MCPClientEvents,
+    MCPMetrics,
+    MCPRequestMethod,
+    SecurityPolicy,
+    TenantContext,
+} from '../../core/types/allTypes.js';
 
 class SecurityManager {
     constructor(

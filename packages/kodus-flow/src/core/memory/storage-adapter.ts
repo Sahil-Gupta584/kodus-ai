@@ -1,14 +1,14 @@
-/**
- * @module core/memory/storage-adapter
- * @description Adapter to bridge old MemoryAdapter interface with new BaseStorage
- */
-
 import { createLogger } from '../../observability/logger.js';
-
-import type { MemoryItem, MemoryQuery } from '../types/memory-types.js';
-import type { BaseStorage, BaseStorageItem } from '../types/base-storage.js';
-import { MemoryAdapter, MemoryAdapterConfig } from './types.js';
 import { StorageAdapterFactory } from '../storage/factory.js';
+import {
+    BaseStorage,
+    BaseStorageItem,
+    MemoryAdapter,
+    MemoryAdapterConfig,
+    MemoryItem,
+    MemoryQuery,
+    StorageEnum,
+} from '../types/allTypes.js';
 
 const logger = createLogger('memory-storage-adapter');
 
@@ -18,24 +18,27 @@ const logger = createLogger('memory-storage-adapter');
 export class StorageMemoryAdapter implements MemoryAdapter {
     private storage: BaseStorage<BaseStorageItem> | null = null;
     private isInitialized = false;
-    // Cache opcional em memória para queries simples sobre metadata
     private inMemoryIndex: Map<string, BaseStorageItem> = new Map();
 
     constructor(
-        private config: MemoryAdapterConfig = { adapterType: 'memory' },
+        private config: MemoryAdapterConfig = {
+            adapterType: StorageEnum.INMEMORY,
+        },
     ) {}
 
     async initialize(): Promise<void> {
-        if (this.isInitialized) return;
+        if (this.isInitialized) {
+            return;
+        }
 
         this.storage = await StorageAdapterFactory.create({
             type: this.config.adapterType,
             connectionString: this.config.connectionString,
             options: {
                 ...this.config.options,
-                // ✅ MEMORY: Use specific collection for Memory data
-                database: this.config.options?.database || 'kodus',
-                collection: this.config.options?.collection || 'memories',
+                database: this.config.options?.database || 'kodus-flow',
+                collection:
+                    this.config.options?.collection || 'kodus-agent-memory',
             },
             maxItems: 10000,
             enableCompression: true,

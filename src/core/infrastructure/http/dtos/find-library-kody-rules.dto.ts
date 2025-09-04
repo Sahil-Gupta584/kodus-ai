@@ -18,4 +18,9 @@ export class FindLibraryKodyRulesDto implements KodyRuleFilters {
 
     @IsOptional()
     language?: ProgrammingLanguage;
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    buckets?: string[];
 }

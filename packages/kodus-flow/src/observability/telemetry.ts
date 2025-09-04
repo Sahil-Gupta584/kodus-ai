@@ -1,144 +1,21 @@
-/**
- * @module observability/telemetry
- * @description OpenTelemetry-compatible tracing and metrics for distributed observability
- *
- * Purpose: Distributed tracing, metrics collection, external observability integration
- * Use cases: APM integration, distributed tracing, performance metrics, OTEL compliance
- * Integration: Works with Jaeger, Zipkin, DataDog, New Relic, etc.
- */
-
-import type { Event } from '../core/types/events.js';
+import {
+    AgentPhase,
+    AgentSpanAttributes,
+    AnyEvent,
+    LLMSpanAttributes,
+    Metrics,
+    Span,
+    SpanContext,
+    SpanKind,
+    SpanOptions,
+    SpanStatus,
+    TelemetryConfig,
+    ToolSpanAttributes,
+    TraceItem,
+    Tracer,
+} from '../core/types/allTypes.js';
 import { IdGenerator } from '../utils/id-generator.js';
 
-/**
- * Telemetry configuration
- */
-export interface TelemetryConfig {
-    enabled: boolean;
-    serviceName: string;
-    serviceVersion?: string;
-    environment?: string;
-
-    // Sampling configuration
-    sampling: {
-        rate: number; // 0.0 to 1.0
-        strategy: 'probabilistic';
-    };
-
-    // Custom attributes applied to all spans
-    globalAttributes?: Record<string, string | number | boolean>;
-
-    // Feature flags
-    features: {
-        traceEvents: boolean;
-        traceKernel: boolean;
-        traceSnapshots: boolean;
-        tracePersistence: boolean;
-        metricsEnabled: boolean;
-    };
-
-    // External tracer integration
-    externalTracer?: Tracer;
-
-    // Privacy flags
-    privacy?: {
-        includeSensitiveData?: boolean;
-    };
-
-    // Span timeout behavior (apenas para InMemoryTracer)
-    spanTimeouts?: {
-        enabled?: boolean; // default: true
-        maxDurationMs?: number; // default: 5m
-    };
-}
-
-/**
- * OpenTelemetry-compatible span interface
- */
-export interface Span {
-    // Core span operations
-    setAttribute(key: string, value: string | number | boolean): Span;
-    setAttributes(attributes: Record<string, string | number | boolean>): Span;
-    setStatus(status: SpanStatus): Span;
-    recordException(exception: Error): Span;
-    addEvent(name: string, attributes?: Record<string, unknown>): Span;
-    end(endTime?: number): void;
-
-    // Span context
-    getSpanContext(): SpanContext;
-    isRecording(): boolean;
-}
-
-/**
- * Span status
- */
-export interface SpanStatus {
-    code: 'ok' | 'error' | 'timeout';
-    message?: string;
-}
-
-/**
- * Span context for correlation
- */
-export interface SpanContext {
-    traceId: string;
-    spanId: string;
-    parentSpanId?: string;
-    traceFlags: number;
-}
-
-/**
- * OpenTelemetry-compatible tracer interface
- */
-export interface Tracer {
-    startSpan(name: string, options?: SpanOptions): Span;
-    createSpanContext(traceId: string, spanId: string): SpanContext;
-}
-
-/**
- * Span creation options
- */
-export interface SpanOptions {
-    kind?: SpanKind;
-    parent?: SpanContext;
-    attributes?: Record<string, string | number | boolean>;
-    startTime?: number;
-}
-
-/**
- * Span kinds following OTEL specification
- */
-export type SpanKind =
-    | 'internal'
-    | 'server'
-    | 'client'
-    | 'producer'
-    | 'consumer';
-
-/**
- * Metrics interface
- */
-export interface Metrics {
-    counter(
-        name: string,
-        value: number,
-        attributes?: Record<string, string>,
-    ): void;
-    histogram(
-        name: string,
-        value: number,
-        attributes?: Record<string, string>,
-    ): void;
-    gauge(
-        name: string,
-        value: number,
-        attributes?: Record<string, string>,
-    ): void;
-}
-
-/**
- * High-performance in-memory tracer implementation
- */
 class InMemoryTracer implements Tracer {
     private enableSpanTimeouts: boolean;
     private activeSpans = new Map<string, InMemorySpan>();
@@ -586,7 +463,7 @@ export class TelemetrySystem {
     /**
      * Trace an event execution
      */
-    traceEvent<T>(event: Event, handler: () => T | Promise<T>): Promise<T> {
+    traceEvent<T>(event: AnyEvent, handler: () => T | Promise<T>): Promise<T> {
         if (!this.config.features.traceEvents) {
             return Promise.resolve(handler());
         }
@@ -777,29 +654,6 @@ export class TelemetrySystem {
     }
 }
 
-// Public types for processors
-export interface TraceItem {
-    name: string;
-    context: SpanContext;
-    attributes: Record<string, string | number | boolean>;
-    startTime: number;
-    endTime: number;
-}
-
-// ============================================================================
-// DOMAIN SPAN HELPERS (padronizam nomes e atributos)
-// ============================================================================
-
-export type AgentPhase = 'think' | 'act' | 'observe' | 'analyze' | 'synthesize';
-
-export interface AgentSpanAttributes {
-    agentName: string;
-    tenantId?: string;
-    correlationId?: string;
-    iteration?: number;
-    attributes?: Record<string, string | number | boolean>;
-}
-
 export function startAgentSpan(
     telemetry: TelemetrySystem,
     phase: AgentPhase,
@@ -824,15 +678,6 @@ export function startAgentSpan(
     }
 
     return telemetry.startSpan(`agent.${phase}`, { attributes });
-}
-
-export interface ToolSpanAttributes {
-    toolName: string;
-    callId?: string;
-    timeoutMs?: number;
-    tenantId?: string;
-    correlationId?: string;
-    attributes?: Record<string, string | number | boolean>;
 }
 
 export function startToolSpan(
@@ -865,19 +710,6 @@ export function startToolSpan(
     }
 
     return telemetry.startSpan('tool.execute', { attributes });
-}
-
-export interface LLMSpanAttributes {
-    model?: string;
-    technique?: string;
-    inputTokens?: number;
-    outputTokens?: number;
-    temperature?: number;
-    topP?: number;
-    maxTokens?: number;
-    tenantId?: string;
-    correlationId?: string;
-    attributes?: Record<string, string | number | boolean>;
 }
 
 export function startLLMSpan(

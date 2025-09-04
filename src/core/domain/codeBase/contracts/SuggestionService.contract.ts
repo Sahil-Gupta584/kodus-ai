@@ -8,6 +8,7 @@ import {
     ReviewOptions,
     ReviewModeResponse,
     CommentResult,
+    CodeReviewVersion,
 } from '@/config/types/general/codeReview.type';
 import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.enum';
 import { ISuggestionByPR } from '../../pullRequests/interfaces/pullRequests.interface';
@@ -155,6 +156,7 @@ export interface ISuggestionService {
         prNumber: number,
         codeSuggestions: Partial<CodeSuggestion>[],
         selectedCategories: ReviewOptions,
+        codeReviewVersion?: CodeReviewVersion,
     ): Promise<Partial<CodeSuggestion>[]>;
 
     /**

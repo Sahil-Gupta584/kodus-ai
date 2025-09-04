@@ -13,6 +13,21 @@ export type LibraryKodyRule = {
     severity: string;
     examples?: KodyRulesExamples[];
     tags?: string[];
+    buckets?: string[];
+    language?: string;
+    scope?: string;
+    bad_example?: string;
+    good_example?: string;
+    // Feedback fields - optional (só aparece se usuário estiver logado)
+    positiveCount?: number;
+    negativeCount?: number;
+    userFeedback?: 'positive' | 'negative' | null;
+}
+
+export type BucketInfo = {
+    slug: string;
+    title: string;
+    description: string;
 }
 
 export type KodyRuleFilters = {
@@ -20,4 +35,5 @@ export type KodyRuleFilters = {
     severity?: string;
     tags?: string[];
     language?: ProgrammingLanguage;
+    buckets?: string[];
 };

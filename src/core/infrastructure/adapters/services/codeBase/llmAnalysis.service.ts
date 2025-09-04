@@ -21,6 +21,8 @@ import {
     prompt_codereview_system_gemini,
     prompt_codereview_user_deepseek,
     prompt_codereview_user_gemini,
+    prompt_codereview_system_gemini_v2,
+    prompt_codereview_user_gemini_v2,
 } from '@/shared/utils/langchainCommon/prompts/configuration/codeReview';
 import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
 import { prompt_codeReviewSafeguard_system } from '@/shared/utils/langchainCommon/prompts';
@@ -296,6 +298,132 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         }
     }
 
+    async analyzeCodeWithAI_v2(
+        organizationAndTeamData: OrganizationAndTeamData,
+        prNumber: number,
+        fileContext: FileChangeContext,
+        reviewModeResponse: ReviewModeResponse,
+        context: AnalysisContext,
+    ): Promise<AIAnalysisResult> {
+        const provider = LLMModelProvider.GEMINI_2_5_PRO;
+        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+
+        // Reset token tracking for new analysis
+        this.tokenTracker.reset();
+
+        // Prepare base context
+        const baseContext = this.prepareAnalysisContext(fileContext, context);
+
+        try {
+            const schema = z.object({
+                codeSuggestions: z.array(
+                    z.object({
+                        id: z.string().optional(),
+                        relevantFile: z.string(),
+                        language: z.string(),
+                        suggestionContent: z.string(),
+                        existingCode: z.string().optional(),
+                        improvedCode: z.string(),
+                        oneSentenceSummary: z.string().optional(),
+                        relevantLinesStart: z.number().min(1).optional(),
+                        relevantLinesEnd: z.number().min(1).optional(),
+                        label: z.string(),
+                        severity: z.string().optional(),
+                        rankScore: z.number().optional(),
+                        type: z.enum(['cross_file']).optional(),
+                    })
+                ),
+                overallSummary: z.string(),
+            });
+
+            const analysis = await this.promptRunnerService
+                .builder()
+                .setProviders({
+                    main: provider,
+                    fallback: fallbackProvider,
+                })
+                .setParser(ParserType.ZOD, schema, {
+                    provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
+                    fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
+                })
+                .setLLMJsonMode(true)
+                .setPayload(baseContext)
+                .addPrompt({
+                    prompt: prompt_codereview_system_gemini_v2,
+                    role: PromptRole.SYSTEM,
+                    scope: PromptScope.MAIN,
+                })
+                .addPrompt({
+                    prompt: prompt_codereview_user_gemini_v2,
+                    role: PromptRole.USER,
+                    scope: PromptScope.MAIN,
+                })
+                .addPrompt({
+                    prompt: prompt_codereview_user_deepseek,
+                    role: PromptRole.USER,
+                    scope: PromptScope.FALLBACK,
+                })
+                .setTemperature(0)
+                .addCallbacks([this.tokenTracker])
+                .addMetadata({
+                    organizationId:
+                        baseContext?.organizationAndTeamData?.organizationId,
+                    teamId: baseContext?.organizationAndTeamData?.teamId,
+                    pullRequestId: baseContext?.pullRequest?.number,
+                    provider: provider,
+                    fallbackProvider: fallbackProvider,
+                    reviewMode: reviewModeResponse,
+                })
+                .setRunName('analyzeCodeWithAI_v2')
+                .setMaxReasoningTokens(3000)
+                .execute();
+
+            if (!analysis) {
+                const message = `No analysis result for PR#${prNumber}`;
+                this.logger.warn({
+                    message,
+                    context: LLMAnalysisService.name,
+                    metadata: {
+                        organizationAndTeamData:
+                            baseContext?.organizationAndTeamData,
+                        prNumber: baseContext?.pullRequest?.number,
+                    },
+                });
+                throw new Error(message);
+            }
+
+            // Com o parser zod, a resposta já vem estruturada
+            const analysisResult: AIAnalysisResult = {
+                codeSuggestions: analysis.codeSuggestions as Partial<CodeSuggestion>[],
+                overallSummary: analysis.overallSummary,
+                codeReviewModelUsed: {
+                    generateSuggestions: provider,
+                },
+            };
+
+            const tokenUsages = this.tokenTracker.getTokenUsages();
+            await this.logTokenUsage({
+                tokenUsages,
+                organizationAndTeamData,
+                prNumber,
+                analysis,
+            });
+
+            return analysisResult;
+        } catch (error) {
+            this.logger.error({
+                message: `Error during LLM code analysis for PR#${prNumber}`,
+                context: LLMAnalysisService.name,
+                metadata: {
+                    organizationAndTeamData: context?.organizationAndTeamData,
+                    prNumber: context?.pullRequest?.number,
+                },
+                error,
+            });
+            throw error;
+        }
+    }
+
     private prepareAnalysisContext(
         fileContext: FileChangeContext,
         context: AnalysisContext,
@@ -320,6 +448,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 context?.codeReviewConfig?.suggestionControl?.groupingMode,
             organizationAndTeamData: context?.organizationAndTeamData,
             relevantContent: fileContext?.relevantContent,
+            prSummary: context?.pullRequest?.body,
         };
 
         return baseContext;
@@ -603,6 +732,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setTemperature(0)
                 .addCallbacks([this.tokenTracker])
                 .setRunName('filterSuggestionsSafeGuard')
+                .setMaxReasoningTokens(5000)
                 .execute();
 
             if (!filteredSuggestions) {

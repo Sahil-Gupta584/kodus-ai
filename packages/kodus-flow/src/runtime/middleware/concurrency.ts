@@ -1,22 +1,9 @@
-// runtime/middleware/concurrency.ts
-import type { Event } from '../../core/types/events.js';
-import type { Middleware } from './types.js';
-
-export interface ConcurrencyOptions {
-    maxConcurrent: number;
-    getKey?: (ev: Event) => string;
-    queueTimeoutMs?: number; // 0 = drop (default)
-    emitMetrics?: boolean;
-    context?: { cost?: { concurrencyDrops: number } };
-}
-
-// defaultOptions fora da função para não recriar
-const DEFAULT_OPTS: ConcurrencyOptions = {
-    maxConcurrent: 5,
-    getKey: (ev) => ev.type,
-    queueTimeoutMs: 0,
-    emitMetrics: true,
-};
+import {
+    ConcurrencyOptions,
+    DEFAULT_OPTS,
+    Middleware,
+    TEvent,
+} from '../../core/types/allTypes.js';
 
 /* ───── ConcurrencyManager singleton ───── */
 class ConcurrencyManager {
@@ -72,7 +59,7 @@ const manager = new ConcurrencyManager();
 export function withConcurrency(opts: Partial<ConcurrencyOptions> = {}) {
     const cfg = { ...DEFAULT_OPTS, ...opts };
 
-    const middleware = function <E extends Event, R = Event | void>(
+    const middleware = function <E extends TEvent, R = TEvent | void>(
         handler: (ev: E) => Promise<R> | R,
     ) {
         const withConcurrencyWrapped = async function wrapped(
@@ -108,7 +95,7 @@ export function withConcurrency(opts: Partial<ConcurrencyOptions> = {}) {
         };
 
         return withConcurrencyWrapped;
-    } as Middleware<Event>;
+    } as Middleware<TEvent>;
 
     middleware.kind = 'pipeline';
     (middleware as unknown as { displayName?: string }).displayName =

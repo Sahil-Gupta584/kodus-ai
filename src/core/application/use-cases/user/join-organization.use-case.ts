@@ -12,8 +12,8 @@ import {
     TEAM_SERVICE_TOKEN,
 } from '@/core/domain/team/contracts/team.service.contract';
 import {
-    TEAM_MEMBERS_SERVICE_TOKEN,
     ITeamMemberService,
+    TEAM_MEMBERS_SERVICE_TOKEN,
 } from '@/core/domain/teamMembers/contracts/teamMembers.service.contracts';
 import { TeamMemberRole } from '@/core/domain/teamMembers/enums/teamMemberRole.enum';
 import {
@@ -119,7 +119,7 @@ export class JoinOrganizationUseCase implements IUseCase {
                     uuid: user.uuid,
                 },
                 {
-                    role: [UserRole.USER],
+                    role: [UserRole.OWNER],
                     status: STATUS.AWAITING_APPROVAL,
                     organization,
                 },

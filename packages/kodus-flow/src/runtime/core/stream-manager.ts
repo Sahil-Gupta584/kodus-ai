@@ -1,21 +1,9 @@
-/**
- * @module runtime/core/stream-manager
- * @description Stream Manager - Operadores de stream para eventos
- *
- * Implementa todas as funcionalidades de stream que estavam no runtime original:
- * - filter, map, debounce, throttle, batch
- * - EventStream interface
- * - AsyncIterator support
- * - Integração com operadores genéricos
- */
+import {
+    AnyEvent,
+    EVENT_TYPES,
+    EventStream,
+} from '../../core/types/allTypes.js';
 
-import type { AnyEvent } from '../../core/types/events.js';
-import type { EventStream } from '../../core/types/common-types.js';
-import { EVENT_TYPES } from '../../core/types/events.js';
-
-/**
- * Stream Manager - Gerencia streams de eventos
- */
 export class StreamManager {
     private generators = new Map<
         AsyncGenerator<AnyEvent>,

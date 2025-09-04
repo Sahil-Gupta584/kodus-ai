@@ -1,26 +1,14 @@
-/**
- * @module core/memory/vector-store
- * @description Vector store for semantic search with similarity calculations
- */
-
-import { createLogger } from '../../observability/logger.js';
-import type {
+import { createLogger } from '../../observability/index.js';
+import {
+    DistanceMetric,
     MemoryVector,
     MemoryVectorQuery,
     MemoryVectorSearchResult,
     MemoryVectorStoreOptions,
-} from '../types/memory-types.js';
+} from '../types/allTypes.js';
 
 const logger = createLogger('vector-store');
 
-/**
- * Distance metrics for vector similarity
- */
-type DistanceMetric = 'cosine' | 'euclidean' | 'dot';
-
-/**
- * Vector store with similarity search capabilities
- */
 export class VectorStore {
     private vectors: Map<string, MemoryVector> = new Map();
     private options: MemoryVectorStoreOptions;

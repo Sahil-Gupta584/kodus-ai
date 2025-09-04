@@ -1,143 +1,34 @@
-import { createLogger, getObservability } from '../observability/index.js';
-import type { ObservabilityConfig } from '../observability/index.js';
+import { createLogger } from '../observability/index.js';
 import { EngineError } from '../core/errors.js';
 import { ToolEngine } from '../engine/tools/tool-engine.js';
-import { defineTool } from '../core/types/tool-types.js';
 import { AgentEngine } from '../engine/agents/agent-engine.js';
 import { AgentExecutor } from '../engine/agents/agent-executor.js';
 import { IdGenerator } from '../utils/id-generator.js';
+import { createDefaultMultiKernelHandler } from '../engine/core/multi-kernel-handler.js';
+import { EnhancedContextBuilder } from '../core/contextNew/index.js';
+import { safeJsonSchemaToZod } from '../core/utils/json-schema-to-zod.js';
 import {
-    createDefaultMultiKernelHandler,
-    createMultiKernelHandler,
-} from '../engine/core/multi-kernel-handler.js';
-import {
-    ContextBuilder,
-    ContextBuilderConfig,
-} from '../core/context/context-builder.js';
-import type { LLMAdapter } from '../adapters/llm/index.js';
-import type { PlannerType } from '../engine/planning/planner-factory.js';
-import type {
+    AgentConfig,
+    AgentCoreConfig,
+    AgentData,
     AgentDefinition,
     AgentExecutionOptions,
-} from '../core/types/agent-types.js';
-import { agentIdentitySchema } from '../core/types/agent-types.js';
-import type { AgentCoreConfig } from '../engine/agents/agent-core.js';
-import type {
+    agentIdentitySchema,
+    defineTool,
+    MCPAdapter,
+    OrchestrationConfig,
+    OrchestrationConfigInternal,
+    OrchestrationResult,
+    PlannerType,
+    SessionId,
+    StorageEnum,
+    Thread,
+    ToolConfig,
     ToolDefinition,
     ToolId,
-    ToolContext,
-} from '../core/types/tool-types.js';
-import type { MCPAdapter } from '../adapters/mcp/types.js';
-import type { AgentData } from './types.js';
-import { z } from 'zod';
-import { safeJsonSchemaToZod } from '../core/utils/json-schema-to-zod.js';
-import { AgentIdentity } from '@/core/types/agent-definition.js';
-import { SessionId, UserContext } from '@/core/types/base-types.js';
-import { Thread } from '@/core/types/common-types.js';
-import type { StorageType } from '../core/storage/factory.js';
-import { ReplanPolicyConfig } from '@/engine/planning/strategies/plan-execute-planner.js';
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🏗️ CLEAN ORCHESTRATOR INTERFACES
-// ──────────────────────────────────────────────────────────────────────────────
-
-export interface OrchestrationConfig {
-    llmAdapter: LLMAdapter;
-    tenantId?: string;
-    mcpAdapter?: MCPAdapter;
-    enableObservability?: boolean;
-    defaultTimeout?: number;
-    defaultPlanner?: PlannerType;
-    defaultMaxIterations?: number;
-    storage?: {
-        memory?: {
-            type: StorageType;
-            connectionString?: string;
-            database?: string;
-            collection?: string;
-            maxItems?: number;
-            enableCompression?: boolean;
-            cleanupInterval?: number;
-        };
-        session?: {
-            type: StorageType;
-            connectionString?: string;
-            database?: string;
-            collection?: string;
-            maxSessions?: number;
-            sessionTimeout?: number;
-            enableCompression?: boolean;
-            cleanupInterval?: number;
-        };
-        snapshot?: {
-            type: StorageType;
-            connectionString?: string;
-            database?: string;
-            collection?: string;
-            maxSnapshots?: number;
-            enableCompression?: boolean;
-            enableDeltaCompression?: boolean;
-            cleanupInterval?: number;
-            ttl?: number;
-        };
-    };
-    observability?: Partial<ObservabilityConfig>;
-    kernel?: {
-        performance?: {
-            autoSnapshot?: {
-                enabled?: boolean;
-                intervalMs?: number;
-                eventInterval?: number;
-                useDelta?: boolean;
-            };
-        };
-    };
-}
-
-export interface OrchestrationConfigInternal
-    extends Omit<OrchestrationConfig, 'mcpAdapter'> {
-    mcpAdapter: MCPAdapter | null;
-}
-
-export type AgentConfig = {
-    name: string;
-    identity: AgentIdentity;
-    maxIterations?: number;
-    executionMode?: 'simple' | 'workflow';
-    constraints?: string[];
-    enableSession?: boolean; // Default: true
-    enableState?: boolean; // Default: true
-    enableMemory?: boolean; // Default: true
-    timeout?: number;
-    plannerOptions?: {
-        planner?: PlannerType;
-        replanPolicy?: Partial<ReplanPolicyConfig>;
-    };
-};
-
-export interface ToolConfig {
-    name: string;
-    title?: string;
-    description: string;
-    inputSchema: z.ZodSchema<unknown>;
-    outputSchema?: z.ZodSchema<unknown>;
-    execute: (input: unknown, context: ToolContext) => Promise<unknown>;
-    categories?: string[];
-    dependencies?: string[];
-    annotations?: Record<string, unknown>;
-}
-
-export interface OrchestrationResult<T = unknown> {
-    success: boolean;
-    result?: T;
-    error?: string;
-    context: Record<string, unknown>;
-    metadata?: Record<string, unknown>;
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🚀 CLEAN SDK ORCHESTRATOR
-// ──────────────────────────────────────────────────────────────────────────────
+    UserContext,
+} from '../core/types/allTypes.js';
+import { getObservability } from '../observability/index.js';
 
 export class SDKOrchestrator {
     private agents = new Map<string, AgentData>();
@@ -178,13 +69,9 @@ const orchestrator = new SDKOrchestrator({
             llmAdapter: config.llmAdapter,
             tenantId: config.tenantId || 'default-tenant',
             mcpAdapter: config.mcpAdapter || null,
-            enableObservability: config.enableObservability ?? true,
-            defaultTimeout: config.defaultTimeout || 60000, //UNIFIED: 60s timeout
-            defaultPlanner: config.defaultPlanner || 'plan-execute',
             defaultMaxIterations: config.defaultMaxIterations || 15,
             storage: config.storage || {},
             observability: config.observability || {},
-            kernel: config.kernel || {},
         };
 
         this.mcpAdapter = config.mcpAdapter;
@@ -197,58 +84,24 @@ const orchestrator = new SDKOrchestrator({
                 storageKeys: Object.keys(this.config.storage || {}),
             },
         );
-        this.configureContextBuilder();
 
-        if (this.config.kernel?.performance?.autoSnapshot) {
-            this.kernelHandler = createMultiKernelHandler({
-                tenantId: this.config.tenantId,
-                observability: { enabled: true },
-                agent: {
-                    enabled: true,
-                    performance: {
-                        enableBatching: true,
-                        enableCaching: true,
-                        autoSnapshot:
-                            this.config.kernel.performance.autoSnapshot,
-                    },
-                },
-                loopProtection: { enabled: true },
-            });
-        } else {
-            //TODO: Remove this when we have a default persistor config
-            // this.kernelHandler = createDefaultMultiKernelHandler(
-            //     this.config.tenantId,
-            //     {
-            //         type: this.config.persistorConfig.type,
-            //         options: this.config.persistorConfig,
-            //     },
-            // );
-        }
+        this.configureEnhancedContext();
 
         this.logger.info('Clean SDKOrchestrator initialized', {
             tenantId: this.config.tenantId,
             llmProvider:
                 this.config.llmAdapter.getProvider?.()?.name || 'unknown',
-            defaultPlanner: this.config.defaultPlanner,
             hasMCP: !!this.mcpAdapter,
         });
     }
 
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 🤖 AGENT MANAGEMENT - APENAS COORDENAÇÃO
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Create agent - APENAS delega para AgentEngine/AgentExecutor
-     */
     async createAgent(
         config: AgentConfig,
     ): Promise<AgentDefinition<unknown, unknown, unknown>> {
         this.logger.info('Creating agent', {
             name: config.name,
-            planner:
-                config.plannerOptions?.planner || this.config.defaultPlanner,
-            executionMode: config.executionMode || 'simple',
+            planner: config.plannerOptions?.type || PlannerType.REACT,
+            executionMode: 'simple',
         });
 
         try {
@@ -270,10 +123,13 @@ const orchestrator = new SDKOrchestrator({
                 );
             },
             config: {
+                name: config.name,
+                identity: config.identity,
                 enableSession: config.enableSession ?? true,
                 enableState: config.enableState ?? true,
                 enableMemory: config.enableMemory ?? true,
                 maxIterations: config.maxIterations,
+                //TODO precisa mesmo
                 timeout: config.timeout,
             },
         };
@@ -281,15 +137,13 @@ const orchestrator = new SDKOrchestrator({
         const agentCoreConfig: AgentCoreConfig = {
             tenantId: this.config.tenantId,
             agentName: config.name,
-            planner:
-                config?.plannerOptions?.planner || this.config.defaultPlanner,
             llmAdapter: this.config.llmAdapter, // Pass LLM adapter
             maxThinkingIterations:
                 config.maxIterations || this.config.defaultMaxIterations,
             enableKernelIntegration: true,
-            debug: process.env.NODE_ENV === 'development',
-            monitoring: this.config.enableObservability,
-            plannerOptions: config?.plannerOptions,
+            plannerOptions: config?.plannerOptions || {
+                type: PlannerType.REACT,
+            },
         };
 
         let agentInstance:
@@ -305,9 +159,7 @@ const orchestrator = new SDKOrchestrator({
 
             this.logger.info('Agent created via AgentExecutor (workflow)', {
                 agentName: config.name,
-                planner:
-                    config?.plannerOptions?.planner ||
-                    this.config.defaultPlanner,
+                planner: config?.plannerOptions?.type || PlannerType.REACT,
             });
         } else {
             agentInstance = new AgentEngine(
@@ -318,30 +170,25 @@ const orchestrator = new SDKOrchestrator({
 
             this.logger.info('Agent created via AgentEngine (simple)', {
                 agentName: config.name,
-                planner:
-                    config?.plannerOptions?.planner ||
-                    this.config.defaultPlanner,
+                planner: config?.plannerOptions?.type || PlannerType.REACT,
             });
         }
 
-        // Register agent
         this.agents.set(config.name, {
             instance: agentInstance,
             definition: agentDefinition,
             config: {
                 executionMode: config.executionMode || 'simple',
-                hooks: {}, // No hooks for clean implementation
+                hooks: {},
             },
         });
 
-        // Inject kernel handler
         if (this.kernelHandler) {
             if (!this.kernelHandler.isInitialized()) {
                 await this.kernelHandler.initialize();
             }
 
             await this.injectKernelHandler(agentInstance);
-            // CRITICAL: Also inject kernel handler into ToolEngine for event handling
             this.toolEngine.setKernelHandler(this.kernelHandler);
         }
 
@@ -353,9 +200,6 @@ const orchestrator = new SDKOrchestrator({
         return agentDefinition;
     }
 
-    /**
-     * Call agent - APENAS encontra e executa
-     */
     async callAgent(
         agentName: string,
         input: unknown,
@@ -444,7 +288,6 @@ const orchestrator = new SDKOrchestrator({
                 },
             });
 
-            // Execute agent
             const executionOptions: AgentExecutionOptions = {
                 ...context,
                 agentName,
@@ -465,7 +308,6 @@ const orchestrator = new SDKOrchestrator({
                 },
             });
 
-            // Root trace with error recording
             const result = await obs.trace(
                 'orchestration.call_agent',
                 async () => {
@@ -506,7 +348,6 @@ const orchestrator = new SDKOrchestrator({
                         );
                     }
 
-                    // Unknown instance type
                     return Promise.reject(
                         new EngineError(
                             'AGENT_ERROR',
@@ -620,18 +461,10 @@ const orchestrator = new SDKOrchestrator({
                 },
             };
         } finally {
-            // Clear context to avoid leaking across executions
             obs.clearContext();
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 🛠️ TOOL MANAGEMENT - APENAS COORDENAÇÃO
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Create tool - APENAS delega para ToolEngine
-     */
     createTool(config: ToolConfig): ToolDefinition<unknown, unknown> {
         const toolDefinition = defineTool<unknown, unknown>({
             name: config.name,
@@ -735,14 +568,10 @@ const orchestrator = new SDKOrchestrator({
                 },
             };
         } finally {
-            // Clear context to avoid leaking across executions
             obs.clearContext();
         }
     }
 
-    /**
-     * Get registered tools with full metadata for context engineering
-     */
     getRegisteredTools(): Array<{
         name: string;
         title?: string;
@@ -755,7 +584,6 @@ const orchestrator = new SDKOrchestrator({
         annotations?: Record<string, unknown>;
     }> {
         return this.toolEngine.listTools().map((tool) => {
-            // ✅ ADDED: Extract title and annotations from tags
             const title = tool.tags
                 ?.find((tag) => tag.startsWith('title:'))
                 ?.replace('title:', '');
@@ -773,8 +601,6 @@ const orchestrator = new SDKOrchestrator({
                 categories: tool.categories,
                 schema: tool.inputSchema,
                 outputSchema: tool.outputSchema,
-                examples: tool.examples,
-                plannerHints: tool.plannerHints,
                 annotations,
             };
         });
@@ -803,13 +629,6 @@ const orchestrator = new SDKOrchestrator({
         return this.toolEngine.getToolsForLLM();
     }
 
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 🔌 MCP INTEGRATION - APENAS COORDENAÇÃO
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Register MCP tools - APENAS delega para MCP adapter
-     */
     async registerMCPTools(): Promise<void> {
         if (!this.mcpAdapter) {
             this.logger.warn(
@@ -858,38 +677,11 @@ const orchestrator = new SDKOrchestrator({
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 📊 GETTERS & UTILITIES
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Get orchestrator stats
-     */
-    getStats() {
-        return {
-            tenantId: this.config.tenantId,
-            agentCount: this.agents.size,
-            toolCount: this.toolEngine.getAvailableTools().length,
-            llmProvider:
-                this.config.llmAdapter.getProvider?.()?.name || 'unknown',
-            defaultPlanner: this.config.defaultPlanner,
-            mcpConnected: !!this.mcpAdapter,
-        };
-    }
-
-    /**
-     * List agents
-     */
-    listAgents(): string[] {
-        return Array.from(this.agents.keys());
-    }
-
-    /**
-     * Get agent status
-     */
     getAgentStatus(agentName: string) {
         const agentData = this.agents.get(agentName);
-        if (!agentData) return null;
+        if (!agentData) {
+            return null;
+        }
 
         return {
             name: agentName,
@@ -905,127 +697,86 @@ const orchestrator = new SDKOrchestrator({
         };
     }
 
-    // ──────────────────────────────────────────────────────────────────────────────
-    // 🔧 INTERNAL HELPERS
-    // ──────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Configure ContextBuilder with storage settings
-     */
-    private configureContextBuilder(): void {
-        this.logger.info('🔍 [DEBUG] Starting configureContextBuilder', {
-            hasStorageInConfig: !!this.config.storage,
-            storageKeys: Object.keys(this.config.storage || {}),
-            fullStorageConfig: this.config.storage,
-        });
-
-        const contextConfig = this.getStorageConfig();
-
-        this.logger.info(
-            '🔍 [DEBUG] Generated contextConfig from getStorageConfig',
-            {
-                contextConfig,
-                hasMemory: !!contextConfig.memory,
-                hasSession: !!contextConfig.session,
-                hasSnapshot: !!contextConfig.snapshot,
-                memoryConnectionString:
-                    contextConfig.memory?.adapterConfig?.connectionString,
-                sessionConnectionString:
-                    contextConfig.session?.connectionString,
-            },
-        );
-
+    private configureEnhancedContext(): void {
         try {
-            ContextBuilder.configure(contextConfig);
+            const enhancedConfig = this.getEnhancedContextConfig();
+            EnhancedContextBuilder.configure(enhancedConfig);
 
-            this.logger.info(
-                'ContextBuilder configured with storage settings',
-                {
-                    hasMemoryConfig: !!contextConfig.memory,
-                    hasSessionConfig: !!contextConfig.session,
-                    memoryAdapter: contextConfig.memory?.adapterType,
-                    sessionAdapter: contextConfig.session?.adapterType,
-                },
-            );
+            this.logger.info('✅ EnhancedContextBuilder configured', {
+                mode: enhancedConfig.adapterType,
+                hasConnectionString: !!enhancedConfig.connectionString,
+            });
         } catch (error) {
             this.logger.error(
-                'Failed to configure ContextBuilder',
+                'Failed to configure EnhancedContextBuilder',
                 error instanceof Error ? error : new Error('Unknown error'),
             );
+            throw error;
         }
     }
 
-    /**
-     * ✅ NEW: Get storage config for ContextBuilder
-     * Converts OrchestrationConfig.storage to ContextBuilderConfig format
-     */
-    getStorageConfig(): ContextBuilderConfig {
-        const result: ContextBuilderConfig = {};
+    async initializeContextCollections(): Promise<void> {
+        try {
+            const enhancedConfig = this.getEnhancedContextConfig();
 
-        // ✅ Convert memory config to ContextBuilder format
-        if (this.config.storage?.memory) {
-            const memoryConfig = this.config.storage.memory;
-            result.memory = {
-                adapterType: memoryConfig.type,
-                adapterConfig: {
-                    connectionString: memoryConfig.connectionString,
-                    options: {
-                        database: memoryConfig.database || 'kodus',
-                        collection: memoryConfig.collection || 'memories',
-                        maxItems: memoryConfig.maxItems || 10000,
-                        enableCompression:
-                            memoryConfig.enableCompression ?? true,
-                        cleanupInterval: memoryConfig.cleanupInterval || 300000,
-                    },
-                },
-            };
+            if (enhancedConfig.adapterType === StorageEnum.MONGODB) {
+                this.logger.info(
+                    '🚀 Initializing ContextNew for MongoDB - creating collections...',
+                    enhancedConfig,
+                );
+
+                const builder = EnhancedContextBuilder.getInstance();
+                await builder.initialize();
+
+                this.logger.info(
+                    '✅ ContextNew initialization complete - MongoDB collections created',
+                );
+            } else {
+                this.logger.info(
+                    'ℹ️ Using InMemory storage - no MongoDB collections to create',
+                );
+            }
+        } catch (error) {
+            this.logger.error(
+                'Failed to initialize ContextNew collections',
+                error instanceof Error ? error : new Error('Unknown error'),
+            );
+            throw error;
         }
-
-        // ✅ Convert session config to SessionConfig format
-        if (this.config.storage?.session) {
-            const sessionConfig = this.config.storage.session;
-            result.session = {
-                maxSessions: sessionConfig.maxSessions || 1000,
-                sessionTimeout: sessionConfig.sessionTimeout || 30 * 60 * 1000,
-                enableAutoCleanup: true,
-                persistent: sessionConfig.type === 'mongodb',
-                adapterType: sessionConfig.type,
-                connectionString: sessionConfig.connectionString,
-                adapterOptions: {
-                    database: sessionConfig.database || 'kodus',
-                    collection: sessionConfig.collection || 'sessions',
-                },
-                cleanupInterval: sessionConfig.cleanupInterval || 300000,
-            };
-        }
-
-        if (this.config.storage?.snapshot) {
-            const snapshotConfig = this.config.storage.snapshot;
-            result.snapshot = {
-                adapterType: snapshotConfig.type,
-                adapterConfig: {
-                    connectionString: snapshotConfig.connectionString,
-                    options: {
-                        database: snapshotConfig.database || 'kodus',
-                        collection: snapshotConfig.collection || 'snapshots',
-                        maxSnapshots: snapshotConfig.maxSnapshots || 1000,
-                        enableCompression:
-                            snapshotConfig.enableCompression ?? true,
-                        enableDeltaCompression:
-                            snapshotConfig.enableDeltaCompression ?? true,
-                        cleanupInterval:
-                            snapshotConfig.cleanupInterval || 300000,
-                    },
-                },
-            };
-        }
-
-        return result;
     }
 
-    /**
-     * Inject kernel handler into agent
-     */
+    getEnhancedContextConfig() {
+        const storage = this.config.storage;
+
+        if (!storage) {
+            return {
+                adapterType: StorageEnum.INMEMORY,
+                connectionString: undefined,
+                sessionTTL: 24 * 60 * 60 * 1000,
+            };
+        }
+
+        const adapterType =
+            storage.type === StorageEnum.MONGODB
+                ? StorageEnum.MONGODB
+                : storage.connectionString
+                  ? StorageEnum.MONGODB
+                  : StorageEnum.INMEMORY;
+
+        const enhancedConfig = {
+            adapterType,
+            connectionString: storage.connectionString,
+            database: storage.database,
+        };
+
+        this.logger.debug('Enhanced context config (SIMPLIFIED)', {
+            adapterType,
+            hasConnectionString: !!storage.connectionString,
+        });
+
+        return enhancedConfig;
+    }
+
     private async injectKernelHandler(
         agentInstance:
             | AgentEngine<unknown, unknown, unknown>
@@ -1050,7 +801,6 @@ const orchestrator = new SDKOrchestrator({
             }
         } catch (error) {
             this.logger.error('Failed to inject KernelHandler', error as Error);
-            // Continue without kernel handler
         }
     }
 
@@ -1069,9 +819,6 @@ const orchestrator = new SDKOrchestrator({
         }
     }
 
-    /**
-     * Desconecta do MCP
-     */
     async disconnectMCP(): Promise<void> {
         if (!this.mcpAdapter) {
             return;
@@ -1089,12 +836,12 @@ const orchestrator = new SDKOrchestrator({
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// 🏭 FACTORY FUNCTION
-// ──────────────────────────────────────────────────────────────────────────────
-
-export function createOrchestration(
+export async function createOrchestration(
     config: OrchestrationConfig,
-): SDKOrchestrator {
-    return new SDKOrchestrator(config);
+): Promise<SDKOrchestrator> {
+    const orchestrator = new SDKOrchestrator(config);
+
+    await orchestrator.initializeContextCollections();
+
+    return orchestrator;
 }

@@ -16,6 +16,8 @@ import {
     Query,
 } from '@nestjs/common';
 import { FindLibraryKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/find-library-kody-rules.use-case';
+import { FindLibraryKodyRulesWithFeedbackUseCase } from '@/core/application/use-cases/kodyRules/find-library-kody-rules-with-feedback.use-case';
+import { FindLibraryKodyRulesBucketsUseCase } from '@/core/application/use-cases/kodyRules/find-library-kody-rules-buckets.use-case';
 import { AddLibraryKodyRulesDto } from '../dtos/add-library-kody-rules.dto';
 import { AddLibraryKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/add-library-kody-rules.use-case';
 import { GenerateKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/generate-kody-rules.use-case';
@@ -37,6 +39,8 @@ export class KodyRulesController {
         private readonly deleteByOrganizationIdKodyRulesUseCase: DeleteByOrganizationIdKodyRulesUseCase,
         private readonly deleteRuleInOrganizationByIdKodyRulesUseCase: DeleteRuleInOrganizationByIdKodyRulesUseCase,
         private readonly findLibraryKodyRulesUseCase: FindLibraryKodyRulesUseCase,
+        private readonly findLibraryKodyRulesWithFeedbackUseCase: FindLibraryKodyRulesWithFeedbackUseCase,
+        private readonly findLibraryKodyRulesBucketsUseCase: FindLibraryKodyRulesBucketsUseCase,
         private readonly addLibraryKodyRulesUseCase: AddLibraryKodyRulesUseCase,
         private readonly generateKodyRulesUseCase: GenerateKodyRulesUseCase,
         private readonly changeStatusKodyRulesUseCase: ChangeStatusKodyRulesUseCase,
@@ -161,8 +165,20 @@ export class KodyRulesController {
     }
 
     @Get('/find-library-kody-rules')
-    public async findLibraryKodyRules(@Body() body: FindLibraryKodyRulesDto) {
-        return this.findLibraryKodyRulesUseCase.execute(body);
+    public async findLibraryKodyRules(@Query() query: FindLibraryKodyRulesDto) {
+        return this.findLibraryKodyRulesUseCase.execute(query);
+    }
+
+    @Get('/find-library-kody-rules-with-feedback')
+    public async findLibraryKodyRulesWithFeedback(
+        @Query() query: FindLibraryKodyRulesDto,
+    ) {
+        return this.findLibraryKodyRulesWithFeedbackUseCase.execute(query);
+    }
+
+    @Get('/find-library-kody-rules-buckets')
+    public async findLibraryKodyRulesBuckets() {
+        return this.findLibraryKodyRulesBucketsUseCase.execute();
     }
 
     @Post('/add-library-kody-rules')

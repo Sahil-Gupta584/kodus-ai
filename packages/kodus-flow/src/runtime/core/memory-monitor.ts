@@ -1,246 +1,11 @@
-/**
- * Memory Monitor - Sistema de monitoramento de memória
- *
- * Monitora uso de memória, detecta memory leaks e gera alertas
- * quando thresholds são excedidos.
- */
-
+import {
+    MemoryAlert,
+    MemoryMetrics,
+    MemoryMonitorConfig,
+    MemoryMonitorStats,
+} from '../../core/types/allTypes.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
 
-/**
- * Configuração do monitor de memória
- */
-export interface MemoryMonitorConfig {
-    /**
-     * Intervalo de monitoramento em ms
-     * @default 30000 (30 segundos)
-     */
-    intervalMs?: number;
-
-    /**
-     * Thresholds de alerta (em MB)
-     */
-    thresholds?: {
-        /**
-         * Alerta quando heap usado excede este valor
-         * @default 512 MB
-         */
-        heapUsed?: number;
-
-        /**
-         * Alerta quando RSS excede este valor
-         * @default 1024 MB
-         */
-        rss?: number;
-
-        /**
-         * Alerta quando external memory excede este valor
-         * @default 256 MB
-         */
-        external?: number;
-
-        /**
-         * Alerta quando heap total excede este valor
-         * @default 1024 MB
-         */
-        heapTotal?: number;
-    };
-
-    /**
-     * Configuração de detecção de memory leaks
-     */
-    leakDetection?: {
-        /**
-         * Habilitar detecção de memory leaks
-         * @default true
-         */
-        enabled?: boolean;
-
-        /**
-         * Número de amostras para detectar leak
-         * @default 10
-         */
-        samples?: number;
-
-        /**
-         * Crescimento mínimo em MB para considerar leak
-         * @default 50
-         */
-        minGrowthMb?: number;
-
-        /**
-         * Intervalo entre amostras em ms
-         * @default 60000 (1 minuto)
-         */
-        sampleIntervalMs?: number;
-    };
-
-    /**
-     * Habilitar monitoramento
-     * @default true
-     */
-    enabled?: boolean;
-
-    /**
-     * Callback para alertas customizados
-     */
-    onAlert?: (alert: MemoryAlert) => void;
-}
-
-/**
- * Métricas de memória
- */
-export interface MemoryMetrics {
-    /**
-     * Timestamp da medição
-     */
-    timestamp: number;
-
-    /**
-     * Heap usado (bytes)
-     */
-    heapUsed: number;
-
-    /**
-     * Heap total (bytes)
-     */
-    heapTotal: number;
-
-    /**
-     * Heap livre (bytes)
-     */
-    heapFree: number;
-
-    /**
-     * RSS - Resident Set Size (bytes)
-     */
-    rss: number;
-
-    /**
-     * Memória externa (bytes)
-     */
-    external: number;
-
-    /**
-     * Array buffers (bytes)
-     */
-    arrayBuffers: number;
-
-    /**
-     * Uso de memória em MB (calculado)
-     */
-    heapUsedMb: number;
-    heapTotalMb: number;
-    rssMb: number;
-    externalMb: number;
-
-    /**
-     * Percentual de uso do heap
-     */
-    heapUsagePercent: number;
-}
-
-/**
- * Alerta de memória
- */
-export interface MemoryAlert {
-    /**
-     * Tipo de alerta
-     */
-    type: 'THRESHOLD_EXCEEDED' | 'MEMORY_LEAK_DETECTED' | 'HIGH_USAGE';
-
-    /**
-     * Severidade
-     */
-    severity: 'WARNING' | 'ERROR' | 'CRITICAL';
-
-    /**
-     * Mensagem do alerta
-     */
-    message: string;
-
-    /**
-     * Métricas atuais
-     */
-    metrics: MemoryMetrics;
-
-    /**
-     * Threshold que foi excedido (se aplicável)
-     */
-    threshold?: number;
-
-    /**
-     * Crescimento detectado (se aplicável)
-     */
-    growth?: {
-        samples: number;
-        growthMb: number;
-        growthPercent: number;
-    };
-
-    /**
-     * Timestamp do alerta
-     */
-    timestamp: number;
-}
-
-/**
- * Estatísticas do monitor
- */
-export interface MemoryMonitorStats {
-    /**
-     * Número total de medições
-     */
-    totalMeasurements: number;
-
-    /**
-     * Número de alertas gerados
-     */
-    totalAlerts: number;
-
-    /**
-     * Última medição
-     */
-    lastMeasurement?: MemoryMetrics;
-
-    /**
-     * Pico de uso de memória
-     */
-    peakUsage: {
-        heapUsed: number;
-        rss: number;
-        external: number;
-        timestamp: number;
-    };
-
-    /**
-     * Média de uso nos últimos 10 minutos
-     */
-    averageUsage: {
-        heapUsed: number;
-        rss: number;
-        external: number;
-    };
-
-    /**
-     * Memory leaks detectados
-     */
-    leaksDetected: number;
-
-    /**
-     * Status do monitor
-     */
-    isRunning: boolean;
-
-    /**
-     * Próxima medição em ms
-     */
-    nextMeasurementIn: number;
-}
-
-/**
- * Monitor de Memória
- */
 export class MemoryMonitor {
     private config: Required<MemoryMonitorConfig>;
     private intervalId?: NodeJS.Timeout;
@@ -259,22 +24,22 @@ export class MemoryMonitor {
         config: MemoryMonitorConfig = {},
     ) {
         this.config = {
-            intervalMs: 60000, // ✅ AUMENTADO: 60s em vez de 30s para produção
-            enabled: true,
+            intervalMs: 30000,
+            enabled: false,
             onAlert: () => {},
             ...config,
             thresholds: {
-                heapUsed: 512 * 1024 * 1024, // 512 MB
-                rss: 1024 * 1024 * 1024, // 1 GB
-                external: 256 * 1024 * 1024, // 256 MB
-                heapTotal: 1024 * 1024 * 1024, // 1 GB
+                heapUsed: 512 * 1024 * 1024,
+                rss: 512 * 1024 * 1024,
+                external: 512 * 1024 * 1024,
+                heapTotal: 512 * 1024 * 1024,
                 ...config.thresholds,
             },
             leakDetection: {
-                enabled: true,
-                samples: 10,
-                minGrowthMb: 50,
-                sampleIntervalMs: 120000, // ✅ AUMENTADO: 2min em vez de 1min
+                enabled: false,
+                samples: 5,
+                minGrowthMb: 100,
+                sampleIntervalMs: 60000,
                 ...config.leakDetection,
             },
         };

@@ -19,7 +19,7 @@ describe('Kernel State Synchronization Tests', () => {
                     sendEvent: async () => {},
                     workflowName: 'test-workflow',
                     executionId: 'test-execution',
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
                     stateManager: {} as any,
                     data: {},
                     currentSteps: [],
@@ -35,7 +35,6 @@ describe('Kernel State Synchronization Tests', () => {
                     startTime: Date.now(),
                     status: 'RUNNING' as const,
                 }),
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any,
             runtimeConfig: {
                 middleware: [],
@@ -146,9 +145,9 @@ describe('Kernel State Synchronization Tests', () => {
             expect(kernel.isRuntimeReady()).toBe(true);
 
             // Simular dessincronização (manualmente)
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             (kernel as any).state.status = 'running';
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             (kernel as any).runtime = null;
 
             // isRuntimeReady deve detectar e corrigir
@@ -212,9 +211,9 @@ describe('Kernel State Synchronization Tests', () => {
             expect(kernel.isRuntimeReady()).toBe(true);
 
             // Simular erro real - limpar runtime e setar status como failed
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             (kernel as any).runtime = null;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             (kernel as any).state.status = 'failed';
 
             // Tentar recuperação

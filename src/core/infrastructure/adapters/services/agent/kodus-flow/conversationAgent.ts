@@ -7,6 +7,8 @@ import {
     MCPServerConfig,
     createOtelTracerAdapter,
     DirectLLMAdapter,
+    PlannerType,
+    StorageEnum,
 } from '@kodus/flow';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
@@ -15,12 +17,13 @@ import { DatabaseConnection } from '@/config/types';
 import { ConnectionString } from 'connection-string';
 import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 import { startKodusOtel } from '@/config/log/otel-kodus-flow';
+import { SDKOrchestrator } from '@kodus/flow/dist/orchestration';
 
 @Injectable()
 export class ConversationAgentProvider {
     protected config: DatabaseConnection;
 
-    private orchestration: ReturnType<typeof createOrchestration>;
+    private orchestration: SDKOrchestrator;
     private mcpAdapter: ReturnType<typeof createMCPAdapter>;
 
     private llmAdapter: DirectLLMAdapter;
@@ -39,14 +42,35 @@ export class ConversationAgentProvider {
         const base = this.llmProviderService.getLLMProvider({
             model: LLMModelProvider.GEMINI_2_5_PRO,
             temperature: 0,
-            maxTokens: 8000,
+            maxTokens: 20000,
             maxReasoningTokens: 800,
-            jsonMode: true,
         });
 
         function sanitizeName(name: string) {
             const cleaned = name.replace(/[^\w.\-]/g, '_');
             return cleaned.slice(0, 64);
+        }
+
+        function contentToString(content: unknown): string {
+            if (typeof content === 'string') {
+                return content;
+            }
+            if (Array.isArray(content)) {
+                return content
+                    .filter(
+                        (b: unknown): b is { type: string; text?: string } =>
+                            !!b &&
+                            typeof b === 'object' &&
+                            'type' in (b as any),
+                    )
+                    .map((b) =>
+                        (b as any).type === 'text'
+                            ? String((b as any).text ?? '')
+                            : '',
+                    )
+                    .join('');
+            }
+            return '';
         }
 
         const wrappedLLM = {
@@ -62,26 +86,26 @@ export class ConversationAgentProvider {
                 }));
 
                 let model = base;
-                if (options.tools?.length) {
-                    const toolDefs = options.tools.map((t: any) => ({
-                        type: 'function',
-                        function: {
-                            name: sanitizeName(t.name),
-                            description: t.description ?? '',
-                            parameters: {
-                                ...t.parameters,
-                                additionalProperties: false,
-                            },
-                        },
-                    }));
+                // if (options.tools?.length) {
+                //     const toolDefs = options.tools.map((t: any) => ({
+                //         type: 'function',
+                //         function: {
+                //             name: sanitizeName(t.name),
+                //             description: t.description ?? '',
+                //             parameters: {
+                //                 ...t.parameters,
+                //                 additionalProperties: false,
+                //             },
+                //         },
+                //     }));
 
-                    const bindOpts: any = {};
-                    if (options.toolChoice) {
-                        bindOpts.tool_choice = options.toolChoice;
-                    }
+                //     const bindOpts: any = {};
+                //     if (options.toolChoice) {
+                //         bindOpts.tool_choice = options.toolChoice;
+                //     }
 
-                    model = (base as any).bindTools(toolDefs, bindOpts);
-                }
+                //     model = (base as any).bindTools(toolDefs, bindOpts);
+                // }
 
                 const resp = await model.invoke(lcMessages, {
                     stop: options.stop,
@@ -91,8 +115,10 @@ export class ConversationAgentProvider {
 
                 console.log('LLM response:', JSON.stringify(resp, null, 2));
 
+                const text = contentToString(resp.content);
+
                 return {
-                    content: resp.content,
+                    content: text,
                     usage: resp.usage_metadata ?? {
                         promptTokens: 0,
                         completionTokens: 0,
@@ -145,12 +171,6 @@ export class ConversationAgentProvider {
             hosts: [{ name: this.config.host, port: this.config.port }],
         }).toString();
 
-        console.log(
-            'Creating orchestration with MongoDB URI:',
-            uri,
-            this.config,
-        );
-
         await startKodusOtel();
         const externalTracer = await createOtelTracerAdapter();
 
@@ -167,7 +187,6 @@ export class ConversationAgentProvider {
                     collections: {
                         logs: 'observability_logs',
                         telemetry: 'observability_telemetry',
-                        metrics: 'observability_metrics',
                         errors: 'observability_errors',
                     },
                     batchSize: 100,
@@ -186,31 +205,11 @@ export class ConversationAgentProvider {
                         maxDurationMs: 5 * 60 * 1000,
                     },
                 },
-                correlation: {
-                    enabled: true,
-                    generateIds: true,
-                    propagateContext: true,
-                },
             },
             storage: {
-                memory: {
-                    type: 'mongodb',
-                    connectionString: uri,
-                    database: this.config.database,
-                    collection: 'memories',
-                },
-                session: {
-                    type: 'mongodb',
-                    connectionString: uri,
-                    database: this.config.database,
-                    collection: 'sessions',
-                },
-                snapshot: {
-                    type: 'mongodb',
-                    connectionString: uri,
-                    database: this.config.database,
-                    collection: 'snapshots',
-                },
+                type: StorageEnum.MONGODB,
+                connectionString: uri,
+                database: this.config.database,
             },
         });
     }
@@ -235,7 +234,7 @@ export class ConversationAgentProvider {
                     'Agente de conversação para interações com usuários.',
             },
             plannerOptions: {
-                planner: 'plan-execute',
+                type: PlannerType.REACT,
                 replanPolicy: {
                     toolUnavailable: 'replan',
                     maxReplans: 3,
@@ -277,25 +276,6 @@ export class ConversationAgentProvider {
                 },
             },
         );
-
-        // Optional timeline (dev only). Guarded to avoid test failures
-        const correlationId = result?.context?.correlationId as
-            | string
-            | undefined;
-        if (
-            correlationId &&
-            typeof (this.orchestration as any)?.getExecutionTimeline ===
-                'function'
-        ) {
-            try {
-                const timeline = (
-                    this.orchestration as any
-                ).getExecutionTimeline(correlationId);
-                if (process.env.NODE_ENV !== 'test') {
-                    console.log(timeline);
-                }
-            } catch {}
-        }
 
         return typeof result.result === 'string'
             ? result.result

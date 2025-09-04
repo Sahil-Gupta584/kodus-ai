@@ -8,6 +8,7 @@ import {
     PullRequestReviewComment,
     PullRequestsWithChangesRequested,
     PullRequestWithFiles,
+    PullRequestReviewState,
 } from '../types/codeManagement/pullRequests.type';
 import { Repositories } from '../types/codeManagement/repositories.type';
 import { ICommonPlatformIntegrationService } from './common.interface';
@@ -216,4 +217,10 @@ export interface ICodeManagementService
         repository: Partial<Repository>;
         prNumber: number;
     }): Promise<boolean>;
+
+    getReviewStatusByPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
+        prNumber: number;
+    }): Promise<PullRequestReviewState | null>;
 }

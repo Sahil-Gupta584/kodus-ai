@@ -4360,12 +4360,32 @@ export class GithubService
         }
     }
 
-    async checkIfPullRequestShouldBeApproved(params: {
+    async getReviewStatusByPullRequest(params: {
         organizationAndTeamData: OrganizationAndTeamData;
+        repository: Partial<Repository>;
         prNumber: number;
-        repository: { id: string; name: string };
-    }): Promise<any | null> {
-        const { organizationAndTeamData, prNumber, repository } = params;
+    }): Promise<PullRequestReviewState | null> {
+        const { organizationAndTeamData, repository, prNumber } = params;
+
+        if (
+            !organizationAndTeamData ||
+            !repository ||
+            !repository.id ||
+            !repository.name ||
+            !prNumber
+        ) {
+            this.logger.warn({
+                message:
+                    'Missing required parameters to get review status by pull request',
+                context: GithubService.name,
+                serviceName: 'GithubService getReviewStatusByPullRequest',
+                metadata: {
+                    repository: params.repository,
+                    prNumber: params.prNumber,
+                },
+            });
+            return null;
+        }
 
         const githubAuth = await this.getGithubAuthDetails(
             organizationAndTeamData,
@@ -4390,10 +4410,9 @@ export class GithubService
         }
       `;
 
-        const variables = {};
         const userAuth: {
-            viewer: { login: string; id: string; __typename: string };
-        } = await graphQLWithAuth(query, variables);
+            viewer: { login: string; id: string };
+        } = await graphQLWithAuth(query);
 
         const { data: allReviews } = await octokit.rest.pulls.listReviews({
             owner: githubAuth.org,
@@ -4403,28 +4422,57 @@ export class GithubService
         });
 
         if (!allReviews?.length) {
-            return;
+            return null;
         }
 
         const myReviews = allReviews
             ?.filter(
-                (reviewer) =>
-                    reviewer?.user?.login === userAuth?.viewer?.login &&
-                    reviewer?.user?.node_id === userAuth?.viewer?.id,
+                (review) =>
+                    review?.user?.login === userAuth?.viewer?.login &&
+                    review?.user?.node_id === userAuth?.viewer?.id,
             )
             ?.sort(
                 (a, b) =>
-                    new Date(a.submitted_at!).getTime() -
-                    new Date(b.submitted_at!).getTime(),
+                    new Date(a.submitted_at).getTime() -
+                    new Date(b.submitted_at).getTime(),
             );
 
         if (!myReviews?.length) {
-            return;
+            return null;
         }
 
-        const lastMy = myReviews.pop();
+        const lastReview = myReviews.pop();
 
-        if (lastMy?.state === 'APPROVED') {
+        switch (lastReview?.state) {
+            case 'APPROVED':
+                return PullRequestReviewState.APPROVED;
+            case 'CHANGES_REQUESTED':
+                return PullRequestReviewState.CHANGES_REQUESTED;
+            case 'COMMENTED':
+                return PullRequestReviewState.COMMENTED;
+            case 'DISMISSED':
+                return PullRequestReviewState.DISMISSED;
+            case 'PENDING':
+                return PullRequestReviewState.PENDING;
+            default:
+                return null;
+        }
+    }
+
+    async checkIfPullRequestShouldBeApproved(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prNumber: number;
+        repository: { id: string; name: string };
+    }): Promise<any | null> {
+        const { organizationAndTeamData, prNumber, repository } = params;
+
+        const reviewStatus = await this.getReviewStatusByPullRequest({
+            organizationAndTeamData,
+            repository,
+            prNumber,
+        });
+
+        if (reviewStatus === PullRequestReviewState.APPROVED) {
             this.logger.log({
                 message: `PR#${prNumber} already approved`,
                 context: GithubService.name,
@@ -4439,28 +4487,29 @@ export class GithubService
                     },
                 },
             });
-            return;
-        } else {
-            this.logger.log({
-                message: `Approving PR#${prNumber}`,
-                context: GithubService.name,
-                serviceName: 'GithubService - approvePullRequest',
-                metadata: {
-                    organizationAndTeamData,
-                    prNumber,
-                    repository: {
-                        name: repository.name,
-                        id: repository.id,
-                    },
-                },
-            });
 
-            await this.approvePullRequest({
+            return;
+        }
+
+        this.logger.log({
+            message: `Approving PR#${prNumber}`,
+            context: GithubService.name,
+            serviceName: 'GithubService - approvePullRequest',
+            metadata: {
                 organizationAndTeamData,
                 prNumber,
-                repository,
-            });
-        }
+                repository: {
+                    name: repository.name,
+                    id: repository.id,
+                },
+            },
+        });
+
+        await this.approvePullRequest({
+            organizationAndTeamData,
+            prNumber,
+            repository,
+        });
     }
 
     async approvePullRequest(params: {
@@ -5089,19 +5138,39 @@ export class GithubService
                 return [];
             }
 
+            const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
+
             // Get repository info to find the default branch
             const repoResponse = await octokit.rest.repos.get({
-                owner: await this.getCorrectOwner(githubAuthDetail, octokit),
+                owner,
                 repo: repository.name,
             });
 
             // Get the tree using the default branch
             const treeResponse = await octokit.rest.git.getTree({
-                owner: await this.getCorrectOwner(githubAuthDetail, octokit),
+                owner,
                 repo: repository.name,
                 tree_sha: repoResponse.data.default_branch,
                 recursive: 'true',
             });
+
+            if (treeResponse.data.truncated) {
+                this.logger.warn({
+                    message: `Repository tree is truncated for repository ${repository.name}, retrying with manual recursion`,
+                    context: GithubService.name,
+                    metadata: {
+                        organizationAndTeamData: params.organizationAndTeamData,
+                        repositoryId: params.repositoryId,
+                    },
+                });
+
+                return await this.getRepositoryTreeByLevel({
+                    owner,
+                    repo: repository.name,
+                    octokit,
+                    rootTreeSha: repoResponse.data.default_branch, // Start recursion with the root tree SHA
+                });
+            }
 
             let tree = treeResponse.data.tree;
 
@@ -5124,6 +5193,79 @@ export class GithubService
             });
             return [];
         }
+    }
+
+    private async getRepositoryTreeByLevel(params: {
+        owner: string;
+        repo: string;
+        octokit: Octokit;
+        rootTreeSha: string;
+    }): Promise<
+        {
+            path: string;
+            type: 'file' | 'directory';
+            sha: string;
+            size?: number;
+            url: string;
+        }[]
+    > {
+        const { owner, repo, octokit, rootTreeSha } = params;
+        const allFiles = [];
+
+        let directoriesToProcess = [{ sha: rootTreeSha, path: '' }];
+
+        while (directoriesToProcess.length > 0) {
+            const promises = directoriesToProcess.map((dir) =>
+                octokit.rest.git.getTree({
+                    owner,
+                    repo,
+                    tree_sha: dir.sha,
+                }),
+            );
+
+            const treeResponses = await Promise.all(promises);
+
+            const nextLevelDirectories = [];
+
+            for (let i = 0; i < treeResponses.length; i++) {
+                const currentDir = directoriesToProcess[i];
+                const treeContents = treeResponses[i].data.tree;
+
+                for (const item of treeContents) {
+                    const fullPath = currentDir.path
+                        ? `${currentDir.path}/${item.path}`
+                        : item.path;
+
+                    const file = {
+                        path: fullPath,
+                        sha: item.sha,
+                        size: item.size,
+                        url: item.url,
+                    };
+
+                    if (item.type === 'blob') {
+                        allFiles.push({
+                            ...file,
+                            type: 'file',
+                        });
+                    } else if (item.type === 'tree' && item.sha) {
+                        allFiles.push({
+                            ...file,
+                            type: 'directory',
+                        });
+
+                        nextLevelDirectories.push({
+                            sha: item.sha,
+                            path: fullPath,
+                        });
+                    }
+                }
+            }
+
+            directoriesToProcess = nextLevelDirectories;
+        }
+
+        return allFiles;
     }
 
     formatReviewCommentBody(params: {
