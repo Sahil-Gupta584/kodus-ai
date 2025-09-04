@@ -65,7 +65,7 @@ export interface TraceabilityResponse {
 export async function getExecutionTraceability(
     mongoConnectionString: string,
     correlationId: string,
-    databaseName: string = 'kodus-observability',
+    databaseName: string,
 ): Promise<TraceabilityResponse> {
     const logger = createLogger('traceability');
     let client: MongoClient | null = null;
@@ -276,7 +276,7 @@ export async function getExecutionTraceability(
 export async function getExecutionSummary(
     mongoConnectionString: string,
     correlationId: string,
-    databaseName: string = 'kodus-observability',
+    databaseName: string,
 ): Promise<TraceabilityResponse['summary'] & { correlationId: string }> {
     const logger = createLogger('traceability-summary');
     let client: MongoClient | null = null;

@@ -8,6 +8,7 @@ import {
     DirectLLMAdapter,
     PlannerType,
     StorageEnum,
+    getExecutionTraceability,
 } from '@kodus/flow';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
@@ -256,6 +257,26 @@ export class ConversationAgentProvider {
                         additional_information: prepareContext,
                     },
                 },
+            );
+
+            let uri = new ConnectionString('', {
+                user: this.config.username,
+                password: this.config.password,
+                protocol: this.config.port ? 'mongodb' : 'mongodb+srv',
+                hosts: [{ name: this.config.host, port: this.config.port }],
+            }).toString();
+
+            const corr = (result?.context?.correlationId as string) ?? '';
+
+            const traceability = await getExecutionTraceability(
+                uri,
+                corr,
+                'kodus_db',
+            );
+
+            console.log(
+                'Conversation Agent Traceability:',
+                JSON.stringify(traceability, null, 2),
             );
 
             this.logger.log({
