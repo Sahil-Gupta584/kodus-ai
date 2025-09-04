@@ -1,16 +1,15 @@
 import { ProgrammingLanguage } from '@/shared/domain/enums/programming-language.enum';
-import { RuleLikeEntity } from '../entities/ruleLike.entity';
+import { RuleLikeEntity, RuleFeedbackType } from '../entities/ruleLike.entity';
 
 export const RULE_LIKE_SERVICE_TOKEN = 'RULE_LIKE_SERVICE_TOKEN';
 
 export interface IRuleLikeService {
     getNativeCollection(): any;
-    setLike(
+    setFeedback(
         ruleId: string,
-        language: ProgrammingLanguage,
-        liked: boolean,
+        feedback: RuleFeedbackType,
         userId?: string,
-    ): Promise<{ liked: boolean; count: number }>;
+    ): Promise<RuleLikeEntity | null>;
     countByRule(ruleId: string): Promise<number>;
     topByLanguage(
         language: ProgrammingLanguage,
@@ -19,5 +18,5 @@ export interface IRuleLikeService {
     findOne(filter?: Partial<RuleLikeEntity>): Promise<RuleLikeEntity | null>;
     find(filter?: Partial<RuleLikeEntity>): Promise<RuleLikeEntity[]>;
     getAllLikes(): Promise<RuleLikeEntity[]>;
-    getAllRulesWithLikes(userId?: string): Promise<{ ruleId: string; likeCount: number; userLiked: boolean }[]>;
+    getAllRulesWithFeedback(userId?: string): Promise<{ ruleId: string; positiveCount: number; negativeCount: number; userFeedback: RuleFeedbackType | null }[]>;
 }

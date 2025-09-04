@@ -32,6 +32,9 @@ import { MongooseModule } from '@nestjs/mongoose';
             useClass: RuleLikesRepository,
         },
     ],
-    exports: [],
+    exports: [
+        RULE_LIKE_SERVICE_TOKEN,
+        RULE_LIKES_REPOSITORY_TOKEN,
+    ],
 })
 export class RuleLikeModule {}

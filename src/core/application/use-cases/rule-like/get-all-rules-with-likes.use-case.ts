@@ -22,7 +22,7 @@ export class GetAllRulesWithLikesUseCase {
 
     async execute() {
         try {
-            return this.ruleLikeService.getAllRulesWithLikes(this.request.user.uuid);
+            return this.ruleLikeService.getAllRulesWithFeedback(this.request.user.uuid);
         } catch (error) {
             this.logger.error({
                 message: `Failed to get all rules with likes`,

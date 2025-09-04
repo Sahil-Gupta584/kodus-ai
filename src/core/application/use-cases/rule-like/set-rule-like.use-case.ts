@@ -4,6 +4,7 @@ import {
     IRuleLikeService,
     RULE_LIKE_SERVICE_TOKEN,
 } from '@/core/domain/kodyRules/contracts/ruleLike.service.contract';
+import { RuleFeedbackType } from '@/core/domain/kodyRules/entities/ruleLike.entity';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 @Injectable()
@@ -17,29 +18,30 @@ export class SetRuleLikeUseCase {
 
     async execute(
         ruleId: string,
-        language: ProgrammingLanguage,
-        liked: boolean,
+        feedback: RuleFeedbackType,
         userId?: string,
     ): Promise<any> {
         try {
-            return this.ruleLikeService.setLike(
+            const result = await this.ruleLikeService.setFeedback(
                 ruleId,
-                language,
-                liked,
+                feedback,
                 userId,
             );
+
+            // Retorna o objeto limpo ao invés da entity
+            return result?.toObject() || null;
         } catch (error) {
             this.logger.error({
-                message: `Failed to save rule likes`,
+                message: `Failed to save rule feedback`,
                 context: SetRuleLikeUseCase.name,
                 error,
                 metadata: {
                     ruleId,
-                    language,
-                    liked,
+                    feedback,
                     userId,
                 },
             });
+            throw error;
         }
     }
 }

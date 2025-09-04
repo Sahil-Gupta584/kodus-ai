@@ -17,9 +17,11 @@ import { v4 } from 'uuid';
 import { NotFoundException } from '@nestjs/common';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import * as libraryKodyRules from './data/library-kody-rules.json';
+import * as bucketsData from './data/buckets.json';
 import {
     KodyRuleFilters,
     LibraryKodyRule,
+    BucketInfo,
 } from '@/config/types/kodyRules.type';
 import { ProgrammingLanguage } from '@/shared/domain/enums/programming-language.enum';
 import {
@@ -28,6 +30,11 @@ import {
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { ActionType, ConfigLevel, UserInfo } from '@/config/types/general/codeReviewSettingsLog.type';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import {
+    IRuleLikeService,
+    RULE_LIKE_SERVICE_TOKEN,
+} from '@/core/domain/kodyRules/contracts/ruleLike.service.contract';
+import { RuleFeedbackType } from '@/core/domain/kodyRules/entities/ruleLike.entity';
 
 @Injectable()
 export class KodyRulesService implements IKodyRulesService {
@@ -37,6 +44,9 @@ export class KodyRulesService implements IKodyRulesService {
 
         @Inject(CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN)
         private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
+
+        @Inject(RULE_LIKE_SERVICE_TOKEN)
+        private readonly ruleLikeService: IRuleLikeService,
 
         private readonly logger: PinoLoggerService,
     ) { }
@@ -443,85 +453,140 @@ export class KodyRulesService implements IKodyRulesService {
 
     async getLibraryKodyRules(
         filters?: KodyRuleFilters,
-    ): Promise<
-        Record<
-            ProgrammingLanguage,
-            (LibraryKodyRule & { language: ProgrammingLanguage })[]
-        >
-    > {
-        try {
-            const result: Record<
-                ProgrammingLanguage,
-                (LibraryKodyRule & { language: ProgrammingLanguage })[]
-            > = {
-                [ProgrammingLanguage.JSTS]: [],
-                [ProgrammingLanguage.PYTHON]: [],
-                [ProgrammingLanguage.JAVA]: [],
-                [ProgrammingLanguage.CSHARP]: [],
-                [ProgrammingLanguage.DART]: [],
-                [ProgrammingLanguage.RUBY]: [],
-            };
+        userId?: string,
+    ): Promise<LibraryKodyRule[]> {
+        return this.getLibraryKodyRulesInternal(filters, userId, false);
+    }
 
-            // If there are no filters or no rules, return an empty object
-            if (!filters || !libraryKodyRules) {
-                return result;
+    async getLibraryKodyRulesWithFeedback(
+        filters?: KodyRuleFilters,
+        userId?: string,
+    ): Promise<LibraryKodyRule[]> {
+        return this.getLibraryKodyRulesInternal(filters, userId, true);
+    }
+
+    private async getLibraryKodyRulesInternal(
+        filters?: KodyRuleFilters,
+        userId?: string,
+        includeFeedback: boolean = false,
+    ): Promise<LibraryKodyRule[]> {
+        try {
+            // Nova estrutura é um array direto
+            if (!Array.isArray(libraryKodyRules)) {
+                return [];
             }
 
-            for (const language in libraryKodyRules) {
-                if (
-                    !Object.prototype.hasOwnProperty.call(
-                        libraryKodyRules,
-                        language,
-                    )
-                ) {
-                    continue;
-                }
+            const validRules = libraryKodyRules
+                .filter(
+                    (rule) =>
+                        rule && typeof rule === 'object' && rule.title,
+                )
+                .map((rule: any) => ({
+                    ...rule,
+                    tags: this.normalizeTags((rule as any).tags || []),
+                    buckets: rule.buckets || [],
+                }));
 
-                const programmingLanguage = language as ProgrammingLanguage;
-                if (
-                    filters?.language &&
-                    filters.language !== programmingLanguage
-                ) {
-                    continue;
-                }
+            // Aplica filtros se houver
+            let filteredRules = validRules;
+            if (filters) {
+                filteredRules = validRules.filter((rule) => {
+                    // Filtro por título
+                    if (filters.title && !rule.title.toLowerCase().includes(filters.title.toLowerCase())) {
+                        return false;
+                    }
 
-                const rules = libraryKodyRules[language];
-                if (!Array.isArray(rules)) {
-                    continue;
-                }
+                    // Filtro por severidade
+                    if (filters.severity && rule.severity?.toLowerCase() !== filters.severity?.toLowerCase()) {
+                        return false;
+                    }
 
-                const validRules = rules
-                    .filter(
-                        (rule) =>
-                            rule && typeof rule === 'object' && rule.title,
-                    )
-                    .map((rule) => ({
-                        ...rule,
-                        tags: this.normalizeTags(rule.tags),
-                    }));
+                    // Filtro por tags
+                    if (filters.tags && filters.tags.length > 0) {
+                        const ruleTags = rule.tags || [];
+                        const hasMatchingTag = filters.tags.some(filterTag =>
+                            ruleTags.some(ruleTag => ruleTag.toLowerCase().includes(filterTag.toLowerCase()))
+                        );
+                        if (!hasMatchingTag) {
+                            return false;
+                        }
+                    }
 
-                const filteredRules = validRules
-                    .filter((rule) => this.ruleMatchesFilters(rule, filters))
-                    .map((rule) =>
-                        this.addLanguageToRule(rule, programmingLanguage),
+                    // Filtro por linguagem
+                    if (filters.language && rule.language && rule.language !== filters.language) {
+                        return false;
+                    }
+
+                    // Filtro por buckets
+                    if (filters.buckets && filters.buckets.length > 0) {
+                        const ruleBuckets = rule.buckets || [];
+                        const hasMatchingBucket = filters.buckets.some(filterBucket =>
+                            ruleBuckets.includes(filterBucket)
+                        );
+                        if (!hasMatchingBucket) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                });
+            }
+
+            // Se deve incluir feedback, busca dados de feedback
+            if (includeFeedback) {
+                console.log('🔍 getLibraryKodyRulesInternal - includeFeedback:', includeFeedback, 'userId:', userId);
+                try {
+                    const feedbackData = await this.ruleLikeService.getAllRulesWithFeedback(userId);
+                    console.log('🔍 getLibraryKodyRulesInternal - feedbackData:', feedbackData);
+                    
+                    const feedbackMap = new Map(
+                        feedbackData.map(f => [f.ruleId, f])
                     );
 
-                if (filteredRules.length > 0) {
-                    result[programmingLanguage] = filteredRules;
+                    return filteredRules.map(rule => {
+                        const feedback = feedbackMap.get(rule.uuid);
+                        return {
+                            ...rule,
+                            positiveCount: feedback?.positiveCount || 0,
+                            negativeCount: feedback?.negativeCount || 0,
+                            // Só inclui userFeedback se userId foi fornecido
+                            userFeedback: userId ? (feedback?.userFeedback || null) : null,
+                        };
+                    });
+                } catch (error) {
+                    console.error('❌ getLibraryKodyRulesInternal - Error fetching feedback:', error);
+                    this.logger.error({
+                        message: 'Error fetching feedback data',
+                        error: error,
+                        context: 'getLibraryKodyRulesInternal',
+                    });
+                    // Se erro ao buscar feedback, retorna sem feedback
+                    return filteredRules;
                 }
             }
 
-            return result;
+            return filteredRules;
         } catch (error) {
             console.error('Error in getLibraryKodyRules:', error);
-            return {
-                [ProgrammingLanguage.JSTS]: [],
-                [ProgrammingLanguage.PYTHON]: [],
-                [ProgrammingLanguage.JAVA]: [],
-                [ProgrammingLanguage.CSHARP]: [],
-                [ProgrammingLanguage.DART]: [],
-                [ProgrammingLanguage.RUBY]: [],
-            };
+            return [];
+        }
+    }
+
+    async getLibraryKodyRulesBuckets(): Promise<BucketInfo[]> {
+        try {
+            if (!Array.isArray(bucketsData)) {
+                return [];
+            }
+
+            // Retorna todos os buckets com informações completas
+            return bucketsData.map((bucket: any) => ({
+                slug: bucket.slug,
+                title: bucket.title,
+                description: bucket.description,
+            }));
+        } catch (error) {
+            console.error('Error in getLibraryKodyRulesBuckets:', error);
+            return [];
         }
     }
 }
