@@ -41,7 +41,7 @@ export class GetRepositoryTreeUseCase implements IUseCase {
 
     public async execute(params: GetRepositoryTreeDto) {
         try {
-            const key = `repo-tree-${params.organizationId}-${params.repositoryId}`;
+            const key = `repo-tree-${params.organizationId}-${params.teamId}-${params.repositoryId}`;
 
             const cached = await this.cacheService.getFromCache<{
                 tree: TreeItem[];
