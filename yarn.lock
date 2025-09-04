@@ -1868,10 +1868,10 @@
   resolved "https://registry.yarnpkg.com/@keyv/serialize/-/serialize-1.1.0.tgz#08f5d89096110fdcf778e5337362e1cd5afad70a"
   integrity sha512-RlDgexML7Z63Q8BSaqhXdCYNBy/JQnqYIwxofUrNLGCblOMHp+xux2Q8nLMLlPpgHQPoU0Do8Z6btCpRBEqZ8g==
 
-"@kodus/flow@0.1.15":
-  version "0.1.15"
-  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/flow/-/@kodus/flow-0.1.15.tgz#26dc9437a5d84d0efb4cc4be8bd3757af951082e"
-  integrity sha512-eJ1xi8y5FhDR4w4eDLp2G+j1xHTaM2vgCJM96XsSWOnZV6FdoHYmIZT0fKQFrtSmfAwhPC3A+JgOIPKQJXDfHQ==
+"@kodus/flow@0.1.16":
+  version "0.1.16"
+  resolved "https://us-central1-npm.pkg.dev/kodus-infra-prod/kodus-pkg/@kodus/flow/-/@kodus/flow-0.1.16.tgz#fc761912eded95edb1f539d7038632b8a6507c7e"
+  integrity sha512-1y6S112ON4rcu1wfj6dRdSklBTRCEFF6Jpi0hRbVIHlAsMBKOBVRKJczkrkc04GP4rM9BQWgsxGBcI6z9hNFlA==
   dependencies:
     "@google/generative-ai" "^0.24.1"
     "@modelcontextprotocol/sdk" "^1.17.5"
@@ -7777,11 +7777,9 @@ lru-cache@^10.2.0:
   integrity sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==
 
 lru-cache@^11.0.0:
-  version "11.2.0"
-  resolved "https://registry.yarnpkg.com/lru-cache/-/lru-cache-11.2.0.tgz#ceefc006a9c200c70146b6f2dbf7d19a5d51d78d"
-  integrity sha512-1oZqnd6TxE/NZyRZ21u+10DKV5sMqT0rJFlPbytSH/0UaXLvE/EurTrd2nDnHif6E1l8N9mothtWs/Um3RijjA==
-  dependencies:
-    esbuild "^0.25.9"
+  version "11.2.1"
+  resolved "https://registry.yarnpkg.com/lru-cache/-/lru-cache-11.2.1.tgz#d426ac471521729c6c1acda5f7a633eadaa28db2"
+  integrity sha512-r8LA6i4LP4EeWOhqBaZZjDWwehd1xUJPCJd9Sv300H0ZmcUER4+JPh7bqqZeqs1o5pgtgvXm+d9UGrB5zZGDiQ==
 
 lru-cache@^5.1.1:
   version "5.1.1"
@@ -8226,9 +8224,9 @@ no-case@^3.0.4:
     tslib "^2.0.3"
 
 node-abi@^3.73.0:
-  version "3.76.0"
-  resolved "https://registry.yarnpkg.com/node-abi/-/node-abi-3.76.0.tgz#b6113facd47ba4ad41e9f7e320f4d23338039948"
-  integrity sha512-vxPAUdXYJ2Vv8bUWSpbC/A4ltEdMYO4ruzMXrb99BbZz0IMmrt6xLhYirTIhOMk2dpsbjby+PZEhUkHIeMXM4g==
+  version "3.77.0"
+  resolved "https://registry.yarnpkg.com/node-abi/-/node-abi-3.77.0.tgz#3ad90d5c9d45663420e5aa4ff58dbf4e3625419a"
+  integrity sha512-DSmt0OEcLoK4i3NuscSbGjOf3bqiDEutejqENSplMSFA/gmB8mkED9G4pKWnPl7MDU4rSHebKPHeitpDfyH0cQ==
   dependencies:
     semver "^7.3.5"
 
